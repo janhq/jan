@@ -1,0 +1,112 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+conf:
+  listen:
+    host: 0.0.0.0     # `manager api` listening ip or host name
+    port: 9000          # `manager api` listening port
+  allow_list:           # If we don't set any IP list, then any IP access is allowed by default.
+    - 0.0.0.0/0
+  etcd:
+    endpoints:          # supports defining multiple etcd host addresses for an etcd cluster
+      - "http://etcd:2379"
+                          # yamllint disable rule:comments-indentation
+                          # etcd basic auth info
+    # username: "root"    # ignore etcd username if not enable etcd auth
+    # password: "123456"  # ignore etcd password if not enable etcd auth
+    mtls:
+      key_file: ""          # Path of your self-signed client side key
+      cert_file: ""         # Path of your self-signed client side cert
+      ca_file: ""           # Path of your self-signed ca cert, the CA is used to sign callers' certificates
+    # prefix: /apisix     # apisix config's prefix in etcd, /apisix by default
+  log:
+    error_log:
+      level: warn       # supports levels, lower to higher: debug, info, warn, error, panic, fatal
+      file_path:
+        logs/error.log  # supports relative path, absolute path, standard output
+                        # such as: logs/error.log, /tmp/logs/error.log, /dev/stdout, /dev/stderr
+    access_log:
+      file_path:
+        logs/access.log  # supports relative path, absolute path, standard output
+                         # such as: logs/access.log, /tmp/logs/access.log, /dev/stdout, /dev/stderr
+                         # log example: 2020-12-09T16:38:09.039+0800	INFO	filter/logging.go:46	/apisix/admin/routes/r1	{"status": 401, "host": "127.0.0.1:9000", "query": "asdfsafd=adf&a=a", "requestId": "3d50ecb8-758c-46d1-af5b-cd9d1c820156", "latency": 0, "remoteIP": "127.0.0.1", "method": "PUT", "errs": []}
+  security:
+      # access_control_allow_origin: "http://httpbin.org"
+      # access_control_allow_credentials: true          # support using custom cors configration
+      # access_control_allow_headers: "Authorization"
+      # access_control-allow_methods: "*"
+      # x_frame_options: "deny"
+      content_security_policy: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src *"  # You can set frame-src to provide content for your grafana panel.
+
+authentication:
+  secret:
+    secret              # secret for jwt token generation.
+                        # NOTE: Highly recommended to modify this value to protect `manager api`.
+                        # if it's default value, when `manager api` start, it will generate a random string to replace it.
+  expire_time: 3600     # jwt token expire time, in second
+  users:                # yamllint enable rule:comments-indentation
+    - username: admin   # username and password for login `manager api`
+      password: admin
+    - username: user
+      password: user
+
+plugins:                          # plugin list (sorted in alphabetical order)
+  - api-breaker
+  - authz-keycloak
+  - basic-auth
+  - batch-requests
+  - consumer-restriction
+  - cors
+  # - dubbo-proxy
+  - echo
+  # - error-log-logger
+  # - example-plugin
+  - fault-injection
+  - grpc-transcode
+  - hmac-auth
+  - http-logger
+  - ip-restriction
+  - jwt-auth
+  - kafka-logger
+  - key-auth
+  - limit-conn
+  - limit-count
+  - limit-req
+  # - log-rotate
+  # - node-status
+  - openid-connect
+  - prometheus
+  - proxy-cache
+  - proxy-mirror
+  - proxy-rewrite
+  - redirect
+  - referer-restriction
+  - request-id
+  - request-validation
+  - response-rewrite
+  - serverless-post-function
+  - serverless-pre-function
+  # - skywalking
+  - sls-logger
+  - syslog
+  - tcp-logger
+  - udp-logger
+  - uri-blocker
+  - wolf-rbac
+  - zipkin
+  - server-info
+  - traffic-split

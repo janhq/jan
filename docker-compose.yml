@@ -1,48 +1,115 @@
-# docker version
 version: "3"
 
-services:  
-  Backend_Frontend:    
-    image: quay.io/keycloak/keycloak:22.0.1        
-    command: start-dev
-    environment:      
-      KC_DB: postgres
-      KC_DB_URL_HOST: postgres_svr
-      KC_DB_URL_DATABASE: db_name
-      KC_DB_PASSWORD: password
-      KC_DB_USERNAME: user_name
-      KC_DB_SCHEMA: public
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin      
-    ports:      
-      - "8080:8080"      
-    depends_on:      
-      postgres_svr:
-        condition: service_healthy
-    networks:
-      network_sso:
-        ipv4_address: "10.0.0.2"    
+volumes:
+  mysql_data:
+      driver: local
 
-  postgres_svr: 
-    image: postgres:13
-    command: postgres -c 'max_connections=200' && postgres -c 'shared_buffers=24MB'    
-    environment:
-      # Environment Variables expecially for Postgres
-      POSTGRES_DB: db_name
-      POSTGRES_USER: user_name
-      POSTGRES_PASSWORD: password
-    healthcheck:
-      test: "exit 0"
+services:
+  apisix-dashboard:
+    image: apache/apisix-dashboard:3.0.1-alpine
+    restart: always
+    volumes:
+    - ./conf/dashboard_conf/conf.yaml:/usr/local/apisix-dashboard/conf/conf.yaml
     ports:
-      - "5432:5432"
+    - "9000:9000"
     networks:
-      network_sso:
-        ipv4_address: "10.0.0.3"
-networks:  
-  network_sso:
-    ipam:
-    # IP Address management
-      driver: default
-      # default = bridge
-      config:
-        - subnet: "10.0.0.0/24"  
+      apisix:
+
+  apisix:
+    image: apache/apisix:${APISIX_IMAGE_TAG:-3.4.1-debian}
+    restart: always
+    volumes:
+      - ./conf/apisix_conf/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+    depends_on:
+      - etcd
+    ##network_mode: host
+    ports:
+      - "9180:9180/tcp"
+      - "9080:9080/tcp"
+      - "9091:9091/tcp"
+      - "9443:9443/tcp"
+      - "9092:9092/tcp"
+    networks:
+      apisix:
+
+  etcd:
+    image: bitnami/etcd:3.4.15
+    restart: always
+    volumes:
+      - etcd_data:/bitnami/etcd
+    environment:
+      ETCD_ENABLE_V2: "true"
+      ALLOW_NONE_AUTHENTICATION: "yes"
+      ETCD_ADVERTISE_CLIENT_URLS: "http://etcd:2379"
+      ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"
+    ports:
+      - "2379:2379/tcp"
+    networks:
+      apisix:
+
+  web1:
+    image: nginx:1.19.0-alpine
+    restart: always
+    volumes:
+      - ./conf/upstream/web1.conf:/etc/nginx/nginx.conf
+    ports:
+      - "9081:80/tcp"
+    environment:
+      - NGINX_PORT=80
+    networks:
+      apisix:
+
+  web2:
+    image: nginx:1.19.0-alpine
+    restart: always
+    volumes:
+      - ./conf/upstream/web2.conf:/etc/nginx/nginx.conf
+    ports:
+      - "9082:80/tcp"
+    environment:
+      - NGINX_PORT=80
+    networks:
+      apisix:
+
+  prometheus:
+    image: prom/prometheus:v2.25.0
+    restart: always
+    volumes:
+      - ./conf/prometheus_conf/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      apisix:
+
+  mysql:
+      image: mysql:5.7
+      volumes:
+        - mysql_data:/var/lib/mysql
+      environment:
+        MYSQL_ROOT_PASSWORD: root
+        MYSQL_DATABASE: keycloak
+        MYSQL_USER: keycloak
+        MYSQL_PASSWORD: password
+        
+  keycloak:
+      image: quay.io/keycloak/keycloak:15.0.2
+      environment:
+        DB_VENDOR: MYSQL
+        DB_ADDR: mysql
+        DB_DATABASE: keycloak
+        DB_USER: keycloak
+        DB_PASSWORD: password
+        KEYCLOAK_USER: admin
+        KEYCLOAK_PASSWORD: admin
+        #KEYCLOAK_LOGLEVEL: DEBUG
+        # Uncomment the line below if you want to specify JDBC parameters. The parameter below is just an example, and it shouldn't be used in production without knowledge. It is highly recommended that you read the MySQL JDBC driver documentation in order to use it.
+        #JDBC_PARAMS: "connectTimeout=30000"
+      ports:
+        - 8080:8080
+        - 8443:8443
+      depends_on:
+        - mysql    
+
+networks:
+  apisix:
+    driver: bridge
