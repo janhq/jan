@@ -57,11 +57,11 @@ Jan is a monorepo that pulls in the following submodules
 
 ```shell
 ├── docker-compose.yml
-├── jan-mobile
-├── jan-web
-├── jan-backend
-├── jan-inference
-├── jan-docs
-    ├── adrs        # Architecture Decision Records
+├── mobile-client
+├── web-client
+├── app-backend
+├── inference-backend
+├── docs                # Developer Docs
+├── adrs                # Architecture Decision Records
 ```
 
