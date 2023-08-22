@@ -1,0 +1,63 @@
+# docker version
+version: "3"
+
+volumes:
+  keycloak_postgres_data:
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION-22.0.0}
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: keycloak_postgres
+      KC_DB_URL_DATABASE: ${POSTGRES_DB_NAME:-keycloak}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      KC_DB_USERNAME: ${POSTGRES_USERNAME:-postgres}
+      KC_DB_SCHEMA: ${KC_DB_SCHEMA:-public}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD-admin}
+    ports:
+      - "8080:8080"
+    depends_on:
+      keycloak_postgres:
+        condition: service_healthy
+    networks:
+      jan_community:
+
+  keycloak_postgres:
+    image: postgres:13
+    command: postgres -c 'max_connections=200' && postgres -c 'shared_buffers=24MB'
+    environment:
+      # Environment Variables expecially for Postgres
+      POSTGRES_DB: ${POSTGRES_DB_NAME:-keycloak}
+      POSTGRES_USER: ${POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATA: /data/postgres
+      PGPORT: ${POSTGRES_PORT:-5432}
+    healthcheck:
+      test: "exit 0"
+    volumes:
+      - keycloak_postgres_data:/data/postgres
+    ports:
+      - ${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}
+    networks:
+      jan_community:
+
+  keycloak_config_cli:
+    image: adorsys/keycloak-config-cli:latest
+    depends_on:
+      - keycloak
+    volumes:
+    - ./conf/keycloak_conf:/config
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_USER: ${KEYCLOAK_ADMIN-admin}
+      KEYCLOAK_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD-admin}
+      KEYCLOAK_AVAILABILITYCHECK_ENABLED: 'true'
+      KEYCLOAK_AVAILABILITYCHECK_TIMEOUT: 120s
+      IMPORT_FILES_LOCATIONS: '/config/*'
+      DEBUG: 'true'
+
+networks:  
+  jan_community:
