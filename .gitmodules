@@ -1,0 +1,9 @@
+[submodule "web-client"]
+	path = web-client
+	url = git@github.com:janhq/jan-web.git
+[submodule "app-backend"]
+	path = app-backend
+	url = git@github.com:janhq/app-backend.git
+[submodule "mobile-client"]
+	path = mobile-client
+	url = git@github.com:janhq/jan-react-native.git
