@@ -1,0 +1,17 @@
+# Compiling
+-r sd_cpp/models/requirements.txt
+
+# diffusers
+# torch
+# ftfy
+# scipy
+# transformers
+# accelerate
+# huggingface-hub
+# xformers
+# omegaconf
+# safetensors
+# cog
+# tomesd
+# compel
+

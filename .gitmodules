@@ -1,0 +1,3 @@
+[submodule "jan-inference/sd/sd_cpp"]
+	path = jan-inference/sd/sd_cpp
+	url = https://github.com/leejet/stable-diffusion.cpp
