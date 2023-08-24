@@ -6,20 +6,20 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'My Site',
-  tagline: 'Dinosaurs are cool',
+  title: 'Jan Docs',
+  tagline: 'Self-hosted AI inference platform',
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://your-docusaurus-test-site.com',
+  url: 'https://docs.jan.ai',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'facebook', // Usually your GitHub org/user name.
-  projectName: 'docusaurus', // Usually your repo name.
+  organizationName: 'janhq', // Usually your GitHub org/user name.
+  projectName: 'jan', // Usually your repo name.
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
@@ -32,53 +32,79 @@ const config = {
     locales: ['en'],
   },
 
+  // The classic preset will relay each option entry to the respective sub plugin/theme.
   presets: [
     [
       'classic',
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
+        // Will be passed to @docusaurus/plugin-content-docs (false to disable)
         docs: {
+          routeBasePath: '/',
           sidebarPath: require.resolve('./sidebars.js'),
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+            'https://github.com/janhq/jan/docs',
+          showLastUpdateAuthor: true,
+          showLastUpdateTime: true,
         },
-        blog: {
-          showReadingTime: true,
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
-        },
+        blog: false,
+        // Will be passed to @docusaurus/theme-classic.
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
         },
+        // Will be passed to @docusaurus/plugin-content-pages (false to disable)
+        // pages: {},
       }),
     ],
   ],
 
+  // Docs: https://docusaurus.io/docs/api/themes/configuration
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       // Replace with your project's social card
       image: 'img/docusaurus-social-card.jpg',
       navbar: {
-        title: 'My Site',
+        title: 'Jan Docs',
         logo: {
-          alt: 'My Site Logo',
+          alt: 'Jan Logo',
           src: 'img/logo.svg',
         },
         items: [
+          // Navbar left
           {
             type: 'docSidebar',
-            sidebarId: 'tutorialSidebar',
+            sidebarId: 'quickstartSidebar',
             position: 'left',
-            label: 'Tutorial',
+            label: 'Quickstart',
           },
-          {to: '/blog', label: 'Blog', position: 'left'},
           {
-            href: 'https://github.com/facebook/docusaurus',
+            type: 'docSidebar',
+            sidebarId: 'guidesSidebar',
+            position: 'left',
+            label: 'Guides',
+          },
+          {
+            type: 'docSidebar',
+            sidebarId: 'developerSidebar',
+            position: 'left',
+            label: 'Developer',
+          },
+          {
+            type: 'docSidebar',
+            sidebarId: 'referenceSidebar',
+            position: 'left',
+            label: 'Reference',
+          },
+          {
+            type: 'docSidebar',
+            sidebarId: 'changelogSidebar',
+            position: 'left',
+            label: 'Changelog',
+          },
+          // Navbar right
+          {
+            href: 'https://github.com/janhq/jan/docs',
             label: 'GitHub',
             position: 'right',
           },
@@ -88,11 +114,11 @@ const config = {
         style: 'dark',
         links: [
           {
-            title: 'Docs',
+            title: 'Quickstart',
             items: [
               {
-                label: 'Tutorial',
-                to: '/docs/intro',
+                label: 'Quickstart',
+                to: '/quickstart/overview',
               },
             ],
           },
@@ -127,7 +153,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Jan AI Pte Ltd.`,
       },
       prism: {
         theme: lightCodeTheme,
