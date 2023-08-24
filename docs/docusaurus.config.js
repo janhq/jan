@@ -44,6 +44,7 @@ const config = {
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl:
             'https://github.com/janhq/jan/docs',
+          sidebarCollapsed: false,
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
         },
@@ -104,9 +105,9 @@ const config = {
           },
           {
             type: 'docSidebar',
-            sidebarId: 'companySidebar',
+            sidebarId: 'aboutSidebar',
             position: 'right',
-            label: 'Company',
+            label: 'About',
           },
           // Navbar right
           {
@@ -152,6 +153,10 @@ const config = {
                 href: 'https://discord.gg/FTk2MvZwJH',
               },
               {
+                label: 'Telegram',
+                href: 'https://t.me/+cSSlxwEM-0piMDQ1',
+              },
+              {
                 label: 'Twitter',
                 href: 'https://twitter.com/askjanai',
               },
@@ -161,8 +166,8 @@ const config = {
             title: 'More',
             items: [
               {
-                label: 'Company',
-                to: '/company',
+                label: 'About',
+                to: '/about',
               },
               {
                 label: 'Blog',
