@@ -76,7 +76,7 @@ const config = {
             type: 'docSidebar',
             sidebarId: 'quickstartSidebar',
             position: 'left',
-            label: 'Quickstart',
+            label: 'Getting Started',
           },
           {
             type: 'docSidebar',
@@ -102,6 +102,12 @@ const config = {
             position: 'left',
             label: 'Changelog',
           },
+          {
+            type: 'docSidebar',
+            sidebarId: 'companySidebar',
+            position: 'right',
+            label: 'Company',
+          },
           // Navbar right
           {
             href: 'https://github.com/janhq/jan/docs',
@@ -114,11 +120,27 @@ const config = {
         style: 'dark',
         links: [
           {
-            title: 'Quickstart',
+            title: 'Documentation',
             items: [
               {
-                label: 'Quickstart',
-                to: '/quickstart/overview',
+                label: 'Getting Started',
+                to: '/',
+              },
+              {
+                label: 'Guides',
+                to: '/guides',
+              },
+              {
+                label: 'Developer',
+                to: '/developer',
+              },
+              {
+                label: 'Reference',
+                to: '/reference',
+              },
+              {
+                label: 'Changelog',
+                to: '/changelog',
               },
             ],
           },
@@ -126,16 +148,12 @@ const config = {
             title: 'Community',
             items: [
               {
-                label: 'Stack Overflow',
-                href: 'https://stackoverflow.com/questions/tagged/docusaurus',
-              },
-              {
                 label: 'Discord',
-                href: 'https://discordapp.com/invite/docusaurus',
+                href: 'https://discord.gg/FTk2MvZwJH',
               },
               {
                 label: 'Twitter',
-                href: 'https://twitter.com/docusaurus',
+                href: 'https://twitter.com/askjanai',
               },
             ],
           },
@@ -143,12 +161,16 @@ const config = {
             title: 'More',
             items: [
               {
+                label: 'Company',
+                to: '/company',
+              },
+              {
                 label: 'Blog',
-                to: '/blog',
+                href: 'https://blog.jan.ai',
               },
               {
                 label: 'GitHub',
-                href: 'https://github.com/facebook/docusaurus',
+                href: 'https://github.com/janhq/jan',
               },
             ],
           },
