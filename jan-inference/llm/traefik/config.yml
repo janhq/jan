@@ -1,0 +1,23 @@
+http:
+ #region routers 
+  routers:
+    llm:
+      entryPoints:
+        - "web"
+      rule: "PathPrefix(`/inference/llm`)"
+      middlewares:
+        - llmm-strip-prefix
+      service: llm
+#endregion
+#region services
+  services:
+    llm:
+      loadBalancer:
+        servers:
+          - url: "http://llm:8000"
+#endregion
+  middlewares:
+    llmm-strip-prefix:
+      stripPrefix:
+        prefixes: 
+          - "/inference/llm"
