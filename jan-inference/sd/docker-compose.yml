@@ -4,18 +4,21 @@ services:
 
   # Service to download a model file.
   downloader:
-    image: busybox
+    build:
+      context: ./
+      dockerfile: compile.Dockerfile
+    # platform: "linux/amd64"
     # The command extracts the model filename from MODEL_URL and downloads it if it doesn't exist.
-    command: /bin/sh -c "LLM_MODEL_FILE=$(basename ${MODEL_URL}); if [ ! -f /models/$LLM_MODEL_FILE ]; then wget -O /models/$LLM_MODEL_FILE ${MODEL_URL}; fi"
+    command: /bin/sh -c "SD_MODEL_FILE=$(basename ${MODEL_URL}); if [ ! -f /converted_models/*.bin ]; then wget -O /converted_models/$SD_MODEL_FILE ${MODEL_URL}; python /sd.cpp/models/convert.py --out_type q4_0 --out_file /converted_models/$SD_MODEL_FILE; fi"
     # Mount a local directory to store the downloaded model.
     volumes:
-      - ./models:/models
+      - ./models:/converted_models
 
   # Service to wait for the downloader service to finish downloading the model.
   wait-for-downloader:
     image: busybox
     # The command waits until the model file (specified in MODEL_URL) exists.
-    command: /bin/sh -c "LLM_MODEL_FILE=$(basename ${MODEL_URL}); echo 'Waiting for downloader to finish'; while [ ! -f /models/$LLM_MODEL_FILE ]; do sleep 1; done; echo 'Model downloaded!'"
+    command: /bin/sh -c "SD_MODEL_FILE=$(basename ${MODEL_URL}); echo 'Waiting for downloader to finish'; while [ ! -f /models/*.bin ]; do sleep 1; done; echo 'Model downloaded and converted!'"
     # Specifies that this service should start after the downloader service has started.
     depends_on:
       downloader:
@@ -24,15 +27,26 @@ services:
     volumes:
       - ./models:/models
 
-  # Service to run the Llama web application.
-  llm:
-    image: ghcr.io/abetlen/llama-cpp-python:latest
+  # Service to run the SD web application.
+  sd:
+    build:
+      context: ./
+      dockerfile: inference.Dockerfile
     # Mount the directory that contains the downloaded model.
     volumes:
       - ./models:/models
+      - ./output/:/serving/output
+    command:  /bin/bash -c "python -m uvicorn main:app --proxy-headers --host 0.0.0.0 --port 8000"
+    # platform: "linux/amd64"
     environment:
       # Specify the path to the model for the web application.
-      MODEL: /models/llama-2-7b-chat.ggmlv3.q4_1.bin
+      BASE_URL: http://0.0.0.0:8000
+      MODEL_NAME: "v1-5-pruned-emaonly-ggml-model-q5_0.bin"
+      MODEL_DIR: "/models"
+      SD_PATH: "/sd"
+      PYTHONUNBUFFERED: 1
+    ports:
+      - 8000:8000
     # Health check configuration
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000"]
@@ -53,7 +67,16 @@ services:
   
   # Service for Traefik, a modern HTTP reverse proxy and load balancer.
   traefik:
-    image: traefik:v2.10
+    image: traefik:v2.5
+    command:
+      # Enable the Traefik API dashboard without TLS (not recommended for production).
+      - "--api.insecure=true"
+      # Enable Traefik to use Docker as a provider.
+      - "--providers.docker=true"
+      # Do not expose services by default. Explicitly specify in each service if it should be exposed.
+      - "--providers.docker.exposedbydefault=false"
+      # Specify the default entry point on port 80.
+      - "--entrypoints.web.address=:80"
     ports:
       # Map port 80 in the container to port 80 on the host.
       - "80:80"
@@ -61,9 +84,7 @@ services:
       - "8080:8080"
     # Mount the Docker socket to allow Traefik to listen to Docker's API.
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik/traefik.yml:/traefik.yml:ro
-      - ./traefik/config.yml:/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     # Connect this service to the traefik_public network.
     networks:
       - traefik_public

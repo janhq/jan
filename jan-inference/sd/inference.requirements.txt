@@ -1,0 +1,4 @@
+# Inference
+fastapi
+uvicorn
+python-multipart
