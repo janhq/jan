@@ -33,16 +33,6 @@ services:
     environment:
       # Specify the path to the model for the web application.
       MODEL: /models/llama-2-7b-chat.ggmlv3.q4_1.bin
-    labels:
-      # Instead of using the Host rule, set a PathPrefix rule
-      - "traefik.http.routers.web.rule=PathPrefix(`/inference/llm`)"
-      # This tells Traefik where to forward the traffic for this route.
-      - "traefik.http.routers.web.service=llm"
-    # Define a service for the llm and specify its load balancer configuration
-      - "traefik.http.services.llm-service.loadbalancer.server.port=8000"
-
-      - "traefik.http.middlewares.strip-llm-prefix.stripprefix.prefixes=/inference/llm"
-      - "traefik.http.routers.web.middlewares=strip-llm-prefix"
     # Health check configuration
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000"]
@@ -63,16 +53,7 @@ services:
   
   # Service for Traefik, a modern HTTP reverse proxy and load balancer.
   traefik:
-    image: traefik:v2.5
-    command:
-      # Enable the Traefik API dashboard without TLS (not recommended for production).
-      - "--api.insecure=true"
-      # Enable Traefik to use Docker as a provider.
-      - "--providers.docker=true"
-      # Do not expose services by default. Explicitly specify in each service if it should be exposed.
-      - "--providers.docker.exposedbydefault=false"
-      # Specify the default entry point on port 80.
-      - "--entrypoints.web.address=:80"
+    image: traefik:v2.10
     ports:
       # Map port 80 in the container to port 80 on the host.
       - "80:80"
@@ -80,7 +61,9 @@ services:
       - "8080:8080"
     # Mount the Docker socket to allow Traefik to listen to Docker's API.
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/traefik.yml:ro
+      - ./traefik/config.yml:/config.yml:ro
     # Connect this service to the traefik_public network.
     networks:
       - traefik_public
