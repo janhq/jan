@@ -32,6 +32,10 @@ const config = {
     locales: ['en'],
   },
 
+  // Plugins we added
+  // Only for react live
+  themes: ['@docusaurus/theme-live-codeblock'],
+
   // The classic preset will relay each option entry to the respective sub plugin/theme.
   presets: [
     [
@@ -43,11 +47,19 @@ const config = {
           routeBasePath: '/',
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl:
-            'https://github.com/janhq/jan/docs',
+            'https://github.com/janhq/jan/tree/main/docs',
           sidebarCollapsed: false,
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
         },
+        // Will be passed to @docusaurus/plugin-content-sitemap (false to disable)
+        sitemap: {
+          changefreq: 'weekly',
+          priority: 0.5,
+          ignorePatterns: ['/tags/**'],
+          filename: 'sitemap.xml',
+        },
+        // Will be passed to @docusaurus/plugin-content-blog (false to disable)
         blog: false,
         // Will be passed to @docusaurus/theme-classic.
         theme: {
@@ -57,14 +69,35 @@ const config = {
         // pages: {},
       }),
     ],
+    // Redoc preset
+    [
+      'redocusaurus',
+      {
+        specs: [
+          {
+            spec: 'openapi/OpenAPISpec.json', // can be local file, url, or parsed json object
+            route: '/reference/',
+          },
+        ],
+        theme: {
+          primaryColor: '#1a73e8',
+          primaryColorDark: '#1a73e8',
+          // redocOptions: { hideDownloadButton: false },
+        },
+      }
+    ]
   ],
 
   // Docs: https://docusaurus.io/docs/api/themes/configuration
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      // Replace with your project's social card
+      // TODO: Replace with your project's social card
       image: 'img/docusaurus-social-card.jpg',
+      // Only for react live
+      liveCodeBlock: {
+        playgroundPosition: 'bottom',
+      },
       navbar: {
         title: 'Jan Docs',
         logo: {
@@ -92,10 +125,9 @@ const config = {
             label: 'Developer',
           },
           {
-            type: 'docSidebar',
-            sidebarId: 'referenceSidebar',
             position: 'left',
             label: 'Reference',
+            to: '/reference',
           },
           {
             type: 'docSidebar',
@@ -103,15 +135,15 @@ const config = {
             position: 'left',
             label: 'Changelog',
           },
+          // Navbar right
           {
             type: 'docSidebar',
             sidebarId: 'aboutSidebar',
             position: 'right',
             label: 'About',
           },
-          // Navbar right
           {
-            href: 'https://github.com/janhq/jan/docs',
+            href: 'https://github.com/janhq/jan',
             label: 'GitHub',
             position: 'right',
           },
@@ -185,6 +217,7 @@ const config = {
       prism: {
         theme: lightCodeTheme,
         darkTheme: darkCodeTheme,
+        additionalLanguages: ['python'],
       },
     }),
 };
