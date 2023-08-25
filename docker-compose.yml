@@ -70,6 +70,20 @@ services:
     networks:
       jan_community:
 
+  worker:
+    build:
+      context: ./app-backend
+      dockerfile: ./worker/Dockerfile
+    restart: always
+    environment:
+      - "NODE_ENV=development"
+    volumes:
+      - .:/worker
+    ports:
+      - "8787:8787"
+    networks:
+      jan_community:
+
   data-connector-agent:
     image: hasura/graphql-data-connector:v2.31.0
     restart: always
