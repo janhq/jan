@@ -1,0 +1,74 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "description": "Jan.ai api reference documentation.",
+    "title": "Rest Endpoints",
+    "version": ""
+  },
+  "paths": {
+    "/api/rest/myquery": {
+      "get": {
+        "summary": "MyQuery",
+        "description": "***\nThe GraphQl query for this endpoint is:\n``` graphql\nquery MyQuery {\n  collections {\n    id\n    name\n    slug\n  }\n}\n```",
+        "parameters": [
+          {
+            "description": "Your x-hasura-admin-secret will be used for authentication of the API request.",
+            "in": "header",
+            "name": "x-hasura-admin-secret",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "collections": {
+                      "items": {
+                        "description": "columns and relationships of \"collections\"",
+                        "nullable": false,
+                        "properties": {
+                          "id": {
+                            "$ref": "#/components/schemas/uuid!"
+                          },
+                          "name": {
+                            "nullable": false,
+                            "title": "String",
+                            "type": "string"
+                          },
+                          "slug": {
+                            "nullable": false,
+                            "title": "String",
+                            "type": "string"
+                          }
+                        },
+                        "title": "collections",
+                        "type": "object"
+                      },
+                      "nullable": false,
+                      "type": "array"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Responses for GET /api/rest/myquery"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "uuid!": {
+        "nullable": false,
+        "pattern": "[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}",
+        "title": "uuid",
+        "type": "string"
+      }
+    }
+  }
+}
