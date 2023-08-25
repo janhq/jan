@@ -21,12 +21,13 @@ services:
     volumes:
       - ./conf/keycloak_conf:/opt/keycloak/data/import
     ports:
-      - "8088:8088"
+    - "8088:8088"
     depends_on:
       keycloak_postgres:
         condition: service_healthy
     networks:
       jan_community:
+        ipv4_address: 172.20.0.9
 
   keycloak_postgres:
     image: postgres:13
@@ -46,6 +47,7 @@ services:
       - ${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}
     networks:
       jan_community:
+        ipv4_address: 172.20.0.10
 
   postgres:
     image: postgres:13
@@ -56,11 +58,12 @@ services:
       - conf/sample.env_app-backend-postgres
     networks:
       jan_community:
+        ipv4_address: 172.20.0.11
 
   graphql-engine:
     image: hasura/graphql-engine:v2.31.0.cli-migrations-v3
     ports:
-      - "8080:8080"
+    - "8080:8080"
     restart: always
     env_file:
       - conf/sample.env_app-backend
@@ -72,6 +75,7 @@ services:
         condition: service_healthy
     networks:
       jan_community:
+        ipv4_address: 172.20.0.12
 
   worker:
     build:
@@ -86,6 +90,7 @@ services:
       - "8787:8787"
     networks:
       jan_community:
+        ipv4_address: 172.20.0.13
 
   data-connector-agent:
     image: hasura/graphql-data-connector:v2.31.0
@@ -103,8 +108,10 @@ services:
       timeout: 10s
       retries: 5
       start_period: 5s
+
     networks:
       jan_community:
+        ipv4_address: 172.20.0.14
 
   web:
     build:
@@ -118,8 +125,76 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: development
+
     networks:
       jan_community:
+        ipv4_address: 172.20.0.15
+
+  # Service to download a model file.
+  downloader:
+    image: busybox
+    # The command extracts the model filename from MODEL_URL and downloads it if it doesn't exist.
+    command: /bin/sh -c "LLM_MODEL_FILE=$(basename ${MODEL_URL}); if [ ! -f /models/$LLM_MODEL_FILE ]; then wget -O /models/$LLM_MODEL_FILE ${MODEL_URL}; fi"
+    # Mount a local directory to store the downloaded model.
+    volumes:
+      - ./jan-inference/llm/models:/models
+
+    networks:
+      jan_community:
+        ipv4_address: 172.20.0.16
+
+  # Service to wait for the downloader service to finish downloading the model.
+  wait-for-downloader:
+    image: busybox
+    # The command waits until the model file (specified in MODEL_URL) exists.
+    command: /bin/sh -c "LLM_MODEL_FILE=$(basename ${MODEL_URL}); echo 'Waiting for downloader to finish'; while [ ! -f /models/$LLM_MODEL_FILE ]; do sleep 1; done; echo 'Model downloaded!'"
+    # Specifies that this service should start after the downloader service has started.
+    depends_on:
+      downloader:
+        condition: service_started
+    # Mount the same local directory to check for the downloaded model.
+    volumes:
+      - ./jan-inference/llm/models:/models
+
+    networks:
+      jan_community:
+        ipv4_address: 172.20.0.17
+
+  # Service to run the Llama web application.
+  llm:
+    image: ghcr.io/abetlen/llama-cpp-python:latest
+    # Mount the directory that contains the downloaded model.
+    volumes:
+      - ./jan-inference/llm/models:/models
+    ports:
+      - 8000:8000
+    environment:
+      # Specify the path to the model for the web application.
+      MODEL: /models/llama-2-7b-chat.ggmlv3.q4_1.bin
+      PYTHONUNBUFFERED: 1
+    # Health check configuration
+    # healthcheck:
+    #   test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 30s
+    # Restart policy configuration
+    restart: on-failure
+    # Specifies that this service should start only after wait-for-downloader has completed successfully.
+    depends_on:
+      wait-for-downloader:
+        condition: service_completed_successfully
+    # Connect this service to two networks: inference_net and traefik_public.
+
+    networks:
+      jan_community:
+        ipv4_address: 172.20.0.18
 
 networks:  
   jan_community:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
