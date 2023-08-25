@@ -467,7 +467,16 @@
           "type": "password",
           "value": "password"
         }
-      ]
+      ],
+      "realmRoles": [
+        "user",
+        "default-roles-hasura"
+      ],
+      "clientRoles": {
+        "hasura": [
+          "user"
+        ]
+      }
     },
     {
       "id": "8728e38e-6b60-44d2-8830-f1e2ad284a02",
@@ -516,7 +525,6 @@
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "oMtCPAV7diKpE564SBspgKj4HqlKM4Hy",
       "redirectUris": ["/realms/hasura/account/*"],
       "webOrigins": [],
       "notBefore": 0,
@@ -690,7 +698,7 @@
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "**********",
+      "secret": "oMtCPAV7diKpE564SBspgKj4HqlKM4Hy",
       "redirectUris": ["http://localhost:3000/*"],
       "webOrigins": ["http://localhost:3000"],
       "notBefore": 0,
