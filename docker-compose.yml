@@ -54,6 +54,9 @@ services:
     #   - db_data:/var/lib/postgresql/data
     env_file:
       - conf/sample.env_app-backend-postgres
+    networks:
+      jan_community:
+
   graphql-engine:
     image: hasura/graphql-engine:v2.31.0.cli-migrations-v3
     ports:
@@ -106,13 +109,11 @@ services:
   web:
     build:
       context: ./web-client
-      dockerfile: dev.Dockerfile
+      dockerfile: ./dev.Dockerfile
     container_name: jan_web
     restart: always
     env_file:
       - conf/sample.env_web-client
-    volumes:
-      - .:/app
     ports:
       - "3000:3000"
     environment:
