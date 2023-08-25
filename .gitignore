@@ -1,2 +1,11 @@
 .vscode
 .env
+
+# Jan inference
+jan-inference/llm/models/**
+jan-inference/llm/.env
+
+jan-inference/sd/models/**
+jan-inference/sd/output/**
+jan-inference/sd/.env
+jan-inference/sd/sd

@@ -7,3 +7,6 @@
 [submodule "mobile-client"]
 	path = mobile-client
 	url = git@github.com:janhq/jan-react-native.git
+[submodule "jan-inference/sd/sd_cpp"]
+	path = jan-inference/sd/sd_cpp
+	url = https://github.com/leejet/stable-diffusion.cpp
