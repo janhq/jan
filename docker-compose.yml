@@ -79,13 +79,13 @@ services:
 
   worker:
     build:
-      context: ./app-backend
-      dockerfile: ./worker/Dockerfile
+      context: ./app-backend/worker
+      dockerfile: ./Dockerfile
     restart: always
     environment:
       - "NODE_ENV=development"
     volumes:
-      - .:/worker
+      - ./app-backend/worker:/worker
     ports:
       - "8787:8787"
     networks:
@@ -119,6 +119,10 @@ services:
       dockerfile: ./dev.Dockerfile
     container_name: jan_web
     restart: always
+    volumes:
+      - ./web-client/:/app
+      - /app/node_modules
+      - /app/.next
     env_file:
       - conf/sample.env_web-client
     ports:
