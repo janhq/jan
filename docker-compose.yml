@@ -16,6 +16,7 @@ services:
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       KC_DB_USERNAME: ${POSTGRES_USERNAME:-postgres}
       KC_DB_SCHEMA: ${KC_DB_SCHEMA:-public}
+      KC_HEALTH_ENABLED: 'true'
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD-admin}
     volumes:
@@ -73,9 +74,31 @@ services:
     depends_on:
       data-connector-agent:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
     networks:
       jan_community:
         ipv4_address: 172.20.0.12
+
+  hasura-seed-apply:
+    image: hasura/graphql-engine:v2.31.0.cli-migrations-v3
+    entrypoint: [""]
+    command: ["/bin/sh", "-c", "hasura-cli seed apply --all-databases"]
+    env_file:
+      - conf/sample.env_app-backend
+    volumes:
+      - ./app-backend/hasura/config.yaml:/config.yaml
+      - ./app-backend/hasura/seeds:/seeds
+    depends_on:
+      graphql-engine:
+        condition: service_healthy
+    extra_hosts:
+      - "localhost:172.20.0.12"
+    networks:
+      jan_community:
 
   worker:
     build:
