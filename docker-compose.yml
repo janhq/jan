@@ -30,7 +30,7 @@ services:
         ipv4_address: 172.20.0.9
 
   keycloak_postgres:
-    image: postgres:13
+    image: postgres:15
     command: postgres -c 'max_connections=200' && postgres -c 'shared_buffers=24MB'
     environment:
       # Environment Variables expecially for Postgres
@@ -50,7 +50,7 @@ services:
         ipv4_address: 172.20.0.10
 
   postgres:
-    image: postgres:13
+    image: postgres:15
     restart: always
     # volumes:
     #   - db_data:/var/lib/postgresql/data
@@ -129,7 +129,8 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: development
-
+    extra_hosts:
+      - "localhost:172.20.0.9"
     networks:
       jan_community:
         ipv4_address: 172.20.0.15
