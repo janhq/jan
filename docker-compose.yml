@@ -1,10 +1,6 @@
 # docker version
 version: "3"
 
-# volumes:
-#   keycloak_postgres_data:
-#   db_data:
-
 services:
   keycloak:
     image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION-22.0.0}
@@ -42,8 +38,7 @@ services:
       PGPORT: ${POSTGRES_PORT:-5432}
     healthcheck:
       test: "exit 0"
-    # volumes:
-    #   - keycloak_postgres_data:/data/postgres
+
     ports:
       - ${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}
     networks:
@@ -53,8 +48,7 @@ services:
   postgres:
     image: postgres:15
     restart: always
-    # volumes:
-    #   - db_data:/var/lib/postgresql/data
+
     env_file:
       - conf/sample.env_app-backend-postgres
     networks:
@@ -200,13 +194,6 @@ services:
       # Specify the path to the model for the web application.
       MODEL: /models/llama-2-7b-chat.ggmlv3.q4_1.bin
       PYTHONUNBUFFERED: 1
-    # Health check configuration
-    # healthcheck:
-    #   test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
-    #   start_period: 30s
     # Restart policy configuration
     restart: on-failure
     # Specifies that this service should start only after wait-for-downloader has completed successfully.

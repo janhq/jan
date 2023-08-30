@@ -1,0 +1,41 @@
+name: Linter & Sonarqube scanner
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  test-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v2
+
+      - name: create sonar properties file
+        run: |
+          echo "Branch Name ${GITHUB_REF#refs/heads/}"
+          echo -e "sonar.sources = ." > sonar-project.properties
+          echo -e "sonar.projectKey = ${{ secrets.PROJECT_KEY }}" >> sonar-project.properties
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo -e "sonar.branch.name = ${GITHUB_REF#refs/heads/}" >> sonar-project.properties
+          fi
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      # Check the Quality Gate status.
+      - name: SonarQube Quality Gate check
+        id: sonarqube-quality-gate-check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        # Force to fail step after specific time.
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }} #OPTIONAL
