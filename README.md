@@ -81,8 +81,14 @@ docker compose up -d
 | app-backend (hasura) | http://localhost:8080 | Admin credentials are set via the environment variables `HASURA_GRAPHQL_ADMIN_SECRET` in file `conf/sample.env_app-backend`                                          |
 | web-client           | http://localhost:3000 | Users are signed up to keycloak, default created user is set via `conf/keycloak_conf/example-realm.json` on keycloak with username: `username`, password: `password` |
 | llm service          | http://localhost:8000 |                                                                                                                                                                      |
+## Usage
 
-After all service up and running, just access to `web-client` via `http://localhost:3000`, login with default user (username: `username`, password: `password`) and test the llm model with `chatgpt` session.
+To get started with Jan, follow these steps:
+
+1. Install the platform as per the instructions above.
+2. Launch the web application via `http://localhost:3000`.
+3. Login with default user (username: `username`, password: `password`)
+4. Test the llm model with `chatgpt` session
 
 ## Developers
 
@@ -112,3 +118,29 @@ Jan is a monorepo that pulls in the following submodules
 ## Live Demo
 
 You can access the live demo at https://cloud.jan.ai.
+
+## Common Issues and Troubleshooting
+
+**Error in `jan-inference` service** ![](images/download-model-error.png)
+
+- Error: download model incomplete
+- Solution:
+  - Manually download the LLM model using the URL specified in the environment variable `MODEL_URL` within the `.env` file. The URL is typically https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin
+  - Copy the downloaded file `llama-2-7b-chat.ggmlv3.q4_1.bin` to the folder `jan-inference/llm/models`
+  - Run `docker compose down` followed by `docker compose up -d` again to restart the services.
+
+## Contributing
+
+Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to contribute to this project.
+
+## License
+
+This project is licensed under the Fair Code License. See [LICENSE.md](LICENSE.md) for more details.
+
+## Authors and Acknowledgments
+
+Created by jan. Thanks to all contributors who have helped to improve this project.
+
+## Support and Contact
+
+For support or to report issues, please email support@jan.ai.
