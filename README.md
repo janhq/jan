@@ -29,7 +29,8 @@ Jan is a free, source-available and [fair code licensed](https://faircode.io/) A
   cd jan
 
   # Pull latest submodule
-  git submodule update --init
+  git submodule update --init --recursive
+
   ```
 
 - **Environment Variables**: You will need to set up several environment variables for services such as Keycloak and Postgres. You can place them in `.env` files in the respective folders as shown in the `docker-compose.yml`.
