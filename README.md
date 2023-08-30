@@ -52,6 +52,15 @@ Jan is a free, source-available and [fair code licensed](https://faircode.io/) A
 
 Jan offers an [Docker Compose](https://docs.docker.com/compose/) deployment that automates the setup process.
 
+```bash
+# Download models
+# Runway SD 1.5
+wget https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors -P jan-inference/sd/models
+
+# Download LLM
+wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin -P jan-inference/llm/models
+``````
+
 Run the following command to start all the services defined in the `docker-compose.yml`
 
 ```shell
@@ -103,13 +112,3 @@ Jan is a monorepo that pulls in the following submodules
 ## Live Demo
 
 You can access the live demo at https://cloud.jan.ai.
-
-## Common Issues and Troubleshooting
-
-**Error in `jan-inference` service** ![](images/download-model-error.png)
-
-- Error: download model incomplete
-- Solution:
-  - Manually download the LLM model using the URL specified in the environment variable `MODEL_URL` within the `.env` file. The URL is typically https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin
-  - Copy the downloaded file `llama-2-7b-chat.ggmlv3.q4_1.bin` to the folder `jan-inference/llm/models`
-  - Run `docker compose down` followed by `docker compose up -d` again to restart the services.
