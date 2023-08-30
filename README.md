@@ -52,6 +52,15 @@ Jan is a free, source-available and [fair code licensed](https://faircode.io/) A
 
 Jan offers an [Docker Compose](https://docs.docker.com/compose/) deployment that automates the setup process.
 
+```bash
+# Download models
+# Runway SD 1.5
+wget https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors -P jan-inference/sd/models
+
+# Download LLM
+wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin -P jan-inference/llm/models
+``````
+
 Run the following command to start all the services defined in the `docker-compose.yml`
 
 ```shell
