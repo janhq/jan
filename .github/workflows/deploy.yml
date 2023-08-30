@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - fix/github-page-customdomain
     # Review gh actions docs if you want to further define triggers, paths, etc
     # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
 
@@ -25,6 +26,9 @@ jobs:
       - name: Build website
         run: yarn build
         working-directory: docs
+      
+      - name: Add Custome Domain file
+        run: echo "docs.jan.ai" > ./docs/build/CNAME
 
       # Popular action to deploy to GitHub Pages:
       # Docs: https://github.com/peaceiris/actions-gh-pages#%EF%B8%8F-docusaurus
