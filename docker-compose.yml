@@ -190,15 +190,16 @@ services:
       dockerfile: inference.Dockerfile
     # Mount the directory that contains the downloaded model.
     volumes:
-      - ./jan-inference/sd/models:/models
-      - ./jan-inference/sd/output/:/serving/output
+      - ./jan-inference/sd/models:/models/
+      - ./jan-inference/sd/output/:/output/
     command:  /bin/bash -c "python -m uvicorn main:app --proxy-headers --host 0.0.0.0 --port 8000"
     environment:
       # Specify the path to the model for the web application.
-      BASE_URL: http://0.0.0.0:8000
+      BASE_URL: http://0.0.0.0:8001
       MODEL_NAME: ${SD_MODEL_FILE}.q4_0.bin
-      MODEL_DIR: "/models"
-      SD_PATH: "/sd"
+      MODEL_DIR: /models
+      OUTPUT_DIR: /output
+      SD_PATH: /sd
       PYTHONUNBUFFERED: 1
     ports:
       - 8001:8000

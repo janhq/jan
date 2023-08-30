@@ -1,4 +1,6 @@
-FROM python:3.9.17 as build
+ARG UBUNTU_VERSION=22.04
+
+FROM ubuntu:$UBUNTU_VERSION as build
 
 RUN apt-get update && apt-get install -y build-essential git cmake
 

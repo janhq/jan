@@ -8,11 +8,12 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-OUTPUT_DIR = "output"
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "output")
 SD_PATH = os.environ.get("SD_PATH", "./sd")
 MODEL_DIR = os.environ.get("MODEL_DIR", "./models")
 MODEL_NAME = os.environ.get(
     "MODEL_NAME", "v1-5-pruned-emaonly-ggml-model-q5_0.bin")
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 
 
 class Payload(BaseModel):
@@ -51,7 +52,7 @@ def run_command(payload: Payload, filename: str):
                ]
 
     try:
-        subprocess.run(command, timeout=5*60)
+        subprocess.run(command)
     except subprocess.CalledProcessError:
         raise HTTPException(
             status_code=500, detail="Failed to execute the command.")
@@ -63,10 +64,11 @@ async def run_inference(background_tasks: BackgroundTasks, payload: Payload):
     filename = f"{uuid4()}.png"
 
     # We will use background task to run the command so it won't block
-    background_tasks.add_task(run_command, payload, filename)
+    # background_tasks.add_task(run_command, payload, filename)
+    run_command(payload, filename)
 
     # Return the expected path of the output file
-    return {"url": f'/serve/{filename}'}
+    return {"url": f'{BASE_URL}/serve/{filename}'}
 
 
 @app.get("/serve/{filename}")
