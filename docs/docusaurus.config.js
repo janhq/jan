@@ -6,12 +6,12 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Jan',
+  title: 'Jan Docs',
   tagline: 'Self-hosted AI inference platform',
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://jan.ai',
+  url: 'https://docs.jan.ai',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
