@@ -202,7 +202,7 @@ services:
       SD_PATH: /sd
       PYTHONUNBUFFERED: 1
     ports:
-      - 8000:8000
+      - 8001:8000
     restart: on-failure
     depends_on:
       sd-downloader:
