@@ -46,7 +46,7 @@ services:
   graphql-engine:
     image: hasura/graphql-engine:v2.31.0.cli-migrations-v3
     ports:
-      - "8080:8080"
+      - 8080:8080
     restart: always
     env_file:
       - conf/sample.env_app-backend
@@ -61,6 +61,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 10
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.graphql-engine.entrypoints=jan"
+      - "traefik.http.routers.graphql-engine.rule=(PathPrefix(`/graphql-engine`))"
+      - "traefik.http.middlewares.graphql-engine.stripprefix.prefixes=/graphql-engine"
+      - "traefik.http.middlewares.graphql-engine.stripprefix.forceslash=false"
+      - "traefik.http.routers.graphql-engine.middlewares=graphql-engine"
     networks:
       jan_community:
         ipv4_address: 172.20.0.12
@@ -92,7 +99,7 @@ services:
     volumes:
       - ./app-backend/worker:/worker
     ports:
-      - "8787:8787"
+      - 8787:8787
     networks:
       jan_community:
         ipv4_address: 172.20.0.13
@@ -129,30 +136,38 @@ services:
     env_file:
       - conf/sample.env_web-client
     ports:
-      - "3000:3000"
+      - 3000:3000
     environment:
       NODE_ENV: development
     extra_hosts:
       - "localhost:172.20.0.9"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.entrypoints=jan"
+      - "traefik.http.routers.web.rule=(Host(`localhost`) && PathPrefix(`/web`))"
+      - "traefik.http.routers.web.middlewares=rewritepath"
+      - "traefik.http.middlewares.rewritepath.addprefix.prefix=/web"
     networks:
       jan_community:
         ipv4_address: 172.20.0.15
 
-  # Service to run the Llama web application.
   llm:
     image: ghcr.io/abetlen/llama-cpp-python@sha256:b6d21ff8c4d9baad65e1fa741a0f8c898d68735fff3f3cd777e3f0c6a1839dd4
-    # Mount the directory that contains the downloaded model.
     volumes:
       - ./jan-inference/llm/models:/models
     ports:
       - 8000:8000
     environment:
-      # Specify the path to the model for the web application.
       MODEL: /models/${LLM_MODEL_FILE}
       PYTHONUNBUFFERED: 1
-    # Restart policy configuration
     restart: on-failure
-    # Specifies that this service should start only after wait-for-downloader has completed successfully.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.llm.entrypoints=jan"
+      - "traefik.http.routers.llm.rule=(PathPrefix(`/llm`))"
+      - "traefik.http.middlewares.llm.stripprefix.prefixes=/llm"
+      - "traefik.http.middlewares.llm.stripprefix.forceslash=false"
+      - "traefik.http.routers.llm.middlewares=llm"
     networks:
       jan_community:
         ipv4_address: 172.20.0.18
@@ -161,26 +176,21 @@ services:
     build:
       context: ./jan-inference/sd/
       dockerfile: compile.Dockerfile
-    # The command extracts the model filename from MODEL_URL and downloads it if it doesn't exist.
     command: /bin/sh -c "if [ ! -f /models/*.bin ]; then python /sd.cpp/sd_cpp/models/convert.py  --out_type q4_0 --out_file /models/${SD_MODEL_FILE}.q4_0.bin  /models/${SD_MODEL_FILE}; fi"
-    # Mount a local directory to store the downloaded model.
     volumes:
       - ./jan-inference/sd/models:/models
     networks:
       jan_community:
         ipv4_address: 172.20.0.19
 
-  # Service to run the SD web application.
   sd:
     build:
       context: ./jan-inference/sd/
       dockerfile: inference.Dockerfile
-    # Mount the directory that contains the downloaded model.
     volumes:
       - ./jan-inference/sd/models:/models/
     command: /bin/bash -c "python -m uvicorn main:app --proxy-headers --host 0.0.0.0 --port 8000"
     environment:
-      # Specify the path to the model for the web application.
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
       S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
@@ -192,13 +202,18 @@ services:
       SD_PATH: /sd
       PYTHONUNBUFFERED: 1
     ports:
-      - 8001:8000
-    # Restart policy configuration
+      - 8000:8000
     restart: on-failure
-    # Specifies that this service should start only after wait-for-downloader has completed successfully.
     depends_on:
       sd-downloader:
         condition: service_completed_successfully
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sd.entrypoints=jan"
+      - "traefik.http.routers.sd.rule=(PathPrefix(`/sd`))"
+      - "traefik.http.middlewares.sd.stripprefix.prefixes=/sd"
+      - "traefik.http.middlewares.sd.stripprefix.forceslash=false"
+      - "traefik.http.routers.sd.middlewares=sd"
     networks:
       jan_community:
         ipv4_address: 172.20.0.21
@@ -207,7 +222,7 @@ services:
     image: minio/minio
     ports:
       - 9000:9000
-      - 9001:9001
+      - 9001
     volumes:
       - ./minio/data:/export
       - ./minio/config:/root/.minio
@@ -215,6 +230,13 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
     command: server /export --console-address ":9001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio.entrypoints=jan"
+      - "traefik.http.routers.minio.rule=(PathPrefix(`/minio`))"
+      - "traefik.http.middlewares.minio.stripprefix.prefixes=/minio"
+      - "traefik.http.middlewares.minio.stripprefix.forceslash=false"
+      - "traefik.http.routers.minio.middlewares=minio"
     networks:
       jan_community:
         ipv4_address: 172.20.0.23
@@ -238,22 +260,22 @@ services:
     networks:
       jan_community:
 
-  # Service for Traefik, a modern HTTP reverse proxy and load balancer.
-  # traefik:
-  #   image: traefik:v2.10
-  #   ports:
-  #     # Map port 80 in the container to port 80 on the host.
-  #     - "80:80"
-  #     # Map port 8080 in the container (Traefik's dashboard) to port 8080 on the host.
-  #     - "8080:8080"
-  #   # Mount the Docker socket to allow Traefik to listen to Docker's API.
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock:ro
-  #     - ./traefik/traefik.yml:/traefik.yml:ro
-  #     - ./traefik/config.yml:/config.yml:ro
-  #   networks:
-  #     jan_community:
-  #       ipv4_address: 172.20.0.22
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--log.level=debug"
+      - "--entrypoints.jan.address=:1337"
+    ports:
+      - "1337:1337"
+      - "9090:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      jan_community:
+        ipv4_address: 172.20.0.22
 
 networks:
   jan_community:
