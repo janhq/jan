@@ -82,6 +82,7 @@ docker compose up -d
 | app-backend (hasura) | http://localhost:8080 | Admin credentials are set via the environment variables `HASURA_GRAPHQL_ADMIN_SECRET` in file `conf/sample.env_app-backend`                                          |
 | web-client           | http://localhost:3000 | Users are signed up to keycloak, default created user is set via `conf/keycloak_conf/example-realm.json` on keycloak with username: `username`, password: `password` |
 | llm service          | http://localhost:8000 |                                                                                                                                                                      |
+| sd service          | http://localhost:8001 |                                                                                                                                                                      |
 ## Usage
 
 To get started with Jan, follow these steps:
@@ -121,14 +122,6 @@ Jan is a monorepo that pulls in the following submodules
 You can access the live demo at https://cloud.jan.ai.
 
 ## Common Issues and Troubleshooting
-
-**Error in `jan-inference` service** ![](images/download-model-error.png)
-
-- Error: download model incomplete
-- Solution:
-  - Manually download the LLM model using the URL specified in the environment variable `MODEL_URL` within the `.env` file. The URL is typically https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin
-  - Copy the downloaded file `llama-2-7b-chat.ggmlv3.q4_1.bin` to the folder `jan-inference/llm/models`
-  - Run `docker compose down` followed by `docker compose up -d` again to restart the services.
 
 ## Contributing
 
