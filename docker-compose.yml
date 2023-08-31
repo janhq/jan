@@ -6,12 +6,12 @@ services:
     image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION-22.0.0}
     command: ["start-dev", "--import-realm", "--http-port", "8088"]
     environment:
-      KC_DB: jan-keycloak
+      KC_DB: postgres
       KC_DB_URL_HOST: postgres
-      KC_DB_URL_DATABASE: ${POSTGRES_DB_NAME:-jan-keycloak}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
-      KC_DB_USERNAME: ${POSTGRES_USERNAME:-postgres}
-      KC_DB_SCHEMA: ${KC_DB_SCHEMA:-public}
+      KC_DB_URL_DATABASE: jan-keycloak
+      KC_DB_PASSWORD: postgrespassword
+      KC_DB_USERNAME: postgres
+      KC_DB_SCHEMA: public
       KC_HEALTH_ENABLED: "true"
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD-admin}
