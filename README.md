@@ -1,39 +1,63 @@
 # Jan
 
-Jan is a free, source-available and [fair code licensed](https://faircode.io/) AI Inference Platform. We help enterprises, small businesses and hobbyists to self-host AI on their own infrastructure efficiently, to protect their data, lower costs, and put powerful AI capabilities in the hands of users.
+Jan is a self-hosted, AI Inference Platform that scales from personal use to production deployments.
+
+Run an entire AI stack locally, from the inference engine to a shareable web application.
+
+Jan is free, source-available, and fair-code licensed.
+
+> 👋 Access a live demo at https://cloud.jan.ai.
+
+## Intended use
+- Run ChatGPT and Midjourney alternatives on-prem and on your private data
+- Self-host AI models for your friends or for a team
+- GPU support with Nvidia hardware acceleration
+- CPU support with optimizations via llama.cpp
 
 ## Features
+- [x] Web, Mobile and APIs (OpenAI compatible REST & GRPC)
+- [x] LLMs and Generative Art models
+- [x] Support for Apple Silicon, CPU architectures
+- [x] C++ inference backend with CUDA/TensorRT/Triton, dynamic batching
+- [x] Load balancing via Traefik
+- [x] Login and authz via Keycloak
+- [x] Data persistence via Postgres and/or MinIO
 
-- Web, Mobile and APIs
-- LLMs and Generative Art models
-- AI Catalog
-- Model Installer
-- User Management
-- Support for Apple Silicon, CPU architectures
+## Planned
+- [ ] Support opting out of optional, 3rd party integrations
+- [ ] Universal model installer & compiler, targeting Nvidia GPU acceleration
+- [ ] Mobile UI with a swappable backend URL
+- [ ] Support for controlnet, upscaler, and code llama
+- [ ] Admin dashboards for user management and audit
 
-## Installation
+## Quickstart
 
-### Pre-Requisites
+So far, this setup is tested and supported for Docker on Linux, Mac, and Windows Subsystem for Linux (WSL).
 
-- **Supported Operating Systems**: This setup is only tested and supported on Linux, Macbook Docker Desktop (For mac m1, m2 remember to change Docker platform `export DOCKER_DEFAULT_PLATFORM=linux/amd64`), or Windows Subsystem for Linux (WSL) with Docker.
+### Dependencies
 
-- **Docker**: Make sure you have Docker installed on your machine. You can install Docker by following the instructions [here](https://docs.docker.com/get-docker/).
+- **Install Docker**: Install Docker [here](https://docs.docker.com/get-docker/).
 
-- **Docker Compose**: Make sure you also have Docker Compose installed. If not, follow the instructions [here](https://docs.docker.com/compose/install/).
+- **Install Docker Compose**: Install Docker Compose [here](https://docs.docker.com/compose/install/).
 
-- **Clone the Repository**: Make sure to clone the repository containing the `docker-compose.yml` and pull the latest git submodules.
+- **Clone the Repository**: Clone this repository and pull in the latest git submodules.
 
   ```bash
   git clone https://github.com/janhq/jan.git
 
   cd jan
 
-  # Pull latest submodule
+  # Pull latest submodules
   git submodule update --init --recursive
-
   ```
 
-- **Environment Variables**: You will need to set up several environment variables for services such as Keycloak and Postgres. You can place them in `.env` files in the respective folders as shown in the `docker-compose.yml`.
+- **Export Environment Variables**
+```sh
+# For Apple Silicon, please set the Docker platform
+export DOCKER_DEFAULT_PLATFORM=linux/$(uname -m)
+```
+
+- **Set a .env**: You will need to set up several environment variables for services such as Keycloak and Postgres. You can place them in `.env` files in the respective folders as shown in the `docker-compose.yml`.
 
   ```bash
   cp sample.env .env
@@ -49,48 +73,52 @@ Jan is a free, source-available and [fair code licensed](https://faircode.io/) A
   | app-backend PostgresDB | `conf/sample.env_app-backend-postgres`                                                                                          |
   | web-client             | `conf/sample.env_web-client`                                                                                                    |
 
-### Docker Compose
+### Install Models
 
-Jan offers an [Docker Compose](https://docs.docker.com/compose/) deployment that automates the setup process.
-
-```bash
-# Download models
-# Runway SD 1.5
+- Download Runway SD 1.5 from HuggingFace
+```sh
 wget https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors -P jan-inference/sd/models
+```
 
-# Download LLM
+-  Download Llama 7Bn ggml from HuggingFace
+```sh
 wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin -P jan-inference/llm/models
-``````
+```
 
-Run the following command to start all the services defined in the `docker-compose.yml`
+### Compose Up
+
+Jan uses an opinionated, but modular, open-source stack that comes with many services out of the box, e.g. multiple clients, autoscaling, auth and more.
+
+You can opt out of such services or swap in your own integrations via [Configurations](#configurations).
+
+- Run the following command to start all the services defined in the `docker-compose.yml`
 
 ```shell
 # Docker Compose up
 docker compose up
-```
 
-To run in detached mode:
-
-```shell
 # Docker Compose up detached mode
 docker compose up -d
 ```
 
-| Service (Docker)     | URL                   | Credential                                                                                                                                                           |
+- This step takes 5-15 minutes and the following services will be provisioned:
+
+| Service     | URL                   | Credentials                                                                                                                                                           |
 | -------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Keycloak             | http://localhost:8088 | Admin credentials are set via the environment variables `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD`                                                               |
 | app-backend (hasura) | http://localhost:8080 | Admin credentials are set via the environment variables `HASURA_GRAPHQL_ADMIN_SECRET` in file `conf/sample.env_app-backend`                                          |
 | web-client           | http://localhost:3000 | Users are signed up to keycloak, default created user is set via `conf/keycloak_conf/example-realm.json` on keycloak with username: `username`, password: `password` |
 | llm service          | http://localhost:8000 |                                                                                                                                                                      |
 | sd service          | http://localhost:8001 |                                                                                                                                                                      |
+
 ## Usage
 
-To get started with Jan, follow these steps:
+- Launch the web application via `http://localhost:3000`.
+- Login with default user (username: `username`, password: `password`)
+- Talk to the models
 
-1. Install the platform as per the instructions above.
-2. Launch the web application via `http://localhost:3000`.
-3. Login with default user (username: `username`, password: `password`)
-4. Test the llm model with `chatgpt` session
+## Configurations
+TODO
 
 ## Developers
 
@@ -116,10 +144,6 @@ Jan is a monorepo that pulls in the following submodules
 ├── docs                # Developer Docs
 ├── adrs                # Architecture Decision Records
 ```
-
-## Live Demo
-
-You can access the live demo at https://cloud.jan.ai.
 
 ## Common Issues and Troubleshooting
 
