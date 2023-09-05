@@ -113,16 +113,16 @@ docker compose up -d
 
 - Launch the web application via `http://localhost:3000`.
 - Login with default user (username: `username`, password: `password`)
-- Talk to the models
 
 ## Configurations
+
 TODO
 
 ## Developers
 
 ### Architecture
 
-- [ ] Architecture Diagram
+TODO
 
 ### Dependencies
 
@@ -135,10 +135,10 @@ Jan is a monorepo that pulls in the following submodules
 
 ```shell
 ├── docker-compose.yml
-├── mobile-client
-├── web-client
-├── app-backend
-├── inference-backend
+├── mobile-client       # Mobile app
+├── web-client          # Web app
+├── app-backend         # Web & mobile app backend
+├── inference-backend   # Inference server
 ├── docs                # Developer Docs
 ├── adrs                # Architecture Decision Records
 ```
@@ -155,8 +155,10 @@ This project is licensed under the Fair Code License. See [LICENSE.md](LICENSE.m
 
 ## Authors and Acknowledgments
 
-Created by jan. Thanks to all contributors who have helped to improve this project.
+Created by Jan. Thanks to all contributors who have helped to improve this project.
 
-## Support and Contact
+## Contact
 
-For support or to report issues, please email support@jan.ai.
+For support: please file a Github ticket
+For questions: join our Discord [here](https://discord.gg/FTk2MvZwJH)
+For long form inquiries: please email hello@jan.ai
