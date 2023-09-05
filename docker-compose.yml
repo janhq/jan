@@ -19,11 +19,6 @@ services:
       - ./conf/keycloak_conf:/opt/keycloak/data/import
     ports:
       - "8088:8088"
-    healthcheck:
-      test: ["CMD", "curl", "--head","fsS", "http://localhost:8080/health/ready"]
-      interval: 5s
-      timeout: 2s
-      retries: 15
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,12 +57,12 @@ services:
       data-connector-agent:
         condition: service_healthy
       keycloak:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
-      interval: 30s
+      interval: 5s
       timeout: 10s
-      retries: 10
+      retries: 30
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.graphql-engine.entrypoints=jan"
