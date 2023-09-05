@@ -3,10 +3,3 @@
 
 # Jan inference
 jan-inference/llm/models/**
-
-jan-inference/sd/models/**
-jan-inference/sd/output/**
-jan-inference/sd/sd
-
-# Minio
-minio/**
