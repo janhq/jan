@@ -72,13 +72,6 @@ export DOCKER_DEFAULT_PLATFORM=linux/$(uname -m)
   | web-client             | `conf/sample.env_web-client`                                                                                                    |
 
 ### Install Models
-
-- Download Runway SD 1.5 from HuggingFace
-```sh
-wget https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors -P jan-inference/sd/models
-```
-
--  Download Llama 7Bn ggml from HuggingFace
 ```sh
 wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin -P jan-inference/llm/models
 ```
@@ -106,8 +99,7 @@ docker compose up -d
 | Web App           | http://localhost:3000 | Users are signed up to keycloak, default created user is set via `conf/keycloak_conf/example-realm.json` on keycloak with username: `username`, password: `password` |
 | Keycloak Admin             | http://localhost:8088 | Admin credentials are set via the environment variables `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD`                                                               |
 | Hasura App Backend | http://localhost:8080 | Admin credentials are set via the environment variables `HASURA_GRAPHQL_ADMIN_SECRET` in file `conf/sample.env_app-backend`                                          |
-| LLM Service          | http://localhost:8000 |                                                                                                                                                                      |
-| Stable Diffusion Service          | http://localhost:8001 |                                                                                                                                                                      |
+| LLM Service          | http://localhost:8000 |                                                                                                                                                                                                                                                                                          |
 
 ## Usage
 
