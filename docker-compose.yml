@@ -19,6 +19,11 @@ services:
       - ./conf/keycloak_conf:/opt/keycloak/data/import
     ports:
       - "8088:8088"
+    healthcheck:
+      test: ["CMD", "curl", "--head","fsS", "http://localhost:8080/health/ready"]
+      interval: 5s
+      timeout: 2s
+      retries: 15
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,6 +60,8 @@ services:
       - ./app-backend/hasura/metadata:/metadata
     depends_on:
       data-connector-agent:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
@@ -147,6 +154,9 @@ services:
       - "traefik.http.routers.web.rule=(Host(`localhost`) && PathPrefix(`/web`))"
       - "traefik.http.routers.web.middlewares=rewritepath"
       - "traefik.http.middlewares.rewritepath.addprefix.prefix=/web"
+    depends_on:
+      graphql-engine:
+        condition: service_healthy
     networks:
       jan_community:
         ipv4_address: 172.20.0.15
