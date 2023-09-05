@@ -6,7 +6,7 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Jan Docs',
+  title: 'Jan Documentation',
   tagline: 'Self-hosted AI inference platform',
   favicon: 'img/favicon.ico',
 
@@ -93,7 +93,7 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       // TODO: Replace with your project's social card
-      image: 'img/docusaurus-social-card.jpg',
+      image: 'img/jan-social-card.jpg',
       // Only for react live
       liveCodeBlock: {
         playgroundPosition: 'bottom',
