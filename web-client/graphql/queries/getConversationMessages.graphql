@@ -1,0 +1,14 @@
+query getConversationMessages(
+  $conversation_id: uuid = "",
+  $limit: Int = 100,
+  $offset: Int = 100,
+) {
+  messages(
+    offset: $offset,
+    limit: $limit,
+    where: { conversation_id: { _eq: $conversation_id } },
+    order_by: {updated_at: desc}
+  ) {
+    ...MessageDetail
+  }
+}

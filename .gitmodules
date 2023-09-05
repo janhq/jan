@@ -1,9 +1,3 @@
-[submodule "web-client"]
-	path = web-client
-	url = ../jan-web.git
-[submodule "app-backend"]
-	path = app-backend
-	url = ../app-backend.git
 [submodule "jan-inference/sd/sd_cpp"]
 	path = jan-inference/sd/sd_cpp
 	url = https://github.com/leejet/stable-diffusion.cpp

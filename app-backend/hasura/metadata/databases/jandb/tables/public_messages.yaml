@@ -1,0 +1,97 @@
+table:
+  name: messages
+  schema: public
+object_relationships:
+  - name: message_conversation
+    using:
+      manual_configuration:
+        column_mapping:
+          conversation_id: id
+        insertion_order: null
+        remote_table:
+          name: conversations
+          schema: public
+array_relationships:
+  - name: message_medias
+    using:
+      manual_configuration:
+        column_mapping:
+          id: message_id
+        insertion_order: null
+        remote_table:
+          name: message_medias
+          schema: public
+insert_permissions:
+  - role: user
+    permission:
+      check:
+        message_conversation:
+          user_id:
+            _eq: X-Hasura-User-Id
+      columns:
+        - content
+        - conversation_id
+        - message_sender_type
+        - message_type
+        - prompt_cache
+        - sender
+        - sender_avatar_url
+        - sender_name
+        - status
+    comment: ""
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - content
+        - conversation_id
+        - created_at
+        - id
+        - message_sender_type
+        - message_type
+        - sender
+        - sender_avatar_url
+        - sender_name
+        - status
+        - updated_at
+      filter:
+        message_conversation:
+          user_id:
+            _eq: X-Hasura-User-Id
+    comment: ""
+update_permissions:
+  - role: user
+    permission:
+      columns:
+        - content
+        - message_sender_type
+        - message_type
+        - sender
+        - sender_avatar_url
+        - sender_name
+        - status
+      filter:
+        message_conversation:
+          user_id:
+            _eq: X-Hasura-User-Id
+      check: null
+    comment: ""
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        message_conversation:
+          user_id:
+            _eq: X-Hasura-User-Id
+    comment: ""
+event_triggers:
+  - name: new_llm_message
+    definition:
+      enable_manual: false
+      insert:
+        columns: '*'
+    retry_conf:
+      interval_sec: 10
+      num_retries: 0
+      timeout_sec: 60
+    webhook: '{{HASURA_EVENTS_HOOK_URL}}'

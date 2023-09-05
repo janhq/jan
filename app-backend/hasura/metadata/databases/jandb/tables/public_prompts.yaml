@@ -1,0 +1,36 @@
+table:
+  name: prompts
+  schema: public
+array_relationships:
+  - name: prompt_products
+    using:
+      manual_configuration:
+        column_mapping:
+          id: prompt_id
+        insertion_order: null
+        remote_table:
+          name: product_prompts
+          schema: public
+select_permissions:
+  - role: public
+    permission:
+      columns:
+        - slug
+        - content
+        - image_url
+        - created_at
+        - updated_at
+        - id
+      filter: {}
+    comment: ""
+  - role: user
+    permission:
+      columns:
+        - slug
+        - content
+        - image_url
+        - created_at
+        - updated_at
+        - id
+      filter: {}
+    comment: ""

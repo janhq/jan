@@ -1,0 +1,6 @@
+subscription subscribeMessage($id: uuid = "") {
+  messages_by_pk(id: $id) {
+    content
+    status
+  }
+}

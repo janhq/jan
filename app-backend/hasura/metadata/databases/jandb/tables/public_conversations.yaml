@@ -1,0 +1,68 @@
+table:
+  name: conversations
+  schema: public
+object_relationships:
+  - name: conversation_product
+    using:
+      manual_configuration:
+        column_mapping:
+          product_id: id
+        insertion_order: null
+        remote_table:
+          name: products
+          schema: public
+array_relationships:
+  - name: conversation_messages
+    using:
+      manual_configuration:
+        column_mapping:
+          id: conversation_id
+        insertion_order: null
+        remote_table:
+          name: messages
+          schema: public
+insert_permissions:
+  - role: user
+    permission:
+      check:
+        user_id:
+          _eq: X-Hasura-User-Id
+      columns:
+        - last_image_url
+        - last_text_message
+        - product_id
+        - user_id
+    comment: ""
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - last_image_url
+        - last_text_message
+        - user_id
+        - created_at
+        - updated_at
+        - id
+        - product_id
+      filter:
+        user_id:
+          _eq: X-Hasura-User-Id
+    comment: ""
+update_permissions:
+  - role: user
+    permission:
+      columns:
+        - last_image_url
+        - last_text_message
+      filter:
+        user_id:
+          _eq: X-Hasura-User-Id
+      check: null
+    comment: ""
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        user_id:
+          _eq: X-Hasura-User-Id
+    comment: ""

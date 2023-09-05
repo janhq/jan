@@ -1,0 +1,68 @@
+table:
+  name: message_medias
+  schema: public
+object_relationships:
+  - name: media_message
+    using:
+      manual_configuration:
+        column_mapping:
+          message_id: id
+        insertion_order: null
+        remote_table:
+          name: messages
+          schema: public
+insert_permissions:
+  - role: user
+    permission:
+      check:
+        media_message:
+          message_conversation:
+            user_id:
+              _eq: X-Hasura-User-Id
+      columns:
+        - media_url
+        - message_id
+        - mime_type
+    comment: ""
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - mime_type
+        - media_url
+        - created_at
+        - updated_at
+        - id
+        - message_id
+      filter:
+        media_message:
+          message_conversation:
+            user_id:
+              _eq: X-Hasura-User-Id
+    comment: ""
+update_permissions:
+  - role: user
+    permission:
+      columns:
+        - mime_type
+        - media_url
+        - created_at
+        - updated_at
+        - id
+        - message_id
+      filter:
+        media_message:
+          message_conversation:
+            user_id:
+              _eq: X-Hasura-User-Id
+      check: null
+    comment: ""
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        media_message:
+          message_conversation:
+            user_id:
+              _eq: X-Hasura-User-Id
+    comment: ""

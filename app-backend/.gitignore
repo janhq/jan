@@ -1,0 +1,4 @@
+.DS_Store
+.env
+.env_postgresql
+worker/node_modules/.mf

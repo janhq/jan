@@ -1,0 +1,15 @@
+query getProducts {
+  products {
+    ...ProductDetail
+    product_prompts {
+      prompts {
+        ...PromptDetail
+      }
+    }
+    product_collections {
+      collections {
+        ...CollectionDetail
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+mutation updateConversation($id: uuid!, $lastMessageText: String, $lastMessageUrl: String) {
+  update_conversations_by_pk(pk_columns: {id: $id}, _set: {last_text_message: $lastMessageText, last_image_url: $lastMessageUrl}) {
+    ...ConversationDetail
+  }
+}

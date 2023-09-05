@@ -1,0 +1,7 @@
+fragment MessageMedia on message_medias {
+  id
+  message_id
+  media_url
+  mime_type
+  updated_at
+}

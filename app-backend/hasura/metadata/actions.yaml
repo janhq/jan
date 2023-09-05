@@ -1,0 +1,32 @@
+actions:
+  - name: imageGeneration
+    definition:
+      kind: synchronous
+      handler: '{{HASURA_ACTION_STABLE_DIFFUSION_URL}}'
+      request_transform:
+        body:
+          action: transform
+          template: |-
+            {
+              "prompt": {{$body.input.input.prompt}},
+              "neg_prompt": {{$body.input.input.neg_prompt}},
+              "unet_model": {{$body.input.input.model}},
+              "seed": {{$body.input.input.seed}},
+              "steps": {{$body.input.input.steps}},
+              "width": {{$body.input.input.width}},
+              "height": {{$body.input.input.height}}
+            }
+        method: POST
+        query_params: {}
+        template_engine: Kriti
+        url: '{{$base_url}}/inferences/txt2img'
+        version: 2
+    permissions:
+      - role: user
+custom_types:
+  enums: []
+  input_objects:
+    - name: ImageGenerationInput
+  objects:
+    - name: ImageGenerationOutput
+  scalars: []

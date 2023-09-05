@@ -1,0 +1,8 @@
+- "!include public_collection_products.yaml"
+- "!include public_collections.yaml"
+- "!include public_conversations.yaml"
+- "!include public_message_medias.yaml"
+- "!include public_messages.yaml"
+- "!include public_product_prompts.yaml"
+- "!include public_products.yaml"
+- "!include public_prompts.yaml"
