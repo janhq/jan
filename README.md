@@ -23,14 +23,10 @@ Jan is free, source-available, and fair-code licensed.
 - [x] Data storage via Postgres, MinIO
 
 ## Planned Features
-- [ ] Support more language models (code llama, wizard, etc.)
-- [ ] Support text2image models (SD1.5, SDXL, etc.)
-- [ ] Accelerated popular models via TensorRT ([WIP](https://github.com/janhq/accelerated_ai))
-- [ ] C++ inference backend with CUDA & dynamic batching ([WIP](https://github.com/janhq/inference_backend))
-- [ ] Let ppl opt out of 3rd party integrations
+- [ ] Support more models, with acceleration ([WIP](https://github.com/janhq/accelerated_ai))
+- [ ] C++ inference backend w/ CUDA & dynamic batching ([WIP](https://github.com/janhq/inference_backend))
 - [ ] Universal model installer & compiler, targeting Nvidia GPU acceleration
 - [ ] Mobile UI with a swappable backend URL
-- [ ] UI for controlnet, upscaler, and code llama
 - [ ] Admin dashboards for user management and audit
 
 ## Quickstart
