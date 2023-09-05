@@ -63,13 +63,6 @@ services:
       interval: 5s
       timeout: 10s
       retries: 30
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.graphql-engine.entrypoints=jan"
-      - "traefik.http.routers.graphql-engine.rule=(PathPrefix(`/graphql-engine`))"
-      - "traefik.http.middlewares.graphql-engine.stripprefix.prefixes=/graphql-engine"
-      - "traefik.http.middlewares.graphql-engine.stripprefix.forceslash=false"
-      - "traefik.http.routers.graphql-engine.middlewares=graphql-engine"
     networks:
       jan_community:
         ipv4_address: 172.20.0.12
@@ -143,12 +136,6 @@ services:
       NODE_ENV: development
     extra_hosts:
       - "localhost:172.20.0.9"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.web.entrypoints=jan"
-      - "traefik.http.routers.web.rule=(Host(`localhost`) && PathPrefix(`/web`))"
-      - "traefik.http.routers.web.middlewares=rewritepath"
-      - "traefik.http.middlewares.rewritepath.addprefix.prefix=/web"
     depends_on:
       graphql-engine:
         condition: service_healthy
@@ -166,121 +153,9 @@ services:
       MODEL: /models/${LLM_MODEL_FILE}
       PYTHONUNBUFFERED: 1
     restart: on-failure
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.llm.entrypoints=jan"
-      - "traefik.http.routers.llm.rule=(PathPrefix(`/llm`))"
-      - "traefik.http.middlewares.llm.stripprefix.prefixes=/llm"
-      - "traefik.http.middlewares.llm.stripprefix.forceslash=false"
-      - "traefik.http.routers.llm.middlewares=llm"
     networks:
       jan_community:
         ipv4_address: 172.20.0.18
-
-  sd-downloader:
-    build:
-      context: ./jan-inference/sd/
-      dockerfile: compile.Dockerfile
-    command: /bin/sh -c "if [ ! -f /models/*.bin ]; then python /sd.cpp/sd_cpp/models/convert.py  --out_type q4_0 --out_file /models/${SD_MODEL_FILE}.q4_0.bin  /models/${SD_MODEL_FILE}; fi"
-    volumes:
-      - ./jan-inference/sd/models:/models
-    networks:
-      jan_community:
-        ipv4_address: 172.20.0.19
-
-  sd:
-    build:
-      context: ./jan-inference/sd/
-      dockerfile: inference.Dockerfile
-    volumes:
-      - ./jan-inference/sd/models:/models/
-    command: /bin/bash -c "python -m uvicorn main:app --proxy-headers --host 0.0.0.0 --port 8000"
-    environment:
-      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL}
-      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
-      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
-      MODEL_NAME: ${SD_MODEL_FILE}.q4_0.bin
-      MODEL_DIR: /models
-      OUTPUT_DIR: /tmp
-      SD_PATH: /sd
-      PYTHONUNBUFFERED: 1
-    ports:
-      - 8001:8000
-    restart: on-failure
-    depends_on:
-      sd-downloader:
-        condition: service_completed_successfully
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.sd.entrypoints=jan"
-      - "traefik.http.routers.sd.rule=(PathPrefix(`/sd`))"
-      - "traefik.http.middlewares.sd.stripprefix.prefixes=/sd"
-      - "traefik.http.middlewares.sd.stripprefix.forceslash=false"
-      - "traefik.http.routers.sd.middlewares=sd"
-    networks:
-      jan_community:
-        ipv4_address: 172.20.0.21
-
-  minio:
-    image: minio/minio
-    ports:
-      - 9000:9000
-      - 9001
-    volumes:
-      - ./minio/data:/export
-      - ./minio/config:/root/.minio
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
-    command: server /export --console-address ":9001"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.minio.entrypoints=jan"
-      - "traefik.http.routers.minio.rule=(PathPrefix(`/minio`))"
-      - "traefik.http.middlewares.minio.stripprefix.prefixes=/minio"
-      - "traefik.http.middlewares.minio.stripprefix.forceslash=false"
-      - "traefik.http.routers.minio.middlewares=minio"
-    networks:
-      jan_community:
-        ipv4_address: 172.20.0.23
-
-  createbuckets:
-    image: minio/mc
-    depends_on:
-      - minio
-    environment:
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
-      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc config host add myminio http://minio:9000 ${S3_ACCESS_KEY_ID} ${S3_SECRET_ACCESS_KEY};
-      /usr/bin/mc rm -r --force myminio/${S3_BUCKET_NAME};
-      /usr/bin/mc mb myminio/${S3_BUCKET_NAME};
-      /usr/bin/mc anonymous set public myminio/${S3_BUCKET_NAME};
-      exit 0;
-      "
-    networks:
-      jan_community:
-
-  traefik:
-    image: traefik:v2.10
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--log.level=debug"
-      - "--entrypoints.jan.address=:1337"
-    ports:
-      - "1337:1337"
-      - "9090:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      jan_community:
-        ipv4_address: 172.20.0.22
 
 networks:
   jan_community:
