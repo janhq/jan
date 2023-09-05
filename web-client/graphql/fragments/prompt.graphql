@@ -1,0 +1,5 @@
+fragment PromptDetail on prompts {
+  slug
+  content
+  image_url
+}

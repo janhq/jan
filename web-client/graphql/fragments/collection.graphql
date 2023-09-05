@@ -1,0 +1,4 @@
+fragment CollectionDetail on collections {
+  slug
+  name
+}

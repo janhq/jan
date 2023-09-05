@@ -1,0 +1,20 @@
+type Mutation {
+  imageGeneration(
+    input: ImageGenerationInput!
+  ): ImageGenerationOutput
+}
+
+input ImageGenerationInput {
+  prompt: String!
+  neg_prompt: String!
+  model: String!
+  seed: Int!
+  steps: Int!
+  width: Int!
+  height: Int!
+}
+
+type ImageGenerationOutput {
+  url: String!
+}
+

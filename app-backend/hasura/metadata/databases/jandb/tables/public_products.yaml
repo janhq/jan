@@ -1,0 +1,65 @@
+table:
+  name: products
+  schema: public
+array_relationships:
+  - name: product_collections
+    using:
+      manual_configuration:
+        column_mapping:
+          id: product_id
+        insertion_order: null
+        remote_table:
+          name: collection_products
+          schema: public
+  - name: product_prompts
+    using:
+      manual_configuration:
+        column_mapping:
+          id: product_id
+        insertion_order: null
+        remote_table:
+          name: product_prompts
+          schema: public
+select_permissions:
+  - role: public
+    permission:
+      columns:
+        - nsfw
+        - slug
+        - inputs
+        - outputs
+        - author
+        - description
+        - greeting
+        - image_url
+        - long_description
+        - name
+        - source_url
+        - technical_description
+        - version
+        - created_at
+        - updated_at
+        - id
+      filter: {}
+    comment: ""
+  - role: user
+    permission:
+      columns:
+        - nsfw
+        - slug
+        - inputs
+        - outputs
+        - author
+        - description
+        - greeting
+        - image_url
+        - long_description
+        - name
+        - source_url
+        - technical_description
+        - version
+        - created_at
+        - updated_at
+        - id
+      filter: {}
+    comment: ""

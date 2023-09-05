@@ -1,0 +1,1 @@
+alter table "public"."messages" drop column "prompt_cache";

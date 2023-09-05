@@ -1,0 +1,23 @@
+mutation generateImage(
+  $model: String = ""
+  $neg_prompt: String = ""
+  $prompt: String = ""
+  $seed: Int = 10
+  $steps: Int = 10
+  $width: Int = 512
+  $height: Int = 512
+) {
+  imageGeneration(
+    input: {
+      model: $model
+      neg_prompt: $neg_prompt
+      prompt: $prompt
+      seed: $seed
+      steps: $steps
+      width: $width
+      height: $height
+    }
+  ) {
+    url
+  }
+}

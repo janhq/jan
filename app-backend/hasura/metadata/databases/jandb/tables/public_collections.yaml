@@ -1,0 +1,36 @@
+table:
+  name: collections
+  schema: public
+array_relationships:
+  - name: collection_products
+    using:
+      manual_configuration:
+        column_mapping:
+          id: collection_id
+        insertion_order: null
+        remote_table:
+          name: collection_products
+          schema: public
+select_permissions:
+  - role: public
+    permission:
+      columns:
+        - slug
+        - description
+        - name
+        - created_at
+        - updated_at
+        - id
+      filter: {}
+    comment: ""
+  - role: user
+    permission:
+      columns:
+        - slug
+        - description
+        - name
+        - created_at
+        - updated_at
+        - id
+      filter: {}
+    comment: ""

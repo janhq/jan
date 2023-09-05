@@ -1,0 +1,11 @@
+query getConversations {
+  conversations {
+    ...ConversationDetail
+    conversation_messages {
+      ...MessageDetail
+      message_medias {
+        ...MessageMedia
+      }
+    }
+  }
+}
