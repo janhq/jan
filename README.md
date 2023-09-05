@@ -14,20 +14,19 @@ Jan is free, source-available, and fair-code licensed.
 - GPU support with Nvidia hardware acceleration
 - CPU support with optimizations via llama.cpp
 
-## Features
-- [x] Web, Mobile and APIs (OpenAI compatible REST & GRPC)
-- [x] LLMs and Generative Art models
-- [x] Support for Apple Silicon, CPU architectures
-- [x] C++ inference backend with CUDA/TensorRT/Triton, dynamic batching
+## Current Features
+- [x] Llama 7Bn
+- [x] Web app and APIs (OpenAI compatible REST & GRPC)
+- [x] Supports Apple Silicon/CPU & GPU architectures
 - [x] Load balancing via Traefik
 - [x] Login and authz via Keycloak
-- [x] Data persistence via Postgres and/or MinIO
+- [x] Data storage via Postgres, MinIO
 
-## Planned
-- [ ] Support opting out of optional, 3rd party integrations
+## Planned Features
+- [ ] Support more models, with acceleration ([WIP](https://github.com/janhq/accelerated_ai))
+- [ ] C++ inference backend w/ CUDA & dynamic batching ([WIP](https://github.com/janhq/inference_backend))
 - [ ] Universal model installer & compiler, targeting Nvidia GPU acceleration
 - [ ] Mobile UI with a swappable backend URL
-- [ ] Support for controlnet, upscaler, and code llama
 - [ ] Admin dashboards for user management and audit
 
 ## Quickstart
@@ -105,11 +104,11 @@ docker compose up -d
 
 | Service     | URL                   | Credentials                                                                                                                                                           |
 | -------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Keycloak             | http://localhost:8088 | Admin credentials are set via the environment variables `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD`                                                               |
-| app-backend (hasura) | http://localhost:8080 | Admin credentials are set via the environment variables `HASURA_GRAPHQL_ADMIN_SECRET` in file `conf/sample.env_app-backend`                                          |
-| web-client           | http://localhost:3000 | Users are signed up to keycloak, default created user is set via `conf/keycloak_conf/example-realm.json` on keycloak with username: `username`, password: `password` |
-| llm service          | http://localhost:8000 |                                                                                                                                                                      |
-| sd service          | http://localhost:8001 |                                                                                                                                                                      |
+| Web App           | http://localhost:3000 | Users are signed up to keycloak, default created user is set via `conf/keycloak_conf/example-realm.json` on keycloak with username: `username`, password: `password` |
+| Keycloak Admin             | http://localhost:8088 | Admin credentials are set via the environment variables `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD`                                                               |
+| Hasura App Backend | http://localhost:8080 | Admin credentials are set via the environment variables `HASURA_GRAPHQL_ADMIN_SECRET` in file `conf/sample.env_app-backend`                                          |
+| LLM Service          | http://localhost:8000 |                                                                                                                                                                      |
+| Stable Diffusion Service          | http://localhost:8001 |                                                                                                                                                                      |
 
 ## Usage
 
