@@ -52,7 +52,6 @@ So far, this setup is tested and supported for Docker on Linux, Mac, and Windows
 
 - **Export Environment Variables**
 ```sh
-# For Apple Silicon, please set the Docker platform
 export DOCKER_DEFAULT_PLATFORM=linux/$(uname -m)
 ```
 
