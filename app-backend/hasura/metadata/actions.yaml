@@ -3,6 +3,7 @@ actions:
     definition:
       kind: synchronous
       handler: '{{HASURA_ACTION_STABLE_DIFFUSION_URL}}'
+      timeout: 1800
       request_transform:
         body:
           action: transform

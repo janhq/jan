@@ -56,11 +56,13 @@ services:
     depends_on:
       data-connector-agent:
         condition: service_healthy
+      keycloak:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
-      interval: 30s
+      interval: 5s
       timeout: 10s
-      retries: 10
+      retries: 30
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.graphql-engine.entrypoints=jan"
@@ -147,6 +149,9 @@ services:
       - "traefik.http.routers.web.rule=(Host(`localhost`) && PathPrefix(`/web`))"
       - "traefik.http.routers.web.middlewares=rewritepath"
       - "traefik.http.middlewares.rewritepath.addprefix.prefix=/web"
+    depends_on:
+      graphql-engine:
+        condition: service_healthy
     networks:
       jan_community:
         ipv4_address: 172.20.0.15
