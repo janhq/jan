@@ -92,8 +92,7 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      // TODO: Replace with your project's social card
-      image: 'img/jan-social-card.jpg',
+      image: 'img/jan-social-card.png',
       // Only for react live
       liveCodeBlock: {
         playgroundPosition: 'bottom',
