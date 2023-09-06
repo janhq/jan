@@ -108,7 +108,6 @@ async function handleRequest(env: Env, request: Request) {
             const content = obj.choices[0].delta.content;
             if (content) deltaText = deltaText.concat(content);
           } catch (e) {
-            console.log(e);
           }
         }
         cachedChunk = "";
@@ -118,7 +117,7 @@ async function handleRequest(env: Env, request: Request) {
         const variables = {
           id: messageBody.id,
           data: {
-            content: answer,
+            content: answer.trim(),
           },
         };
 
