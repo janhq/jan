@@ -17,6 +17,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD-admin}
     volumes:
       - ./conf/keycloak_conf:/opt/keycloak/data/import
+      - ./conf/keycloak_theme/keywind:/opt/keycloak/themes/keywind
     ports:
       - "8088:8088"
     depends_on:
@@ -60,7 +61,7 @@ services:
         condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
-      interval: 5s
+      interval: 10s
       timeout: 10s
       retries: 30
     networks:
