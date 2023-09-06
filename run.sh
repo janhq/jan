@@ -98,4 +98,4 @@ progress $'
 done
 ' "Waiting for service ready" 11
 
-echo -ne "\\r\\033[1A You can now view Jan app in the browser: http://localhost:3000 \\n"
+echo -ne "\\r You can now view Jan app in the browser: http://localhost:3000 \\n"
