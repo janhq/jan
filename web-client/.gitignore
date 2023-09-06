@@ -1,8 +1,5 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# apollo graphql
-/graphql/generated
-
 # dependencies
 /node_modules
 /.pnp
