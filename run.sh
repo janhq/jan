@@ -138,13 +138,17 @@ fi
 ### Download Model
 
 ### Launch Docker & Docker compose up
-progress $'
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    progress $'
     if (! docker stats --no-stream 2>/dev/null ); then
         open /Applications/Docker.app 
         while (! docker stats --no-stream 2>/dev/null ); do
             sleep 0.3 
         done 
     fi' "Waiting for docker to launch" $((step++))
+elif [[ "$OSTYPE" == "linux"* ]]; then
+    progress 'sudo service docker start 2>/dev/null' "Starting Docker Service" $((step++))
+fi
 if [[ -x "$(command -v docker compose)" ]]; then
     progress 'docker compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
 elif [[ -x "$(command -v docker-compose)" ]]; then
