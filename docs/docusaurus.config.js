@@ -119,9 +119,9 @@ const config = {
           },
           {
             type: 'docSidebar',
-            sidebarId: 'selfhostSidebar',
+            sidebarId: 'hardwareSidebar',
             position: 'left',
-            label: 'Self Host',
+            label: 'Hardware',
           },
           {
             type: 'docSidebar',
