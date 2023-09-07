@@ -38,7 +38,7 @@ progress() {
         done
     done
     error_log="error.log"
-    if [ -s "$error_log" ]; then
+    if [ -s "$error_log" ] && [ ! $error_log = WARNING* ]; then
         echo -ne "\\r\\033[1A- [$3/$MAX_STEPS] [x] $2\\n $(cat "$error_log")"
         exit 1
     fi
@@ -81,7 +81,8 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         progress '' "Docker - Installed" $((step++))
     fi
 
-    if [ ! -x "$(command -v docker-compose)" ] && [ ! -x "$(command -v docker compose)" ]; then
+    docker compose version &>/dev/null
+    if [ $? -ne 0 ] && [ ! -x "$(command -v docker-compose)" ]; then
         progress 'brew install docker-compose' "Installing Docker Compose" $((step++))
     else
         progress '' "docker-compose - Installed" $((step++))
@@ -106,9 +107,16 @@ if [[ "$OSTYPE" == "linux"* ]]; then
     fi
 
     if [[ ! -x "$(command -v docker)" ]]; then
-        progress '/bin/bash -c "$(curl -fsSL https://get.docker.com/)"' "Installing Docker" $((step++))
+        progress '/bin/bash -c "$(curl -fsSL https://get.docker.com/) 2>/dev/null"' "Installing Docker" $((step++))
     else
         progress '' "Docker - Installed" $((step++))
+    fi
+
+    docker compose version &>/dev/null
+    if [ $? -ne 0 ] || [ ! -x "$(command -v docker-compose)" ]; then
+        progress 'sudo apt install docker-compose' "Installing Docker Compose" $((step++))
+    else
+        progress '' "docker-compose - Installed" $((step++))
     fi
 fi
 ### Debian setup
@@ -149,11 +157,22 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 elif [[ "$OSTYPE" == "linux"* ]]; then
     progress 'sudo service docker start 2>/dev/null' "Starting Docker Service" $((step++))
 fi
-if [[ -x "$(command -v docker compose)" ]]; then
-    progress 'docker compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
-elif [[ -x "$(command -v docker-compose)" ]]; then
-    progress 'docker-compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
+
+docker compose version &>/dev/null
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    if [ $? == 0 ]; then
+        progress 'docker compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
+    elif [[ -x "$(command -v docker-compose)" ]]; then
+        progress 'docker-compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
+    fi
+elif [[ "$OSTYPE" == "linux"* ]]; then
+    if [ $? == 0 ]; then
+        progress 'sudo docker compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
+    elif [[ -x "$(command -v docker-compose)" ]]; then
+        progress 'sudo docker-compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
+    fi
 fi
+
 ### Launch Docker & Docker compose up
 
 ### Wait for service ready
