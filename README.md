@@ -6,7 +6,9 @@ Run an entire AI stack locally, from the inference engine to a shareable web app
 
 Jan is free, source-available, and fair-code licensed.
 
-> 👋 Access a live demo at https://cloud.jan.ai.
+> 👋 Use a live demo at https://cloud.jan.ai.
+
+> 👾 Detailed developer docs at https://docs.jan.ai/.
 
 ## Intended use
 - Run ChatGPT and Midjourney alternatives on-prem and on your private data
