@@ -26,9 +26,8 @@ progress() {
             sleep 0.1
         done
     done
-    error_log="error.log"
-    if [ -s "$error_log" ] && [ $error_log != "WARNING"* ]; then
-        echo -ne "\\r\\033[1A- [$3/$MAX_STEPS] [x] $2\\n $(cat "$error_log")"
+    if [ -s "error.log" ] && [ $(cat "error.log") != "WARNING"* ]; then
+        echo -ne "\\r\\033[1A- [$3/$MAX_STEPS] [x] $2\\n $(cat "error.log")"
         exit 1
     fi
     echo -ne "\\r\\033[1A- [$3/$MAX_STEPS] [✔] $2 $CLEAR_LINE\\n"
@@ -135,11 +134,6 @@ else
 fi
 ###
 
-### Run Llama.cpp
-# pip install llama-cpp-python[server]
-# python3 -m llama_cpp.server --model models/7B/ggml-model.bin
-###
-
 ### Launch Docker & Docker compose up
 if [[ "$OSTYPE" == "darwin"* ]]; then
     progress $'
@@ -153,7 +147,7 @@ elif [[ "$OSTYPE" == "linux"* ]]; then
     progress 'sudo service docker start 2>/dev/null' "Starting Docker Service" $((step++))
 fi
 
-docker compose version &>/dev/null
+docker compose version >/dev/null
 if [[ "$OSTYPE" == "darwin"* ]]; then
     if [ $? == 0 ]; then
         progress 'docker compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
