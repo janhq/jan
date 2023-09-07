@@ -4,19 +4,6 @@ set -e
 ### Clean sub-processes on exit
 trap "trap - SIGTERM && kill -- -$$" SIGINT
 
-### Parse arguments
-while getopts no-dockerize-llm: flag
-do
-    case "${flag}" in
-        u) username=${OPTARG};;
-        a) age=${OPTARG};;
-        f) fullname=${OPTARG};;
-    esac
-done
-echo "Username: $username";
-echo "Age: $age";
-echo "Full Name: $fullname";
-
 MAX_STEPS=13
 progress() {
     local BAR_SIZE="##########"
