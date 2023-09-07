@@ -50,41 +50,41 @@ step=1
 
 ### macOS setup
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    if [[ -x "$(command -v brew)" ]]; then
-        progress 'brew update' "Updating Homebrew" $((step++))
-    else
+    if [[ ! -x "$(command -v brew)" ]]; then
         progress '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' "Installing Homebrew" 1
+    else
+        progress '' "Homebrew - Installed" $((step++))
     fi
 
     xcode-select -p &>/dev/null
     if [ $? -ne 0 ]; then
         progress 'xcode-select --install' "Installing Xcode Command Line Tools" $((step++))
     else
-        progress '' "Installing Xcode Command Line Tools" $((step++))
+        progress '' "Xcode Command Line Tools - Installed" $((step++))
     fi
 
     if [[ ! -x "$(command -v git)" ]]; then
         progress 'brew install git' "Installing Git" $((step++))
     else
-        progress '' "Installing Git" $((step++))
+        progress '' "Git - Installed" $((step++))
     fi
 
     if [[ ! -x "$(command -v wget)" ]]; then
         progress 'brew install wget' "Installing Wget" $((step++))
     else
-        progress '' "Installing Wget" $((step++))
+        progress '' "Wget - Installed" $((step++))
     fi
 
     if [[ ! -x "$(command -v docker)" ]]; then
         progress 'brew install --cask docker' "Installing Docker" $((step++))
     else
-        progress '' "Installing Docker" $((step++))
+        progress '' "Docker - Installed" $((step++))
     fi
 
     if [ ! -x "$(command -v docker-compose)" ] && [ ! -x "$(command -v docker compose)" ]; then
         progress 'brew install docker-compose' "Installing Docker Compose" $((step++))
     else
-        progress '' "Installing docker-compose" $((step++))
+        progress '' "docker-compose - Installed" $((step++))
     fi
 fi
 ### macOS setup
@@ -96,16 +96,20 @@ if [[ "$OSTYPE" == "linux"* ]]; then
     if [[ ! -x "$(command -v git)" ]]; then
         progress 'sudo apt install git' "Installing Git" $((step++))
     else
-        progress '' "Installing Git" $((step++))
+        progress '' "Git - Installed" $((step++))
     fi
 
     if [[ ! -x "$(command -v wget)" ]]; then
         progress 'sudo apt install wget' "Installing Wget" $((step++))
     else
-        progress '' "Installing Wget" $((step++))
+        progress '' "Wget - Installed" $((step++))
     fi
 
-    progress '/bin/bash -c "$(curl -fsSL https://get.docker.com/)"' "Installing Docker" $((step++))
+    if [[ ! -x "$(command -v docker)" ]]; then
+        progress '/bin/bash -c "$(curl -fsSL https://get.docker.com/)"' "Installing Docker" $((step++))
+    else
+        progress '' "Docker - Installed" $((step++))
+    fi
 fi
 ### Debian setup
 
@@ -127,7 +131,7 @@ progress 'cp -f sample.env .env' "Prepare .env file" $((step++))
 
 ### Download Model
 if [ -f "jan-inference/llm/models/llama-2-7b-chat.ggmlv3.q4_1.bin" ]; then
-    progress '' "Download Llama model" $((step++))
+    progress '' "Llama model - Installed" $((step++))
 else
     progress 'wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin -P jan-inference/llm/models' "Download Llama model" $((step++))
 fi
