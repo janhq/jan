@@ -1,19 +1,6 @@
 #!/bin/bash
 set -e
-
-### Clean sub-processes on exit
-cleanup() {
-    # kill all processes whose parent is this process
-    pkill -P $$
-}
-
-for sig in INT QUIT HUP TERM; do
-    trap "
-    cleanup
-    trap - $sig EXIT
-    kill -s $sig "'"$$"' "$sig"
-done
-trap cleanup EXIT
+trap "trap - SIGTERM && kill -- -$$" SIGINT
 
 MAX_STEPS=13
 progress() {
