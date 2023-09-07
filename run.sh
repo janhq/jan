@@ -7,7 +7,7 @@ cleanup() {
 }
 
 for sig in INT QUIT HUP TERM; do
-  trap "
+    trap "
     cleanup
     trap - $sig EXIT
     kill -s $sig "'"$$"' "$sig"
@@ -70,16 +70,16 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         progress '' "Installing Docker" 4
     fi
 
-    if [[ ! -x "$(command -v docker-compose)" ]]; then
-        progress 'brew install docker-compose' "Installing Docker Compose" 5
-    else
+    if [ -x "$(command -v docker compose)" ] || [ -x "$(command -v docker-compose)" ]; then
         progress '' "Installing Docker Compose" 5
+    elif [[ ! -x "$(command -v docker-compose)" ]]; then
+        progress 'brew install docker-compose' "Installing Docker Compose" 5
     fi
 fi
 
 if [ -d "jan" ]; then
     cd jan
-    progress 'git fetch; git pull' "Git pull" 6
+    progress 'git fetch; git pull 2>/dev/null' "Git pull" 6
 else
     progress 'git clone --quiet https://github.com/janhq/jan' "Git clone" 6
     cd jan
@@ -102,7 +102,12 @@ progress $'
             sleep 0.3 
         done 
     fi' "Waiting for docker to launch" 9
+if [[ -x "$(command -v docker compose)" ]]; then
+    progress 'docker compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" 10
+fi
+if [[ -x "$(command -v docker-compose)" ]]; then
 progress 'docker-compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" 10
+fi
 
 progress $'
     while (true); do
