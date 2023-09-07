@@ -1,0 +1,58 @@
+name: Jan CI Staging
+on:
+  push:
+    branches:
+      - stag
+    paths:
+      - 'app-backend/worker/**' # hasura worker source code
+      - 'web-client/**' # web client source code
+
+env:
+  REGISTRY: ghcr.io
+  HASURA_WORKER_IMAGE_NAME: ${{ github.repository }}/worker
+  WEB_CLIENT_IMAGE_NAME: ${{ github.repository }}/web-client
+
+jobs:
+  build-docker-image:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get current date
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y.%m.%d')"
+
+      # Build docker image for app-backend worker
+      - name: Build docker image for app-backend worker
+        if: ${{ contains(github.event.head_commit.added, 'app-backend/worker/') }}
+        run: |
+          cd ./app-backend/worker
+          docker build -t ${{ env.REGISTRY }}/${{ env.HASURA_WORKER_IMAGE_NAME }}:staging-${{ steps.date.outputs.date }}.${{github.run_number}} .
+          docker push ${{ env.REGISTRY }}/${{ env.HASURA_WORKER_IMAGE_NAME }}:staging-${{ steps.date.outputs.date }}.${{github.run_number}}
+
+      # Get .env for FE
+      - name: Get .env file for build time
+        run: cd ./web-client && base64 -d <<< "$ENV_FILE_BASE64" > .env
+        shell: bash
+        env:
+          ENV_FILE_BASE64: ${{ secrets.ENV_FILE_BASE64 }}
+
+      # Build and push docker for web client
+      - name: Build docker image for web-client
+        if: ${{ contains(github.event.head_commit.added, 'web-client/') }}
+        run: |
+          cd ./web-client
+          docker build -t ${{ env.REGISTRY }}/${{ env.WEB_CLIENT_IMAGE_NAME }}:staging-${{ steps.date.outputs.date }}.${{github.run_number}} .
+          docker push ${{ env.REGISTRY }}/${{ env.WEB_CLIENT_IMAGE_NAME }}:staging-${{ steps.date.outputs.date }}.${{github.run_number}}

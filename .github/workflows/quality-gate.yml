@@ -2,11 +2,9 @@ name: Linter & Sonarqube scanner
 on:
   push:
     branches:
-      - dev
       - main
   pull_request:
     branches:
-      - dev
       - main
 
 jobs:
