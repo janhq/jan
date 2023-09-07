@@ -134,11 +134,6 @@ else
 fi
 ###
 
-### Run Llama.cpp
-# pip install llama-cpp-python[server]
-# python3 -m llama_cpp.server --model models/7B/ggml-model.bin
-###
-
 ### Launch Docker & Docker compose up
 if [[ "$OSTYPE" == "darwin"* ]]; then
     progress $'
