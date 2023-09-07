@@ -15,8 +15,8 @@ for sig in INT QUIT HUP TERM; do
 done
 trap cleanup EXIT
 
+MAX_STEPS=13
 progress() {
-    local MAX_STEPS=13
     local BAR_SIZE="##########"
     local MAX_BAR_SIZE="${#BAR_SIZE}"
     local CLEAR_LINE="\\033[K"
@@ -50,6 +50,7 @@ step=1
 
 ### macOS setup
 if [[ "$OSTYPE" == "darwin"* ]]; then
+    MAX_STEPS=13
     if [[ ! -x "$(command -v brew)" ]]; then
         progress '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' "Installing Homebrew" 1
     else
@@ -92,6 +93,7 @@ fi
 
 ### Debian setup
 if [[ "$OSTYPE" == "linux"* ]]; then
+    MAX_STEPS=12
     progress "sudo apt update 2>/dev/null" "Apt Updating" $((step++))
 
     if [[ ! -x "$(command -v git)" ]]; then
