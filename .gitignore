@@ -3,3 +3,4 @@
 
 # Jan inference
 jan-inference/llm/models/**
+error.log
