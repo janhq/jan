@@ -1,6 +1,21 @@
 #!/bin/bash
 set -e
+
+### Clean sub-processes on exit
 trap "trap - SIGTERM && kill -- -$$" SIGINT
+
+### Parse arguments
+while getopts no-dockerize-llm: flag
+do
+    case "${flag}" in
+        u) username=${OPTARG};;
+        a) age=${OPTARG};;
+        f) fullname=${OPTARG};;
+    esac
+done
+echo "Username: $username";
+echo "Age: $age";
+echo "Full Name: $fullname";
 
 MAX_STEPS=13
 progress() {
@@ -25,7 +40,7 @@ progress() {
         done
     done
     error_log="error.log"
-    if [ -s "$error_log" ] && [ ! $error_log = WARNING* ]; then
+    if [ -s "$error_log" ] && [ $error_log != "WARNING"* ]; then
         echo -ne "\\r\\033[1A- [$3/$MAX_STEPS] [x] $2\\n $(cat "$error_log")"
         exit 1
     fi
@@ -33,7 +48,6 @@ progress() {
 }
 step=1
 
-### Clean sub-processes on exit
 
 ### macOS setup
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -76,7 +90,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         progress '' "docker-compose - Installed" $((step++))
     fi
 fi
-### macOS setup
+### 
 
 ### Debian setup
 if [[ "$OSTYPE" == "linux"* ]]; then
@@ -108,7 +122,7 @@ if [[ "$OSTYPE" == "linux"* ]]; then
         progress '' "docker-compose - Installed" $((step++))
     fi
 fi
-### Debian setup
+###
 
 ### Pull Jan
 if [ -d "jan" ]; then
@@ -120,11 +134,11 @@ else
 fi
 
 progress 'git submodule update --init --recursive' "Pull submodule" $((step++))
-### Pull Jan
+###
 
 ### Prepare environment
 progress 'cp -f sample.env .env' "Prepare .env file" $((step++))
-### Prepare environment
+###
 
 ### Download Model
 if [ -f "jan-inference/llm/models/llama-2-7b-chat.ggmlv3.q4_1.bin" ]; then
@@ -132,7 +146,12 @@ if [ -f "jan-inference/llm/models/llama-2-7b-chat.ggmlv3.q4_1.bin" ]; then
 else
     progress 'wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin -P jan-inference/llm/models' "Download Llama model" $((step++))
 fi
-### Download Model
+###
+
+### Run Llama.cpp
+# pip install llama-cpp-python[server]
+# python3 -m llama_cpp.server --model models/7B/ggml-model.bin
+###
 
 ### Launch Docker & Docker compose up
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -162,7 +181,7 @@ elif [[ "$OSTYPE" == "linux"* ]]; then
     fi
 fi
 
-### Launch Docker & Docker compose up
+###
 
 ### Wait for service ready
 progress $'
@@ -172,6 +191,6 @@ progress $'
     fi
 done
 ' "Waiting for service ready" $((step++))
-### Wait for service ready
+###
 
 echo -ne "\\r You can now view Jan app in the browser: http://localhost:3000 \\n"
