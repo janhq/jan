@@ -1,5 +1,19 @@
 #!/bin/bash
 set -e
+
+cleanup() {
+    # kill all processes whose parent is this process
+    pkill -P $$
+}
+
+for sig in INT QUIT HUP TERM; do
+  trap "
+    cleanup
+    trap - $sig EXIT
+    kill -s $sig "'"$$"' "$sig"
+done
+trap cleanup EXIT
+
 progress() {
     local MAX_STEPS=11
     local BAR_SIZE="##########"
@@ -65,7 +79,7 @@ fi
 
 if [ -d "jan" ]; then
     cd jan
-    progress 'git pull' "Git pull" 6
+    progress 'git fetch; git pull' "Git pull" 6
 else
     progress 'git clone --quiet https://github.com/janhq/jan' "Git clone" 6
     cd jan
@@ -82,9 +96,9 @@ else
 fi
 
 progress $'
-    if (! docker stats --no-stream ); then
+    if (! docker stats --no-stream 2>/dev/null ); then
         open /Applications/Docker.app 
-        while (! docker stats --no-stream ); do
+        while (! docker stats --no-stream 2>/dev/null ); do
             sleep 0.3 
         done 
     fi' "Waiting for docker to launch" 9
