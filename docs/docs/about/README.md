@@ -1,4 +1,4 @@
 ---
 sidebar_position: 1
-title: Overview
+title: About Jan
 ---

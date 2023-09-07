@@ -119,20 +119,20 @@ const config = {
           },
           {
             type: 'docSidebar',
-            sidebarId: 'developerSidebar',
+            sidebarId: 'selfhostSidebar',
             position: 'left',
-            label: 'Developer',
+            label: 'Self Host',
+          },
+          {
+            type: 'docSidebar',
+            sidebarId: 'integrationsSidebar',
+            position: 'left',
+            label: 'Integrations',
           },
           {
             position: 'left',
             label: 'Reference',
             to: '/reference',
-          },
-          {
-            type: 'docSidebar',
-            sidebarId: 'changelogSidebar',
-            position: 'left',
-            label: 'Changelog',
           },
           // Navbar right
           {
