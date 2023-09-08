@@ -29,7 +29,7 @@ const wsLink =
   typeof window !== "undefined"
     ? new GraphQLWsLink(
         createClient({
-          url: `ws://${process.env.NEXT_PUBLIC_GRAPHQL_ENGINE_URL}/v1/graphql`,
+          url: `${process.env.NEXT_PUBLIC_GRAPHQL_ENGINE_WEB_SOCKET_URL}`,
           connectionParams: async () => {
             const token = await getAccessToken();
             return {
@@ -42,7 +42,7 @@ const wsLink =
       )
     : null;
 const httpLink = new HttpLink({
-  uri: `http://${process.env.NEXT_PUBLIC_GRAPHQL_ENGINE_URL}/v1/graphql`,
+  uri: `${process.env.NEXT_PUBLIC_GRAPHQL_ENGINE_URL}`,
 });
 
 const link =
