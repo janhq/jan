@@ -1,6 +1,4 @@
 #!/bin/bash
-set -e
-
 ### Clean sub-processes on exit
 trap "trap - SIGTERM && kill -- -$$" SIGINT
 
@@ -26,14 +24,13 @@ progress() {
             sleep 0.1
         done
     done
-    if [ -s "error.log" ] && [ $(cat "error.log") != "WARNING"* ]; then
-        echo -ne "\\r\\033[1A- [$3/$MAX_STEPS] [x] $2\\n $(cat "error.log")"
+    if [ -s "error.log" ] && [[ "$(cat error.log)" != "WARNING"* ]]; then
+        echo -ne "\\r\\033[1A- [$3/$MAX_STEPS] [x] $2\\n $(cat error.log)"
         exit 1
     fi
     echo -ne "\\r\\033[1A- [$3/$MAX_STEPS] [✔] $2 $CLEAR_LINE\\n"
 }
 step=1
-
 
 ### macOS setup
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -76,7 +73,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         progress '' "docker-compose - Installed" $((step++))
     fi
 fi
-### 
+###
 
 ### Debian setup
 if [[ "$OSTYPE" == "linux"* ]]; then
@@ -102,7 +99,7 @@ if [[ "$OSTYPE" == "linux"* ]]; then
     fi
 
     docker compose version &>/dev/null
-    if [ $? -ne 0 ] || [ ! -x "$(command -v docker-compose)" ]; then
+    if [ $? -ne 0 ] && [ ! -x "$(command -v docker-compose)" ]; then
         progress 'sudo apt install docker-compose' "Installing Docker Compose" $((step++))
     else
         progress '' "docker-compose - Installed" $((step++))
@@ -147,7 +144,7 @@ elif [[ "$OSTYPE" == "linux"* ]]; then
     progress 'sudo service docker start 2>/dev/null' "Starting Docker Service" $((step++))
 fi
 
-docker compose version >/dev/null
+docker compose version &>/dev/null
 if [[ "$OSTYPE" == "darwin"* ]]; then
     if [ $? == 0 ]; then
         progress 'docker compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
@@ -155,11 +152,14 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         progress 'docker-compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
     fi
 elif [[ "$OSTYPE" == "linux"* ]]; then
-    if [ $? == 0 ]; then
+    if [[ $? == 0 ]]; then
         progress 'sudo docker compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
     elif [[ -x "$(command -v docker-compose)" ]]; then
         progress 'sudo docker-compose up -d --quiet-pull --remove-orphans 2>/dev/null' "Docker compose up" $((step++))
     fi
+else
+    echo >&2 "Can not find docker compose runner"
+    exit 2
 fi
 
 ###
