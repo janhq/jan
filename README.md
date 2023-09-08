@@ -107,6 +107,7 @@ docker compose up -d
 
 - Launch the web application via `http://localhost:3000`.
 - Login with default user (username: `username`, password: `password`)
+- For configuring login theme, check out [here](KC.md)
 
 ## Configurations
 
