@@ -34,6 +34,7 @@ export const authOptions = {
       issuer: `${process.env.AUTH_ISSUER}`,
     }),
   ],
+  secret: `${process.env.NEXTAUTH_SECRET}`,
   callbacks: {
     async jwt({ token, account }) {
       const nowTimestamp = Math.floor(Date.now() / 1000);
