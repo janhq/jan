@@ -1,6 +1,10 @@
 # Jan - Self-Hosted AI Platform
 
 <p align="center">
+  <img alt="posthoglogo" src="https://user-images.githubusercontent.com/69952136/266827788-b37d6f41-fc34-4677-aa1f-3e2ca6d3c91a.png">
+</p>
+
+<p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
   <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/janhq/jan"/>
   <img alt="Github Last Commit" src="https://img.shields.io/github/last-commit/janhq/jan"/>
