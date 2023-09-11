@@ -29,7 +29,7 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 👋 https://cloud.jan.ai
 
 <div style="display:flex;">
-  <div style="flex:100%;">
+  <div style="flex:72%;">
     <img src="https://github.com/janhq/jan/assets/69952136/1f9bb48c-2e70-4633-9f68-7881cd925972" alt="Jan Web GIF">
   </div>
   <div style="flex:2%;">
