@@ -1,5 +1,3 @@
-SET check_function_bodies = false;
-
 INSERT INTO public.product_prompts (product_id, prompt_id)
 SELECT p.id AS product_id, r.id AS prompt_id
 FROM public.products p 

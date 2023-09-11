@@ -1,4 +1,3 @@
-SET check_function_bodies = false;
 INSERT INTO public.prompts ("slug", "content", "image_url") VALUES
 ('conversational-ai-future', 'What are possible developments for AI technology in the next decade?', ''),
 ('conversational-managing-stress', 'What are some tips for managing stress?', ''),

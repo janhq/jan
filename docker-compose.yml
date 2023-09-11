@@ -68,23 +68,6 @@ services:
       jan_community:
         ipv4_address: 172.20.0.12
 
-  hasura-seed-apply:
-    image: hasura/graphql-engine:v2.31.0.cli-migrations-v3
-    entrypoint: [""]
-    command: ["/bin/sh", "-c", "hasura-cli seed apply --all-databases"]
-    env_file:
-      - conf/sample.env_app-backend
-    volumes:
-      - ./app-backend/hasura/config.yaml:/config.yaml
-      - ./app-backend/hasura/seeds:/seeds
-    depends_on:
-      graphql-engine:
-        condition: service_healthy
-    extra_hosts:
-      - "localhost:172.20.0.12"
-    networks:
-      jan_community:
-
   worker:
     build:
       context: ./app-backend/worker

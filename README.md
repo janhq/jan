@@ -1,7 +1,7 @@
 # Jan - Self-Hosted AI Platform
 
 <p align="center">
-  <img alt="posthoglogo" src="https://user-images.githubusercontent.com/69952136/266827788-b37d6f41-fc34-4677-aa1f-3e2ca6d3c91a.png">
+  <img alt="janlogo" src="https://user-images.githubusercontent.com/69952136/266827788-b37d6f41-fc34-4677-aa1f-3e2ca6d3c91a.png">
 </p>
 
 <p align="center">
@@ -31,6 +31,10 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 ## Demo
 
 👋 https://cloud.jan.ai
+
+<p align="center">
+  <img src="https://github.com/janhq/jan/assets/69952136/1f9bb48c-2e70-4633-9f68-7881cd925972" alt="Jan Web GIF">
+</p>
 
 ## Features
 
