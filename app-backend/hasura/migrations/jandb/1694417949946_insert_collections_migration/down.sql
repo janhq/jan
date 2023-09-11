@@ -1,5 +1,1 @@
--- Could not auto-generate a down migration.
--- Please write an appropriate down migration for the SQL below:
--- INSERT INTO public.collections ("slug", "name", "description") VALUES
--- ('conversational', 'Conversational', 'Chatbot alternatives to ChatGPT. Converse with these models and get answers.')
--- ON CONFLICT (slug) DO NOTHING;
+-- DO NOTHING WITH DATA MIGRATION DOWN
