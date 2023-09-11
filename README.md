@@ -18,6 +18,8 @@
   - <a href="https://docs.jan.ai/changelog/">Changelog</a> - <a href="https://github.com/janhq/jan/issues">Bug reports</a> - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
+> ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
+
 Jan is a self-hosted AI Platform. We help you run AI on your own hardware, giving you full control and protecting your enterprises' data and IP. 
 
 Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
@@ -51,138 +53,130 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 - [ ] Apple Silicon (in progress)
 - [ ] CPU support via llama.cpp (in progress)
 
-## Usage
+## Documentation
 
-So far, this setup is tested and supported for Docker on Linux, Mac, and Windows Subsystem for Linux (WSL).
+👋 https://docs.jan.ai (Work in Progress)
 
-### Dependencies
+## Installation
 
-- **Install Docker**: Install Docker [here](https://docs.docker.com/get-docker/).
+> ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-- **Install Docker Compose**: Install Docker Compose [here](https://docs.docker.com/compose/install/).
+### Step 1: Install Docker
 
-- **Clone the Repository**: Clone this repository and pull in the latest git submodules.
+Jan is currently packaged as a Docker Compose application. 
 
-  ```bash
-  git clone https://github.com/janhq/jan.git
+- Docker ([Installation Instructions](https://docs.docker.com/get-docker/))
+- Docker Compose ([Installation Instructions](https://docs.docker.com/compose/install/))
 
-  cd jan
+### Step 2: Clone Repo
 
-  # Pull latest submodules
-  git submodule update --init --recursive
-  ```
+```bash
+git clone https://github.com/janhq/jan.git
+cd jan
 
-- **Export Environment Variables**
-```sh
-export DOCKER_DEFAULT_PLATFORM=linux/$(uname -m)
+# Pull latest submodules
+git submodule update --init --recursive
 ```
 
-- **Set a .env**: You will need to set up several environment variables for services such as Keycloak and Postgres. You can place them in `.env` files in the respective folders as shown in the `docker-compose.yml`.
+### Step 3: Configure `.env`
 
-  ```bash
-  cp sample.env .env
-  ```
-
-  | Service (Docker)       | env file                                                                                                                        |
-  | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-  | Global env             | `.env`, just run `cp sample.env .env`                                                                                           |
-  | Keycloak               | `.env` presented in global env and initiate realm in `conf/keycloak_conf/example-realm.json`                                    |
-  | Keycloak PostgresDB    | `.env` presented in global env                                                                                                  |
-  | jan-inference          | `.env` presented in global env                                                                                                  |
-  | app-backend (hasura)   | `conf/sample.env_app-backend` refer from [here](https://hasura.io/docs/latest/deployment/graphql-engine-flags/config-examples/) |
-  | app-backend PostgresDB | `conf/sample.env_app-backend-postgres`                                                                                          |
-  | web-client             | `conf/sample.env_web-client`                                                                                                    |
-
-### Install Models
-```sh
-wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin -P jan-inference/llm/models
-```
-
-### Compose Up
-
-Jan uses an opinionated, but modular, open-source stack that comes with many services out of the box, e.g. multiple clients, autoscaling, auth and more.
-
-You can opt out of such services or swap in your own integrations via [Configurations](#configurations).
-
-- Run the following command to start all the services defined in the `docker-compose.yml`
+We provide a sample `.env` file that you can use to get started.
 
 ```shell
-# Docker Compose up
-docker compose up
-
-# Docker Compose up detached mode
-docker compose up -d
+cp sample.env .env
 ```
 
-- This step takes 5-15 minutes and the following services will be provisioned:
+You will need to set the following `.env` variables
 
-| Service     | URL                   | Credentials                                                                                                                                                           |
-| -------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Web App           | http://localhost:3000 | Users are signed up to keycloak, default created user is set via `conf/keycloak_conf/example-realm.json` on keycloak with username: `username`, password: `password` |
-| Keycloak Admin             | http://localhost:8088 | Admin credentials are set via the environment variables `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD`                                                               |
-| Hasura App Backend | http://localhost:8080 | Admin credentials are set via the environment variables `HASURA_GRAPHQL_ADMIN_SECRET` in file `conf/sample.env_app-backend`                                          |
-| LLM Service          | http://localhost:8000 |                                                                                                                                                                                                                                                                                          |
+```shell
+# TODO: Document .env variables
+```
 
-## Usage
+### Step 4: Install Models
+
+> Note: This step will change soon with [Nitro](https://github.com/janhq/nitro) becoming its own library
+
+We recommend that Llama2-7B (4-bit quantized) as a basic model to get started. 
+
+You will need to download the models to the `jan-inference/llms/models` folder. 
+
+```shell
+cd jan-inference/llms/models
+
+# Downloads model (~4gb)
+# Download time depends on your internet connection and HuggingFace's bandwidth
+wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin 
+```
+
+### Step 5: `docker compose up`
+
+Jan utilizes Docker Compose to run all services:
+
+```shell
+docker compose up
+docker compose up -d # Detached mode
+```
+-  (Backend)
+- [Keycloak](https://www.keycloak.org/) (Identity)
+
+The table below summarizes the services and their respective URLs and credentials.
+
+| Service                                          | Container Name       | URL and Port          | Credentials                                                                        |
+| ------------------------------------------------ | -------------------- | --------------------- | ---------------------------------------------------------------------------------- |
+| Jan Web                                          | jan-web-*            | http://localhost:3000 | Set in `conf/keycloak_conf/example-realm.json` <br />- Default Username / Password |
+| [Hasura](https://hasura.io) (Backend)            | jan-graphql-engine-* | http://localhost:8080 | Set in `conf/sample.env_app-backend` <br /> - `HASURA_GRAPHQL_ADMIN_SECRET`        |
+| [Keycloak](https://www.keycloak.org/) (Identity) | jan-keycloak-*       | http://localhost:8088 | Set in `.env` <br />- `KEYCLOAK_ADMIN` <br />- `KEYCLOAK_ADMIN_PASSWORD`           |
+| Inference Service                                | jan-llm-*            | http://localhost:8000 | Set in `.env`                                                                      |
+| PostgresDB                                       | jan-postgres-*       | http://localhost:5432 | Set in `.env`                                                                      |
+
+### Step 6: Configure Keycloak
+
+- [ ] Refactor [Keycloak Instructions](KC.md) into main README.md
+- [ ] Changing login theme
+
+### Step 7: Use Jan
 
 - Launch the web application via `http://localhost:3000`.
 - Login with default user (username: `username`, password: `password`)
-- For configuring login theme, check out [here](KC.md)
 
-## Configurations
+### Step 8: Deploying to Production
 
-TODO
+- [ ] TODO
 
-## Developers
+## About Jan
+
+Jan is a commercial company with a [Fair Code](https://faircode.io/) business model. This means that while we are open-source and can used for free, we require commercial licenses for specific use cases (e.g. hosting Jan as a service). 
+
+We are a team of engineers passionate about AI, productivity and the future of work. We are funded through consulting contracts and enterprise licenses. Feel free to reach out to us!
+
+### Repo Structure
+
+Jan comprises of several repositories: 
+
+| Repo                                                    | Purpose                                                                                                                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Jan](https://github.com/janhq/jan)                     | AI Platform to run AI in the enterprise. Easy-to-use for users, and packed with useful organizational and compliance features.                                |
+| [Jan Mobile](https://github.com/janhq/jan-react-native) | Mobile App that can be pointed to a custom Jan server.                                                                                                        |
+| [Nitro](https://github.com/janhq/nitro)                 | Inference Engine that runs AI on different types of hardware. Offers popular API formats (e.g. OpenAI, Clipdrop). Written in C++ for blazing fast performance |
 
 ### Architecture
 
-TODO
-
-### Dependencies
+Jan builds on top of several open-source projects:
 
 - [Keycloak Community](https://github.com/keycloak/keycloak) (Apache-2.0)
 - [Hasura Community Edition](https://github.com/hasura/graphql-engine) (Apache-2.0)
 
-### Repo Structure
+We may re-evaluate this in the future, given different customer requirements. 
 
-Jan is a monorepo that pulls in the following submodules
 
-```shell
-├── docker-compose.yml
-├── mobile-client       # Mobile app
-├── web-client          # Web app
-├── app-backend         # Web & mobile app backend
-├── inference-backend   # Inference server
-├── docs                # Developer Docs
-├── adrs                # Architecture Decision Records
-```
-
-## Common Issues and Troubleshooting
-
-## Contributing
+### Contributing
 
 Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to contribute to this project.
 
-## License
+Please note that Jan intends to build a sustainable business that can provide high quality jobs to its contributors. If you are excited about our mission and vision, please contact us to explore opportunities. 
 
-This project is licensed under the Fair Code License. See [LICENSE.md](LICENSE.md) for more details.
+### Contact
 
-## Authors and Acknowledgments
-
-Created by Jan. Thanks to all contributors who have helped to improve this project.
-
-## Contact
-
-For support: please file a Github ticket
-For questions: join our Discord [here](https://discord.gg/FTk2MvZwJH)
-For long form inquiries: please email hello@jan.ai
-
-
-## Current Features
-- [x] Llama 7Bn
-- [x] Web app and APIs (OpenAI compatible REST & GRPC)
-- [x] Supports Apple Silicon/CPU & GPU architectures
-- [x] Load balancing via Traefik
-- [x] Login and authz via Keycloak
-- [x] Data storage via Postgres, MinIO
+- For support: please file a Github ticket
+- For questions: join our Discord [here](https://discord.gg/FTk2MvZwJH)
+- For long form inquiries: please email hello@jan.ai
