@@ -20,7 +20,11 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan is a self-hosted AI Platform. We help you run AI on your own hardware, giving you full control and protecting your enterprises' data and IP. 
+Jan is a self-hosted AI Platform to run AI in the enterprise. Easy-to use for users, and packed with useful organizational and compliance features.
+
+We help you run AI on your own hardware, with 1-click installs for the latest models. Jan runs on a wide variety of hardware, from consumer grade Mac Minis to datacenter-grade Nvidia H100s. 
+
+We also connect to the latest AI engines like ChatGPT, but protect your organization with a data policy engine that can detect sensitive data and PII.
 
 Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 
@@ -52,6 +56,7 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 - [ ] Nvidia GPUs 
 - [ ] Apple Silicon (in progress)
 - [ ] CPU support via llama.cpp (in progress)
+- [ ] Nvidia GPUs using TensorRT (in progress)
 
 ## Documentation
 
