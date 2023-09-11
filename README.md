@@ -1,37 +1,57 @@
-# Jan
+# Jan - Self-Hosted AI Platform
 
-Jan is a self-hosted, AI Inference Platform that scales from personal use to production deployments.
+<p align="center">
+  <img alt="posthoglogo" src="https://user-images.githubusercontent.com/69952136/266827788-b37d6f41-fc34-4677-aa1f-3e2ca6d3c91a.png">
+</p>
 
-Run an entire AI stack locally, from the inference engine to a shareable web application.
+<p align="center">
+  <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
+  <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/janhq/jan"/>
+  <img alt="Github Last Commit" src="https://img.shields.io/github/last-commit/janhq/jan"/>
+  <img alt="Github Contributors" src="https://img.shields.io/github/contributors/janhq/jan"/>
+  <img alt="GitHub closed issues" src="https://img.shields.io/github/issues-closed/janhq/jan"/>
+  <img alt="Discord" src="https://img.shields.io/discord/1107178041848909847?label=discord"/>
+</p>
 
-Jan is free, source-available, and fair-code licensed.
+<p align="center">
+  <a href="https://docs.jan.ai/">Getting Started</a> - <a href="https://docs.jan.ai">Docs</a> 
+  - <a href="https://docs.jan.ai/changelog/">Changelog</a> - <a href="https://github.com/janhq/jan/issues">Bug reports</a> - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
+</p>
 
-> 👋 Use a live demo at https://cloud.jan.ai.
+Jan is a self-hosted AI Platform. We help you run AI on your own hardware, giving you full control and protecting your enterprises' data and IP. 
 
-> 👾 Detailed developer docs at https://docs.jan.ai/.
+Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 
-## Intended use
-- Run ChatGPT and Midjourney alternatives on-prem and on your private data
-- Self-host AI models for your friends or for a team
-- GPU support with Nvidia hardware acceleration
-- CPU support with optimizations via llama.cpp
+## Demo
 
-## Current Features
-- [x] Llama 7Bn
-- [x] Web app and APIs (OpenAI compatible REST & GRPC)
-- [x] Supports Apple Silicon/CPU & GPU architectures
-- [x] Load balancing via Traefik
-- [x] Login and authz via Keycloak
-- [x] Data storage via Postgres, MinIO
+👋 https://cloud.jan.ai
 
-## Planned Features
-- [ ] Support more models, with acceleration ([WIP](https://github.com/janhq/accelerated_ai))
-- [ ] C++ inference backend w/ CUDA & dynamic batching ([WIP](https://github.com/janhq/inference_backend))
-- [ ] Universal model installer & compiler, targeting Nvidia GPU acceleration
-- [ ] Mobile UI with a swappable backend URL
-- [ ] Admin dashboards for user management and audit
+## Features
 
-## Quickstart
+**Multiple AI Engines**
+- [x] Self-hosted Llama2 and LLMs 
+- [x] Self-hosted StableDiffusion and Controlnet
+- [ ] Connect to ChatGPT, Claude via API Key (coming soon)
+- [ ] 1-click installs for Models (coming soon)
+
+**Cross-Platform**
+- [x] Web App
+- [ ] Jan Mobile support for custom Jan server (in progress)
+- [ ] Cloud deployments (coming soon)
+
+**Organization Tools**
+- [x] Multi-user support 
+- [ ] Audit and Usage logs (coming soon)
+- [ ] Compliance and Audit (coming soon)
+- [ ] PII and Sensitive Data policy engine for 3rd-party AIs (coming soon)
+
+**Hardware Support**
+
+- [ ] Nvidia GPUs 
+- [ ] Apple Silicon (in progress)
+- [ ] CPU support via llama.cpp (in progress)
+
+## Usage
 
 So far, this setup is tested and supported for Docker on Linux, Mac, and Windows Subsystem for Linux (WSL).
 
@@ -157,3 +177,12 @@ Created by Jan. Thanks to all contributors who have helped to improve this proje
 For support: please file a Github ticket
 For questions: join our Discord [here](https://discord.gg/FTk2MvZwJH)
 For long form inquiries: please email hello@jan.ai
+
+
+## Current Features
+- [x] Llama 7Bn
+- [x] Web app and APIs (OpenAI compatible REST & GRPC)
+- [x] Supports Apple Silicon/CPU & GPU architectures
+- [x] Load balancing via Traefik
+- [x] Login and authz via Keycloak
+- [x] Data storage via Postgres, MinIO
