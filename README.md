@@ -28,6 +28,15 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 
 👋 https://cloud.jan.ai
 
+<div style="display:flex;">
+  <div style="flex:66%;">
+    <img src="jan-web.gif" alt="Jan Web GIF">
+  </div>
+  <div style="flex:34%;">
+    <img src="jan-mobile.gif" alt="Jan Mobile GIF">
+  </div>
+</div>
+
 ## Features
 
 **Multiple AI Engines**
