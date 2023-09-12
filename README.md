@@ -61,8 +61,8 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 **Hardware Support**
 
 - [x] Nvidia GPUs 
-- [ ] Apple Silicon (in progress)
-- [ ] CPU support via llama.cpp (in progress)
+- [x] Apple Silicon (in progress)
+- [x] CPU support via llama.cpp
 - [ ] Nvidia GPUs using TensorRT (in progress)
 
 ## Documentation
@@ -85,9 +85,6 @@ Jan is currently packaged as a Docker Compose application.
 ```bash
 git clone https://github.com/janhq/jan.git
 cd jan
-
-# Pull latest submodules
-git submodule update --init --recursive
 ```
 
 ### Step 3: Configure `.env`
@@ -108,16 +105,54 @@ You will need to set the following `.env` variables
 
 > Note: This step will change soon with [Nitro](https://github.com/janhq/nitro) becoming its own library
 
-We recommend that Llama2-7B (4-bit quantized) as a basic model to get started. 
+Install Mamba to handle native python binding (which can yield better performance on Mac M/ NVIDIA)
+```bash
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh"
+bash Mambaforge-$(uname)-$(uname -m).sh
+rm Mambaforge-$(uname)-$(uname -m).sh
 
-You will need to download the models to the `jan-inference/llms/models` folder. 
+# Create environment
+conda create -n jan python=3.9.16
+conda activate jan
+pip uninstall llama-cpp-python -y
+```
+
+- On Mac
+```bash
+CMAKE_ARGS="-DLLAMA_METAL=on" FORCE_CMAKE=1 pip install -U llama-cpp-python --no-cache-dir
+pip install 'llama-cpp-python[server]'
+```
+- On Linux with NVIDIA GPU
+```bash
+CMAKE_ARGS="-DLLAMA_HIPBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python
+pip install 'llama-cpp-python[server]'
+```
+- On Linux with Intel/ AMD CPU (support for AVX-2/ AVX-512)
+
+```bash
+CMAKE_ARGS="-DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS" FORCE_CMAKE=1 pip install llama-cpp-python
+pip install 'llama-cpp-python[server]'
+```
+
+We recommend that Llama2-7B (4-bit quantized) as a basic model to get started.
+
+You will need to download the models to the `models` folder.
 
 ```shell
-cd jan-inference/llms/models
-
+mkdir -p models
 # Downloads model (~4gb)
 # Download time depends on your internet connection and HuggingFace's bandwidth
-wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin 
+# In this part, please head over to any source contains `.gguf` format model - https://huggingface.co/models?search=gguf
+wget LLM_MODEL_URL=https://huggingface.co/TheBloke/CodeLlama-13B-GGUF/resolve/main/codellama-13b.Q3_K_L.gguf -P models
+```
+
+- Run the model in host machine
+```bash
+# Please change the value of --model key as your corresponding model path
+# The --n_gpu_layers 1 means using acclerator (can be Metal on Mac, NVIDIA GPU on on linux with NVIDIA GPU)
+# This service will run at `http://localhost:8000` in host level
+# The backend service inside docker compose will connect to this service by using `http://host.docker.internal:8000`
+python3 -m llama_cpp.server --model models/codellama-13b.Q3_K_L.gguf --n_gpu_layers 1
 ```
 
 ### Step 5: `docker compose up`
@@ -125,11 +160,8 @@ wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7
 Jan utilizes Docker Compose to run all services:
 
 ```shell
-docker compose up
 docker compose up -d # Detached mode
 ```
--  (Backend)
-- [Keycloak](https://www.keycloak.org/) (Identity)
 
 The table below summarizes the services and their respective URLs and credentials.
 
@@ -137,8 +169,7 @@ The table below summarizes the services and their respective URLs and credential
 | ------------------------------------------------ | -------------------- | --------------------- | ---------------------------------------------------------------------------------- |
 | Jan Web                                          | jan-web-*            | http://localhost:3000 | Set in `conf/keycloak_conf/example-realm.json` <br />- Default Username / Password |
 | [Hasura](https://hasura.io) (Backend)            | jan-graphql-engine-* | http://localhost:8080 | Set in `conf/sample.env_app-backend` <br /> - `HASURA_GRAPHQL_ADMIN_SECRET`        |
-| [Keycloak](https://www.keycloak.org/) (Identity) | jan-keycloak-*       | http://localhost:8088 | Set in `.env` <br />- `KEYCLOAK_ADMIN` <br />- `KEYCLOAK_ADMIN_PASSWORD`           |
-| Inference Service                                | jan-llm-*            | http://localhost:8000 | Set in `.env`                                                                      |
+| [Keycloak](https://www.keycloak.org/) (Identity) | jan-keycloak-*       | http://localhost:8088 | Set in `.env` <br />- `KEYCLOAK_ADMIN` <br />- `KEYCLOAK_ADMIN_PASSWORD`           |                                                                     |
 | PostgresDB                                       | jan-postgres-*       | http://localhost:5432 | Set in `.env`                                                                      |
 
 ### Step 6: Configure Keycloak

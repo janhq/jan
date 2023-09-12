@@ -2,5 +2,5 @@
 .env
 
 # Jan inference
-jan-inference/llm/models/**
+models/**
 error.log
