@@ -14,7 +14,7 @@ const ShortcutItem: React.FC<Props> = ({ product }) => {
   };
 
   return (
-    <button className="flex items-center gap-2" onClick={onClickHandler}>
+    <button className="flex bg-white hover:bg-gray-100 items-center gap-2" onClick={onClickHandler}>
       {product.image_url && (
         <img
           src={product.image_url}

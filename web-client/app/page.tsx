@@ -12,14 +12,12 @@ const Page: React.FC = () => {
     <ApolloWrapper>
       <MobxWrapper>
         <ThemeWrapper>
-          <div className="flex w-full h-screen">
-            <div className="flex h-screen z-100">
+          <div className="flex grow h-100">
+            <div className="flex w-80 hidden lg:flex">
               <SidebarLeft />
-              <CompactSideBar />
-              <AdvancedPrompt />
             </div>
             <div className="w-full max-h-screen flex-1 flex flex-col">
-              <div className="flex-shrink-0 flex-0">
+              <div className="flex lg:hidden">
                 <Header />
               </div>
               <ChatContainer />

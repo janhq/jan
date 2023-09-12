@@ -8,6 +8,7 @@ import { ThemeChanger } from "../ChangeTheme";
 import UserProfileDropDown from "../UserProfileDropDown";
 import useSignIn from "@/_hooks/useSignIn";
 import useGetCurrentUser from "@/_hooks/useGetCurrentUser";
+import { PlusSmallIcon } from "@heroicons/react/24/outline";
 
 const Header: React.FC = () => {
   const { signInWithKeyCloak } = useSignIn();
@@ -23,9 +24,9 @@ const Header: React.FC = () => {
       className="text-sm bg-white border-b-[1px] border-gray-200 relative w-full py-3 px-6 dark:bg-gray-800"
     >
       <nav className="mx-auto flex items-center" aria-label="Global">
-        <div className="flex items-center flex-1 justify-center" />
+        <div className="flex items-center justify-center" />
 
-        <div className="hidden md:flex items-center gap-2">
+{/*         <div className="hidden items-center gap-2">
           <ThemeChanger />
           {loading ? (
             <div></div>
@@ -36,8 +37,10 @@ const Header: React.FC = () => {
           ) : (
             <button onClick={signInWithKeyCloak}>Login</button>
           )}
-        </div>
-        <div className="flex lg:hidden">
+        </div> */}
+
+        {/* Mobile Header */}
+        <div className="flex lg:hidden w-full justify-between">
           <button
             type="button"
             className="-m-2.5 inline-flex items-center justify-center rounded-md p-2.5 text-gray-700"
@@ -46,7 +49,17 @@ const Header: React.FC = () => {
             <span className="sr-only">Open main menu</span>
             <Bars3Icon className="h-6 w-6" aria-hidden="true" />
           </button>
+
+          <button
+            type="button"
+            className="-m-2.5 inline-flex items-center justify-center rounded-md p-2.5 text-gray-700"
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <span className="sr-only">Open main menu</span>
+            <PlusSmallIcon className="h-6 w-6" aria-hidden="true" />
+          </button>
         </div>
+
       </nav>
       <ConfirmSignOutModal
         open={showLogOutModal}

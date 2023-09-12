@@ -30,6 +30,7 @@ const NewChatBlankState: React.FC = () => {
       )
     ) ?? [];
 
+
   if (loading) {
     return (
       <div className="w-full flex flex-row justify-center items-center">
@@ -43,10 +44,10 @@ const NewChatBlankState: React.FC = () => {
   }
 
   return (
-    <div className="bg-gray-100 px-6 pt-8 w-full h-full overflow-y-scroll scroll">
-      <Slider products={featured} />
-      <ConversationalList products={conversational} />
-      <GenerateImageList products={generativeArts} />
+    <div className="flex min-h-full flex-1 flex-col px-6 py-4">
+      <div className="m:mx-auto m:w-full m:max-w-sm">
+        <ConversationalList products={conversational} />
+      </div>
     </div>
   );
 };

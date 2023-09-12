@@ -19,9 +19,9 @@ const ConversationalCard: React.FC<Props> = ({ product }) => {
       onClick={() =>
         requestCreateConvo(product)
       }
-      className="flex flex-col justify-between flex-shrink-0 gap-3 bg-white p-4 w-52 rounded-lg text-left dark:bg-gray-700 hover:opacity-20"
-    >
-      <div className="flex flex-col gap-2 box-border">
+      className="relative flex items-center space-x-3 rounded-lg border border-gray-300 bg-white px-6 py-5 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:border-gray-400"
+        >
+      <div className="flex-shrink-0">
         <Image
           width={32}
           height={32}
@@ -29,17 +29,15 @@ const ConversationalCard: React.FC<Props> = ({ product }) => {
           className="rounded-full"
           alt=""
         />
-        <h2 className="text-gray-900 font-semibold dark:text-white line-clamp-1 mt-2">
+        </div>
+        <div className="min-w-0 flex-1">
+        <p className="text-left text-sm font-medium text-gray-900">
           {name}
-        </h2>
-        <span className="text-gray-600 mt-1 font-normal line-clamp-2">
+        </p>
+        <p className="text-left text-sm text-gray-500 line-clamp-2">
           {description}
-        </span>
+        </p>
       </div>
-      <span className="flex text-xs leading-5 text-gray-500 items-center gap-[2px]">
-        <Image src={"/icons/play.svg"} width={16} height={16} alt="" />
-        32.2k runs
-      </span>
     </button>
   );
 };

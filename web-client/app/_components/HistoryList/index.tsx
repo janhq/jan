@@ -13,7 +13,7 @@ const HistoryList: React.FC<IHistoryListProps> = observer((props) => {
 
   return (
     <div className="flex flex-col w-full pl-1 pt-3">
-      <button
+{/*       <button
         onClick={() => setShowHistory(!showHistory)}
         className="flex items-center justify-between px-2"
       >
@@ -27,7 +27,7 @@ const HistoryList: React.FC<IHistoryListProps> = observer((props) => {
           height={24}
           alt=""
         />
-      </button>
+      </button> */}
       <div className={`flex-col gap-1 ${showHistory ? "flex" : "hidden"}`}>
         {historyStore.conversations
           .filter(

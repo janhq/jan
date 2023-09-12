@@ -31,12 +31,11 @@ export default function RootLayout({
           className={classNames(
             inter.className,
             "flex flex-col w-full h-screen"
-          )}
-        >
-          <div className="hidden md:flex flex-col w-full h-screen">
+          )}>
+            
+          <div className="md:flex flex-col w-full h-screen">
             {children}
           </div>
-          <MobileShowcase />
         </body>
       </html>
     </SessionProviderWrapper>
