@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'docs/**'
+      - '.github/workflows/deploy-jan-docs.yml'
     # Review gh actions docs if you want to further define triggers, paths, etc
     # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
 
