@@ -35,6 +35,7 @@ const StreamTextMessage: React.FC<Props> = ({
   React.useEffect(() => {
     if (
       !conversation ||
+      data ||
       conversation.chatMessages.findIndex((e) => e.id === id) !==
         conversation.chatMessages.length - 1
     ) {
@@ -53,18 +54,17 @@ const StreamTextMessage: React.FC<Props> = ({
     setData({
       model: "gpt-3.5-turbo",
       stream: true,
-      messages,
+      messages: messages,
       max_tokens: 500,
     });
-  }, [conversation]);
+  }, [conversation, id, data]);
 
-  const { buffer, done } = useTextBuffer({
+  const { buffer, done, error } = useTextBuffer({
     url: `${process.env.NEXT_PUBLIC_OPEN_AI_ENDPOINT}`,
     data,
     options: {
       cache: "no-cache",
       keepalive: true,
-      // mode: "no-cors",
       headers: {
         Accept: "text/event-stream",
         "Content-Type": "application/json",
@@ -74,28 +74,42 @@ const StreamTextMessage: React.FC<Props> = ({
 
   const parsedBuffer = (buffer: String) => {
     try {
-      console.log(buffer)
       const json = buffer.replace("data: ", "");
       return JSON.parse(json).choices[0].delta.content;
     } catch (e) {
       return "";
     }
   };
+
+  const updateLatestMessage = async (text: String[]) => {
+    const variables: UpdateMessageMutationVariables = {
+      id: id,
+      data: {
+        content: text.map((e) => parsedBuffer(e)).join(""),
+        status: MessageStatus.Ready,
+      },
+    };
+    updateMessage({
+      variables,
+    });
+  };
+
   useEffect(() => {
-    if (done) {
+    if (done && buffer.length > 0) {
       // mutate result
-      const variables: UpdateMessageMutationVariables = {
-        id: id,
-        data: {
-          content: buffer.map((e) => parsedBuffer(e)).join(""),
-          status: MessageStatus.Ready,
-        },
-      };
-      updateMessage({
-        variables,
-      });
+      updateLatestMessage(buffer);
     }
-  }, [done]);
+  }, [done, buffer]);
+
+  useEffect(() => {
+    return () => {
+      historyStore.finishActiveConversationWaiting();
+      historyStore.stopModelStreaming();
+      setData(undefined)
+      // mutate result on unmount
+      updateLatestMessage(buffer);
+    };
+  }, []);
 
   useEffect(() => {
     if (buffer.length > 0 && conversation?.isWaitingForModelResponse) {

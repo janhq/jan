@@ -52,6 +52,7 @@ export const Conversation = types
     offset: 0,
     hasMore: true,
     isWaitingForModelResponse: false,
+    isModelStreaming: false,
   }))
   .actions(withSetPropAction)
   .actions((self) => ({
@@ -74,5 +75,8 @@ export const Conversation = types
 
     setWaitingForModelResponse(isWaitingForModelResponse: boolean) {
       self.isWaitingForModelResponse = isWaitingForModelResponse;
+    },
+    setModelStream(isStreaming: boolean) {
+      self.isModelStreaming = isStreaming
     },
   }));

@@ -113,6 +113,9 @@ export const History = types
     finishActiveConversationWaiting() {
       self.getActiveConversation()?.setWaitingForModelResponse(false);
     },
+    stopModelStreaming() {
+      self.getActiveConversation()?.setModelStream(false);
+    },
   }))
   .actions((self) => {
     const fetchMoreMessages = flow(function* (
@@ -220,6 +223,7 @@ export const History = types
       convoId: string | undefined
     ) {
       self.activeConversationId = convoId;
+      self.stopModelStreaming();
     });
 
     return { setActiveConversationId };
@@ -538,6 +542,7 @@ export const History = types
         );
         return;
       }
+      conversation.setModelStream(true)
       conversation.setWaitingForModelResponse(true);
       const variables: CreateMessageMutationVariables = {
         data: {

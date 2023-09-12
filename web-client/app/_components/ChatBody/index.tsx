@@ -110,7 +110,9 @@ export const ChatBody: React.FC<Props> = observer(({ onPromptSelected }) => {
             className="flex flex-col justify-end gap-8 py-2"
             ref={refContent}
           >
-            {messages.map((message, index) => renderItem(index, message))}
+            {messages.map((message, index) =>
+              renderItem(index, convo?.isModelStreaming ?? false, message)
+            )}
             <div ref={refSmooth}>
               {convo?.isWaitingForModelResponse && (
                 <div className="w-[50px] h-[50px] px-2 flex flex-row items-start justify-start">
@@ -127,6 +129,7 @@ export const ChatBody: React.FC<Props> = observer(({ onPromptSelected }) => {
 
 const renderItem = (
   index: number,
+  streaming: boolean,
   {
     id,
     messageType,
@@ -162,7 +165,7 @@ const renderItem = (
         />
       );
     case MessageType.Text:
-      return status === MessageStatus.Ready ? (
+      return status === MessageStatus.Ready || !streaming ? (
         <SimpleTextMessage
           key={index}
           avatarUrl={senderAvatarUrl ?? "/icons/app_icon.svg"}
