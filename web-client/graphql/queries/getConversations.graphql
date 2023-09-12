@@ -1,5 +1,5 @@
 query getConversations {
-  conversations {
+  conversations(order_by: {updated_at: desc}) {
     ...ConversationDetail
     conversation_messages {
       ...MessageDetail

@@ -1,11 +1,19 @@
+import {
+  currentConvoStateAtom,
+  currentPromptAtom,
+} from "@/_helpers/JotaiWrapper";
+import useSendChatMessage from "@/_hooks/useSendChatMessage";
+import { useAtomValue } from "jotai";
 import Image from "next/image";
 
-type Props = {
-  onClick: () => void;
-  disabled?: boolean;
-};
+const SendButton: React.FC = () => {
+  const currentPrompt = useAtomValue(currentPromptAtom);
+  const currentConvoState = useAtomValue(currentConvoStateAtom);
+  const { sendChatMessage } = useSendChatMessage();
 
-const SendButton: React.FC<Props> = ({ onClick, disabled = false }) => {
+  const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false;
+  const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse;
+
   const enabledStyle = {
     backgroundColor: "#FACA15",
   };
@@ -16,7 +24,7 @@ const SendButton: React.FC<Props> = ({ onClick, disabled = false }) => {
 
   return (
     <button
-      onClick={onClick}
+      onClick={sendChatMessage}
       style={disabled ? disabledStyle : enabledStyle}
       type="submit"
       className="p-2 gap-[10px] inline-flex items-center rounded-[12px] text-sm font-semibold shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"

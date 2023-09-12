@@ -1,27 +1,25 @@
-import { Instance } from "mobx-state-tree";
-import { Product } from "@/_models/Product";
 import JanWelcomeTitle from "../JanWelcomeTitle";
 import { useQuery } from "@apollo/client";
 import { GetProductPromptsDocument, GetProductPromptsQuery } from "@/graphql";
+import { Product } from "@/_models/Product";
+import { useSetAtom } from "jotai";
+import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 
 type Props = {
-  model: Instance<typeof Product>;
-  onPromptSelected: (prompt: string) => void;
+  product: Product;
 };
 
-const SampleLlmContainer: React.FC<Props> = ({ model, onPromptSelected }) => {
-  const { loading, error, data } = useQuery<GetProductPromptsQuery>(
-    GetProductPromptsDocument,
-    {
-      variables: { productSlug: model.id },
-    }
-  );
+const SampleLlmContainer: React.FC<Props> = ({ product }) => {
+  const setCurrentPrompt = useSetAtom(currentPromptAtom);
+  const { data } = useQuery<GetProductPromptsQuery>(GetProductPromptsDocument, {
+    variables: { productSlug: product.slug },
+  });
 
   return (
     <div className="flex flex-col max-w-sm flex-shrink-0 gap-9 items-center pt-6 mx-auto">
       <JanWelcomeTitle
-        title={model.name}
-        description={model.description ?? ""}
+        title={product.name}
+        description={product.description ?? ""}
       />
       <div className="flex flex-col">
         <h2 className="font-semibold text-xl leading-6 tracking-[-0.4px] mb-5">
@@ -30,7 +28,7 @@ const SampleLlmContainer: React.FC<Props> = ({ model, onPromptSelected }) => {
         <div className="flex flex-col">
           {data?.prompts.map((item) => (
             <button
-              onClick={() => onPromptSelected(item.content ?? "")}
+              onClick={() => setCurrentPrompt(item.content ?? "")}
               key={item.slug}
               className="rounded p-2 hover:bg-[#0000000F] text-xs leading-[18px] text-gray-500 text-left"
             >

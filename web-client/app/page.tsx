@@ -1,34 +1,23 @@
-import Header from "@/_components/Header";
-import { AdvancedPrompt } from "@/_components/AdvancedPrompt";
-import ChatContainer from "@/_components/ChatContainer";
-import { CompactSideBar } from "@/_components/CompactSideBar";
-import { SidebarLeft } from "@/_components/SidebarLeft";
 import { ApolloWrapper } from "./_helpers/ApolloWrapper";
-import { MobxWrapper } from "./_helpers/MobxWrapper";
 import { ThemeWrapper } from "./_helpers/ThemeWrapper";
+import JotaiWrapper from "./_helpers/JotaiWrapper";
+import LeftContainer from "./_components/LeftContainer";
+import RightContainer from "./_components/RightContainer";
+import { ModalWrapper } from "./_helpers/ModalWrapper";
 
-const Page: React.FC = () => {
-  return (
-    <ApolloWrapper>
-      <MobxWrapper>
-        <ThemeWrapper>
-          <div className="flex w-full h-screen">
-            <div className="flex h-screen z-100">
-              <SidebarLeft />
-              <CompactSideBar />
-              <AdvancedPrompt />
-            </div>
-            <div className="w-full max-h-screen flex-1 flex flex-col">
-              <div className="flex-shrink-0 flex-0">
-                <Header />
-              </div>
-              <ChatContainer />
-            </div>
+const Page: React.FC = () => (
+  <ApolloWrapper>
+    <JotaiWrapper>
+      <ThemeWrapper>
+        <ModalWrapper>
+          <div className="flex">
+            <LeftContainer />
+            <RightContainer />
           </div>
-        </ThemeWrapper>
-      </MobxWrapper>
-    </ApolloWrapper>
-  );
-};
+        </ModalWrapper>
+      </ThemeWrapper>
+    </JotaiWrapper>
+  </ApolloWrapper>
+);
 
 export default Page;

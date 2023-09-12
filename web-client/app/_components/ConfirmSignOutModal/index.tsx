@@ -1,22 +1,21 @@
 import React, { Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
+import { showConfirmSignOutModalAtom } from "@/_helpers/JotaiWrapper";
+import { useAtom } from "jotai";
+import useSignOut from "@/_hooks/useSignOut";
 
-type Props = {
-  open: boolean;
-  setOpen: (open: boolean) => void;
-  onConfirm: () => void;
-};
+const ConfirmSignOutModal: React.FC = () => {
+  const [show, setShow] = useAtom(showConfirmSignOutModalAtom);
+  const { signOut } = useSignOut();
 
-const ConfirmSignOutModal: React.FC<Props> = ({ open, setOpen, onConfirm }) => {
   const onLogOutClick = () => {
-    onConfirm();
-    setOpen(false);
+    signOut().then(() => setShow(false));
   };
 
   return (
-    <Transition.Root show={open} as={Fragment}>
-      <Dialog as="div" className="relative z-10" onClose={setOpen}>
+    <Transition.Root show={show} as={Fragment}>
+      <Dialog as="div" className="relative z-10" onClose={setShow}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -73,7 +72,7 @@ const ConfirmSignOutModal: React.FC<Props> = ({ open, setOpen, onConfirm }) => {
                   <button
                     type="button"
                     className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
-                    onClick={() => setOpen(false)}
+                    onClick={() => setShow(false)}
                   >
                     Cancel
                   </button>

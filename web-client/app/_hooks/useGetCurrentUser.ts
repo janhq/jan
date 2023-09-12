@@ -1,15 +1,15 @@
 // @ts-nocheck
-import { DefaultUser, User } from "@/_models/User";
-import { Instance } from "mobx-state-tree";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import useSignOut from "./useSignOut";
+import { DefaultUser, User } from "@/_models/User";
 
 export default function useGetCurrentUser() {
   const { data: session, status } = useSession();
   const { signOut } = useSignOut();
   const [loading, setLoading] = useState(status === "loading");
-  const [user, setUser] = useState<Instance<typeof User>>();
+  const [user, setUser] = useState<User>();
+
   useEffect(() => {
     if (
       status !== "loading" &&

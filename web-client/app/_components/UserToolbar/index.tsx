@@ -1,12 +1,11 @@
-import { observer } from "mobx-react-lite";
-import { useStore } from "@/_models/RootStore";
+import { currentConversationAtom } from "@/_helpers/JotaiWrapper";
+import { useAtomValue } from "jotai";
 
-export const UserToolbar: React.FC = observer(() => {
-  const { historyStore } = useStore();
-  const conversation = historyStore.getActiveConversation();
+const UserToolbar: React.FC = () => {
+  const currentConvo = useAtomValue(currentConversationAtom);
 
-  const avatarUrl = conversation?.product.avatarUrl ?? "";
-  const title = conversation?.product.name ?? "";
+  const avatarUrl = currentConvo?.product.avatarUrl ?? "";
+  const title = currentConvo?.product.name ?? "";
 
   return (
     <div className="flex items-center gap-3 p-1">
@@ -20,4 +19,6 @@ export const UserToolbar: React.FC = observer(() => {
       </span>
     </div>
   );
-});
+};
+
+export default UserToolbar;

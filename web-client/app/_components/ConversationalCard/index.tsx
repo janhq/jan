@@ -1,18 +1,16 @@
 import React from "react";
 import Image from "next/image";
-import {
-  ProductDetailFragment,
-} from "@/graphql";
 import useCreateConversation from "@/_hooks/useCreateConversation";
+import { Product } from "@/_models/Product";
 
 type Props = {
-  product: ProductDetailFragment;
+  product: Product;
 };
 
 const ConversationalCard: React.FC<Props> = ({ product }) => {
   const { requestCreateConvo } = useCreateConversation();
 
-  const { name, image_url, description } = product;
+  const { name, avatarUrl, description } = product;
 
   return (
     <button
@@ -25,7 +23,7 @@ const ConversationalCard: React.FC<Props> = ({ product }) => {
         <Image
           width={32}
           height={32}
-          src={image_url ?? ""}
+          src={avatarUrl ?? ""}
           className="rounded-full"
           alt=""
         />

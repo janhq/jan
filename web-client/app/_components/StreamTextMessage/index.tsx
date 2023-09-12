@@ -2,15 +2,17 @@ import React, { useEffect } from "react";
 import { displayDate } from "@/_utils/datetime";
 import { TextCode } from "../TextCode";
 import { getMessageCode } from "@/_utils/message";
-import { useSubscription } from "@apollo/client";
+import Image from "next/image";
+import useChatMessageSubscription from "@/_hooks/useChatMessageSubscription";
 import {
-  SubscribeMessageDocument,
-  SubscribeMessageSubscription,
-} from "@/graphql";
-import { useStore } from "@/_models/RootStore";
+  updateLastMessageAsReadyAtom,
+  updateConversationWaitingForResponseAtom,
+  getActiveConvoIdAtom,
+} from "@/_helpers/JotaiWrapper";
+import { useAtomValue, useSetAtom } from "jotai";
 
 type Props = {
-  id?: string;
+  id: string;
   avatarUrl?: string;
   senderName: string;
   createdAt: number;
@@ -25,49 +27,44 @@ const StreamTextMessage: React.FC<Props> = ({
   text = "",
 }) => {
   const [textMessage, setTextMessage] = React.useState(text);
-  const [completedTyping, setCompletedTyping] = React.useState(false);
   const tokenIndex = React.useRef(0);
-  const { historyStore } = useStore();
-  const { data } = useSubscription<SubscribeMessageSubscription>(
-    SubscribeMessageDocument,
-    {
-      variables: {
-        id,
-      },
-    }
+  const { data } = useChatMessageSubscription(id);
+
+  const convoId = useAtomValue(getActiveConvoIdAtom);
+  const updateLastMessageAsReady = useSetAtom(updateLastMessageAsReadyAtom);
+  const updateConversationWaiting = useSetAtom(
+    updateConversationWaitingForResponseAtom
   );
 
   useEffect(() => {
-    if (
-      data?.messages_by_pk?.content &&
-      data.messages_by_pk.content.length > text.length
-    ) {
-      historyStore.finishActiveConversationWaiting();
-    }
-  }, [data, text]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    setCompletedTyping(false);
-
     const stringResponse = data?.messages_by_pk?.content ?? text;
+
+    if (data?.messages_by_pk?.status === "ready") {
+      updateLastMessageAsReady(
+        data.messages_by_pk.id,
+        data.messages_by_pk.content ?? ""
+      );
+
+      if (convoId) {
+        updateConversationWaiting(convoId, false);
+      }
+    }
 
     const intervalId = setInterval(() => {
       setTextMessage(stringResponse.slice(0, tokenIndex.current));
 
       tokenIndex.current++;
-
       if (tokenIndex.current > stringResponse.length) {
         clearInterval(intervalId);
-        setCompletedTyping(true);
       }
     }, 20);
 
     return () => clearInterval(intervalId);
-  }, [data?.messages_by_pk?.content, text]);
+  }, [data?.messages_by_pk?.content, text, data?.messages_by_pk?.status]);
 
   return textMessage.length > 0 ? (
-    <div className="flex items-start gap-2">
-      <img
+    <div className="flex items-start gap-2 ml-3">
+      <Image
         className="rounded-full"
         src={avatarUrl}
         width={32}

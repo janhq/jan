@@ -21,7 +21,7 @@ const MobileDownload = () => {
       {/** Buttons */}
       <div className="flex w-full mt-4 justify-between">
         <a
-          href={process.env.NEXT_PUBLIC_DOWNLOAD_APP_IOS || "#"}
+          href={process.env.NEXT_PUBLIC_DOWNLOAD_APP_IOS || ""}
           target="_blank"
           rel="noopener noreferrer"
           className="w-[48%]"
@@ -42,7 +42,7 @@ const MobileDownload = () => {
         </a>
 
         <a
-          href={process.env.NEXT_PUBLIC_DOWNLOAD_APP_ANDROID || "#"}
+          href={process.env.NEXT_PUBLIC_DOWNLOAD_APP_ANDROID || ""}
           target="_blank"
           rel="noopener noreferrer"
           className="w-[48%]"
