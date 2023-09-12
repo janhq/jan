@@ -128,7 +128,6 @@ export const ChatBody: React.FC<Props> = observer(({ onPromptSelected }) => {
 const renderItem = (
   index: number,
   {
-    id,
     messageType,
     senderAvatarUrl,
     senderName,
@@ -173,11 +172,9 @@ const renderItem = (
       ) : (
         <StreamTextMessage
           key={index}
-          id={id}
           avatarUrl={senderAvatarUrl ?? "/icons/app_icon.svg"}
           senderName={senderName}
           createdAt={createdAt}
-          text={text}
         />
       );
     default:
