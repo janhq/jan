@@ -1,0 +1,150 @@
+# docker version
+version: "3"
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION-22.0.0}
+    command: ["start-dev", "--import-realm", "--http-port", "8088"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: jan-keycloak
+      KC_DB_PASSWORD: postgrespassword
+      KC_DB_USERNAME: postgres
+      KC_DB_SCHEMA: public
+      KC_HEALTH_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD-admin}
+    volumes:
+      - ./conf/keycloak_conf:/opt/keycloak/data/import
+      - ./conf/keycloak_theme/keywind:/opt/keycloak/themes/keywind
+    ports:
+      - "8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      jan_local:
+        ipv4_address: 172.20.0.9
+
+  postgres:
+    image: postgres:15
+    command: postgres -c jit=off
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: "exit 0"
+    volumes: 
+      - ./conf/db/docker_psql_init.sql:/docker-entrypoint-initdb.d/docker_postgres_init.sql
+    networks:
+      jan_local:
+        ipv4_address: 172.20.0.11
+
+  graphql-engine:
+    image: hasura/graphql-engine:v2.31.0.cli-migrations-v3
+    ports:
+      - 8080:8080
+    restart: always
+    env_file:
+      - conf/sample.env_app-backend
+    volumes:
+      - ./app-backend/hasura/migrations:/migrations
+      - ./app-backend/hasura/metadata:/metadata
+    depends_on:
+      data-connector-agent:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    networks:
+      jan_local:
+        ipv4_address: 172.20.0.12
+
+  worker:
+    build:
+      context: ./app-backend/worker
+      dockerfile: ./Dockerfile
+    restart: always
+    environment:
+      - "NODE_ENV=development"
+    volumes:
+      - ./app-backend/worker:/worker
+    ports:
+      - 8787:8787
+    networks:
+      jan_local:
+        ipv4_address: 172.20.0.13
+
+  data-connector-agent:
+    image: hasura/graphql-data-connector:v2.31.0
+    restart: always
+    ports:
+      - 8081:8081
+    environment:
+      QUARKUS_LOG_LEVEL: ERROR # FATAL, ERROR, WARN, INFO, DEBUG, TRACE
+      ## https://quarkus.io/guides/opentelemetry#configuration-reference
+      QUARKUS_OPENTELEMETRY_ENABLED: "false"
+      ## QUARKUS_OPENTELEMETRY_TRACER_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/api/v1/athena/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 5s
+    networks:
+      jan_local:
+        ipv4_address: 172.20.0.14
+
+  web:
+    build:
+      context: ./web-client
+      dockerfile: ./dev.Dockerfile
+    restart: always
+    volumes:
+      - ./web-client/:/app
+      - /app/node_modules
+      - /app/.next
+    env_file:
+      - conf/sample.env_web-client
+    ports:
+      - 3000:3000
+    environment:
+      NODE_ENV: development
+    extra_hosts:
+      - "localhost:172.20.0.9"
+    depends_on:
+      graphql-engine:
+        condition: service_healthy
+    networks:
+      jan_local:
+        ipv4_address: 172.20.0.15
+
+  llm:
+    image: ghcr.io/abetlen/llama-cpp-python@sha256:b6d21ff8c4d9baad65e1fa741a0f8c898d68735fff3f3cd777e3f0c6a1839dd4
+    volumes:
+      - ./jan-inference/llm/models:/models
+    ports:
+      - 8000:8000
+    environment:
+      MODEL: /models/${LLM_MODEL_FILE}
+      PYTHONUNBUFFERED: 1
+    restart: on-failure
+    networks:
+      jan_local:
+        ipv4_address: 172.20.0.18
+
+networks:
+  jan_local:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
