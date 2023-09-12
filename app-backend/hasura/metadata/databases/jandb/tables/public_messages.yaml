@@ -84,14 +84,3 @@ delete_permissions:
           user_id:
             _eq: X-Hasura-User-Id
     comment: ""
-event_triggers:
-  - name: new_llm_message
-    definition:
-      enable_manual: false
-      insert:
-        columns: '*'
-    retry_conf:
-      interval_sec: 10
-      num_retries: 0
-      timeout_sec: 60
-    webhook: '{{HASURA_EVENTS_HOOK_URL}}'

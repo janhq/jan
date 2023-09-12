@@ -1,13 +1,9 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { displayDate } from "@/_utils/datetime";
-import { TextCode } from "../TextCode";
-import { getMessageCode } from "@/_utils/message";
-import { useSubscription } from "@apollo/client";
-import {
-  SubscribeMessageDocument,
-  SubscribeMessageSubscription,
-} from "@/graphql";
 import { useStore } from "@/_models/RootStore";
+import { StreamingText, StreamingTextURL, useTextBuffer } from "nextjs-openai";
+import { MessageSenderType } from "@/_models/ChatMessage";
+import { Role } from "@/_models/History";
 
 type Props = {
   id?: string;
@@ -18,54 +14,52 @@ type Props = {
 };
 
 const StreamTextMessage: React.FC<Props> = ({
-  id,
   senderName,
   createdAt,
   avatarUrl = "",
-  text = "",
 }) => {
-  const [textMessage, setTextMessage] = React.useState(text);
-  const [completedTyping, setCompletedTyping] = React.useState(false);
-  const tokenIndex = React.useRef(0);
+  const [data, setData] = React.useState<any | undefined>();
   const { historyStore } = useStore();
-  const { data } = useSubscription<SubscribeMessageSubscription>(
-    SubscribeMessageDocument,
-    {
-      variables: {
-        id,
+  const conversation = historyStore?.getActiveConversation();
+
+  React.useEffect(() => {
+    const messages = conversation?.chatMessages.slice(-5).map((e) => ({
+      role:
+        e.messageSenderType === MessageSenderType.User
+          ? Role.User
+          : Role.Assistant,
+      content: e.text,
+    }));
+    setData({
+      messages,
+      stream: true,
+      model: "gpt-3.5-turbo",
+      max_tokens: 500,
+    });
+  }, [conversation]);
+
+  const { buffer, refresh, cancel } = useTextBuffer({
+    url: `${process.env.NEXT_PUBLIC_OPENAPI_ENDPOINT}`,
+    throttle: 100,
+    data,
+
+    options: {
+      headers: {
+        "Content-Type": "application/json",
       },
+    },
+  });
+
+  const parsedBuffer = (buffer: String) => {
+    try {
+      const json = buffer.replace("data: ", "");
+      return JSON.parse(json).choices[0].text;
+    } catch (e) {
+      return "";
     }
-  );
+  };
 
-  useEffect(() => {
-    if (
-      data?.messages_by_pk?.content &&
-      data.messages_by_pk.content.length > text.length
-    ) {
-      historyStore.finishActiveConversationWaiting();
-    }
-  }, [data, text]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    setCompletedTyping(false);
-
-    const stringResponse = data?.messages_by_pk?.content ?? text;
-
-    const intervalId = setInterval(() => {
-      setTextMessage(stringResponse.slice(0, tokenIndex.current));
-
-      tokenIndex.current++;
-
-      if (tokenIndex.current > stringResponse.length) {
-        clearInterval(intervalId);
-        setCompletedTyping(true);
-      }
-    }, 20);
-
-    return () => clearInterval(intervalId);
-  }, [data?.messages_by_pk?.content, text]);
-
-  return textMessage.length > 0 ? (
+  return data ? (
     <div className="flex items-start gap-2">
       <img
         className="rounded-full"
@@ -83,20 +77,11 @@ const StreamTextMessage: React.FC<Props> = ({
             {displayDate(createdAt)}
           </div>
         </div>
-        {textMessage.includes("```") ? (
-          getMessageCode(textMessage).map((item, i) => (
-            <div className="flex gap-1 flex-col" key={i}>
-              <p className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
-                {item.text}
-              </p>
-              {item.code.trim().length > 0 && <TextCode text={item.code} />}
-            </div>
-          ))
-        ) : (
-          <p className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
-            {textMessage}
-          </p>
-        )}
+        <div className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
+          <StreamingText
+            buffer={buffer.map((b) => parsedBuffer(b))}
+          ></StreamingText>
+        </div>
       </div>
     </div>
   ) : (
