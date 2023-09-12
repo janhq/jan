@@ -136,14 +136,13 @@ pip install 'llama-cpp-python[server]'
 
 We recommend that Llama2-7B (4-bit quantized) as a basic model to get started.
 
-You will need to download the models to the `models` folder.
+You will need to download the models to the `models` folder at root level.
 
 ```shell
-mkdir -p models
 # Downloads model (~4gb)
 # Download time depends on your internet connection and HuggingFace's bandwidth
 # In this part, please head over to any source contains `.gguf` format model - https://huggingface.co/models?search=gguf
-wget LLM_MODEL_URL=https://huggingface.co/TheBloke/CodeLlama-13B-GGUF/resolve/main/codellama-13b.Q3_K_L.gguf -P models
+wget https://huggingface.co/TheBloke/CodeLlama-13B-GGUF/resolve/main/codellama-13b.Q3_K_L.gguf -P models
 ```
 
 - Run the model in host machine
