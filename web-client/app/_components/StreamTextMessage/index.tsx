@@ -1,9 +1,16 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { displayDate } from "@/_utils/datetime";
 import { useStore } from "@/_models/RootStore";
-import { StreamingText, StreamingTextURL, useTextBuffer } from "nextjs-openai";
-import { MessageSenderType } from "@/_models/ChatMessage";
+import { StreamingText, useTextBuffer } from "nextjs-openai";
+import { MessageSenderType, MessageStatus } from "@/_models/ChatMessage";
 import { Role } from "@/_models/History";
+import { useMutation } from "@apollo/client";
+import { OpenAI } from "openai-streams";
+import {
+  UpdateMessageDocument,
+  UpdateMessageMutation,
+  UpdateMessageMutationVariables,
+} from "@/graphql";
 
 type Props = {
   id?: string;
@@ -14,6 +21,7 @@ type Props = {
 };
 
 const StreamTextMessage: React.FC<Props> = ({
+  id,
   senderName,
   createdAt,
   avatarUrl = "",
@@ -21,43 +29,59 @@ const StreamTextMessage: React.FC<Props> = ({
   const [data, setData] = React.useState<any | undefined>();
   const { historyStore } = useStore();
   const conversation = historyStore?.getActiveConversation();
+  const [updateMessage] = useMutation<UpdateMessageMutation>(
+    UpdateMessageDocument
+  );
 
   React.useEffect(() => {
-    const messages = conversation?.chatMessages.slice(-5).map((e) => ({
-      role:
-        e.messageSenderType === MessageSenderType.User
-          ? Role.User
-          : Role.Assistant,
-      content: e.text,
-    }));
+    if (
+      !conversation ||
+      conversation.chatMessages.findIndex((e) => e.id === id) !==
+        conversation.chatMessages.length - 1
+    ) {
+      return;
+    }
+    const messages = conversation?.chatMessages
+      .slice(-10)
+      .filter((e) => e.id !== id)
+      .map((e) => ({
+        role:
+          e.messageSenderType === MessageSenderType.User
+            ? Role.User
+            : Role.Assistant,
+        content: e.text,
+      }));
     setData({
       messages,
-      stream: true,
-      model: "gpt-3.5-turbo",
-      max_tokens: 500,
     });
   }, [conversation]);
 
-  const { buffer, refresh, cancel } = useTextBuffer({
-    url: `${process.env.NEXT_PUBLIC_OPENAPI_ENDPOINT}`,
-    throttle: 100,
+  const { buffer, done } = useTextBuffer({
+    url: `api/openai`,
     data,
-
-    options: {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    },
   });
 
-  const parsedBuffer = (buffer: String) => {
-    try {
-      const json = buffer.replace("data: ", "");
-      return JSON.parse(json).choices[0].text;
-    } catch (e) {
-      return "";
+  useEffect(() => {
+    if (done) {
+      // mutate result
+      const variables: UpdateMessageMutationVariables = {
+        id: id,
+        data: {
+          content: buffer.join(""),
+          status: MessageStatus.Ready,
+        },
+      };
+      updateMessage({
+        variables,
+      });
     }
-  };
+  }, [done]);
+
+  useEffect(() => {
+    if (buffer.length > 0 && conversation?.isWaitingForModelResponse) {
+      historyStore.finishActiveConversationWaiting();
+    }
+  }, [buffer]);
 
   return data ? (
     <div className="flex items-start gap-2">
@@ -78,9 +102,7 @@ const StreamTextMessage: React.FC<Props> = ({
           </div>
         </div>
         <div className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
-          <StreamingText
-            buffer={buffer.map((b) => parsedBuffer(b))}
-          ></StreamingText>
+          <StreamingText buffer={buffer} fade={100} />
         </div>
       </div>
     </div>
