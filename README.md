@@ -20,7 +20,11 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan is a self-hosted AI Platform. We help you run AI on your own hardware, giving you full control and protecting your enterprises' data and IP. 
+Jan is a self-hosted AI Platform to run AI in the enterprise. Easy-to use for users, and packed with useful organizational and security features.
+
+We help you run AI on your own hardware, with 1-click installs for the latest models. Jan runs on a wide variety of hardware: from consumer grade Mac Minis, to datacenter-grade Nvidia H100s. 
+
+Jan can also connect to the latest AI engines like ChatGPT, with a security policy engine to protect your organization from sensitive data leaks.
 
 Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 
@@ -28,15 +32,23 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 
 👋 https://cloud.jan.ai
 
+<p align="center">
+  <img style='border:1px solid #000000' src="https://github.com/janhq/jan/assets/69952136/1f9bb48c-2e70-4633-9f68-7881cd925972" alt="Jan Web GIF">
+</p>
+
 ## Features
 
-**Multiple AI Engines**
+**Self-Hosted AI**
 - [x] Self-hosted Llama2 and LLMs 
 - [x] Self-hosted StableDiffusion and Controlnet
-- [ ] Connect to ChatGPT, Claude via API Key (coming soon)
 - [ ] 1-click installs for Models (coming soon)
 
-**Cross-Platform**
+**3rd-party AIs**
+- [ ] Connect to ChatGPT, Claude via API Key (coming soon)
+- [ ] Security policy engine for 3rd-party AIs (coming soon)
+- [ ] Pre-flight PII and Sensitive Data checks (coming soon)
+
+**Multi-Device**
 - [x] Web App
 - [ ] Jan Mobile support for custom Jan server (in progress)
 - [ ] Cloud deployments (coming soon)
@@ -44,14 +56,14 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 **Organization Tools**
 - [x] Multi-user support 
 - [ ] Audit and Usage logs (coming soon)
-- [ ] Compliance and Audit (coming soon)
-- [ ] PII and Sensitive Data policy engine for 3rd-party AIs (coming soon)
+- [ ] Compliance and Audit policy (coming soon)
 
 **Hardware Support**
 
-- [ ] Nvidia GPUs 
+- [x] Nvidia GPUs 
 - [ ] Apple Silicon (in progress)
 - [ ] CPU support via llama.cpp (in progress)
+- [ ] Nvidia GPUs using TensorRT (in progress)
 
 ## Documentation
 
