@@ -32,6 +32,8 @@ progress() {
 }
 step=1
 
+mkdir -p models/
+
 ### macOS setup
 if [[ "$OSTYPE" == "darwin"* ]]; then
     MAX_STEPS=13
@@ -124,10 +126,10 @@ progress 'cp -f sample.env .env' "Prepare .env file" $((step++))
 ###
 
 ### Download Model
-if [ -f "jan-inference/llm/models/llama-2-7b.Q4_K_S.gguf" ]; then
+if [ -f "/models/llama-2-7b.Q4_K_S.gguf" ]; then
     progress '' "Llama model - Installed" $((step++))
 else
-    progress 'wget https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_S.gguf -P jan-inference/llm/models' "Download Llama model" $((step++))
+    progress 'wget https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_S.gguf -P models' "Download Llama model" $((step++))
 fi
 ###
 
