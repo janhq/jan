@@ -5,7 +5,6 @@ import { StreamingText, useTextBuffer } from "nextjs-openai";
 import { MessageSenderType, MessageStatus } from "@/_models/ChatMessage";
 import { Role } from "@/_models/History";
 import { useMutation } from "@apollo/client";
-import { OpenAI } from "openai-streams";
 import {
   UpdateMessageDocument,
   UpdateMessageMutation,
@@ -52,15 +51,36 @@ const StreamTextMessage: React.FC<Props> = ({
         content: e.text,
       }));
     setData({
+      model: "gpt-3.5-turbo",
+      stream: true,
       messages,
+      max_tokens: 500,
     });
   }, [conversation]);
 
   const { buffer, done } = useTextBuffer({
-    url: `api/openai`,
+    url: `${process.env.NEXT_PUBLIC_OPEN_AI_ENDPOINT}`,
     data,
+    options: {
+      cache: "no-cache",
+      keepalive: true,
+      // mode: "no-cors",
+      headers: {
+        Accept: "text/event-stream",
+        "Content-Type": "application/json",
+      },
+    },
   });
 
+  const parsedBuffer = (buffer: String) => {
+    try {
+      console.log(buffer)
+      const json = buffer.replace("data: ", "");
+      return JSON.parse(json).choices[0].delta.content;
+    } catch (e) {
+      return "";
+    }
+  };
   useEffect(() => {
     if (done) {
       // mutate result
@@ -102,7 +122,10 @@ const StreamTextMessage: React.FC<Props> = ({
           </div>
         </div>
         <div className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
-          <StreamingText buffer={buffer} fade={100} />
+          <StreamingText
+            buffer={buffer.map((e) => parsedBuffer(e))}
+            fade={100}
+          />
         </div>
       </div>
     </div>
