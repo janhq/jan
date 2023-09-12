@@ -1,32 +1,30 @@
-import { useStore } from "@/_models/RootStore";
+import {
+  getActiveConvoIdAtom,
+  setActiveConvoIdAtom,
+} from "@/_helpers/JotaiWrapper";
+import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
-import React from "react";
 
 type Props = {
   imageUrl: string;
-  isSelected: boolean;
   conversationId: string;
 };
 
-const CompactHistoryItem: React.FC<Props> = ({
-  imageUrl,
-  isSelected,
-  conversationId,
-}) => {
-  const { historyStore } = useStore();
-  const onClick = () => {
-    historyStore.setActiveConversationId(conversationId);
-  };
+const CompactHistoryItem: React.FC<Props> = ({ imageUrl, conversationId }) => {
+  const activeConvoId = useAtomValue(getActiveConvoIdAtom);
+  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
+
+  const isSelected = activeConvoId === conversationId;
 
   return (
     <button
-      onClick={onClick}
+      onClick={() => setActiveConvoId(conversationId)}
       className={`${
         isSelected ? "bg-gray-100" : "bg-transparent"
-      } p-2 rounded-lg`}
+      } w-14 h-14 rounded-lg`}
     >
       <Image
-        className="rounded-full"
+        className="rounded-full mx-auto"
         src={imageUrl}
         width={36}
         height={36}
@@ -36,4 +34,4 @@ const CompactHistoryItem: React.FC<Props> = ({
   );
 };
 
-export default React.memo(CompactHistoryItem);
+export default CompactHistoryItem;

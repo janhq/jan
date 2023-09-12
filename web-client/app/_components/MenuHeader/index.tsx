@@ -2,12 +2,11 @@ import Link from "next/link";
 import { Popover, Transition } from "@headlessui/react";
 import { Fragment } from "react";
 import useGetCurrentUser from "@/_hooks/useGetCurrentUser";
+import { useSetAtom } from "jotai";
+import { showConfirmSignOutModalAtom } from "@/_helpers/JotaiWrapper";
 
-type Props = {
-  onLogOutClick: () => void;
-};
-
-export const MenuHeader: React.FC<Props> = ({ onLogOutClick }) => {
+export const MenuHeader: React.FC = () => {
+  const setShowConfirmSignOutModal = useSetAtom(showConfirmSignOutModalAtom);
   const { user } = useGetCurrentUser();
 
   if (!user) {
@@ -24,7 +23,7 @@ export const MenuHeader: React.FC<Props> = ({ onLogOutClick }) => {
       leaveFrom="opacity-100 translate-y-0"
       leaveTo="opacity-0 translate-y-1"
     >
-      <Popover.Panel className="absolute  shadow-profile -right-2 top-full z-10 mt-3 w-[224px] overflow-hidden rounded-[6px] bg-white shadow-lg ring-1 ring-gray-200">
+      <Popover.Panel className="absolute shadow-profile -right-2 top-full z-10 mt-3 w-[224px] overflow-hidden rounded-[6px] bg-white shadow-lg ring-1 ring-gray-200">
         <div className="py-3 px-4 gap-2 flex flex-col">
           <h2 className="text-[20px] leading-[25px] tracking-[-0.4px] font-bold text-[#111928]">
             {user.displayName}
@@ -35,7 +34,7 @@ export const MenuHeader: React.FC<Props> = ({ onLogOutClick }) => {
         </div>
         <hr />
         <button
-          onClick={onLogOutClick}
+          onClick={() => setShowConfirmSignOutModal(true)}
           className="px-4 py-3 text-sm w-full text-left text-gray-700"
         >
           Sign Out

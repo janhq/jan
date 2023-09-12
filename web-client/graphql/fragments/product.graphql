@@ -13,4 +13,6 @@ fragment ProductDetail on products {
   inputs
   outputs
   nsfw
+  created_at
+  updated_at
 }

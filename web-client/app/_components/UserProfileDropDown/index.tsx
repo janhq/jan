@@ -1,13 +1,11 @@
+"use client";
+
 import React from "react";
 import { Popover } from "@headlessui/react";
 import { MenuHeader } from "../MenuHeader";
 import useGetCurrentUser from "@/_hooks/useGetCurrentUser";
 
-type Props = {
-  onLogOutClick: () => void;
-};
-
-const UserProfileDropDown: React.FC<Props> = ({ onLogOutClick }) => {
+const UserProfileDropDown: React.FC = () => {
   const { loading, user } = useGetCurrentUser();
 
   if (loading || !user) {
@@ -29,7 +27,7 @@ const UserProfileDropDown: React.FC<Props> = ({ onLogOutClick }) => {
             </h2>
           </div>
         </Popover.Button>
-        <MenuHeader onLogOutClick={onLogOutClick} />
+        <MenuHeader />
       </Popover>
     </Popover.Group>
   );

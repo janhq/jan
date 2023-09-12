@@ -1,13 +1,13 @@
 import useCreateConversation from "@/_hooks/useCreateConversation";
-import { ProductDetailFragment } from "@/graphql";
+import { Product } from "@/_models/Product";
 import Image from "next/image";
 
 type Props = {
-  product: ProductDetailFragment;
+  product: Product;
 };
 
 const Slide: React.FC<Props> = ({ product }) => {
-  const { name, image_url, description } = product;
+  const { name, avatarUrl, description } = product;
   const { requestCreateConvo } = useCreateConversation();
 
   const onClick = () => {
@@ -17,9 +17,10 @@ const Slide: React.FC<Props> = ({ product }) => {
   return (
     <div className="w-full embla__slide h-[435px] relative">
       <Image
-        className="object-cover w-full h-full embla__slide__img"
-        src={image_url ?? ""}
-        layout="fill"
+        className="w-full h-auto embla__slide__img"
+        src={avatarUrl}
+        fill
+        priority
         alt=""
       />
       <div className="absolute bg-[rgba(0,0,0,0.7)] w-full text-white bottom-0 right-0">

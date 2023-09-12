@@ -2,10 +2,10 @@ import { FC, useCallback, useEffect, useState } from "react";
 import Slide from "../Slide";
 import useEmblaCarousel, { EmblaCarouselType } from "embla-carousel-react";
 import { NextButton, PrevButton } from "../ButtonSlider";
-import { ProductDetailFragment } from "@/graphql";
+import { Product } from "@/_models/Product";
 
 type Props = {
-  products: ProductDetailFragment[];
+  products: Product[];
 };
 
 const Slider: FC<Props> = ({ products }) => {
@@ -35,12 +35,12 @@ const Slider: FC<Props> = ({ products }) => {
   }, [emblaApi, onSelect]);
 
   return (
-    <div className="embla rounded-lg overflow-hidden relative">
+    <div className="embla rounded-lg overflow-hidden relative mt-6 mx-6">
       <div className="embla__viewport" ref={emblaRef}>
         <div className="embla__container">
-          {products.map((product) => {
-            return <Slide key={product.slug} product={product} />;
-          })}
+          {products.map((product) => (
+            <Slide key={product.slug} product={product} />
+          ))}
         </div>
       </div>
       <div className="embla__buttons">

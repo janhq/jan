@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import React, { PropsWithChildren } from "react";
 
 type PropType = PropsWithChildren<
@@ -17,13 +17,7 @@ export const PrevButton: React.FC<PropType> = (props) => {
       type="button"
       {...restProps}
     >
-      <Image
-        className="rotate-180"
-        src={"/icons/chevron-right.svg"}
-        width={20}
-        height={20}
-        alt=""
-      />
+      <ChevronLeftIcon width={20} height={20} />
       {children}
     </button>
   );
@@ -38,7 +32,7 @@ export const NextButton: React.FC<PropType> = (props) => {
       type="button"
       {...restProps}
     >
-      <Image src={"/icons/chevron-right.svg"} width={20} height={20} alt="" />
+      <ChevronRightIcon width={20} height={20} />
       {children}
     </button>
   );

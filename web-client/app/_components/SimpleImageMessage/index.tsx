@@ -2,15 +2,6 @@ import Image from "next/image";
 import JanImage from "../JanImage";
 import { displayDate } from "@/_utils/datetime";
 import Link from "next/link";
-import { useStore } from "@/_models/RootStore";
-import useGetCurrentUser from "@/_hooks/useGetCurrentUser";
-import {
-  CreateMessageMutation,
-  CreateMessageDocument,
-  GenerateImageMutation,
-  GenerateImageDocument,
-} from "@/graphql";
-import { useMutation } from "@apollo/client";
 
 type Props = {
   avatarUrl?: string;
@@ -27,31 +18,7 @@ const SimpleImageMessage: React.FC<Props> = ({
   text,
   createdAt,
 }) => {
-  const { historyStore } = useStore();
-  const { user } = useGetCurrentUser();
-  const [createMessageMutation] = useMutation<CreateMessageMutation>(
-    CreateMessageDocument
-  );
-  const [imageGenerationMutation] = useMutation<GenerateImageMutation>(
-    GenerateImageDocument
-  );
-
-  const onRegenerate = () => {
-    if (!user) {
-      // TODO: we should show an error here
-      return;
-    }
-
-    historyStore.sendMessage(
-      createMessageMutation,
-      imageGenerationMutation,
-      text ?? "",
-      user.id,
-      senderName,
-      avatarUrl
-    );
-  };
-
+  // TODO handle regenerate image case
   return (
     <div className="flex items-start gap-2">
       <img
@@ -88,7 +55,7 @@ const SimpleImageMessage: React.FC<Props> = ({
             </Link>
             <button
               className="flex gap-1 items-center px-2 py-1 bg-[#F3F4F6] rounded-[12px]"
-              onClick={onRegenerate}
+              // onClick={() => sendChatMessage()}
             >
               <Image src="/icons/refresh.svg" width={16} height={16} alt="" />
               <span className="leading-[20px] text-[14px] text-[#111928]">

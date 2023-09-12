@@ -1,23 +1,21 @@
 import useCreateConversation from "@/_hooks/useCreateConversation";
-import { ProductDetailFragment } from "@/graphql";
-import { useCallback } from "react";
+import { Product } from "@/_models/Product";
 
 type Props = {
-  product: ProductDetailFragment;
+  product: Product;
 };
 
 const GenerateImageCard: React.FC<Props> = ({ product }) => {
-  const { name, image_url } = product;
+  const { name, avatarUrl } = product;
   const { requestCreateConvo } = useCreateConversation();
 
-  const onClick = useCallback(() => {
-    requestCreateConvo(product);
-  }, [product]);
-
   return (
-    <button onClick={onClick} className="relative active:opacity-50 text-left">
+    <button
+      onClick={() => requestCreateConvo(product)}
+      className="relative active:opacity-50 text-left"
+    >
       <img
-        src={image_url ?? ""}
+        src={avatarUrl}
         alt=""
         className="w-full h-full rounded-[8px] bg-gray-200 group-hover:opacity-75 object-cover object-center"
       />

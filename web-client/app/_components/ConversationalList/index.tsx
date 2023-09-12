@@ -1,22 +1,22 @@
+import { Product } from "@/_models/Product";
 import ConversationalCard from "../ConversationalCard";
-import Image from "next/image";
-import { ProductDetailFragment } from "@/graphql";
+import { ChatBubbleBottomCenterTextIcon } from "@heroicons/react/24/outline";
 
 type Props = {
-  products: ProductDetailFragment[];
+  products: Product[];
 };
 
 const ConversationalList: React.FC<Props> = ({ products }) => (
   <>
     <div className="flex items-center gap-3 mt-8 mb-2">
-      <Image src={"/icons/messicon.svg"} width={24} height={24} alt="" />
+      <ChatBubbleBottomCenterTextIcon width={24} height={24} className="ml-6" />
       <span className="font-semibold text-gray-900 dark:text-white">
         Conversational
       </span>
     </div>
-    <div className="mt-2 flex w-full gap-2 overflow-x-scroll scroll overflow-hidden">
+    <div className="mt-2 pl-6 flex w-full gap-2 overflow-x-scroll scroll overflow-hidden">
       {products.map((item) => (
-        <ConversationalCard key={item.name} product={item} />
+        <ConversationalCard key={item.slug} product={item} />
       ))}
     </div>
   </>

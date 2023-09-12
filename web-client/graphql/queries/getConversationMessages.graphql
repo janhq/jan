@@ -7,7 +7,7 @@ query getConversationMessages(
     offset: $offset,
     limit: $limit,
     where: { conversation_id: { _eq: $conversation_id } },
-    order_by: {updated_at: desc}
+    order_by: {created_at: desc}
   ) {
     ...MessageDetail
   }

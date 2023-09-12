@@ -1,30 +1,25 @@
 import JanWelcomeTitle from "../JanWelcomeTitle";
-import { Product } from "@/_models/Product";
-import { Instance } from "mobx-state-tree";
 import { GetProductPromptsQuery, GetProductPromptsDocument } from "@/graphql";
 import { useQuery } from "@apollo/client";
+import { Product } from "@/_models/Product";
+import { useSetAtom } from "jotai";
+import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 
 type Props = {
-  model: Instance<typeof Product>;
-  onPromptSelected: (prompt: string) => void;
+  product: Product;
 };
 
-export const GenerativeSampleContainer: React.FC<Props> = ({
-  model,
-  onPromptSelected,
-}) => {
-  const { loading, error, data } = useQuery<GetProductPromptsQuery>(
-    GetProductPromptsDocument,
-    {
-      variables: { productSlug: model.id },
-    }
-  );
+const GenerativeSampleContainer: React.FC<Props> = ({ product }) => {
+  const setCurrentPrompt = useSetAtom(currentPromptAtom);
+  const { data } = useQuery<GetProductPromptsQuery>(GetProductPromptsDocument, {
+    variables: { productSlug: product.slug },
+  });
 
   return (
     <div className="flex flex-col max-w-2xl flex-shrink-0 mx-auto mt-6">
       <JanWelcomeTitle
-        title={model.name}
-        description={model.modelDescription ?? ""}
+        title={product.name}
+        description={product.longDescription}
       />
       <div className="flex flex-col">
         <h2 className="font-semibold text-xl leading-6 tracking-[-0.4px] mb-5">
@@ -34,7 +29,7 @@ export const GenerativeSampleContainer: React.FC<Props> = ({
           {data?.prompts.map((item) => (
             <button
               key={item.slug}
-              onClick={() => onPromptSelected(item.content ?? "")}
+              onClick={() => setCurrentPrompt(item.content ?? "")}
               className="w-full h-full"
             >
               <img
@@ -50,3 +45,5 @@ export const GenerativeSampleContainer: React.FC<Props> = ({
     </div>
   );
 };
+
+export default GenerativeSampleContainer;
