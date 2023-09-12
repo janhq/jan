@@ -110,16 +110,53 @@ For more detail of all configuration, checkout to [configuration](./configuratio
 
 > Note: This step will change soon with [Nitro](https://github.com/janhq/nitro) becoming its own library
 
-We recommend that Llama2-7B (4-bit quantized) as a basic model to get started. 
+Install Mamba to handle native python binding (which can yield better performance on Mac M/ NVIDIA)
+```bash
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh"
+bash Mambaforge-$(uname)-$(uname -m).sh
+rm Mambaforge-$(uname)-$(uname -m).sh
 
-You will need to download the models to the `jan-inference/llms/models` folder. 
+# Create environment
+conda create -n jan python=3.9.16
+conda activate jan
+pip uninstall llama-cpp-python -y
+```
+
+- On Mac
+```bash
+CMAKE_ARGS="-DLLAMA_METAL=on" FORCE_CMAKE=1 pip install -U llama-cpp-python --no-cache-dir
+pip install 'llama-cpp-python[server]'
+```
+- On Linux with NVIDIA GPU
+```bash
+CMAKE_ARGS="-DLLAMA_HIPBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python
+pip install 'llama-cpp-python[server]'
+```
+- On Linux with Intel/ AMD CPU (support for AVX-2/ AVX-512)
+
+```bash
+CMAKE_ARGS="-DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS" FORCE_CMAKE=1 pip install llama-cpp-python
+pip install 'llama-cpp-python[server]'
+```
+
+We recommend that Llama2-7B (4-bit quantized) as a basic model to get started.
+
+You will need to download the models to the `models` folder at root level.
 
 ```shell
-cd jan-inference/llms/models
-
 # Downloads model (~4gb)
 # Download time depends on your internet connection and HuggingFace's bandwidth
-wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_1.bin 
+# In this part, please head over to any source contains `.gguf` format model - https://huggingface.co/models?search=gguf
+wget https://huggingface.co/TheBloke/CodeLlama-13B-GGUF/resolve/main/codellama-13b.Q3_K_L.gguf -P models
+```
+
+- Run the model in host machine
+```bash
+# Please change the value of --model key as your corresponding model path
+# The --n_gpu_layers 1 means using acclerator (can be Metal on Mac, NVIDIA GPU on on linux with NVIDIA GPU)
+# This service will run at `http://localhost:8000` in host level
+# The backend service inside docker compose will connect to this service by using `http://host.docker.internal:8000`
+python3 -m llama_cpp.server --model models/codellama-13b.Q3_K_L.gguf --n_gpu_layers 1
 ```
 
 ## Step 5: `docker compose up`
@@ -127,7 +164,6 @@ wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7
 Jan utilizes Docker Compose to run all services:
 
 ```shell
-docker compose up -f docker-compose.develop.yml
 docker compose up -f docker-compose.develop.yml -d # Detached mode
 ```
 -  (Backend)

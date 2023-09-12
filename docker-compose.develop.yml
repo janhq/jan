@@ -68,21 +68,6 @@ services:
       jan_local:
         ipv4_address: 172.20.0.12
 
-  worker:
-    build:
-      context: ./app-backend/worker
-      dockerfile: ./Dockerfile
-    restart: always
-    environment:
-      - "NODE_ENV=development"
-    volumes:
-      - ./app-backend/worker:/worker
-    ports:
-      - 8787:8787
-    networks:
-      jan_local:
-        ipv4_address: 172.20.0.13
-
   data-connector-agent:
     image: hasura/graphql-data-connector:v2.31.0
     restart: always
@@ -126,20 +111,6 @@ services:
     networks:
       jan_local:
         ipv4_address: 172.20.0.15
-
-  llm:
-    image: ghcr.io/abetlen/llama-cpp-python@sha256:b6d21ff8c4d9baad65e1fa741a0f8c898d68735fff3f3cd777e3f0c6a1839dd4
-    volumes:
-      - ./jan-inference/llm/models:/models
-    ports:
-      - 8000:8000
-    environment:
-      MODEL: /models/${LLM_MODEL_FILE}
-      PYTHONUNBUFFERED: 1
-    restart: on-failure
-    networks:
-      jan_local:
-        ipv4_address: 172.20.0.18
 
 networks:
   jan_local:

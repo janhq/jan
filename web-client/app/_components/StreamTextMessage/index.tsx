@@ -1,13 +1,16 @@
 import React, { useEffect } from "react";
 import { displayDate } from "@/_utils/datetime";
-import { TextCode } from "../TextCode";
-import { getMessageCode } from "@/_utils/message";
-import { useSubscription } from "@apollo/client";
-import {
-  SubscribeMessageDocument,
-  SubscribeMessageSubscription,
-} from "@/graphql";
 import { useStore } from "@/_models/RootStore";
+import { StreamingText, useTextBuffer } from "nextjs-openai";
+import { MessageSenderType, MessageStatus } from "@/_models/ChatMessage";
+import { Role } from "@/_models/History";
+import { useMutation } from "@apollo/client";
+import { OpenAI } from "openai-streams";
+import {
+  UpdateMessageDocument,
+  UpdateMessageMutation,
+  UpdateMessageMutationVariables,
+} from "@/graphql";
 
 type Props = {
   id?: string;
@@ -22,50 +25,65 @@ const StreamTextMessage: React.FC<Props> = ({
   senderName,
   createdAt,
   avatarUrl = "",
-  text = "",
 }) => {
-  const [textMessage, setTextMessage] = React.useState(text);
-  const [completedTyping, setCompletedTyping] = React.useState(false);
-  const tokenIndex = React.useRef(0);
+  const [data, setData] = React.useState<any | undefined>();
   const { historyStore } = useStore();
-  const { data } = useSubscription<SubscribeMessageSubscription>(
-    SubscribeMessageDocument,
-    {
-      variables: {
-        id,
-      },
-    }
+  const conversation = historyStore?.getActiveConversation();
+  const [updateMessage] = useMutation<UpdateMessageMutation>(
+    UpdateMessageDocument
   );
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (
-      data?.messages_by_pk?.content &&
-      data.messages_by_pk.content.length > text.length
+      !conversation ||
+      conversation.chatMessages.findIndex((e) => e.id === id) !==
+        conversation.chatMessages.length - 1
     ) {
+      return;
+    }
+    const messages = conversation?.chatMessages
+      .slice(-10)
+      .filter((e) => e.id !== id)
+      .map((e) => ({
+        role:
+          e.messageSenderType === MessageSenderType.User
+            ? Role.User
+            : Role.Assistant,
+        content: e.text,
+      }));
+    setData({
+      messages,
+    });
+  }, [conversation]);
+
+  const { buffer, done } = useTextBuffer({
+    url: `api/openai`,
+    data,
+  });
+
+  useEffect(() => {
+    if (done) {
+      // mutate result
+      const variables: UpdateMessageMutationVariables = {
+        id: id,
+        data: {
+          content: buffer.join(""),
+          status: MessageStatus.Ready,
+        },
+      };
+      updateMessage({
+        variables,
+      });
+    }
+  }, [done]);
+
+  useEffect(() => {
+    if (buffer.length > 0 && conversation?.isWaitingForModelResponse) {
       historyStore.finishActiveConversationWaiting();
     }
-  }, [data, text]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [buffer]);
 
-  useEffect(() => {
-    setCompletedTyping(false);
-
-    const stringResponse = data?.messages_by_pk?.content ?? text;
-
-    const intervalId = setInterval(() => {
-      setTextMessage(stringResponse.slice(0, tokenIndex.current));
-
-      tokenIndex.current++;
-
-      if (tokenIndex.current > stringResponse.length) {
-        clearInterval(intervalId);
-        setCompletedTyping(true);
-      }
-    }, 20);
-
-    return () => clearInterval(intervalId);
-  }, [data?.messages_by_pk?.content, text]);
-
-  return textMessage.length > 0 ? (
+  return data ? (
     <div className="flex items-start gap-2">
       <img
         className="rounded-full"
@@ -83,20 +101,9 @@ const StreamTextMessage: React.FC<Props> = ({
             {displayDate(createdAt)}
           </div>
         </div>
-        {textMessage.includes("```") ? (
-          getMessageCode(textMessage).map((item, i) => (
-            <div className="flex gap-1 flex-col" key={i}>
-              <p className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
-                {item.text}
-              </p>
-              {item.code.trim().length > 0 && <TextCode text={item.code} />}
-            </div>
-          ))
-        ) : (
-          <p className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
-            {textMessage}
-          </p>
-        )}
+        <div className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
+          <StreamingText buffer={buffer} fade={100} />
+        </div>
       </div>
     </div>
   ) : (

@@ -33,8 +33,13 @@ For using our complete solution, check [this](https://github.com/janhq/jan)
    ```
    yarn dev
    ```
+4. **Regenerate Graphql:**
 
-4. **Access Jan Web:**
+   ```
+   HASURA_ADMIN_TOKEN="[hasura_admin_secret_key]" yarn generate
+   ```
+
+5. **Access Jan Web:**
 
    Open your web browser and navigate to `http://localhost:3000` to access the Jan Web application.
 

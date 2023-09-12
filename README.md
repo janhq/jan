@@ -61,8 +61,8 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 **Hardware Support**
 
 - [x] Nvidia GPUs 
-- [ ] Apple Silicon (in progress)
-- [ ] CPU support via llama.cpp (in progress)
+- [x] Apple Silicon (in progress)
+- [x] CPU support via llama.cpp
 - [ ] Nvidia GPUs using TensorRT (in progress)
 
 ## Documentation
