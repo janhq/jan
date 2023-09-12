@@ -24,7 +24,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      jan_community:
+      jan_local:
         ipv4_address: 172.20.0.9
 
   postgres:
@@ -41,7 +41,7 @@ services:
     volumes: 
       - ./conf/db/docker_psql_init.sql:/docker-entrypoint-initdb.d/docker_postgres_init.sql
     networks:
-      jan_community:
+      jan_local:
         ipv4_address: 172.20.0.11
 
   graphql-engine:
@@ -65,7 +65,7 @@ services:
       timeout: 10s
       retries: 30
     networks:
-      jan_community:
+      jan_local:
         ipv4_address: 172.20.0.12
 
   worker:
@@ -80,7 +80,7 @@ services:
     ports:
       - 8787:8787
     networks:
-      jan_community:
+      jan_local:
         ipv4_address: 172.20.0.13
 
   data-connector-agent:
@@ -100,7 +100,7 @@ services:
       retries: 5
       start_period: 5s
     networks:
-      jan_community:
+      jan_local:
         ipv4_address: 172.20.0.14
 
   web:
@@ -124,7 +124,7 @@ services:
       graphql-engine:
         condition: service_healthy
     networks:
-      jan_community:
+      jan_local:
         ipv4_address: 172.20.0.15
 
   llm:
@@ -138,11 +138,11 @@ services:
       PYTHONUNBUFFERED: 1
     restart: on-failure
     networks:
-      jan_community:
+      jan_local:
         ipv4_address: 172.20.0.18
 
 networks:
-  jan_community:
+  jan_local:
     driver: bridge
     ipam:
       driver: default
