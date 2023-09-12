@@ -87,7 +87,7 @@ const StreamTextMessage: React.FC<Props> = ({
       const variables: UpdateMessageMutationVariables = {
         id: id,
         data: {
-          content: buffer.join(""),
+          content: buffer.map((e) => parsedBuffer(e)).join(""),
           status: MessageStatus.Ready,
         },
       };
