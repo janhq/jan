@@ -8,7 +8,6 @@
     "start": "next start",
     "lint": "next lint",
     "compile": "tsc --noEmit -p . --pretty",
-    "configure": "op read op://Shared/WebDevelopmentEnv/.env > .env && op read op://Shared/WebDevelopmentFirebaseConfig/firebase_configs.json > app/_services/firebase/firebase_configs.json",
     "generate": "graphql-codegen --config codegen.ts",
     "watch": "graphql-codegen -w"
   },
