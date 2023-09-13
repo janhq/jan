@@ -49,6 +49,8 @@ export const setConvoUpdatedAtAtom = atom(null, (get, set, convoId: string) => {
   set(userConversationsAtom, newConversations);
 });
 
+export const currentStreamingMessageAtom = atom<ChatMessage | undefined>(undefined);
+
 export const setConvoLastImageAtom = atom(
   null,
   (get, set, convoId: string, lastImageUrl: string) => {
@@ -117,6 +119,7 @@ export const currentChatMessagesAtom = atom<ChatMessage[]>((get) => {
   if (!activeConversationId) return [];
   return get(chatMessages)[activeConversationId] ?? [];
 });
+
 export const addOldMessagesAtom = atom(
   null,
   (get, set, newMessages: ChatMessage[]) => {
@@ -147,6 +150,24 @@ export const addNewMessageAtom = atom(
     };
     newData[currentConvoId] = updatedMessages;
     set(chatMessages, newData);
+  }
+);
+
+export const updateMessageAtom = atom(
+  null,
+  (get, set, id: string, conversationId: string, text: string) => {
+    const messages = get(chatMessages)[conversationId] ?? [];
+    const message = messages.find((e) => e.id === id);
+    if (message) {
+      message.text = text;
+      const updatedMessages = [...messages];
+
+      const newData: Record<string, ChatMessage[]> = {
+        ...get(chatMessages),
+      };
+      newData[conversationId] = updatedMessages;
+      set(chatMessages, newData);
+    }
   }
 );
 /**

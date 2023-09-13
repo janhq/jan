@@ -1,8 +1,10 @@
 import SimpleControlNetMessage from "../SimpleControlNetMessage";
 import SimpleImageMessage from "../SimpleImageMessage";
 import SimpleTextMessage from "../SimpleTextMessage";
-import { ChatMessage, MessageStatus, MessageType } from "@/_models/ChatMessage";
+import { ChatMessage, MessageType } from "@/_models/ChatMessage";
 import StreamTextMessage from "../StreamTextMessage";
+import { useAtom } from "jotai";
+import { currentStreamingMessageAtom } from "@/_helpers/JotaiWrapper";
 
 export default function renderChatMessage({
   id,
@@ -14,6 +16,8 @@ export default function renderChatMessage({
   text,
   status,
 }: ChatMessage): React.ReactNode {
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [message, _] = useAtom(currentStreamingMessageAtom);
   switch (messageType) {
     case MessageType.ImageWithText:
       return (
@@ -38,7 +42,7 @@ export default function renderChatMessage({
         />
       );
     case MessageType.Text:
-      return status === MessageStatus.Ready ? (
+      return id !== message?.id ? (
         <SimpleTextMessage
           key={id}
           avatarUrl={senderAvatarUrl}

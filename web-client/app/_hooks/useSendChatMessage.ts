@@ -3,9 +3,11 @@ import {
   currentChatMessagesAtom,
   currentConversationAtom,
   currentPromptAtom,
+  currentStreamingMessageAtom,
   setConvoLastImageAtom,
   setConvoUpdatedAtAtom,
   updateConversationWaitingForResponseAtom,
+  updateMessageAtom,
   userConversationsAtom,
 } from "@/_helpers/JotaiWrapper";
 import {
@@ -23,6 +25,12 @@ import {
   GenerateImageDocument,
   GenerateImageMutation,
   GenerateImageMutationVariables,
+  UpdateMessageMutation,
+  UpdateMessageDocument,
+  UpdateMessageMutationVariables,
+  UpdateConversationMutation,
+  UpdateConversationDocument,
+  UpdateConversationMutationVariables,
 } from "@/graphql";
 import { useMutation } from "@apollo/client";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -43,12 +51,20 @@ export default function useSendChatMessage() {
   const [createMessageMutation] = useMutation<CreateMessageMutation>(
     CreateMessageDocument
   );
+  const [updateMessageMutation] = useMutation<UpdateMessageMutation>(
+    UpdateMessageDocument
+  );
+  const [updateConversationMutation] = useMutation<UpdateConversationMutation>(
+    UpdateConversationDocument
+  );
   const [imageGenerationMutation] = useMutation<GenerateImageMutation>(
     GenerateImageDocument
   );
   const updateConvoWaitingState = useSetAtom(
     updateConversationWaitingForResponseAtom
   );
+  const updateMessageText = useSetAtom(updateMessageAtom);
+  const [, setTextMessage] = useAtom(currentStreamingMessageAtom);
   const setConvoLastImageUrl = useSetAtom(setConvoLastImageAtom);
   const setConvoUpdateAt = useSetAtom(setConvoUpdatedAtAtom);
 
@@ -107,7 +123,73 @@ export default function useSendChatMessage() {
       createdAt: Date.now(),
     };
 
+    setTextMessage(aiResponseMessage);
     addNewMessage(aiResponseMessage);
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_OPENAPI_ENDPOINT}`,
+        {
+          method: "POST",
+          cache: "no-cache",
+          keepalive: true,
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+          },
+          body: JSON.stringify({
+            messages: latestMessages,
+            model: "gpt-3.5-turbo",
+            stream: true,
+            max_tokens: 500,
+          }),
+        }
+      );
+      if (!response.ok) {
+        updateMessageText(
+          aiResponseMessage.id,
+          conversation.id,
+          "There is an error while retrieving the result. Please try again later."
+        );
+      } else {
+        const data = response.body;
+        if (!data) {
+          return;
+        }
+        const reader = data.getReader();
+        const decoder = new TextDecoder();
+        let done = false;
+
+        let currentResponse: string = "";
+        updateConvoWaitingState(conversation.id, false);
+        while (!done) {
+          const { value, done: doneReading } = await reader.read();
+          done = doneReading;
+          const chunkValue = decoder.decode(value);
+          chunkValue.split("\n").forEach((chunk) => {
+            console.log("chunk", chunk);
+            const text = parsedBuffer(chunk) ?? "";
+            currentResponse += text;
+            updateMessageText(
+              aiResponseMessage.id,
+              conversation.id,
+              currentResponse
+            );
+          });
+        }
+        mutateMessageText(
+          aiResponseMessage.id,
+          conversation.id,
+          currentResponse
+        );
+      }
+    } catch (err) {
+      const errorText =
+        "There is an error while retrieving the result. Please try again later.";
+      updateMessageText(aiResponseMessage.id, conversation.id, errorText);
+      mutateMessageText(aiResponseMessage.id, conversation.id, errorText);
+    }
+    updateConvoWaitingState(conversation.id, false);
   };
 
   const sendTextToImageMessage = async (conversation: Conversation) => {
@@ -260,6 +342,39 @@ export default function useSendChatMessage() {
         activeConversation.product.type
       );
     }
+  };
+
+  const parsedBuffer = (buffer: string) => {
+    try {
+      const json = buffer.replace("data: ", "");
+      return JSON.parse(json).choices[0].delta.content;
+    } catch (e) {
+      return "";
+    }
+  };
+
+  const mutateMessageText = (
+    messageId: string,
+    convId: string,
+    text: string
+  ) => {
+    const variables: UpdateMessageMutationVariables = {
+      data: {
+        content: text,
+        status: MessageStatus.Ready,
+      },
+      id: messageId,
+    };
+    updateMessageMutation({
+      variables,
+    });
+
+    updateConversationMutation({
+      variables: {
+        id: convId,
+        lastMessageText: text,
+      },
+    });
   };
 
   return {

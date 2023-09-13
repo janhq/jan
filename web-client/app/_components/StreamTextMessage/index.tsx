@@ -1,15 +1,10 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { displayDate } from "@/_utils/datetime";
 import { TextCode } from "../TextCode";
 import { getMessageCode } from "@/_utils/message";
 import Image from "next/image";
-import useChatMessageSubscription from "@/_hooks/useChatMessageSubscription";
-import {
-  updateLastMessageAsReadyAtom,
-  updateConversationWaitingForResponseAtom,
-  getActiveConvoIdAtom,
-} from "@/_helpers/JotaiWrapper";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtom } from "jotai";
+import { currentStreamingMessageAtom } from "@/_helpers/JotaiWrapper";
 
 type Props = {
   id: string;
@@ -26,43 +21,9 @@ const StreamTextMessage: React.FC<Props> = ({
   avatarUrl = "",
   text = "",
 }) => {
-  const [textMessage, setTextMessage] = React.useState(text);
-  const tokenIndex = React.useRef(0);
-  const { data } = useChatMessageSubscription(id);
+  const [message, _] = useAtom(currentStreamingMessageAtom);
 
-  const convoId = useAtomValue(getActiveConvoIdAtom);
-  const updateLastMessageAsReady = useSetAtom(updateLastMessageAsReadyAtom);
-  const updateConversationWaiting = useSetAtom(
-    updateConversationWaitingForResponseAtom
-  );
-
-  useEffect(() => {
-    const stringResponse = data?.messages_by_pk?.content ?? text;
-
-    if (data?.messages_by_pk?.status === "ready") {
-      updateLastMessageAsReady(
-        data.messages_by_pk.id,
-        data.messages_by_pk.content ?? ""
-      );
-
-      if (convoId) {
-        updateConversationWaiting(convoId, false);
-      }
-    }
-
-    const intervalId = setInterval(() => {
-      setTextMessage(stringResponse.slice(0, tokenIndex.current));
-
-      tokenIndex.current++;
-      if (tokenIndex.current > stringResponse.length) {
-        clearInterval(intervalId);
-      }
-    }, 20);
-
-    return () => clearInterval(intervalId);
-  }, [data?.messages_by_pk?.content, text, data?.messages_by_pk?.status]);
-
-  return textMessage.length > 0 ? (
+  return message?.text && message?.text?.length > 0 ? (
     <div className="flex items-start gap-2 ml-3">
       <Image
         className="rounded-full"
@@ -80,8 +41,8 @@ const StreamTextMessage: React.FC<Props> = ({
             {displayDate(createdAt)}
           </div>
         </div>
-        {textMessage.includes("```") ? (
-          getMessageCode(textMessage).map((item, i) => (
+        {message.text.includes("```") ? (
+          getMessageCode(message.text).map((item, i) => (
             <div className="flex gap-1 flex-col" key={i}>
               <p className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
                 {item.text}
@@ -92,7 +53,7 @@ const StreamTextMessage: React.FC<Props> = ({
         ) : (
           <p
             className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]"
-            dangerouslySetInnerHTML={{ __html: textMessage }}
+            dangerouslySetInnerHTML={{ __html: message.text }}
           />
         )}
       </div>
