@@ -15,7 +15,7 @@ const HistoryList: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col flex-grow pt-3">
+    <div className="flex flex-col flex-grow pt-3 gap-2">
       <ExpandableHeader
         title="CHAT HISTORY"
         expanded={expand}

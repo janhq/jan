@@ -13,6 +13,9 @@ module.exports = {
         bounce200: "bounce 1s infinite 200ms",
         bounce400: "bounce 1s infinite 400ms",
       },
+      colors: {
+        "hover-light": { DEFAULT: "#F9FAFB" },
+      },
     },
   },
   plugins: [require("@tailwindcss/forms"), require("@tailwindcss/typography")],
