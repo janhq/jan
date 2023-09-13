@@ -4,12 +4,13 @@ import {
   currentConversationAtom,
   updateConversationHasMoreAtom,
 } from "@/_helpers/JotaiWrapper";
-import { toChatMessage } from "@/_models/ChatMessage";
+import { ChatMessage, toChatMessage } from "@/_models/ChatMessage";
 import { MESSAGE_PER_PAGE } from "@/_utils/const";
 import {
   GetConversationMessagesQuery,
   GetConversationMessagesDocument,
   GetConversationMessagesQueryVariables,
+  MessageDetailFragment,
 } from "@/graphql";
 import { useLazyQuery } from "@apollo/client";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -43,11 +44,11 @@ const useChatMessages = (offset = 0) => {
     };
 
     getConversationMessages({ variables }).then((data) => {
-      const newMessages =
-        data.data?.messages.map((m) => toChatMessage(m)) ?? [];
-      const isHasMore = newMessages.length === MESSAGE_PER_PAGE;
-      addOldChatMessages(newMessages);
-      updateConvoHasMore(currentConvo.id, isHasMore);
+      parseMessages(data.data?.messages ?? []).then((newMessages) => {
+        const isHasMore = newMessages.length === MESSAGE_PER_PAGE;
+        addOldChatMessages(newMessages);
+        updateConvoHasMore(currentConvo.id, isHasMore);
+      });
     });
   }, [offset, currentConvo.id]);
 
@@ -57,5 +58,16 @@ const useChatMessages = (offset = 0) => {
     hasMore: convoStates[currentConvo.id]?.hasMore ?? true,
   };
 };
+
+async function parseMessages(
+  messages: MessageDetailFragment[]
+): Promise<ChatMessage[]> {
+  const newMessages: ChatMessage[] = [];
+  for (const m of messages) {
+    const chatMessage = await toChatMessage(m);
+    newMessages.push(chatMessage);
+  }
+  return newMessages;
+}
 
 export default useChatMessages;

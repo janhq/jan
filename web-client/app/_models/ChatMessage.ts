@@ -1,4 +1,6 @@
 import { MessageDetailFragment } from "@/graphql";
+import { remark } from "remark";
+import html from "remark-html";
 
 export enum MessageType {
   Text = "Text",
@@ -31,7 +33,9 @@ export interface ChatMessage {
   status: MessageStatus;
 }
 
-export const toChatMessage = (m: MessageDetailFragment): ChatMessage => {
+export const toChatMessage = async (
+  m: MessageDetailFragment
+): Promise<ChatMessage> => {
   const createdAt = new Date(m.created_at).getTime();
   const imageUrls: string[] = [];
   const imageUrl =
@@ -47,6 +51,10 @@ export const toChatMessage = (m: MessageDetailFragment): ChatMessage => {
     ? MessageSenderType[m.message_sender_type as keyof typeof MessageSenderType]
     : MessageSenderType.Ai;
 
+  const content = m.content ?? "";
+  const processedContent = await remark().use(html).process(content);
+  const contentHtml = processedContent.toString();
+
   return {
     id: m.id,
     conversationId: m.conversation_id,
@@ -55,7 +63,7 @@ export const toChatMessage = (m: MessageDetailFragment): ChatMessage => {
     senderUid: m.sender,
     senderName: m.sender_name ?? "",
     senderAvatarUrl: m.sender_avatar_url ?? "/icons/app_icon.svg",
-    text: m.content ?? undefined,
+    text: contentHtml,
     imageUrls: imageUrls,
     createdAt: createdAt,
     status: m.status as MessageStatus,

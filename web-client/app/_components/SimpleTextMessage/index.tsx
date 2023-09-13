@@ -5,7 +5,7 @@ import { getMessageCode } from "@/_utils/message";
 import Image from "next/image";
 
 type Props = {
-  avatarUrl?: string;
+  avatarUrl: string;
   senderName: string;
   createdAt: number;
   text?: string;
@@ -44,9 +44,10 @@ const SimpleTextMessage: React.FC<Props> = ({
           </div>
         ))
       ) : (
-        <p className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
-          {text}
-        </p>
+        <p
+          className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]"
+          dangerouslySetInnerHTML={{ __html: text }}
+        />
       )}
     </div>
   </div>

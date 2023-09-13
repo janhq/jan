@@ -1,3 +1,5 @@
+"use client";
+
 import { useAtomValue } from "jotai";
 import TryItYourself from "./TryItYourself";
 import React from "react";
