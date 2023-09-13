@@ -32,19 +32,19 @@ const ShortcutList: React.FC = () => {
   }, [data?.products, searchText]);
 
   return (
-    <div className="flex flex-col mt-6">
+    <div className="flex flex-col mt-6 gap-2">
       <ExpandableHeader
         title="START A NEW CHAT"
         expanded={expand}
         onClick={() => setExpand(!expand)}
       />
-      <div
-        className={`flex flex-col gap-1 mt-1 ${!expand ? "hidden " : "block"}`}
-      >
-        {featuredProducts.map((product) => (
-          <ShortcutItem key={product.slug} product={product} />
-        ))}
-      </div>
+      {expand ? (
+        <div className="flex flex-row mx-1 items-center rounded-lg hover:bg-hover-light">
+          {featuredProducts.map((product) => (
+            <ShortcutItem key={product.slug} product={product} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 };

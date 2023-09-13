@@ -53,7 +53,7 @@ const HistoryItem: React.FC<Props> = ({
 
   return (
     <button
-      className={`flex flex-row mx-1 items-center gap-[10px] rounded-lg p-2 ${backgroundColor}`}
+      className={`flex flex-row mx-1 items-center gap-[10px] rounded-lg p-2 ${backgroundColor} hover:bg-hover-light`}
       onClick={onClick}
     >
       <Image
