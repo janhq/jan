@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {

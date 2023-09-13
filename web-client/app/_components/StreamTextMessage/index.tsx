@@ -90,9 +90,10 @@ const StreamTextMessage: React.FC<Props> = ({
             </div>
           ))
         ) : (
-          <p className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
-            {textMessage}
-          </p>
+          <p
+            className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]"
+            dangerouslySetInnerHTML={{ __html: textMessage }}
+          />
         )}
       </div>
     </div>

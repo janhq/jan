@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useCallback, useRef, useState } from "react";
 import ChatItem from "../ChatItem";
 import { ChatMessage } from "@/_models/ChatMessage";
@@ -36,7 +38,7 @@ const ChatBody: React.FC = () => {
   });
 
   return (
-    <div className="flex flex-col-reverse flex-1 gap-8 py-8 overflow-y-auto scroll">
+    <div className="flex flex-col-reverse flex-1 py-4 overflow-y-auto scroll">
       {content}
     </div>
   );

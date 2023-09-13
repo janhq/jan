@@ -8,14 +8,14 @@ type Props = {
 
 const GenerateImageList: React.FC<Props> = ({ products }) => (
   <>
-    <div className="flex mt-4 mx-6 justify-between">
-      <div className="gap-4 flex items-center">
-        <PhotoIcon width={24} height={24} />
-        <h2 className="text-gray-900 font-bold dark:text-white">
+    {products.length === 0 ? null : (
+      <div className="flex items-center gap-3 mt-8 mb-2">
+        <PhotoIcon width={24} height={24} className="ml-6" />
+        <span className="font-semibold text-gray-900 dark:text-white">
           Generate Images
-        </h2>
+        </span>
       </div>
-    </div>
+    )}
     <div className="mt-2 mx-6 mb-6 grid grid-cols-2 gap-6 sm:gap-x-6 md:grid-cols-4 md:gap-8">
       {products.map((item) => (
         <GenerateImageCard key={item.name} product={item} />
