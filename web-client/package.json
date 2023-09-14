@@ -2,14 +2,30 @@
   "name": "jan-web",
   "version": "0.1.0",
   "private": true,
+  "main": "./electron/main.ts",
+  "homepage": "./",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "electron:start": "concurrently \"yarn dev\" \"wait-on http://localhost:3000 && electron .\"",
     "lint": "next lint",
     "compile": "tsc --noEmit -p . --pretty",
     "generate": "graphql-codegen --config codegen.ts",
     "watch": "graphql-codegen -w"
+  },
+  "build": {
+    "appId": "com.app.id",
+    "productName": "Jan Desktop App",
+    "files": [
+      "build/**/*",
+      "electron/main.ts",
+      "package.json"
+    ],
+    "extends": null,
+    "mac": {
+      "type": "distribution"
+    }
   },
   "dependencies": {
     "@apollo/client": "^3.8.1",
@@ -22,6 +38,7 @@
     "@types/react-syntax-highlighter": "^15.5.7",
     "autoprefixer": "10.4.14",
     "classnames": "^2.3.2",
+    "electron-is-dev": "^2.0.0",
     "embla-carousel": "^8.0.0-rc11",
     "embla-carousel-react": "^8.0.0-rc11",
     "eslint": "8.45.0",
@@ -50,6 +67,10 @@
     "@graphql-codegen/client-preset": "4.1.0",
     "@graphql-codegen/introspection": "4.0.0",
     "@tailwindcss/forms": "^0.5.4",
-    "encoding": "^0.1.13"
+    "concurrently": "^8.2.1",
+    "electron": "^26.2.1",
+    "electron-builder": "^24.6.4",
+    "encoding": "^0.1.13",
+    "wait-on": "^7.0.1"
   }
 }

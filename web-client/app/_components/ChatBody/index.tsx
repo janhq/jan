@@ -32,6 +32,7 @@ const ChatBody: React.FC = () => {
 
   const content = messages.map((message, index) => {
     if (messages.length === index + 1) {
+      // @ts-ignore
       return <ChatItem ref={lastPostRef} message={message} key={message.id} />;
     }
     return <ChatItem message={message} key={message.id} />;

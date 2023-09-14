@@ -76,10 +76,6 @@ const useCreateConversation = () => {
       const mappedConvo: Conversation = {
         id: newConvo.id,
         product: product,
-        user: {
-          id: user.id,
-          displayName: user.displayName,
-        },
         lastTextMessage: newConvo.last_text_message ?? "",
         createdAt: Date.now(),
         updatedAt: Date.now(),

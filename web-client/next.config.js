@@ -1,9 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export',
   experimental: {
-    serverActions: true,
+    serverActions: false,
   },
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",
@@ -11,6 +13,7 @@ const nextConfig = {
       },
     ],
   },
+  exclude: ['electron'],
 };
 
 module.exports = nextConfig;
