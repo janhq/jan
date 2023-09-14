@@ -1,9 +1,9 @@
 import React, { Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
-import { showConfirmSignOutModalAtom } from "@/_helpers/JotaiWrapper";
 import { useAtom } from "jotai";
 import useSignOut from "@/_hooks/useSignOut";
+import { showConfirmSignOutModalAtom } from "@/_atoms/ModalAtoms";
 
 const ConfirmSignOutModal: React.FC = () => {
   const [show, setShow] = useAtom(showConfirmSignOutModalAtom);

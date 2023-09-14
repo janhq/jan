@@ -1,15 +1,11 @@
 import { GetConversationsQuery, GetConversationsDocument } from "@/graphql";
 import { useLazyQuery } from "@apollo/client";
-import { ConversationState, toConversation } from "@/_models/Conversation";
+import { toConversation } from "@/_models/Conversation";
 import { useSetAtom } from "jotai";
-import {
-  conversationStatesAtom,
-  userConversationsAtom,
-} from "@/_helpers/JotaiWrapper";
+import { setConversationsAtom } from "@/_atoms/ConversationAtoms";
 
 const useGetUserConversations = () => {
-  const setConversationStates = useSetAtom(conversationStatesAtom);
-  const setConversations = useSetAtom(userConversationsAtom);
+  const setConversations = useSetAtom(setConversationsAtom);
   const [getConvos] = useLazyQuery<GetConversationsQuery>(
     GetConversationsDocument
   );
@@ -21,14 +17,6 @@ const useGetUserConversations = () => {
     }
 
     const convos = results.data.conversations.map((e) => toConversation(e));
-    const convoStates: Record<string, ConversationState> = {};
-    convos.forEach((convo) => {
-      convoStates[convo.id] = {
-        hasMore: true,
-        waitingForResponse: false,
-      };
-    });
-    setConversationStates(convoStates);
     setConversations(convos);
   };
 

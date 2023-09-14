@@ -6,44 +6,23 @@ import {
 import useGetCurrentUser from "./useGetCurrentUser";
 import { useMutation } from "@apollo/client";
 import useSignIn from "./useSignIn";
-import { useAtom, useSetAtom } from "jotai";
-import {
-  addNewConversationStateAtom,
-  setActiveConvoIdAtom,
-  userConversationsAtom,
-} from "@/_helpers/JotaiWrapper";
 import { Conversation } from "@/_models/Conversation";
 import { Product } from "@/_models/Product";
 import { MessageSenderType, MessageType } from "@/_models/ChatMessage";
+import { useSetAtom } from "jotai";
+import { createNewConversationAtom } from "@/_atoms/ConversationAtoms";
 
 const useCreateConversation = () => {
-  const [userConversations, setUserConversations] = useAtom(
-    userConversationsAtom
-  );
-  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
-  const addNewConvoState = useSetAtom(addNewConversationStateAtom);
+  const addNewConversation = useSetAtom(createNewConversationAtom);
   const { user } = useGetCurrentUser();
   const { signInWithKeyCloak } = useSignIn();
   const [createConversation] = useMutation<CreateConversationMutation>(
     CreateConversationDocument
   );
 
-  const requestCreateConvo = async (
-    product: Product,
-    forceCreate: boolean = false
-  ) => {
+  const requestCreateConvo = async (product: Product) => {
     if (!user) {
       signInWithKeyCloak();
-      return;
-    }
-
-    // search if any fresh convo with particular product id
-    const convo = userConversations.find(
-      (convo) => convo.product.slug === product.slug
-    );
-
-    if (convo && !forceCreate) {
-      setActiveConvoId(convo.id);
       return;
     }
 
@@ -76,22 +55,13 @@ const useCreateConversation = () => {
       const mappedConvo: Conversation = {
         id: newConvo.id,
         product: product,
-        user: {
-          id: user.id,
-          displayName: user.displayName,
-        },
         lastTextMessage: newConvo.last_text_message ?? "",
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
-      addNewConvoState(newConvo.id, {
-        hasMore: true,
-        waitingForResponse: false,
-      });
-      setUserConversations([...userConversations, mappedConvo]);
-      setActiveConvoId(newConvo.id);
+
+      addNewConversation(mappedConvo);
     }
-    // if not found, create new convo and set it as current
   };
 
   return {

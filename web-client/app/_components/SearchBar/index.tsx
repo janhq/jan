@@ -1,4 +1,4 @@
-import { searchAtom } from "@/_helpers/JotaiWrapper";
+import { searchAtom } from "@/_atoms/SearchAtoms";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { useSetAtom } from "jotai";
 

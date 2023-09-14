@@ -1,14 +1,14 @@
 "use client";
 
-import { currentConversationAtom } from "@/_helpers/JotaiWrapper";
+import { activeConversationAtom } from "@/_atoms/ConversationAtoms";
 import { useAtomValue } from "jotai";
 import Image from "next/image";
 
 const UserToolbar: React.FC = () => {
-  const currentConvo = useAtomValue(currentConversationAtom);
+  const activeConvo = useAtomValue(activeConversationAtom);
 
-  const avatarUrl = currentConvo?.product.avatarUrl ?? "";
-  const title = currentConvo?.product.name ?? "";
+  const avatarUrl = activeConvo?.product.avatarUrl ?? "";
+  const title = activeConvo?.product.name ?? "";
 
   return (
     <div className="flex items-center gap-3 p-1">

@@ -6,8 +6,8 @@ import { GetProductsDocument, GetProductsQuery } from "@/graphql";
 import ExpandableHeader from "../ExpandableHeader";
 import { useQuery } from "@apollo/client";
 import { useAtomValue } from "jotai";
-import { searchAtom } from "@/_helpers/JotaiWrapper";
 import { Product, toProduct } from "@/_models/Product";
+import { searchAtom } from "@/_atoms/SearchAtoms";
 
 const ShortcutList: React.FC = () => {
   const searchText = useAtomValue(searchAtom);

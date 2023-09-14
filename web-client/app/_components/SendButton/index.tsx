@@ -1,17 +1,15 @@
-import {
-  currentConvoStateAtom,
-  currentPromptAtom,
-} from "@/_helpers/JotaiWrapper";
+import { getActiveConversationStateAtom } from "@/_atoms/ConversationAtoms";
+import { currentPromptAtom } from "@/_atoms/PromptAtoms";
 import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtomValue } from "jotai";
 import Image from "next/image";
 
 const SendButton: React.FC = () => {
   const currentPrompt = useAtomValue(currentPromptAtom);
-  const currentConvoState = useAtomValue(currentConvoStateAtom);
+  const activeConvoState = useAtomValue(getActiveConversationStateAtom);
   const { sendChatMessage } = useSendChatMessage();
 
-  const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false;
+  const isWaitingForResponse = activeConvoState?.waitingForResponse ?? false;
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse;
 
   const enabledStyle = {

@@ -1,9 +1,10 @@
+import { addHistoryMessagesAtom } from "@/_atoms/ChatMessageAtoms";
 import {
-  addOldMessagesAtom,
-  conversationStatesAtom,
-  currentConversationAtom,
-  updateConversationHasMoreAtom,
-} from "@/_helpers/JotaiWrapper";
+  activeConversationAtom,
+  getActiveConversationStateAtom,
+  isActiveConvoHasMoreAtom,
+  setConversationHasMoreAtom,
+} from "@/_atoms/ConversationAtoms";
 import { ChatMessage, toChatMessage } from "@/_models/ChatMessage";
 import { MESSAGE_PER_PAGE } from "@/_utils/const";
 import {
@@ -23,22 +24,23 @@ import { useEffect } from "react";
  * @returns
  */
 const useChatMessages = (offset = 0) => {
-  const addOldChatMessages = useSetAtom(addOldMessagesAtom);
-  const currentConvo = useAtomValue(currentConversationAtom);
-  if (!currentConvo) {
+  const addOldChatMessages = useSetAtom(addHistoryMessagesAtom);
+  const activeConvoState = useAtomValue(getActiveConversationStateAtom);
+  const activeConvo = useAtomValue(activeConversationAtom);
+  if (!activeConvo) {
     throw new Error("activeConversation is null");
   }
-  const convoStates = useAtomValue(conversationStatesAtom);
-  const updateConvoHasMore = useSetAtom(updateConversationHasMoreAtom);
+  const isHasMore = useAtomValue(isActiveConvoHasMoreAtom);
+  const setConvoHasMore = useSetAtom(setConversationHasMoreAtom);
   const [getConversationMessages, { loading, error }] =
     useLazyQuery<GetConversationMessagesQuery>(GetConversationMessagesDocument);
 
   useEffect(() => {
-    const hasMore = convoStates[currentConvo.id]?.hasMore ?? true;
+    const hasMore = activeConvoState?.hasMore ?? true;
     if (!hasMore) return;
 
     const variables: GetConversationMessagesQueryVariables = {
-      conversation_id: currentConvo.id,
+      conversation_id: activeConvo.id,
       limit: MESSAGE_PER_PAGE,
       offset: offset,
     };
@@ -47,15 +49,15 @@ const useChatMessages = (offset = 0) => {
       parseMessages(data.data?.messages ?? []).then((newMessages) => {
         const isHasMore = newMessages.length === MESSAGE_PER_PAGE;
         addOldChatMessages(newMessages);
-        updateConvoHasMore(currentConvo.id, isHasMore);
+        setConvoHasMore(activeConvo.id, isHasMore);
       });
     });
-  }, [offset, currentConvo.id]);
+  }, [offset, activeConvo.id]);
 
   return {
     loading,
     error,
-    hasMore: convoStates[currentConvo.id]?.hasMore ?? true,
+    hasMore: isHasMore,
   };
 };
 

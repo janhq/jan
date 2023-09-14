@@ -4,11 +4,11 @@ import React, { useCallback, useRef, useState } from "react";
 import ChatItem from "../ChatItem";
 import { ChatMessage } from "@/_models/ChatMessage";
 import useChatMessages from "@/_hooks/useChatMessages";
-import { currentChatMessagesAtom } from "@/_helpers/JotaiWrapper";
 import { useAtomValue } from "jotai";
+import { getActiveChatMessagesAtom } from "@/_atoms/ChatMessageAtoms";
 
 const ChatBody: React.FC = () => {
-  const messages = useAtomValue(currentChatMessagesAtom);
+  const messages = useAtomValue(getActiveChatMessagesAtom);
   const [offset, setOffset] = useState(0);
   const { loading, hasMore } = useChatMessages(offset);
   const intersectObs = useRef<any>(null);

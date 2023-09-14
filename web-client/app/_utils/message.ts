@@ -23,7 +23,7 @@ export function mergeAndRemoveDuplicates(
     }
   }
 
-  return result.reverse();
+  return result;
 }
 
 export function getMessageCode(stringCode: string) {

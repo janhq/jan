@@ -4,15 +4,16 @@ import { TextCode } from "../TextCode";
 import { getMessageCode } from "@/_utils/message";
 import Image from "next/image";
 import useChatMessageSubscription from "@/_hooks/useChatMessageSubscription";
+import { useSetAtom } from "jotai";
 import {
-  updateLastMessageAsReadyAtom,
-  updateConversationWaitingForResponseAtom,
-  getActiveConvoIdAtom,
-} from "@/_helpers/JotaiWrapper";
-import { useAtomValue, useSetAtom } from "jotai";
+  setConversationLastMessageAtom,
+  setConvoWaitingStateAtom,
+} from "@/_atoms/ConversationAtoms";
+import { updateLastMessageAsReadyAtom } from "@/_atoms/ChatMessageAtoms";
 
 type Props = {
   id: string;
+  convoId: string;
   avatarUrl?: string;
   senderName: string;
   createdAt: number;
@@ -21,6 +22,7 @@ type Props = {
 
 const StreamTextMessage: React.FC<Props> = ({
   id,
+  convoId,
   senderName,
   createdAt,
   avatarUrl = "",
@@ -30,24 +32,21 @@ const StreamTextMessage: React.FC<Props> = ({
   const tokenIndex = React.useRef(0);
   const { data } = useChatMessageSubscription(id);
 
-  const convoId = useAtomValue(getActiveConvoIdAtom);
   const updateLastMessageAsReady = useSetAtom(updateLastMessageAsReadyAtom);
-  const updateConversationWaiting = useSetAtom(
-    updateConversationWaitingForResponseAtom
-  );
+  const updateConversationWaiting = useSetAtom(setConvoWaitingStateAtom);
+  const setLastMessage = useSetAtom(setConversationLastMessageAtom);
 
   useEffect(() => {
     const stringResponse = data?.messages_by_pk?.content ?? text;
 
     if (data?.messages_by_pk?.status === "ready") {
       updateLastMessageAsReady(
+        convoId,
         data.messages_by_pk.id,
         data.messages_by_pk.content ?? ""
       );
-
-      if (convoId) {
-        updateConversationWaiting(convoId, false);
-      }
+      setLastMessage(convoId, data.messages_by_pk.content ?? "");
+      updateConversationWaiting(convoId, false);
     }
 
     const intervalId = setInterval(() => {

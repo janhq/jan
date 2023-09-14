@@ -3,7 +3,7 @@ import { Popover, Transition } from "@headlessui/react";
 import { Fragment } from "react";
 import useGetCurrentUser from "@/_hooks/useGetCurrentUser";
 import { useSetAtom } from "jotai";
-import { showConfirmSignOutModalAtom } from "@/_helpers/JotaiWrapper";
+import { showConfirmSignOutModalAtom } from "@/_atoms/ModalAtoms";
 
 export const MenuHeader: React.FC = () => {
   const setShowConfirmSignOutModal = useSetAtom(showConfirmSignOutModalAtom);

@@ -3,27 +3,30 @@
 import { useAtomValue } from "jotai";
 import TryItYourself from "./TryItYourself";
 import React from "react";
-import { currentProductAtom } from "@/_helpers/JotaiWrapper";
+import { activeConversationAtom } from "@/_atoms/ConversationAtoms";
 
 const OverviewPane: React.FC = () => {
-  const product = useAtomValue(currentProductAtom);
+  const activeConvo = useAtomValue(activeConversationAtom);
 
   return (
     <div className="scroll overflow-y-auto">
       <div className="flex flex-col flex-grow gap-6 m-3">
         <AboutProductItem
           title={"About this AI"}
-          value={product?.description ?? ""}
+          value={activeConvo?.product?.description ?? ""}
         />
-        <SmallItem title={"Model Version"} value={product?.version ?? ""} />
+        <SmallItem
+          title={"Model Version"}
+          value={activeConvo?.product?.version ?? ""}
+        />
         <div className="flex flex-col">
           <span className="text-[#6B7280]">Model URL</span>
           <a
             className="text-[#1C64F2]"
-            href={product?.modelUrl ?? "#"}
+            href={activeConvo?.product?.modelUrl ?? "#"}
             target="_blank_"
           >
-            {product?.modelUrl}
+            {activeConvo?.product?.modelUrl}
           </a>
         </div>
         <TryItYourself />

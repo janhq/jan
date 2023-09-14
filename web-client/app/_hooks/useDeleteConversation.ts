@@ -1,27 +1,25 @@
 import {
-  currentPromptAtom,
-  getActiveConvoIdAtom,
-  setActiveConvoIdAtom,
-  showingAdvancedPromptAtom,
+  activeConversationIdAtom,
+  removeConversationAtom,
+} from "@/_atoms/ConversationAtoms";
+import {
   showingProductDetailAtom,
-  userConversationsAtom,
-} from "@/_helpers/JotaiWrapper";
+  showingAdvancedPromptAtom,
+} from "@/_atoms/ModalAtoms";
+import { currentPromptAtom } from "@/_atoms/PromptAtoms";
 import {
   DeleteConversationDocument,
   DeleteConversationMutation,
 } from "@/graphql";
 import { useMutation } from "@apollo/client";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 
 export default function useDeleteConversation() {
-  const [userConversations, setUserConversations] = useAtom(
-    userConversationsAtom
-  );
+  const removeConversation = useSetAtom(removeConversationAtom);
   const setCurrentPrompt = useSetAtom(currentPromptAtom);
   const setShowingProductDetail = useSetAtom(showingProductDetailAtom);
   const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom);
-  const activeConvoId = useAtomValue(getActiveConvoIdAtom);
-  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
+  const [activeConvoId, setActiveConvoId] = useAtom(activeConversationIdAtom);
 
   const [deleteConversation] = useMutation<DeleteConversationMutation>(
     DeleteConversationDocument
@@ -31,9 +29,7 @@ export default function useDeleteConversation() {
     if (activeConvoId) {
       try {
         await deleteConversation({ variables: { id: activeConvoId } });
-        setUserConversations(
-          userConversations.filter((c) => c.id !== activeConvoId)
-        );
+        removeConversation(activeConvoId);
         setActiveConvoId(undefined);
         setCurrentPrompt("");
         setShowingProductDetail(false);

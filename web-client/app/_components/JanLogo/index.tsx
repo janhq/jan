@@ -1,10 +1,10 @@
-import { setActiveConvoIdAtom } from "@/_helpers/JotaiWrapper";
+import { activeConversationIdAtom } from "@/_atoms/ConversationAtoms";
 import { useSetAtom } from "jotai";
 import Image from "next/image";
 import React from "react";
 
 const JanLogo: React.FC = () => {
-  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
+  const setActiveConvoId = useSetAtom(activeConversationIdAtom);
   return (
     <button
       className="p-3 flex gap-[2px] items-center"

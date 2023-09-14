@@ -1,15 +1,14 @@
 import React from "react";
 import JanImage from "../JanImage";
 import { displayDate } from "@/_utils/datetime";
-import {
-  conversationStatesAtom,
-  getActiveConvoIdAtom,
-  setActiveConvoIdAtom,
-} from "@/_helpers/JotaiWrapper";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { ProductType } from "@/_models/Product";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
+import {
+  activeConversationIdAtom,
+  getConversationStateAtom,
+} from "@/_atoms/ConversationAtoms";
 
 type Props = {
   conversation: Conversation;
@@ -24,9 +23,8 @@ const HistoryItem: React.FC<Props> = ({
   name,
   updatedAt,
 }) => {
-  const conversationStates = useAtomValue(conversationStatesAtom);
-  const activeConvoId = useAtomValue(getActiveConvoIdAtom);
-  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
+  const conversationStates = useAtomValue(getConversationStateAtom);
+  const [activeConvoId, setActiveConvoId] = useAtom(activeConversationIdAtom);
   const isSelected = activeConvoId === conversation.id;
 
   const onClick = () => {
@@ -39,8 +37,10 @@ const HistoryItem: React.FC<Props> = ({
     ? "bg-gray-100 dark:bg-gray-700"
     : "bg-white dark:bg-gray-500";
 
+  const state = conversationStates.find((c) => c.id === conversation.id);
+
   let rightImageUrl: string | undefined;
-  if (conversationStates[conversation.id]?.waitingForResponse === true) {
+  if (state?.waitingForResponse === true) {
     rightImageUrl = "/icons/loading.svg";
   } else if (
     conversation &&
@@ -76,16 +76,14 @@ const HistoryItem: React.FC<Props> = ({
               {conversation?.lastTextMessage || <br className="h-5 block" />}
             </span>
           </div>
-          <>
-            {rightImageUrl != null ? (
-              <JanImage
-                imageUrl={rightImageUrl ?? ""}
-                className="rounded"
-                width={24}
-                height={24}
-              />
-            ) : undefined}
-          </>
+          {rightImageUrl != null ? (
+            <JanImage
+              imageUrl={rightImageUrl ?? ""}
+              className="rounded"
+              width={24}
+              height={24}
+            />
+          ) : undefined}
         </div>
       </div>
     </button>

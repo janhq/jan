@@ -1,9 +1,9 @@
 import { useAtomValue } from "jotai";
 import CompactHistoryItem from "../CompactHistoryItem";
-import { userConversationsAtom } from "@/_helpers/JotaiWrapper";
+import { conversationsAtom } from "@/_atoms/ConversationAtoms";
 
 const CompactHistoryList: React.FC = () => {
-  const conversations = useAtomValue(userConversationsAtom);
+  const conversations = useAtomValue(conversationsAtom);
 
   return (
     <div className="flex flex-col flex-1 gap-1 mt-3">

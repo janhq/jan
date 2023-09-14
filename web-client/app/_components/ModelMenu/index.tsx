@@ -2,25 +2,26 @@
 
 import Image from "next/image";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import {
-  currentProductAtom,
-  showConfirmDeleteConversationModalAtom,
-  showingProductDetailAtom,
-} from "@/_helpers/JotaiWrapper";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import useCreateConversation from "@/_hooks/useCreateConversation";
+import {
+  showConfirmDeleteConversationModalAtom,
+  showingProductDetailAtom,
+} from "@/_atoms/ModalAtoms";
+import { activeConversationAtom } from "@/_atoms/ConversationAtoms";
 
 const ModelMenu: React.FC = () => {
-  const currentProduct = useAtomValue(currentProductAtom);
+  const activeConvo = useAtomValue(activeConversationAtom);
   const [active, setActive] = useAtom(showingProductDetailAtom);
   const { requestCreateConvo } = useCreateConversation();
-  const setShowConfirmDeleteConversationModal = useSetAtom(
+  const showConfirmDeleteModal = useSetAtom(
     showConfirmDeleteConversationModalAtom
   );
 
   const onCreateConvoClick = () => {
-    if (!currentProduct) return;
-    requestCreateConvo(currentProduct, true);
+    const product = activeConvo?.product;
+    if (!product) return;
+    requestCreateConvo(product);
   };
 
   return (
@@ -28,7 +29,7 @@ const ModelMenu: React.FC = () => {
       <button onClick={() => onCreateConvoClick()}>
         <PlusIcon width={24} height={24} color="#9CA3AF" />
       </button>
-      <button onClick={() => setShowConfirmDeleteConversationModal(true)}>
+      <button onClick={() => showConfirmDeleteModal(true)}>
         <TrashIcon width={24} height={24} color="#9CA3AF" />
       </button>
       <button onClick={() => setActive(!active)}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
+import { currentPromptAtom } from "@/_atoms/PromptAtoms";
 import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtom } from "jotai";
 

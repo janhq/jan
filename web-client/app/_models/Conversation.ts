@@ -14,6 +14,7 @@ export interface Conversation {
  * Store the state of conversation like fetching, waiting for response, etc.
  */
 export type ConversationState = {
+  id: string;
   hasMore: boolean;
   waitingForResponse: boolean;
 };

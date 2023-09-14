@@ -1,13 +1,14 @@
-import { currentProductAtom, currentPromptAtom } from "@/_helpers/JotaiWrapper";
+import { activeConversationAtom } from "@/_atoms/ConversationAtoms";
+import { currentPromptAtom } from "@/_atoms/PromptAtoms";
 import { GetProductPromptsQuery, GetProductPromptsDocument } from "@/graphql";
 import { useQuery } from "@apollo/client";
 import { useAtomValue, useSetAtom } from "jotai";
 
 const TryItYourself = () => {
-  const setCurrentPrompt = useSetAtom(currentPromptAtom);
-  const product = useAtomValue(currentProductAtom);
+  const setPrompt = useSetAtom(currentPromptAtom);
+  const activeConvo = useAtomValue(activeConversationAtom);
   const { data } = useQuery<GetProductPromptsQuery>(GetProductPromptsDocument, {
-    variables: { productSlug: product?.slug ?? "" },
+    variables: { productSlug: activeConvo?.product?.slug ?? "" },
   });
 
   if (!data || data.prompts.length === 0) {
@@ -22,7 +23,7 @@ const TryItYourself = () => {
       <ul className="border-[1px] border-[#D1D5DB] rounded-[12px]">
         {promps.map((prompt, index) => (
           <button
-            onClick={() => setCurrentPrompt(prompt.content ?? "")}
+            onClick={() => setPrompt(prompt.content ?? "")}
             key={prompt.slug}
             className={`text-sm text-gray-500 leading-[20px] flex gap-[10px] border-b-[${
               index !== promps.length - 1 ? "1" : "0"

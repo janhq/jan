@@ -6,6 +6,7 @@ import StreamTextMessage from "../StreamTextMessage";
 
 export default function renderChatMessage({
   id,
+  conversationId,
   messageType,
   senderAvatarUrl,
   senderName,
@@ -50,6 +51,7 @@ export default function renderChatMessage({
         <StreamTextMessage
           key={id}
           id={id}
+          convoId={conversationId}
           avatarUrl={senderAvatarUrl}
           senderName={senderName}
           createdAt={createdAt}

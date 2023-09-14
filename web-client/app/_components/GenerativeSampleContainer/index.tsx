@@ -3,14 +3,14 @@ import { GetProductPromptsQuery, GetProductPromptsDocument } from "@/graphql";
 import { useQuery } from "@apollo/client";
 import { Product } from "@/_models/Product";
 import { useSetAtom } from "jotai";
-import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
+import { currentPromptAtom } from "@/_atoms/PromptAtoms";
 
 type Props = {
   product: Product;
 };
 
 const GenerativeSampleContainer: React.FC<Props> = ({ product }) => {
-  const setCurrentPrompt = useSetAtom(currentPromptAtom);
+  const setPrompt = useSetAtom(currentPromptAtom);
   const { data } = useQuery<GetProductPromptsQuery>(GetProductPromptsDocument, {
     variables: { productSlug: product.slug },
   });
@@ -29,7 +29,7 @@ const GenerativeSampleContainer: React.FC<Props> = ({ product }) => {
           {data?.prompts.map((item) => (
             <button
               key={item.slug}
-              onClick={() => setCurrentPrompt(item.content ?? "")}
+              onClick={() => setPrompt(item.content ?? "")}
               className="w-full h-full"
             >
               <img

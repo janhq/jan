@@ -27,7 +27,7 @@ export interface ChatMessage {
   senderUid: string;
   senderName: string;
   senderAvatarUrl: string;
-  text: string | undefined;
+  text?: string;
   imageUrls?: string[] | undefined;
   createdAt: number;
   status: MessageStatus;

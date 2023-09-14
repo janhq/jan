@@ -2,8 +2,8 @@
 
 import BasicPromptInput from "../BasicPromptInput";
 import BasicPromptAccessories from "../BasicPromptAccessories";
-import { showingAdvancedPromptAtom } from "@/_helpers/JotaiWrapper";
 import { useAtomValue } from "jotai";
+import { showingAdvancedPromptAtom } from "@/_atoms/ModalAtoms";
 
 const InputToolbar: React.FC = () => {
   const showingAdvancedPrompt = useAtomValue(showingAdvancedPromptAtom);

@@ -1,4 +1,4 @@
-import { showConfirmDeleteConversationModalAtom } from "@/_helpers/JotaiWrapper";
+import { showConfirmDeleteConversationModalAtom } from "@/_atoms/ModalAtoms";
 import useDeleteConversation from "@/_hooks/useDeleteConversation";
 import { Dialog, Transition } from "@headlessui/react";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";

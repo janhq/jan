@@ -2,8 +2,8 @@ import React, { useRef } from "react";
 import { Dialog } from "@headlessui/react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import Image from "next/image";
-import { showingMobilePaneAtom } from "@/_helpers/JotaiWrapper";
 import { useAtom } from "jotai";
+import { showingMobilePaneAtom } from "@/_atoms/ModalAtoms";
 
 const MobileMenuPane: React.FC = () => {
   const [show, setShow] = useAtom(showingMobilePaneAtom);

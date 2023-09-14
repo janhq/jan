@@ -3,19 +3,15 @@
 import ModelDetailSideBar from "../ModelDetailSideBar";
 import ProductOverview from "../ProductOverview";
 import { useAtomValue } from "jotai";
-import {
-  getActiveConvoIdAtom,
-  showingProductDetailAtom,
-} from "@/_helpers/JotaiWrapper";
 import { ReactNode } from "react";
+import { activeConversationIdAtom } from "@/_atoms/ConversationAtoms";
 
 type Props = {
   children: ReactNode;
 };
 
 export default function ChatContainer({ children }: Props) {
-  const activeConvoId = useAtomValue(getActiveConvoIdAtom);
-  const showingProductDetail = useAtomValue(showingProductDetailAtom);
+  const activeConvoId = useAtomValue(activeConversationIdAtom);
 
   if (!activeConvoId) {
     return <ProductOverview />;
@@ -24,7 +20,7 @@ export default function ChatContainer({ children }: Props) {
   return (
     <div className="flex flex-1 overflow-hidden">
       {children}
-      {showingProductDetail ? <ModelDetailSideBar /> : null}
+      <ModelDetailSideBar />
     </div>
   );
 }

@@ -1,10 +1,10 @@
 import React from "react";
 import JanImage from "../JanImage";
-import { setActiveConvoIdAtom } from "@/_helpers/JotaiWrapper";
 import { useSetAtom } from "jotai";
+import { activeConversationIdAtom } from "@/_atoms/ConversationAtoms";
 
 const CompactLogo: React.FC = () => {
-  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
+  const setActiveConvoId = useSetAtom(activeConversationIdAtom);
 
   return (
     <button onClick={() => setActiveConvoId(undefined)}>
