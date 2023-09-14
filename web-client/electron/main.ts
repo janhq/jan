@@ -14,7 +14,7 @@ const createMainWindow = () => {
   });
   const startURL = isDev
   ? 'http://localhost:3000'
-  : `file://${path.join(__dirname, '../export/index.html')}`;
+  : `file://${path.join(__dirname, '../out/index.html')}`;
 
   mainWindow.loadURL(startURL);
 
