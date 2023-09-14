@@ -1,27 +1,26 @@
+import { showConfirmDeleteConversationModalAtom } from "@/_helpers/JotaiWrapper";
+import useDeleteConversation from "@/_hooks/useDeleteConversation";
 import { Dialog, Transition } from "@headlessui/react";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import React, { Fragment, useRef, useState } from "react";
+import { useAtom } from "jotai";
+import React, { Fragment, useRef } from "react";
 
-type Props = {
-  open: boolean;
-  setOpen: (open: boolean) => void;
-  onConfirmDelete: () => void;
-};
-
-const ConfirmDeleteConversationModal: React.FC<Props> = ({
-  open,
-  setOpen,
-  onConfirmDelete,
-}) => {
+const ConfirmDeleteConversationModal: React.FC = () => {
+  const [show, setShow] = useAtom(showConfirmDeleteConversationModalAtom);
   const cancelButtonRef = useRef(null);
+  const { deleteConvo } = useDeleteConversation();
+
+  const onConfirmDelete = () => {
+    deleteConvo().then(() => setShow(false));
+  };
 
   return (
-    <Transition.Root show={open} as={Fragment}>
+    <Transition.Root show={show} as={Fragment}>
       <Dialog
         as="div"
         className="relative z-10"
         initialFocus={cancelButtonRef}
-        onClose={setOpen}
+        onClose={setShow}
       >
         <Transition.Child
           as={Fragment}
@@ -81,7 +80,7 @@ const ConfirmDeleteConversationModal: React.FC<Props> = ({
                   <button
                     type="button"
                     className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
-                    onClick={() => setOpen(false)}
+                    onClick={() => setShow(false)}
                     ref={cancelButtonRef}
                   >
                     Cancel

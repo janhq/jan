@@ -77,9 +77,7 @@ Replace above configuration with your actual infrastructure.
 | [@tailwindcss/typography](https://tailwindcss.com/docs/typography-plugin) | UI | ^0.5.9 |
 | [embla-carousel](https://www.embla-carousel.com/) | UI | ^8.0.0-rc11 |
 | [@apollo/client](https://www.apollographql.com/docs/react/) | State management | ^3.8.1 |
-| [mobx](https://mobx.js.org/README.html) | State management | ^6.10.0 |
-| [mobx-react-lite](https://www.npmjs.com/package/mobx-react-lite) | State management | ^4.0.3 |
-| [mobx-state-tree](https://mobx-state-tree.js.org/) | State management | ^5.1.8 |
+| [jotai](https://jotai.org/) | State management | ^2.4.0 |
 
 
 ## Deploy to Netlify

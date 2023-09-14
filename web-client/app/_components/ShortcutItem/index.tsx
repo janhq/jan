@@ -1,9 +1,10 @@
 import React from "react";
 import useCreateConversation from "@/_hooks/useCreateConversation";
-import { ProductDetailFragment } from "@/graphql";
+import Image from "next/image";
+import { Product } from "@/_models/Product";
 
 type Props = {
-  product: ProductDetailFragment;
+  product: Product;
 };
 
 const ShortcutItem: React.FC<Props> = ({ product }) => {
@@ -14,17 +15,22 @@ const ShortcutItem: React.FC<Props> = ({ product }) => {
   };
 
   return (
-    <button className="flex items-center gap-2" onClick={onClickHandler}>
-      {product.image_url && (
-        <img
-          src={product.image_url}
+    <button
+      className="flex items-center gap-2 mx-1 p-2"
+      onClick={onClickHandler}
+    >
+      {product.avatarUrl && (
+        <Image
+          width={36}
+          height={36}
+          src={product.avatarUrl}
           className="w-9 aspect-square rounded-full"
           alt=""
         />
       )}
-      <div className="flex flex-col text-sm leading-[20px]">
-        <span className="text-[#111928] dark:text-white">{product.name}</span>
-      </div>
+      <span className="text-gray-900 dark:text-white font-normal text-sm">
+        {product.name}
+      </span>
     </button>
   );
 };

@@ -1,19 +1,13 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { displayDate } from "@/_utils/datetime";
-import { useStore } from "@/_models/RootStore";
-import { StreamingText, useTextBuffer } from "nextjs-openai";
-import { MessageSenderType, MessageStatus } from "@/_models/ChatMessage";
-import { Role } from "@/_models/History";
-import { useMutation } from "@apollo/client";
-import { OpenAI } from "openai-streams";
-import {
-  UpdateMessageDocument,
-  UpdateMessageMutation,
-  UpdateMessageMutationVariables,
-} from "@/graphql";
+import { TextCode } from "../TextCode";
+import { getMessageCode } from "@/_utils/message";
+import Image from "next/image";
+import { useAtom } from "jotai";
+import { currentStreamingMessageAtom } from "@/_helpers/JotaiWrapper";
 
 type Props = {
-  id?: string;
+  id: string;
   avatarUrl?: string;
   senderName: string;
   createdAt: number;
@@ -25,67 +19,13 @@ const StreamTextMessage: React.FC<Props> = ({
   senderName,
   createdAt,
   avatarUrl = "",
+  text = "",
 }) => {
-  const [data, setData] = React.useState<any | undefined>();
-  const { historyStore } = useStore();
-  const conversation = historyStore?.getActiveConversation();
-  const [updateMessage] = useMutation<UpdateMessageMutation>(
-    UpdateMessageDocument
-  );
+  const [message, _] = useAtom(currentStreamingMessageAtom);
 
-  React.useEffect(() => {
-    if (
-      !conversation ||
-      conversation.chatMessages.findIndex((e) => e.id === id) !==
-        conversation.chatMessages.length - 1
-    ) {
-      return;
-    }
-    const messages = conversation?.chatMessages
-      .slice(-10)
-      .filter((e) => e.id !== id)
-      .map((e) => ({
-        role:
-          e.messageSenderType === MessageSenderType.User
-            ? Role.User
-            : Role.Assistant,
-        content: e.text,
-      }));
-    setData({
-      messages,
-    });
-  }, [conversation]);
-
-  const { buffer, done } = useTextBuffer({
-    url: `api/openai`,
-    data,
-  });
-
-  useEffect(() => {
-    if (done) {
-      // mutate result
-      const variables: UpdateMessageMutationVariables = {
-        id: id,
-        data: {
-          content: buffer.join(""),
-          status: MessageStatus.Ready,
-        },
-      };
-      updateMessage({
-        variables,
-      });
-    }
-  }, [done]);
-
-  useEffect(() => {
-    if (buffer.length > 0 && conversation?.isWaitingForModelResponse) {
-      historyStore.finishActiveConversationWaiting();
-    }
-  }, [buffer]);
-
-  return data ? (
-    <div className="flex items-start gap-2">
-      <img
+  return message?.text && message?.text?.length > 0 ? (
+    <div className="flex items-start gap-2 ml-3">
+      <Image
         className="rounded-full"
         src={avatarUrl}
         width={32}
@@ -101,9 +41,21 @@ const StreamTextMessage: React.FC<Props> = ({
             {displayDate(createdAt)}
           </div>
         </div>
-        <div className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
-          <StreamingText buffer={buffer} fade={100} />
-        </div>
+        {message.text.includes("```") ? (
+          getMessageCode(message.text).map((item, i) => (
+            <div className="flex gap-1 flex-col" key={i}>
+              <p className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
+                {item.text}
+              </p>
+              {item.code.trim().length > 0 && <TextCode text={item.code} />}
+            </div>
+          ))
+        ) : (
+          <p
+            className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]"
+            dangerouslySetInnerHTML={{ __html: message.text }}
+          />
+        )}
       </div>
     </div>
   ) : (

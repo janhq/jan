@@ -1,42 +1,52 @@
-import Image from "next/image";
-import React from "react";
+"use client";
+
+import React, { useEffect, useState } from "react";
 import ShortcutItem from "../ShortcutItem";
-import { observer } from "mobx-react-lite";
-import { ProductDetailFragment } from "@/graphql";
+import { GetProductsDocument, GetProductsQuery } from "@/graphql";
+import ExpandableHeader from "../ExpandableHeader";
+import { useQuery } from "@apollo/client";
+import { useAtomValue } from "jotai";
+import { searchAtom } from "@/_helpers/JotaiWrapper";
+import { Product, toProduct } from "@/_models/Product";
 
-type Props = {
-  products: ProductDetailFragment[];
-};
+const ShortcutList: React.FC = () => {
+  const searchText = useAtomValue(searchAtom);
+  const { data } = useQuery<GetProductsQuery>(GetProductsDocument);
+  const [expand, setExpand] = useState<boolean>(true);
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
 
-const ShortcutList: React.FC<Props> = observer(({ products }) => {
-  const [expand, setExpand] = React.useState<boolean>(true);
+  useEffect(() => {
+    if (data?.products) {
+      const products: Product[] = data.products.map((p) => toProduct(p));
+      setFeaturedProducts(
+        [...(products || [])]
+          .sort(() => 0.5 - Math.random())
+          .slice(0, 3)
+          .filter(
+            (e) =>
+              searchText === "" ||
+              e.name.toLowerCase().includes(searchText.toLowerCase())
+          ) || []
+      );
+    }
+  }, [data?.products, searchText]);
 
   return (
-    <div className="flex flex-col w-full px-3 pt-3">
-      <button
+    <div className="flex flex-col mt-6 gap-2">
+      <ExpandableHeader
+        title="START A NEW CHAT"
+        expanded={expand}
         onClick={() => setExpand(!expand)}
-        className="flex justify-between items-center"
-      >
-        <h2 className="text-[#9CA3AF] font-bold text-xs leading-[12px]">
-          SHORTCUTS
-        </h2>
-        <Image
-          className={`${expand ? "" : "rotate-180"}`}
-          src={"/icons/unicorn_angle-up.svg"}
-          width={24}
-          height={24}
-          alt=""
-        />
-      </button>
-      <div
-        className={`flex flex-col gap-3 py-2 ${!expand ? "hidden " : "block"}`}
-      >
-        {products.map((product) => (
-          <ShortcutItem key={product.slug} product={product} />
-        ))}
-      </div>
+      />
+      {expand ? (
+        <div className="flex flex-row mx-1 items-center rounded-lg hover:bg-hover-light">
+          {featuredProducts.map((product) => (
+            <ShortcutItem key={product.slug} product={product} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
-});
+};
 
 export default ShortcutList;

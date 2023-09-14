@@ -1,44 +1,46 @@
+"use client";
+
 import Image from "next/image";
-import { useStore } from "@/_models/RootStore";
-import { useCallback } from "react";
-import { observer } from "mobx-react-lite";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import {
+  currentProductAtom,
+  showConfirmDeleteConversationModalAtom,
+  showingProductDetailAtom,
+} from "@/_helpers/JotaiWrapper";
+import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
+import useCreateConversation from "@/_hooks/useCreateConversation";
 
-type Props = {
-  onDeleteClick: () => void;
-  onCreateConvClick: () => void;
+const ModelMenu: React.FC = () => {
+  const currentProduct = useAtomValue(currentProductAtom);
+  const [active, setActive] = useAtom(showingProductDetailAtom);
+  const { requestCreateConvo } = useCreateConversation();
+  const setShowConfirmDeleteConversationModal = useSetAtom(
+    showConfirmDeleteConversationModalAtom
+  );
+
+  const onCreateConvoClick = () => {
+    if (!currentProduct) return;
+    requestCreateConvo(currentProduct, true);
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      <button onClick={() => onCreateConvoClick()}>
+        <PlusIcon width={24} height={24} color="#9CA3AF" />
+      </button>
+      <button onClick={() => setShowConfirmDeleteConversationModal(true)}>
+        <TrashIcon width={24} height={24} color="#9CA3AF" />
+      </button>
+      <button onClick={() => setActive(!active)}>
+        <Image
+          src={active ? "/icons/ic_sidebar_fill.svg" : "/icons/ic_sidebar.svg"}
+          width={24}
+          height={24}
+          alt=""
+        />
+      </button>
+    </div>
+  );
 };
-
-const ModelMenu: React.FC<Props> = observer(
-  ({ onDeleteClick, onCreateConvClick }) => {
-    const { historyStore } = useStore();
-
-    const onModelInfoClick = useCallback(() => {
-      historyStore.toggleModelDetail();
-    }, []);
-
-    return (
-      <div className="flex items-center gap-3">
-        <button onClick={onCreateConvClick}>
-          <Image src="/icons/unicorn_plus.svg" width={24} height={24} alt="" />
-        </button>
-        <button onClick={onDeleteClick}>
-          <Image src="/icons/unicorn_trash.svg" width={24} height={24} alt="" />
-        </button>
-        <button onClick={onModelInfoClick}>
-          <Image
-            src={
-              historyStore.showModelDetail
-                ? "/icons/ic_sidebar_fill.svg"
-                : "/icons/ic_sidebar.svg"
-            }
-            width={24}
-            height={24}
-            alt=""
-          />
-        </button>
-      </div>
-    );
-  }
-);
 
 export default ModelMenu;

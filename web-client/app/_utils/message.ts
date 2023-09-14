@@ -1,4 +1,3 @@
-import { Instance } from "mobx-state-tree";
 import { ChatMessage } from "../_models/ChatMessage";
 
 /**
@@ -10,12 +9,12 @@ import { ChatMessage } from "../_models/ChatMessage";
  * @returns Merged array of messages
  */
 export function mergeAndRemoveDuplicates(
-  arr1: Instance<typeof ChatMessage>[],
-  arr2: Instance<typeof ChatMessage>[]
-): Instance<typeof ChatMessage>[] {
+  arr1: ChatMessage[],
+  arr2: ChatMessage[]
+): ChatMessage[] {
   const mergedArray = arr1.concat(arr2);
   const uniqueIdMap = new Map<string, boolean>();
-  const result: Instance<typeof ChatMessage>[] = [];
+  const result: ChatMessage[] = [];
 
   for (const message of mergedArray) {
     if (!uniqueIdMap.has(message.id)) {

@@ -7,10 +7,9 @@ type Props = {
   children: ReactNode;
 };
 
-export const ThemeWrapper: React.FC<Props> = ({ children }) => {
-  return (
-    <ThemeProvider enableSystem={false} attribute="class">
-      {children}
-    </ThemeProvider>
-  );
-};
+// consider to use next-themes or not. This caused the error Warning: Extra attributes from the server: class,style at html after hydration
+export const ThemeWrapper: React.FC<Props> = ({ children }) => (
+  <ThemeProvider enableSystem={false} attribute="class">
+    {children}
+  </ThemeProvider>
+);

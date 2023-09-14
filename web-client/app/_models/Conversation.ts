@@ -1,78 +1,38 @@
-import { Instance, castToSnapshot, types } from "mobx-state-tree";
-import { Product } from "./Product";
-import { ChatMessage } from "./ChatMessage";
-import { User } from "../_models/User";
-import { withSetPropAction } from "../_helpers/withSetPropAction";
-import { mergeAndRemoveDuplicates } from "../_utils/message";
+import { ConversationDetailFragment } from "@/graphql";
+import { Product, toProduct } from "./Product";
 
-export const Conversation = types
-  .model("Conversation", {
-    /**
-     * Unique identifier for the conversation
-     */
-    id: types.string,
+export interface Conversation {
+  id: string;
+  product: Product;
+  createdAt: number;
+  updatedAt?: number;
+  lastImageUrl?: string;
+  lastTextMessage?: string;
+}
 
-    /**
-     * AI model that the conversation is using
-     */
-    product: Product,
+/**
+ * Store the state of conversation like fetching, waiting for response, etc.
+ */
+export type ConversationState = {
+  hasMore: boolean;
+  waitingForResponse: boolean;
+};
 
-    /**
-     * Conversation's messages, should ordered by time (createdAt)
-     */
-    chatMessages: types.optional(types.array(ChatMessage), []),
-
-    /**
-     * User who initiate the chat with the above AI model
-     */
-    user: User,
-
-    /**
-     * Indicates whether the conversation is created by the user
-     */
-    createdAt: types.number,
-
-    /**
-     * Time the last message is sent
-     */
-    updatedAt: types.maybe(types.number),
-
-    /**
-     * Last image url sent by the model if any
-     */
-    lastImageUrl: types.maybe(types.string),
-
-    /**
-     * Last text sent by the user if any
-     */
-    lastTextMessage: types.maybe(types.string),
-  })
-  .volatile(() => ({
-    isFetching: false,
-    offset: 0,
-    hasMore: true,
-    isWaitingForModelResponse: false,
-  }))
-  .actions(withSetPropAction)
-  .actions((self) => ({
-    addMessage(message: Instance<typeof ChatMessage>) {
-      self.chatMessages.push(message);
-    },
-
-    pushMessages(messages: Instance<typeof ChatMessage>[]) {
-      const mergedMessages = mergeAndRemoveDuplicates(
-        self.chatMessages,
-        messages
-      );
-
-      self.chatMessages = castToSnapshot(mergedMessages);
-    },
-
-    setHasMore(hasMore: boolean) {
-      self.hasMore = hasMore;
-    },
-
-    setWaitingForModelResponse(isWaitingForModelResponse: boolean) {
-      self.isWaitingForModelResponse = isWaitingForModelResponse;
-    },
-  }));
+export const toConversation = (
+  convo: ConversationDetailFragment
+): Conversation => {
+  const product = convo.conversation_product;
+  if (!product) {
+    throw new Error("Product is not defined");
+  }
+  return {
+    id: convo.id,
+    product: toProduct(product),
+    lastImageUrl: convo.last_image_url ?? undefined,
+    lastTextMessage: convo.last_text_message ?? undefined,
+    createdAt: new Date(convo.created_at).getTime(),
+    updatedAt: convo.updated_at
+      ? new Date(convo.updated_at).getTime()
+      : undefined,
+  };
+};

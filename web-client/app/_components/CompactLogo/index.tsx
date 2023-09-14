@@ -1,13 +1,13 @@
 import React from "react";
 import JanImage from "../JanImage";
+import { setActiveConvoIdAtom } from "@/_helpers/JotaiWrapper";
+import { useSetAtom } from "jotai";
 
-type Props = {
-  onClick: () => void;
-};
+const CompactLogo: React.FC = () => {
+  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
 
-const CompactLogo: React.FC<Props> = ({ onClick }) => {
   return (
-    <button onClick={onClick}>
+    <button onClick={() => setActiveConvoId(undefined)}>
       <JanImage imageUrl="/icons/app_icon.svg" width={28} height={28} />
     </button>
   );

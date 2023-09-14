@@ -1,58 +1,41 @@
 import HistoryItem from "../HistoryItem";
-import { observer } from "mobx-react-lite";
-import { useStore } from "@/_models/RootStore";
-import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import ExpandableHeader from "../ExpandableHeader";
+import { useAtomValue } from "jotai";
+import { userConversationsAtom } from "@/_helpers/JotaiWrapper";
+import useGetUserConversations from "@/_hooks/useGetUserConversations";
 
-interface IHistoryListProps {
-  searchText: string;
-}
-const HistoryList: React.FC<IHistoryListProps> = observer((props) => {
-  const { historyStore } = useStore();
-  const [showHistory, setShowHistory] = useState(true);
+const HistoryList: React.FC = () => {
+  const conversations = useAtomValue(userConversationsAtom);
+  const [expand, setExpand] = useState<boolean>(true);
+  const { getUserConversations } = useGetUserConversations();
+
+  useEffect(() => {
+    getUserConversations();
+  }, []);
 
   return (
-    <div className="flex flex-col w-full pl-1 pt-3">
-      <button
-        onClick={() => setShowHistory(!showHistory)}
-        className="flex items-center justify-between px-2"
+    <div className="flex flex-col flex-grow pt-3 gap-2">
+      <ExpandableHeader
+        title="CHAT HISTORY"
+        expanded={expand}
+        onClick={() => setExpand(!expand)}
+      />
+      <div
+        className={`flex flex-col gap-1 mt-1 ${!expand ? "hidden " : "block"}`}
       >
-        <h2 className="text-[#9CA3AF] font-bold text-[12px] leading-[12px]">
-          HISTORY
-        </h2>
-        <Image
-          className={`${showHistory ? "" : "rotate-180"}`}
-          src={"/icons/unicorn_angle-up.svg"}
-          width={24}
-          height={24}
-          alt=""
-        />
-      </button>
-      <div className={`flex-col gap-1 ${showHistory ? "flex" : "hidden"}`}>
-        {historyStore.conversations
-          .filter(
-            (e) =>
-              props.searchText === "" ||
-              e.product.name
-                .toLowerCase()
-                .includes(props.searchText.toLowerCase()) ||
-              e.product.description
-                ?.toLowerCase()
-                .includes(props.searchText.toLowerCase())
-          )
-          .sort((n1, n2) => (n2.updatedAt || 0) - (n1.updatedAt || 0))
-          .map(({ id, product: aiModel, updatedAt }) => (
-            <HistoryItem
-              key={id}
-              conversationId={id}
-              avatarUrl={aiModel.avatarUrl ?? ""}
-              name={aiModel.name}
-              updatedAt={updatedAt}
-            />
-          ))}
+        {conversations.map((convo) => (
+          <HistoryItem
+            key={convo.id}
+            conversation={convo}
+            avatarUrl={convo.product.avatarUrl}
+            name={convo.product.name}
+            updatedAt={convo.updatedAt}
+          />
+        ))}
       </div>
     </div>
   );
-});
+};
 
 export default HistoryList;
