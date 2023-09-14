@@ -63,7 +63,7 @@ export function toProduct(
     slug,
     name,
     description: description ?? "",
-    avatarUrl: image_url ?? "/icons/app_icon.svg",
+    avatarUrl: image_url ?? "icons/app_icon.svg",
     longDescription: long_description ?? "",
     technicalDescription: technical_description ?? "",
     author: author ?? "",

@@ -8,11 +8,11 @@ export const TabModelDetail: React.FC<Props> = ({ onTabClick, tab }) => {
   const btns = [
     {
       name: "api",
-      icon: "/icons/unicorn_arrow.svg",
+      icon: "icons/unicorn_arrow.svg",
     },
     {
       name: "description",
-      icon: "/icons/unicorn_exclamation-circle.svg",
+      icon: "icons/unicorn_exclamation-circle.svg",
     },
   ];
 

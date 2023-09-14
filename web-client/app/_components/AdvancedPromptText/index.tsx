@@ -13,7 +13,7 @@ const AdvancedPromptText: React.FC<Props> = ({ register }) => {
   return (
     <>
       <TogglableHeader
-        icon={"/icons/messicon.svg"}
+        icon={"icons/messicon.svg"}
         title={"Prompt"}
         expand={expand}
         onTitleClick={() => setExpand(!expand)}

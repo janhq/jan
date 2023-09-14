@@ -6,7 +6,7 @@ const MobileDownload = () => {
     <div className="flex items-center flex-col box-border rounded-lg border border-gray-200 p-4 bg-[#F9FAFB] mb-3">
       {/** Jan logo */}
       <Image
-        src="/icons/janai_logo.svg"
+        src="icons/janai_logo.svg"
         alt={""}
         width={32}
         height={32}
@@ -28,7 +28,7 @@ const MobileDownload = () => {
         >
           <div className="flex box-border h-11 rounded-md bg-gray-300 p-2 items-center hover:bg-gray-200 focus:bg-gray-600">
             <Image
-              src="/icons/social_icon_apple.svg"
+              src="icons/social_icon_apple.svg"
               alt={""}
               width={26}
               height={26}
@@ -49,7 +49,7 @@ const MobileDownload = () => {
         >
           <div className="flex box-border h-11 rounded-md bg-gray-300 p-2 items-center hover:bg-gray-200 focus:bg-gray-600">
             <Image
-              src="/icons/google_play_logo.svg"
+              src="icons/google_play_logo.svg"
               alt={""}
               width={26}
               height={26}

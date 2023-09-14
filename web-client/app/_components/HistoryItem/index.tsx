@@ -41,7 +41,7 @@ const HistoryItem: React.FC<Props> = ({
 
   let rightImageUrl: string | undefined;
   if (conversationStates[conversation.id]?.waitingForResponse === true) {
-    rightImageUrl = "/icons/loading.svg";
+    rightImageUrl = "icons/loading.svg";
   } else if (
     conversation &&
     conversation.product.type === ProductType.GenerativeArt &&

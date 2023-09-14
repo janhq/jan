@@ -35,7 +35,7 @@ const ConversationalCard: React.FC<Props> = ({ product }) => {
         </span>
       </div>
       <span className="flex text-xs leading-5 text-gray-500 items-center gap-[2px]">
-        <Image src={"/icons/play.svg"} width={16} height={16} alt="" />
+        <Image src={"icons/play.svg"} width={16} height={16} alt="" />
         32.2k runs
       </span>
     </button>

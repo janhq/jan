@@ -62,7 +62,7 @@ export const toChatMessage = async (
     messageSenderType: messageSenderType,
     senderUid: m.sender,
     senderName: m.sender_name ?? "",
-    senderAvatarUrl: m.sender_avatar_url ?? "/icons/app_icon.svg",
+    senderAvatarUrl: m.sender_avatar_url ?? "icons/app_icon.svg",
     text: contentHtml,
     imageUrls: imageUrls,
     createdAt: createdAt,

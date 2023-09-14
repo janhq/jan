@@ -10,7 +10,7 @@ const DiscordContainer = () => (
       target="_blank_"
     >
       <Image
-        src={"/icons/ico_mobile-android.svg"}
+        src={"icons/ico_mobile-android.svg"}
         width={16}
         height={16}
         alt=""
@@ -22,7 +22,7 @@ const DiscordContainer = () => (
       href={process.env.NEXT_PUBLIC_DISCORD_INVITATION_URL ?? "#"}
       target="_blank_"
     >
-      <Image src={"/icons/ico_Discord.svg"} width={20} height={20} alt="" />
+      <Image src={"icons/ico_Discord.svg"} width={20} height={20} alt="" />
       Discord
     </Link>
   </div>

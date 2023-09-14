@@ -33,7 +33,7 @@ const ModelMenu: React.FC = () => {
       </button>
       <button onClick={() => setActive(!active)}>
         <Image
-          src={active ? "/icons/ic_sidebar_fill.svg" : "/icons/ic_sidebar.svg"}
+          src={active ? "icons/ic_sidebar_fill.svg" : "icons/ic_sidebar.svg"}
           width={24}
           height={24}
           alt=""

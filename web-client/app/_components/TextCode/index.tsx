@@ -11,7 +11,7 @@ export const TextCode: React.FC<Props> = ({ text }) => (
     <div className="text-gray-200 bg-gray-800 flex items-center justify-between px-4 py-2 text-xs capitalize">
       <button onClick={() => navigator.clipboard.writeText(text)}>
         <Image
-          src={"/icons/unicorn_clipboard-alt.svg"}
+          src={"icons/unicorn_clipboard-alt.svg"}
           width={24}
           height={24}
           alt=""

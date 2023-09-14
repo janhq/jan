@@ -6,7 +6,7 @@ const MobileShowcase = () => {
   return (
     <div className="md:hidden flex flex-col px-5 mt-10 items-center justify-center w-full gap-10">
       <Image
-        src="/images/mobile.jpg"
+        src="images/mobile.jpg"
         width={638}
         height={892}
         alt="mobile"
@@ -15,7 +15,7 @@ const MobileShowcase = () => {
       />
       <div className="flex flex-col items-center justify-center mb-20">
         <Image
-          src="/icons/app_icon.svg"
+          src="icons/app_icon.svg"
           width={200}
           height={200}
           className="w-[10%]"
@@ -35,7 +35,7 @@ const MobileShowcase = () => {
           >
             <div className="flex box-border h-11 rounded-md bg-gray-300 p-2 items-center hover:bg-gray-200 focus:bg-gray-600">
               <Image
-                src="/icons/social_icon_apple.svg"
+                src="icons/social_icon_apple.svg"
                 alt={""}
                 width={26}
                 height={26}
@@ -55,7 +55,7 @@ const MobileShowcase = () => {
           >
             <div className="flex box-border h-11 rounded-md bg-gray-300 p-2 items-center hover:bg-gray-200 focus:bg-gray-600">
               <Image
-                src="/icons/google_play_logo.svg"
+                src="icons/google_play_logo.svg"
                 alt={""}
                 width={26}
                 height={26}

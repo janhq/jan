@@ -8,7 +8,7 @@ const CompactLogo: React.FC = () => {
 
   return (
     <button onClick={() => setActiveConvoId(undefined)}>
-      <JanImage imageUrl="/icons/app_icon.svg" width={28} height={28} />
+      <JanImage imageUrl="icons/app_icon.svg" width={28} height={28} />
     </button>
   );
 };

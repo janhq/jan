@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
+  output: "export",
+  assetPrefix: ".",
   experimental: {
     serverActions: false,
   },
@@ -13,7 +14,7 @@ const nextConfig = {
       },
     ],
   },
-  exclude: ['electron'],
+  exclude: ["electron"],
 };
 
 module.exports = nextConfig;

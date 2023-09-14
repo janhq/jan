@@ -18,7 +18,7 @@ const UserProfileDropDown: React.FC = () => {
         <Popover.Button className="flex items-center gap-2 outline-none">
           <img
             className="rounded-sm w-8 aspect-square"
-            src={user.avatarUrl ?? "/icons/app_icon.svg"}
+            src={user.avatarUrl ?? "icons/app_icon.svg"}
             alt=""
           />
           <div className="flex flex-col justify-start">

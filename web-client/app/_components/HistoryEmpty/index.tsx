@@ -6,7 +6,7 @@ const HistoryEmpty: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-full items-center justify-center gap-4">
       <Image
-        src={"/icons/chats-circle-light.svg"}
+        src={"icons/chats-circle-light.svg"}
         width={50}
         height={50}
         alt=""

@@ -14,8 +14,8 @@ const Page: React.FC = () => {
       <div className="absolute top-3 left-5">
         <Link href="/" className="flex flex-row gap-2">
           <div className="flex gap-[2px] items-center">
-            <Image src={"/icons/app_icon.svg"} width={28} height={28} alt="" />
-            <Image src={"/icons/Jan.svg"} width={27} height={12} alt="" />
+            <Image src={"icons/app_icon.svg"} width={28} height={28} alt="" />
+            <Image src={"icons/Jan.svg"} width={27} height={12} alt="" />
           </div>
         </Link>
       </div>
@@ -27,7 +27,7 @@ const Page: React.FC = () => {
           href={process.env.NEXT_PUBLIC_DISCORD_INVITATION_URL ?? "#"}
           target="_blank_"
         >
-          <Image src={"/icons/discord.svg"} width={70} height={70} alt="" />
+          <Image src={"icons/discord.svg"} width={70} height={70} alt="" />
         </Link>
         <p>
           If you have any questions or concerns about our privacy policy or

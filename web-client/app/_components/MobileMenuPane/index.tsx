@@ -25,7 +25,7 @@ const MobileMenuPane: React.FC = () => {
               className="h-8 w-auto"
               width={32}
               height={32}
-              src="/icons/app_icon.svg"
+              src="icons/app_icon.svg"
               alt=""
             />
           </a>

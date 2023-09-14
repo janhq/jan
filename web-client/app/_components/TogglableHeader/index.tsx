@@ -23,7 +23,7 @@ const TogglableHeader: React.FC<Props> = ({
     </div>
     <Image
       className={`${!expand ? "rotate-180" : "rotate-0"}`}
-      src={"/icons/unicorn_angle-up.svg"}
+      src={"icons/unicorn_angle-up.svg"}
       width={24}
       height={24}
       alt=""

@@ -32,7 +32,7 @@ const ModelInfo: React.FC<Props> = ({
         </span>
       </div>
       <button className="px-3 py-2 bg-[#1F2A37] flex gap-2 items-center rounded-lg">
-        <Image src={"/icons/code.svg"} width={16} height={17} alt="" />
+        <Image src={"icons/code.svg"} width={16} height={17} alt="" />
         <span className="text-white text-sm font-medium">Get API Key</span>
       </button>
     </div>

@@ -48,7 +48,7 @@ const SimpleImageMessage: React.FC<Props> = ({
               target="_blank_"
               className="flex gap-1 items-center px-2 py-1 bg-[#F3F4F6] rounded-[12px]"
             >
-              <Image src="/icons/download.svg" width={16} height={16} alt="" />
+              <Image src="icons/download.svg" width={16} height={16} alt="" />
               <span className="leading-[20px] text-[14px] text-[#111928]">
                 Download
               </span>
@@ -57,7 +57,7 @@ const SimpleImageMessage: React.FC<Props> = ({
               className="flex gap-1 items-center px-2 py-1 bg-[#F3F4F6] rounded-[12px]"
               // onClick={() => sendChatMessage()}
             >
-              <Image src="/icons/refresh.svg" width={16} height={16} alt="" />
+              <Image src="icons/refresh.svg" width={16} height={16} alt="" />
               <span className="leading-[20px] text-[14px] text-[#111928]">
                 Re-generate
               </span>

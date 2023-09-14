@@ -15,7 +15,7 @@ const AdvancedPromptImageUpload: React.FC<Props> = ({ register }) => {
   return (
     <>
       <TogglableHeader
-        icon={"/icons/ic_image.svg"}
+        icon={"icons/ic_image.svg"}
         title={"Image"}
         expand={expand}
         onTitleClick={() => setExpand(!expand)}
