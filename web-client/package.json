@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "electron:start": "concurrently \"yarn dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:build:all": "yarn build && electron-builder build --publish never -mwl",
     "lint": "next lint",
     "compile": "tsc --noEmit -p . --pretty",
     "generate": "graphql-codegen --config codegen.ts",
@@ -18,7 +19,7 @@
     "appId": "com.app.id",
     "productName": "Jan Desktop App",
     "files": [
-      "build/**/*",
+      "out/**/*",
       "electron/main.ts",
       "package.json"
     ],
