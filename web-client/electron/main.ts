@@ -17,7 +17,7 @@ const createMainWindow = () => {
     webPreferences: {
       nodeIntegration: true,
       preload: path.join(__dirname, "preload.js"),
-      // contextIsolation: false,
+      enableRemoteModule: true,
     },
   });
   const startURL = isDev

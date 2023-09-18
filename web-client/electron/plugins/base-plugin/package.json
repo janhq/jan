@@ -1,0 +1,29 @@
+{
+  "name": "demoplugin",
+  "version": "2.1.0",
+  "description": "",
+  "main": "dist/bundle.js",
+  "author": "Igor Honhoff",
+  "license": "MIT",
+  "activationPoints": [
+    "init"
+  ],
+  "scripts": {
+    "prepare": "webpack --config webpack.config.js",
+    "package": "rimraf ./demoplugin*.tgz && npm pack"
+  },
+  "devDependencies": {
+    "rimraf": "^3.0.2",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "axios": "^1.5.0",
+    "sql.js": "^1.8.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ]
+}
