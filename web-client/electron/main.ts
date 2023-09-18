@@ -17,6 +17,7 @@ const createMainWindow = () => {
     webPreferences: {
       nodeIntegration: true,
       preload: path.join(__dirname, "preload.js"),
+      // contextIsolation: false,
     },
   });
   const startURL = isDev
@@ -37,6 +38,7 @@ app.whenReady().then(() => {
 
   pe.init({
     // Function to check from the main process that user wants to install a plugin
+    //@ts-ignore
     confirmInstall: async (plugins) => {
       const answer = await dialog.showMessageBox({
         message: `Are you sure you want to install the plugin ${plugins.join(
