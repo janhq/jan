@@ -1,6 +1,7 @@
 "use client";
 import { useEffect } from "react";
 import {
+  setup,
   plugins,
   extensionPoints,
   activationPoints,
@@ -8,6 +9,20 @@ import {
 /* eslint-disable @next/next/no-sync-scripts */
 export const Preferences = () => {
   useEffect(() => {
+    async function setupPE() {
+      // Enable activation point management
+      setup({
+        importer: (plugin) =>
+          //@ts-ignore
+          import(/* webpackIgnore: true */ plugin).catch((err) => {
+            console.log(err);
+          }),
+      });
+
+      // Register all active plugins with their activation points
+      await plugins.registerActive();
+    }
+    setupPE();
     // Install a new plugin on clicking the install button
     document
       ?.getElementById("install-file")
