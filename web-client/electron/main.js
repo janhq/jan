@@ -1,6 +1,12 @@
-const { app, BrowserWindow, screen: electronScreen } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  screen: electronScreen,
+  dialog,
+} = require("electron");
 const isDev = require("electron-is-dev");
 const path = require("path");
+const pe = require("pluggable-electron/main");
 
 const createMainWindow = () => {
   let mainWindow = new BrowserWindow({
@@ -9,7 +15,8 @@ const createMainWindow = () => {
     show: false,
     backgroundColor: "white",
     webPreferences: {
-      nodeIntegration: false,
+      nodeIntegration: true,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
   const startURL = isDev
@@ -28,6 +35,23 @@ const createMainWindow = () => {
 app.whenReady().then(() => {
   createMainWindow();
 
+  pe.init({
+    // Function to check from the main process that user wants to install a plugin
+    confirmInstall: async (plugins) => {
+      const answer = await dialog.showMessageBox({
+        message: `Are you sure you want to install the plugin ${plugins.join(
+          ", "
+        )}`,
+        buttons: ["Ok", "Cancel"],
+        cancelId: 1,
+      });
+      console.log("Main:", answer);
+      return answer.response == 0;
+    },
+    // Path to install plugin to
+    pluginsPath: path.join(app.getPath("userData"), "plugins"),
+  });
+  console.log(path.join(app.getPath("userData"), "plugins"));
   app.on("activate", () => {
     if (!BrowserWindow.getAllWindows().length) {
       createMainWindow();

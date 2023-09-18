@@ -1,8 +1,6 @@
 import "./globals.css";
-import classNames from "classnames";
 import { Metadata } from "next";
 import SessionProviderWrapper from "@/_components/SessionProviderWrapper";
-
 
 export const metadata: Metadata = {
   title: "Jan",
@@ -24,7 +22,7 @@ export default function RootLayout({ children }: Props) {
   return (
     <SessionProviderWrapper>
       {/* suppressHydrationWarning is for next-themes */}
-      <html lang="en" suppressHydrationWarning> 
+      <html lang="en" suppressHydrationWarning>
         <body>{children}</body>
       </html>
     </SessionProviderWrapper>

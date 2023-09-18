@@ -2,7 +2,7 @@
   "name": "jan-web",
   "version": "0.1.0",
   "private": true,
-  "main": "./electron/main.ts",
+  "main": "./electron/main.js",
   "homepage": "./",
   "scripts": {
     "dev": "next dev",
@@ -20,7 +20,7 @@
     "productName": "Jan Desktop App",
     "files": [
       "out/**/*",
-      "electron/main.ts",
+      "electron/main.js",
       "package.json"
     ],
     "extends": null,
@@ -72,6 +72,7 @@
     "electron": "^26.2.1",
     "electron-builder": "^24.6.4",
     "encoding": "^0.1.13",
+    "pluggable-electron": "^0.6.0",
     "wait-on": "^7.0.1"
   }
 }

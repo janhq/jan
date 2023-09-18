@@ -24,6 +24,6 @@
       "@/graphql": ["./graphql/generated/graphql"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "electron/renderer.js", "electron/preload.js", "electron/main.js"],
   "exclude": ["node_modules"]
 }
