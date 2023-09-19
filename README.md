@@ -1,4 +1,4 @@
-# Jan - Self-Hosted AI Platform
+# Jan - Run your own AI
 
 <p align="center">
   <img alt="janlogo" src="https://user-images.githubusercontent.com/69952136/266827788-b37d6f41-fc34-4677-aa1f-3e2ca6d3c91a.png">
@@ -20,7 +20,7 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan helps you run Local AI on your computer, with 1-click installs for the latest models. Easy-to-use yet powerful, with helpful tools to monitor and manage software-hardware performance. 
+Jan lets you run AI on your own hardware, and with 1-click installs for the latest models. Easy-to-use yet powerful, with helpful tools to monitor and manage software-hardware performance. 
 
 Jan runs on a wide variety of hardware. We run on consumer-grade GPUs and Mac Minis, as well as datacenter-grade DGX H100 clusters. 
 
