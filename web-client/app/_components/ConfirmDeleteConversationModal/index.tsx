@@ -1,5 +1,5 @@
 import { showConfirmDeleteConversationModalAtom } from "@/_helpers/JotaiWrapper";
-import useDeleteConversation from "@/_hooks/useDeleteConversation";
+// import useDeleteConversation from "@/_hooks/useDeleteConversation";
 import { Dialog, Transition } from "@headlessui/react";
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import { useAtom } from "jotai";
@@ -8,10 +8,10 @@ import React, { Fragment, useRef } from "react";
 const ConfirmDeleteConversationModal: React.FC = () => {
   const [show, setShow] = useAtom(showConfirmDeleteConversationModalAtom);
   const cancelButtonRef = useRef(null);
-  const { deleteConvo } = useDeleteConversation();
+  // const { deleteConvo } = useDeleteConversation();
 
   const onConfirmDelete = () => {
-    deleteConvo().then(() => setShow(false));
+    // deleteConvo().then(() => setShow(false));
   };
 
   return (

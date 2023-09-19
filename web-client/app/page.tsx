@@ -1,5 +1,4 @@
 "use client";
-import { ApolloWrapper } from "./_helpers/ApolloWrapper";
 import { ThemeWrapper } from "./_helpers/ThemeWrapper";
 import JotaiWrapper from "./_helpers/JotaiWrapper";
 import LeftContainer from "./_components/LeftContainer";
@@ -8,18 +7,16 @@ import { ModalWrapper } from "./_helpers/ModalWrapper";
 const Page: React.FC = () => {
   return (
     <>
-      <ApolloWrapper>
-        <JotaiWrapper>
-          <ThemeWrapper>
-            <ModalWrapper>
-              <div className="flex">
-                <LeftContainer />
-                <RightContainer />
-              </div>
-            </ModalWrapper>
-          </ThemeWrapper>
-        </JotaiWrapper>
-      </ApolloWrapper>
+      <JotaiWrapper>
+        <ThemeWrapper>
+          <ModalWrapper>
+            <div className="flex">
+              <LeftContainer />
+              <RightContainer />
+            </div>
+          </ModalWrapper>
+        </ThemeWrapper>
+      </JotaiWrapper>
     </>
   );
 };

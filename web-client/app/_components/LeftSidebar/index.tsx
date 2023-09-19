@@ -10,7 +10,7 @@ const LeftSidebar: React.FC = () => (
     <JanLogo />
     <div className="flex flex-col flex-1 gap-3 overflow-x-hidden">
       <SearchBar />
-      <ShortcutList />
+      {/* <ShortcutList /> */}
       <HistoryList />
     </div>
     <DiscordContainer />
