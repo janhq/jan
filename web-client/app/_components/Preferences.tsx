@@ -5,15 +5,15 @@ import {
   plugins,
   extensionPoints,
   activationPoints,
-} from "../../node_modules/pluggable-electron/dist/execution.es.js";
+} from "../../electron/core/plugin-manager/execution/index";
 /* eslint-disable @next/next/no-sync-scripts */
 export const Preferences = () => {
   useEffect(() => {
     async function setupPE() {
       // Enable activation point management
       setup({
+        //@ts-ignore
         importer: (plugin) =>
-          //@ts-ignore
           import(/* webpackIgnore: true */ plugin).catch((err) => {
             console.log(err);
           }),
@@ -23,6 +23,7 @@ export const Preferences = () => {
       await plugins.registerActive();
     }
     setupPE();
+
     // Install a new plugin on clicking the install button
     document
       ?.getElementById("install-file")
@@ -114,7 +115,11 @@ export const Preferences = () => {
         //@ts-ignore
         const price = new FormData(e.target).get("price");
         // Get the cost, calculated in multiple steps, by the plugins
-        const cost = await extensionPoints.executeSerial("calc-price", price);
+        const cost = await extensionPoints
+          .executeSerial("calc-price", price)
+          .catch((err) => {
+            console.log(err);
+          });
         // Display result in the app
         document!.getElementById("demo-cost")!.innerText = cost;
       });

@@ -1,4 +1,4 @@
-import axios from "axios";
+// import axios from "axios";
 
 // Provide menu item as plain object
 const newItem = { text: "Item from object" };
@@ -23,16 +23,25 @@ const asyncChildItem = (parent) =>
       500
     );
   });
+
 // Provide an async method to manipulate the price provided by the extension point
 const addVat = (price) =>
   new Promise(async (resolve) => {
     const vat = 1.2;
+    // axios
+    //   .get("https://jsonplaceholder.typicode.com/todos/1")
+    //   .then((response) => {
+    //     console.log(response);
+    //   });
+
+    if (window.electronAPI) {
+      window.electronAPI.invokePluginSep(
+        "demoplugin",
+        "testNodeProcess"
+      );
+    }
+    // @ts-ignore
     setTimeout(() => resolve(price * vat), 1);
-    axios
-      .get("https://jsonplaceholder.typicode.com/todos/1")
-      .then((response) => {
-        console.log(response);
-      });
   });
 
 // Provide a synchronous method to manipulate the price provided by the extension point
@@ -46,6 +55,8 @@ const displayImg = (url) => {
   img.setAttribute("width", "100%");
   document.getElementById("img-viewer").appendChild(img);
 };
+
+
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
   register("extend-menu", "newItem", newItem);
@@ -57,3 +68,4 @@ export function init({ register }) {
   register("calc-price", "addDelivery", addDelivery, 10);
   register("display-img", "displayImg", displayImg);
 }
+

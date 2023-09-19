@@ -3,6 +3,7 @@ const {
   BrowserWindow,
   screen: electronScreen,
   dialog,
+  ipcMain,
 } = require("electron");
 const isDev = require("electron-is-dev");
 const path = require("path");
@@ -17,9 +18,35 @@ const createMainWindow = () => {
     webPreferences: {
       nodeIntegration: true,
       preload: path.join(__dirname, "preload.js"),
-      enableRemoteModule: true,
     },
   });
+
+  ipcMain.on("invokePluginSep", async (event, plugin, method) => {
+    const plg = pe
+      .getStore()
+      .getActivePlugins()
+      // @ts-ignore
+      .filter((p) => p.name === plugin)[0];
+    const pluginPath = path.join(
+      app.getPath("userData"),
+      "plugins",
+      plg.name,
+      "dist/module.js"
+    );
+    await import(
+      /* webpackIgnore: true */
+      pluginPath
+    )
+      .then((plugin) => {
+        if (typeof plugin[method] === "function") {
+          plugin[method](); // Call the function dynamically
+        } else {
+          console.error(`Function "${method}" does not exist in the module.`);
+        }
+      })
+      .catch((err) => console.log(err));
+  });
+
   const startURL = isDev
     ? "http://localhost:3000"
     : `file://${path.join(__dirname, "../out/index.html")}`;
@@ -28,8 +55,9 @@ const createMainWindow = () => {
 
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.on("closed", () => {
-    mainWindow = null;
+    if (process.platform !== "darwin") app.quit();
   });
+
   mainWindow.webContents.openDevTools();
 };
 
@@ -53,7 +81,7 @@ app.whenReady().then(() => {
     // Path to install plugin to
     pluginsPath: path.join(app.getPath("userData"), "plugins"),
   });
-  console.log(path.join(app.getPath("userData"), "plugins"));
+
   app.on("activate", () => {
     if (!BrowserWindow.getAllWindows().length) {
       createMainWindow();
