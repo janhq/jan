@@ -26,7 +26,7 @@ Jan runs on a wide variety of hardware. We run on consumer-grade GPUs and Mac Mi
 
 Jan can be run as a server or cloud-native application for enterprise. We offer enterprise plugins for LDAP integration and Audit Logs. Contact us at [hello@jan.ai](mailto:hello@jan.ai) for more details. 
 
-Jan is free, [open core](https://en.wikipedia.org/wiki/Open-core_model), and licensed under a Sustainable Use License. 
+Jan is free, [open core](https://en.wikipedia.org/wiki/Open-core_model), and Sustainable Use Licensed.
 
 ## Demo
 
