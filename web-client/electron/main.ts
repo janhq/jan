@@ -8,6 +8,7 @@ const {
 const isDev = require("electron-is-dev");
 const path = require("path");
 const pe = require("pluggable-electron/main");
+// const expr = require("./app-express");
 
 const createMainWindow = () => {
   let mainWindow = new BrowserWindow({
@@ -93,4 +94,18 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+
+// Spawn the Express server as a separate process
+const { spawn } = require('child_process');
+const expressServer = spawn('node', ['electron/app-express.js']);
+expressServer.stdout.on('data', (data) => {
+  console.log(`stdout: ${data}`);
+});
+expressServer.stderr.on('data', (data) => {
+  console.error(`stderr: ${data}`);
+});
+expressServer.on('close', (code) => {
+  console.log(`Express server process exited with code ${code}`);
 });
