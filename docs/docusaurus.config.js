@@ -6,12 +6,12 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Jan Documentation',
-  tagline: 'Self-hosted AI inference platform',
+  title: 'Jan',
+  tagline: 'Run your own AI',
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://docs.jan.ai',
+  url: 'https://jan.ai',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
@@ -21,7 +21,7 @@ const config = {
   organizationName: 'janhq', // Usually your GitHub org/user name.
   projectName: 'jan', // Usually your repo name.
 
-  onBrokenLinks: 'ignore',
+  onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
 
   // Even if you don't use internalization, you can use this field to set useful
@@ -54,8 +54,8 @@ const config = {
         },
         // Will be passed to @docusaurus/plugin-content-sitemap (false to disable)
         sitemap: {
-          changefreq: 'weekly',
-          priority: 0.5,
+          changefreq: 'daily',
+          priority: 1.0,
           ignorePatterns: ['/tags/**'],
           filename: 'sitemap.xml',
         },
@@ -76,7 +76,7 @@ const config = {
         specs: [
           {
             spec: 'openapi/OpenAPISpec.json', // can be local file, url, or parsed json object
-            route: '/reference/',
+            route: '/api/',
           },
         ],
         theme: {
@@ -98,18 +98,18 @@ const config = {
         playgroundPosition: 'bottom',
       },
       navbar: {
-        title: 'Jan Docs',
+        title: 'Jan',
         logo: {
           alt: 'Jan Logo',
           src: 'img/logo.svg',
         },
         items: [
-          // Navbar left
+          // Navbar Top
           {
             type: 'docSidebar',
-            sidebarId: 'quickstartSidebar',
+            sidebarId: 'featuresSidebar',
             position: 'left',
-            label: 'Getting Started',
+            label: 'Features',
           },
           {
             type: 'docSidebar',
@@ -124,15 +124,9 @@ const config = {
             label: 'Hardware',
           },
           {
-            type: 'docSidebar',
-            sidebarId: 'integrationsSidebar',
             position: 'left',
-            label: 'Integrations',
-          },
-          {
-            position: 'left',
-            label: 'Reference',
-            to: '/reference',
+            label: 'API',
+            to: '/api',
           },
           // Navbar right
           {
@@ -167,8 +161,8 @@ const config = {
                 to: '/developer',
               },
               {
-                label: 'Reference',
-                to: '/reference',
+                label: 'API',
+                to: '/api',
               },
               {
                 label: 'Changelog',
@@ -184,12 +178,8 @@ const config = {
                 href: 'https://discord.gg/FTk2MvZwJH',
               },
               {
-                label: 'Telegram',
-                href: 'https://t.me/+cSSlxwEM-0piMDQ1',
-              },
-              {
                 label: 'Twitter',
-                href: 'https://twitter.com/askjanai',
+                href: 'https://twitter.com/jan_dotai',
               },
             ],
           },
