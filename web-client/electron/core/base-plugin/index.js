@@ -37,7 +37,7 @@ const addVat = (price) =>
     if (window.electronAPI) {
       window.electronAPI.invokePluginSep(
         "demoplugin",
-        "testNodeProcess"
+        "init"
       );
     }
     // @ts-ignore
