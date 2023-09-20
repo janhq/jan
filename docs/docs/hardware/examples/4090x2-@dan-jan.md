@@ -1,3 +1,3 @@
 ---
-title: $50,000
+title: "@Jan: 2 x 4090 Workstation"
 ---
