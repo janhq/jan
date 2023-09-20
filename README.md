@@ -1,4 +1,4 @@
-# Jan - Self-Hosted AI Platform
+# Jan - Run your own AI
 
 <p align="center">
   <img alt="janlogo" src="https://user-images.githubusercontent.com/69952136/266827788-b37d6f41-fc34-4677-aa1f-3e2ca6d3c91a.png">
@@ -20,17 +20,15 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan is a self-hosted AI Platform to run AI in the enterprise. Easy-to use for users, and packed with useful organizational and security features.
+Jan lets you run AI on your own hardware, and with 1-click installs for the latest models. Easy-to-use yet powerful, with helpful tools to monitor and manage software-hardware performance. 
 
-We help you run AI on your own hardware, with 1-click installs for the latest models. Jan runs on a wide variety of hardware: from consumer grade Mac Minis, to datacenter-grade Nvidia H100s. 
+Jan runs on a wide variety of hardware. We run on consumer-grade GPUs and Mac Minis, as well as datacenter-grade DGX H100 clusters. 
 
-Jan can also connect to the latest AI engines like ChatGPT, with a security policy engine to protect your organization from sensitive data leaks.
+Jan can be run as a server or cloud-native application for enterprise. We offer enterprise plugins for LDAP integration and Audit Logs. Contact us at [hello@jan.ai](mailto:hello@jan.ai) for more details. 
 
-Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
+Jan is free, [open core](https://en.wikipedia.org/wiki/Open-core_model), and Sustainable Use Licensed.
 
 ## Demo
-
-👋 https://cloud.jan.ai
 
 <p align="center">
   <img style='border:1px solid #000000' src="https://github.com/janhq/jan/assets/69952136/1f9bb48c-2e70-4633-9f68-7881cd925972" alt="Jan Web GIF">
@@ -40,7 +38,7 @@ Jan is free, source-available, and [fair-code](https://faircode.io/) licensed.
 
 **Self-Hosted AI**
 - [x] Self-hosted Llama2 and LLMs 
-- [x] Self-hosted StableDiffusion and Controlnet
+- [ ] Self-hosted StableDiffusion and Controlnet
 - [ ] 1-click installs for Models (coming soon)
 
 **3rd-party AIs**
@@ -103,9 +101,14 @@ You will need to set the following `.env` variables
 
 ### Step 4: Install Models
 
-> Note: This step will change soon with [Nitro](https://github.com/janhq/nitro) becoming its own library
+> Note: These step will change soon as we will be switching to [Nitro](https://github.com/janhq/nitro), an Accelerated Inference Server written in C++
+
+#### Step 4.1: Install Mamba
+
+> For complete Mambaforge installation instructions, see [miniforge repo](https://github.com/conda-forge/miniforge)
 
 Install Mamba to handle native python binding (which can yield better performance on Mac M/ NVIDIA)
+
 ```bash
 curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh"
 bash Mambaforge-$(uname)-$(uname -m).sh
@@ -114,19 +117,33 @@ rm Mambaforge-$(uname)-$(uname -m).sh
 # Create environment
 conda create -n jan python=3.9.16
 conda activate jan
+```
+
+Uninstall any previous versions of `llama-cpp-python`
+```bash
 pip uninstall llama-cpp-python -y
 ```
 
+#### Step 4.2: Install `llama-cpp-python`
+
+> Note: This step will change soon once [Nitro](https://github.com/janhq/nitro) (our accelerated inference server written in C++) is released
+
 - On Mac
+
 ```bash
+# See https://github.com/abetlen/llama-cpp-python/blob/main/docs/install/macos.md
 CMAKE_ARGS="-DLLAMA_METAL=on" FORCE_CMAKE=1 pip install -U llama-cpp-python --no-cache-dir
 pip install 'llama-cpp-python[server]'
 ```
-- On Linux with NVIDIA GPU
+
+- On Linux with NVIDIA GPU Hardware Acceleration
+
 ```bash
-CMAKE_ARGS="-DLLAMA_HIPBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python
+# See https://github.com/abetlen/llama-cpp-python#installation-with-hardware-acceleration
+CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python
 pip install 'llama-cpp-python[server]'
 ```
+
 - On Linux with Intel/ AMD CPU (support for AVX-2/ AVX-512)
 
 ```bash
@@ -142,7 +159,7 @@ You will need to download the models to the `models` folder at root level.
 # Downloads model (~4gb)
 # Download time depends on your internet connection and HuggingFace's bandwidth
 # In this part, please head over to any source contains `.gguf` format model - https://huggingface.co/models?search=gguf
-wget https://huggingface.co/TheBloke/CodeLlama-13B-GGUF/resolve/main/codellama-13b.Q3_K_L.gguf -P models
+wget https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_0.gguf -P models
 ```
 
 - Run the model in host machine
@@ -151,7 +168,7 @@ wget https://huggingface.co/TheBloke/CodeLlama-13B-GGUF/resolve/main/codellama-1
 # The --n_gpu_layers 1 means using acclerator (can be Metal on Mac, NVIDIA GPU on on linux with NVIDIA GPU)
 # This service will run at `http://localhost:8000` in host level
 # The backend service inside docker compose will connect to this service by using `http://host.docker.internal:8000`
-python3 -m llama_cpp.server --model models/codellama-13b.Q3_K_L.gguf --n_gpu_layers 1
+python3 -m llama_cpp.server --model models/llama-2-7b.Q4_0.gguf --n_gpu_layers 1
 ```
 
 ### Step 5: `docker compose up`
