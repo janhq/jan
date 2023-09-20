@@ -24,7 +24,7 @@ function init() {
   db.close();
 }
 function getConversations() {
-  return new Promise(async (res) => {
+  return new Promise((res) => {
     const db = new sqlite3.Database(
       path.join(app.getPath("userData"), "jan.db")
     );
@@ -36,33 +36,43 @@ function getConversations() {
   });
 }
 function storeConversation(conversation) {
-  const db = new sqlite3.Database(path.join(app.getPath("userData"), "jan.db"));
+  return new Promise((res) => {
+    const db = new sqlite3.Database(
+      path.join(app.getPath("userData"), "jan.db")
+    );
 
-  db.serialize(() => {
-    const stmt = db.prepare(
-      "INSERT INTO conversations (name, model_id, image, message) VALUES (?, ?, ?, ?)"
-    );
-    stmt.run(
-      conversation.name,
-      conversation.model_id,
-      conversation.image,
-      conversation.message
-    );
-    stmt.finalize();
+    db.serialize(() => {
+      const stmt = db.prepare(
+        "INSERT INTO conversations (name, model_id, image, message) VALUES (?, ?, ?, ?)"
+      );
+      stmt.run(
+        conversation.name,
+        conversation.model_id,
+        conversation.image,
+        conversation.message
+      );
+      stmt.finalize();
+      res([]);
+    });
+
+    db.close();
   });
-
-  db.close();
 }
 function deleteConversation(id) {
-  const db = new sqlite3.Database(path.join(app.getPath("userData"), "jan.db"));
+  return new Promise((res) => {
+    const db = new sqlite3.Database(
+      path.join(app.getPath("userData"), "jan.db")
+    );
 
-  db.serialize(() => {
-    const stmt = db.prepare("DELETE FROM conversations WHERE id = ?");
-    stmt.run(id);
-    stmt.finalize();
+    db.serialize(() => {
+      const stmt = db.prepare("DELETE FROM conversations WHERE id = ?");
+      stmt.run(id);
+      stmt.finalize();
+      res([]);
+    });
+
+    db.close();
   });
-
-  db.close();
 }
 
 module.exports = {

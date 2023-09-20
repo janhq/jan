@@ -54,7 +54,7 @@ const createMainWindow = () => {
     )
       .then((plugin) => {
         if (typeof plugin[method] === "function") {
-          return plugin[method](args);
+          return plugin[method](...args);
         } else {
           console.log(plugin[method]);
           console.error(`Function "${method}" does not exist in the module.`);

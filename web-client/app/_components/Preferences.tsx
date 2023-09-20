@@ -335,13 +335,47 @@ export const Preferences = () => {
               className="mt-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
               onClick={async () => {
                 const data = await extensionPoints.executeSerial(
-                  "datadriver",
                   "getConversations"
                 );
                 console.log(data);
               }}
             >
               Get Conversations
+            </button>
+            <button
+              type="submit"
+              className="mt-5 ml-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              onClick={async () => {
+                const data = await extensionPoints.executeSerial(
+                  "createConversation",
+                  {
+                    name: "test",
+                    model_id: "yolo",
+                  }
+                );
+                console.log(data);
+              }}
+            >
+              Create Conversation
+            </button>
+            <button
+              type="submit"
+              className="mt-5 ml-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              onClick={async () => {
+                const convs = await extensionPoints.executeSerial(
+                  "getConversations"
+                );
+                await extensionPoints.executeSerial(
+                  "deleteConversation",
+                  convs[0].id
+                );
+                const data = await extensionPoints.executeSerial(
+                  "getConversations"
+                );
+                console.log(data)
+              }}
+            >
+              Delete Conversation
             </button>
             {/* Content */}
           </div>
