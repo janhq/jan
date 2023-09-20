@@ -29,7 +29,7 @@ function getConversations() {
       path.join(app.getPath("userData"), "jan.db")
     );
 
-    db.all("SELECT * from conversations", (err, row) => {
+    db.all("SELECT * FROM conversations ORDER BY created_at DESC", (err, row) => {
       res(row);
     });
     db.close();
@@ -104,7 +104,7 @@ function getConversationMessages(conversation_id) {
       path.join(app.getPath("userData"), "jan.db")
     );
 
-    const query = `SELECT * FROM messages WHERE conversation_id = ${conversation_id}`;
+    const query = `SELECT * FROM messages WHERE conversation_id = ${conversation_id} ORDER BY created_at DESC`;
     db.all(query, (err, row) => {
       res(row);
     });
