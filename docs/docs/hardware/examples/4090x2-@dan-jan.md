@@ -1,3 +1,3 @@
 ---
-title: "@Jan: 2 x 4090 Workstation"
+title: "@janhq: 2x4090 Workstation"
 ---
