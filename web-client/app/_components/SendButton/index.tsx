@@ -5,10 +5,13 @@ import {
   currentConversationAtom,
 } from "@/_helpers/JotaiWrapper";
 import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
-import { invoke } from "@/_services/pluginService";
+import {
+  invokeDataService,
+} from "@/_services/pluginService";
 // import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
+import { DataService } from "../../../shared/coreService";
 
 const SendButton: React.FC = () => {
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom);
@@ -23,7 +26,7 @@ const SendButton: React.FC = () => {
       user: "user",
       created_at: new Date().toISOString(),
     };
-    await invoke("createMessage", newMessage);
+    await invokeDataService(DataService.CREATE_MESSAGE, newMessage);
     addNewMessage(await toChatMessage(newMessage));
     setCurrentPrompt("");
   };
