@@ -34,8 +34,8 @@ export interface ChatMessage {
 }
 
 export interface RawMessage {
-  id: string;
-  conversation_id: string;
+  id?: number;
+  conversation_id: number;
   user?: string;
   message?: string;
   created_at?: string;
@@ -64,8 +64,8 @@ export const toChatMessage = async (m: RawMessage): Promise<ChatMessage> => {
   const contentHtml = processedContent.toString();
 
   return {
-    id: m.id,
-    conversationId: m.conversation_id,
+    id: (m.id ?? 0).toString(),
+    conversationId: (m.conversation_id ?? 0).toString(),
     messageType: messageType,
     messageSenderType: messageSenderType,
     senderUid: m.user?.toString() || "0",

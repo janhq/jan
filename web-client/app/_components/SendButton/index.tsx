@@ -1,16 +1,32 @@
 import {
+  addNewMessageAtom,
   currentConvoStateAtom,
   currentPromptAtom,
+  currentConversationAtom,
 } from "@/_helpers/JotaiWrapper";
+import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
+import { invoke } from "@/_services/pluginService";
 // import useSendChatMessage from "@/_hooks/useSendChatMessage";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 
 const SendButton: React.FC = () => {
-  const currentPrompt = useAtomValue(currentPromptAtom);
+  const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom);
+  const currentConvo = useAtomValue(currentConversationAtom);
   const currentConvoState = useAtomValue(currentConvoStateAtom);
+  const addNewMessage = useSetAtom(addNewMessageAtom);
   // const { sendChatMessage } = useSendChatMessage();
-  const sendChatMessage = () => {}
+  const sendChatMessage = async () => {
+    const newMessage: RawMessage = {
+      conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,
+      message: currentPrompt,
+      user: "user",
+      created_at: new Date().toISOString(),
+    };
+    await invoke("createMessage", newMessage);
+    addNewMessage(await toChatMessage(newMessage));
+    setCurrentPrompt("");
+  };
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false;
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse;
 
