@@ -35,9 +35,13 @@ const deleteConversation = (id) =>
       resolve();
     }
   });
+const setupDb = () => {
+  window.electronAPI.invokePluginFunc(PLUGIN_NAME, "init");
+};
 
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
+  setupDb();
   register("getConversations", "getConversations", getConversations, 1);
   register("createConversation", "createConversation", createConversation);
   register("deleteConversation", "deleteConversation", deleteConversation);
