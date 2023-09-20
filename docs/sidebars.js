@@ -98,8 +98,8 @@ const sidebars = {
         },
         {
           type: "doc",
-          label: "Nvidia vs. AMD vs. Intel vs. Apple",
-          id: "hardware/overview/ecosystems",
+          label: "CPUs vs. GPUs",
+          id: "hardware/overview/cpu-vs-gpu",
         },
       ],
     },
