@@ -1,5 +1,4 @@
-// import axios from "axios";
-
+// @ts-nocheck
 // Provide menu item as plain object
 const newItem = { text: "Item from object" };
 
@@ -35,12 +34,8 @@ const addVat = (price) =>
     //   });
 
     if (window.electronAPI) {
-      window.electronAPI.invokePluginSep(
-        "demoplugin",
-        "init"
-      );
+      window.electronAPI.invokePluginSep("demoplugin", "init");
     }
-    // @ts-ignore
     setTimeout(() => resolve(price * vat), 1);
   });
 
@@ -49,13 +44,17 @@ const addDelivery = (price) => price + 5;
 
 // Append in img element to the img-viewer div with the provided url as source.
 // The url is provided by the extension point.
-const displayImg = (url) => {
-  const img = document.createElement("img");
-  img.setAttribute("src", url);
-  img.setAttribute("width", "100%");
-  document.getElementById("img-viewer").appendChild(img);
+const displayImg = async (url) => {
+  // const img = document.createElement("img");
+  // img.setAttribute("src", url);
+  // img.setAttribute("width", "100%");
+  // document.getElementById("img-viewer").appendChild(img);
+  if (window.electronAPI) {
+    console.log(`User: ${url}`);
+    const response = await window.electronAPI.sendInquiry(url);
+    console.log(`Ai: ${response}`);
+  }
 };
-
 
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
@@ -68,4 +67,3 @@ export function init({ register }) {
   register("calc-price", "addDelivery", addDelivery, 10);
   register("display-img", "displayImg", displayImg);
 }
-

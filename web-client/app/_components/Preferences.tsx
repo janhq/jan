@@ -53,7 +53,7 @@ export const Preferences = () => {
         console.log(
           res
             ? "Plugin successfully uninstalled"
-            : "Plugin could not be uninstalled"
+            : "Plugin could not be uninstalled",
         );
       });
 
@@ -88,7 +88,7 @@ export const Preferences = () => {
       ?.addEventListener("click", async (e) => {
         // Get additional menu items from plugins, providing the desired parent item
         const menuItems = await Promise.all(
-          extensionPoints.execute("extend-menu", "demo-parent-li")
+          extensionPoints.execute("extend-menu", "demo-parent-li"),
         );
         // Insert items based on the parent and text provide by the plugin
         menuItems.forEach((item) => {

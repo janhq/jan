@@ -1,3 +1,4 @@
+// @ts-nocheck
 const {
   app,
   BrowserWindow,
@@ -8,6 +9,8 @@ const {
 const isDev = require("electron-is-dev");
 const path = require("path");
 const pe = require("pluggable-electron/main");
+
+let modelSession = undefined;
 
 const createMainWindow = () => {
   let mainWindow = new BrowserWindow({
@@ -21,11 +24,23 @@ const createMainWindow = () => {
     },
   });
 
+  let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
+
+  import("../node_modules/node-llama-cpp/dist/index.js").then(
+    ({ LlamaContext, LlamaChatSession, LlamaModel }) => {
+      const modelPath = path.join(app.getPath("userData"), modelName);
+      const model = new LlamaModel({
+        modelPath: modelPath,
+      });
+      const context = new LlamaContext({ model });
+      modelSession = new LlamaChatSession({ context });
+    }
+  );
+
   ipcMain.on("invokePluginSep", async (event, plugin, method) => {
     const plg = pe
       .getStore()
       .getActivePlugins()
-      // @ts-ignore
       .filter((p) => p.name === plugin)[0];
     const pluginPath = path.join(
       app.getPath("userData"),
@@ -64,9 +79,16 @@ const createMainWindow = () => {
 app.whenReady().then(() => {
   createMainWindow();
 
+  ipcMain.handle("sendInquiry", async (event, question) => {
+    if (!modelSession) {
+      console.error("Model session has not been initialized!");
+      return;
+    }
+    return modelSession.prompt(question);
+  });
+
   pe.init({
     // Function to check from the main process that user wants to install a plugin
-    //@ts-ignore
     confirmInstall: async (plugins) => {
       const answer = await dialog.showMessageBox({
         message: `Are you sure you want to install the plugin ${plugins.join(
