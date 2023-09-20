@@ -13,8 +13,8 @@ const BasicPromptAccessories: React.FC = () => {
   const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom);
   const currentConversation = useAtomValue(currentConversationAtom);
 
-  const shouldShowAdvancedPrompt =
-    currentConversation?.product.type === ProductType.ControlNet;
+  const shouldShowAdvancedPrompt = false;
+  // currentConversation?.product.type === ProductType.ControlNet;
 
   return (
     <div

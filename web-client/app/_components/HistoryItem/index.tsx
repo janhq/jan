@@ -7,13 +7,12 @@ import {
   setActiveConvoIdAtom,
 } from "@/_helpers/JotaiWrapper";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ProductType } from "@/_models/Product";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
 
 type Props = {
   conversation: Conversation;
-  avatarUrl: string;
+  avatarUrl?: string;
   name: string;
   updatedAt?: number;
 };
@@ -42,13 +41,6 @@ const HistoryItem: React.FC<Props> = ({
   let rightImageUrl: string | undefined;
   if (conversationStates[conversation.id]?.waitingForResponse === true) {
     rightImageUrl = "icons/loading.svg";
-  } else if (
-    conversation &&
-    conversation.product.type === ProductType.GenerativeArt &&
-    conversation.lastImageUrl &&
-    conversation.lastImageUrl.trim().startsWith("https://")
-  ) {
-    rightImageUrl = conversation.lastImageUrl;
   }
 
   return (
@@ -59,7 +51,7 @@ const HistoryItem: React.FC<Props> = ({
       <Image
         width={36}
         height={36}
-        src={avatarUrl}
+        src={avatarUrl ?? "icons/app_icon.svg"}
         className="w-9 aspect-square rounded-full"
         alt=""
       />
@@ -73,7 +65,7 @@ const HistoryItem: React.FC<Props> = ({
         <div className="flex items-center justify-between gap-1">
           <div className="flex-1">
             <span className="text-gray-400 hidden-text text-left">
-              {conversation?.lastTextMessage || <br className="h-5 block" />}
+              {conversation?.message ?? <span>No new message<br className="h-5 block" /></span>}
             </span>
           </div>
           <>

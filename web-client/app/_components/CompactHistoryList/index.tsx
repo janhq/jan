@@ -7,11 +7,11 @@ const CompactHistoryList: React.FC = () => {
 
   return (
     <div className="flex flex-col flex-1 gap-1 mt-3">
-      {conversations.map(({ id, product }) => (
+      {conversations.map(({ id, image }) => (
         <CompactHistoryItem
           key={id}
           conversationId={id}
-          imageUrl={product.avatarUrl ?? ""}
+          imageUrl={image ?? ""}
         />
       ))}
     </div>

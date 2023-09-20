@@ -28,9 +28,9 @@ const HistoryList: React.FC = () => {
           <HistoryItem
             key={convo.id}
             conversation={convo}
-            avatarUrl={convo.product.avatarUrl}
-            name={convo.product.name}
-            updatedAt={convo.updatedAt}
+            avatarUrl={convo.image}
+            name={convo.name || "Jan"}
+            updatedAt={convo.updated_at || 0}
           />
         ))}
       </div>

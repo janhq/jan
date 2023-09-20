@@ -31,14 +31,14 @@ const ModelMenu: React.FC = () => {
       <button onClick={() => setShowConfirmDeleteConversationModal(true)}>
         <TrashIcon width={24} height={24} color="#9CA3AF" />
       </button>
-      <button onClick={() => setActive(!active)}>
+      {/* <button onClick={() => setActive(!active)}>
         <Image
           src={active ? "icons/ic_sidebar_fill.svg" : "icons/ic_sidebar.svg"}
           width={24}
           height={24}
           alt=""
         />
-      </button>
+      </button> */}
     </div>
   );
 };

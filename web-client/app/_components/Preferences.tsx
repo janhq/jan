@@ -372,10 +372,42 @@ export const Preferences = () => {
                 const data = await extensionPoints.executeSerial(
                   "getConversations"
                 );
-                console.log(data)
+                console.log(data);
               }}
             >
               Delete Conversation
+            </button>
+
+            <button
+              type="submit"
+              className="mt-5 ml-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              onClick={async () => {
+                const convs = await extensionPoints.executeSerial(
+                  "getConversations"
+                );
+                const data = await extensionPoints.executeSerial(
+                  "createMessage",
+                  {
+                    name: "",
+                    conversation_id: convs[0].id,
+                    message: "yoo",
+                    user: "user",
+                  }
+                );
+                const data2 = await extensionPoints.executeSerial(
+                  "createMessage",
+                  {
+                    name: "",
+                    conversation_id: convs[0].id,
+                    message: "yee",
+                    user: "assistant",
+                  }
+                );
+                console.log(data);
+                console.log(data2);
+              }}
+            >
+              Create Message
             </button>
             {/* Content */}
           </div>

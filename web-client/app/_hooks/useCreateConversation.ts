@@ -1,8 +1,4 @@
-import {
-  CreateConversationMutation,
-  CreateConversationDocument,
-  CreateConversationMutationVariables,
-} from "@/graphql";
+
 // import useGetCurrentUser from "./useGetCurrentUser";
 import { useMutation } from "@apollo/client";
 import useSignIn from "./useSignIn";
@@ -20,13 +16,13 @@ const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
     userConversationsAtom
   );
-  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
-  const addNewConvoState = useSetAtom(addNewConversationStateAtom);
-  // const { user } = useGetCurrentUser();
-  const { signInWithKeyCloak } = useSignIn();
-  const [createConversation] = useMutation<CreateConversationMutation>(
-    CreateConversationDocument
-  );
+  // const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
+  // const addNewConvoState = useSetAtom(addNewConversationStateAtom);
+  // // const { user } = useGetCurrentUser();
+  // const { signInWithKeyCloak } = useSignIn();
+  // const [createConversation] = useMutation<CreateConversationMutation>(
+  //   CreateConversationDocument
+  // );
 
   const requestCreateConvo = async (
     product: Product,

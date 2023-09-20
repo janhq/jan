@@ -4,7 +4,7 @@ import JotaiWrapper from "./_helpers/JotaiWrapper";
 import LeftContainer from "./_components/LeftContainer";
 import RightContainer from "./_components/RightContainer";
 import { ModalWrapper } from "./_helpers/ModalWrapper";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import {
   setup,
@@ -13,6 +13,7 @@ import {
 } from "../node_modules/pluggable-electron/dist/execution.es";
 
 const Page: React.FC = () => {
+  const [activated, setActivated] = useState(false);
   useEffect(() => {
     async function setupPE() {
       // Enable activation point management
@@ -26,20 +27,24 @@ const Page: React.FC = () => {
 
       // Register all active plugins with their activation points
       await plugins.registerActive();
+
+      // Trigger activation points
+      await activationPoints.trigger("init");
+      setActivated(true);
     }
     setupPE();
-
-    activationPoints.trigger("init");
   }, []);
   return (
     <>
       <JotaiWrapper>
         <ThemeWrapper>
           <ModalWrapper>
-            <div className="flex">
-              <LeftContainer />
-              <RightContainer />
-            </div>
+            {activated && (
+              <div className="flex">
+                <LeftContainer />
+                <RightContainer />
+              </div>
+            )}
           </ModalWrapper>
         </ThemeWrapper>
       </JotaiWrapper>

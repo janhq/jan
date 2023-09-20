@@ -58,6 +58,29 @@ function storeConversation(conversation) {
     db.close();
   });
 }
+function storeMessage(message) {
+  return new Promise((res) => {
+    const db = new sqlite3.Database(
+      path.join(app.getPath("userData"), "jan.db")
+    );
+
+    db.serialize(() => {
+      const stmt = db.prepare(
+        "INSERT INTO messages (name, conversation_id, user, message) VALUES (?, ?, ?, ?)"
+      );
+      stmt.run(
+        message.name,
+        message.conversation_id,
+        message.user,
+        message.message
+      );
+      stmt.finalize();
+      res([]);
+    });
+
+    db.close();
+  });
+}
 function deleteConversation(id) {
   return new Promise((res) => {
     const db = new sqlite3.Database(
@@ -75,10 +98,25 @@ function deleteConversation(id) {
   });
 }
 
+function getConversationMessages(conversation_id) {
+  return new Promise((res) => {
+    const db = new sqlite3.Database(
+      path.join(app.getPath("userData"), "jan.db")
+    );
+
+    const query = `SELECT * FROM messages WHERE conversation_id = ${conversation_id}`;
+    db.all(query, (err, row) => {
+      res(row);
+    });
+    db.close();
+  });
+}
+
 module.exports = {
   init,
   getConversations,
   deleteConversation,
   storeConversation,
-  storeConversation,
+  storeMessage,
+  getConversationMessages,
 };

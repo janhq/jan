@@ -15,7 +15,7 @@ type Props = {
 
 export default function ChatContainer({ children }: Props) {
   const activeConvoId = useAtomValue(getActiveConvoIdAtom);
-  const showingProductDetail = useAtomValue(showingProductDetailAtom);
+  // const showingProductDetail = useAtomValue(showingProductDetailAtom);
 
   if (!activeConvoId) {
     return <ProductOverview />;
@@ -24,7 +24,7 @@ export default function ChatContainer({ children }: Props) {
   return (
     <div className="flex flex-1 overflow-hidden">
       {children}
-      {showingProductDetail ? <ModelDetailSideBar /> : null}
+      {/* {showingProductDetail ? <ModelDetailSideBar /> : null} */}
     </div>
   );
 }

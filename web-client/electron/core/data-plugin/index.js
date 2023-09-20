@@ -11,12 +11,32 @@ const getConversations = () =>
       resolve([]);
     }
   });
+const getConversationMessages = (id) =>
+  new Promise(async (resolve) => {
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(PLUGIN_NAME, "getConversationMessages", id)
+        .then((res) => resolve(res));
+    } else {
+      resolve([]);
+    }
+  });
 
 const createConversation = (conversation) =>
   new Promise(async (resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
         .invokePluginFunc(PLUGIN_NAME, "storeConversation", conversation)
+        .then((res) => resolve(res));
+    } else {
+      resolve();
+    }
+  });
+const createMessage = (message) =>
+  new Promise(async (resolve) => {
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(PLUGIN_NAME, "storeMessage", message)
         .then((res) => resolve(res));
     } else {
       resolve();
@@ -35,6 +55,7 @@ const deleteConversation = (id) =>
       resolve();
     }
   });
+
 const setupDb = () => {
   window.electronAPI.invokePluginFunc(PLUGIN_NAME, "init");
 };
@@ -42,7 +63,9 @@ const setupDb = () => {
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
   setupDb();
-  register("getConversations", "getConversations", getConversations, 1);
-  register("createConversation", "createConversation", createConversation);
-  register("deleteConversation", "deleteConversation", deleteConversation);
+  register("getConversations", "getConv", getConversations, 1);
+  register("createConversation", "insertConv", createConversation);
+  register("deleteConversation", "deleteConv", deleteConversation);
+  register("createMessage", "insertMessage", createMessage);
+  register("getConversationMessages", "getMessages", getConversationMessages);
 }

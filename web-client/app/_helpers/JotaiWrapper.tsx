@@ -41,7 +41,7 @@ export const currentConversationAtom = atom<Conversation | undefined>((get) =>
 export const setConvoUpdatedAtAtom = atom(null, (get, set, convoId: string) => {
   const convo = get(userConversationsAtom).find((c) => c.id === convoId);
   if (!convo) return;
-  const newConvo: Conversation = { ...convo, updatedAt: Date.now() };
+  const newConvo: Conversation = { ...convo, updated_at: Date.now() };
   const newConversations: Conversation[] = get(userConversationsAtom).map((c) =>
     c.id === convoId ? newConvo : c
   );
@@ -56,7 +56,7 @@ export const setConvoLastImageAtom = atom(
   (get, set, convoId: string, lastImageUrl: string) => {
     const convo = get(userConversationsAtom).find((c) => c.id === convoId);
     if (!convo) return;
-    const newConvo: Conversation = { ...convo, lastImageUrl };
+    const newConvo: Conversation = { ...convo };
     const newConversations: Conversation[] = get(userConversationsAtom).map(
       (c) => (c.id === convoId ? newConvo : c)
     );
@@ -202,10 +202,10 @@ export const updateLastMessageAsReadyAtom = atom(
 );
 
 export const currentProductAtom = atom<Product | undefined>(
-  (get) =>
-    get(userConversationsAtom).find(
-      (c) => c.id === get(activeConversationIdAtom)
-    )?.product
+  (get) => undefined
+    // get(userConversationsAtom).find(
+    //   (c) => c.id === get(activeConversationIdAtom)
+    // )?.product
 );
 
 export const searchAtom = atom<string>("");

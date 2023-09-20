@@ -1,6 +1,6 @@
 import React from "react";
 import SearchBar from "../SearchBar";
-import ShortcutList from "../ShortcutList";
+// import ShortcutList from "../ShortcutList";
 import HistoryList from "../HistoryList";
 import DiscordContainer from "../DiscordContainer";
 import JanLogo from "../JanLogo";
