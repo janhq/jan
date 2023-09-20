@@ -1,3 +1,0 @@
----
-title: Enterprise AI Platform
----

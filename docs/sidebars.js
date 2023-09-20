@@ -20,64 +20,74 @@ const sidebars = {
 
   // But you can create a sidebar manually
   featuresSidebar: [
-    'features/features',
+    'platform/platform',
     {
       type: 'category',
-      label: 'Platforms',
+      label: 'Products',
       collapsible: true,
-      collapsed: true,
-      link: { type: 'doc', id: 'platforms/platform' },
+      collapsed: false,
+      link: { type: 'doc', id: 'products/products' },
       items: [
-        'platforms/desktop',
-        'platforms/mobile',
-        'platforms/server'
+        'products/desktop',
+        'products/mobile',
+        'products/server'
       ]
     },
     {
       type: 'category',
       label: 'Features',
       collapsible: true,
-      collapsed: true,
+      collapsed: false,
+      link: { type: 'doc', id: 'features/features' },
       items: [
         'features/self-hosted',
         'features/acceleration',
+        'features/extensions',
+      ]
+    }
+  ],
+
+  // Note: Tab name is "Use Cases"
+  solutionsSidebar: [
+    'solutions/solutions',
+    {
+      type: 'category',
+      label: 'Use cases',
+      collapsible: true,
+      collapsed: false,
+      items: [
+        'solutions/personal-ai',
+        'solutions/self-hosted'
       ]
     },
     {
       type: 'category',
-      label: 'Solutions',
+      label: 'Industries',
       collapsible: true,
-      collapsed: true,
+      collapsed: false,
       items: [
-        'solutions/personal-ai',
-        'solutions/enterprise'
+        'solutions/industries/public-sector',
+        'solutions/industries/education',
+        'solutions/industries/finance',
+        'solutions/industries/law',
+        'solutions/industries/healthcare',
       ]
-    },
+    }
   ],
 
-  guidesSidebar: [
-    { type: 'doc', label: "Overview", id: 'guides/guides' },
+  docsSidebar: [
+    { type: 'doc', label: "Getting Started", id: 'docs/docs' },
     {
       type: 'category',
       label: 'Install',
       collapsible: true,
-      collapsed: true,
+      collapsed: false,
       items: [
-        { type: 'doc', label: 'Overview', id: 'guides/install/install' },
-        { type: 'doc', label: 'Windows', id: 'guides/install/windows' },
-        { type: 'doc', label: 'Mac', id: 'guides/install/mac' },
-        { type: 'doc', label: 'Linux', id: 'guides/install/linux' },
+        { type: 'doc', label: 'Windows', id: 'docs/install/windows' },
+        { type: 'doc', label: 'Mac', id: 'docs/install/mac' },
+        { type: 'doc', label: 'Linux', id: 'docs/install/linux' },
       ]
-    },
-    {
-      type: 'category',
-      label: 'Running as Server',
-      collapsible: true,
-      collapsed: true,
-      items: [
-        { type: 'doc', label: 'Overview', id: 'guides/install/install' },
-      ]
-    },
+    }
   ]
 };
 

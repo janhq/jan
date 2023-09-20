@@ -48,7 +48,6 @@ const config = {
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl:
             'https://github.com/janhq/jan/tree/main/docs',
-          sidebarCollapsed: false,
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
         },
@@ -109,13 +108,19 @@ const config = {
             type: 'docSidebar',
             sidebarId: 'featuresSidebar',
             position: 'left',
-            label: 'Features',
+            label: 'Platform',
           },
           {
             type: 'docSidebar',
-            sidebarId: 'guidesSidebar',
+            sidebarId: 'solutionsSidebar',
             position: 'left',
-            label: 'Guides',
+            label: 'Use Cases',
+          },
+          {
+            type: 'docSidebar',
+            sidebarId: 'docsSidebar',
+            position: 'left',
+            label: 'Docs',
           },
           {
             type: 'docSidebar',

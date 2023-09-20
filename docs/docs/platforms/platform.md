@@ -1,4 +1,0 @@
----
-title: Platform
-slug: /platform
----
