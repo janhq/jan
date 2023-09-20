@@ -4,7 +4,8 @@
 # Jan inference
 models/**
 error.log
-web-client/electron/core/base-plugin/node_modules
-web-client/electron/core/base-plugin/dist
+web-client/electron/core/*/node_modules
+web-client/electron/core/*/dist
+web-client/electron/core/*/package-lock.json
 *.tgz
 web-client/yarn.lock

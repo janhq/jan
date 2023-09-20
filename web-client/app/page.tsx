@@ -9,7 +9,8 @@ import { useEffect } from "react";
 import {
   setup,
   plugins,
-} from "../electron/core/plugin-manager/execution/index";
+  activationPoints,
+} from "../node_modules/pluggable-electron/dist/execution.es";
 
 const Page: React.FC = () => {
   useEffect(() => {
@@ -27,6 +28,8 @@ const Page: React.FC = () => {
       await plugins.registerActive();
     }
     setupPE();
+
+    activationPoints.trigger("init");
   }, []);
   return (
     <>

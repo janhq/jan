@@ -5,7 +5,7 @@ import {
   plugins,
   extensionPoints,
   activationPoints,
-} from "../../electron/core/plugin-manager/execution/index";
+} from "../../node_modules/pluggable-electron/dist/execution.es";
 
 import {
   ChartPieIcon,
@@ -239,44 +239,46 @@ export const Preferences = () => {
               <CommandLineIcon width={30} />
               Installed Plugins
             </div>
-            {activePlugins.map((e) => (
-              <div key={e.name}>
-                <a
-                  href="#"
-                  className="block max-w-sm p-6 bg-white border border-gray-200 rounded-lg shadow  dark:bg-gray-800 dark:border-gray-700"
-                >
-                  <h5 className="mb-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-                    {e.name}
-                  </h5>
-                  <p className="font-normal text-gray-700 dark:text-gray-400">
-                    Activation: {e.activationPoints}
-                  </p>
-                  <p className="font-normal text-gray-700 dark:text-gray-400">
-                    Url: {e.url}
-                  </p>
-                  <div className="flex flex-row space-x-5">
-                    <button
-                      type="submit"
-                      onClick={() => {
-                        uninstall(e.name);
-                      }}
-                      className="mt-5 rounded-md bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
-                    >
-                      Uninstall
-                    </button>
-                    <button
-                      type="submit"
-                      onClick={() => {
-                        update();
-                      }}
-                      className="mt-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                    >
-                      Update
-                    </button>
-                  </div>
-                </a>
-              </div>
-            ))}
+            <div className="flex flex-wrap">
+              {activePlugins.map((e) => (
+                <div key={e.name} className="m-2">
+                  <a
+                    href="#"
+                    className="block max-w-sm p-6 bg-white border border-gray-200 rounded-lg shadow  dark:bg-gray-800 dark:border-gray-700"
+                  >
+                    <h5 className="mb-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+                      {e.name}
+                    </h5>
+                    <p className="font-normal text-gray-700 dark:text-gray-400">
+                      Activation: {e.activationPoints}
+                    </p>
+                    <p className="font-normal text-gray-700 dark:text-gray-400">
+                      Url: {e.url}
+                    </p>
+                    <div className="flex flex-row space-x-5">
+                      <button
+                        type="submit"
+                        onClick={() => {
+                          uninstall(e.name);
+                        }}
+                        className="mt-5 rounded-md bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+                      >
+                        Uninstall
+                      </button>
+                      <button
+                        type="submit"
+                        onClick={() => {
+                          update();
+                        }}
+                        className="mt-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                      >
+                        Update
+                      </button>
+                    </div>
+                  </a>
+                </div>
+              ))}
+            </div>
             <div className="flex flex-row items-center my-4">
               <PlayIcon width={30} />
               Test Plugins
@@ -328,6 +330,19 @@ export const Preferences = () => {
               <div />
             </form>
 
+            <button
+              type="submit"
+              className="mt-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              onClick={async () => {
+                const data = await extensionPoints.executeSerial(
+                  "datadriver",
+                  "getConversations"
+                );
+                console.log(data);
+              }}
+            >
+              Get Conversations
+            </button>
             {/* Content */}
           </div>
         </main>

@@ -1,5 +1,5 @@
 {
-  "name": "base-plugin",
+  "name": "data-plugin",
   "version": "2.1.0",
   "description": "",
   "main": "dist/bundle.js",
@@ -10,17 +10,23 @@
   ],
   "scripts": {
     "prepare": "webpack --config webpack.config.js",
-    "package": "rimraf ./base-plugin*.tgz && npm pack"
+    "package": "rimraf ./data-plugin*.tgz && cp -f module.js ./dist/module.js && npm pack"
   },
   "devDependencies": {
     "rimraf": "^3.0.2",
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
   },
-  "dependencies": {},
+  "bundledDependencies": [
+    "sql.js",
+    "sqlite3"
+  ],
   "files": [
     "dist/*",
     "package.json",
     "README.md"
-  ]
+  ],
+  "dependencies": {
+    "sqlite3": "^5.1.6"
+  }
 }

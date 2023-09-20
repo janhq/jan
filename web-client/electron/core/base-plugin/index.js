@@ -26,15 +26,7 @@ const asyncChildItem = (parent) =>
 // Provide an async method to manipulate the price provided by the extension point
 const addVat = (price) =>
   new Promise(async (resolve) => {
-    const vat = 1.2;
-    if (window && window.electronAPI) {
-      const data = await window.electronAPI.invokePluginFunc(
-        "demoplugin",
-        "getConversations"
-      );
-      // await window.electronAPI.invokePluginFunc("demoplugin", "init");
-      console.log(data)
-    }
+    const vat = 1;
     setTimeout(() => resolve(price * vat), 1);
   });
 
