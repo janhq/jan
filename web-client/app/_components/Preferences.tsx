@@ -93,28 +93,15 @@ export const Preferences = () => {
   };
 
   // test button
-  const testCalculate = async (e: any) => {
-    e.preventDefault();
-    //@ts-ignore
-    const price = new FormData(e.target).get("price");
-    // Get the cost, calculated in multiple steps, by the plugins
-    const cost = await extensionPoints
-      .executeSerial("calc-price", price)
-      .catch((err) => {
-        console.log(err);
-      });
-    alert(cost);
-  };
-
-  // test button
   const testInference = async (e: any) => {
     e.preventDefault();
     //@ts-ignore
     const message = new FormData(e.target).get("message");
     // Get the cost, calculated in multiple steps, by the plugins
-    await extensionPoints.executeSerial("display-img", message).catch((err) => {
+    const resp = await extensionPoints.executeSerial("inference", message).catch((err) => {
       console.log(err);
     });
+    alert(resp);
   };
 
   return (
@@ -284,28 +271,6 @@ export const Preferences = () => {
               Test Plugins
             </div>
 
-            <form
-              id="test"
-              onSubmit={testCalculate}
-              className="flex flex-row items-center"
-            >
-              <div className="flex flex-row items-center justify-center space-x-5 mt-5">
-                <input
-                  id="price-field"
-                  className="rounded-lg border-gray-200"
-                  placeholder="Price..."
-                  type="text"
-                  name="price"
-                />
-                <button
-                  type="submit"
-                  className="w-full rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                >
-                  Test Calculate
-                </button>
-              </div>
-              <div />
-            </form>
 
             <form
               id="test"

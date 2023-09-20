@@ -69,8 +69,11 @@ export const toChatMessage = async (m: RawMessage): Promise<ChatMessage> => {
     messageType: messageType,
     messageSenderType: messageSenderType,
     senderUid: m.user?.toString() || "0",
-    senderName: m.user === "user" ? "You" : "Jan", // m.sender_name ?? "",
-    senderAvatarUrl: "icons/app_icon.svg", // m.sender_avatar_url ?? "icons/app_icon.svg",
+    senderName: m.user === "user" ? "You" : "LLaMA", // m.sender_name ?? "",
+    senderAvatarUrl:
+      m.user === "user"
+        ? "icons/avatar.svg"
+        : "https://huggingface.co/front/assets/huggingface_logo-noborder.svg", // m.sender_avatar_url ?? "icons/app_icon.svg",
     text: contentHtml,
     imageUrls: imageUrls,
     createdAt: createdAt,

@@ -7,11 +7,12 @@ import {
 import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
 import {
   invokeDataService,
+  invokeInferenceService,
 } from "@/_services/pluginService";
 // import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
-import { DataService } from "../../../shared/coreService";
+import { DataService, InfereceService } from "../../../shared/coreService";
 
 const SendButton: React.FC = () => {
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom);
@@ -20,15 +21,29 @@ const SendButton: React.FC = () => {
   const addNewMessage = useSetAtom(addNewMessageAtom);
   // const { sendChatMessage } = useSendChatMessage();
   const sendChatMessage = async () => {
+    setCurrentPrompt("");
+    const prompt = currentPrompt.trim();
     const newMessage: RawMessage = {
       conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,
-      message: currentPrompt,
+      message: prompt,
       user: "user",
       created_at: new Date().toISOString(),
     };
     await invokeDataService(DataService.CREATE_MESSAGE, newMessage);
     addNewMessage(await toChatMessage(newMessage));
-    setCurrentPrompt("");
+    const resp = await invokeInferenceService(
+      InfereceService.INFERENCE,
+      prompt
+    );
+
+    const newResponse: RawMessage = {
+      conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,
+      message: resp,
+      user: "assistant",
+      created_at: new Date().toISOString(),
+    };
+    await invokeDataService(DataService.CREATE_MESSAGE, newResponse);
+    addNewMessage(await toChatMessage(newResponse));
   };
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false;
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse;
