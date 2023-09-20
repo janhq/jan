@@ -150,19 +150,27 @@ const config = {
         style: "dark",
         links: [
           {
-            title: "Documentation",
+            title: "Site",
             items: [
               {
-                label: "Getting Started",
+                label: "Home",
                 to: "/",
               },
               {
-                label: "Guides",
-                to: "/guides",
+                label: "Platform",
+                to: "/platform",
               },
               {
-                label: "Developer",
-                to: "/developer",
+                label: "Use Cases",
+                to: "/solutions",
+              },
+              {
+                label: "Docs",
+                to: "/docs",
+              },
+              {
+                label: "Hardware",
+                to: "/hardware",
               },
               {
                 label: "API",

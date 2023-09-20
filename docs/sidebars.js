@@ -33,7 +33,8 @@ const sidebars = {
       collapsed: false,
       link: { type: "doc", id: "features/features" },
       items: [
-        "features/self-hosted",
+        "features/ai-models",
+        "features/control",
         "features/acceleration",
         "features/extensions",
       ],
