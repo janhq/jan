@@ -1,11 +1,26 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   setup,
   plugins,
   extensionPoints,
   activationPoints,
 } from "../../electron/core/plugin-manager/execution/index";
+
+import {
+  ChartPieIcon,
+  CommandLineIcon,
+  HomeIcon,
+  PlayIcon,
+} from "@heroicons/react/24/outline";
+
+import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
+import classNames from "classnames";
+import Link from "next/link";
+const navigation = [
+  { name: "Plugin Manager", href: "#", icon: ChartPieIcon, current: true },
+];
+
 /* eslint-disable @next/next/no-sync-scripts */
 export const Preferences = () => {
   useEffect(() => {
@@ -23,310 +38,299 @@ export const Preferences = () => {
       await plugins.registerActive();
     }
     setupPE();
-
-    // Install a new plugin on clicking the install button
-    document
-      ?.getElementById("install-file")
-      ?.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        //@ts-ignore
-        const pluginFile = new FormData(e.target).get("plugin-file").path;
-
-        // Send the filename of the to be installed plugin
-        // to the main process for installation
-        const installed = await plugins.install([pluginFile]);
-        console.log("Installed plugin:", installed);
-      });
-
-    // Uninstall a plugin on clicking uninstall
-    document
-      ?.getElementById("uninstall-plg")
-      ?.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        //@ts-ignore
-        const pluginPkg = new FormData(e.target).get("plugin-pkg");
-
-        // Send the filename of the to be uninstalled plugin
-        // to the main process for removal
-        //@ts-ignore
-        const res = await plugins.uninstall([pluginPkg]);
-        console.log(
-          res
-            ? "Plugin successfully uninstalled"
-            : "Plugin could not be uninstalled",
-        );
-      });
-
-    // Update all plugins on clicking update plugins
-    document
-      ?.getElementById("update-plgs")
-      ?.addEventListener("click", async (e) => {
-        const active = await plugins.getActive();
-        plugins.update(active.map((plg) => plg.name));
-        console.log("Plugins updated");
-      });
-
-    // Trigger the init activation point on clicking activate plugins
-    document
-      ?.getElementById("activate-plgs")
-      ?.addEventListener("click", async (e) => {
-        // Trigger activation point
-        activationPoints.trigger("init");
-
-        // Enable extend functionality now that extensions have been registered
-        const buttons = document.getElementsByClassName("extend");
-        //@ts-ignore
-        for (const btn of buttons) {
-          btn.disabled = false;
-        }
-        console.log('"Init" activation point triggered');
-      });
-
-    // Create a menu that can be extended through plugins
-    document
-      ?.getElementById("extend-menu")
-      ?.addEventListener("click", async (e) => {
-        // Get additional menu items from plugins, providing the desired parent item
-        const menuItems = await Promise.all(
-          extensionPoints.execute("extend-menu", "demo-parent-li"),
-        );
-        // Insert items based on the parent and text provide by the plugin
-        menuItems.forEach((item) => {
-          const demoAnchor = document.createElement("a");
-          demoAnchor.classList.add("nav-link");
-          demoAnchor.href = "#";
-          demoAnchor.innerText = item.text;
-
-          const demoLi = document.createElement("li");
-          demoLi.appendChild(demoAnchor);
-
-          const parentId = item.hasOwnProperty("parent")
-            ? item.parent
-            : "demo-menu";
-          document!.getElementById(parentId)!.appendChild(demoLi);
-        });
-      });
-
-    // Calculate a cost based on plugin extensions
-    document
-      ?.getElementById("calc-price")
-      ?.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        //@ts-ignore
-        const price = new FormData(e.target).get("price");
-        // Get the cost, calculated in multiple steps, by the plugins
-        const cost = await extensionPoints
-          .executeSerial("calc-price", price)
-          .catch((err) => {
-            console.log(err);
-          });
-        // Display result in the app
-        document!.getElementById("demo-cost")!.innerText = cost;
-      });
-
-    // Provide image url to plugins to display as desired
-    document
-      ?.getElementById("display-img")
-      ?.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        //@ts-ignore
-        const img = new FormData(e.target).get("img-url");
-        // Provide image url to plugins
-        extensionPoints.execute("display-img", img);
-      });
   }, []);
+
+  const [activePlugins, setActivePlugins] = useState<any[]>([]);
+  useEffect(() => {
+    const getPlugins = async () => {
+      const plgs = await plugins.getActive();
+      setActivePlugins(plgs);
+      // Activate alls
+      activationPoints.trigger("init");
+    };
+    getPlugins();
+  }, []);
+
+  // Install a new plugin on clicking the install button
+  const install = async (e: any) => {
+    e.preventDefault();
+    //@ts-ignore
+    const pluginFile = new FormData(e.target).get("plugin-file").path;
+
+    // Send the filename of the to be installed plugin
+    // to the main process for installation
+    const installed = await plugins.install([pluginFile]);
+    console.log("Installed plugin:", installed);
+    window.location.reload();
+  };
+
+  // Uninstall a plugin on clicking uninstall
+  const uninstall = async (name: string) => {
+    //@ts-ignore
+
+    // Send the filename of the to be uninstalled plugin
+    // to the main process for removal
+    //@ts-ignore
+    const res = await plugins.uninstall([name]);
+    console.log(
+      res
+        ? "Plugin successfully uninstalled"
+        : "Plugin could not be uninstalled"
+    );
+  };
+
+  // Update all plugins on clicking update plugins
+  const update = async () => {
+    const active = await plugins.getActive();
+    plugins.update(active.map((plg) => plg.name));
+    console.log("Plugins updated");
+  };
+
+  // Trigger the init activation point on clicking activate plugins
+  const activate = async () => {
+    // Trigger activation point
+    activationPoints.trigger("init");
+  };
+
+  // test button
+  const testCalculate = async (e: any) => {
+    e.preventDefault();
+    //@ts-ignore
+    const price = new FormData(e.target).get("price");
+    // Get the cost, calculated in multiple steps, by the plugins
+    const cost = await extensionPoints
+      .executeSerial("calc-price", price)
+      .catch((err) => {
+        console.log(err);
+      });
+    alert(cost);
+  };
+
+  // test button
+  const testInference = async (e: any) => {
+    e.preventDefault();
+    //@ts-ignore
+    const message = new FormData(e.target).get("message");
+    // Get the cost, calculated in multiple steps, by the plugins
+    await extensionPoints.executeSerial("display-img", message).catch((err) => {
+      console.log(err);
+    });
+  };
+
   return (
-    <div className="bg-light h-[100%] overflow-auto">
-      <div className="container mx-auto my-5 overflow-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="col">
-            <div className="bg-white shadow-md rounded-lg p-4">
-              <div className="mb-4">
-                <h2 className="text-2xl font-semibold">
-                  Manage plugin lifecycle
-                </h2>
-              </div>
-              <div className="border-t border-gray-300 py-4">
-                <form id="install-file">
-                  <div className="flex items-end">
-                    <div className="w-8/12">
-                      <label className="block text-gray-700">
-                        Package file:
-                      </label>
-                      <input
-                        type="file"
-                        name="plugin-file"
-                        className="w-full p-2 border rounded-lg"
-                      />
-                    </div>
-                    <div className="w-4/12 flex items-center justify-center">
-                      <button className="bg-blue-500 text-white px-4 py-2 rounded-lg">
-                        Install
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-              <div className="border-t border-gray-300 py-4">
-                <form id="uninstall-plg">
-                  <div className="flex items-end">
-                    <div className="w-8/12">
-                      <label className="block text-gray-700">
-                        Package name:
-                      </label>
-                      <input
-                        type="text"
-                        name="plugin-pkg"
-                        className="w-full p-2 border rounded-lg"
-                      />
-                    </div>
-                    <div className="w-4/12 flex items-center justify-center">
-                      <button className="bg-blue-500 text-white px-4 py-2 rounded-lg">
-                        Uninstall
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-              <div className="border-t border-gray-300 py-4">
-                <div className="flex justify-end">
-                  <div className="w-4/12 flex items-center justify-center">
-                    <button
-                      className="bg-blue-500 text-white px-4 py-2 rounded-lg"
-                      id="update-plgs"
-                    >
-                      Update plugins
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="border-t border-gray-300 py-4">
-                <div className="flex justify-end">
-                  <div className="w-4/12 flex items-center justify-center">
-                    <button
-                      className="bg-blue-500 text-white px-4 py-2 rounded-lg"
-                      id="activate-plgs"
-                    >
-                      Activate plugins
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+    <div className="w-full h-full">
+      {/* Static sidebar for desktop */}
+      <div className="fixed inset-y-0 z-50 flex w-72 flex-col">
+        {/* Sidebar component, swap this element with another sidebar if you like */}
+        <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-gray-900 px-6 pb-4">
+          <div className="flex h-16 shrink-0 items-center">
+            <Link href="/">
+              <img
+                className="h-8 w-auto"
+                src="icons/app_icon.svg"
+                alt="Your Company"
+              />
+            </Link>
           </div>
-          <div className="col">
-            <div className="bg-white shadow-md rounded-lg p-4">
-              <div className="mb-4">
-                <h2 className="text-2xl font-semibold">
-                  Test Extension Points
-                </h2>
-              </div>
-              <div className="border-t border-gray-300 py-4">
-                <div className="flex">
-                  <h4 className="text-lg font-semibold">Parallel execution</h4>
-                </div>
-                <div className="flex items-start">
-                  <div className="w-8/12">
-                    <p className="text-gray-700">Demo menu:</p>
-                    <nav className="bg-light">
-                      <div className="container mx-auto">
-                        <div className="navbar-collapse">
-                          <ul className="flex" id="demo-menu">
-                            <li className="dropdown">
-                              <a
-                                href="#"
-                                className="dropdown-toggle"
-                                role="button"
-                                data-bs-toggle="dropdown"
-                                aria-expanded="false"
-                              >
-                                parent item
-                              </a>
-                              <ul
-                                className="dropdown-menu"
-                                id="demo-parent-li"
-                              ></ul>
-                            </li>
-                          </ul>
-                        </div>
-                      </div>
-                    </nav>
-                  </div>
-                  <div className="w-4/12 flex items-center justify-center">
-                    <button
-                      className="bg-blue-500 text-white px-4 py-2 rounded-lg extend"
-                      id="extend-menu"
-                      disabled
-                    >
-                      Extend demo menu
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="border-t border-gray-300 py-4">
-                <div className="flex">
-                  <h4 className="text-lg font-semibold">Serial execution</h4>
-                </div>
-                <form id="calc-price">
-                  <div className="flex items-end">
-                    <div className="w-8/12">
-                      <label className="block text-gray-700">Demo price:</label>
-                      <div className="input-group">
-                        <span className="input-group-text">€</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          name="price"
-                          className="w-full p-2 border rounded-lg"
+          <nav className="flex flex-1 flex-col">
+            <ul role="list" className="flex flex-1 flex-col gap-y-7">
+              <li>
+                <ul role="list" className="-mx-2 space-y-1">
+                  {navigation.map((item) => (
+                    <li key={item.name}>
+                      <a
+                        href={item.href}
+                        className={classNames(
+                          item.current
+                            ? "bg-gray-800 text-white"
+                            : "text-gray-400 hover:text-white hover:bg-gray-800",
+                          "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
+                        )}
+                      >
+                        <item.icon
+                          className="h-6 w-6 shrink-0"
+                          aria-hidden="true"
                         />
-                      </div>
-                      <p>
-                        Cost: € <span id="demo-cost"></span>
-                      </p>
-                    </div>
-                    <div className="w-4/12 flex items-center justify-center">
-                      <button
-                        className="bg-blue-500 text-white px-4 py-2 rounded-lg extend"
-                        disabled
-                      >
-                        Calculate cost
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-              <div className="border-t border-gray-300 py-4">
-                <div className="flex">
-                  <h4 className="text-lg font-semibold">Handover</h4>
-                </div>
-                <form id="display-img">
-                  <div className="flex items-end">
-                    <div className="w-8/12">
-                      <label className="block text-gray-700">Image url:</label>
-                      <input
-                        type="text"
-                        name="img-url"
-                        className="w-full p-2 border rounded-lg"
-                      />
-                    </div>
-                    <div className="w-4/12 flex items-center justify-center">
-                      <button
-                        className="bg-blue-500 text-white px-4 py-2 rounded-lg extend"
-                        disabled
-                      >
-                        Display image
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-              <div
-                className="border-t border-gray-300 py-4"
-                id="img-viewer"
-              ></div>
-            </div>
+                        {item.name}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+
+              <li className="mt-auto">
+                <a
+                  href="/"
+                  className="group -mx-2 flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-400 hover:bg-gray-800 hover:text-white"
+                >
+                  <HomeIcon className="h-6 w-6 shrink-0" aria-hidden="true" />
+                  Home
+                </a>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </div>
+
+      <div className="pl-72 w-full">
+        <div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white shadow-sm sm:gap-x-6 sm:px-6 px-8">
+          {/* Separator */}
+          <div className="h-6 w-px bg-gray-900/10 hidden" aria-hidden="true" />
+
+          <div className="flex flex-1 self-stretch gap-x-6">
+            <form className="relative flex flex-1" action="#" method="GET">
+              <label htmlFor="search-field" className="sr-only">
+                Search
+              </label>
+              <MagnifyingGlassIcon
+                className="pointer-events-none absolute inset-y-0 left-0 h-full w-5 text-gray-400"
+                aria-hidden="true"
+              />
+              <input
+                id="search-field"
+                className="block h-full w-full border-0 py-0 pl-8 pr-0 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm"
+                placeholder="Search..."
+                type="search"
+                name="search"
+              />
+            </form>
           </div>
         </div>
+
+        <main className="py-5">
+          <div className="sm:px-6 px-8">
+            {/* Content */}
+            <div className="flex flex-row items-center my-4">
+              <ChartPieIcon width={30} />
+              Install Plugin
+            </div>
+            <form id="plugin-file" onSubmit={install}>
+              <div className="flex flex-row items-center space-x-10">
+                <div className="flex items-center justify-center w-[300px]">
+                  <label className="flex flex-col items-center justify-center w-full border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:hover:bg-bray-800 dark:bg-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-600">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                        <span className="font-semibold">Click to upload</span>{" "}
+                        or drag and drop
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        TGZ (MAX 50MB)
+                      </p>
+                    </div>
+                    <input
+                      id="dropzone-file"
+                      name="plugin-file"
+                      type="file"
+                      className="hidden"
+                      required
+                    />
+                  </label>
+                </div>
+                <button
+                  type="submit"
+                  className="rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                >
+                  Install Plugin
+                </button>
+              </div>
+            </form>
+
+            <div className="flex flex-row items-center my-4">
+              <CommandLineIcon width={30} />
+              Installed Plugins
+            </div>
+            {activePlugins.map((e) => (
+              <div key={e.name}>
+                <a
+                  href="#"
+                  className="block max-w-sm p-6 bg-white border border-gray-200 rounded-lg shadow  dark:bg-gray-800 dark:border-gray-700"
+                >
+                  <h5 className="mb-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+                    {e.name}
+                  </h5>
+                  <p className="font-normal text-gray-700 dark:text-gray-400">
+                    Activation: {e.activationPoints}
+                  </p>
+                  <p className="font-normal text-gray-700 dark:text-gray-400">
+                    Url: {e.url}
+                  </p>
+                  <div className="flex flex-row space-x-5">
+                    <button
+                      type="submit"
+                      onClick={() => {
+                        uninstall(e.name);
+                      }}
+                      className="mt-5 rounded-md bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+                    >
+                      Uninstall
+                    </button>
+                    <button
+                      type="submit"
+                      onClick={() => {
+                        update();
+                      }}
+                      className="mt-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                    >
+                      Update
+                    </button>
+                  </div>
+                </a>
+              </div>
+            ))}
+            <div className="flex flex-row items-center my-4">
+              <PlayIcon width={30} />
+              Test Plugins
+            </div>
+
+            <form
+              id="test"
+              onSubmit={testCalculate}
+              className="flex flex-row items-center"
+            >
+              <div className="flex flex-row items-center justify-center space-x-5 mt-5">
+                <input
+                  id="price-field"
+                  className="rounded-lg border-gray-200"
+                  placeholder="Price..."
+                  type="text"
+                  name="price"
+                />
+                <button
+                  type="submit"
+                  className="w-full rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                >
+                  Test Calculate
+                </button>
+              </div>
+              <div />
+            </form>
+
+            <form
+              id="test"
+              onSubmit={testInference}
+              className="flex flex-row items-center"
+            >
+              <div className="flex flex-row items-center justify-center space-x-5 mt-5">
+                <input
+                  id="message-field"
+                  className="rounded-lg border-gray-200"
+                  placeholder="Message..."
+                  type="text"
+                  name="message"
+                />
+                <button
+                  type="submit"
+                  className="w-full rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                >
+                  Test Inference
+                </button>
+              </div>
+              <div />
+            </form>
+
+            {/* Content */}
+          </div>
+        </main>
       </div>
     </div>
   );

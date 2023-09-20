@@ -27,14 +27,13 @@ const asyncChildItem = (parent) =>
 const addVat = (price) =>
   new Promise(async (resolve) => {
     const vat = 1.2;
-    // axios
-    //   .get("https://jsonplaceholder.typicode.com/todos/1")
-    //   .then((response) => {
-    //     console.log(response);
-    //   });
-
-    if (window.electronAPI) {
-      window.electronAPI.invokePluginSep("demoplugin", "init");
+    if (window && window.electronAPI) {
+      const data = await window.electronAPI.invokePluginFunc(
+        "demoplugin",
+        "getConversations"
+      );
+      // await window.electronAPI.invokePluginFunc("demoplugin", "init");
+      console.log(data)
     }
     setTimeout(() => resolve(price * vat), 1);
   });
@@ -45,10 +44,6 @@ const addDelivery = (price) => price + 5;
 // Append in img element to the img-viewer div with the provided url as source.
 // The url is provided by the extension point.
 const displayImg = async (url) => {
-  // const img = document.createElement("img");
-  // img.setAttribute("src", url);
-  // img.setAttribute("width", "100%");
-  // document.getElementById("img-viewer").appendChild(img);
   if (window.electronAPI) {
     console.log(`User: ${url}`);
     const response = await window.electronAPI.sendInquiry(url);

@@ -37,7 +37,7 @@ const createMainWindow = () => {
     }
   );
 
-  ipcMain.on("invokePluginSep", async (event, plugin, method) => {
+  ipcMain.handle("invokePluginFunc", async (event, plugin, method, ...args) => {
     const plg = pe
       .getStore()
       .getActivePlugins()
@@ -48,16 +48,20 @@ const createMainWindow = () => {
       plg.name,
       "dist/module.js"
     );
-    await import(
+    return await import(
       /* webpackIgnore: true */
       pluginPath
     )
       .then((plugin) => {
         if (typeof plugin[method] === "function") {
-          plugin[method](); // Call the function dynamically
+          return plugin[method](args);
         } else {
+          console.log(plugin[method]);
           console.error(`Function "${method}" does not exist in the module.`);
         }
+      })
+      .then((res) => {
+        return res;
       })
       .catch((err) => console.log(err));
   });
@@ -78,6 +82,7 @@ const createMainWindow = () => {
 
 app.whenReady().then(() => {
   createMainWindow();
+  setupPlugins();
 
   ipcMain.handle("sendInquiry", async (event, question) => {
     if (!modelSession) {
@@ -85,23 +90,6 @@ app.whenReady().then(() => {
       return;
     }
     return modelSession.prompt(question);
-  });
-
-  pe.init({
-    // Function to check from the main process that user wants to install a plugin
-    confirmInstall: async (plugins) => {
-      const answer = await dialog.showMessageBox({
-        message: `Are you sure you want to install the plugin ${plugins.join(
-          ", "
-        )}`,
-        buttons: ["Ok", "Cancel"],
-        cancelId: 1,
-      });
-      console.log("Main:", answer);
-      return answer.response == 0;
-    },
-    // Path to install plugin to
-    pluginsPath: path.join(app.getPath("userData"), "plugins"),
   });
 
   app.on("activate", () => {
@@ -116,3 +104,21 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+
+function setupPlugins() {
+  pe.init({
+    // Function to check from the main process that user wants to install a plugin
+    confirmInstall: async (plugins) => {
+      const answer = await dialog.showMessageBox({
+        message: `Are you sure you want to install the plugin ${plugins.join(
+          ", "
+        )}`,
+        buttons: ["Ok", "Cancel"],
+        cancelId: 1,
+      });
+      return answer.response == 0;
+    },
+    // Path to install plugin to
+    pluginsPath: path.join(app.getPath("userData"), "plugins"),
+  });
+}
