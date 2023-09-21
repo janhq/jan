@@ -4,6 +4,11 @@ import Link from "@docusaurus/Link";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import Layout from "@theme/Layout";
 import HomepageFeatures from "@site/src/components/HomepageFeatures";
+import Head from "@docusaurus/Head";
+
+// Sample TailwindUI
+// TODO: Drake to remove
+import Example from "@site/src/components/HomepageFeatures/sample-tailwind";
 
 import styles from "./index.module.css";
 
@@ -34,6 +39,10 @@ export default function Home() {
       title={`Hello from ${siteConfig.title}`}
       description="Description will go into a meta tag in <head />"
     >
+      <Head>
+        <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+      </Head>
+      <Example />
       <HomepageHeader />
       <main>
         <HomepageFeatures />

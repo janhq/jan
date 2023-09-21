@@ -32,7 +32,22 @@ const config = {
     locales: ["en"],
   },
 
-  // Plugins we added
+  // Plugins
+  plugins: [
+    // Tailwind: see https://www.swyx.io/tailwind-docusaurus-2022
+    async function myPlugin(context, options) {
+      return {
+        name: "docusaurus-tailwindcss",
+        configurePostCss(postcssOptions) {
+          // Appends TailwindCSS and AutoPrefixer.
+          postcssOptions.plugins.push(require("tailwindcss"));
+          postcssOptions.plugins.push(require("autoprefixer"));
+          return postcssOptions;
+        },
+      };
+    },
+  ],
+
   // Only for react live
   themes: ["@docusaurus/theme-live-codeblock"],
 
