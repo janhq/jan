@@ -60,7 +60,7 @@ function storeConversation(conversation) {
             res(err.message);
             return;
           }
-          const id = this.lastID
+          const id = this.lastID;
           console.log(`Record inserted successfully with ID ${id}`);
           res(id);
           return;
@@ -102,9 +102,14 @@ function deleteConversation(id) {
     );
 
     db.serialize(() => {
-      const stmt = db.prepare("DELETE FROM conversations WHERE id = ?");
-      stmt.run(id);
-      stmt.finalize();
+      const deleteConv = db.prepare("DELETE FROM conversations WHERE id = ?");
+      deleteConv.run(id);
+      deleteConv.finalize();
+      const deleteMessages = db.prepare(
+        "DELETE FROM messages WHERE conversation_id = ?"
+      );
+      deleteMessages.run(id);
+      deleteMessages.finalize();
       res([]);
     });
 
