@@ -11,7 +11,7 @@ const Slide: React.FC<Props> = ({ product }) => {
   const { requestCreateConvo } = useCreateConversation();
 
   const onClick = () => {
-    requestCreateConvo(product);
+    requestCreateConvo(1);
   };
 
   return (

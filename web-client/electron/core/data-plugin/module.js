@@ -29,9 +29,12 @@ function getConversations() {
       path.join(app.getPath("userData"), "jan.db")
     );
 
-    db.all("SELECT * FROM conversations ORDER BY created_at DESC", (err, row) => {
-      res(row);
-    });
+    db.all(
+      "SELECT * FROM conversations ORDER BY created_at DESC",
+      (err, row) => {
+        res(row);
+      }
+    );
     db.close();
   });
 }
@@ -49,10 +52,21 @@ function storeConversation(conversation) {
         conversation.name,
         conversation.model_id,
         conversation.image,
-        conversation.message
+        conversation.message,
+        function (err) {
+          if (err) {
+            // Handle the insertion error here
+            console.error(err.message);
+            res(err.message);
+            return;
+          }
+          const id = this.lastID
+          console.log(`Record inserted successfully with ID ${id}`);
+          res(id);
+          return;
+        }
       );
       stmt.finalize();
-      res([]);
     });
 
     db.close();

@@ -11,7 +11,7 @@ const GenerateImageCard: React.FC<Props> = ({ product }) => {
 
   return (
     <button
-      onClick={() => requestCreateConvo(product)}
+      onClick={() => requestCreateConvo(1)}
       className="relative active:opacity-50 text-left"
     >
       <img

@@ -11,7 +11,7 @@ const ShortcutItem: React.FC<Props> = ({ product }) => {
   const { requestCreateConvo } = useCreateConversation();
 
   const onClickHandler = () => {
-    requestCreateConvo(product);
+    requestCreateConvo(1);
   };
 
   return (

@@ -6,12 +6,9 @@ import {
   showingProductDetailAtom,
   userConversationsAtom,
 } from "@/_helpers/JotaiWrapper";
-import {
-  DeleteConversationDocument,
-  DeleteConversationMutation,
-} from "@/graphql";
-import { useMutation } from "@apollo/client";
+import { execute } from "@/_services/pluginService";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { DataService } from "../../shared/coreService";
 
 export default function useDeleteConversation() {
   const [userConversations, setUserConversations] = useAtom(
@@ -23,14 +20,10 @@ export default function useDeleteConversation() {
   const activeConvoId = useAtomValue(getActiveConvoIdAtom);
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
 
-  const [deleteConversation] = useMutation<DeleteConversationMutation>(
-    DeleteConversationDocument
-  );
-
   const deleteConvo = async () => {
     if (activeConvoId) {
       try {
-        await deleteConversation({ variables: { id: activeConvoId } });
+        await execute(DataService.DELETE_CONVERSATION, activeConvoId);
         setUserConversations(
           userConversations.filter((c) => c.id !== activeConvoId)
         );

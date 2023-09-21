@@ -2,7 +2,7 @@
 const PLUGIN_NAME = "data-plugin";
 
 const getConversations = () =>
-  new Promise(async (resolve) => {
+  new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
         .invokePluginFunc(PLUGIN_NAME, "getConversations")
@@ -12,7 +12,7 @@ const getConversations = () =>
     }
   });
 const getConversationMessages = (id) =>
-  new Promise(async (resolve) => {
+  new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
         .invokePluginFunc(PLUGIN_NAME, "getConversationMessages", id)
@@ -23,28 +23,30 @@ const getConversationMessages = (id) =>
   });
 
 const createConversation = (conversation) =>
-  new Promise(async (resolve) => {
+  new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
         .invokePluginFunc(PLUGIN_NAME, "storeConversation", conversation)
-        .then((res) => resolve(res));
+        .then((res) => {
+          resolve(res);
+        });
     } else {
-      resolve();
+      resolve("-");
     }
   });
 const createMessage = (message) =>
-  new Promise(async (resolve) => {
+  new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
         .invokePluginFunc(PLUGIN_NAME, "storeMessage", message)
         .then((res) => resolve(res));
     } else {
-      resolve();
+      resolve("-");
     }
   });
 
 const deleteConversation = (id) =>
-  new Promise(async (resolve) => {
+  new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
         .invokePluginFunc(PLUGIN_NAME, "deleteConversation", id)
@@ -52,7 +54,7 @@ const deleteConversation = (id) =>
           resolve(res);
         });
     } else {
-      resolve();
+      resolve("-");
     }
   });
 
@@ -88,11 +90,11 @@ const experimentComponent = () => {
   });
   const spawnConv = getButton("Spawn Conversation", async () => {
     // Define the action you want to perform when the button is clicked
-    await createConversation({
+    const id = await createConversation({
       name: "test",
       model_id: "yolo",
     });
-    alert("A new conversation is created");
+    alert("A new conversation is created: " + id);
   });
   const deleteLastConv = getButton("Delete Last Conversation", async () => {
     // Define the action you want to perform when the button is clicked
