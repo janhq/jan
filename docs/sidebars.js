@@ -189,7 +189,7 @@ const sidebars = {
       ],
     },
   ],
-  aboutSidebar: [
+  companySidebar: [
     {
       type: "category",
       label: "About Jan",

@@ -117,27 +117,27 @@ const config = {
           },
           {
             type: "docSidebar",
-            sidebarId: "docsSidebar",
+            sidebarId: "companySidebar",
             position: "left",
+            label: "Company",
+          },
+          // Navbar right
+          {
+            type: "docSidebar",
+            sidebarId: "docsSidebar",
+            position: "right",
             label: "Docs",
           },
           {
             type: "docSidebar",
             sidebarId: "hardwareSidebar",
-            position: "left",
+            position: "right",
             label: "Hardware",
           },
           {
-            position: "left",
+            position: "right",
             label: "API",
             to: "/api",
-          },
-          // Navbar right
-          {
-            type: "docSidebar",
-            sidebarId: "aboutSidebar",
-            position: "right",
-            label: "About",
           },
           {
             href: "https://github.com/janhq/jan",
@@ -150,7 +150,7 @@ const config = {
         style: "dark",
         links: [
           {
-            title: "Site",
+            title: "Jan",
             items: [
               {
                 label: "Home",
@@ -164,6 +164,11 @@ const config = {
                 label: "Use Cases",
                 to: "/solutions",
               },
+            ],
+          },
+          {
+            title: "Docs",
+            items: [
               {
                 label: "Docs",
                 to: "/docs",
@@ -196,7 +201,7 @@ const config = {
             ],
           },
           {
-            title: "About",
+            title: "Company",
             items: [
               {
                 label: "About",
