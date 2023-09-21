@@ -29,9 +29,6 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "electron/renderer.js",
-    "electron/preload.js",
-    "electron/main.ts"
   ],
   "exclude": ["node_modules"]
 }

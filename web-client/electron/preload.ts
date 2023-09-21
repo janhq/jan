@@ -6,10 +6,10 @@ useFacade();
 // TODO: recheck if we need below code, since we have nodeIntegration enabled
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("electronAPI", {
-  invokePluginFunc: (plugin, method, ...args) =>
+  invokePluginFunc: (plugin: any, method: any, ...args: any) =>
     ipcRenderer.invoke("invokePluginFunc", plugin, method, ...args),
-  sendInquiry: (question) => ipcRenderer.invoke("sendInquiry", question),
-  initModel: (modelName) => ipcRenderer.invoke("initModel", modelName),
+  sendInquiry: (question: string) => ipcRenderer.invoke("sendInquiry", question),
+  initModel: (modelName: string) => ipcRenderer.invoke("initModel", modelName),
   getDownloadedModels: () => ipcRenderer.invoke("getDownloadedModels"),
   getAvailableModels: () => ipcRenderer.invoke("getAvailableModels"),
 });
