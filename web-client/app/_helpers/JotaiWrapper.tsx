@@ -219,3 +219,4 @@ export const searchAtom = atom<string>("");
 // modal atoms
 export const showConfirmDeleteConversationModalAtom = atom(false);
 export const showConfirmSignOutModalAtom = atom(false);
+export const showConfirmDeleteModalAtom = atom(false);

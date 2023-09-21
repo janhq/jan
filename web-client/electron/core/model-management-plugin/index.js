@@ -1,4 +1,4 @@
-const getDownloadedModels = async () => 
+const getDownloadedModels = async () =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       const response = await window.electronAPI.getDownloadedModels();
@@ -6,7 +6,7 @@ const getDownloadedModels = async () =>
     }
   });
 
-const getAvailableModels = async () => 
+const getAvailableModels = async () =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       const response = await window.electronAPI.getAvailableModels();
@@ -15,17 +15,21 @@ const getAvailableModels = async () =>
   });
 
 // TODO: register callback for progress update
-const downloadModel = async () => {
-};
-
-const deleteModel = async () =>
+const downloadModel = async (url) =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
-      const response = await window.electronAPI.deleteModel();
+      const response = await window.electronAPI.downloadModel(url);
       resolve(response);
     }
   });
 
+const deleteModel = async (path) =>
+  new Promise(async (resolve) => {
+    if (window.electronAPI) {
+      const response = await window.electronAPI.deleteModel(path);
+      resolve(response);
+    }
+  });
 
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {

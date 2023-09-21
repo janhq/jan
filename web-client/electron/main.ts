@@ -10,8 +10,12 @@ const isDev = require("electron-is-dev");
 const path = require("path");
 const pe = require("pluggable-electron/main");
 const fs = require("fs");
+const { mkdir, writeFile } = require("fs/promises");
+const { Readable } = require("stream");
+const { finished } = require("stream/promises");
 
 let modelSession = undefined;
+let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
 
 const createMainWindow = () => {
   let mainWindow = new BrowserWindow({
@@ -25,8 +29,6 @@ const createMainWindow = () => {
     },
   });
 
-  let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
-
   import("../node_modules/node-llama-cpp/dist/index.js").then(
     ({ LlamaContext, LlamaChatSession, LlamaModel }) => {
       const modelPath = path.join(app.getPath("userData"), modelName);
@@ -35,7 +37,7 @@ const createMainWindow = () => {
       });
       const context = new LlamaContext({ model });
       modelSession = new LlamaChatSession({ context });
-    }
+    },
   );
 
   ipcMain.handle("invokePluginFunc", async (event, plugin, method, ...args) => {
@@ -47,7 +49,7 @@ const createMainWindow = () => {
       app.getPath("userData"),
       "plugins",
       plg.name,
-      "dist/module.js"
+      "dist/module.js",
     );
     return await import(
       /* webpackIgnore: true */
@@ -85,6 +87,33 @@ app.whenReady().then(() => {
   createMainWindow();
   setupPlugins();
 
+  ipcMain.handle("downloadModel", async (event, url) => {
+    const res = await fetch(url);
+    const userDataPath = app.getPath("userData");
+    const destination = path.resolve(userDataPath, modelName);
+    const fileStream = fs.createWriteStream(destination, { flags: "wx" });
+    await finished(Readable.fromWeb(res.body).pipe(fileStream));
+    console.log("Download finished");
+  });
+
+  ipcMain.handle("deleteModel", async (event, path) => {
+    let result = "REMOVED";
+    fs.unlink(path, function (err) {
+      if (err && err.code == "ENOENT") {
+        console.info("File doesn't exist, won't remove it.");
+        result = "FILE_NOT_EXIST";
+      } else if (err) {
+        console.error("Error occurred while trying to remove file");
+        result = "ERROR";
+      } else {
+        console.info(`removed`);
+        result = "REMOVED";
+      }
+    });
+    console.log(result);
+    return result;
+  });
+
   ipcMain.handle("getDownloadedModels", async (event) => {
     const userDataPath = app.getPath("userData");
 
@@ -100,7 +129,6 @@ app.whenReady().then(() => {
         allBinariesName.push(filename);
       }
     }
-    console.log("NamH allBinariesName: ", allBinariesName);
     return allBinariesName;
   });
 
@@ -131,7 +159,7 @@ function setupPlugins() {
     confirmInstall: async (plugins) => {
       const answer = await dialog.showMessageBox({
         message: `Are you sure you want to install the plugin ${plugins.join(
-          ", "
+          ", ",
         )}`,
         buttons: ["Ok", "Cancel"],
         cancelId: 1,

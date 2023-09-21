@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "prepare": "webpack --config webpack.config.js",
-    "package": "rimraf ./base-plugin*.tgz && npm pack"
+    "package": "rimraf ./*.tgz && npm pack"
   },
   "devDependencies": {
     "rimraf": "^3.0.2",
