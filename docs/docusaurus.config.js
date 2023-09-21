@@ -240,7 +240,7 @@ const config = {
         additionalLanguages: ["python"],
       },
       colorMode: {
-        defaultMode: "light",
+        defaultMode: "dark",
         disableSwitch: false,
         respectPrefersColorScheme: false,
       },
