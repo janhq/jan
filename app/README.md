@@ -1,6 +1,6 @@
-# Jan Web
+# App
 
-Jan Web is a Next.js application designed to provide users with the ability to interact with the Language Model (LLM) through chat or generate art using Stable Diffusion. This application runs as a single-page application (SPA) and is encapsulated within a Docker container for easy local deployment.
+Jan Desktop is an Electron application designed to allow users to interact with the Language Model (LLM) through chat or create art using Stable Diffusion.
 
 ## Features
 
@@ -10,91 +10,63 @@ Jan Web is a Next.js application designed to provide users with the ability to i
 
 ## Installation and Usage
 
-### Use as complete suite
-For using our complete solution, check [this](https://github.com/janhq/jan)
+### Use as complete suite (in progress)
  
 ### For interactive development
+
+Note: This instruction is tested on MacOS only.
 
 1. **Clone the Repository:**
 
    ```
-   git clone https://github.com/your-username/jan-web.git
-   cd jan-web
+   git clone https://github.com/janhq/jan
+   cd jan/app
    ```
 
 2. **Install dependencies:**
 
    ```
-   yarn
+   yarn install
    ```
 
-3. **Run development:**
+3. **Download Model and copy to userdata directory** (this is a hacky step, will be remove in future versions)
 
    ```
-   yarn dev
-   ```
-4. **Regenerate Graphql:**
-
-   ```
-   HASURA_ADMIN_TOKEN="[hasura_admin_secret_key]" yarn generate
+   # Determining the path to save model with /Users/<username>/Library/Application Support/jan-web/
+   # Now download the model to correct location by running command
+   wget -O /Users/<username>/Library/Application Support/jan-web/llama-2-7b-chat.gguf.q4_0.bin https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf
    ```
 
-5. **Access Jan Web:**
+4. **Run development and Using Jan Desktop**
 
-   Open your web browser and navigate to `http://localhost:3000` to access the Jan Web application.
+   ```
+   yarn electron:start
+   ```
+   This will start the development server and open the desktop app.
+   In this step, there are a few notification about installing base plugin, just click `OK` and `Next` to continue.
+   ![](./images/jan-desktop-dev-instruction-1.png)
+   ![](./images/jan-desktop-dev-instruction-2.png)
+   ![](./images/jan-desktop-dev-instruction-3.png)
+
+   After that, you can use Jan Desktop as normal.
+   ![](./images/jan-desktop-dev-instruction-4.png)
+   ![](./images/jan-desktop-dev-instruction-5.png)
+   ![](./images/jan-desktop-dev-instruction-6.png)
+
+
+   
 
 ## Configuration
 
-You can customize the endpoint of the Jan Web application through environment file. These options can be found in the `.env` file located in the project's root directory.
-
-```env
-// .env
-
-KEYCLOAK_CLIENT_ID=hasura
-KEYCLOAK_CLIENT_SECRET=**********
-AUTH_ISSUER=http://localhost:8088/realms/hasura
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=my-secret
-END_SESSION_URL=http://localhost:8088/realms/hasura/protocol/openid-connect/logout
-REFRESH_TOKEN_URL=http://localhost:8088/realms/hasura/protocol/openid-connect/token
-HASURA_ADMIN_TOKEN=myadminsecretkey
-NEXT_PUBLIC_GRAPHQL_ENGINE_URL=localhost:8080
-```
-
-Replace above configuration with your actual infrastructure.
+TO DO
 
 ## Dependencies
 
-|Library| Category | Version | Description | 
-|--|--|--|--|
-| [next](https://nextjs.org/) | Framework | 13.4.10 |
-| [typescript](https://www.typescriptlang.org/) | Language | 5.1.6 |
-| [tailwindcss](https://tailwindcss.com/) | UI | 3.3.3 |
-| [Tailwind UI](https://tailwindui.com/) | UI |  |
-| [react-hook-form](https://www.react-hook-form.com/) | UI | ^7.45.4 |
-| [@headlessui/react](https://headlessui.com/) | UI | ^1.7.15 |
-| [@heroicons/react](https://heroicons.com/) | UI | ^2.0.18 |
-| [@tailwindcss/typography](https://tailwindcss.com/docs/typography-plugin) | UI | ^0.5.9 |
-| [embla-carousel](https://www.embla-carousel.com/) | UI | ^8.0.0-rc11 |
-| [@apollo/client](https://www.apollographql.com/docs/react/) | State management | ^3.8.1 |
-| [jotai](https://jotai.org/) | State management | ^2.4.0 |
-
-
-## Deploy to Netlify
-Clone this repository on own GitHub account and deploy to Netlify:
-
-[![Netlify Deploy button](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/janhq/jan-web)
-
-## Deploy to Vercel
-
-Deploy Jan Web on Vercel in one click:
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/janhq/jan-web)
-
+TO DO
 
 ## Contributing
 
-Contributions are welcome! If you find a bug or have suggestions for improvements, feel free to open an issue or submit a pull request on the [GitHub repository](https://github.com/janhq/jan-web/tree/6337306c54e735a4a5c2132dcd1377f21fd76a33).
+Contributions are welcome! If you find a bug or have suggestions for improvements, feel free to open an issue or submit a pull request on the [GitHub repository](https://github.com/janhq/jan).
 
 ## License
 
