@@ -3,12 +3,10 @@ import {
   currentConvoStateAtom,
   currentPromptAtom,
   currentConversationAtom,
+  showingTyping,
 } from "@/_helpers/JotaiWrapper";
 import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
-import {
-  execute,
-  executeSerial,
-} from "@/_services/pluginService";
+import { execute, executeSerial } from "@/_services/pluginService";
 // import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
@@ -19,8 +17,10 @@ const SendButton: React.FC = () => {
   const currentConvo = useAtomValue(currentConversationAtom);
   const currentConvoState = useAtomValue(currentConvoStateAtom);
   const addNewMessage = useSetAtom(addNewMessageAtom);
+  const [, setIsTyping] = useAtom(showingTyping);
   // const { sendChatMessage } = useSendChatMessage();
   const sendChatMessage = async () => {
+    setIsTyping(true);
     setCurrentPrompt("");
     const prompt = currentPrompt.trim();
     const newMessage: RawMessage = {
@@ -31,10 +31,7 @@ const SendButton: React.FC = () => {
     };
     await execute(DataService.CREATE_MESSAGE, newMessage);
     addNewMessage(await toChatMessage(newMessage));
-    const resp = await executeSerial(
-      InfereceService.INFERENCE,
-      prompt
-    );
+    const resp = await executeSerial(InfereceService.INFERENCE, prompt);
 
     const newResponse: RawMessage = {
       conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,
@@ -44,6 +41,7 @@ const SendButton: React.FC = () => {
     };
     await execute(DataService.CREATE_MESSAGE, newResponse);
     addNewMessage(await toChatMessage(newResponse));
+    setIsTyping(false);
   };
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false;
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse;

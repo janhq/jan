@@ -30,6 +30,7 @@ export const currentPromptAtom = atom<string>("");
 export const showingAdvancedPromptAtom = atom<boolean>(false);
 export const showingProductDetailAtom = atom<boolean>(false);
 export const showingMobilePaneAtom = atom<boolean>(false);
+export const showingTyping = atom<boolean>(false);
 
 /**
  * Stores all conversations for the current user
@@ -41,7 +42,10 @@ export const currentConversationAtom = atom<Conversation | undefined>((get) =>
 export const setConvoUpdatedAtAtom = atom(null, (get, set, convoId: string) => {
   const convo = get(userConversationsAtom).find((c) => c.id === convoId);
   if (!convo) return;
-  const newConvo: Conversation = { ...convo, updated_at: Date.now() };
+  const newConvo: Conversation = {
+    ...convo,
+    updated_at: new Date().toISOString(),
+  };
   const newConversations: Conversation[] = get(userConversationsAtom).map((c) =>
     c.id === convoId ? newConvo : c
   );
@@ -49,7 +53,9 @@ export const setConvoUpdatedAtAtom = atom(null, (get, set, convoId: string) => {
   set(userConversationsAtom, newConversations);
 });
 
-export const currentStreamingMessageAtom = atom<ChatMessage | undefined>(undefined);
+export const currentStreamingMessageAtom = atom<ChatMessage | undefined>(
+  undefined
+);
 
 export const setConvoLastImageAtom = atom(
   null,
@@ -203,9 +209,9 @@ export const updateLastMessageAsReadyAtom = atom(
 
 export const currentProductAtom = atom<Product | undefined>(
   (get) => undefined
-    // get(userConversationsAtom).find(
-    //   (c) => c.id === get(activeConversationIdAtom)
-    // )?.product
+  // get(userConversationsAtom).find(
+  //   (c) => c.id === get(activeConversationIdAtom)
+  // )?.product
 );
 
 export const searchAtom = atom<string>("");
