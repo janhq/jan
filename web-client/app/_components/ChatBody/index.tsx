@@ -46,7 +46,7 @@ const ChatBody: React.FC = () => {
   return (
     <div className="flex flex-col-reverse flex-1 py-4 overflow-y-auto scroll">
       {isTyping && (
-        <div className="ml-4 mb-2">
+        <div className="ml-4 mb-2" key="indicator">
           <LoadingIndicator />
         </div>
       )}

@@ -57,7 +57,7 @@ function storeConversation(conversation) {
           if (err) {
             // Handle the insertion error here
             console.error(err.message);
-            res(err.message);
+            res(undefined);
             return;
           }
           const id = this.lastID;
@@ -86,10 +86,21 @@ function storeMessage(message) {
         message.name,
         message.conversation_id,
         message.user,
-        message.message
+        message.message,
+        function (err) {
+          if (err) {
+            // Handle the insertion error here
+            console.error(err.message);
+            res(undefined);
+            return;
+          }
+          const id = this.lastID;
+          console.log(`Record inserted successfully with ID ${id}`);
+          res(id);
+          return;
+        }
       );
       stmt.finalize();
-      res([]);
     });
 
     db.close();

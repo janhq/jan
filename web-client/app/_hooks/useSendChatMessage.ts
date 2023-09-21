@@ -9,7 +9,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 
 import { DataService, InfereceService } from "../../shared/coreService";
 import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
-import { execute, executeSerial } from "@/_services/pluginService";
+import { executeSerial } from "@/_services/pluginService";
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom);
@@ -27,7 +27,9 @@ export default function useSendChatMessage() {
       user: "user",
       created_at: new Date().toISOString(),
     };
-    await execute(DataService.CREATE_MESSAGE, newMessage);
+    const id = await executeSerial(DataService.CREATE_MESSAGE, newMessage);
+    newMessage.id = id;
+
     addNewMessage(await toChatMessage(newMessage));
     const resp = await executeSerial(InfereceService.INFERENCE, prompt);
 
@@ -37,7 +39,8 @@ export default function useSendChatMessage() {
       user: "assistant",
       created_at: new Date().toISOString(),
     };
-    await execute(DataService.CREATE_MESSAGE, newResponse);
+    const respId = await executeSerial(DataService.CREATE_MESSAGE, newResponse);
+    newResponse.id = respId;
     addNewMessage(await toChatMessage(newResponse));
     setIsTyping(false);
   };
