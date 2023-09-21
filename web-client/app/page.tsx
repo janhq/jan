@@ -11,6 +11,10 @@ import {
   plugins,
   activationPoints,
 } from "../node_modules/pluggable-electron/dist/execution.es";
+import {
+  isCorePluginInstalled,
+  setupBasePlugins,
+} from "./_services/pluginService";
 
 const Page: React.FC = () => {
   const [activated, setActivated] = useState(false);
@@ -30,6 +34,13 @@ const Page: React.FC = () => {
       setTimeout(async () => {
         // Trigger activation points
         await activationPoints.trigger("init");
+        if (!isCorePluginInstalled()) {
+          alert(
+            "It seems like you don't have all required plugins installed. To use this app, please install all required plugins."
+          );
+          setupBasePlugins();
+          return;
+        }
         setActivated(true);
       }, 500);
     }
