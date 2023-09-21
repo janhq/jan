@@ -27,10 +27,11 @@ const Page: React.FC = () => {
 
       // Register all active plugins with their activation points
       await plugins.registerActive();
-
-      // Trigger activation points
-      await activationPoints.trigger("init");
-      setActivated(true);
+      setTimeout(async () => {
+        // Trigger activation points
+        await activationPoints.trigger("init");
+        setActivated(true);
+      }, 500);
     }
     setupPE();
   }, []);

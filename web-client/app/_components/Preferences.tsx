@@ -48,15 +48,17 @@ export const Preferences = () => {
       // Activate alls
       setTimeout(async () => {
         await activationPoints.trigger("init");
-        const components = await Promise.all(
-          extensionPoints.execute("experimentComponent")
-        );
-        components.forEach((e) => {
-          if (preferenceRef.current) {
-            // @ts-ignore
-            preferenceRef.current.appendChild(e);
-          }
-        });
+        if (extensionPoints.get("experimentComponent")) {
+          const components = await Promise.all(
+            extensionPoints.execute("experimentComponent")
+          );
+          components.forEach((e) => {
+            if (preferenceRef.current) {
+              // @ts-ignore
+              preferenceRef.current.appendChild(e);
+            }
+          });
+        }
       }, 500);
     };
     setupPE().then(() => activePlugins());

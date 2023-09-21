@@ -64,7 +64,7 @@ const ModelListContainer: React.FC = () => {
 
   const onDeleteClick = async () => {
     // TODO: for now we only support 1 model
-    if (downloadedModels.length < 1) {
+    if (downloadedModels?.length < 1) {
       return;
     }
     console.log(downloadedModels[0]);
@@ -88,7 +88,7 @@ const ModelListContainer: React.FC = () => {
     <div className="flex flex-col gap-5">
       <div className="pb-5 flex flex-col gap-2">
         <Title title={DownloadedModel.title} />
-        {downloadedModels.length > 0
+        {downloadedModels?.length > 0
           ? DownloadedModel.data.map((item, index) => (
               <DownloadModelCard
                 key={index}

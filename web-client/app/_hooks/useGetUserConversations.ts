@@ -13,16 +13,18 @@ const useGetUserConversations = () => {
 
   const getUserConversations = async () => {
     try {
-      const convos: Conversation[] = await executeSerial(DataService.GET_CONVERSATIONS);
+      const convos: Conversation[] | undefined = await executeSerial(
+        DataService.GET_CONVERSATIONS
+      );
       const convoStates: Record<string, ConversationState> = {};
-      convos.forEach((convo) => {
+      convos?.forEach((convo) => {
         convoStates[convo.id ?? ""] = {
           hasMore: true,
           waitingForResponse: false,
         };
       });
       setConversationStates(convoStates);
-      setConversations(convos);
+      setConversations(convos ?? []);
     } catch (ex) {
       console.log(ex);
     }
