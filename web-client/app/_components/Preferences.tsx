@@ -96,26 +96,6 @@ export const Preferences = () => {
     // plugins.update(active.map((plg) => plg.name));
   };
 
-  // Trigger the init activation point on clicking activate plugins
-  const activate = async () => {
-    // Trigger activation point
-    activationPoints.trigger("init");
-  };
-
-  // test button
-  const testInference = async (e: any) => {
-    e.preventDefault();
-    //@ts-ignore
-    const message = new FormData(e.target).get("message");
-    // Get the cost, calculated in multiple steps, by the plugins
-    const resp = await extensionPoints
-      .executeSerial("inference", message)
-      .catch((err) => {
-        console.log(err);
-      });
-    alert(resp);
-  };
-
   return (
     <div className="w-full h-full">
       {/* Static sidebar for desktop */}
@@ -282,30 +262,6 @@ export const Preferences = () => {
               <PlayIcon width={30} />
               Test Plugins
             </div>
-
-            <form
-              id="test"
-              onSubmit={testInference}
-              className="flex flex-row items-center"
-            >
-              <div className="flex flex-row items-center justify-center space-x-5 mt-5">
-                <input
-                  id="message-field"
-                  className="rounded-lg border-gray-200"
-                  placeholder="Message..."
-                  type="text"
-                  name="message"
-                />
-                <button
-                  type="submit"
-                  className="w-full rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                >
-                  Test Inference
-                </button>
-              </div>
-              <div />
-            </form>
-
             <div className="h-full w-full" ref={preferenceRef}></div>
             {/* Content */}
           </div>

@@ -76,7 +76,7 @@ const getButton = (text, func) => {
   element.addEventListener("click", func);
   return element;
 };
-const experimentComponentGetConv = () => {
+const experimentComponent = () => {
   var parent = document.createElement("div");
   const label = document.createElement("p");
   label.style.marginTop = "5px";
@@ -129,7 +129,7 @@ export function init({ register }) {
   // Experiment UI - for Preferences
   register(
     "experimentComponent",
-    "data-plugin-component-get-conv",
-    experimentComponentGetConv
+    "data-plugin-experiment-component",
+    experimentComponent
   );
 }
