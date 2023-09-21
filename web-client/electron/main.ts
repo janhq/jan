@@ -37,7 +37,7 @@ const createMainWindow = () => {
       });
       const context = new LlamaContext({ model });
       modelSession = new LlamaChatSession({ context });
-    },
+    }
   );
 
   ipcMain.handle("invokePluginFunc", async (event, plugin, method, ...args) => {
@@ -49,7 +49,7 @@ const createMainWindow = () => {
       app.getPath("userData"),
       "plugins",
       plg.name,
-      "dist/module.js",
+      "dist/module.js"
     );
     return await import(
       /* webpackIgnore: true */
@@ -94,6 +94,8 @@ app.whenReady().then(() => {
     const fileStream = fs.createWriteStream(destination, { flags: "wx" });
     await finished(Readable.fromWeb(res.body).pipe(fileStream));
     console.log("Download finished");
+    app.relaunch();
+    app.exit();
   });
 
   ipcMain.handle("deleteModel", async (event, path) => {
@@ -159,7 +161,7 @@ function setupPlugins() {
     confirmInstall: async (plugins) => {
       const answer = await dialog.showMessageBox({
         message: `Are you sure you want to install the plugin ${plugins.join(
-          ", ",
+          ", "
         )}`,
         buttons: ["Ok", "Cancel"],
         cancelId: 1,
