@@ -15,6 +15,8 @@ type Props = {
   storage: number;
   installed?: boolean;
   required?: string;
+  onDeleteClick?: () => void;
+  onDownloadClick?: () => void;
 };
 
 const DownloadModelCard: React.FC<Props> = ({
@@ -26,6 +28,8 @@ const DownloadModelCard: React.FC<Props> = ({
   type,
   installed = false,
   required,
+  onDeleteClick,
+  onDownloadClick,
 }) => {
   const [download, setDownload] = useState(true);
   const handleClick = () => {
@@ -37,13 +41,15 @@ const DownloadModelCard: React.FC<Props> = ({
   if (!installed) {
     downloadButton = download ? (
       <div className="w-1/5 flex items-center justify-end">
-        <ModelDownloadButton callback={handleClick} />
+        <ModelDownloadButton callback={() => onDownloadClick?.()} />
       </div>
     ) : (
       <div className="w-1/5 flex items-start justify-end">
         <ModelDownloadingButton total={storage} value={128} />
       </div>
     );
+  } else {
+    downloadButton = <button onClick={onDeleteClick}>Delete</button>;
   }
 
   return (
