@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   setup,
   plugins,
@@ -23,6 +23,9 @@ const navigation = [
 
 /* eslint-disable @next/next/no-sync-scripts */
 export const Preferences = () => {
+  const [activePlugins, setActivePlugins] = useState<any[]>([]);
+
+  const preferenceRef = useRef(null);
   useEffect(() => {
     async function setupPE() {
       // Enable activation point management
@@ -37,18 +40,25 @@ export const Preferences = () => {
       // Register all active plugins with their activation points
       await plugins.registerActive();
     }
-    setupPE();
-  }, []);
 
-  const [activePlugins, setActivePlugins] = useState<any[]>([]);
-  useEffect(() => {
-    const getPlugins = async () => {
+    const activePlugins = async () => {
       const plgs = await plugins.getActive();
       setActivePlugins(plgs);
       // Activate alls
-      activationPoints.trigger("init");
+      setTimeout(async () => {
+        await activationPoints.trigger("init");
+        const components = await Promise.all(
+          extensionPoints.execute("experimentComponent")
+        );
+        components.forEach((e) => {
+          if (preferenceRef.current) {
+            // @ts-ignore
+            preferenceRef.current.appendChild(e);
+          }
+        });
+      }, 500);
     };
-    getPlugins();
+    setupPE().then(() => activePlugins());
   }, []);
 
   // Install a new plugin on clicking the install button
@@ -80,10 +90,10 @@ export const Preferences = () => {
   };
 
   // Update all plugins on clicking update plugins
-  const update = async () => {
-    const active = await plugins.getActive();
-    plugins.update(active.map((plg) => plg.name));
-    console.log("Plugins updated");
+  const update = async (plugin: string) => {
+    // @ts-ignore
+    await window.pluggableElectronIpc.update([plugin], true);
+    // plugins.update(active.map((plg) => plg.name));
   };
 
   // Trigger the init activation point on clicking activate plugins
@@ -98,9 +108,11 @@ export const Preferences = () => {
     //@ts-ignore
     const message = new FormData(e.target).get("message");
     // Get the cost, calculated in multiple steps, by the plugins
-    const resp = await extensionPoints.executeSerial("inference", message).catch((err) => {
-      console.log(err);
-    });
+    const resp = await extensionPoints
+      .executeSerial("inference", message)
+      .catch((err) => {
+        console.log(err);
+      });
     alert(resp);
   };
 
@@ -255,7 +267,7 @@ export const Preferences = () => {
                       <button
                         type="submit"
                         onClick={() => {
-                          update();
+                          update(e.name);
                         }}
                         className="mt-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
                       >
@@ -270,7 +282,6 @@ export const Preferences = () => {
               <PlayIcon width={30} />
               Test Plugins
             </div>
-
 
             <form
               id="test"
@@ -295,85 +306,7 @@ export const Preferences = () => {
               <div />
             </form>
 
-            <button
-              type="submit"
-              className="mt-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-              onClick={async () => {
-                const data = await extensionPoints.executeSerial(
-                  "getConversations"
-                );
-                console.log(data);
-              }}
-            >
-              Get Conversations
-            </button>
-            <button
-              type="submit"
-              className="mt-5 ml-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-              onClick={async () => {
-                const data = await extensionPoints.executeSerial(
-                  "createConversation",
-                  {
-                    name: "test",
-                    model_id: "yolo",
-                  }
-                );
-                console.log(data);
-              }}
-            >
-              Create Conversation
-            </button>
-            <button
-              type="submit"
-              className="mt-5 ml-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-              onClick={async () => {
-                const convs = await extensionPoints.executeSerial(
-                  "getConversations"
-                );
-                await extensionPoints.executeSerial(
-                  "deleteConversation",
-                  convs[0].id
-                );
-                const data = await extensionPoints.executeSerial(
-                  "getConversations"
-                );
-                console.log(data);
-              }}
-            >
-              Delete Conversation
-            </button>
-
-            <button
-              type="submit"
-              className="mt-5 ml-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-              onClick={async () => {
-                const convs = await extensionPoints.executeSerial(
-                  "getConversations"
-                );
-                const data = await extensionPoints.executeSerial(
-                  "createMessage",
-                  {
-                    name: "",
-                    conversation_id: convs[0].id,
-                    message: "yoo",
-                    user: "user",
-                  }
-                );
-                const data2 = await extensionPoints.executeSerial(
-                  "createMessage",
-                  {
-                    name: "",
-                    conversation_id: convs[0].id,
-                    message: "yee",
-                    user: "assistant",
-                  }
-                );
-                console.log(data);
-                console.log(data2);
-              }}
-            >
-              Create Message
-            </button>
+            <div className="h-full w-full" ref={preferenceRef}></div>
             {/* Content */}
           </div>
         </main>

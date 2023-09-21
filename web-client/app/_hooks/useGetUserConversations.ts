@@ -4,7 +4,7 @@ import {
   conversationStatesAtom,
   userConversationsAtom,
 } from "@/_helpers/JotaiWrapper";
-import { invokeDataService } from "@/_services/pluginService";
+import { executeSerial } from "@/_services/pluginService";
 import { DataService } from "../../shared/coreService";
 
 const useGetUserConversations = () => {
@@ -13,7 +13,7 @@ const useGetUserConversations = () => {
 
   const getUserConversations = async () => {
     try {
-      const convos: Conversation[] = await invokeDataService(DataService.GET_CONVERSATIONS);
+      const convos: Conversation[] = await executeSerial(DataService.GET_CONVERSATIONS);
       const convoStates: Record<string, ConversationState> = {};
       convos.forEach((convo) => {
         convoStates[convo.id] = {

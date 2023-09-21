@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import DownloadModelCard from "../DownloadModelCard";
-import { invokeModelManagementService } from "@/_services/pluginService";
+import { executeSerial } from "@/_services/pluginService";
 import { ModelManagementService } from "../../../shared/coreService";
 
 const ModelListContainer: React.FC = () => {
@@ -51,7 +51,7 @@ const ModelListContainer: React.FC = () => {
 
   useEffect(() => {
     const getDownloadedModels = async () => {
-      const modelNames = await invokeModelManagementService(
+      const modelNames = await executeSerial(
         ModelManagementService.GET_DOWNLOADED_MODELS
       );
       setDownloadedModels(modelNames);

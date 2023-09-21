@@ -6,8 +6,8 @@ import {
 } from "@/_helpers/JotaiWrapper";
 import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
 import {
-  invokeDataService,
-  invokeInferenceService,
+  execute,
+  executeSerial,
 } from "@/_services/pluginService";
 // import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -29,9 +29,9 @@ const SendButton: React.FC = () => {
       user: "user",
       created_at: new Date().toISOString(),
     };
-    await invokeDataService(DataService.CREATE_MESSAGE, newMessage);
+    await execute(DataService.CREATE_MESSAGE, newMessage);
     addNewMessage(await toChatMessage(newMessage));
-    const resp = await invokeInferenceService(
+    const resp = await executeSerial(
       InfereceService.INFERENCE,
       prompt
     );
@@ -42,7 +42,7 @@ const SendButton: React.FC = () => {
       user: "assistant",
       created_at: new Date().toISOString(),
     };
-    await invokeDataService(DataService.CREATE_MESSAGE, newResponse);
+    await execute(DataService.CREATE_MESSAGE, newResponse);
     addNewMessage(await toChatMessage(newResponse));
   };
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false;

@@ -5,10 +5,7 @@ import {
   updateConversationHasMoreAtom,
 } from "@/_helpers/JotaiWrapper";
 import { ChatMessage, RawMessage, toChatMessage } from "@/_models/ChatMessage";
-import { invokeDataService } from "@/_services/pluginService";
-import { MESSAGE_PER_PAGE } from "@/_utils/const";
-
-import { useLazyQuery } from "@apollo/client";
+import { executeSerial } from "@/_services/pluginService";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useState } from "react";
 import { DataService } from "../../shared/coreService";
@@ -34,7 +31,7 @@ const useChatMessages = (offset = 0) => {
     if (!hasMore) return;
 
     const getMessages = async () => {
-      invokeDataService(
+      executeSerial(
         DataService.GET_CONVERSATION_MESSAGES,
         currentConvo.id
       ).then((data) => {
