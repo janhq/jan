@@ -1,0 +1,93 @@
+{
+  "name": "sqlite3",
+  "description": "Asynchronous, non-blocking SQLite3 bindings",
+  "version": "5.1.6",
+  "homepage": "https://github.com/TryGhost/node-sqlite3",
+  "author": {
+    "name": "Mapbox",
+    "url": "https://mapbox.com/"
+  },
+  "binary": {
+    "module_name": "node_sqlite3",
+    "module_path": "./lib/binding/napi-v{napi_build_version}-{platform}-{libc}-{arch}",
+    "host": "https://github.com/TryGhost/node-sqlite3/releases/download/",
+    "remote_path": "v{version}",
+    "package_name": "napi-v{napi_build_version}-{platform}-{libc}-{arch}.tar.gz",
+    "napi_versions": [
+      3,
+      6
+    ]
+  },
+  "contributors": [
+    "Konstantin Käfer <mail@kkaefer.com>",
+    "Dane Springmeyer <dane@mapbox.com>",
+    "Will White <will@mapbox.com>",
+    "Orlando Vazquez <ovazquez@gmail.com>",
+    "Artem Kustikov <kustikoff@gmail.com>",
+    "Eric Fredricksen <efredricksen@gmail.com>",
+    "John Wright <mrjjwright@gmail.com>",
+    "Ryan Dahl <ry@tinyclouds.org>",
+    "Tom MacWright <tom@mapbox.com>",
+    "Carter Thaxton <carter.thaxton@gmail.com>",
+    "Audrius Kažukauskas <audrius@neutrino.lt>",
+    "Johannes Schauer <josch@pyneo.org>",
+    "Nathan Rajlich <nathan@tootallnate.net>",
+    "AJ ONeal <coolaj86@gmail.com>",
+    "Mithgol",
+    "Ben Noordhuis <ben@strongloop.com>"
+  ],
+  "files": [
+    "binding.gyp",
+    "deps/",
+    "lib/*.js",
+    "lib/*.d.ts",
+    "src/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TryGhost/node-sqlite3.git"
+  },
+  "dependencies": {
+    "@mapbox/node-pre-gyp": "^1.0.0",
+    "node-addon-api": "^4.2.0",
+    "tar": "^6.1.11"
+  },
+  "devDependencies": {
+    "eslint": "6.8.0",
+    "mocha": "7.2.0",
+    "node-pre-gyp-github": "1.4.4"
+  },
+  "peerDependencies": {
+    "node-gyp": "8.x"
+  },
+  "peerDependenciesMeta": {
+    "node-gyp": {
+      "optional": true
+    }
+  },
+  "optionalDependencies": {
+    "node-gyp": "8.x"
+  },
+  "scripts": {
+    "build": "node-pre-gyp build",
+    "build:debug": "node-pre-gyp build --debug",
+    "install": "node-pre-gyp install --fallback-to-build",
+    "pretest": "node test/support/createdb.js",
+    "test": "mocha -R spec --timeout 480000",
+    "pack": "node-pre-gyp package"
+  },
+  "license": "BSD-3-Clause",
+  "keywords": [
+    "sql",
+    "sqlite",
+    "sqlite3",
+    "database"
+  ],
+  "main": "./lib/sqlite3",
+  "types": "./lib/sqlite3.d.ts",
+  "renovate": {
+    "extends": [
+      "@tryghost:base"
+    ]
+  }
+}

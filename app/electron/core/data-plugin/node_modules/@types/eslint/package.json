@@ -1,0 +1,65 @@
+{
+    "name": "@types/eslint",
+    "version": "8.44.2",
+    "description": "TypeScript definitions for eslint",
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/eslint",
+    "license": "MIT",
+    "contributors": [
+        {
+            "name": "Pierre-Marie Dartus",
+            "url": "https://github.com/pmdartus",
+            "githubUsername": "pmdartus"
+        },
+        {
+            "name": "Jed Fox",
+            "url": "https://github.com/j-f1",
+            "githubUsername": "j-f1"
+        },
+        {
+            "name": "Saad Quadri",
+            "url": "https://github.com/saadq",
+            "githubUsername": "saadq"
+        },
+        {
+            "name": "Jason Kwok",
+            "url": "https://github.com/JasonHK",
+            "githubUsername": "JasonHK"
+        },
+        {
+            "name": "Brad Zacher",
+            "url": "https://github.com/bradzacher",
+            "githubUsername": "bradzacher"
+        },
+        {
+            "name": "JounQin",
+            "url": "https://github.com/JounQin",
+            "githubUsername": "JounQin"
+        }
+    ],
+    "main": "",
+    "types": "index.d.ts",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+        "directory": "types/eslint"
+    },
+    "scripts": {},
+    "dependencies": {
+        "@types/estree": "*",
+        "@types/json-schema": "*"
+    },
+    "typesPublisherContentHash": "97b0176e71d5a8db5e07c2bd8d35d2ed6738aa1eaa3f7175881f9942d304c0ba",
+    "typeScriptVersion": "4.3",
+    "exports": {
+        ".": {
+            "types": "./index.d.ts"
+        },
+        "./use-at-your-own-risk": {
+            "types": "./use-at-your-own-risk.d.ts"
+        },
+        "./rules": {
+            "types": "./rules/index.d.ts"
+        },
+        "./package.json": "./package.json"
+    }
+}
