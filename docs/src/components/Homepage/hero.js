@@ -107,8 +107,8 @@ export default function HomepageHero() {
           </h1>
           {/* Hero Subtitle */}
           <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
-            Jan is the private and flexible way to run your own AI. Jan is the
-            private and flexible way to run your own AI.
+            Free. Source available. Runs on your CPU and GPU with hardware
+            acceleration and collaboration mode.
           </p>
           {/* Download CTAs */}
           <div className="mt-10 flex items-center gap-x-6">
