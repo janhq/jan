@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("invokePluginFunc", plugin, method, ...args),
   sendInquiry: (question) => ipcRenderer.invoke("sendInquiry", question),
   initModel: (modelName) => ipcRenderer.invoke("initModel", modelName),
+  getDownloadedModels: () => ipcRenderer.invoke("getDownloadedModels"),
+  getAvailableModels: () => ipcRenderer.invoke("getAvailableModels"),
 });

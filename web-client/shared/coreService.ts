@@ -13,3 +13,7 @@ export enum ModelService {
 export enum InfereceService {
   INFERENCE = "inference",
 }
+
+export enum ModelManagementService {
+  GET_DOWNLOADED_MODELS = "getDownloadedModels",
+}

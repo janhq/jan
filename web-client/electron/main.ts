@@ -9,6 +9,7 @@ const {
 const isDev = require("electron-is-dev");
 const path = require("path");
 const pe = require("pluggable-electron/main");
+const fs = require("fs");
 
 let modelSession = undefined;
 
@@ -83,6 +84,25 @@ const createMainWindow = () => {
 app.whenReady().then(() => {
   createMainWindow();
   setupPlugins();
+
+  ipcMain.handle("getDownloadedModels", async (event) => {
+    const userDataPath = app.getPath("userData");
+
+    const allBinariesName = [];
+    var files = fs.readdirSync(userDataPath);
+    for (var i = 0; i < files.length; i++) {
+      var filename = path.join(userDataPath, files[i]);
+      var stat = fs.lstatSync(filename);
+      if (stat.isDirectory()) {
+        // ignore
+      } else if (filename.endsWith(".bin")) {
+        console.log("-- found: ", filename);
+        allBinariesName.push(filename);
+      }
+    }
+    console.log("NamH allBinariesName: ", allBinariesName);
+    return allBinariesName;
+  });
 
   ipcMain.handle("sendInquiry", async (event, question) => {
     if (!modelSession) {

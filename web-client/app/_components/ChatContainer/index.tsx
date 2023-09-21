@@ -8,6 +8,7 @@ import {
   showingProductDetailAtom,
 } from "@/_helpers/JotaiWrapper";
 import { ReactNode } from "react";
+import ModelManagement from "../ModelManagement";
 
 type Props = {
   children: ReactNode;
@@ -18,7 +19,8 @@ export default function ChatContainer({ children }: Props) {
   // const showingProductDetail = useAtomValue(showingProductDetailAtom);
 
   if (!activeConvoId) {
-    return <ProductOverview />;
+    // return <ProductOverview />;
+    return <ModelManagement />;
   }
 
   return (
