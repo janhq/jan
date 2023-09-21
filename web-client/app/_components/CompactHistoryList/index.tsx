@@ -10,7 +10,7 @@ const CompactHistoryList: React.FC = () => {
       {conversations.map(({ id, image }) => (
         <CompactHistoryItem
           key={id}
-          conversationId={id}
+          conversationId={id ?? ""}
           imageUrl={image ?? ""}
         />
       ))}

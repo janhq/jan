@@ -14,7 +14,7 @@ type Props = {
   conversation: Conversation;
   avatarUrl?: string;
   name: string;
-  updatedAt?: number;
+  updatedAt?: string;
 };
 
 const HistoryItem: React.FC<Props> = ({
@@ -39,7 +39,7 @@ const HistoryItem: React.FC<Props> = ({
     : "bg-white dark:bg-gray-500";
 
   let rightImageUrl: string | undefined;
-  if (conversationStates[conversation.id]?.waitingForResponse === true) {
+  if (conversationStates[conversation.id ?? ""]?.waitingForResponse === true) {
     rightImageUrl = "icons/loading.svg";
   }
 
@@ -59,13 +59,18 @@ const HistoryItem: React.FC<Props> = ({
         <div className="flex flex-row items-center justify-between">
           <span className="text-gray-900 text-left">{name}</span>
           <span className="text-[11px] leading-[13px] tracking-[-0.4px] text-gray-400">
-            {updatedAt && displayDate(updatedAt)}
+            {updatedAt && updatedAt}
           </span>
         </div>
         <div className="flex items-center justify-between gap-1">
           <div className="flex-1">
             <span className="text-gray-400 hidden-text text-left">
-              {conversation?.message ?? <span>No new message<br className="h-5 block" /></span>}
+              {conversation?.message ?? (
+                <span>
+                  No new message
+                  <br className="h-5 block" />
+                </span>
+              )}
             </span>
           </div>
           <>

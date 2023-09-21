@@ -1,48 +1,16 @@
 import {
-  addNewMessageAtom,
   currentConvoStateAtom,
   currentPromptAtom,
-  currentConversationAtom,
-  showingTyping,
 } from "@/_helpers/JotaiWrapper";
-import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
-import { execute, executeSerial } from "@/_services/pluginService";
-// import useSendChatMessage from "@/_hooks/useSendChatMessage";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import useSendChatMessage from "@/_hooks/useSendChatMessage";
+import { useAtom, useAtomValue } from "jotai";
 import Image from "next/image";
-import { DataService, InfereceService } from "../../../shared/coreService";
 
 const SendButton: React.FC = () => {
-  const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom);
-  const currentConvo = useAtomValue(currentConversationAtom);
+  const [currentPrompt] = useAtom(currentPromptAtom);
   const currentConvoState = useAtomValue(currentConvoStateAtom);
-  const addNewMessage = useSetAtom(addNewMessageAtom);
-  const [, setIsTyping] = useAtom(showingTyping);
-  // const { sendChatMessage } = useSendChatMessage();
-  const sendChatMessage = async () => {
-    setIsTyping(true);
-    setCurrentPrompt("");
-    const prompt = currentPrompt.trim();
-    const newMessage: RawMessage = {
-      conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,
-      message: prompt,
-      user: "user",
-      created_at: new Date().toISOString(),
-    };
-    await execute(DataService.CREATE_MESSAGE, newMessage);
-    addNewMessage(await toChatMessage(newMessage));
-    const resp = await executeSerial(InfereceService.INFERENCE, prompt);
 
-    const newResponse: RawMessage = {
-      conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,
-      message: resp,
-      user: "assistant",
-      created_at: new Date().toISOString(),
-    };
-    await execute(DataService.CREATE_MESSAGE, newResponse);
-    addNewMessage(await toChatMessage(newResponse));
-    setIsTyping(false);
-  };
+  const { sendChatMessage } = useSendChatMessage();
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false;
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse;
 

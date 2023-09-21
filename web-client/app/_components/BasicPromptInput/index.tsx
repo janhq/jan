@@ -1,13 +1,12 @@
 "use client";
 
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
-// import useSendChatMessage from "@/_hooks/useSendChatMessage";
+import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtom } from "jotai";
 
 const BasicPromptInput: React.FC = () => {
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom);
-  // const { sendChatMessage } = useSendChatMessage();
-  const sendChatMessage = () => {};
+  const { sendChatMessage } = useSendChatMessage();
 
   const handleMessageChange = (event: any) => {
     setCurrentPrompt(event.target.value);

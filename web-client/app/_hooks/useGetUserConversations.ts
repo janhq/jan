@@ -16,7 +16,7 @@ const useGetUserConversations = () => {
       const convos: Conversation[] = await executeSerial(DataService.GET_CONVERSATIONS);
       const convoStates: Record<string, ConversationState> = {};
       convos.forEach((convo) => {
-        convoStates[convo.id] = {
+        convoStates[convo.id ?? ""] = {
           hasMore: true,
           waitingForResponse: false,
         };
