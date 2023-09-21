@@ -97,7 +97,7 @@ export const Preferences = () => {
   };
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-screen overflow-scroll">
       {/* Static sidebar for desktop */}
       <div className="fixed inset-y-0 z-50 flex w-72 flex-col">
         {/* Sidebar component, swap this element with another sidebar if you like */}
