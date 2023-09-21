@@ -1,6 +1,7 @@
 import React from "react";
 import { ChevronRightIcon } from "@heroicons/react/20/solid";
 import { useColorMode } from "@docusaurus/theme-common";
+import Dropdown from "@site/src/components/Elements/dropdown";
 
 export default function HomepageHero() {
   const { isDarkTheme } = useColorMode();
@@ -51,15 +52,11 @@ export default function HomepageHero() {
                 fugiat aliqua.
               </p>
               <div className="mt-10 flex items-center justify-center gap-x-6">
+                {/* TODO: handle mobile model download app instead */}
+                <Dropdown />
                 <a
                   href="#"
-                  className="rounded-md bg-indigo-600 dark:bg-indigo-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                >
-                  Download (Mac Silicon)
-                </a>
-                <a
-                  href="#"
-                  className="text-sm font-semibold leading-6 text-gray-900 dark:text-white"
+                  className="text-base font-semibold leading-6 text-gray-900 dark:text-white"
                 >
                   Book a Demo <span aria-hidden="true">→</span>
                 </a>
