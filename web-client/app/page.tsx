@@ -57,6 +57,15 @@ const Page: React.FC = () => {
                 <RightContainer />
               </div>
             )}
+            {!activated && (
+              <>
+                <img
+                  className="w-full h-full object-cover"
+                  alt=""
+                  src="images/banner.jpg"
+                ></img>
+              </>
+            )}
           </ModalWrapper>
         </ThemeWrapper>
       </JotaiWrapper>
