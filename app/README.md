@@ -33,6 +33,8 @@ Note: This instruction is tested on MacOS only.
 
    ```
    # Determining the path to save model with /Users/<username>/Library/Application Support/jan-web/
+   mkdir /Users/<username>/Library/Application Support/jan-web
+
    # Now download the model to correct location by running command
    wget -O /Users/<username>/Library/Application Support/jan-web/llama-2-7b-chat.gguf.q4_0.bin https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf
    ```
