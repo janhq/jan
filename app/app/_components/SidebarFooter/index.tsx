@@ -6,14 +6,14 @@ const SidebarFooter: React.FC = () => (
     <SidebarButton
       className="flex items-center border border-gray-200 rounded-lg p-2 gap-3 flex-1 justify-center text-gray-900 font-medium text-sm"
       height={24}
-      icon="/icons/discord.svg"
+      icon="icons/discord.svg"
       title="Discord"
       width={24}
     />
     <SidebarButton
       className="flex items-center border border-gray-200 rounded-lg p-2 gap-3 flex-1 justify-center text-gray-900 font-medium text-sm"
       height={24}
-      icon="/icons/unicorn_twitter.svg"
+      icon="icons/unicorn_twitter.svg"
       title="Twitter"
       width={24}
     />

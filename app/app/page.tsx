@@ -2,7 +2,6 @@
 
 import { ThemeWrapper } from "./_helpers/ThemeWrapper";
 import JotaiWrapper from "./_helpers/JotaiWrapper";
-import LeftContainer from "./_components/LeftContainer";
 import RightContainer from "./_components/RightContainer";
 import { ModalWrapper } from "./_helpers/ModalWrapper";
 import { useEffect, useState } from "react";
@@ -11,7 +10,7 @@ import {
   setup,
   plugins,
   activationPoints,
-} from "../node_modules/pluggable-electron/dist/execution.es";
+} from "../electron/core/plugin-manager/execution/index";
 import {
   isCorePluginInstalled,
   setupBasePlugins,
@@ -38,7 +37,7 @@ const Page: React.FC = () => {
         await activationPoints.trigger("init");
         if (!isCorePluginInstalled()) {
           alert(
-            "It seems like you don't have all required plugins installed. To use this app, please install all required plugins.",
+            "It seems like you don't have all required plugins installed. To use this app, please install all required plugins."
           );
           setupBasePlugins();
           return;

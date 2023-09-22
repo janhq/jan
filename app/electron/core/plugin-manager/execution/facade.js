@@ -5,8 +5,8 @@
  * @namespace plugins
  */
 
-import Plugin from "./Plugin"
-import { register } from './activation-manager'
+import Plugin from "./Plugin";
+import { register } from "./activation-manager";
 
 /**
  * @typedef {Object.<string, any>} installOptions The {@link https://www.npmjs.com/package/pacote|pacote options}
@@ -22,13 +22,21 @@ import { register } from './activation-manager'
  * @alias plugins.install
  */
 export async function install(plugins) {
-  const plgList = await window.pluggableElectronIpc.install(plugins)
-  if (plgList.cancelled) return false
-  return plgList.map(plg => {
-    const plugin = new Plugin(plg.name, plg.url, plg.activationPoints, plg.active)
-    register(plugin)
-    return plugin
-  })
+  if (typeof window === "undefined") {
+    return;
+  }
+  const plgList = await window.pluggableElectronIpc.install(plugins);
+  if (plgList.cancelled) return false;
+  return plgList.map((plg) => {
+    const plugin = new Plugin(
+      plg.name,
+      plg.url,
+      plg.activationPoints,
+      plg.active
+    );
+    register(plugin);
+    return plugin;
+  });
 }
 
 /**
@@ -39,7 +47,10 @@ export async function install(plugins) {
  * @alias plugins.uninstall
  */
 export function uninstall(plugins, reload = true) {
-  return window.pluggableElectronIpc.uninstall(plugins, reload)
+  if (typeof window === "undefined") {
+    return;
+  }
+  return window.pluggableElectronIpc.uninstall(plugins, reload);
 }
 
 /**
@@ -48,8 +59,19 @@ export function uninstall(plugins, reload = true) {
  * @alias plugins.getActive
  */
 export async function getActive() {
-  const plgList = await window.pluggableElectronIpc.getActive()
-  return plgList.map(plugin => new Plugin(plugin.name, plugin.url, plugin.activationPoints, plugin.active))
+  if (typeof window === "undefined") {
+    return;
+  }
+  const plgList = await window.pluggableElectronIpc.getActive();
+  return plgList.map(
+    (plugin) =>
+      new Plugin(
+        plugin.name,
+        plugin.url,
+        plugin.activationPoints,
+        plugin.active
+      )
+  );
 }
 
 /**
@@ -58,8 +80,20 @@ export async function getActive() {
  * @alias plugins.registerActive
  */
 export async function registerActive() {
-  const plgList = await window.pluggableElectronIpc.getActive()
-  plgList.forEach(plugin => register(new Plugin(plugin.name, plugin.url, plugin.activationPoints, plugin.active)))
+  if (typeof window === "undefined") {
+    return;
+  }
+  const plgList = await window.pluggableElectronIpc.getActive();
+  plgList.forEach((plugin) =>
+    register(
+      new Plugin(
+        plugin.name,
+        plugin.url,
+        plugin.activationPoints,
+        plugin.active
+      )
+    )
+  );
 }
 
 /**
@@ -70,8 +104,19 @@ export async function registerActive() {
  * @alias plugins.update
  */
 export async function update(plugins, reload = true) {
-  const plgList = await window.pluggableElectronIpc.update(plugins, reload)
-  return plgList.map(plugin => new Plugin(plugin.name, plugin.url, plugin.activationPoints, plugin.active))
+  if (typeof window === "undefined") {
+    return;
+  }
+  const plgList = await window.pluggableElectronIpc.update(plugins, reload);
+  return plgList.map(
+    (plugin) =>
+      new Plugin(
+        plugin.name,
+        plugin.url,
+        plugin.activationPoints,
+        plugin.active
+      )
+  );
 }
 
 /**
@@ -81,7 +126,10 @@ export async function update(plugins, reload = true) {
  * @alias plugins.updatesAvailable
  */
 export function updatesAvailable(plugin) {
-  return window.pluggableElectronIpc.updatesAvailable(plugin)
+  if (typeof window === "undefined") {
+    return;
+  }
+  return window.pluggableElectronIpc.updatesAvailable(plugin);
 }
 
 /**
@@ -92,6 +140,9 @@ export function updatesAvailable(plugin) {
  * @alias plugins.toggleActive
  */
 export async function toggleActive(plugin, active) {
-  const plg = await window.pluggableElectronIpc.toggleActive(plugin, active)
-  return new Plugin(plg.name, plg.url, plg.activationPoints, plg.active)
+  if (typeof window === "undefined") {
+    return;
+  }
+  const plg = await window.pluggableElectronIpc.toggleActive(plugin, active);
+  return new Plugin(plg.name, plg.url, plg.activationPoints, plg.active);
 }

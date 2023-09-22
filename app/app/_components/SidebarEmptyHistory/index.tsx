@@ -5,7 +5,7 @@ const SidebarEmptyHistory: React.FC = () => {
   return (
     <div className="flex flex-col items-center py-10 gap-3">
       <Image
-        src={"/icons/chat-bubble-oval-left.svg"}
+        src={"icons/chat-bubble-oval-left.svg"}
         width={32}
         height={32}
         alt=""
@@ -22,7 +22,7 @@ const SidebarEmptyHistory: React.FC = () => {
         <SidebarButton
           className="flex items-center border bg-blue-600 rounded-lg py-[9px] pl-[15px] pr-[17px] gap-2 text-white font-medium text-sm"
           height={14}
-          icon="/icons/Icon_plus.svg"
+          icon="icons/Icon_plus.svg"
           title="New chat"
           width={14}
         />

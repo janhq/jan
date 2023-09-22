@@ -1,11 +1,14 @@
-import { definePresetEps, setImporter } from "./import-manager.js"
+import { definePresetEps, setImporter } from "./import-manager.js";
 
-export * as extensionPoints from './extension-manager.js';
-export * as activationPoints from './activation-manager.js';
-export * as plugins from './facade'
-export { default as ExtensionPoint } from './ExtensionPoint.js';
+export * as extensionPoints from "./extension-manager.js";
+export * as activationPoints from "./activation-manager.js";
+export * as plugins from "./facade";
+export { default as ExtensionPoint } from "./ExtensionPoint.js";
 
-if (!window.pluggableElectronIpc) console.warn('Facade is not registered in preload. Facade functions will throw an error if used.')
+if (typeof window === "undefined" || !window.pluggableElectronIpc)
+  console.warn(
+    "Facade is not registered in preload. Facade functions will throw an error if used."
+  );
 
 /**
  * Set the renderer options for Pluggable Electron. Should be called before any other Pluggable Electron function in the renderer
@@ -16,6 +19,6 @@ if (!window.pluggableElectronIpc) console.warn('Facade is not registered in prel
  * @returns {void}
  */
 export function setup(options) {
-  setImporter(options.importer)
-  definePresetEps(options.presetEPs)
+  setImporter(options.importer);
+  definePresetEps(options.presetEPs);
 }

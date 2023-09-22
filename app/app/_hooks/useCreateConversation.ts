@@ -6,8 +6,6 @@ import {
   userConversationsAtom,
 } from "@/_helpers/JotaiWrapper";
 import { Conversation } from "@/_models/Conversation";
-import { Product } from "@/_models/Product";
-import { MessageSenderType, MessageType } from "@/_models/ChatMessage";
 import { executeSerial } from "@/_services/pluginService";
 import { DataService } from "../../shared/coreService";
 

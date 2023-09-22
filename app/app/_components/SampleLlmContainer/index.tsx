@@ -1,6 +1,4 @@
 import JanWelcomeTitle from "../JanWelcomeTitle";
-import { useQuery } from "@apollo/client";
-import { GetProductPromptsDocument, GetProductPromptsQuery } from "@/graphql";
 import { Product } from "@/_models/Product";
 import { useSetAtom } from "jotai";
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
@@ -11,9 +9,7 @@ type Props = {
 
 const SampleLlmContainer: React.FC<Props> = ({ product }) => {
   const setCurrentPrompt = useSetAtom(currentPromptAtom);
-  const { data } = useQuery<GetProductPromptsQuery>(GetProductPromptsDocument, {
-    variables: { productSlug: product.slug },
-  });
+  const { data } = { data: { prompts: [] } };
 
   return (
     <div className="flex flex-col max-w-sm flex-shrink-0 gap-9 items-center pt-6 mx-auto">
@@ -25,7 +21,7 @@ const SampleLlmContainer: React.FC<Props> = ({ product }) => {
         <h2 className="font-semibold text-xl leading-6 tracking-[-0.4px] mb-5">
           Try now
         </h2>
-        <div className="flex flex-col">
+        {/* <div className="flex flex-col">
           {data?.prompts.map((item) => (
             <button
               onClick={() => setCurrentPrompt(item.content ?? "")}
@@ -35,7 +31,7 @@ const SampleLlmContainer: React.FC<Props> = ({ product }) => {
               <span className="line-clamp-3">{item.content}</span>
             </button>
           ))}
-        </div>
+        </div> */}
       </div>
     </div>
   );

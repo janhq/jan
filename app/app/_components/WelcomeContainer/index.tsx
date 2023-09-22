@@ -33,7 +33,7 @@ const Welcome: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       <div className="px-[200px] flex-1 flex flex-col gap-5 justify-center items-start">
-        <Image src={"/icons/App_ico.svg"} width={44} height={45} alt="" />
+        <Image src={"icons/App_ico.svg"} width={44} height={45} alt="" />
         <span className="font-semibold text-gray-500 text-5xl">
           Welcome,
           <br />
@@ -41,7 +41,7 @@ const Welcome: React.FC = () => {
         </span>
         <SidebarButton
           className="flex flex-row-reverse items-center rounded-lg gap-2 px-3 py-2 text-xs font-medium border border-gray-200"
-          icon="/icons/arrow-right.svg"
+          icon="icons/arrow-right.svg"
           title="Explore models"
           height={16}
           width={16}

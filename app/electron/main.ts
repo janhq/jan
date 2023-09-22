@@ -39,7 +39,7 @@ const createMainWindow = () => {
       });
       const context = new LlamaContext({ model });
       modelSession = new LlamaChatSession({ context });
-    },
+    }
   );
 
   ipcMain.handle("invokePluginFunc", async (event, plugin, method, ...args) => {
@@ -51,7 +51,7 @@ const createMainWindow = () => {
       app.getPath("userData"),
       "plugins",
       plg.name,
-      "dist/module.js",
+      "dist/module.js"
     );
     return await import(
       /* webpackIgnore: true */
@@ -95,9 +95,9 @@ app.whenReady().then(() => {
 
     progress(
       request(
-        "https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf",
+        "https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf"
       ),
-      {},
+      {}
     )
       .on("progress", function (state) {
         console.log("progress", state);
@@ -179,7 +179,7 @@ function setupPlugins() {
     confirmInstall: async (plugins) => {
       const answer = await dialog.showMessageBox({
         message: `Are you sure you want to install the plugin ${plugins.join(
-          ", ",
+          ", "
         )}`,
         buttons: ["Ok", "Cancel"],
         cancelId: 1,

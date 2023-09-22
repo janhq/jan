@@ -5,7 +5,7 @@ import {
   plugins,
   extensionPoints,
   activationPoints,
-} from "../../node_modules/pluggable-electron/dist/execution.es";
+} from "../../electron/core/plugin-manager/execution/index";
 
 import {
   ChartPieIcon,
@@ -73,8 +73,9 @@ export const Preferences = () => {
     // Send the filename of the to be installed plugin
     // to the main process for installation
     const installed = await plugins.install([pluginFile]);
-    console.log("Installed plugin:", installed);
-    window.location.reload();
+    if (typeof window !== "undefined") {
+      window.location.reload();
+    }
   };
 
   // Uninstall a plugin on clicking uninstall
@@ -94,8 +95,10 @@ export const Preferences = () => {
 
   // Update all plugins on clicking update plugins
   const update = async (plugin: string) => {
-    // @ts-ignore
-    await window.pluggableElectronIpc.update([plugin], true);
+    if (typeof window !== "undefined") {
+      // @ts-ignore
+      await window.pluggableElectronIpc.update([plugin], true);
+    }
     // plugins.update(active.map((plg) => plg.name));
   };
 

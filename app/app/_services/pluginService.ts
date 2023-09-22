@@ -1,7 +1,8 @@
+"use client";
 import {
   extensionPoints,
   plugins,
-} from "../../node_modules/pluggable-electron/dist/execution.es";
+} from "../../electron/core/plugin-manager/execution/index";
 import {
   CoreService,
   DataService,
@@ -38,7 +39,9 @@ export const setupBasePlugins = async () => {
   }
   const installed = await plugins.install(toInstall);
   if (installed) {
-    window.location.reload();
+    if (typeof window !== "undefined") {
+      window.location.reload();
+    }
   }
 };
 
@@ -53,7 +56,7 @@ export const execute = (name: CoreService, args?: any) => {
 export const executeSerial = (name: CoreService, args?: any) => {
   if (!extensionPoints.get(name)) {
     alert("Missing extension for function: " + name);
-    return undefined;
+    return Promise.resolve(undefined);
   }
   return extensionPoints.executeSerial(name, args);
 };

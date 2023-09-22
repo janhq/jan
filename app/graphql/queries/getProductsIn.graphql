@@ -1,5 +1,0 @@
-query getProductsIn($_in: [String!] = "") {
-  products(where: {slug: {_in: $_in}}) {
-    ...ProductDetail
-  }
-}

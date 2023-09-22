@@ -37,7 +37,7 @@ const SidebarMenu: React.FC = () => {
             className="flex items-center gap-3 text-base text-gray-600"
           >
             <Image
-              src={`/icons/${item.icon}.svg`}
+              src={`icons/${item.icon}.svg`}
               width={24}
               height={24}
               alt=""

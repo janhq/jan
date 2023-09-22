@@ -34,7 +34,7 @@ const useChatMessages = (offset = 0) => {
       executeSerial(
         DataService.GET_CONVERSATION_MESSAGES,
         currentConvo.id
-      ).then((data) => {
+      ).then((data: any) => {
         if (!data) {
           return;
         }

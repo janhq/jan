@@ -1,7 +1,6 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import TryItYourself from "./TryItYourself";
 import React from "react";
 import { currentProductAtom } from "@/_helpers/JotaiWrapper";
 
@@ -26,7 +25,6 @@ const OverviewPane: React.FC = () => {
             {product?.modelUrl}
           </a>
         </div>
-        <TryItYourself />
       </div>
     </div>
   );
