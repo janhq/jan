@@ -34,11 +34,12 @@ const createMainWindow = () => {
   });
 
   import(
-    path.resolve(
-      "asar://",
-      __dirname,
-      "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
-    )
+    isDev
+      ? "../node_modules/node-llama-cpp/dist/index.js"
+      : path.resolve(
+          app.getAppPath(),
+          "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
+        )
   )
     .then(({ LlamaContext, LlamaChatSession, LlamaModel }) => {
       const modelPath = path.join(app.getPath("userData"), modelName);
@@ -50,11 +51,7 @@ const createMainWindow = () => {
     })
     .catch(async (e) => {
       await dialog.showMessageBox({
-        message: `failed to import node-llama-cpp module at
-        ${path.resolve(
-          __dirname,
-          "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
-        )}`,
+        message: "Failed to import LLM module",
       });
     });
 
@@ -106,7 +103,7 @@ app.whenReady().then(() => {
   setupPlugins();
 
   ipcMain.handle("userData", async (event) => {
-    return path.resolve(__dirname, "./../../app.asar.unpacked");
+    return path.resolve(__dirname, "../");
   });
 
   ipcMain.handle("downloadModel", async (event, url) => {
