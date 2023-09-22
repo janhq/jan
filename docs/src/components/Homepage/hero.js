@@ -39,7 +39,7 @@ export default function HomepageHero() {
         )}
 
         {/* Main hero block */}
-        <div className="py-24 sm:py-32 lg:pb-40">
+        <div className="py-24 sm:py-32 lg:pb-40 animate-in fade-in zoom-in-50 duration-1000 ">
           <div className="mx-auto max-w-7xl px-6 lg:px-8">
             {/* Hero text and buttons */}
             <div className="mx-auto max-w-2xl text-center">
@@ -47,9 +47,7 @@ export default function HomepageHero() {
                 Run your own AI
               </h1>
               <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
-                Anim aute id magna aliqua ad ad non deserunt sunt. Qui irure qui
-                lorem cupidatat commodo. Elit sunt amet fugiat veniam occaecat
-                fugiat aliqua.
+              Jan lets you run AI on your own hardware, and with 1-click installs for the latest models. Easy-to-use yet powerful, with helpful tools to monitor and manage software-hardware performance.
               </p>
               <div className="mt-10 flex items-center justify-center gap-x-6">
                 {/* TODO: handle mobile model download app instead */}
