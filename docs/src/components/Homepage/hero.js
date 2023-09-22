@@ -54,12 +54,18 @@ export default function HomepageHero() {
               <div className="mt-10 flex items-center justify-center gap-x-6">
                 {/* TODO: handle mobile model download app instead */}
                 <Dropdown />
-                <a
+                {/* <a
                   href="#"
                   className="text-base font-semibold leading-6 text-gray-900 dark:text-white"
                 >
                   Book a Demo <span aria-hidden="true">→</span>
-                </a>
+                </a> */}
+                <button
+                  type="button"
+                  className="cursor-pointer relative inline-flex items-center rounded px-3.5 py-2.5 text-base font-semibold text-indigo-600 bg-white border-indigo-600 hover:bg-indigo-600 hover:text-white"
+                >
+                  Book a Demo
+                </button>
               </div>
             </div>
             {/* Desktop screenshot image full width */}

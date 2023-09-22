@@ -4,9 +4,26 @@ import { Menu, Transition } from "@headlessui/react";
 import { ChevronDownIcon } from "@heroicons/react/20/solid";
 
 const items = [
-  { name: "Download for Mac (Intel)", href: "#" },
-  { name: "Download for Windows", href: "#" },
-  { name: "Download for Linux", href: "#" },
+  {
+    name: "Download for Mac (M1/M2)",
+    href: "#",
+    logo: require("@site/static/img/apple-logo-white.png").default,
+  },
+  {
+    name: "Download for Mac (Intel)",
+    href: "#",
+    logo: require("@site/static/img/apple-logo-white.png").default,
+  },
+  {
+    name: "Download for Windows",
+    href: "#",
+    logo: require("@site/static/img/windows-logo-white.png").default,
+  },
+  {
+    name: "Download for Linux",
+    href: "#",
+    logo: require("@site/static/img/linux-logo-white.png").default,
+  },
 ];
 
 function classNames(...classes) {
@@ -15,7 +32,8 @@ function classNames(...classes) {
 
 export default function Dropdown() {
   return (
-    <div className="inline-flex">
+    <div className="inline-flex align-items-stretch">
+      {/* TODO dynamically detect users OS through browser */}
       <button
         type="button"
         className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-3.5 py-2.5 text-base font-semibold text-white bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400"
@@ -28,7 +46,7 @@ export default function Dropdown() {
         Download for Mac (Silicon)
       </button>
       <Menu as="div" className="relative -ml-px block">
-        <Menu.Button className="cursor-pointer relative inline-flex items-center rounded-r-md border-0 border-l border-gray-300 h-12 text-white bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400">
+        <Menu.Button className="cursor-pointer relative inline-flex items-center rounded-r-md border-0 border-l border-gray-300 active:border-l active:border-white h-full text-white bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400">
           <span className="sr-only">Open OS options</span>
           <ChevronDownIcon className="h-5 w-5" aria-hidden="true" />
         </Menu.Button>
@@ -41,7 +59,7 @@ export default function Dropdown() {
           leaveFrom="transform opacity-100 scale-100"
           leaveTo="transform opacity-0 scale-95"
         >
-          <Menu.Items className="absolute right-0 z-10 -mr-1 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+          <Menu.Items className="absolute right-0 z-10 mt-2 w-72 text-left origin-top-right rounded-md bg-indigo-600 dark:bg-indigo-500 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
             <div className="py-1">
               {items.map((item) => (
                 <Menu.Item key={item.name}>
@@ -49,10 +67,17 @@ export default function Dropdown() {
                     <a
                       href={item.href}
                       className={classNames(
-                        active ? "bg-gray-100 text-gray-900" : "text-gray-700",
+                        active
+                          ? "bg-indigo-500 dark:hover:bg-indigo-400 hover:text-white"
+                          : "text-white",
                         "block px-4 py-2"
                       )}
                     >
+                      <img
+                        src={item.logo}
+                        alt="Logo"
+                        className="w-3 mr-3 -mt-1"
+                      />
                       {item.name}
                     </a>
                   )}
