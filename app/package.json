@@ -25,7 +25,8 @@
       "out/**/*",
       "electron/main.ts",
       "package.json",
-      "electron/preload.js"
+      "electron/preload.js",
+      "electron/core"
     ],
     "extends": null,
     "mac": {
