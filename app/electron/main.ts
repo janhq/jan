@@ -13,6 +13,8 @@ const fs = require("fs");
 const { mkdir, writeFile } = require("fs/promises");
 const { Readable } = require("stream");
 const { finished } = require("stream/promises");
+const request = require("request");
+const progress = require("request-progress");
 
 let modelSession = undefined;
 let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
@@ -37,7 +39,7 @@ const createMainWindow = () => {
       });
       const context = new LlamaContext({ model });
       modelSession = new LlamaChatSession({ context });
-    }
+    },
   );
 
   ipcMain.handle("invokePluginFunc", async (event, plugin, method, ...args) => {
@@ -49,7 +51,7 @@ const createMainWindow = () => {
       app.getPath("userData"),
       "plugins",
       plg.name,
-      "dist/module.js"
+      "dist/module.js",
     );
     return await import(
       /* webpackIgnore: true */
@@ -88,19 +90,35 @@ app.whenReady().then(() => {
   setupPlugins();
 
   ipcMain.handle("downloadModel", async (event, url) => {
-    const res = await fetch(url);
     const userDataPath = app.getPath("userData");
     const destination = path.resolve(userDataPath, modelName);
-    const fileStream = fs.createWriteStream(destination, { flags: "wx" });
-    await finished(Readable.fromWeb(res.body).pipe(fileStream));
-    console.log("Download finished");
-    app.relaunch();
-    app.exit();
+
+    progress(
+      request(
+        "https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf",
+      ),
+      {},
+    )
+      .on("progress", function (state) {
+        console.log("progress", state);
+      })
+      .on("error", function (err) {
+        // Do something with err
+      })
+      .on("end", function () {
+        app.relaunch();
+        app.exit();
+        // Do something after request finishes
+      })
+      .pipe(fs.createWriteStream(destination));
   });
 
-  ipcMain.handle("deleteModel", async (event, path) => {
-    let result = "REMOVED";
-    fs.unlink(path, function (err) {
+  ipcMain.handle("deleteModel", async (event, modelFileName) => {
+    const userDataPath = app.getPath("userData");
+    const fullPath = path.join(userDataPath, modelFileName);
+
+    let result = "NULL";
+    fs.unlink(fullPath, function (err) {
       if (err && err.code == "ENOENT") {
         console.info("File doesn't exist, won't remove it.");
         result = "FILE_NOT_EXIST";
@@ -161,7 +179,7 @@ function setupPlugins() {
     confirmInstall: async (plugins) => {
       const answer = await dialog.showMessageBox({
         message: `Are you sure you want to install the plugin ${plugins.join(
-          ", "
+          ", ",
         )}`,
         buttons: ["Ok", "Cancel"],
         cancelId: 1,

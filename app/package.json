@@ -61,6 +61,8 @@
     "react-syntax-highlighter": "^15.5.0",
     "remark": "^14.0.3",
     "remark-html": "^15.0.2",
+    "request": "^2.88.2",
+    "request-progress": "^3.0.0",
     "tailwindcss": "3.3.3",
     "typescript": "5.1.6"
   },
