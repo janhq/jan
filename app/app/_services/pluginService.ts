@@ -23,10 +23,21 @@ export const isCorePluginInstalled = () => {
   return true;
 };
 export const setupBasePlugins = async () => {
-  const basePlugin = "electron/core/pre-install/base-plugin.tgz";
-  const dataPlugin = "electron/core/pre-install/data-plugin.tgz";
+  if (
+    typeof window === "undefined" ||
+    // @ts-ignore
+    typeof window.electronAPI === "undefined"
+  ) {
+    return;
+  }
+  // @ts-ignore
+  const userDataPath = await window.electronAPI.userData();
+  const basePlugin =
+    userDataPath + "/electron/core/pre-install/base-plugin.tgz";
+  const dataPlugin =
+    userDataPath + "/electron/core/pre-install/data-plugin.tgz";
   const modelManagementPlugin =
-    "electron/core/pre-install/model-management-plugin.tgz";
+    userDataPath + "/electron/core/pre-install/model-management-plugin.tgz";
   const toInstall = [];
   if (!extensionPoints.get(DataService.GET_CONVERSATIONS)) {
     toInstall.push(dataPlugin);
@@ -39,9 +50,7 @@ export const setupBasePlugins = async () => {
   }
   const installed = await plugins.install(toInstall);
   if (installed) {
-    if (typeof window !== "undefined") {
-      window.location.reload();
-    }
+    window.location.reload();
   }
 };
 

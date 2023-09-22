@@ -14,7 +14,6 @@ const { mkdir, writeFile } = require("fs/promises");
 const { Readable } = require("stream");
 const { finished } = require("stream/promises");
 const request = require("request");
-const progress = require("request-progress");
 
 let modelSession = undefined;
 let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
@@ -29,20 +28,35 @@ const createMainWindow = () => {
     backgroundColor: "white",
     webPreferences: {
       nodeIntegration: true,
-      preload: path.join(__dirname, "preload.js"),
+      enableRemoteModule: true,
+      preload: path.resolve(app.getAppPath(), "electron/preload.js"),
     },
   });
 
-  import("../node_modules/node-llama-cpp/dist/index.js").then(
-    ({ LlamaContext, LlamaChatSession, LlamaModel }) => {
+  import(
+    path.resolve(
+      "asar://",
+      __dirname,
+      "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
+    )
+  )
+    .then(({ LlamaContext, LlamaChatSession, LlamaModel }) => {
       const modelPath = path.join(app.getPath("userData"), modelName);
       const model = new LlamaModel({
         modelPath: modelPath,
       });
       const context = new LlamaContext({ model });
       modelSession = new LlamaChatSession({ context });
-    }
-  );
+    })
+    .catch(async (e) => {
+      await dialog.showMessageBox({
+        message: `failed to import node-llama-cpp module at
+        ${path.resolve(
+          __dirname,
+          "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
+        )}`,
+      });
+    });
 
   ipcMain.handle("invokePluginFunc", async (event, plugin, method, ...args) => {
     const plg = pe
@@ -90,6 +104,10 @@ const createMainWindow = () => {
 app.whenReady().then(() => {
   createMainWindow();
   setupPlugins();
+
+  ipcMain.handle("userData", async (event) => {
+    return path.resolve(__dirname, "./../../app.asar.unpacked");
+  });
 
   ipcMain.handle("downloadModel", async (event, url) => {
     const userDataPath = app.getPath("userData");

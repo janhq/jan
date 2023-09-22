@@ -17,6 +17,10 @@
   "build": {
     "appId": "com.app.id",
     "productName": "Jan Desktop App",
+    "asarUnpack": [
+      "node_modules",
+      "electron/core"
+    ],
     "files": [
       "out/**/*",
       "electron/main.ts",
