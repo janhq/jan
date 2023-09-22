@@ -2,10 +2,11 @@ import React from "react";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import Layout from "@theme/Layout";
 import {
-  HomepageFeatures,
   HomepageHero,
   HomepageBanner,
-  HomepageUseCases,
+  HomepageSectionOne,
+  HomepageSectionTwo,
+  HomepageSectionThree,
   HomepageDownloads,
 } from "@site/src/components/Homepage";
 
@@ -21,8 +22,9 @@ export default function Home() {
       {/* <HomepageBanner /> */}
       <main className={styles.main}>
         <HomepageHero />
-        <HomepageFeatures />
-        <HomepageUseCases />
+        <HomepageSectionOne />
+        <HomepageSectionTwo />
+        <HomepageSectionThree />
         <HomepageDownloads />
       </main>
     </Layout>
