@@ -21,7 +21,6 @@
     ],
     "paths": {
       "@/*": ["./app/*"],
-      "@/graphql": ["./graphql/generated/graphql"]
     }
   },
   "include": [
