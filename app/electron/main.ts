@@ -19,8 +19,10 @@ const progress = require("request-progress");
 let modelSession = undefined;
 let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
 
+let window;
+
 const createMainWindow = () => {
-  let mainWindow = new BrowserWindow({
+  window = new BrowserWindow({
     width: electronScreen.getPrimaryDisplay().workArea.width,
     height: electronScreen.getPrimaryDisplay().workArea.height,
     show: false,
@@ -75,14 +77,14 @@ const createMainWindow = () => {
     ? "http://localhost:3000"
     : `file://${path.join(__dirname, "../out/index.html")}`;
 
-  mainWindow.loadURL(startURL);
+  window.loadURL(startURL);
 
-  mainWindow.once("ready-to-show", () => mainWindow.show());
-  mainWindow.on("closed", () => {
+  window.once("ready-to-show", () => window.show());
+  window.on("closed", () => {
     if (process.platform !== "darwin") app.quit();
   });
 
-  mainWindow.webContents.openDevTools();
+  window.webContents.openDevTools();
 };
 
 app.whenReady().then(() => {
@@ -93,17 +95,15 @@ app.whenReady().then(() => {
     const userDataPath = app.getPath("userData");
     const destination = path.resolve(userDataPath, modelName);
 
-    progress(
-      request(
-        "https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf"
-      ),
-      {}
-    )
+    progress(request(url), {})
       .on("progress", function (state) {
-        console.log("progress", state);
+        window.webContents.send("model-download-update", {
+          ...state,
+          modelId: modelName,
+        });
       })
       .on("error", function (err) {
-        // Do something with err
+        window.webContents.send("model-download-error", err);
       })
       .on("end", function () {
         app.relaunch();
@@ -145,7 +145,6 @@ app.whenReady().then(() => {
       if (stat.isDirectory()) {
         // ignore
       } else if (filename.endsWith(".bin")) {
-        console.log("-- found: ", filename);
         allBinariesName.push(filename);
       }
     }

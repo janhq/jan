@@ -16,6 +16,7 @@ import {
   setupBasePlugins,
 } from "./_services/pluginService";
 import LeftContainer2 from "./_components/LeftContainer2";
+import EventListenerWrapper from "./_helpers/EventListenerWrapper";
 
 const Page: React.FC = () => {
   const [activated, setActivated] = useState(false);
@@ -47,27 +48,30 @@ const Page: React.FC = () => {
     }
     setupPE();
   }, []);
+
   return (
     <JotaiWrapper>
-      <ThemeWrapper>
-        <ModalWrapper>
-          {activated && (
-            <div className="flex">
-              <LeftContainer2 />
-              <RightContainer />
-            </div>
-          )}
-          {!activated && (
-            <>
-              <img
-                className="w-full h-full object-cover"
-                alt=""
-                src="images/banner.jpg"
-              ></img>
-            </>
-          )}
-        </ModalWrapper>
-      </ThemeWrapper>
+      <EventListenerWrapper>
+        <ThemeWrapper>
+          <ModalWrapper>
+            {activated && (
+              <div className="flex">
+                <LeftContainer2 />
+                <RightContainer />
+              </div>
+            )}
+            {!activated && (
+              <>
+                <img
+                  className="w-full h-full object-cover"
+                  alt=""
+                  src="images/banner.jpg"
+                ></img>
+              </>
+            )}
+          </ModalWrapper>
+        </ThemeWrapper>
+      </EventListenerWrapper>
     </JotaiWrapper>
   );
 };

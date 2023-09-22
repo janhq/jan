@@ -2,6 +2,7 @@
 
 import { ChatMessage, MessageStatus } from "@/_models/ChatMessage";
 import { Conversation, ConversationState } from "@/_models/Conversation";
+import { DownloadState } from "@/_models/DownloadState";
 import { Product } from "@/_models/Product";
 import { Provider, atom } from "jotai";
 import { ReactNode } from "react";
@@ -220,3 +221,8 @@ export const searchAtom = atom<string>("");
 export const showConfirmDeleteConversationModalAtom = atom(false);
 export const showConfirmSignOutModalAtom = atom(false);
 export const showConfirmDeleteModalAtom = atom(false);
+
+// download states
+export const modelDownloadStateAtom = atom<DownloadState | undefined>(
+  undefined
+);

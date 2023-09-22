@@ -3,8 +3,8 @@
 const useFacade = require("pluggable-electron/facade");
 useFacade();
 
-// TODO: recheck if we need below code, since we have nodeIntegration enabled
 const { contextBridge, ipcRenderer } = require("electron");
+
 contextBridge.exposeInMainWorld("electronAPI", {
   invokePluginFunc: (plugin, method, ...args) =>
     ipcRenderer.invoke("invokePluginFunc", plugin, method, ...args),
@@ -20,4 +20,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   deleteModel: (path) => ipcRenderer.invoke("deleteModel", path),
 
   downloadModel: (url) => ipcRenderer.invoke("downloadModel", url),
+
+  onModelDownloadUpdate: (callback) =>
+    ipcRenderer.on("model-download-update", callback),
+
+  onModelDownloadError: (callback) =>
+    ipcRenderer.on("model-download-error", callback),
 });

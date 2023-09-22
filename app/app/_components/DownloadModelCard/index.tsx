@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import DownloadModelContent from "../DownloadModelContent";
 import ModelDownloadButton from "../ModelDownloadButton";
 import ModelDownloadingButton from "../ModelDownloadingButton";
@@ -15,6 +14,9 @@ type Props = {
   storage: number;
   installed?: boolean;
   required?: string;
+  downloading?: boolean;
+  total?: number;
+  transferred?: number;
   onDeleteClick?: () => void;
   onDownloadClick?: () => void;
 };
@@ -28,24 +30,23 @@ const DownloadModelCard: React.FC<Props> = ({
   type,
   installed = false,
   required,
+  downloading = false,
+  total = 0,
+  transferred = 0,
   onDeleteClick,
   onDownloadClick,
 }) => {
-  const [download, setDownload] = useState(true);
-  const handleClick = () => {
-    setDownload(!download);
-  };
   const handleViewDetails = () => {};
 
   let downloadButton = null;
   if (!installed) {
-    downloadButton = download ? (
+    downloadButton = downloading ? (
       <div className="w-1/5 flex items-center justify-end">
         <ModelDownloadButton callback={() => onDownloadClick?.()} />
       </div>
     ) : (
       <div className="w-1/5 flex items-start justify-end">
-        <ModelDownloadingButton total={storage} value={128} />
+        <ModelDownloadingButton total={total} value={transferred} />
       </div>
     );
   } else {
