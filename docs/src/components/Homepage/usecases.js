@@ -1,5 +1,4 @@
 import React from "react";
-import { useColorMode } from "@docusaurus/theme-common";
 import {
   CloudArrowUpIcon,
   LockClosedIcon,
@@ -28,8 +27,6 @@ const features = [
 ];
 
 export default function HomepageUseCases() {
-  const { isDarkTheme } = useColorMode();
-
   return (
     <div className="overflow-hidden bg-white dark:bg-gray-900 py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">

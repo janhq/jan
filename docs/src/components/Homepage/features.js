@@ -1,5 +1,4 @@
 import React from "react";
-import { useColorMode } from "@docusaurus/theme-common";
 import {
   ArrowPathIcon,
   CloudArrowUpIcon,
@@ -31,7 +30,6 @@ const features = [
 ];
 
 export default function HomepageFeatures() {
-  const { isDarkTheme } = useColorMode();
   return (
     <div className="bg-white dark:bg-gray-900 py-12 sm:py-16">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">

@@ -4,13 +4,13 @@ import { useColorMode } from "@docusaurus/theme-common";
 import Dropdown from "@site/src/components/Elements/dropdown";
 
 export default function HomepageHero() {
-  const { isDarkTheme } = useColorMode();
+  const { colorMode } = useColorMode();
 
   return (
     <div className="bg-white dark:bg-gray-900">
       <div className="relative isolate pt-14">
         {/* Background top gradient styling */}
-        {isDarkTheme ? (
+        {colorMode === "dark" ? (
           <div
             className="absolute inset-x-0 -top-40 -z-10 transform-gpu overflow-hidden blur-3xl sm:-top-80"
             aria-hidden="true"
@@ -54,15 +54,9 @@ export default function HomepageHero() {
               <div className="mt-10 flex items-center justify-center gap-x-6">
                 {/* TODO: handle mobile model download app instead */}
                 <Dropdown />
-                {/* <a
-                  href="#"
-                  className="text-base font-semibold leading-6 text-gray-900 dark:text-white"
-                >
-                  Book a Demo <span aria-hidden="true">→</span>
-                </a> */}
                 <button
                   type="button"
-                  className="cursor-pointer relative inline-flex items-center rounded px-3.5 py-2.5 text-base font-semibold text-indigo-600 bg-white border-indigo-600 hover:bg-indigo-600 hover:text-white"
+                  className="cursor-pointer relative inline-flex items-center rounded px-3.5 py-2 text-base font-semibold text-indigo-600 bg-white border-indigo-600 dark:border-white hover:bg-indigo-600 dark:hover:border-indigo-600 hover:text-white"
                 >
                   Book a Demo
                 </button>
@@ -71,7 +65,7 @@ export default function HomepageHero() {
             {/* Desktop screenshot image full width */}
             <img
               src={
-                isDarkTheme
+                colorMode === "dark"
                   ? require("@site/static/img/desktop-screenshot-dark.png")
                       .default
                   : require("@site/static/img/desktop-screenshot.png").default

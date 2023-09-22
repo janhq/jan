@@ -1,10 +1,7 @@
 import React from "react";
-import { useColorMode } from "@docusaurus/theme-common";
 import { XMarkIcon } from "@heroicons/react/20/solid";
 
 export default function HomepageBanner() {
-  const { isDarkTheme } = useColorMode();
-
   return (
     <div className="flex items-center gap-x-6 bg-gray-900 px-6 py-2.5 sm:px-3.5 sm:before:flex-1">
       <p className="text-sm leading-6 text-white">
