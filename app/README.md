@@ -10,6 +10,10 @@ Jan Desktop is an Electron application designed to allow users to interact with 
 
 ## Installation and Usage
 
+### Pre-requisites
+- node >= 20.0.0
+- yarn >= 1.22.0
+
 ### Use as complete suite (in progress)
  
 ### For interactive development
@@ -20,6 +24,7 @@ Note: This instruction is tested on MacOS only.
 
    ```
    git clone https://github.com/janhq/jan
+   git checkout feature/hackathon-refactor-jan-into-electron-app
    cd jan/app
    ```
 
@@ -55,8 +60,20 @@ Note: This instruction is tested on MacOS only.
    ![](./images/jan-desktop-dev-instruction-5.png)
    ![](./images/jan-desktop-dev-instruction-6.png)
 
+### For production build
 
-   
+   ```bash
+   # Do step 1 and 2 in previous section
+   git clone https://github.com/janhq/jan
+   git checkout feature/hackathon-refactor-jan-into-electron-app
+   cd jan/app
+   yarn install
+
+   # Build the app
+   yarn electron:build:all
+   ```
+
+   This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
 
 ## Configuration
 
