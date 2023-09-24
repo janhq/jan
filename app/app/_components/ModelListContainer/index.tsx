@@ -45,7 +45,7 @@ const ModelListContainer: React.FC = () => {
   useEffect(() => {
     const getDownloadedModels = async () => {
       const modelNames = await executeSerial(
-        ModelManagementService.GET_DOWNLOADED_MODELS
+        ModelManagementService.GET_DOWNLOADED_MODELS,
       );
       setDownloadedModels(modelNames);
     };
@@ -67,13 +67,21 @@ const ModelListContainer: React.FC = () => {
     setDownloadedModels([]);
   };
 
+  const initModel = async () => {
+    const product = {
+      name: "LLama 2 7B Chat",
+      fileName: "llama-2-7b-chat.gguf.q4_0.bin",
+      downloadUrl:
+        "https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf",
+    };
+    await executeSerial(ModelManagementService.INIT_MODEL, product);
+  };
+
   const onDownloadClick = async () => {
     const url =
       "https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf";
     await executeSerial(ModelManagementService.DOWNLOAD_MODEL, url);
   };
-
-  console.log(downloadState);
 
   return (
     <div className="flex flex-col gap-5">
@@ -85,6 +93,7 @@ const ModelListContainer: React.FC = () => {
               key={index}
               {...item}
               installed={true}
+              onInitClick={initModel}
               onDeleteClick={onDeleteClick}
             />
           ))}

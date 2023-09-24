@@ -25,4 +25,6 @@ export interface Product {
   outputs?: ProductOutput;
   createdAt: number;
   updatedAt?: number;
+  fileName?: string;
+  downloadUrl?: string;
 }

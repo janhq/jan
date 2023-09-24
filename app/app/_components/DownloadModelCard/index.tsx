@@ -17,6 +17,7 @@ type Props = {
   downloading?: boolean;
   total?: number;
   transferred?: number;
+  onInitClick?: () => void;
   onDeleteClick?: () => void;
   onDownloadClick?: () => void;
 };
@@ -33,6 +34,7 @@ const DownloadModelCard: React.FC<Props> = ({
   downloading = false,
   total = 0,
   transferred = 0,
+  onInitClick,
   onDeleteClick,
   onDownloadClick,
 }) => {
@@ -50,7 +52,12 @@ const DownloadModelCard: React.FC<Props> = ({
       </div>
     );
   } else {
-    downloadButton = <button onClick={onDeleteClick}>Delete</button>;
+    downloadButton = (
+      <div className="flex flex-col">
+        <button onClick={onInitClick}>Init</button>
+        <button onClick={onDeleteClick}>Delete</button>
+      </div>
+    );
   }
 
   return (

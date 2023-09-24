@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   sendInquiry: (question) => ipcRenderer.invoke("sendInquiry", question),
 
-  initModel: (modelName) => ipcRenderer.invoke("initModel", modelName),
+  initModel: (product) => ipcRenderer.invoke("initModel", product),
 
   getDownloadedModels: () => ipcRenderer.invoke("getDownloadedModels"),
 
