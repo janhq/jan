@@ -10,13 +10,12 @@
     "productName": "Jan Desktop App",
     "asarUnpack": [
       "node_modules",
-      "electron/core"
+      "core"
     ],
     "files": [
       "out/**/*",
-      "build/main.js",
-      "build/preload.js",
-      "electron/core"
+      "build/**/*",
+      "core"
     ],
     "extends": null,
     "mac": {

@@ -31,7 +31,7 @@ const createMainWindow = () => {
   });
 
   // TODO: add options for model configuration
-  ipcMain.handle("initModel", async (event, product) => {
+  ipcMain.handle("initModel", async (event, product, importer) => {
     if (!product.fileName) {
       await dialog.showMessageBox({
         message: "Selected model does not have file name..",
@@ -43,10 +43,10 @@ const createMainWindow = () => {
     console.info(`Initializing model: ${product.name}..`);
     import(
       isDev
-        ? "../node_modules/node-llama-cpp/dist/index.js"
+        ? join(__dirname, "../node_modules/node-llama-cpp/dist/index.js")
         : resolve(
             app.getAppPath(),
-            "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js",
+            "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
           )
     )
       .then(({ LlamaContext, LlamaChatSession, LlamaModel }) => {
@@ -75,7 +75,7 @@ const createMainWindow = () => {
       app.getPath("userData"),
       "plugins",
       plg.name,
-      "dist/module.js",
+      "dist/module.js"
     );
     return await import(
       /* webpackIgnore: true */
@@ -204,7 +204,7 @@ function setupPlugins() {
     confirmInstall: async (plugins) => {
       const answer = await dialog.showMessageBox({
         message: `Are you sure you want to install the plugin ${plugins.join(
-          ", ",
+          ", "
         )}`,
         buttons: ["Ok", "Cancel"],
         cancelId: 1,
