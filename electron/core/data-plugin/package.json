@@ -2,18 +2,25 @@
   "name": "data-plugin",
   "version": "2.1.0",
   "description": "",
-  "main": "dist/bundle.js",
-  "author": "Igor Honhoff",
+  "main": "dist/index.js",
+  "author": "Jan",
   "license": "MIT",
   "activationPoints": [
     "init"
   ],
   "scripts": {
-    "prepare": "webpack --config webpack.config.js",
-    "package": "rimraf ./data-plugin*.tgz && cp -f module.js ./dist/module.js && npm pack"
+    "build": "tsc",
+    "package": "rimraf ./data-plugin*.tgz && tsc -b . && webpack --config webpack.config.js && npm pack"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/module.js"
   },
   "devDependencies": {
     "rimraf": "^3.0.2",
+    "ts-loader": "^9.4.4",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2",
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
   },
@@ -24,7 +31,8 @@
   "files": [
     "dist/*",
     "package.json",
-    "README.md"
+    "README.md",
+    "node_modules/*"
   ],
   "dependencies": {
     "sqlite3": "^5.1.6"
