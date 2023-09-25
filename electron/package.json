@@ -15,7 +15,7 @@
     "files": [
       "out/**/*",
       "build/**/*",
-      "core"
+      "core/plugin-manager"
     ],
     "extends": null,
     "mac": {
