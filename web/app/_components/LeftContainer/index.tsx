@@ -1,24 +1,16 @@
-"use client";
+import React from "react";
+import SidebarFooter from "../SidebarFooter";
+import SidebarHeader from "../SidebarHeader";
+import SidebarMenu from "../SidebarMenu";
+import HistoryList from "../HistoryList";
 
-import { useAtomValue } from "jotai";
-import AdvancedPrompt from "../AdvancedPrompt";
-import CompactSideBar from "../CompactSideBar";
-import LeftSidebar from "../LeftSidebar";
-import { showingAdvancedPromptAtom } from "@/_helpers/JotaiWrapper";
+const LeftContainer: React.FC = () => (
+  <div className="w-[323px] flex-shrink-0 p-3 h-screen border-r border-gray-200 flex flex-col">
+    <SidebarHeader />
+    <HistoryList />
+    <SidebarMenu />
+    <SidebarFooter />
+  </div>
+);
 
-const LeftContainer: React.FC = () => {
-  const isShowingAdvPrompt = useAtomValue(showingAdvancedPromptAtom);
-
-  if (isShowingAdvPrompt) {
-    return (
-      <div className="flex h-screen">
-        <CompactSideBar />
-        <AdvancedPrompt />
-      </div>
-    );
-  }
-
-  return <LeftSidebar />;
-};
-
-export default LeftContainer;
+export default React.memo(LeftContainer);

@@ -1,6 +1,5 @@
 import React from "react";
 import JanImage from "../JanImage";
-import { displayDate } from "@/_utils/datetime";
 import {
   conversationStatesAtom,
   getActiveConvoIdAtom,
@@ -59,7 +58,7 @@ const HistoryItem: React.FC<Props> = ({
         <div className="flex flex-row items-center justify-between">
           <span className="text-gray-900 text-left">{name}</span>
           <span className="text-[11px] leading-[13px] tracking-[-0.4px] text-gray-400">
-            {updatedAt && updatedAt}
+            {updatedAt && new Date(updatedAt).toDateString()}
           </span>
         </div>
         <div className="flex items-center justify-between gap-1">

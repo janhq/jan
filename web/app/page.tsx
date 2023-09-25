@@ -15,7 +15,7 @@ import {
   isCorePluginInstalled,
   setupBasePlugins,
 } from "./_services/pluginService";
-import LeftContainer2 from "./_components/LeftContainer2";
+import LeftContainer from "./_components/LeftContainer";
 import EventListenerWrapper from "./_helpers/EventListenerWrapper";
 
 const Page: React.FC = () => {
@@ -24,8 +24,7 @@ const Page: React.FC = () => {
     async function setupPE() {
       // Enable activation point management
       setup({
-        //@ts-ignore
-        importer: (plugin) =>
+        importer: (plugin: string) =>
           import(/* webpackIgnore: true */ plugin).catch((err) => {
             console.log(err);
           }),
@@ -62,18 +61,16 @@ const Page: React.FC = () => {
           <ModalWrapper>
             {activated && (
               <div className="flex">
-                <LeftContainer2 />
+                <LeftContainer />
                 <RightContainer />
               </div>
             )}
             {!activated && (
-              <>
-                <img
-                  className="w-full h-full object-cover"
-                  alt=""
-                  src="images/banner.jpg"
-                ></img>
-              </>
+              <img
+                className="w-screen h-screen object-cover"
+                alt=""
+                src="images/banner.jpg"
+              />
             )}
           </ModalWrapper>
         </ThemeWrapper>

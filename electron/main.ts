@@ -17,7 +17,7 @@ let modelSession = undefined;
 let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
 let mainWindow;
 
-const _importDynamic = new Function('modulePath', 'return import(modulePath)')
+const _importDynamic = new Function("modulePath", "return import(modulePath)");
 
 const createMainWindow = () => {
   mainWindow = new BrowserWindow({
@@ -33,7 +33,7 @@ const createMainWindow = () => {
   });
 
   // TODO: add options for model configuration
-  ipcMain.handle("initModel", async (event, product, importer) => {
+  ipcMain.handle("initModel", async (event, product) => {
     if (!product.fileName) {
       await dialog.showMessageBox({
         message: "Selected model does not have file name..",

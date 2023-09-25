@@ -4,7 +4,7 @@ import ExpandableHeader from "../ExpandableHeader";
 import { useAtomValue } from "jotai";
 import { searchAtom, userConversationsAtom } from "@/_helpers/JotaiWrapper";
 import useGetUserConversations from "@/_hooks/useGetUserConversations";
-import HistoryEmpty from "../HistoryEmpty";
+import SidebarEmptyHistory from "../SidebarEmptyHistory";
 
 const HistoryList: React.FC = () => {
   const conversations = useAtomValue(userConversationsAtom);
@@ -43,7 +43,7 @@ const HistoryList: React.FC = () => {
               />
             ))
         ) : (
-          <HistoryEmpty/>
+          <SidebarEmptyHistory />
         )}
       </div>
     </div>
