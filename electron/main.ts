@@ -26,7 +26,7 @@ const createMainWindow = () => {
     webPreferences: {
       nodeIntegration: true,
       enableRemoteModule: true,
-      preload: resolve(app.getAppPath(), "build/preload.js"),
+      preload: join(__dirname, "preload.js"),
     },
   });
 
@@ -113,7 +113,7 @@ app.whenReady().then(() => {
   setupPlugins();
 
   ipcMain.handle("userData", async (event) => {
-    return resolve(__dirname, "../");
+    return join(__dirname, "../");
   });
 
   ipcMain.handle("downloadModel", async (event, url) => {
