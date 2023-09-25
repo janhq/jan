@@ -18,6 +18,7 @@ let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
 let mainWindow;
 
 const _importDynamic = new Function("modulePath", "return import(modulePath)");
+const lastInitializedModel: string | undefined = undefined;
 
 const createMainWindow = () => {
   mainWindow = new BrowserWindow({
@@ -42,6 +43,10 @@ const createMainWindow = () => {
       return;
     }
 
+    if (lastInitializedModel === product.name) {
+      console.log("Model initialized");
+      return;
+    }
     console.info(`Initializing model: ${product.name}..`);
     _importDynamic(
       isDev
@@ -60,6 +65,7 @@ const createMainWindow = () => {
         const context = new LlamaContext({ model });
         modelSession = new LlamaChatSession({ context });
         console.info(`Init model ${product.name} successfully!`);
+        lastInitializedModel = product.name;
       })
       .catch(async (e) => {
         console.error(e);
