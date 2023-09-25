@@ -1,5 +1,0 @@
-query getProductPrompts($productSlug: String = "") {
-  prompts(where: {prompt_products: {products: {slug: {_eq: $productSlug}}}}) {
-    ...PromptDetail
-  }
-}
