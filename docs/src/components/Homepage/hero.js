@@ -47,9 +47,13 @@ export default function HomepageHero() {
                 Run your own AI
               </h1>
               <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
-                Anim aute id magna aliqua ad ad non deserunt sunt. Qui irure qui
-                lorem cupidatat commodo. Elit sunt amet fugiat veniam occaecat
-                fugiat aliqua.
+                Jan lets you run AI on your own hardware. 1-click to install the
+                latest open-source models. Monitor and manage software-hardware
+                performance.
+                <br></br>
+                Jan is
+                <strong> free and open core</strong> with a Sustainable Use
+                License.
               </p>
               <div className="mt-10 flex items-center justify-center gap-x-6">
                 {/* TODO: handle mobile model download app instead */}
@@ -66,9 +70,9 @@ export default function HomepageHero() {
             <img
               src={
                 colorMode === "dark"
-                  ? require("@site/static/img/desktop-screenshot-dark.png")
-                      .default
-                  : require("@site/static/img/desktop-screenshot.png").default
+                  ? // TODO replace with darkmode image
+                    require("@site/static/img/desktop-llm-chat.png").default
+                  : require("@site/static/img/desktop-llm-chat.png").default
               }
               alt="App screenshot"
               width={2432}

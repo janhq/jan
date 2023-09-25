@@ -24,8 +24,8 @@ export default function Home() {
         <HomepageHero />
         <HomepageSectionOne />
         <HomepageSectionTwo />
-        <HomepageSectionThree />
-        <HomepageDownloads />
+        {/* <HomepageSectionThree />
+        <HomepageDownloads /> */}
       </main>
     </Layout>
   );

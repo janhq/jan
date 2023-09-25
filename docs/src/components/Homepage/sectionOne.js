@@ -8,6 +8,7 @@ import {
   RocketLaunchIcon,
   ServerIcon,
 } from "@heroicons/react/20/solid";
+import { useColorMode } from "@docusaurus/theme-common";
 
 const features = [
   {
@@ -31,6 +32,7 @@ const features = [
 ];
 
 export default function HomepageSectionOne() {
+  const { colorMode } = useColorMode();
   return (
     <div className="overflow-hidden bg-white dark:bg-gray-900 py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
@@ -64,7 +66,14 @@ export default function HomepageSectionOne() {
           </div>
           <div className="flex items-start justify-end lg:order-first">
             <img
-              src="https://tailwindui.com/img/component-images/dark-project-app-screenshot.png"
+              src={
+                colorMode === "dark"
+                  ? // TODO replace with darkmode image
+                    require("@site/static/img/desktop-explore-models-dark.png")
+                      .default
+                  : require("@site/static/img/desktop-explore-models.png")
+                      .default
+              }
               alt="Product screenshot"
               className="w-[48rem] max-w-none rounded-xl shadow-xl ring-1 ring-gray-400/10 sm:w-[57rem]"
               width={2432}

@@ -8,7 +8,9 @@
  * work well for content-centric websites.
  */
 
-/* You can override the default Infima variables here. */
+/* You can override the default Infima variables here. 
+   Full list of Infima variables: https://github.com/facebook/docusaurus/issues/3955#issuecomment-1521944593
+*/
 :root {
   --ifm-color-primary: #2e8555;
   --ifm-color-primary-dark: #29784c;
@@ -30,5 +32,6 @@
   --ifm-color-primary-light: #29d5b0;
   --ifm-color-primary-lighter: #32d8b4;
   --ifm-color-primary-lightest: #4fddbf;
+  --ifm-navbar-background-color: rgba(15, 23, 42);
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
