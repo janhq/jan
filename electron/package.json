@@ -34,7 +34,6 @@
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
     "node-llama-cpp": "^2.4.1"
-
   },
   "devDependencies": {
     "concurrently": "^8.2.1",

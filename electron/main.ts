@@ -8,11 +8,11 @@ import {
 } from "electron";
 import { resolve, join } from "path";
 import { readdirSync, createWriteStream, unlink, lstatSync } from "fs";
-
 import isDev = require("electron-is-dev");
 import request = require("request");
-
+import progress = require("request-progress");
 import { init, getStore } from "./core/plugin-manager/pluginMgr";
+
 let modelSession = undefined;
 let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
 let mainWindow;
@@ -46,7 +46,7 @@ const createMainWindow = () => {
         ? "../node_modules/node-llama-cpp/dist/index.js"
         : resolve(
             app.getAppPath(),
-            "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
+            "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js",
           )
     )
       .then(({ LlamaContext, LlamaChatSession, LlamaModel }) => {
@@ -60,6 +60,7 @@ const createMainWindow = () => {
         console.info(`Init model ${product.name} successfully!`);
       })
       .catch(async (e) => {
+        console.error(e);
         await dialog.showMessageBox({
           message: "Failed to import LLM module",
         });
@@ -74,7 +75,7 @@ const createMainWindow = () => {
       app.getPath("userData"),
       "plugins",
       plg.name,
-      "dist/module.js"
+      "dist/module.js",
     );
     return await import(
       /* webpackIgnore: true */
@@ -159,42 +160,6 @@ app.whenReady().then(() => {
     return result;
   });
 
-  // TODO: add options for model configuration
-  ipcMain.handle("initModel", async (event, product) => {
-    if (!product.fileName) {
-      await dialog.showMessageBox({
-        message: "Selected model does not have file name..",
-      });
-
-      return;
-    }
-
-    console.info(`Initializing model: ${product.name}..`);
-    import(
-      isDev
-        ? "../node_modules/node-llama-cpp/dist/index.js"
-        : resolve(
-            app.getAppPath(),
-            "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
-          )
-    )
-      .then(({ LlamaContext, LlamaChatSession, LlamaModel }) => {
-        const modelPath = join(app.getPath("userData"), product.fileName);
-        // TODO: check if file is already there
-        const model = new LlamaModel({
-          modelPath: modelPath,
-        });
-        const context = new LlamaContext({ model });
-        modelSession = new LlamaChatSession({ context });
-        console.info(`Init model ${product.name} successfully!`);
-      })
-      .catch(async (e) => {
-        await dialog.showMessageBox({
-          message: "Failed to import LLM module",
-        });
-      });
-  });
-
   ipcMain.handle("getDownloadedModels", async (event) => {
     const userDataPath = app.getPath("userData");
 
@@ -239,7 +204,7 @@ function setupPlugins() {
     confirmInstall: async (plugins) => {
       const answer = await dialog.showMessageBox({
         message: `Are you sure you want to install the plugin ${plugins.join(
-          ", "
+          ", ",
         )}`,
         buttons: ["Ok", "Cancel"],
         cancelId: 1,

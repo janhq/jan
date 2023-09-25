@@ -12,13 +12,15 @@ type Props = {
 export default function EventListenerWrapper({ children }: Props) {
   const setDownloadState = useSetAtom(modelDownloadStateAtom);
   useEffect(() => {
-    window.electronAPI.onModelDownloadUpdate((event, state) => {
-      setDownloadState(state);
-    });
+    if (window && window.electronAPI) {
+      window.electronAPI.onModelDownloadUpdate((event, state) => {
+        setDownloadState(state);
+      });
 
-    window.electronAPI.onModelDownloadError(() => {
-      // TODO: Show error message
-    });
+      window.electronAPI.onModelDownloadError(() => {
+        // TODO: Show error message
+      });
+    }
   }, []);
 
   return <div id="eventlistener">{children}</div>;
