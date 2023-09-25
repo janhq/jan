@@ -11,7 +11,7 @@ import { readdirSync, createWriteStream, unlink, lstatSync } from "fs";
 import isDev = require("electron-is-dev");
 import request = require("request");
 import progress = require("request-progress");
-import { init, getStore } from "./core/plugin-manager/pluginMgr";
+import { init } from "./core/plugin-manager/pluginMgr";
 
 let modelSession = undefined;
 let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
@@ -75,33 +75,25 @@ const createMainWindow = () => {
       });
   });
 
-  ipcMain.handle("invokePluginFunc", async (event, plugin, method, ...args) => {
-    const plg = getStore()
-      .getActivePlugins()
-      .filter((p) => p.name === plugin)[0];
-    const pluginPath = join(
-      app.getPath("userData"),
-      "plugins",
-      plg.name,
-      "dist/module.js"
-    );
-    return await import(
-      /* webpackIgnore: true */
-      pluginPath
-    )
-      .then((plugin) => {
-        if (typeof plugin[method] === "function") {
-          return plugin[method](...args);
-        } else {
-          console.log(plugin[method]);
-          console.error(`Function "${method}" does not exist in the module.`);
-        }
-      })
-      .then((res) => {
-        return res;
-      })
-      .catch((err) => console.log(err));
-  });
+  ipcMain.handle(
+    "invokePluginFunc",
+    async (event, modulePath, method, ...args) => {
+      const module = join(app.getPath("userData"), "plugins", modulePath);
+      return await import(/* webpackIgnore: true */ module)
+        .then((plugin) => {
+          if (typeof plugin[method] === "function") {
+            return plugin[method](...args);
+          } else {
+            console.log(plugin[method]);
+            console.error(`Function "${method}" does not exist in the module.`);
+          }
+        })
+        .then((res) => {
+          return res;
+        })
+        .catch((err) => console.log(err));
+    }
+  );
 
   const startURL = isDev
     ? "http://localhost:3000"
@@ -123,6 +115,9 @@ app.whenReady().then(() => {
 
   ipcMain.handle("userData", async (event) => {
     return join(__dirname, "../");
+  });
+  ipcMain.handle("pluginPath", async (event) => {
+    return join(app.getPath("userData"), "plugins");
   });
 
   ipcMain.handle("downloadModel", async (event, url) => {

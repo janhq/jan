@@ -1,11 +1,11 @@
 // Provide an async method to manipulate the price provided by the extension point
-const PLUGIN_NAME = "data-plugin";
+const MODULE_PATH = "data-plugin/dist/module.js";
 
 const getConversations = () =>
   new Promise<any>((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc(PLUGIN_NAME, "getConversations")
+        .invokePluginFunc(MODULE_PATH, "getConversations")
         .then((res: any[]) => resolve(res));
     } else {
       resolve([]);
@@ -15,7 +15,7 @@ const getConversationMessages = (id: any) =>
   new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc(PLUGIN_NAME, "getConversationMessages", id)
+        .invokePluginFunc(MODULE_PATH, "getConversationMessages", id)
         .then((res: any[]) => resolve(res));
     } else {
       resolve([]);
@@ -26,7 +26,7 @@ const createConversation = (conversation: any) =>
   new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc(PLUGIN_NAME, "storeConversation", conversation)
+        .invokePluginFunc(MODULE_PATH, "storeConversation", conversation)
         .then((res: any) => {
           resolve(res);
         });
@@ -38,7 +38,7 @@ const createMessage = (message: any) =>
   new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc(PLUGIN_NAME, "storeMessage", message)
+        .invokePluginFunc("storeMessage", message)
         .then((res: any) => resolve(res));
     } else {
       resolve("-");
@@ -49,7 +49,7 @@ const deleteConversation = (id: any) =>
   new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc(PLUGIN_NAME, "deleteConversation", id)
+        .invokePluginFunc(MODULE_PATH, "deleteConversation", id)
         .then((res: any) => {
           resolve(res);
         });
@@ -59,7 +59,7 @@ const deleteConversation = (id: any) =>
   });
 
 const setupDb = () => {
-  window.electronAPI.invokePluginFunc(PLUGIN_NAME, "init");
+  window.electronAPI.invokePluginFunc(MODULE_PATH, "init");
 };
 
 const getButton = (text: string, func: () => void) => {
