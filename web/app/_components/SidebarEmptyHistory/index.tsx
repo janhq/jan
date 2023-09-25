@@ -7,10 +7,15 @@ import useCreateConversation from "@/_hooks/useCreateConversation";
 const SidebarEmptyHistory: React.FC = () => {
   const { requestCreateConvo } = useCreateConversation();
   const startChat = async () => {
+    // Host
+    if (window && !window.electronAPI) {
+      requestCreateConvo(1);
+    }
+    // Electron
     const downloadedModels = await executeSerial(
       ModelManagementService.GET_DOWNLOADED_MODELS
     );
-    if (!downloadedModels || downloadedModels.length === 0) {
+    if (!downloadedModels || downloadedModels?.length === 0) {
       alert(
         "Seems like there is no model downloaded yet. Please download a model first."
       );

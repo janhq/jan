@@ -25,17 +25,13 @@ export const isCorePluginInstalled = () => {
 export const setupBasePlugins = async () => {
   if (
     typeof window === "undefined" ||
-    // @ts-ignore
     typeof window.electronAPI === "undefined"
   ) {
     return;
   }
-  // @ts-ignore
   const userDataPath = await window.electronAPI.userData();
-  const basePlugin =
-    userDataPath + "/core/pre-install/base-plugin.tgz";
-  const dataPlugin =
-    userDataPath + "/core/pre-install/data-plugin.tgz";
+  const basePlugin = userDataPath + "/core/pre-install/base-plugin.tgz";
+  const dataPlugin = userDataPath + "/core/pre-install/data-plugin.tgz";
   const modelManagementPlugin =
     userDataPath + "/core/pre-install/model-management-plugin.tgz";
   const toInstall = [];

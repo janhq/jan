@@ -10,7 +10,7 @@ const HistoryEmpty: React.FC = () => {
     const downloadedModels = await executeSerial(
       ModelManagementService.GET_DOWNLOADED_MODELS
     );
-    if (!downloadedModels || downloadedModels.length === 0) {
+    if (!downloadedModels || downloadedModels?.length === 0) {
       alert(
         "Seems like there is no model downloaded yet. Please download a model first."
       );

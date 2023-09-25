@@ -99,7 +99,7 @@ const ModelListContainer: React.FC = () => {
           ))}
       </div>
       <div className="pb-5 flex flex-col gap-2">
-        {downloadedModels.length === 0 && (
+        {downloadedModels?.length === 0 && (
           <>
             <Title title={BrowseAvailableModels.title} />
             {BrowseAvailableModels.data.map((item, index) => (

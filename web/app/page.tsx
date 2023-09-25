@@ -46,7 +46,13 @@ const Page: React.FC = () => {
         setActivated(true);
       }, 500);
     }
-    setupPE();
+    // Electron
+    if (window && window.electronAPI) {
+      setupPE();
+    } else {
+      // Host
+      setActivated(true);
+    }
   }, []);
 
   return (
