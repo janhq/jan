@@ -17,6 +17,8 @@ let modelSession = undefined;
 let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
 let mainWindow;
 
+const _importDynamic = new Function('modulePath', 'return import(modulePath)')
+
 const createMainWindow = () => {
   mainWindow = new BrowserWindow({
     width: electronScreen.getPrimaryDisplay().workArea.width,
@@ -41,7 +43,7 @@ const createMainWindow = () => {
     }
 
     console.info(`Initializing model: ${product.name}..`);
-    import(
+    _importDynamic(
       isDev
         ? join(__dirname, "../node_modules/node-llama-cpp/dist/index.js")
         : resolve(
