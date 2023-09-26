@@ -8,15 +8,13 @@
   "build": {
     "appId": "jan.ai.app",
     "productName": "Jan Desktop App",
-    "asarUnpack": [
-      "node_modules",
-      "core",
-      "web"
-    ],
     "files": [
-      "../web/out/**/*",
-      "build/**/*",
-      "core/plugin-manager"
+      "renderer/**/*",
+      "build/*.{js,map}",
+      "build/core/plugin-manager/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules"
     ],
     "extends": null,
     "mac": {
@@ -25,7 +23,7 @@
   },
   "scripts": {
     "dev": "tsc -p . && electron .",
-    "build": "electron-builder build --publish never -mwl"
+    "build": "tsc -p . && electron-builder build --publish never -mwl"
   },
   "dependencies": {
     "electron-is-dev": "^2.0.0",

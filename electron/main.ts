@@ -47,7 +47,11 @@ const createMainWindow = () => {
       return;
     }
     console.info(`Initializing model: ${product.name}..`);
-    _importDynamic("node-llama-cpp")
+    _importDynamic(
+      isDev
+        ? "node-llama-cpp"
+        : "../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
+    )
       .then(
         ({
           LlamaContext,
@@ -99,7 +103,7 @@ const createMainWindow = () => {
 
   const startURL = isDev
     ? "http://localhost:3000"
-    : `file://${join(__dirname, "../web/out/index.html")}`;
+    : `file://${join(__dirname, "../renderer/index.html")}`;
 
   mainWindow.loadURL(startURL);
 

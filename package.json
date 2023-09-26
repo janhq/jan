@@ -3,7 +3,8 @@
   "name": "jan-app",
   "workspaces": {
     "packages": [
-      "electron", "web"
+      "electron",
+      "web"
     ],
     "nohoist": [
       "electron",
@@ -18,10 +19,12 @@
     "dev": "concurrently --kill-others-on-fail \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "build:web": "yarn workspace jan-web build",
     "build:electron": "yarn workspace jan-electron build",
-    "build": "yarn build:web && yarn build:electron"
+    "build": "rimraf ./electron/renderer/* && yarn build:web && cpx \"web/out/**\" \"electron/renderer/\" && yarn build:electron"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",
+    "cpx": "^1.5.0",
+    "rimraf": "^5.0.4",
     "wait-on": "^7.0.1"
   },
   "dependencies": {}

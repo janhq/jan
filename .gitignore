@@ -11,3 +11,4 @@ yarn.lock
 dist
 build
 .DS_Store
+electron/renderer
