@@ -7,14 +7,13 @@ import {
   ipcMain,
 } from "electron";
 import { resolve, join } from "path";
-import { readdirSync, createWriteStream, unlink, lstatSync } from "fs";
+import { unlink, createWriteStream } from "fs";
 import isDev = require("electron-is-dev");
+import { init } from "./core/plugin-manager/pluginMgr";
 import request = require("request");
 import progress = require("request-progress");
-import { init } from "./core/plugin-manager/pluginMgr";
 
 let modelSession = undefined;
-let modelName = "llama-2-7b-chat.gguf.q4_0.bin";
 let mainWindow;
 
 const _importDynamic = new Function("modulePath", "return import(modulePath)");
@@ -116,68 +115,59 @@ app.whenReady().then(() => {
   ipcMain.handle("userData", async (event) => {
     return join(__dirname, "../");
   });
+
   ipcMain.handle("pluginPath", async (event) => {
     return join(app.getPath("userData"), "plugins");
   });
 
-  ipcMain.handle("downloadModel", async (event, url) => {
+  /**
+   * Used to delete a file from the user data folder
+   */
+  ipcMain.handle("deleteFile", async (_event, filePath) => {
     const userDataPath = app.getPath("userData");
-    const destination = resolve(userDataPath, modelName);
-
-    progress(request(url), {})
-      .on("progress", function (state) {
-        mainWindow.webContents.send("model-download-update", {
-          ...state,
-          modelId: modelName,
-        });
-      })
-      .on("error", function (err) {
-        mainWindow.webContents.send("model-download-error", err);
-      })
-      .on("end", function () {
-        app.relaunch();
-        app.exit();
-        // Do something after request finishes
-      })
-      .pipe(createWriteStream(destination));
-  });
-
-  ipcMain.handle("deleteModel", async (event, modelFileName) => {
-    const userDataPath = app.getPath("userData");
-    const fullPath = join(userDataPath, modelFileName);
+    const fullPath = join(userDataPath, filePath);
 
     let result = "NULL";
     unlink(fullPath, function (err) {
       if (err && err.code == "ENOENT") {
-        console.info("File doesn't exist, won't remove it.");
-        result = "FILE_NOT_EXIST";
+        result = `File not exist: ${err}`;
       } else if (err) {
-        console.error("Error occurred while trying to remove file");
-        result = "ERROR";
+        result = `File delete error: ${err}`;
       } else {
-        console.info(`removed`);
-        result = "REMOVED";
+        result = "File deleted successfully";
       }
+      console.log(`Delete file ${filePath} from ${fullPath} result: ${result}`);
     });
-    console.log(result);
+
     return result;
   });
 
-  ipcMain.handle("getDownloadedModels", async (event) => {
+  /**
+   * Used to download a file from a given url
+   */
+  ipcMain.handle("downloadFile", async (_event, url, fileName) => {
     const userDataPath = app.getPath("userData");
+    const destination = resolve(userDataPath, fileName);
 
-    const allBinariesName = [];
-    var files = readdirSync(userDataPath);
-    for (var i = 0; i < files.length; i++) {
-      var filename = join(userDataPath, files[i]);
-      var stat = lstatSync(filename);
-      if (stat.isDirectory()) {
-        // ignore
-      } else if (filename.endsWith(".bin")) {
-        allBinariesName.push(filename);
-      }
-    }
-    return allBinariesName;
+    progress(request(url), {})
+      .on("progress", function (state) {
+        mainWindow.webContents.send("FILE_DOWNLOAD_UPDATE", {
+          ...state,
+          fileName,
+        });
+      })
+      .on("error", function (err) {
+        mainWindow.webContents.send("FILE_DOWNLOAD_ERROR", {
+          fileName,
+          err,
+        });
+      })
+      .on("end", function () {
+        mainWindow.webContents.send("FILE_DOWNLOAD_COMPLETE", {
+          fileName,
+        });
+      })
+      .pipe(createWriteStream(destination));
   });
 
   ipcMain.handle("sendInquiry", async (event, question) => {

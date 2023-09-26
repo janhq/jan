@@ -23,6 +23,7 @@ export enum InfereceService {
 
 export enum ModelManagementService {
   GET_DOWNLOADED_MODELS = "getDownloadedModels",
+  GET_AVAILABLE_MODELS = "getAvailableModels",
   DELETE_MODEL = "deleteModel",
   DOWNLOAD_MODEL = "downloadModel",
   INIT_MODEL = "initModel",

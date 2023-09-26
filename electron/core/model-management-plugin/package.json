@@ -2,7 +2,7 @@
   "name": "model-management-plugin",
   "version": "0.0.1",
   "description": "",
-  "main": "dist/bundle.js",
+  "main": "dist/index.js",
   "author": "James",
   "license": "MIT",
   "activationPoints": [
@@ -17,7 +17,14 @@
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
   },
-  "dependencies": {},
+  "bundledDependencies": [
+    "request",
+    "request-progress"
+  ],
+  "dependencies": {
+    "request": "^2.88.2",
+    "request-progress": "^3.0.0"
+  },
   "files": [
     "dist/*",
     "package.json",

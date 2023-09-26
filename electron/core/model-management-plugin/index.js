@@ -1,31 +1,38 @@
+const MODULE_PATH = "model-management-plugin/dist/module.js";
+
 const getDownloadedModels = async () =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
-      const response = await window.electronAPI.getDownloadedModels();
-      resolve(response);
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "getDownloadedModels")
+        .then((res) => resolve(res));
     }
   });
 
 const getAvailableModels = async () =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
-      const response = await window.electronAPI.getAvailableModels();
-      resolve(response);
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "getAvailableModels")
+        .then((res) => resolve(res));
     }
   });
 
-const downloadModel = async (url) =>
+const downloadModel = async (product) =>
   new Promise(async (resolve) => {
-    if (window.electronAPI) {
-      const response = await window.electronAPI.downloadModel(url);
-      resolve(response);
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .downloadFile(product.downloadUrl, product.fileName)
+        .then((res) => resolve(res));
+    } else {
+      resolve("-");
     }
   });
 
 const deleteModel = async (path) =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
-      const response = await window.electronAPI.deleteModel(path);
+      const response = await window.electronAPI.deleteFile(path);
       resolve(response);
     }
   });

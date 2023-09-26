@@ -18,17 +18,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   initModel: (product: any) => ipcRenderer.invoke("initModel", product),
 
-  getDownloadedModels: () => ipcRenderer.invoke("getDownloadedModels"),
+  deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
 
-  getAvailableModels: () => ipcRenderer.invoke("getAvailableModels"),
+  downloadFile: (url: string, path: string) =>
+    ipcRenderer.invoke("downloadFile", url, path),
 
-  deleteModel: (path: string) => ipcRenderer.invoke("deleteModel", path),
+  onFileDownloadUpdate: (callback: any) =>
+    ipcRenderer.on("FILE_DOWNLOAD_UPDATE", callback),
 
-  downloadModel: (url: string) => ipcRenderer.invoke("downloadModel", url),
+  onFileDownloadError: (callback: any) =>
+    ipcRenderer.on("FILE_DOWNLOAD_ERROR", callback),
 
-  onModelDownloadUpdate: (callback: any) =>
-    ipcRenderer.on("model-download-update", callback),
-
-  onModelDownloadError: (callback: any) =>
-    ipcRenderer.on("model-download-error", callback),
+  onFileDownloadSuccess: (callback: any) =>
+    ipcRenderer.on("FILE_DOWNLOAD_COMPLETE", callback),
 });

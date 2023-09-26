@@ -13,15 +13,23 @@ export default function EventListenerWrapper({ children }: Props) {
   const setDownloadState = useSetAtom(modelDownloadStateAtom);
   useEffect(() => {
     if (window && window.electronAPI) {
-      window.electronAPI.onModelDownloadUpdate(
-        (event: string, state: DownloadState | undefined) => {
+      window.electronAPI.onFileDownloadUpdate(
+        (_event: string, state: DownloadState | undefined) => {
           setDownloadState(state);
         }
       );
 
-      window.electronAPI.onModelDownloadError(() => {
-        // TODO: Show error message
-      });
+      window.electronAPI.onFileDownloadError(
+        (_event: string, callback: any) => {
+          console.log("Download error", callback);
+        }
+      );
+
+      window.electronAPI.onFileDownloadSuccess(
+        (_event: string, callback: any) => {
+          console.log("Download success", callback);
+        }
+      );
     }
   }, []);
 
