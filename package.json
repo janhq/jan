@@ -1,10 +1,12 @@
 {
   "private": true,
   "name": "jan-app",
-  "workspaces": [
-    "electron",
-    "web"
-  ],
+  "workspaces": {
+    "nohoist": [
+      "electron",
+      "web/**"
+    ]
+  },
   "scripts": {
     "dev:electron": "yarn workspace jan-electron dev",
     "dev:web": "yarn workspace jan-web dev",
@@ -16,5 +18,7 @@
   "devDependencies": {
     "concurrently": "^8.2.1"
   },
-  "dependencies": {}
+  "dependencies": {
+    "wait-on": "^7.0.1"
+  }
 }
