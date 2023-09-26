@@ -10,7 +10,8 @@
     "productName": "Jan Desktop App",
     "asarUnpack": [
       "node_modules",
-      "core"
+      "core",
+      "web"
     ],
     "files": [
       "../web/out/**/*",
@@ -38,5 +39,8 @@
     "electron": "26.2.1",
     "electron-builder": "^24.6.4",
     "wait-on": "^7.0.1"
+  },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
   }
 }

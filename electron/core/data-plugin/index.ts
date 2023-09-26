@@ -38,7 +38,7 @@ const createMessage = (message: any) =>
   new Promise((resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc("storeMessage", message)
+        .invokePluginFunc(MODULE_PATH, "storeMessage", message)
         .then((res: any) => resolve(res));
     } else {
       resolve("-");
