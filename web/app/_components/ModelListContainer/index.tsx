@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import DownloadModelCard from "../DownloadModelCard";
 import { executeSerial } from "@/_services/pluginService";
-import { ModelManagementService } from "../../../shared/coreService";
+import {
+  InfereceService,
+  ModelManagementService,
+} from "../../../shared/coreService";
 import { useAtomValue } from "jotai";
 import { modelDownloadStateAtom } from "@/_helpers/JotaiWrapper";
 import { Product } from "@/_models/Product";
@@ -19,12 +22,9 @@ const ModelListContainer: React.FC = () => {
         ModelManagementService.GET_AVAILABLE_MODELS
       );
 
-      const downloaded: Product[] = (
-        await executeSerial(ModelManagementService.GET_DOWNLOADED_MODELS)
-      ).filter((item: Product | undefined) => {
-        item && item.id;
-      });
-
+      const downloaded: Product[] = await executeSerial(
+        ModelManagementService.GET_DOWNLOADED_MODELS
+      );
       setAvailableModels(avails);
       setDownloadedModels(downloaded);
     };
@@ -38,18 +38,16 @@ const ModelListContainer: React.FC = () => {
       ModelManagementService.GET_AVAILABLE_MODELS
     );
 
-    const downloaded: Product[] = (
-      await executeSerial(ModelManagementService.GET_DOWNLOADED_MODELS)
-    ).filter((item: Product | undefined) => {
-      item && item.id;
-    });
+    const downloaded: Product[] = await executeSerial(
+      ModelManagementService.GET_DOWNLOADED_MODELS
+    );
 
     setAvailableModels(avails);
     setDownloadedModels(downloaded);
   };
 
   const initModel = async (product: Product) => {
-    await executeSerial(ModelManagementService.INIT_MODEL, product);
+    await executeSerial(InfereceService.INIT_MODEL, product);
   };
 
   const onDownloadClick = async (product: Product) => {

@@ -18,7 +18,8 @@ export enum ModelService {
 }
 
 export enum InfereceService {
-  INFERENCE = "inference",
+  PROMPT = "prompt",
+  INIT_MODEL = "initModel",
 }
 
 export enum ModelManagementService {
@@ -26,7 +27,6 @@ export enum ModelManagementService {
   GET_AVAILABLE_MODELS = "getAvailableModels",
   DELETE_MODEL = "deleteModel",
   DOWNLOAD_MODEL = "downloadModel",
-  INIT_MODEL = "initModel",
 }
 
 export enum PreferenceService {

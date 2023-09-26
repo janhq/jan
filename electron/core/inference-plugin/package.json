@@ -1,5 +1,5 @@
 {
-  "name": "model-management-plugin",
+  "name": "inference-plugin",
   "version": "0.0.1",
   "description": "",
   "main": "dist/index.js",
@@ -16,6 +16,17 @@
     "rimraf": "^3.0.2",
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
+  },
+  "bundledDependencies": [
+    "electron-is-dev",
+    "node-llama-cpp"
+  ],
+  "dependencies": {
+    "electron-is-dev": "^2.0.0",
+    "node-llama-cpp": "^2.4.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "files": [
     "dist/*",

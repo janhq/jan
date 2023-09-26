@@ -10,8 +10,6 @@ import {
 } from "@/_helpers/JotaiWrapper";
 import { useAtomValue } from "jotai";
 import LoadingIndicator from "../LoadingIndicator";
-import { executeSerial } from "@/_services/pluginService";
-import { ModelManagementService } from "../../../shared/coreService";
 
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(currentChatMessagesAtom);
@@ -19,20 +17,6 @@ const ChatBody: React.FC = () => {
   const [offset, setOffset] = useState(0);
   const { loading, hasMore } = useChatMessages(offset);
   const intersectObs = useRef<any>(null);
-  
-  // TODO: Remove this hacky and load corresponding model
-  React.useEffect(() => {
-    const initModel = async () => {
-      const product = {
-        name: "LLama 2 7B Chat",
-        fileName: "llama-2-7b-chat.gguf.q4_0.bin",
-        downloadUrl:
-          "https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf",
-      };
-      await executeSerial(ModelManagementService.INIT_MODEL, product);
-    };
-    initModel();
-  }, []);
 
   const lastPostRef = useCallback(
     (message: ChatMessage) => {
