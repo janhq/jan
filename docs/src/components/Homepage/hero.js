@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronRightIcon } from "@heroicons/react/20/solid";
+import { ArrowTopRightOnSquareIcon } from "@heroicons/react/20/solid";
 import { useColorMode } from "@docusaurus/theme-common";
 import Dropdown from "@site/src/components/Elements/dropdown";
 
@@ -61,8 +61,16 @@ export default function HomepageHero() {
                 <button
                   type="button"
                   className="cursor-pointer relative inline-flex items-center rounded px-3.5 py-2 dark:py-2.5 text-base font-semibold text-indigo-600 bg-white border-indigo-600 dark:border-0 hover:bg-indigo-600 dark:hover:bg-indigo-500 hover:text-white"
+                  onClick={() =>
+                    window.open(
+                      "https://github.com/janhq/jan",
+                      "_blank",
+                      "noreferrer"
+                    )
+                  }
                 >
-                  Book a Demo
+                  View Github
+                  <ArrowTopRightOnSquareIcon className="h-5 w-5 ml-2" />
                 </button>
               </div>
             </div>
