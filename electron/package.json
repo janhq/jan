@@ -13,9 +13,6 @@
       "build/*.{js,map}",
       "build/core/plugin-manager/**/*"
     ],
-    "asarUnpack": [
-      "node_modules"
-    ],
     "extends": null,
     "mac": {
       "type": "distribution"

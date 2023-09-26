@@ -1,6 +1,5 @@
 const path = require("path");
 const { app, dialog } = require("electron");
-const isDev = require("electron-is-dev");
 const _importDynamic = new Function("modulePath", "return import(modulePath)");
 
 let llamaSession = null;
@@ -15,14 +14,7 @@ async function initModel(product) {
   }
 
   console.info(`Initializing model: ${product.name}..`);
-  _importDynamic(
-    isDev
-      ? path.join(__dirname, "../node_modules/node-llama-cpp/dist/index.js")
-      : path.resolve(
-          app.getAppPath(),
-          "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
-        )
-  )
+  _importDynamic("../node_modules/node-llama-cpp/dist/index.js")
     .then(({ LlamaContext, LlamaChatSession, LlamaModel }) => {
       const modelPath = path.join(app.getPath("userData"), product.fileName);
       const model = new LlamaModel({ modelPath });
