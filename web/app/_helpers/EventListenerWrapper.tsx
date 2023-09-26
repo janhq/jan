@@ -2,7 +2,10 @@
 
 import { useSetAtom } from "jotai";
 import { ReactNode, useEffect } from "react";
-import { modelDownloadStateAtom } from "./JotaiWrapper";
+import {
+  setDownloadStateAtom,
+  setDownloadStateSuccessAtom,
+} from "./JotaiWrapper";
 import { DownloadState } from "@/_models/DownloadState";
 
 type Props = {
@@ -10,11 +13,13 @@ type Props = {
 };
 
 export default function EventListenerWrapper({ children }: Props) {
-  const setDownloadState = useSetAtom(modelDownloadStateAtom);
+  const setDownloadState = useSetAtom(setDownloadStateAtom);
+  const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom);
   useEffect(() => {
     if (window && window.electronAPI) {
       window.electronAPI.onFileDownloadUpdate(
         (_event: string, state: DownloadState | undefined) => {
+          if (!state) return;
           setDownloadState(state);
         }
       );
@@ -27,7 +32,9 @@ export default function EventListenerWrapper({ children }: Props) {
 
       window.electronAPI.onFileDownloadSuccess(
         (_event: string, callback: any) => {
-          console.log("Download success", callback);
+          if (callback && callback.fileName) {
+            setDownloadStateSuccess(callback.fileName);
+          }
         }
       );
     }

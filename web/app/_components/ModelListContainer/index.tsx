@@ -1,15 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import DownloadModelCard from "../DownloadModelCard";
 import { executeSerial } from "@/_services/pluginService";
-import {
-  InfereceService,
-  ModelManagementService,
-} from "../../../shared/coreService";
+import { ModelManagementService } from "../../../shared/coreService";
 import { useAtomValue } from "jotai";
 import { modelDownloadStateAtom } from "@/_helpers/JotaiWrapper";
 import { Product } from "@/_models/Product";
+import DownloadedModelCard from "../DownloadedModelCard";
+import AvailableModelCard from "../AvailableModelCard";
 
 const ModelListContainer: React.FC = () => {
   const [downloadedModels, setDownloadedModels] = useState<Product[]>([]);
@@ -25,29 +23,50 @@ const ModelListContainer: React.FC = () => {
       const downloaded: Product[] = await executeSerial(
         ModelManagementService.GET_DOWNLOADED_MODELS
       );
-      setAvailableModels(avails);
-      setDownloadedModels(downloaded);
+
+      const downloadedSucessfullyModels: Product[] = [];
+      const availableOrDownloadingModels: Product[] = avails;
+
+      downloaded.forEach((item) => {
+        if (item.fileName && downloadState[item.fileName] == null) {
+          downloadedSucessfullyModels.push(item);
+        } else {
+          availableOrDownloadingModels.push(item);
+        }
+      });
+
+      setAvailableModels(availableOrDownloadingModels);
+      setDownloadedModels(downloadedSucessfullyModels);
     };
     getDownloadedModels();
-  }, []);
+  }, [downloadState]);
 
   const onDeleteClick = async (product: Product) => {
     await executeSerial(ModelManagementService.DELETE_MODEL, product.fileName);
+    const getDownloadedModels = async () => {
+      const avails = await executeSerial(
+        ModelManagementService.GET_AVAILABLE_MODELS
+      );
 
-    const avails = await executeSerial(
-      ModelManagementService.GET_AVAILABLE_MODELS
-    );
+      const downloaded: Product[] = await executeSerial(
+        ModelManagementService.GET_DOWNLOADED_MODELS
+      );
 
-    const downloaded: Product[] = await executeSerial(
-      ModelManagementService.GET_DOWNLOADED_MODELS
-    );
+      const downloadedSucessfullyModels: Product[] = [];
+      const availableOrDownloadingModels: Product[] = avails;
 
-    setAvailableModels(avails);
-    setDownloadedModels(downloaded);
-  };
+      downloaded.forEach((item) => {
+        if (item.fileName && downloadState[item.fileName] == null) {
+          downloadedSucessfullyModels.push(item);
+        } else {
+          availableOrDownloadingModels.push(item);
+        }
+      });
 
-  const initModel = async (product: Product) => {
-    await executeSerial(InfereceService.INIT_MODEL, product);
+      setAvailableModels(availableOrDownloadingModels);
+      setDownloadedModels(downloadedSucessfullyModels);
+    };
+    getDownloadedModels();
   };
 
   const onDownloadClick = async (product: Product) => {
@@ -63,11 +82,9 @@ const ModelListContainer: React.FC = () => {
       <div className="pb-5 flex flex-col gap-2">
         <Title title="Downloaded models" />
         {downloadedModels?.map((item) => (
-          <DownloadModelCard
+          <DownloadedModelCard
             key={item.id}
             product={item}
-            installed={true}
-            onInitClick={initModel}
             onDeleteClick={onDeleteClick}
             isRecommend={false}
           />
@@ -76,12 +93,9 @@ const ModelListContainer: React.FC = () => {
       <div className="pb-5 flex flex-col gap-2">
         <Title title="Browse available models" />
         {availableModels?.map((item) => (
-          <DownloadModelCard
+          <AvailableModelCard
             key={item.id}
             product={item}
-            downloading={downloadState == null}
-            total={downloadState?.size.total ?? 0}
-            transferred={downloadState?.size.transferred ?? 0}
             onDownloadClick={onDownloadClick}
             isRecommend={false}
           />

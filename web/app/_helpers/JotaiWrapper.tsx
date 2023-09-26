@@ -222,7 +222,34 @@ export const showConfirmDeleteConversationModalAtom = atom(false);
 export const showConfirmSignOutModalAtom = atom(false);
 export const showConfirmDeleteModalAtom = atom(false);
 
+export type FileDownloadStates = {
+  [key: string]: DownloadState;
+};
+
 // download states
-export const modelDownloadStateAtom = atom<DownloadState | undefined>(
-  undefined
+export const modelDownloadStateAtom = atom<FileDownloadStates>({});
+
+export const setDownloadStateAtom = atom(
+  null,
+  (get, set, state: DownloadState) => {
+    const currentState = { ...get(modelDownloadStateAtom) };
+    console.log(`current download state for ${state.fileName} is ${state}`);
+    currentState[state.fileName] = state;
+    set(modelDownloadStateAtom, currentState);
+  }
+);
+
+export const setDownloadStateSuccessAtom = atom(
+  null,
+  (get, set, fileName: string) => {
+    const currentState = { ...get(modelDownloadStateAtom) };
+    const state = currentState[fileName];
+    if (!state) {
+      console.error(`Cannot find download state for ${fileName}`);
+      return;
+    }
+
+    delete currentState[fileName];
+    set(modelDownloadStateAtom, currentState);
+  }
 );
