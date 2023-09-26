@@ -6,9 +6,12 @@
     "web"
   ],
   "scripts": {
-    "electron": "yarn workspace jan-electron dev",
-    "web": "yarn workspace jan-web dev",
-    "dev": "concurrently --kill-others-on-fail \"yarn web\" \"wait-on http://localhost:3000 && yarn electron\""
+    "dev:electron": "yarn workspace jan-electron dev",
+    "dev:web": "yarn workspace jan-web dev",
+    "dev": "concurrently --kill-others-on-fail \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
+    "build:web": "yarn workspace jan-web build",
+    "build:electron": "yarn workspace jan-electron build",
+    "build": "yarn build:web && yarn build:electron"
   },
   "devDependencies": {
     "concurrently": "^8.2.1"

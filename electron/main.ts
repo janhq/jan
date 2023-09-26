@@ -106,7 +106,7 @@ const createMainWindow = () => {
 
   const startURL = isDev
     ? "http://localhost:3000"
-    : `file://${join(__dirname, "../out/index.html")}`;
+    : `file://${join(__dirname, "../web/out/index.html")}`;
 
   mainWindow.loadURL(startURL);
 

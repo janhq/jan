@@ -13,7 +13,7 @@
       "core"
     ],
     "files": [
-      "out/**/*",
+      "../web/out/**/*",
       "build/**/*",
       "core/plugin-manager"
     ],
@@ -24,8 +24,7 @@
   },
   "scripts": {
     "dev": "tsc -p . && electron .",
-    "electron:start": "concurrently \"yarn dev\" \"wait-on http://localhost:3000 && tsc -p . && electron .\"",
-    "electron:build:all": "yarn build && electron-builder build --publish never -mwl"
+    "build": "electron-builder build --publish never -mwl"
   },
   "dependencies": {
     "electron-is-dev": "^2.0.0",
@@ -36,7 +35,7 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.1",
-    "electron": "^26.2.1",
+    "electron": "26.2.1",
     "electron-builder": "^24.6.4",
     "wait-on": "^7.0.1"
   }
