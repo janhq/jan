@@ -6,7 +6,6 @@ import {
 } from "@/_helpers/JotaiWrapper";
 
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-
 import { DataService, InfereceService } from "../../shared/coreService";
 import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
 import { executeSerial } from "@/_services/pluginService";
@@ -31,7 +30,7 @@ export default function useSendChatMessage() {
     newMessage.id = id;
 
     addNewMessage(await toChatMessage(newMessage));
-    const resp = await executeSerial(InfereceService.INFERENCE, prompt);
+    const resp = await executeSerial(InfereceService.PROMPT, prompt);
 
     const newResponse: RawMessage = {
       conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,

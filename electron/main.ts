@@ -14,11 +14,7 @@ import request = require("request");
 // @ts-ignore
 import progress = require("request-progress");
 
-let modelSession: any | undefined = undefined;
 let mainWindow: BrowserWindow | undefined = undefined;
-
-const _importDynamic = new Function("modulePath", "return import(modulePath)");
-let lastInitializedModel: string | undefined = undefined;
 
 const createMainWindow = () => {
   mainWindow = new BrowserWindow({
@@ -30,55 +26,6 @@ const createMainWindow = () => {
       nodeIntegration: true,
       preload: join(__dirname, "preload.js"),
     },
-  });
-
-  // TODO: add options for model configuration
-  ipcMain.handle("initModel", async (event, product) => {
-    if (!product.fileName) {
-      await dialog.showMessageBox({
-        message: "Selected model does not have file name..",
-      });
-
-      return;
-    }
-
-    if (lastInitializedModel === product.name) {
-      console.log("Model initialized");
-      return;
-    }
-    console.info(`Initializing model: ${product.name}..`);
-    _importDynamic(
-      isDev
-        ? "node-llama-cpp"
-        : "../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
-    )
-      .then(
-        ({
-          LlamaContext,
-          LlamaChatSession,
-          LlamaModel,
-        }: {
-          LlamaContext: any;
-          LlamaChatSession: any;
-          LlamaModel: any;
-        }) => {
-          const modelPath = join(app.getPath("userData"), product.fileName);
-          // TODO: check if file is already there
-          const model = new LlamaModel({
-            modelPath: modelPath,
-          });
-          const context = new LlamaContext({ model });
-          modelSession = new LlamaChatSession({ context });
-          console.info(`Init model ${product.name} successfully!`);
-          lastInitializedModel = product.name;
-        }
-      )
-      .catch(async (e: Error) => {
-        console.error(e);
-        await dialog.showMessageBox({
-          message: "Failed to import LLM module",
-        });
-      });
   });
 
   ipcMain.handle(
@@ -175,14 +122,6 @@ app.whenReady().then(() => {
         });
       })
       .pipe(createWriteStream(destination));
-  });
-
-  ipcMain.handle("sendInquiry", async (event, question) => {
-    if (!modelSession) {
-      console.error("Model session has not been initialized!");
-      return;
-    }
-    return modelSession.prompt(question);
   });
 
   app.on("activate", () => {

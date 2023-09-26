@@ -11,12 +11,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("invokePluginFunc", plugin, method, ...args),
 
   userData: () => ipcRenderer.invoke("userData"),
+
   pluginPath: () => ipcRenderer.invoke("pluginPath"),
-
-  sendInquiry: (question: string) =>
-    ipcRenderer.invoke("sendInquiry", question),
-
-  initModel: (product: any) => ipcRenderer.invoke("initModel", product),
 
   deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
 

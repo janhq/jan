@@ -14,7 +14,7 @@ export const isCorePluginInstalled = () => {
   if (!extensionPoints.get(DataService.GET_CONVERSATIONS)) {
     return false;
   }
-  if (!extensionPoints.get(InfereceService.INFERENCE)) {
+  if (!extensionPoints.get(InfereceService.PROMPT)) {
     return false;
   }
   if (!extensionPoints.get(ModelManagementService.GET_DOWNLOADED_MODELS)) {
@@ -30,16 +30,17 @@ export const setupBasePlugins = async () => {
     return;
   }
   const userDataPath = await window.electronAPI.userData();
-  const basePlugin = userDataPath + "/core/pre-install/base-plugin.tgz";
   const dataPlugin = userDataPath + "/core/pre-install/data-plugin.tgz";
   const modelManagementPlugin =
     userDataPath + "/core/pre-install/model-management-plugin.tgz";
+  const inferencePlugin =
+    userDataPath + "/core/pre-install/inference-plugin.tgz";
   const toInstall = [];
   if (!extensionPoints.get(DataService.GET_CONVERSATIONS)) {
     toInstall.push(dataPlugin);
   }
-  if (!extensionPoints.get(InfereceService.INFERENCE)) {
-    toInstall.push(basePlugin);
+  if (!extensionPoints.get(InfereceService.PROMPT)) {
+    toInstall.push(inferencePlugin);
   }
   if (!extensionPoints.get(ModelManagementService.GET_DOWNLOADED_MODELS)) {
     toInstall.push(modelManagementPlugin);
