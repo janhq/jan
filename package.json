@@ -1,0 +1,17 @@
+{
+  "private": true,
+  "name": "jan-app",
+  "workspaces": [
+    "electron",
+    "web"
+  ],
+  "scripts": {
+    "electron": "yarn workspace jan-electron dev",
+    "web": "yarn workspace jan-web dev",
+    "dev": "concurrently --kill-others-on-fail \"yarn web\" \"wait-on http://localhost:3000 && yarn electron\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.1"
+  },
+  "dependencies": {}
+}

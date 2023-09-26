@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   app,
   BrowserWindow,
@@ -10,14 +9,16 @@ import { resolve, join } from "path";
 import { unlink, createWriteStream } from "fs";
 import isDev = require("electron-is-dev");
 import { init } from "./core/plugin-manager/pluginMgr";
+// @ts-ignore
 import request = require("request");
+// @ts-ignore
 import progress = require("request-progress");
 
-let modelSession = undefined;
-let mainWindow;
+let modelSession: any | undefined = undefined;
+let mainWindow: BrowserWindow | undefined = undefined;
 
 const _importDynamic = new Function("modulePath", "return import(modulePath)");
-const lastInitializedModel: string | undefined = undefined;
+let lastInitializedModel: string | undefined = undefined;
 
 const createMainWindow = () => {
   mainWindow = new BrowserWindow({
@@ -27,7 +28,6 @@ const createMainWindow = () => {
     backgroundColor: "white",
     webPreferences: {
       nodeIntegration: true,
-      enableRemoteModule: true,
       preload: join(__dirname, "preload.js"),
     },
   });
@@ -55,18 +55,28 @@ const createMainWindow = () => {
             "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
           )
     )
-      .then(({ LlamaContext, LlamaChatSession, LlamaModel }) => {
-        const modelPath = join(app.getPath("userData"), product.fileName);
-        // TODO: check if file is already there
-        const model = new LlamaModel({
-          modelPath: modelPath,
-        });
-        const context = new LlamaContext({ model });
-        modelSession = new LlamaChatSession({ context });
-        console.info(`Init model ${product.name} successfully!`);
-        lastInitializedModel = product.name;
-      })
-      .catch(async (e) => {
+      .then(
+        ({
+          LlamaContext,
+          LlamaChatSession,
+          LlamaModel,
+        }: {
+          LlamaContext: any;
+          LlamaChatSession: any;
+          LlamaModel: any;
+        }) => {
+          const modelPath = join(app.getPath("userData"), product.fileName);
+          // TODO: check if file is already there
+          const model = new LlamaModel({
+            modelPath: modelPath,
+          });
+          const context = new LlamaContext({ model });
+          modelSession = new LlamaChatSession({ context });
+          console.info(`Init model ${product.name} successfully!`);
+          lastInitializedModel = product.name;
+        }
+      )
+      .catch(async (e: Error) => {
         console.error(e);
         await dialog.showMessageBox({
           message: "Failed to import LLM module",
@@ -100,7 +110,7 @@ const createMainWindow = () => {
 
   mainWindow.loadURL(startURL);
 
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("closed", () => {
     if (process.platform !== "darwin") app.quit();
   });
@@ -150,20 +160,20 @@ app.whenReady().then(() => {
     const destination = resolve(userDataPath, fileName);
 
     progress(request(url), {})
-      .on("progress", function (state) {
-        mainWindow.webContents.send("FILE_DOWNLOAD_UPDATE", {
+      .on("progress", function (state: any) {
+        mainWindow?.webContents.send("FILE_DOWNLOAD_UPDATE", {
           ...state,
           fileName,
         });
       })
-      .on("error", function (err) {
-        mainWindow.webContents.send("FILE_DOWNLOAD_ERROR", {
+      .on("error", function (err: Error) {
+        mainWindow?.webContents.send("FILE_DOWNLOAD_ERROR", {
           fileName,
           err,
         });
       })
       .on("end", function () {
-        mainWindow.webContents.send("FILE_DOWNLOAD_COMPLETE", {
+        mainWindow?.webContents.send("FILE_DOWNLOAD_COMPLETE", {
           fileName,
         });
       })
@@ -194,7 +204,7 @@ app.on("window-all-closed", () => {
 function setupPlugins() {
   init({
     // Function to check from the main process that user wants to install a plugin
-    confirmInstall: async (plugins) => {
+    confirmInstall: async (plugins: string[]) => {
       const answer = await dialog.showMessageBox({
         message: `Are you sure you want to install the plugin ${plugins.join(
           ", "

@@ -3,7 +3,7 @@
   "version": "2.1.0",
   "description": "",
   "main": "dist/bundle.js",
-  "author": "Igor Honhoff",
+  "author": "Jan",
   "license": "MIT",
   "activationPoints": [
     "init"
