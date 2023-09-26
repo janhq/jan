@@ -44,10 +44,16 @@ function getDownloadedModels() {
   }
 
   const downloadedModels = ALL_MODELS.map((model) => {
-    if (model.fileName && allBinariesName.includes(model.fileName)) {
+    if (
+      model.fileName &&
+      allBinariesName
+        .map((t) => t.toLowerCase())
+        .includes(model.fileName.toLowerCase())
+    ) {
       return model;
     }
-  });
+    return undefined;
+  }).filter((m) => m !== undefined);
 
   return downloadedModels;
 }

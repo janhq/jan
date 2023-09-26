@@ -8,6 +8,8 @@
     ],
     "nohoist": [
       "electron",
+      "electron/plugins",
+      "electron/plugins/**",
       "electron/**",
       "web",
       "web/**"

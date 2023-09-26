@@ -141,14 +141,7 @@ function setupPlugins() {
   init({
     // Function to check from the main process that user wants to install a plugin
     confirmInstall: async (plugins: string[]) => {
-      const answer = await dialog.showMessageBox({
-        message: `Are you sure you want to install the plugin ${plugins.join(
-          ", "
-        )}`,
-        buttons: ["Ok", "Cancel"],
-        cancelId: 1,
-      });
-      return answer.response == 0;
+      return true
     },
     // Path to install plugin to
     pluginsPath: join(app.getPath("userData"), "plugins"),

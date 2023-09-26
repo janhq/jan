@@ -62,7 +62,7 @@ const ModelListContainer: React.FC = () => {
     <div className="flex flex-col gap-5">
       <div className="pb-5 flex flex-col gap-2">
         <Title title="Downloaded models" />
-        {downloadedModels.map((item) => (
+        {downloadedModels?.map((item) => (
           <DownloadModelCard
             key={item.id}
             product={item}
@@ -75,7 +75,7 @@ const ModelListContainer: React.FC = () => {
       </div>
       <div className="pb-5 flex flex-col gap-2">
         <Title title="Browse available models" />
-        {availableModels.map((item) => (
+        {availableModels?.map((item) => (
           <DownloadModelCard
             key={item.id}
             product={item}

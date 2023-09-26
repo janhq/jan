@@ -36,9 +36,6 @@ const Page: React.FC = () => {
         // Trigger activation points
         await activationPoints.trigger("init");
         if (!isCorePluginInstalled()) {
-          alert(
-            "It seems like you don't have all required plugins installed. To use this app, please install all required plugins."
-          );
           setupBasePlugins();
           return;
         }
