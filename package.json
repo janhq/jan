@@ -2,8 +2,13 @@
   "private": true,
   "name": "jan-app",
   "workspaces": {
+    "packages": [
+      "electron", "web"
+    ],
     "nohoist": [
       "electron",
+      "electron/**",
+      "web",
       "web/**"
     ]
   },
@@ -16,9 +21,8 @@
     "build": "yarn build:web && yarn build:electron"
   },
   "devDependencies": {
-    "concurrently": "^8.2.1"
-  },
-  "dependencies": {
+    "concurrently": "^8.2.1",
     "wait-on": "^7.0.1"
-  }
+  },
+  "dependencies": {}
 }

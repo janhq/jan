@@ -47,14 +47,7 @@ const createMainWindow = () => {
       return;
     }
     console.info(`Initializing model: ${product.name}..`);
-    _importDynamic(
-      isDev
-        ? join(__dirname, "../node_modules/node-llama-cpp/dist/index.js")
-        : resolve(
-            app.getAppPath(),
-            "./../../app.asar.unpacked/node_modules/node-llama-cpp/dist/index.js"
-          )
-    )
+    _importDynamic("node-llama-cpp")
       .then(
         ({
           LlamaContext,
