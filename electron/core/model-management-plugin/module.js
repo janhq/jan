@@ -25,6 +25,28 @@ const ALL_MODELS = [
     downloadUrl:
       "https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_0.gguf",
   },
+  {
+    id: "llama-2-13b-chat.Q4_0.gguf",
+    slug: "llama-2-13b-chat.Q4_0.gguf",
+    name: "Llama-2-13B-chat-GGUF",
+    description: "my description",
+    avatarUrl: "",
+    longDescription: "my long description",
+    technicalDescription: "my technical description",
+    author: "The Bloke",
+    version: "1.0.0",
+    modelUrl: "https://google.com",
+    nsfw: false,
+    greeting: "Hello there",
+    type: "LLM",
+    inputs: undefined,
+    outputs: undefined,
+    createdAt: 0,
+    updatedAt: undefined,
+    fileName: "llama-2-13b-chat.Q4_0.gguf.bin",
+    downloadUrl:
+      "https://huggingface.co/TheBloke/Llama-2-13B-chat-GGUF/resolve/main/llama-2-13b-chat.Q4_0.gguf",
+  },
 ];
 
 function getDownloadedModels() {

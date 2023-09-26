@@ -46,8 +46,9 @@ async function prompt(prompt) {
 
     return;
   }
-
+  console.log("prompt: ", prompt);
   const response = await llamaSession.prompt(prompt);
+  console.log("response: ", response);
   return response;
 }
 

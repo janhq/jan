@@ -1,10 +1,10 @@
 const MODULE_PATH = "inference-plugin/dist/module.js";
 
-const prompt = async () =>
+const prompt = async (prompt) =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc(MODULE_PATH, "prompt")
+        .invokePluginFunc(MODULE_PATH, "prompt", prompt)
         .then((res) => resolve(res));
     }
   });
