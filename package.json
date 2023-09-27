@@ -1,5 +1,4 @@
 {
-  "private": true,
   "name": "jan-app",
   "workspaces": {
     "packages": [
@@ -21,7 +20,8 @@
     "dev": "concurrently --kill-others-on-fail \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "build:web": "yarn workspace jan-web build",
     "build:electron": "yarn workspace jan-electron build",
-    "build": "rimraf ./electron/renderer/* && yarn build:web && cpx \"web/out/**\" \"electron/renderer/\" && yarn build:electron"
+    "build": "rimraf ./electron/renderer/* && yarn build:web && cpx \"web/out/**\" \"electron/renderer/\" && yarn build:electron",
+    "publish": "yarn workspace electron publish"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",
