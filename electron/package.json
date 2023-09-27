@@ -1,7 +1,6 @@
 {
   "name": "jan-electron",
-  "version": "1.0.0",
-  "description": "Hello World!",
+  "version": "0.1.1",
   "main": "./build/main.js",
   "author": "Jan",
   "license": "MIT",
@@ -13,6 +12,13 @@
       "build/*.{js,map}",
       "build/core/plugin-manager/**/*"
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "janhq",
+        "repo": "jan"
+      }
+    ],
     "extends": null,
     "mac": {
       "type": "distribution"
@@ -20,10 +26,12 @@
   },
   "scripts": {
     "dev": "tsc -p . && electron .",
-    "build": "tsc -p . && electron-builder build --publish never -mwl"
+    "build": "tsc -p . && electron-builder -p never -mwl",
+    "publish": "tsc -p . && electron-builder -p onTagOrDraft -mwl"
   },
   "dependencies": {
     "electron-is-dev": "^2.0.0",
+    "electron-updater": "^6.1.4",
     "node-llama-cpp": "^2.4.1",
     "pluggable-electron": "^0.6.0",
     "request": "^2.88.2",
@@ -35,6 +43,7 @@
     "electron-builder": "^24.6.4",
     "wait-on": "^7.0.1"
   },
+  "postinstall": "electron-builder install-app-deps",
   "installConfig": {
     "hoistingLimits": "workspaces"
   }

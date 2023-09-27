@@ -2,19 +2,23 @@ import {
   app,
   BrowserWindow,
   screen as electronScreen,
-  dialog,
   ipcMain,
+  dialog,
 } from "electron";
 import { resolve, join } from "path";
 import { unlink, createWriteStream } from "fs";
 import isDev = require("electron-is-dev");
 import { init } from "./core/plugin-manager/pluginMgr";
+const { autoUpdater } = require("electron-updater");
 // @ts-ignore
 import request = require("request");
 // @ts-ignore
 import progress = require("request-progress");
 
 let mainWindow: BrowserWindow | undefined = undefined;
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
 
 const createMainWindow = () => {
   mainWindow = new BrowserWindow({
@@ -59,12 +63,13 @@ const createMainWindow = () => {
     if (process.platform !== "darwin") app.quit();
   });
 
-  mainWindow.webContents.openDevTools();
+  if (isDev) mainWindow.webContents.openDevTools();
 };
 
 app.whenReady().then(() => {
   createMainWindow();
   setupPlugins();
+  autoUpdater.checkForUpdates();
 
   ipcMain.handle("userData", async (event) => {
     return join(__dirname, "../");
@@ -131,6 +136,34 @@ app.whenReady().then(() => {
   });
 });
 
+/*New Update Available*/
+autoUpdater.on("update-available", async (info: any) => {
+  dialog.showMessageBox({
+    message: `Update available. Current version ${app.getVersion()}`,
+  });
+  let pth = await autoUpdater.downloadUpdate();
+  dialog.showMessageBox({
+    message: pth.join(","),
+  });
+});
+
+autoUpdater.on("update-not-available", (info: any) => {
+  dialog.showMessageBox({
+    message: `No update available. Current version ${app.getVersion()}`,
+  });
+});
+
+/*Download Completion Message*/
+autoUpdater.on("update-downloaded", (info: any) => {
+  dialog.showMessageBox({
+    message: `Update downloaded. Current version ${app.getVersion()}`,
+  });
+});
+
+autoUpdater.on("error", (info: any) => {
+  dialog.showMessageBox({ message: info.message });
+});
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
@@ -141,7 +174,7 @@ function setupPlugins() {
   init({
     // Function to check from the main process that user wants to install a plugin
     confirmInstall: async (plugins: string[]) => {
-      return true
+      return true;
     },
     // Path to install plugin to
     pluginsPath: join(app.getPath("userData"), "plugins"),
