@@ -147,22 +147,27 @@ autoUpdater.on("update-available", async (info: any) => {
   });
 });
 
-autoUpdater.on("update-not-available", (info: any) => {
-  dialog.showMessageBox({
-    message: `No update available. Current version ${app.getVersion()}`,
-  });
-});
-
-/*Download Completion Message*/
+/*App Update Completion Message*/
 autoUpdater.on("update-downloaded", (info: any) => {
   dialog.showMessageBox({
     message: `Update downloaded. Current version ${app.getVersion()}`,
   });
 });
 
+/*App Update Error */
 autoUpdater.on("error", (info: any) => {
   dialog.showMessageBox({ message: info.message });
 });
+
+/*App Update Progress */
+autoUpdater.on("download-progress", (progress: any) => {
+  console.log("app update progress: ", progress.percent);
+  sendStatusToWindow("APP_UPDATE_UPDATE", progress.percent);
+});
+
+function sendStatusToWindow(action: string, progress?: number) {
+  mainWindow?.webContents.send(action, { progress });
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
