@@ -138,20 +138,22 @@ app.whenReady().then(() => {
 
 /*New Update Available*/
 autoUpdater.on("update-available", async (info: any) => {
-  dialog.showMessageBox({
-    message: `Update available. Current version ${app.getVersion()}`,
+  const action = await dialog.showMessageBox({
+    message: `Update available. Do you want to download the latest update?`,
+    buttons: ["Download", "Later"],
   });
-  let pth = await autoUpdater.downloadUpdate();
-  dialog.showMessageBox({
-    message: pth.join(","),
-  });
+  if (action.response === 0) await autoUpdater.downloadUpdate();
 });
 
 /*App Update Completion Message*/
-autoUpdater.on("update-downloaded", (info: any) => {
-  dialog.showMessageBox({
-    message: `Update downloaded. Current version ${app.getVersion()}`,
+autoUpdater.on("update-downloaded", async (info: any) => {
+  const action = await dialog.showMessageBox({
+    message: `Update downloaded. Please restart the application to apply the updates.`,
+    buttons: ["Restart", "Later"],
   });
+  if (action.response === 0) {
+    autoUpdater.quitAndInstall();
+  }
 });
 
 /*App Update Error */
