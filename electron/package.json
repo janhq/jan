@@ -4,6 +4,7 @@
   "main": "./build/main.js",
   "author": "Jan",
   "license": "MIT",
+  "homepage":"./",
   "build": {
     "appId": "jan.ai.app",
     "productName": "Jan Desktop App",
@@ -27,7 +28,7 @@
   "scripts": {
     "dev": "tsc -p . && electron .",
     "build": "tsc -p . && electron-builder -p never -mwl",
-    "publish": "tsc -p . && electron-builder -p onTagOrDraft -mwl"
+    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mwl"
   },
   "dependencies": {
     "electron-is-dev": "^2.0.0",
