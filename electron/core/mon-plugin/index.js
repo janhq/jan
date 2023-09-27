@@ -24,3 +24,9 @@ const getCurrentLoad = () => {
     }
   })
 }
+
+// Register all the above functions and objects with the relevant extension points
+export function init({ register }) {
+  register("getResourcesInfo", "getResourcesInfo", getResourcesInfo);
+  register("getCurrentLoad", "getCurrentLoad", getCurrentLoad);
+}
