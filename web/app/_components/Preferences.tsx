@@ -13,12 +13,23 @@ import {
 } from "@heroicons/react/24/outline";
 
 import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
+import classNames from "classnames";
 
 /* eslint-disable @next/next/no-sync-scripts */
 export const Preferences = () => {
   const [search, setSearch] = useState<string>("");
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
   const [isTestAvailable, setIsTestAvailable] = useState(false);
+  const [fileName, setFileName] = useState("");
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setFileName(file.name);
+    } else {
+      setFileName("");
+    }
+  };
 
   const preferenceRef = useRef(null);
   useEffect(() => {
@@ -137,28 +148,38 @@ export const Preferences = () => {
           <form id="plugin-file" onSubmit={install}>
             <div className="flex flex-row items-center space-x-10">
               <div className="flex items-center justify-center w-[300px]">
-                <label className="flex flex-col items-center justify-center w-full border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:hover:bg-bray-800 dark:bg-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-600">
-                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                      <span className="font-semibold">Click to upload</span> or
-                      drag and drop
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      TGZ (MAX 50MB)
-                    </p>
-                  </div>
+                <label className="h-[120px] flex flex-col items-center justify-center w-full border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:hover:bg-bray-800 dark:bg-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-600">
+                  {!fileName ? (
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                        <span className="font-semibold">Click to upload</span>{" "}
+                        or drag and drop
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        TGZ (MAX 50MB)
+                      </p>
+                    </div>
+                  ) : (
+                    <>{fileName}</>
+                  )}
                   <input
                     id="dropzone-file"
                     name="plugin-file"
                     type="file"
                     className="hidden"
+                    onChange={handleFileChange}
                     required
                   />
                 </label>
               </div>
               <button
                 type="submit"
-                className="rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                className={classNames(
+                  "rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600",
+                  fileName
+                    ? "bg-indigo-600 hover:bg-indigo-500"
+                    : "bg-gray-500"
+                )}
               >
                 Install Plugin
               </button>
