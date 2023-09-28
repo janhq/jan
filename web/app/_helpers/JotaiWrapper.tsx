@@ -168,6 +168,14 @@ export const addNewMessageAtom = atom(
   }
 );
 
+export const deleteConversationMessage = atom(null, (get, set, id: string) => {
+  const newData: Record<string, ChatMessage[]> = {
+    ...get(chatMessages),
+  };
+  newData[id] = [];
+  set(chatMessages, newData);
+});
+
 export const updateMessageAtom = atom(
   null,
   (get, set, id: string, conversationId: string, text: string) => {

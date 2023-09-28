@@ -1,5 +1,6 @@
 import {
   currentPromptAtom,
+  deleteConversationMessage,
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
   showingAdvancedPromptAtom,
@@ -19,6 +20,7 @@ export default function useDeleteConversation() {
   const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom);
   const activeConvoId = useAtomValue(getActiveConvoIdAtom);
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
+  const deleteMessages = useSetAtom(deleteConversationMessage);
 
   const deleteConvo = async () => {
     if (activeConvoId) {
@@ -27,6 +29,7 @@ export default function useDeleteConversation() {
         setUserConversations(
           userConversations.filter((c) => c.id !== activeConvoId)
         );
+        deleteMessages(activeConvoId);
         setActiveConvoId(undefined);
         setCurrentPrompt("");
         setShowingProductDetail(false);
