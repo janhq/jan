@@ -39,6 +39,7 @@ export const showingTyping = atom<boolean>(false);
 
 export const appDownloadProgress = atom<number>(-1);
 export const activeModel = atom<string | undefined>(undefined);
+export const searchingModelText = atom<string>("");
 
 /**
  * Stores all conversations for the current user

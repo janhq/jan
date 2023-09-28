@@ -18,7 +18,7 @@ type Props = {
 export default function EventListenerWrapper({ children }: Props) {
   const setDownloadState = useSetAtom(setDownloadStateAtom);
   const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom);
-  const [, setProgress] = useAtom(appDownloadProgress);
+  const setProgress = useSetAtom(appDownloadProgress);
 
   useEffect(() => {
     if (window && window.electronAPI) {
@@ -47,7 +47,7 @@ export default function EventListenerWrapper({ children }: Props) {
       window.electronAPI.onAppUpdateDownloadUpdate(
         (_event: string, progress: any) => {
           setProgress(progress.percent);
-          console.log("app update progress:", progress.percent)
+          console.log("app update progress:", progress.percent);
         }
       );
 

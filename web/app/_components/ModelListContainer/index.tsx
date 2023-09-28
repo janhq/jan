@@ -7,7 +7,10 @@ import {
   ModelManagementService,
 } from "../../../shared/coreService";
 import { useAtomValue } from "jotai";
-import { modelDownloadStateAtom } from "@/_helpers/JotaiWrapper";
+import {
+  modelDownloadStateAtom,
+  searchingModelText,
+} from "@/_helpers/JotaiWrapper";
 import { Product } from "@/_models/Product";
 import DownloadedModelCard from "../DownloadedModelCard";
 import AvailableModelCard from "../AvailableModelCard";
@@ -16,6 +19,7 @@ const ModelListContainer: React.FC = () => {
   const [downloadedModels, setDownloadedModels] = useState<Product[]>([]);
   const [availableModels, setAvailableModels] = useState<Product[]>([]);
   const downloadState = useAtomValue(modelDownloadStateAtom);
+  const searchText = useAtomValue(searchingModelText);
 
   useEffect(() => {
     const getDownloadedModels = async () => {
@@ -85,25 +89,37 @@ const ModelListContainer: React.FC = () => {
     <div className="flex flex-col gap-5">
       <div className="pb-5 flex flex-col gap-2">
         <Title title="Downloaded models" />
-        {downloadedModels?.map((item) => (
-          <DownloadedModelCard
-            key={item.id}
-            product={item}
-            onDeleteClick={onDeleteClick}
-            isRecommend={false}
-          />
-        ))}
+        {downloadedModels
+          ?.filter(
+            (e) =>
+              searchText.toLowerCase().trim() === "" ||
+              e.name.toLowerCase().includes(searchText.toLowerCase())
+          )
+          .map((item) => (
+            <DownloadedModelCard
+              key={item.id}
+              product={item}
+              onDeleteClick={onDeleteClick}
+              isRecommend={false}
+            />
+          ))}
       </div>
       <div className="pb-5 flex flex-col gap-2">
         <Title title="Browse available models" />
-        {availableModels?.map((item) => (
-          <AvailableModelCard
-            key={item.id}
-            product={item}
-            onDownloadClick={onDownloadClick}
-            isRecommend={false}
-          />
-        ))}
+        {availableModels
+          ?.filter(
+            (e) =>
+              searchText.toLowerCase().trim() === "" ||
+              e.name.toLowerCase().includes(searchText.toLowerCase())
+          )
+          .map((item) => (
+            <AvailableModelCard
+              key={item.id}
+              product={item}
+              onDownloadClick={onDownloadClick}
+              isRecommend={false}
+            />
+          ))}
       </div>
     </div>
   );

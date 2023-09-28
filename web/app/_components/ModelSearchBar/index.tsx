@@ -1,10 +1,16 @@
 "use client";
 
+import { searchingModelText } from "@/_helpers/JotaiWrapper";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
-import { useState } from "react";
+import { useSetAtom } from "jotai";
+import { useEffect, useState } from "react";
 
 const ModelSearchBar: React.FC = () => {
+  const setSearchtext = useSetAtom(searchingModelText);
   const [text, setText] = useState("");
+  useEffect(() => {
+    setSearchtext(text);
+  }, [text, setSearchtext]);
   return (
     <div className="py-[27px] flex items-center justify-center">
       <div className="w-[520px] h-[42px] flex items-center">

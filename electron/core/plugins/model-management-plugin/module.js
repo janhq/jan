@@ -6,7 +6,7 @@ const ALL_MODELS = [
   {
     id: "llama-2-7b-chat.Q4_K_M.gguf.bin",
     slug: "llama-2-7b-chat.Q4_K_M.gguf.bin",
-    name: "Llama 2 7B Chat - GGML",
+    name: "Llama 2 7B Chat - GGUF",
     description: "medium, balanced quality - recommended",
     avatarUrl:
       "https://aeiljuispo.cloudimg.io/v7/https://cdn-uploads.huggingface.co/production/uploads/6426d3f3a7723d62b53c259b/tvPikpAzKTKGN5wrpadOJ.jpeg?w=200&h=200&f=face",
@@ -31,7 +31,7 @@ const ALL_MODELS = [
   {
     id: "llama-2-13b-chat.Q4_K_M.gguf",
     slug: "llama-2-13b-chat.Q4_K_M.gguf",
-    name: "Llama-2-13B-chat-GGUF",
+    name: "Llama 2 13B Chat - GGUF",
     description: "medium, balanced quality - recommended",
     avatarUrl:
       "https://aeiljuispo.cloudimg.io/v7/https://cdn-uploads.huggingface.co/production/uploads/6426d3f3a7723d62b53c259b/tvPikpAzKTKGN5wrpadOJ.jpeg?w=200&h=200&f=face",
