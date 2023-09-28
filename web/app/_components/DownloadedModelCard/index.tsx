@@ -36,7 +36,7 @@ const DownloadedModelCard: React.FC<Props> = ({
           <button onClick={() => onDeleteClick?.(product)}>Delete</button>
         </div>
       </div>
-      <ViewModelDetailButton callback={handleViewDetails} />
+      {/* <ViewModelDetailButton callback={handleViewDetails} /> */}
     </div>
   );
 };

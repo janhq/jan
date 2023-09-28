@@ -177,10 +177,10 @@ export const Preferences = () => {
                   e.name.toLowerCase().includes(search.toLowerCase())
               )
               .map((e) => (
-                <div key={e.name} className="m-2">
+                <div key={e.name} className="m-2 w-[400px]">
                   <a
                     href="#"
-                    className="block max-w-sm p-6 bg-white border border-gray-200 rounded-lg shadow  dark:bg-gray-800 dark:border-gray-700"
+                    className="block max-w-sm p-6 bg-white border border-gray-200 rounded-lg shadow dark:bg-gray-800 dark:border-gray-700"
                   >
                     <h5 className="mb-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
                       {e.name}
@@ -188,7 +188,7 @@ export const Preferences = () => {
                     <p className="font-normal text-gray-700 dark:text-gray-400">
                       Activation: {e.activationPoints}
                     </p>
-                    <p className="font-normal text-gray-700 dark:text-gray-400">
+                    <p className="font-normal text-gray-700 dark:text-gray-400 h-[24px] truncate w-full">
                       Url: {e.url}
                     </p>
                     <div className="flex flex-row space-x-5">

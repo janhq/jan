@@ -61,7 +61,7 @@ const AvailableModelCard: React.FC<Props> = ({
         />
         {downloadButton}
       </div>
-      <ViewModelDetailButton callback={handleViewDetails} />
+      {/* <ViewModelDetailButton callback={handleViewDetails} /> */}
     </div>
   );
 };
