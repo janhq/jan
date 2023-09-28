@@ -1,0 +1,55 @@
+{
+  "name": "jan-electron",
+  "version": "0.1.1",
+  "main": "./build/main.js",
+  "author": "Jan",
+  "license": "MIT",
+  "homepage": "./",
+  "build": {
+    "appId": "jan.ai.app",
+    "productName": "Jan",
+    "files": [
+      "renderer/**/*",
+      "build/*.{js,map}",
+      "build/core/plugin-manager/**/*",
+      "core/pre-install"
+    ],
+    "asarUnpack": [
+      "core/pre-install"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "janhq",
+        "repo": "jan"
+      }
+    ],
+    "extends": null,
+    "mac": {
+      "type": "distribution"
+    }
+  },
+  "scripts": {
+    "dev": "tsc -p . && electron .",
+    "build": "tsc -p . && electron-builder -p never -mw",
+    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mw",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "electron-is-dev": "^2.0.0",
+    "electron-updater": "^6.1.4",
+    "node-llama-cpp": "^2.4.1",
+    "pluggable-electron": "^0.6.0",
+    "request": "^2.88.2",
+    "request-progress": "^3.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.1",
+    "electron": "26.2.1",
+    "electron-builder": "^24.6.4",
+    "wait-on": "^7.0.1"
+  },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  }
+}
