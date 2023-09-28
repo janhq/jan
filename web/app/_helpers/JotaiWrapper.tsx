@@ -216,12 +216,7 @@ export const updateLastMessageAsReadyAtom = atom(
   }
 );
 
-export const currentProductAtom = atom<Product | undefined>(
-  (get) => undefined
-  // get(userConversationsAtom).find(
-  //   (c) => c.id === get(activeConversationIdAtom)
-  // )?.product
-);
+export const currentProductAtom = atom<Product | undefined>(undefined);
 
 export const searchAtom = atom<string>("");
 

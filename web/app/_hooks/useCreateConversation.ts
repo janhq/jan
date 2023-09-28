@@ -3,6 +3,7 @@ import { useAtom, useSetAtom } from "jotai";
 import {
   activeModel,
   addNewConversationStateAtom,
+  currentProductAtom,
   setActiveConvoIdAtom,
   userConversationsAtom,
 } from "@/_helpers/JotaiWrapper";
@@ -17,7 +18,8 @@ const useCreateConversation = () => {
   );
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   const addNewConvoState = useSetAtom(addNewConversationStateAtom);
-  const setActiveModel = useSetAtom(activeModel)
+  const setActiveModel = useSetAtom(activeModel);
+  const setActiveProduct = useSetAtom(currentProductAtom);
 
   const requestCreateConvo = async (model: Product) => {
     const conv: Conversation = {
@@ -29,7 +31,8 @@ const useCreateConversation = () => {
     };
     const id = await executeSerial(DataService.CREATE_CONVERSATION, conv);
     await executeSerial(InfereceService.INIT_MODEL, model);
-    setActiveModel(model.name)
+    setActiveProduct(model);
+    setActiveModel(model.name);
 
     const mappedConvo: Conversation = {
       id,
