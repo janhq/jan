@@ -7,7 +7,7 @@
   "homepage":"./",
   "build": {
     "appId": "jan.ai.app",
-    "productName": "Jan Desktop App",
+    "productName": "Jan",
     "files": [
       "renderer/**/*",
       "build/*.{js,map}",
