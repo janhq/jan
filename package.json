@@ -8,8 +8,6 @@
     ],
     "nohoist": [
       "electron",
-      "electron/plugins",
-      "electron/plugins/**",
       "electron/**",
       "web",
       "web/**"
@@ -29,6 +27,5 @@
     "cpx": "^1.5.0",
     "wait-on": "^7.0.1"
   },
-  "dependencies": {},
   "version": "0.0.0"
 }

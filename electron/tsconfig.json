@@ -9,5 +9,6 @@
     "noEmitOnError": true,
     "allowJs": true,
     "typeRoots": ["node_modules/@types"]
-  }
+  },
+  "exclude": ["core", "build", "node_modules"]
 }
