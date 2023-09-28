@@ -1,6 +1,67 @@
 // Provide an async method to manipulate the price provided by the extension point
 const MODULE_PATH = "data-plugin/dist/module.js";
 
+const storeModel = (model: any) =>
+  new Promise((resolve) => {
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "storeModel", model)
+        .then((res: any) => resolve(res));
+    }
+  });
+
+const getFinishedDownloadModels = () =>
+  new Promise((resolve) => {
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "getFinishedDownloadModels")
+        .then((res: any) => resolve(res));
+    }
+  });
+
+const getModelById = (modelId: string) =>
+  new Promise((resolve) => {
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "getModelById", modelId)
+        .then((res: any) => resolve(res));
+    }
+  });
+
+const updateFinishedDownloadAt = (fileName: string) =>
+  new Promise((resolve) => {
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(
+          MODULE_PATH,
+          "updateFinishedDownloadAt",
+          fileName,
+          Date.now()
+        )
+        .then((res: any) => resolve(res));
+    }
+  });
+
+const getUnfinishedDownloadModels = () =>
+  new Promise<any>((resolve) => {
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "getUnfinishedDownloadModels")
+        .then((res: any[]) => resolve(res));
+    } else {
+      resolve([]);
+    }
+  });
+
+const deleteDownloadModel = (modelId: string) =>
+  new Promise((resolve) => {
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "deleteDownloadModel", modelId)
+        .then((res: any) => resolve(res));
+    }
+  });
+
 const getConversations = () =>
   new Promise<any>((resolve) => {
     if (window && window.electronAPI) {
@@ -129,6 +190,24 @@ export function init({ register }: { register: any }) {
   register("deleteConversation", "deleteConv", deleteConversation);
   register("createMessage", "insertMessage", createMessage);
   register("getConversationMessages", "getMessages", getConversationMessages);
+  register("storeModel", "storeModel", storeModel);
+  register(
+    "updateFinishedDownloadAt",
+    "updateFinishedDownloadAt",
+    updateFinishedDownloadAt
+  );
+  register(
+    "getUnfinishedDownloadModels",
+    "getUnfinishedDownloadModels",
+    getUnfinishedDownloadModels
+  );
+  register("deleteDownloadModel", "deleteDownloadModel", deleteDownloadModel);
+  register("getModelById", "getModelById", getModelById);
+  register(
+    "getFinishedDownloadModels",
+    "getFinishedDownloadModels",
+    getFinishedDownloadModels
+  );
 
   // Experiment UI - for Preferences
   register(

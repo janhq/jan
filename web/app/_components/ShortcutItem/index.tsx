@@ -10,14 +10,10 @@ type Props = {
 const ShortcutItem: React.FC<Props> = ({ product }) => {
   const { requestCreateConvo } = useCreateConversation();
 
-  const onClickHandler = () => {
-    requestCreateConvo(1);
-  };
-
   return (
     <button
       className="flex items-center gap-2 mx-1 p-2"
-      onClick={onClickHandler}
+      onClick={() => requestCreateConvo(product)}
     >
       {product.avatarUrl && (
         <Image

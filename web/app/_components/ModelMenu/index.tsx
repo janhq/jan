@@ -1,17 +1,15 @@
 "use client";
 
-import Image from "next/image";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   currentProductAtom,
   showConfirmDeleteConversationModalAtom,
-  showingProductDetailAtom,
 } from "@/_helpers/JotaiWrapper";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import useCreateConversation from "@/_hooks/useCreateConversation";
 
 const ModelMenu: React.FC = () => {
-  // const currentProduct = useAtomValue(currentProductAtom);
+  const currentProduct = useAtomValue(currentProductAtom);
   // const [active, setActive] = useAtom(showingProductDetailAtom);
   const { requestCreateConvo } = useCreateConversation();
   const setShowConfirmDeleteConversationModal = useSetAtom(
@@ -19,7 +17,9 @@ const ModelMenu: React.FC = () => {
   );
 
   const onCreateConvoClick = () => {
-    requestCreateConvo(1);
+    if (currentProduct) {
+      requestCreateConvo(currentProduct);
+    }
   };
 
   return (

@@ -22,6 +22,10 @@ export const getActiveConvoIdAtom = atom((get) =>
 export const setActiveConvoIdAtom = atom(
   null,
   (_get, set, convoId: string | undefined) => {
+    if (convoId) {
+      console.log(`set active convo id to ${convoId}`);
+      set(setMainViewStateAtom, MainViewState.Conversation);
+    }
     set(activeConversationIdAtom, convoId);
   }
 );
@@ -226,6 +230,38 @@ export type FileDownloadStates = {
   [key: string]: DownloadState;
 };
 
+// main view state
+export enum MainViewState {
+  Welcome,
+  ExploreModel,
+  MyModel,
+  ResourceMonitor,
+  Setting,
+  Conversation,
+}
+
+const systemBarVisibilityAtom = atom<boolean>(true);
+export const getSystemBarVisibilityAtom = atom((get) =>
+  get(systemBarVisibilityAtom)
+);
+
+const currentMainViewStateAtom = atom<MainViewState>(MainViewState.Welcome);
+export const getMainViewStateAtom = atom((get) =>
+  get(currentMainViewStateAtom)
+);
+
+export const setMainViewStateAtom = atom(
+  null,
+  (_get, set, state: MainViewState) => {
+    if (state !== MainViewState.Conversation) {
+      set(activeConversationIdAtom, undefined);
+    }
+    const showSystemBar = state !== MainViewState.Conversation;
+    set(systemBarVisibilityAtom, showSystemBar);
+    set(currentMainViewStateAtom, state);
+  }
+);
+
 // download states
 export const modelDownloadStateAtom = atom<FileDownloadStates>({});
 
@@ -233,7 +269,9 @@ export const setDownloadStateAtom = atom(
   null,
   (get, set, state: DownloadState) => {
     const currentState = { ...get(modelDownloadStateAtom) };
-    console.log(`current download state for ${state.fileName} is ${state}`);
+    console.debug(
+      `current download state for ${state.fileName} is ${JSON.stringify(state)}`
+    );
     currentState[state.fileName] = state;
     set(modelDownloadStateAtom, currentState);
   }

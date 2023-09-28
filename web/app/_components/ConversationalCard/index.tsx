@@ -14,9 +14,7 @@ const ConversationalCard: React.FC<Props> = ({ product }) => {
 
   return (
     <button
-      onClick={() =>
-        requestCreateConvo(1)
-      }
+      onClick={() => requestCreateConvo(product)}
       className="flex flex-col justify-between flex-shrink-0 gap-3 bg-white p-4 w-52 rounded-lg text-left dark:bg-gray-700 hover:opacity-20"
     >
       <div className="flex flex-col gap-2 box-border">

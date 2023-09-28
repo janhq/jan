@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { SidebarButton } from "../SidebarButton";
 import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
-import { ModelManagementService } from "../../../shared/coreService";
+import { DataService } from "../../../shared/coreService";
 import useCreateConversation from "@/_hooks/useCreateConversation";
 
 const SidebarEmptyHistory: React.FC = () => {
@@ -9,18 +9,18 @@ const SidebarEmptyHistory: React.FC = () => {
   const startChat = async () => {
     // Host
     if (window && !window.electronAPI) {
-      requestCreateConvo(1);
+      // requestCreateConvo(); // TODO: get model id from somewhere
     }
     // Electron
     const downloadedModels = await executeSerial(
-      ModelManagementService.GET_DOWNLOADED_MODELS
+      DataService.GET_FINISHED_DOWNLOAD_MODELS
     );
     if (!downloadedModels || downloadedModels?.length === 0) {
       alert(
         "Seems like there is no model downloaded yet. Please download a model first."
       );
     } else {
-      requestCreateConvo(1);
+      requestCreateConvo(downloadedModels[0]);
     }
   };
   return (

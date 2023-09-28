@@ -1,6 +1,6 @@
 export interface Conversation {
   id?: string;
-  model_id?: number;
+  model_id?: string;
   name?: string;
   image?: string;
   message?: string;

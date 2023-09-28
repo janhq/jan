@@ -1,51 +1,67 @@
+import {
+  MainViewState,
+  getMainViewStateAtom,
+  setMainViewStateAtom,
+} from "@/_helpers/JotaiWrapper";
+import classNames from "classnames";
+import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
-import Link from "next/link";
 
 const SidebarMenu: React.FC = () => {
+  const currentState = useAtomValue(getMainViewStateAtom);
+  const setMainViewState = useSetAtom(setMainViewStateAtom);
+
   const menu = [
-    {
-      name: "Chat History",
-      icon: "ClipboardList",
-      url: "#",
-    },
     {
       name: "Explore Models",
       icon: "Search_gray",
-      url: "#",
+      state: MainViewState.ExploreModel,
     },
     {
       name: "My Models",
       icon: "ViewGrid",
-      url: "#",
+      state: MainViewState.MyModel,
     },
     {
       name: "Settings",
       icon: "Cog",
-      url: "/settings",
+      state: MainViewState.Setting,
     },
   ];
 
+  const onMenuClick = (state: MainViewState) => {
+    if (state === currentState) return;
+    setMainViewState(state);
+  };
+
   return (
-    <div className="flex-1 flex flex-col justify-end">
+    <div className="flex flex-col">
       <div className="text-gray-500 text-xs font-semibold py-2 pl-2 pr-3">
         Your Configurations
       </div>
-      {menu.map((item, index) => (
-        <div key={index} className="py-2 pl-2 pr-3">
-          <Link
-            href={item.url}
-            className="flex items-center gap-3 text-base text-gray-600"
-          >
-            <Image
-              src={`icons/${item.icon}.svg`}
-              width={24}
-              height={24}
-              alt=""
-            />
-            {item.name}
-          </Link>
-        </div>
-      ))}
+      <ul role="list" className="-mx-2 mt-2 space-y-1">
+        {menu.map((item) => (
+          <li key={item.name}>
+            <button
+              onClick={() => onMenuClick(item.state)}
+              className={classNames(
+                currentState === item.state
+                  ? "bg-gray-50 text-indigo-600"
+                  : "text-gray-600 hover:text-indigo-600 hover:bg-gray-50",
+                "group flex gap-x-3 rounded-md text-base py-2 px-3 w-full"
+              )}
+            >
+              <Image
+                src={`/icons/${item.icon}.svg`}
+                width={24}
+                height={24}
+                alt=""
+              />
+              <span className="truncate">{item.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };

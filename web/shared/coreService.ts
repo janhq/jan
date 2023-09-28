@@ -11,6 +11,14 @@ export enum DataService {
   DELETE_CONVERSATION = "deleteConversation",
   CREATE_MESSAGE = "createMessage",
   GET_CONVERSATION_MESSAGES = "getConversationMessages",
+
+  STORE_MODEL = "storeModel",
+  UPDATE_FINISHED_DOWNLOAD = "updateFinishedDownloadAt",
+  GET_UNFINISHED_DOWNLOAD_MODELS = "getUnfinishedDownloadModels",
+  GET_FINISHED_DOWNLOAD_MODELS = "getFinishedDownloadModels",
+  DELETE_DOWNLOAD_MODEL = "deleteDownloadModel",
+
+  GET_MODEL_BY_ID = "getModelById",
 }
 
 export enum ModelService {

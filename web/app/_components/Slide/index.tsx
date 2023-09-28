@@ -10,10 +10,6 @@ const Slide: React.FC<Props> = ({ product }) => {
   const { name, avatarUrl, description } = product;
   const { requestCreateConvo } = useCreateConversation();
 
-  const onClick = () => {
-    requestCreateConvo(1);
-  };
-
   return (
     <div className="w-full embla__slide h-[435px] relative">
       <Image
@@ -34,7 +30,7 @@ const Slide: React.FC<Props> = ({ product }) => {
             </span>
           </div>
           <button
-            onClick={onClick}
+            onClick={() => requestCreateConvo(product)}
             className="flex-none flex w-30 h-12 items-center text-sm justify-center gap-2 px-5 py-[10px] rounded-md bg-white leading-[21px] text-gray-800"
           >
             Try now

@@ -32,6 +32,7 @@ const downloadModel = async (product) =>
 const deleteModel = async (path) =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
+      console.debug(`Delete model model management plugin: ${path}`);
       const response = await window.electronAPI.deleteFile(path);
       resolve(response);
     }

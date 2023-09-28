@@ -1,32 +1,29 @@
 "use client";
 
-import ModelDetailSideBar from "../ModelDetailSideBar";
-import ProductOverview from "../ProductOverview";
 import { useAtomValue } from "jotai";
-import {
-  getActiveConvoIdAtom,
-  showingProductDetailAtom,
-} from "@/_helpers/JotaiWrapper";
+import { MainViewState, getMainViewStateAtom } from "@/_helpers/JotaiWrapper";
 import { ReactNode } from "react";
 import ModelManagement from "../ModelManagement";
+import Welcome from "../WelcomeContainer";
+import { Preferences } from "../Preferences";
 
 type Props = {
   children: ReactNode;
 };
 
 export default function ChatContainer({ children }: Props) {
-  const activeConvoId = useAtomValue(getActiveConvoIdAtom);
-  // const showingProductDetail = useAtomValue(showingProductDetailAtom);
+  const viewState = useAtomValue(getMainViewStateAtom);
 
-  if (!activeConvoId) {
-    // return <ProductOverview />;
-    return <ModelManagement />;
+  switch (viewState) {
+    case MainViewState.ExploreModel:
+      return <ModelManagement />;
+    case MainViewState.Setting:
+      return <Preferences />;
+    case MainViewState.ResourceMonitor:
+    case MainViewState.MyModel:
+    case MainViewState.Welcome:
+      return <Welcome />;
+    default:
+      return <div className="flex flex-1 overflow-hidden">{children}</div>;
   }
-
-  return (
-    <div className="flex flex-1 overflow-hidden">
-      {children}
-      {/* {showingProductDetail ? <ModelDetailSideBar /> : null} */}
-    </div>
-  );
 }

@@ -2,20 +2,20 @@ import useCreateConversation from "@/_hooks/useCreateConversation";
 import { executeSerial } from "@/_services/pluginService";
 import Image from "next/image";
 import React from "react";
-import { ModelManagementService } from "../../../shared/coreService";
+import { DataService } from "../../../shared/coreService";
 
 const HistoryEmpty: React.FC = () => {
   const { requestCreateConvo } = useCreateConversation();
   const startChat = async () => {
     const downloadedModels = await executeSerial(
-      ModelManagementService.GET_DOWNLOADED_MODELS
+      DataService.GET_FINISHED_DOWNLOAD_MODELS
     );
     if (!downloadedModels || downloadedModels?.length === 0) {
       alert(
         "Seems like there is no model downloaded yet. Please download a model first."
       );
     } else {
-      requestCreateConvo(1);
+      requestCreateConvo(downloadedModels[0]);
     }
   };
   return (

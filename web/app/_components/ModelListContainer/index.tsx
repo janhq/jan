@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { executeSerial } from "@/_services/pluginService";
-import { ModelManagementService } from "../../../shared/coreService";
+import { execute, executeSerial } from "@/_services/pluginService";
+import {
+  DataService,
+  ModelManagementService,
+} from "../../../shared/coreService";
 import { useAtomValue } from "jotai";
 import { modelDownloadStateAtom } from "@/_helpers/JotaiWrapper";
 import { Product } from "@/_models/Product";
@@ -42,6 +45,7 @@ const ModelListContainer: React.FC = () => {
   }, [downloadState]);
 
   const onDeleteClick = async (product: Product) => {
+    execute(DataService.DELETE_DOWNLOAD_MODEL, product.id);
     await executeSerial(ModelManagementService.DELETE_MODEL, product.fileName);
     const getDownloadedModels = async () => {
       const avails = await executeSerial(
@@ -70,7 +74,7 @@ const ModelListContainer: React.FC = () => {
   };
 
   const onDownloadClick = async (product: Product) => {
-    console.log("onDownloadClick", product);
+    await executeSerial(DataService.STORE_MODEL, product);
     await executeSerial(ModelManagementService.DOWNLOAD_MODEL, {
       downloadUrl: product.downloadUrl,
       fileName: product.fileName,
