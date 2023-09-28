@@ -91,6 +91,9 @@ Note: This instruction is tested on MacOS only.
 
    ```
    yarn install
+
+   # Packing base plugins
+   yarn build:plugins
    ```
 
 4. **Run development and Using Jan Desktop**
@@ -108,6 +111,7 @@ Note: This instruction is tested on MacOS only.
    git clone https://github.com/janhq/jan
    cd jan
    yarn install
+   yarn build:plugins
 
    # Build the app
    yarn build
@@ -123,7 +127,7 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 ```sh
 # From the root, run:
-yarn
+yarn install
 
 yarn build:plugins
 
