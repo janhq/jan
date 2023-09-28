@@ -20,13 +20,13 @@ const useChatMessages = (offset = 0) => {
   const [loading, setLoading] = useState(true);
   const addOldChatMessages = useSetAtom(addOldMessagesAtom);
   const currentConvo = useAtomValue(currentConversationAtom);
-  if (!currentConvo) {
-    throw new Error("activeConversation is null");
-  }
   const convoStates = useAtomValue(conversationStatesAtom);
   const updateConvoHasMore = useSetAtom(updateConversationHasMoreAtom);
 
   useEffect(() => {
+    if (!currentConvo) {
+      return;
+    }
     const hasMore = convoStates[currentConvo.id ?? ""]?.hasMore ?? true;
     if (!hasMore) return;
 
@@ -48,7 +48,7 @@ const useChatMessages = (offset = 0) => {
     getMessages();
   }, [
     offset,
-    currentConvo.id,
+    currentConvo?.id,
     convoStates,
     addOldChatMessages,
     updateConvoHasMore,
@@ -57,7 +57,7 @@ const useChatMessages = (offset = 0) => {
   return {
     loading: loading,
     error: undefined,
-    hasMore: convoStates[currentConvo.id ?? ""]?.hasMore ?? true,
+    hasMore: convoStates[currentConvo?.id ?? ""]?.hasMore ?? true,
   };
 };
 

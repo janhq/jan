@@ -18,11 +18,6 @@ const DownloadedModelCard: React.FC<Props> = ({
   required,
   onDeleteClick,
 }) => {
-  const initModel = () => {
-    executeSerial(InfereceService.INIT_MODEL, product)
-      .then(() => console.info(`Init model success`))
-      .catch((err) => console.log(`Init model error ${err}`));
-  };
 
   const handleViewDetails = () => {};
 
@@ -37,8 +32,7 @@ const DownloadedModelCard: React.FC<Props> = ({
           name={product.name}
           type={product.type}
         />
-        <div className="flex flex-col">
-          <button onClick={initModel}>Init</button>
+        <div className="flex flex-col justify-center">
           <button onClick={() => onDeleteClick?.(product)}>Delete</button>
         </div>
       </div>

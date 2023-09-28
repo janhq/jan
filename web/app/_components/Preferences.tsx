@@ -18,6 +18,7 @@ import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 export const Preferences = () => {
   const [search, setSearch] = useState<string>("");
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
+  const [isTestAvailable, setIsTestAvailable] = useState(false);
 
   const preferenceRef = useRef(null);
   useEffect(() => {
@@ -45,6 +46,9 @@ export const Preferences = () => {
           const components = await Promise.all(
             extensionPoints.execute("experimentComponent")
           );
+          if (components.length > 0) {
+            setIsTestAvailable(true);
+          }
           components.forEach((e) => {
             if (preferenceRef.current) {
               // @ts-ignore
@@ -211,10 +215,12 @@ export const Preferences = () => {
                 </div>
               ))}
           </div>
-          <div className="flex flex-row items-center my-4">
-            <PlayIcon width={30} />
-            Test Plugins
-          </div>
+          {activePlugins.length > 0 && isTestAvailable && (
+            <div className="flex flex-row items-center my-4">
+              <PlayIcon width={30} />
+              Test Plugins
+            </div>
+          )}
           <div className="h-full w-full" ref={preferenceRef}></div>
           {/* Content */}
         </div>

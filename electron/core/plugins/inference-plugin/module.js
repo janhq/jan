@@ -5,6 +5,11 @@ const _importDynamic = new Function("modulePath", "return import(modulePath)");
 let llamaSession = null;
 
 async function initModel(product) {
+  // fileName fallback
+  if (!product.fileName) {
+    product.fileName = product.file_name;
+  }
+
   if (!product.fileName) {
     await dialog.showMessageBox({
       message: "Selected model does not have file name..",
