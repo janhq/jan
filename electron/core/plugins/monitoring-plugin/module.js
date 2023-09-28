@@ -13,12 +13,11 @@ const getResourcesInfo = async () =>
     resolve(response);
   });
 
-const getCurrentLoad = async () => {
+const getCurrentLoad = async () =>
   new Promise(async (resolve) => {
     const currentLoad = await si.currentLoad();
     resolve(currentLoad);
   });
-};
 
 module.exports = {
   getResourcesInfo,

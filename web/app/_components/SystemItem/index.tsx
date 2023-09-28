@@ -1,22 +1,15 @@
 type Props = {
   name: string;
-  total: number;
-  used?: number;
+  value: string;
 };
 
-const SystemItem: React.FC<Props> = ({ name, total, used }) => {
+const SystemItem: React.FC<Props> = ({ name, value }) => {
   return (
-    <div className="flex gap-2 pl-4">
-      <div className="flex gap-[10px] font-bold text-gray-900 text-sm">
+    <div className="flex gap-2 pl-4 my-1">
+      <div className="flex gap-[10px] w-max font-bold text-gray-900 text-sm">
         {name}
       </div>
-      {used ? (
-        <span className="text-gray-900 text-sm">
-          {((used / total) * 100).toFixed(0)}%
-        </span>
-      ) : (
-        <span className="text-gray-900 text-sm"> {total}</span>
-      )}
+      <span className="text-gray-900 text-sm">{value}</span>
     </div>
   );
 };
