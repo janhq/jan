@@ -125,6 +125,8 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 # From the root, run:
 yarn
 
+yarn build:plugins
+
 yarn dev
 ```
 
