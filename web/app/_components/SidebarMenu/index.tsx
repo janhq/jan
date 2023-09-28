@@ -52,7 +52,7 @@ const SidebarMenu: React.FC = () => {
               )}
             >
               <Image
-                src={`/icons/${item.icon}.svg`}
+                src={`icons/${item.icon}.svg`}
                 width={24}
                 height={24}
                 alt=""
