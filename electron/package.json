@@ -28,7 +28,8 @@
   "scripts": {
     "dev": "tsc -p . && electron .",
     "build": "tsc -p . && electron-builder -p never -mwl",
-    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mwl"
+    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mwl",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "electron-is-dev": "^2.0.0",
@@ -44,7 +45,6 @@
     "electron-builder": "^24.6.4",
     "wait-on": "^7.0.1"
   },
-  "postinstall": "electron-builder install-app-deps",
   "installConfig": {
     "hoistingLimits": "workspaces"
   }

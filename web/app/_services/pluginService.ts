@@ -29,25 +29,17 @@ export const setupBasePlugins = async () => {
   ) {
     return;
   }
-  const userDataPath = await window.electronAPI.userData();
-  const dataPlugin = userDataPath + "/core/pre-install/data-plugin.tgz";
-  const modelManagementPlugin =
-    userDataPath + "/core/pre-install/model-management-plugin.tgz";
-  const inferencePlugin =
-    userDataPath + "/core/pre-install/inference-plugin.tgz";
-  const toInstall = [];
-  if (!extensionPoints.get(DataService.GET_CONVERSATIONS)) {
-    toInstall.push(dataPlugin);
-  }
-  if (!extensionPoints.get(InfereceService.PROMPT)) {
-    toInstall.push(inferencePlugin);
-  }
-  if (!extensionPoints.get(ModelManagementService.GET_DOWNLOADED_MODELS)) {
-    toInstall.push(modelManagementPlugin);
-  }
-  const installed = await plugins.install(toInstall);
-  if (installed) {
-    window.location.reload();
+  const basePlugins = await window.electronAPI.basePlugins();
+
+  if (
+    !extensionPoints.get(DataService.GET_CONVERSATIONS) ||
+    !extensionPoints.get(InfereceService.PROMPT) ||
+    !extensionPoints.get(ModelManagementService.GET_DOWNLOADED_MODELS)
+  ) {
+    const installed = await plugins.install(basePlugins);
+    if (installed) {
+      window.location.reload();
+    }
   }
 };
 

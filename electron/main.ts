@@ -5,7 +5,8 @@ import {
   ipcMain,
   dialog,
 } from "electron";
-import { resolve, join } from "path";
+import { readdirSync } from "fs";
+import { resolve, join, extname } from "path";
 import { unlink, createWriteStream } from "fs";
 import isDev = require("electron-is-dev");
 import { init } from "./core/plugin-manager/pluginMgr";
@@ -71,8 +72,11 @@ app.whenReady().then(() => {
   setupPlugins();
   autoUpdater.checkForUpdates();
 
-  ipcMain.handle("userData", async (event) => {
-    return join(__dirname, "../");
+  ipcMain.handle("basePlugins", async (event) => {
+    const basePluginPath = join(__dirname, "../") + "/core/pre-install";
+    return readdirSync(basePluginPath)
+      .filter((file) => extname(file) === ".tgz")
+      .map((file) => join(basePluginPath, file));
   });
 
   ipcMain.handle("pluginPath", async (event) => {

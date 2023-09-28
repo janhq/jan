@@ -9,32 +9,31 @@
     "init"
   ],
   "scripts": {
-    "build": "tsc -b .",
-    "build:package": "rimraf ./data-plugin*.tgz && npm run build && webpack --config webpack.config.js && npm pack",
-    "build:publish": "yarn build:package && cpx *.tgz ../../pre-install"
+    "build": "tsc -b . && webpack --config webpack.config.js",
+    "build:package": "rimraf ./data-plugin*.tgz && npm run build && npm pack",
+    "build:publish": "npm run build:package && cpx *.tgz ../../pre-install"
   },
   "exports": {
     ".": "./dist/index.js",
     "./main": "./dist/module.js"
   },
   "devDependencies": {
+    "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
     "ts-loader": "^9.4.4",
     "ts-node": "^10.9.1",
     "typescript": "^5.2.2",
     "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4",
-    "cpx": "^1.5.0"
+    "webpack-cli": "^5.1.4"
   },
   "bundledDependencies": [
     "sql.js",
     "sqlite3"
   ],
   "files": [
-    "dist/*",
+    "dist/**",
     "package.json",
-    "README.md",
-    "node_modules/*"
+    "node_modules"
   ],
   "dependencies": {
     "sqlite3": "^5.1.6"

@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   invokePluginFunc: (plugin: any, method: any, ...args: any[]) =>
     ipcRenderer.invoke("invokePluginFunc", plugin, method, ...args),
 
-  userData: () => ipcRenderer.invoke("userData"),
+  basePlugins: () => ipcRenderer.invoke("basePlugins"),
 
   pluginPath: () => ipcRenderer.invoke("pluginPath"),
 
