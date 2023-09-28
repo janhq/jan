@@ -27,8 +27,8 @@
   },
   "scripts": {
     "dev": "tsc -p . && electron .",
-    "build": "tsc -p . && electron-builder -p never -mwl",
-    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mwl",
+    "build": "tsc -p . && electron-builder -p never -mw",
+    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mw",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

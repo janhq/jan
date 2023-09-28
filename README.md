@@ -91,6 +91,9 @@ Note: This instruction is tested on MacOS only.
 
    ```
    yarn install
+
+   # Packing base plugins
+   yarn build:plugins
    ```
 
 4. **Run development and Using Jan Desktop**
