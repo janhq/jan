@@ -2,8 +2,6 @@ import React from "react";
 import UserProfileDropDown from "../UserProfileDropDown";
 import LoginButton from "../LoginButton";
 import HamburgerButton from "../HamburgerButton";
-import { CogIcon } from "@heroicons/react/24/outline";
-import Link from "next/link";
 
 const Header: React.FC = () => {
   return (
@@ -11,9 +9,7 @@ const Header: React.FC = () => {
       <nav className="flex-1 justify-center">
         <HamburgerButton />
       </nav>
-      <Link href="/settings">
-        <CogIcon width={30} height={30} />
-      </Link>
+      <div className="h-[30px]" />
       <LoginButton />
       <UserProfileDropDown />
     </header>
