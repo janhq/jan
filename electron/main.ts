@@ -73,7 +73,11 @@ app.whenReady().then(() => {
   autoUpdater.checkForUpdates();
 
   ipcMain.handle("basePlugins", async (event) => {
-    const basePluginPath = join(__dirname, "../") + "/core/pre-install";
+    const basePluginPath = join(
+      __dirname,
+      "../",
+      isDev ? "/core/pre-install" : "../app.asar.unpacked/core/pre-install"
+    );
     return readdirSync(basePluginPath)
       .filter((file) => extname(file) === ".tgz")
       .map((file) => join(basePluginPath, file));
