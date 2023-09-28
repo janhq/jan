@@ -5,6 +5,7 @@ import JotaiWrapper from "./_helpers/JotaiWrapper";
 import RightContainer from "./_components/RightContainer";
 import { ModalWrapper } from "./_helpers/ModalWrapper";
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 import {
   setup,
@@ -63,11 +64,9 @@ const Page: React.FC = () => {
               </div>
             )}
             {!activated && (
-              <img
-                className="w-screen h-screen object-cover"
-                alt=""
-                src="images/banner.jpg"
-              />
+              <div className="bg-white w-screen h-screen items-center justify-center flex">
+                <Image width={50} height={50} src="icons/app_icon.svg" alt="" />
+              </div>
             )}
           </ModalWrapper>
         </ThemeWrapper>
