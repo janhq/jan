@@ -82,6 +82,9 @@ app.whenReady().then(() => {
   ipcMain.handle("pluginPath", async (event) => {
     return join(app.getPath("userData"), "plugins");
   });
+  ipcMain.handle("appVersion", async (event) => {
+    return app.getVersion();
+  });
 
   /**
    * Used to delete a file from the user data folder

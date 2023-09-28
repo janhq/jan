@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   pluginPath: () => ipcRenderer.invoke("pluginPath"),
 
+  appVersion: () => ipcRenderer.invoke("appVersion"),
+
   deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
 
   downloadFile: (url: string, path: string) =>

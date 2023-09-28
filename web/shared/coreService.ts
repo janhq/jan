@@ -3,6 +3,7 @@ export type CoreService =
   | ModelService
   | InfereceService
   | ModelManagementService
+  | SystemMonitoringService
   | PreferenceService;
 
 export enum DataService {
@@ -39,4 +40,9 @@ export enum ModelManagementService {
 
 export enum PreferenceService {
   GET_EXPERIMENT_COMPONENT = "experimentComponent",
+}
+
+export enum SystemMonitoringService {
+  GET_RESOURCES_INFORMATION = "getResourcesInfo",
+  GET_CURRENT_LOAD_INFORMATION = "getCurrentLoad",
 }
