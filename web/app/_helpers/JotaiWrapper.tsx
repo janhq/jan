@@ -37,6 +37,8 @@ export const showingProductDetailAtom = atom<boolean>(false);
 export const showingMobilePaneAtom = atom<boolean>(false);
 export const showingTyping = atom<boolean>(false);
 
+export const appDownloadProgress = atom<number>(-1);
+
 /**
  * Stores all conversations for the current user
  */

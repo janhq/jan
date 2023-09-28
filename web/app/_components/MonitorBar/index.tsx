@@ -1,10 +1,14 @@
 import ProgressBar from "../ProgressBar";
 import SystemItem from "../SystemItem";
 import { useAtomValue } from "jotai";
-import { getSystemBarVisibilityAtom } from "@/_helpers/JotaiWrapper";
+import {
+  appDownloadProgress,
+  getSystemBarVisibilityAtom,
+} from "@/_helpers/JotaiWrapper";
 
 const MonitorBar: React.FC = () => {
   const show = useAtomValue(getSystemBarVisibilityAtom);
+  const progress = useAtomValue(appDownloadProgress);
   const data = [
     {
       name: "CPU",
@@ -32,7 +36,7 @@ const MonitorBar: React.FC = () => {
 
   return (
     <div className="flex items-center justify-between border-t border-gray-200">
-      <ProgressBar total={1400} used={790} />
+      {progress && progress >= 0 && <ProgressBar total={100} used={progress} />}
       <div className="flex items-center gap-8 px-2">
         {data.map((item, index) => (
           <SystemItem key={index} {...item} />

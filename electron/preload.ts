@@ -27,4 +27,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   onFileDownloadSuccess: (callback: any) =>
     ipcRenderer.on("FILE_DOWNLOAD_COMPLETE", callback),
+
+  onAppUpdateDownloadUpdate: (callback: any) =>
+    ipcRenderer.on("APP_UPDATE_PROGRESS", callback),
+
+  onAppUpdateDownloadError: (callback: any) =>
+    ipcRenderer.on("APP_UPDATE_ERROR", callback),
+
+  onAppUpdateDownloadSuccess: (callback: any) =>
+    ipcRenderer.on("APP_UPDATE_COMPLETE", callback),
 });

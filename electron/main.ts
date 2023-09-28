@@ -151,6 +151,7 @@ autoUpdater.on("update-available", async (info: any) => {
 
 /*App Update Completion Message*/
 autoUpdater.on("update-downloaded", async (info: any) => {
+  mainWindow?.webContents.send("APP_UPDATE_COMPLETE", {});
   const action = await dialog.showMessageBox({
     message: `Update downloaded. Please restart the application to apply the updates.`,
     buttons: ["Restart", "Later"],
@@ -163,17 +164,16 @@ autoUpdater.on("update-downloaded", async (info: any) => {
 /*App Update Error */
 autoUpdater.on("error", (info: any) => {
   dialog.showMessageBox({ message: info.message });
+  mainWindow?.webContents.send("APP_UPDATE_ERROR", {});
 });
 
 /*App Update Progress */
 autoUpdater.on("download-progress", (progress: any) => {
   console.log("app update progress: ", progress.percent);
-  sendStatusToWindow("APP_UPDATE_UPDATE", progress.percent);
+  mainWindow?.webContents.send("APP_UPDATE_PROGRESS", {
+    percent: progress.percent,
+  });
 });
-
-function sendStatusToWindow(action: string, progress?: number) {
-  mainWindow?.webContents.send(action, { progress });
-}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
