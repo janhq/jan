@@ -4,6 +4,7 @@ import {
   screen as electronScreen,
   ipcMain,
   dialog,
+  shell,
 } from "electron";
 import { readdirSync } from "fs";
 import { resolve, join, extname } from "path";
@@ -88,6 +89,9 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("appVersion", async (event) => {
     return app.getVersion();
+  });
+  ipcMain.handle("openExternalUrl", async (event, url) => {
+    shell.openExternal(url);
   });
 
   /**

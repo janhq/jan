@@ -4,14 +4,18 @@
   "main": "./build/main.js",
   "author": "Jan",
   "license": "MIT",
-  "homepage":"./",
+  "homepage": "./",
   "build": {
     "appId": "jan.ai.app",
     "productName": "Jan",
     "files": [
       "renderer/**/*",
       "build/*.{js,map}",
-      "build/core/plugin-manager/**/*"
+      "build/core/plugin-manager/**/*",
+      "core/pre-install"
+    ],
+    "asarUnpack": [
+      "core/pre-install"
     ],
     "publish": [
       {
