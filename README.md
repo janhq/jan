@@ -68,6 +68,56 @@ Not supported yet: Apple Intel, Linux RPM, Windows x86|ARM64, AMD ROCm
 
 > See [developer docs](https://docs.jan.ai/docs/) for detailed installation instructions.
 
+## Installation and Usage
+
+### Pre-requisites
+- node >= 20.0.0
+- yarn >= 1.22.0
+
+### Use as complete suite (in progress)
+### For interactive development
+
+Note: This instruction is tested on MacOS only.
+
+1. **Clone the Repository:**
+
+   ```
+   git clone https://github.com/janhq/jan
+   git checkout feature/hackathon-refactor-jan-into-electron-app
+   cd jan
+   ```
+
+2. **Install dependencies:**
+
+   ```
+   yarn install
+   ```
+
+4. **Run development and Using Jan Desktop**
+
+   ```
+   yarn dev
+   ```
+   This will start the development server and open the desktop app.
+   In this step, there are a few notification about installing base plugin, just click `OK` and `Next` to continue.
+
+### For production build
+
+   ```bash
+   # Do step 1 and 2 in previous section
+   git clone https://github.com/janhq/jan
+   git checkout feature/hackathon-refactor-jan-into-electron-app
+   cd jan
+   yarn install
+
+   # Build the app
+   yarn build
+   ```
+
+   This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
+
+
+
 ## Contributing
 
 Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file
@@ -92,7 +142,6 @@ Jan builds on top of other open-source projects:
 - [llama.cpp](https://github.com/ggerganov/llama.cpp)
 - [TensorRT](https://github.com/NVIDIA/TensorRT)
 - [Keycloak Community](https://github.com/keycloak/keycloak) (Apache-2.0)
-- [Hasura Community Edition](https://github.com/hasura/graphql-engine) (Apache-2.0)
 
 ## Contact
 
