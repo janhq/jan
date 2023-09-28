@@ -1,6 +1,7 @@
 // import useGetCurrentUser from "./useGetCurrentUser";
 import { useAtom, useSetAtom } from "jotai";
 import {
+  activeModel,
   addNewConversationStateAtom,
   setActiveConvoIdAtom,
   userConversationsAtom,
@@ -16,6 +17,7 @@ const useCreateConversation = () => {
   );
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   const addNewConvoState = useSetAtom(addNewConversationStateAtom);
+  const setActiveModel = useSetAtom(activeModel)
 
   const requestCreateConvo = async (model: Product) => {
     const conv: Conversation = {
@@ -27,6 +29,7 @@ const useCreateConversation = () => {
     };
     const id = await executeSerial(DataService.CREATE_CONVERSATION, conv);
     await executeSerial(InfereceService.INIT_MODEL, model);
+    setActiveModel(model.name)
 
     const mappedConvo: Conversation = {
       id,

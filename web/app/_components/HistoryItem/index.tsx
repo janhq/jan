@@ -2,6 +2,7 @@ import React from "react";
 import JanImage from "../JanImage";
 import {
   MainViewState,
+  activeModel,
   conversationStatesAtom,
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
@@ -34,7 +35,7 @@ const HistoryItem: React.FC<Props> = ({
   const activeConvoId = useAtomValue(getActiveConvoIdAtom);
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   const isSelected = activeConvoId === conversation.id;
-
+  const setActiveModel = useSetAtom(activeModel);
   const onClick = async () => {
     const convoModel = await executeSerial(
       DataService.GET_MODEL_BY_ID,
@@ -48,6 +49,7 @@ const HistoryItem: React.FC<Props> = ({
       executeSerial(InfereceService.INIT_MODEL, convoModel)
         .then(() => console.info(`Init model success`))
         .catch((err) => console.log(`Init model error ${err}`));
+      setActiveModel(convoModel.name);
     }
     if (activeConvoId !== conversation.id) {
       setMainViewState(MainViewState.Conversation);

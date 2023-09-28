@@ -2,6 +2,7 @@ import ProgressBar from "../ProgressBar";
 import SystemItem from "../SystemItem";
 import { useAtomValue } from "jotai";
 import {
+  activeModel,
   appDownloadProgress,
   getSystemBarVisibilityAtom,
 } from "@/_helpers/JotaiWrapper";
@@ -9,6 +10,8 @@ import {
 const MonitorBar: React.FC = () => {
   const show = useAtomValue(getSystemBarVisibilityAtom);
   const progress = useAtomValue(appDownloadProgress);
+  const modelName = useAtomValue(activeModel);
+
   const data = [
     {
       name: "CPU",
@@ -25,10 +28,6 @@ const MonitorBar: React.FC = () => {
       total: 1400,
       used: 1300,
     },
-    {
-      name: "Active Models",
-      total: 1400,
-    },
   ];
 
   const version = "v1.2.2";
@@ -41,6 +40,9 @@ const MonitorBar: React.FC = () => {
         {data.map((item, index) => (
           <SystemItem key={index} {...item} />
         ))}
+        {modelName && modelName.length > 0 && (
+          <SystemItem name="Active Models" total={1} used={1} />
+        )}
         <span className="text-gray-900 text-sm">{version}</span>
       </div>
     </div>

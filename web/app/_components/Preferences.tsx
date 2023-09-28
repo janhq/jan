@@ -177,7 +177,7 @@ export const Preferences = () => {
                   e.name.toLowerCase().includes(search.toLowerCase())
               )
               .map((e) => (
-                <div key={e.name} className="m-2 w-[400px]">
+                <div key={e.name} className="mr-2 my-3 w-[400px]">
                   <a
                     href="#"
                     className="block max-w-sm p-6 bg-white border border-gray-200 rounded-lg shadow dark:bg-gray-800 dark:border-gray-700"
