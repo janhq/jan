@@ -8,18 +8,19 @@ import {
   RocketLaunchIcon,
   ServerIcon,
 } from "@heroicons/react/20/solid";
+import { useColorMode } from "@docusaurus/theme-common";
 
 const features = [
   {
-    name: "Data security and privacy.",
+    name: "Data Security and Privacy.",
     description:
-      "Lorem ipsum, dolor sit amet consectetur adipisicing elit. Maiores impedit perferendis suscipit eaque, iste dolor cupiditate blanditiis ratione.",
+      "Jan runs locally on your machine. Your data never leaves your computer. You can even run Jan offline.",
     icon: CloudArrowUpIcon,
   },
   {
-    name: "Always accessible.",
+    name: "Cross Device Compatible.",
     description:
-      "Anim aute id magna aliqua ad ad non deserunt sunt. Qui irure qui lorem cupidatat commodo.",
+      "Jan runs Nitro, a C++ inference engine, that is compatible with all major operating systems (CPU and GPU).",
     icon: LockClosedIcon,
   },
   {
@@ -30,6 +31,7 @@ const features = [
 ];
 
 export default function sectionTwo() {
+  const { colorMode } = useColorMode();
   return (
     <div className="overflow-hidden bg-white dark:bg-gray-900 py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
@@ -43,9 +45,8 @@ export default function sectionTwo() {
                 AI that you control
               </p>
               <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
-                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
-                Maiores impedit perferendis suscipit eaque, iste dolor
-                cupiditate blanditiis ratione.
+                Jan is a source-available, cross device, and privacy focused AI
+                engine and Desktop app that runs locally on your machine.
               </p>
               <dl className="mt-10 max-w-xl space-y-8 text-base leading-7 text-gray-600 dark:text-gray-300 lg:max-w-none">
                 {features.map((feature) => (
@@ -64,7 +65,12 @@ export default function sectionTwo() {
             </div>
           </div>
           <img
-            src="https://tailwindui.com/img/component-images/dark-project-app-screenshot.png"
+            src={
+              colorMode === "dark"
+                ? // TODO replace with darkmode image
+                  require("@site/static/img/desktop-model-settings.png").default
+                : require("@site/static/img/desktop-model-settings.png").default
+            }
             alt="Product screenshot"
             className="w-[48rem] max-w-none rounded-xl shadow-xl ring-1 ring-gray-400/10 sm:w-[57rem] md:-ml-4 lg:-ml-0"
             width={2432}

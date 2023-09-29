@@ -1,5 +1,0 @@
-mutation createConversation($data: conversations_insert_input!) {
-  insert_conversations_one(object: $data) {
-    ...ConversationDetail
-  }
-}

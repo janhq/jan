@@ -4,3 +4,11 @@
 # Jan inference
 models/**
 error.log
+node_modules
+package-lock.json
+*.tgz
+yarn.lock
+dist
+build
+.DS_Store
+electron/renderer

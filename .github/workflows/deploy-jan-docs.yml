@@ -19,8 +19,8 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 18
-          cache: 'npm'
-          cache-dependency-path: './docs/package-lock.json'
+          cache: 'yarn'
+          cache-dependency-path: './docs/yarn.lock'
 
       - name: Install dependencies
         run: yarn install
@@ -30,7 +30,7 @@ jobs:
         working-directory: docs
       
       - name: Add Custome Domain file
-        run: echo "docs.jan.ai" > ./docs/build/CNAME
+        run: echo "${{ vars.DOCUSAURUS_DOMAIN }}" > ./docs/build/CNAME
 
       # Popular action to deploy to GitHub Pages:
       # Docs: https://github.com/peaceiris/actions-gh-pages#%EF%B8%8F-docusaurus
