@@ -1,8 +1,8 @@
 ---
-name: Feature request
+name: Epic (large feature request)
 about: Suggest an idea for this project
-title: 'feat: [DESCRIPTION]'
-labels: 'type: feature request'
+title: 'epic: [DESCRIPTION]'
+labels: 'type: epic'
 assignees: ''
 
 ---
@@ -14,4 +14,4 @@ A clear and concise description of what the problem is. Ex. I'm always frustrate
 A clear and concise description of what you want to happen.
 
 **Additional context**
-Add any other context or screenshots about the feature request here.
+Add any other context or screenshots about the epic request here.
