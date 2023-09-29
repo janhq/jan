@@ -12,3 +12,9 @@ dist
 build
 .DS_Store
 electron/renderer
+
+
+# Nitro
+electron/core/plugins/nitro-plugin/nitro
+electron/core/plugins/nitro-plugin/uploads
+electron/core/plugins/nitro-plugin/*.log
