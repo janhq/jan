@@ -12,15 +12,15 @@ import { useColorMode } from "@docusaurus/theme-common";
 
 const features = [
   {
-    name: "Data security and privacy.",
+    name: "Data Security and Privacy.",
     description:
-      "Lorem ipsum, dolor sit amet consectetur adipisicing elit. Maiores impedit perferendis suscipit eaque, iste dolor cupiditate blanditiis ratione.",
+      "Jan runs locally on your machine. Your data never leaves your computer. You can even run Jan offline.",
     icon: CloudArrowUpIcon,
   },
   {
-    name: "Always accessible.",
+    name: "Cross Device Compatible.",
     description:
-      "Anim aute id magna aliqua ad ad non deserunt sunt. Qui irure qui lorem cupidatat commodo.",
+      "Jan runs Nitro, a C++ inference engine, that is compatible with all major operating systems (CPU and GPU).",
     icon: LockClosedIcon,
   },
   {
@@ -45,9 +45,8 @@ export default function sectionTwo() {
                 AI that you control
               </p>
               <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
-                Lorem ipsum, dolor sit amet consectetur adipisicing elit.
-                Maiores impedit perferendis suscipit eaque, iste dolor
-                cupiditate blanditiis ratione.
+                Jan is a source-available, cross device, and privacy focused AI
+                engine and Desktop app that runs locally on your machine.
               </p>
               <dl className="mt-10 max-w-xl space-y-8 text-base leading-7 text-gray-600 dark:text-gray-300 lg:max-w-none">
                 {features.map((feature) => (

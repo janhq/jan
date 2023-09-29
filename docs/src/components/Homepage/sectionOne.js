@@ -14,19 +14,19 @@ const features = [
   {
     name: "1 Click Installs.",
     description:
-      "Llama2, MPT, CodeLlama, and more. 1 click to install the latest and greatest models directly from HuggingFace. Or easily uploads your own models.",
+      "Llama2, MPT, CodeLlama, and more. 1 click to install the latest and greatest models directly from HuggingFace. Or easily upload your own models.",
     icon: CursorArrowRaysIcon,
   },
   {
-    name: "Model management.",
+    name: "Model Management.",
     description:
-      "Configure advanced settings for each model. Manage your model versions. Easily switch between models. Get visibility into hardware compatibility.",
+      "Configure advanced settings for each model. Manage your model versions. Easily switch between models. Get visibility into hardware performance.",
     icon: HomeIcon,
   },
   {
-    name: "Cloud AI Compatible.",
+    name: "Cloud AI Compatible. (Coming Soon)",
     description:
-      "Connect via API to ChatGPT, Claude which are also still supported. Also declare your own remote server endpoint on any GPU cloud and share it.",
+      "Connect to ChatGPT, Claude via an API key. Alternatively, host your own AI server on any GPU cloud and use it from the app.",
     icon: CloudArrowUpIcon,
   },
 ];
