@@ -14,7 +14,7 @@ export const isCorePluginInstalled = () => {
   if (!extensionPoints.get(DataService.GET_CONVERSATIONS)) {
     return false;
   }
-  if (!extensionPoints.get(InfereceService.PROMPT)) {
+  if (!extensionPoints.get(InfereceService.INIT_MODEL)) {
     return false;
   }
   if (!extensionPoints.get(ModelManagementService.GET_DOWNLOADED_MODELS)) {
@@ -33,7 +33,7 @@ export const setupBasePlugins = async () => {
 
   if (
     !extensionPoints.get(DataService.GET_CONVERSATIONS) ||
-    !extensionPoints.get(InfereceService.PROMPT) ||
+    !extensionPoints.get(InfereceService.INIT_MODEL) ||
     !extensionPoints.get(ModelManagementService.GET_DOWNLOADED_MODELS)
   ) {
     const installed = await plugins.install(basePlugins);

@@ -241,7 +241,7 @@ function getConversations() {
     );
 
     db.all(
-      "SELECT * FROM conversations ORDER BY created_at DESC",
+      "SELECT * FROM conversations ORDER BY updated_at DESC",
       (err: any, row: any) => {
         res(row);
       }
@@ -249,7 +249,7 @@ function getConversations() {
     db.close();
   });
 }
-function storeConversation(conversation: any) {
+function storeConversation(conversation: any): Promise<number | undefined> {
   return new Promise((res) => {
     const db = new sqlite3.Database(
       path.join(app.getPath("userData"), "jan.db")
@@ -284,7 +284,7 @@ function storeConversation(conversation: any) {
   });
 }
 
-function storeMessage(message: any) {
+function storeMessage(message: any): Promise<number | undefined> {
   return new Promise((res) => {
     const db = new sqlite3.Database(
       path.join(app.getPath("userData"), "jan.db")
@@ -299,7 +299,7 @@ function storeMessage(message: any) {
         message.conversation_id,
         message.user,
         message.message,
-        (err: any) => {
+        function (err: any) {
           if (err) {
             // Handle the insertion error here
             console.error(err.message);
@@ -313,6 +313,24 @@ function storeMessage(message: any) {
         }
       );
       stmt.finalize();
+    });
+
+    db.close();
+  });
+}
+function updateMessage(message: any): Promise<number | undefined> {
+  return new Promise((res) => {
+    const db = new sqlite3.Database(
+      path.join(app.getPath("userData"), "jan.db")
+    );
+
+    db.serialize(() => {
+      const stmt = db.prepare(
+        "UPDATE messages SET message = ?, updated_at = ? WHERE id = ?"
+      );
+      stmt.run(message.message, message.updated_at, message.id);
+      stmt.finalize();
+      res(message.id);
     });
 
     db.close();
@@ -347,7 +365,7 @@ function getConversationMessages(conversation_id: any) {
       path.join(app.getPath("userData"), "jan.db")
     );
 
-    const query = `SELECT * FROM messages WHERE conversation_id = ${conversation_id} ORDER BY created_at DESC`;
+    const query = `SELECT * FROM messages WHERE conversation_id = ${conversation_id} ORDER BY id DESC`;
     db.all(query, (err: Error, row: any) => {
       res(row);
     });
@@ -361,6 +379,7 @@ module.exports = {
   deleteConversation,
   storeConversation,
   storeMessage,
+  updateMessage,
   getConversationMessages,
   storeModel,
   updateFinishedDownloadAt,

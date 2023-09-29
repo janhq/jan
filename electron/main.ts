@@ -24,13 +24,14 @@ autoUpdater.autoInstallOnAppQuit = true;
 
 const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    width: electronScreen.getPrimaryDisplay().workArea.width,
-    height: electronScreen.getPrimaryDisplay().workArea.height,
+    width: 1200,
+    height: 800,
     show: false,
     backgroundColor: "white",
     webPreferences: {
       nodeIntegration: true,
       preload: join(__dirname, "preload.js"),
+      webSecurity: false,
     },
   });
 
