@@ -1,0 +1,36 @@
+{
+  "name": "nitro-plugin",
+  "version": "0.0.1",
+  "description": "",
+  "main": "dist/index.js",
+  "author": "Hiro",
+  "license": "MIT",
+  "activationPoints": [
+    "init"
+  ],
+  "scripts": {
+    "build": "webpack --config webpack.config.js",
+    "build:package": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && npm pack",
+    "build:publish": "yarn build:package && cpx *.tgz ../../pre-install"
+  },
+  "devDependencies": {
+    "cpx": "^1.5.0",
+    "rimraf": "^3.0.2",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "bundledDependencies": [
+    "electron-is-dev"
+  ],
+  "dependencies": {
+    "electron-is-dev": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ]
+}
