@@ -26,6 +26,7 @@ export interface ChatMessage {
   senderUid: string;
   senderName: string;
   senderAvatarUrl: string;
+  htmlText?: string | undefined;
   text: string | undefined;
   imageUrls?: string[] | undefined;
   createdAt: number;
@@ -45,18 +46,13 @@ export const toChatMessage = async (m: RawMessage): Promise<ChatMessage> => {
   const createdAt = new Date(m.created_at ?? "").getTime();
   const imageUrls: string[] = [];
   const imageUrl = undefined;
-  // m.message_medias.length > 0 ? m.message_medias[0].media_url : null;
   if (imageUrl) {
     imageUrls.push(imageUrl);
   }
 
   const messageType = MessageType.Text;
-  // m.message_type ? MessageType[m.message_type as keyof typeof MessageType] : MessageType.Text;
   const messageSenderType =
     m.user === "user" ? MessageSenderType.User : MessageSenderType.Ai;
-  // m.message_sender_type
-  //   ? MessageSenderType[m.message_sender_type as keyof typeof MessageSenderType]
-  //   : MessageSenderType.Ai;
 
   const content = m.message ?? "";
   const processedContent = await remark().use(html).process(content);
@@ -68,15 +64,13 @@ export const toChatMessage = async (m: RawMessage): Promise<ChatMessage> => {
     messageType: messageType,
     messageSenderType: messageSenderType,
     senderUid: m.user?.toString() || "0",
-    senderName: m.user === "user" ? "You" : "LLaMA", // m.sender_name ?? "",
+    senderName: m.user === "user" ? "You" : "Assistant",
     senderAvatarUrl:
-      m.user === "user"
-        ? "icons/avatar.svg"
-        : "https://huggingface.co/front/assets/huggingface_logo-noborder.svg", // m.sender_avatar_url ?? "icons/app_icon.svg",
-    text: contentHtml,
+      m.user === "user" ? "icons/avatar.svg" : "icons/app_icon.svg",
+    text: content,
+    htmlText: contentHtml,
     imageUrls: imageUrls,
     createdAt: createdAt,
     status: MessageStatus.Ready,
-    // status: m.status as MessageStatus,
   };
 };

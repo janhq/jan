@@ -13,8 +13,8 @@ export default function renderChatMessage({
   senderName,
   createdAt,
   imageUrls,
+  htmlText,
   text,
-  status,
 }: ChatMessage): React.ReactNode {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const message = useAtomValue(currentStreamingMessageAtom);
@@ -48,7 +48,7 @@ export default function renderChatMessage({
           avatarUrl={senderAvatarUrl}
           senderName={senderName}
           createdAt={createdAt}
-          text={text}
+          text={htmlText ?? text}
         />
       ) : (
         <StreamTextMessage
@@ -57,7 +57,7 @@ export default function renderChatMessage({
           avatarUrl={senderAvatarUrl}
           senderName={senderName}
           createdAt={createdAt}
-          text={text}
+          text={htmlText ?? text}
         />
       );
     default:
