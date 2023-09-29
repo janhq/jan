@@ -52,7 +52,7 @@ export default function useSendChatMessage() {
     addNewMessage(newChatMessage);
 
     const recentMessages = [
-      ...chatMessagesHistory.toSorted(
+      ...chatMessagesHistory.sort(
         (a, b) => parseInt(a.id) - parseInt(b.id)
       ),
       newChatMessage,
