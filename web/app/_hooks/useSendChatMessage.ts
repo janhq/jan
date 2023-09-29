@@ -1,14 +1,16 @@
 import {
   addNewMessageAtom,
-  currentChatMessagesAtom,
+  chatMessages,
   currentConversationAtom,
   currentPromptAtom,
   currentStreamingMessageAtom,
+  getActiveConvoIdAtom,
   showingTyping,
   updateMessageAtom,
 } from "@/_helpers/JotaiWrapper";
 
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { selectAtom } from "jotai/utils";
 import { DataService } from "../../shared/coreService";
 import {
   MessageSenderType,
@@ -16,13 +18,21 @@ import {
   toChatMessage,
 } from "@/_models/ChatMessage";
 import { executeSerial } from "@/_services/pluginService";
+import { useCallback } from "react";
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom);
   const updateStreamMessage = useSetAtom(currentStreamingMessageAtom);
   const addNewMessage = useSetAtom(addNewMessageAtom);
   const updateMessage = useSetAtom(updateMessageAtom);
-  const chatMessagesHistory = useAtomValue(currentChatMessagesAtom);
+  const activeConversationId = useAtomValue(getActiveConvoIdAtom) ?? "";
+
+  const chatMessagesHistory = useAtomValue(
+    selectAtom(
+      chatMessages,
+      useCallback((v) => v[activeConversationId], [activeConversationId])
+    )
+  );
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom);
   const [, setIsTyping] = useAtom(showingTyping);
   const sendChatMessage = async () => {
@@ -120,6 +130,11 @@ export default function useSendChatMessage() {
         }
       }
     }
+    updateMessage(
+      responseChatMessage.id,
+      responseChatMessage.conversationId,
+      answer
+    );
     await executeSerial(DataService.UPDATE_MESSAGE, {
       ...newResponse,
       message: answer,
