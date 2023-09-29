@@ -34,9 +34,9 @@ export default function Dropdown() {
   return (
     <div className="inline-flex align-items-stretch">
       {/* TODO dynamically detect users OS through browser */}
-      <button
-        type="button"
-        className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-3.5 py-2.5 text-base font-semibold text-white bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400"
+      <a
+        className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-3.5 py-2.5 text-base font-semibold text-white bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400 hover:text-white"
+        href={items[0].href}
       >
         <img
           src={require("@site/static/img/apple-logo-white.png").default}
@@ -44,7 +44,7 @@ export default function Dropdown() {
           className="h-5 mr-3 -mt-1"
         />
         Download for Mac (Silicon)
-      </button>
+      </a>
       <Menu as="div" className="relative -ml-px block">
         <Menu.Button className="cursor-pointer relative inline-flex items-center rounded-r-md border-0 border-l border-gray-300 active:border-l active:border-white h-full text-white bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400">
           <span className="sr-only">Open OS options</span>
