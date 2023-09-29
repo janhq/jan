@@ -48,7 +48,7 @@ export default function renderChatMessage({
           avatarUrl={senderAvatarUrl}
           senderName={senderName}
           createdAt={createdAt}
-          text={htmlText ?? text}
+          text={htmlText && htmlText.trim().length > 0 ? htmlText : text}
         />
       ) : (
         <StreamTextMessage
@@ -57,7 +57,7 @@ export default function renderChatMessage({
           avatarUrl={senderAvatarUrl}
           senderName={senderName}
           createdAt={createdAt}
-          text={htmlText ?? text}
+          text={htmlText && htmlText.trim().length > 0 ? htmlText : text}
         />
       );
     default:
