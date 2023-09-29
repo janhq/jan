@@ -116,7 +116,7 @@ export default function useSendChatMessage() {
           const data = JSON.parse(line.replace("data: ", ""));
           answer += data.choices[0]?.delta?.content ?? "";
           if (answer.startsWith("assistant: ")) {
-            answer = answer.replace("assistant: ", "").trim();
+            answer = answer.replace("assistant: ", "");
           }
           updateStreamMessage({
             ...responseChatMessage,
@@ -133,11 +133,11 @@ export default function useSendChatMessage() {
     updateMessage(
       responseChatMessage.id,
       responseChatMessage.conversationId,
-      answer
+      answer.trimEnd()
     );
     await executeSerial(DataService.UPDATE_MESSAGE, {
       ...newResponse,
-      message: answer,
+      message: answer.trimEnd(),
       updated_at: new Date()
         .toISOString()
         .replace("T", " ")
