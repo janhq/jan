@@ -68,7 +68,9 @@ Not supported yet: Apple Intel, Linux RPM, Windows x86|ARM64, AMD ROCm
 
 > See [developer docs](https://docs.jan.ai/docs/) for detailed installation instructions.
 
-## Installation and Usage
+## Contributing
+
+Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file
 
 ### Pre-requisites
 - node >= 20.0.0
@@ -118,23 +120,6 @@ Note: This instruction is tested on MacOS only.
    ```
 
    This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
-
-
-
-## Contributing
-
-Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file
-
-```sh
-# From the root, run:
-yarn install
-
-yarn build:plugins
-
-yarn dev
-```
-
-> See [developer docs]() for guidelines on how to contribute to this project.
 
 ## License
 
