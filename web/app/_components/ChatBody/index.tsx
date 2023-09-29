@@ -5,14 +5,24 @@ import ChatItem from "../ChatItem";
 import { ChatMessage } from "@/_models/ChatMessage";
 import useChatMessages from "@/_hooks/useChatMessages";
 import {
-  currentChatMessagesAtom,
+  chatMessages,
+  getActiveConvoIdAtom,
   showingTyping,
 } from "@/_helpers/JotaiWrapper";
 import { useAtomValue } from "jotai";
+import { selectAtom } from "jotai/utils";
 import LoadingIndicator from "../LoadingIndicator";
 
 const ChatBody: React.FC = () => {
-  const messages = useAtomValue(currentChatMessagesAtom);
+  const activeConversationId = useAtomValue(getActiveConvoIdAtom) ?? "";
+  const messageList = useAtomValue(
+    selectAtom(
+      chatMessages,
+      useCallback((v) => v[activeConversationId], [activeConversationId])
+    )
+  );
+  const [content, setContent] = useState<React.JSX.Element[]>([]);
+
   const isTyping = useAtomValue(showingTyping);
   const [offset, setOffset] = useState(0);
   const { loading, hasMore } = useChatMessages(offset);
@@ -35,13 +45,18 @@ const ChatBody: React.FC = () => {
     [loading, hasMore]
   );
 
-  const content = messages.map((message, index) => {
-    if (messages.length === index + 1) {
-      // @ts-ignore
-      return <ChatItem ref={lastPostRef} message={message} key={message.id} />;
-    }
-    return <ChatItem message={message} key={message.id} />;
-  });
+  React.useEffect(() => {
+    const list = messageList?.map((message, index) => {
+      if (messageList?.length === index + 1) {
+        return (
+          // @ts-ignore
+          <ChatItem ref={lastPostRef} message={message} key={message.id} />
+        );
+      }
+      return <ChatItem message={message} key={message.id} />;
+    });
+    setContent(list);
+  }, [messageList, lastPostRef]);
 
   return (
     <div className="flex flex-col-reverse flex-1 py-4 overflow-y-auto scroll">
