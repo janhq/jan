@@ -56,7 +56,7 @@ export default function HomepageSectionOne() {
                       />
                       {feature.name}
                     </dt>{" "}
-                    <dd className="inline">{feature.description}</dd>
+                    <dt>{feature.description}</dt>
                   </div>
                 ))}
               </dl>

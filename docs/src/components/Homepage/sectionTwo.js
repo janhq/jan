@@ -57,7 +57,7 @@ export default function sectionTwo() {
                       />
                       {feature.name}
                     </dt>{" "}
-                    <dd className="inline">{feature.description}</dd>
+                    <dt>{feature.description}</dt>
                   </div>
                 ))}
               </dl>
