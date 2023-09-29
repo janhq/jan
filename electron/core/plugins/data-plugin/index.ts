@@ -92,7 +92,7 @@ const createConversation = (conversation: any) =>
           resolve(res);
         });
     } else {
-      resolve("-");
+      resolve(undefined);
     }
   });
 const createMessage = (message: any) =>
@@ -100,9 +100,24 @@ const createMessage = (message: any) =>
     if (window && window.electronAPI) {
       window.electronAPI
         .invokePluginFunc(MODULE_PATH, "storeMessage", message)
-        .then((res: any) => resolve(res));
+        .then((res: any) => {
+          resolve(res);
+        });
     } else {
-      resolve("-");
+      resolve(undefined);
+    }
+  });
+
+const updateMessage = (message: any) =>
+  new Promise((resolve) => {
+    if (window && window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "updateMessage", message)
+        .then((res: any) => {
+          resolve(res);
+        });
+    } else {
+      resolve(undefined);
     }
   });
 
@@ -128,6 +143,7 @@ export function init({ register }: { register: any }) {
   setupDb();
   register("getConversations", "getConv", getConversations, 1);
   register("createConversation", "insertConv", createConversation);
+  register("updateMessage", "updateMessage", updateMessage);
   register("deleteConversation", "deleteConv", deleteConversation);
   register("createMessage", "insertMessage", createMessage);
   register("getConversationMessages", "getMessages", getConversationMessages);
