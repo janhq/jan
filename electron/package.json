@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "electron-is-dev": "^2.0.0",
+    "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
     "node-llama-cpp": "^2.4.1",
     "pluggable-electron": "^0.6.0",
