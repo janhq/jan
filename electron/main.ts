@@ -39,7 +39,7 @@ const createMainWindow = () => {
 
   ipcMain.handle(
     "invokePluginFunc",
-    async (event, modulePath, method, ...args) => {
+    async (_event, modulePath, method, ...args) => {
       const module = join(app.getPath("userData"), "plugins", modulePath);
       return await import(/* webpackIgnore: true */ module)
         .then((plugin) => {
@@ -69,24 +69,6 @@ const createMainWindow = () => {
   });
 
   if (isDev) mainWindow.webContents.openDevTools();
-};
-const migratePlugins = () => {
-  return new Promise((resolve) => {
-    if (store.get("migrated_version") !== app.getVersion()) {
-      console.log("start migration:", store.get("migrated_version"));
-      const userDataPath = app.getPath("userData");
-      const fullPath = join(userDataPath, "plugins");
-
-      rmdir(fullPath, { recursive: true }, function (err) {
-        if (err) console.log(err);
-        store.set("migrated_version", app.getVersion());
-        console.log("migrate plugins done");
-        resolve(undefined);
-      });
-    } else {
-      resolve(undefined);
-    }
-  });
 };
 
 app
@@ -217,6 +199,25 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+
+function migratePlugins() {
+  return new Promise((resolve) => {
+    if (store.get("migrated_version") !== app.getVersion()) {
+      console.log("start migration:", store.get("migrated_version"));
+      const userDataPath = app.getPath("userData");
+      const fullPath = join(userDataPath, "plugins");
+
+      rmdir(fullPath, { recursive: true }, function (err) {
+        if (err) console.log(err);
+        store.set("migrated_version", app.getVersion());
+        console.log("migrate plugins done");
+        resolve(undefined);
+      });
+    } else {
+      resolve(undefined);
+    }
+  });
+};
 
 function setupPlugins() {
   init({
