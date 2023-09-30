@@ -1,20 +1,14 @@
 "use client";
 
-import {
-  currentConversationAtom,
-  showingAdvancedPromptAtom,
-} from "@/_helpers/JotaiWrapper";
-import { useAtomValue, useSetAtom } from "jotai";
+import { showingAdvancedPromptAtom } from "@/_helpers/JotaiWrapper";
+import { useSetAtom } from "jotai";
 import SecondaryButton from "../SecondaryButton";
 import SendButton from "../SendButton";
-import { ProductType } from "@/_models/Product";
 
 const BasicPromptAccessories: React.FC = () => {
   const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom);
-  const currentConversation = useAtomValue(currentConversationAtom);
 
   const shouldShowAdvancedPrompt = false;
-  // currentConversation?.product.type === ProductType.ControlNet;
 
   return (
     <div
