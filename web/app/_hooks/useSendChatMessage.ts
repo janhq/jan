@@ -11,7 +11,7 @@ import {
 
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { selectAtom } from "jotai/utils";
-import { DataService } from "../../shared/coreService";
+import { DataService, InfereceService } from "../../shared/coreService";
 import {
   MessageSenderType,
   RawMessage,
@@ -52,9 +52,7 @@ export default function useSendChatMessage() {
     addNewMessage(newChatMessage);
 
     const recentMessages = [
-      ...chatMessagesHistory.sort(
-        (a, b) => parseInt(a.id) - parseInt(b.id)
-      ),
+      ...chatMessagesHistory.sort((a, b) => parseInt(a.id) - parseInt(b.id)),
       newChatMessage,
     ]
       .slice(-10)
@@ -67,23 +65,21 @@ export default function useSendChatMessage() {
               : "assistant",
         };
       });
-    const response = await fetch(
-      "http://localhost:8080/llama/chat_completion",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-          "Access-Control-Allow-Origi": "*",
-        },
-        body: JSON.stringify({
-          messages: recentMessages,
-          stream: true,
-          model: "gpt-3.5-turbo",
-          max_tokens: 500,
-        }),
-      }
-    );
+    const url = await executeSerial(InfereceService.INFERENCE_URL);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        "Access-Control-Allow-Origi": "*",
+      },
+      body: JSON.stringify({
+        messages: recentMessages,
+        stream: true,
+        model: "gpt-3.5-turbo",
+        max_tokens: 500,
+      }),
+    });
     const stream = response.body;
 
     const decoder = new TextDecoder("utf-8");

@@ -28,7 +28,7 @@ export enum ModelService {
 }
 
 export enum InfereceService {
-  PROMPT = "prompt",
+  INFERENCE_URL = "inferenceUrl",
   INIT_MODEL = "initModel",
 }
 
