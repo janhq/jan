@@ -1,0 +1,4 @@
+---
+title: Products
+slug: /product
+---

@@ -1,5 +1,0 @@
-mutation updateMessage($id: uuid = "", $data: messages_set_input!) {
-  update_messages_by_pk(pk_columns: { id: $id }, _set: $data) {
-    ...MessageDetail
-  }
-}

@@ -1,5 +1,0 @@
-mutation deleteConversation($id: uuid!) {
-  delete_conversations_by_pk(id: $id) {
-    id
-  }
-}

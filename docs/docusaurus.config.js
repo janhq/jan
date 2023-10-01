@@ -9,21 +9,23 @@ const config = {
   title: "Jan Documentation",
   tagline: "Self-hosted AI inference platform",
   favicon: "img/favicon.ico",
-
   // Set the production url of your site here
   url: "https://docs.jan.ai",
+  title: "Jan",
+  tagline: "Run your own AI",
+  favicon: "img/favicon.ico",
+  // Set the production url of your site here
+  url: "https://jan.ai",
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: "/",
-
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: "janhq", // Usually your GitHub org/user name.
   projectName: "jan", // Usually your repo name.
-
   onBrokenLinks: "ignore",
+  onBrokenLinks: "warn",
   onBrokenMarkdownLinks: "warn",
-
   // Even if you don't use internalization, you can use this field to set useful
   // metadata like html lang. For example, if your site is Chinese, you may want
   // to replace "en" with "zh-Hans".
@@ -33,6 +35,21 @@ const config = {
   },
 
   // Plugins we added
+
+  plugins: [
+    async function myPlugin(context, options) {
+      return {
+        name: "docusaurus-tailwindcss",
+        configurePostCss(postcssOptions) {
+          // Appends TailwindCSS and AutoPrefixer.
+          postcssOptions.plugins.push(require("tailwindcss"));
+          postcssOptions.plugins.push(require("autoprefixer"));
+          return postcssOptions;
+        },
+      };
+    },
+  ],
+
 
   // Only for react live
   themes: ["@docusaurus/theme-live-codeblock"],
@@ -56,6 +73,8 @@ const config = {
         sitemap: {
           changefreq: "weekly",
           priority: 0.5,
+          changefreq: "daily",
+          priority: 1.0,
           ignorePatterns: ["/tags/**"],
           filename: "sitemap.xml",
         },
@@ -84,6 +103,7 @@ const config = {
           {
             spec: "openapi/OpenAPISpec.json", // can be local file, url, or parsed json object
             route: "/reference/",
+            route: "/api/",
           },
         ],
         theme: {
@@ -106,14 +126,16 @@ const config = {
       },
       navbar: {
         title: "Jan Docs",
+        title: "Jan",
         logo: {
           alt: "Jan Logo",
           src: "img/logo.svg",
         },
         items: [
-          // Navbar left
+          // Navbar Top
           {
             type: "docSidebar",
+
             sidebarId: "quickstartSidebar",
             position: "left",
             label: "Getting Started",
@@ -129,9 +151,26 @@ const config = {
             sidebarId: "hardwareSidebar",
             position: "left",
             label: "Hardware",
+            sidebarId: "featuresSidebar",
+            position: "left",
+            label: "Platform",
           },
           {
             type: "docSidebar",
+            sidebarId: "solutionsSidebar",
+            position: "left",
+            label: "Use Cases",
+          },
+          {
+            type: "docSidebar",
+            sidebarId: "companySidebar",
+            position: "left",
+            label: "Company",
+          },
+          // Navbar right
+          {
+            type: "docSidebar",
+
             sidebarId: "integrationsSidebar",
             position: "left",
             label: "Integrations",
@@ -154,6 +193,20 @@ const config = {
             sidebarId: "aboutSidebar",
             position: "right",
             label: "About",
+            sidebarId: "docsSidebar",
+            position: "right",
+            label: "Docs",
+          },
+          {
+            type: "docSidebar",
+            sidebarId: "hardwareSidebar",
+            position: "right",
+            label: "Hardware",
+          },
+          {
+            position: "right",
+            label: "API",
+            to: "/api",
           },
           {
             href: "https://github.com/janhq/jan",
@@ -175,7 +228,25 @@ const config = {
               {
                 label: "Guides",
                 to: "/guides",
+            title: "Jan",
+            items: [
+              {
+                label: "Home",
+                to: "/",
               },
+              {
+                label: "Platform",
+                to: "/platform",
+              },
+              {
+                label: "Use Cases",
+                to: "/solutions",
+              },
+            ],
+          },
+          {
+            title: "Docs",
+            items: [
               {
                 label: "Developer",
                 to: "/developer",
@@ -187,6 +258,20 @@ const config = {
               {
                 label: "Changelog",
                 to: "/blog",
+                label: "Docs",
+                to: "/docs",
+              },
+              {
+                label: "Hardware",
+                to: "/hardware",
+              },
+              {
+                label: "API",
+                to: "/api",
+              },
+              {
+                label: "Changelog",
+                to: "/changelog",
               },
             ],
           },
@@ -196,6 +281,7 @@ const config = {
               {
                 label: "Discord",
                 href: "https://discord.gg/FTk2MvZwJH",
+
               },
               {
                 label: "Telegram",
@@ -205,10 +291,15 @@ const config = {
                 label: "Twitter",
                 href: "https://twitter.com/askjanai",
               },
+              {
+                label: "Twitter",
+                href: "https://twitter.com/jan_dotai",
+              },
             ],
           },
           {
             title: "More",
+            title: "Company",
             items: [
               {
                 label: "About",
@@ -217,6 +308,9 @@ const config = {
               {
                 label: "Blog",
                 href: "https://blog.jan.ai",
+
+                label: "Careers",
+                href: "https://janai.bamboohr.com/careers",
               },
               {
                 label: "GitHub",
@@ -231,6 +325,11 @@ const config = {
         theme: lightCodeTheme,
         darkTheme: darkCodeTheme,
         additionalLanguages: ["python"],
+      },
+      colorMode: {
+        defaultMode: "dark",
+        disableSwitch: false,
+        respectPrefersColorScheme: false,
       },
     }),
 };

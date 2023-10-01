@@ -1,9 +1,0 @@
-mutation createMessage(
-  $data: messages_insert_input!
-) {
-  insert_messages_one(
-    object: $data
-  ) {
-    ...MessageDetail
-  }
-}
