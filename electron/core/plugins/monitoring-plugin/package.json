@@ -1,0 +1,32 @@
+{
+  "name": "monitoring-plugin",
+  "version": "0.0.1",
+  "description": "",
+  "main": "dist/bundle.js",
+  "author": "Jan",
+  "license": "MIT",
+  "activationPoints": [
+    "init"
+  ],
+  "scripts": {
+    "build": "webpack --config webpack.config.js",
+    "build:package": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && npm pack",
+    "build:publish": "yarn build:package && cpx *.tgz ../../pre-install"
+  },
+  "devDependencies": {
+    "rimraf": "^3.0.2",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "systeminformation": "^5.21.8"
+  },
+  "bundledDependencies": [
+    "systeminformation"
+  ],
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ]
+}

@@ -20,13 +20,14 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan lets you run AI on your own hardware, and with 1-click installs for the latest models. Easy-to-use yet powerful, with helpful tools to monitor and manage software-hardware performance. 
+Jan lets you run AI on your own hardware, with helpful tools to manage models and monitor your hardware performance.
 
-Jan runs on a wide variety of hardware. We run on consumer-grade GPUs and Mac Minis, as well as datacenter-grade DGX H100 clusters. 
+In the background, Jan runs [Nitro](https://nitro.jan.ai), a C++ inference engine. It runs various model formats (GGUF/TensorRT) on various hardware (Mac M1/M2/Intel, Windows, Linux, and datacenter-grade Nvidia GPUs) with optional GPU acceleration.
 
-Jan can be run as a server or cloud-native application for enterprise. We offer enterprise plugins for LDAP integration and Audit Logs. Contact us at [hello@jan.ai](mailto:hello@jan.ai) for more details. 
+> See the Nitro codebase at https://nitro.jan.ai.
 
-Jan is free, [open core](https://en.wikipedia.org/wiki/Open-core_model), and Sustainable Use Licensed.
+<!-- TODO: uncomment this later when we have this feature -->
+<!-- Jan can be run as a server or cloud-native application for enterprise. We offer enterprise plugins for LDAP integration and Audit Logs. Contact us at [hello@jan.ai](mailto:hello@jan.ai) for more details. -->
 
 ## Demo
 
@@ -34,208 +35,107 @@ Jan is free, [open core](https://en.wikipedia.org/wiki/Open-core_model), and Sus
   <img style='border:1px solid #000000' src="https://github.com/janhq/jan/assets/69952136/1f9bb48c-2e70-4633-9f68-7881cd925972" alt="Jan Web GIF">
 </p>
 
-## Features
+## Quicklinks
 
-**Self-Hosted AI**
-- [x] Self-hosted Llama2 and LLMs 
-- [ ] Self-hosted StableDiffusion and Controlnet
-- [ ] 1-click installs for Models (coming soon)
+- Developer documentation: https://jan.ai/docs (Work in Progress)
+- Desktop app: Download at https://jan.ai/
+- Mobile app shell: Download via [App Store](https://apps.apple.com/us/app/jan-on-device-ai-cloud-ais/id6449664703) | [Android](https://play.google.com/store/apps/details?id=com.jan.ai)
+- Nitro (C++ AI Engine): https://nitro.jan.ai
 
-**3rd-party AIs**
-- [ ] Connect to ChatGPT, Claude via API Key (coming soon)
-- [ ] Security policy engine for 3rd-party AIs (coming soon)
-- [ ] Pre-flight PII and Sensitive Data checks (coming soon)
+## Plugins
 
-**Multi-Device**
-- [x] Web App
-- [ ] Jan Mobile support for custom Jan server (in progress)
-- [ ] Cloud deployments (coming soon)
+Jan supports core & 3rd party extensions:
 
-**Organization Tools**
-- [x] Multi-user support 
-- [ ] Audit and Usage logs (coming soon)
-- [ ] Compliance and Audit policy (coming soon)
+- [x] **LLM chat**: Self-hosted Llama2 and LLMs
+- [x] **Model Manager**: 1-click to install, swap, and delete models
+- [x] **Storage**: Optionally store your conversation history and other data in SQLite/your storage of choice
+- [ ] **3rd-party AIs**: Connect to ChatGPT, Claude via API Key (in progress)
+- [ ] **Cross device support**: Mobile & Web support for custom shared servers (in progress)
+- [ ] **File retrieval**: User can upload private and run a vectorDB (planned)
+- [ ] **Multi-user support**: Share a single server across a team/friends (planned)
+- [ ] **Compliance**: Auditing and flagging features (planned)
 
-**Hardware Support**
+## Hardware Support
 
-- [x] Nvidia GPUs 
-- [x] Apple Silicon (in progress)
-- [x] CPU support via llama.cpp
-- [ ] Nvidia GPUs using TensorRT (in progress)
+Nitro provides both CPU and GPU support, via [llama.cpp](https://github.com/ggerganov/llama.cpp) and [TensorRT](https://github.com/NVIDIA/TensorRT), respectively.
 
-## Documentation
+- [x] Nvidia GPUs (accelerated)
+- [x] Apple M-series (accelerated)
+- [x] Linux DEB
+- [x] Windows x64
 
-👋 https://docs.jan.ai (Work in Progress)
+Not supported yet: Apple Intel, Linux RPM, Windows x86|ARM64, AMD ROCm
 
-## Installation
+> See [developer docs](https://docs.jan.ai/docs/) for detailed installation instructions.
 
-> ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
+## Contributing
 
-### Step 1: Install Docker
+Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file
 
-Jan is currently packaged as a Docker Compose application. 
+### Pre-requisites
+- node >= 20.0.0
+- yarn >= 1.22.0
 
-- Docker ([Installation Instructions](https://docs.docker.com/get-docker/))
-- Docker Compose ([Installation Instructions](https://docs.docker.com/compose/install/))
+### Use as complete suite (in progress)
+### For interactive development
 
-### Step 2: Clone Repo
+Note: This instruction is tested on MacOS only.
 
-```bash
-git clone https://github.com/janhq/jan.git
-cd jan
-```
+1. **Clone the Repository:**
 
-### Step 3: Configure `.env`
+   ```
+   git clone https://github.com/janhq/jan
+   git checkout feature/hackathon-refactor-jan-into-electron-app
+   cd jan
+   ```
 
-We provide a sample `.env` file that you can use to get started.
+2. **Install dependencies:**
 
-```shell
-cp sample.env .env
-```
+   ```
+   yarn install
 
-You will need to set the following `.env` variables
+   # Packing base plugins
+   yarn build:plugins
+   ```
 
-```shell
-# TODO: Document .env variables
-```
+4. **Run development and Using Jan Desktop**
 
-### Step 4: Install Models
+   ```
+   yarn dev
+   ```
+   This will start the development server and open the desktop app.
+   In this step, there are a few notification about installing base plugin, just click `OK` and `Next` to continue.
 
-> Note: These step will change soon as we will be switching to [Nitro](https://github.com/janhq/nitro), an Accelerated Inference Server written in C++
+### For production build
 
-#### Step 4.1: Install Mamba
+   ```bash
+   # Do step 1 and 2 in previous section
+   git clone https://github.com/janhq/jan
+   cd jan
+   yarn install
+   yarn build:plugins
 
-> For complete Mambaforge installation instructions, see [miniforge repo](https://github.com/conda-forge/miniforge)
+   # Build the app
+   yarn build
+   ```
 
-Install Mamba to handle native python binding (which can yield better performance on Mac M/ NVIDIA)
+   This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
 
-```bash
-curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh"
-bash Mambaforge-$(uname)-$(uname -m).sh
-rm Mambaforge-$(uname)-$(uname -m).sh
+## License
 
-# Create environment
-conda create -n jan python=3.9.16
-conda activate jan
-```
+Jan is free, [open core](https://en.wikipedia.org/wiki/Open-core_model), and Sustainable Use Licensed.
 
-Uninstall any previous versions of `llama-cpp-python`
-```bash
-pip uninstall llama-cpp-python -y
-```
+## Acknowledgements
 
-#### Step 4.2: Install `llama-cpp-python`
+Jan builds on top of other open-source projects:
 
-> Note: This step will change soon once [Nitro](https://github.com/janhq/nitro) (our accelerated inference server written in C++) is released
-
-- On Mac
-
-```bash
-# See https://github.com/abetlen/llama-cpp-python/blob/main/docs/install/macos.md
-CMAKE_ARGS="-DLLAMA_METAL=on" FORCE_CMAKE=1 pip install -U llama-cpp-python --no-cache-dir
-pip install 'llama-cpp-python[server]'
-```
-
-- On Linux with NVIDIA GPU Hardware Acceleration
-
-```bash
-# See https://github.com/abetlen/llama-cpp-python#installation-with-hardware-acceleration
-CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python
-pip install 'llama-cpp-python[server]'
-```
-
-- On Linux with Intel/ AMD CPU (support for AVX-2/ AVX-512)
-
-```bash
-CMAKE_ARGS="-DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS" FORCE_CMAKE=1 pip install llama-cpp-python
-pip install 'llama-cpp-python[server]'
-```
-
-We recommend that Llama2-7B (4-bit quantized) as a basic model to get started.
-
-You will need to download the models to the `models` folder at root level.
-
-```shell
-# Downloads model (~4gb)
-# Download time depends on your internet connection and HuggingFace's bandwidth
-# In this part, please head over to any source contains `.gguf` format model - https://huggingface.co/models?search=gguf
-wget https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_0.gguf -P models
-```
-
-- Run the model in host machine
-```bash
-# Please change the value of --model key as your corresponding model path
-# The --n_gpu_layers 1 means using acclerator (can be Metal on Mac, NVIDIA GPU on on linux with NVIDIA GPU)
-# This service will run at `http://localhost:8000` in host level
-# The backend service inside docker compose will connect to this service by using `http://host.docker.internal:8000`
-python3 -m llama_cpp.server --model models/llama-2-7b.Q4_0.gguf --n_gpu_layers 1
-```
-
-### Step 5: `docker compose up`
-
-Jan utilizes Docker Compose to run all services:
-
-```shell
-docker compose up -d # Detached mode
-```
-
-The table below summarizes the services and their respective URLs and credentials.
-
-| Service                                          | Container Name       | URL and Port          | Credentials                                                                        |
-| ------------------------------------------------ | -------------------- | --------------------- | ---------------------------------------------------------------------------------- |
-| Jan Web                                          | jan-web-*            | http://localhost:3000 | Set in `conf/keycloak_conf/example-realm.json` <br />- Default Username / Password |
-| [Hasura](https://hasura.io) (Backend)            | jan-graphql-engine-* | http://localhost:8080 | Set in `conf/sample.env_app-backend` <br /> - `HASURA_GRAPHQL_ADMIN_SECRET`        |
-| [Keycloak](https://www.keycloak.org/) (Identity) | jan-keycloak-*       | http://localhost:8088 | Set in `.env` <br />- `KEYCLOAK_ADMIN` <br />- `KEYCLOAK_ADMIN_PASSWORD`           |                                                                     |
-| PostgresDB                                       | jan-postgres-*       | http://localhost:5432 | Set in `.env`                                                                      |
-
-### Step 6: Configure Keycloak
-
-- [ ] Refactor [Keycloak Instructions](KC.md) into main README.md
-- [ ] Changing login theme
-
-### Step 7: Use Jan
-
-- Launch the web application via `http://localhost:3000`.
-- Login with default user (username: `username`, password: `password`)
-
-### Step 8: Deploying to Production
-
-- [ ] TODO
-
-## About Jan
-
-Jan is a commercial company with a [Fair Code](https://faircode.io/) business model. This means that while we are open-source and can used for free, we require commercial licenses for specific use cases (e.g. hosting Jan as a service). 
-
-We are a team of engineers passionate about AI, productivity and the future of work. We are funded through consulting contracts and enterprise licenses. Feel free to reach out to us!
-
-### Repo Structure
-
-Jan comprises of several repositories: 
-
-| Repo                                                    | Purpose                                                                                                                                                       |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Jan](https://github.com/janhq/jan)                     | AI Platform to run AI in the enterprise. Easy-to-use for users, and packed with useful organizational and compliance features.                                |
-| [Jan Mobile](https://github.com/janhq/jan-react-native) | Mobile App that can be pointed to a custom Jan server.                                                                                                        |
-| [Nitro](https://github.com/janhq/nitro)                 | Inference Engine that runs AI on different types of hardware. Offers popular API formats (e.g. OpenAI, Clipdrop). Written in C++ for blazing fast performance |
-
-### Architecture
-
-Jan builds on top of several open-source projects:
-
+- [llama.cpp](https://github.com/ggerganov/llama.cpp)
+- [TensorRT](https://github.com/NVIDIA/TensorRT)
 - [Keycloak Community](https://github.com/keycloak/keycloak) (Apache-2.0)
-- [Hasura Community Edition](https://github.com/hasura/graphql-engine) (Apache-2.0)
 
-We may re-evaluate this in the future, given different customer requirements. 
+## Contact
 
-
-### Contributing
-
-Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to contribute to this project.
-
-Please note that Jan intends to build a sustainable business that can provide high quality jobs to its contributors. If you are excited about our mission and vision, please contact us to explore opportunities. 
-
-### Contact
-
-- For support: please file a Github ticket
-- For questions: join our Discord [here](https://discord.gg/FTk2MvZwJH)
-- For long form inquiries: please email hello@jan.ai
+- Bugs & requests: file a Github ticket
+- For discussion: join our Discord [here](https://discord.gg/FTk2MvZwJH)
+- For business inquiries: email hello@jan.ai
+- For jobs: please email hr@jan.ai
