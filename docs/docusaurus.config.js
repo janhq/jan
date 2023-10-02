@@ -110,7 +110,6 @@ const config = {
         playgroundPosition: "bottom",
       },
       navbar: {
-        hideOnScroll: true,
         title: "Jan",
         logo: {
           alt: "Jan Logo",
