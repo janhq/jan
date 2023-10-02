@@ -8,6 +8,7 @@ import { useAtomValue } from "jotai";
 
 export default function useGetAvailableModels() {
   const downloadState = useAtomValue(modelDownloadStateAtom);
+  const [allAvailableModels, setAllAvailableModels] = useState<Product[]>([]);
   const [availableModels, setAvailableModels] = useState<Product[]>([]);
   const [downloadedModels, setDownloadedModels] = useState<Product[]>([]);
 
@@ -15,6 +16,7 @@ export default function useGetAvailableModels() {
     const avails = await getAvailableModels();
     const downloaded = await getModelFiles();
 
+    setAllAvailableModels(avails);
     const availableOrDownloadingModels: Product[] = avails;
     const successfullDownloadModels: Product[] = [];
 
@@ -36,6 +38,7 @@ export default function useGetAvailableModels() {
   }, []);
 
   return {
+    allAvailableModels,
     availableModels,
     downloadedModels,
     getAvailableModelExceptDownloaded,

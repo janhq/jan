@@ -1,3 +1,4 @@
+import useGetAvailableModels from "@/_hooks/useGetAvailableModels";
 import ExploreModelItem from "../ExploreModelItem";
 import HeaderTitle from "../HeaderTitle";
 import SearchBar from "../SearchBar";
@@ -14,46 +15,10 @@ const tags = [
   "Coding",
 ];
 const checkboxs = ["GGUF", "TensorRT", "Meow", "JigglyPuff"];
-const data = [
-  {
-    name: "Llama-7B-Chat-GGUF",
-    total: 107000,
-    status: "Recommended",
-    modelFormat: "GGUF",
-    releaseDate: "20 Sep 2023",
-    hardwareCompatibility: ["Insufficient RAM", "Compatible"],
-    expectedPerformance: "medium, balanced quality",
-    description:
-      "This model is made for chatting. Primary intended uses The primary use of LLaMA is for research on large language LLaMA is research.",
-    tags: ["Roleplay", "Professional"],
-  },
-  {
-    name: "Llama-7B-Chat-GGUF",
-    total: 107000,
-    status: "Recommended",
-    modelFormat: "GGUF",
-    releaseDate: "20 Sep 2023",
-    hardwareCompatibility: ["Insufficient RAM", "Compatible"],
-    expectedPerformance: "medium, balanced quality",
-    description:
-      "This model is made for chatting. Primary intended uses The primary use of LLaMA is for research on large language LLaMA is research.",
-    tags: ["Roleplay", "Professional"],
-  },
-  {
-    name: "Llama-7B-Chat-GGUF",
-    total: 107000,
-    status: "Recommended",
-    modelFormat: "GGUF",
-    releaseDate: "20 Sep 2023",
-    hardwareCompatibility: ["Insufficient RAM", "Compatible"],
-    expectedPerformance: "medium, balanced quality",
-    description:
-      "This model is made for chatting. Primary intended uses The primary use of LLaMA is for research on large language LLaMA is research.",
-    tags: ["Roleplay", "Professional"],
-  },
-];
 
 const ExploreModelContainer: React.FC = () => {
+  const { allAvailableModels } = useGetAvailableModels();
+
   return (
     <div className="flex flex-col w-full h-full pl-[63px] pr-[89px] pt-[60px] overflow-y-auto">
       <HeaderTitle title="Explore Models" />
@@ -77,8 +42,8 @@ const ExploreModelContainer: React.FC = () => {
         <div className="flex-[3_3_0%]">
           <h2 className="font-semibold text-xs mb-[18px]">Results</h2>
           <div className="flex flex-col gap-[31px]">
-            {data.map((item, index) => (
-              <ExploreModelItem key={index} {...item} />
+            {allAvailableModels.map((item) => (
+              <ExploreModelItem key={item.id} model={item} />
             ))}
           </div>
         </div>

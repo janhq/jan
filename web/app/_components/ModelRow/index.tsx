@@ -7,6 +7,7 @@ import { useAtomValue } from "jotai";
 import { currentProductAtom } from "@/_helpers/JotaiWrapper";
 import ModelActionButton, { ModelActionType } from "../ModelActionButton";
 import useStartStopModel from "@/_hooks/useStartStopModel";
+import useDeleteModel from "@/_hooks/useDeleteModel";
 
 type Props = {
   model: Product;
@@ -15,6 +16,7 @@ type Props = {
 const ModelRow: React.FC<Props> = ({ model }) => {
   const { startModel } = useStartStopModel();
   const activeModel = useAtomValue(currentProductAtom);
+  const { deleteModel } = useDeleteModel();
 
   let status = ModelStatus.Installed;
   if (activeModel && activeModel.id === model.id) {
@@ -32,7 +34,9 @@ const ModelRow: React.FC<Props> = ({ model }) => {
     }
   };
 
-  const onDeleteClick = () => {};
+  const onDeleteClick = () => {
+    deleteModel(model);
+  };
 
   return (
     <tr
