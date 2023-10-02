@@ -5,8 +5,8 @@ on:
     tags: ['v*.*.*']
 
 jobs:
-  build-macos-app:
-    runs-on: macos-latest
+  build-macos-silocon:
+    runs-on: [self-hosted, macOS, ARM64]
 
     permissions:
       contents: write
