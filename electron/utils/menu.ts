@@ -1,5 +1,5 @@
 // @ts-nocheck
-const { app, Menu } = require("electron");
+const { app, Menu, dialog } = require("electron");
 const isMac = process.platform === "darwin";
 const { autoUpdater } = require("electron-updater");
 
@@ -12,7 +12,13 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
             { role: "about" },
             {
               label: "Check for Updates...",
-              click: () => autoUpdater.checkForUpdates(),
+              click: () =>
+                autoUpdater.checkForUpdatesAndNotify().then((e) => {
+                  if (!e || e.updateInfo.files.length === 0)
+                    dialog.showMessageBox({
+                      message: `There are currently no updates available.`,
+                    });
+                }),
             },
             { type: "separator" },
             { role: "services" },
