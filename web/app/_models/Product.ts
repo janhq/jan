@@ -27,4 +27,10 @@ export interface Product {
   updatedAt?: number;
   fileName?: string;
   downloadUrl?: string;
+
+  accelerated: boolean; // TODO: add this in the database
+  totalSize: number; // TODO: add this in the database
+  format: string; // TODO: add this in the database // GGUF or something else
+  status: string; // TODO: add this in the database // Downloaded, Active
+  releaseDate: number; // TODO: add this in the database
 }

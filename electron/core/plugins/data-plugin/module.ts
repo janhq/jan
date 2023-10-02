@@ -168,7 +168,7 @@ function getFinishedDownloadModels() {
 
     const query = `SELECT * FROM models WHERE finish_download_at != -1 ORDER BY finish_download_at DESC`;
     db.all(query, (err: Error, row: any) => {
-      res(row);
+      res(row.map((item: any) => parseToProduct(item)));
     });
     db.close();
   });
@@ -371,6 +371,31 @@ function getConversationMessages(conversation_id: any) {
     });
     db.close();
   });
+}
+
+function parseToProduct(row: any) {
+  const product = {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description,
+    avatarUrl: row.avatar_url,
+    longDescription: row.long_description,
+    technicalDescription: row.technical_description,
+    author: row.author,
+    version: row.version,
+    modelUrl: row.model_url,
+    nsfw: row.nsfw,
+    greeting: row.greeting,
+    type: row.type,
+    inputs: row.inputs,
+    outputs: row.outputs,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+    fileName: row.file_name,
+    downloadUrl: row.download_url,
+  };
+  return product;
 }
 
 module.exports = {
