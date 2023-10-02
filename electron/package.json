@@ -30,6 +30,7 @@
     }
   },
   "scripts": {
+    "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "dev": "tsc -p . && electron .",
     "build": "tsc -p . && electron-builder -p never -mw",
     "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mw",
@@ -37,6 +38,7 @@
   },
   "dependencies": {
     "electron-is-dev": "^2.0.0",
+    "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
     "node-llama-cpp": "^2.4.1",
     "pluggable-electron": "^0.6.0",
@@ -44,9 +46,12 @@
     "request-progress": "^3.0.0"
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.7.3",
+    "@typescript-eslint/parser": "^6.7.3",
     "concurrently": "^8.2.1",
     "electron": "26.2.1",
     "electron-builder": "^24.6.4",
+    "eslint-plugin-react": "^7.33.2",
     "wait-on": "^7.0.1"
   },
   "installConfig": {

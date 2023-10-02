@@ -8,35 +8,38 @@ import {
 } from "electron";
 import { readdirSync } from "fs";
 import { resolve, join, extname } from "path";
-import { unlink, createWriteStream } from "fs";
+import { rmdir, unlink, createWriteStream } from "fs";
 import isDev = require("electron-is-dev");
 import { init } from "./core/plugin-manager/pluginMgr";
 const { autoUpdater } = require("electron-updater");
+const Store = require("electron-store");
 // @ts-ignore
 import request = require("request");
 // @ts-ignore
 import progress = require("request-progress");
 
 let mainWindow: BrowserWindow | undefined = undefined;
+const store = new Store();
 
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
 const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    width: electronScreen.getPrimaryDisplay().workArea.width,
-    height: electronScreen.getPrimaryDisplay().workArea.height,
+    width: 1200,
+    height: 800,
     show: false,
     backgroundColor: "white",
     webPreferences: {
       nodeIntegration: true,
       preload: join(__dirname, "preload.js"),
+      webSecurity: false,
     },
   });
 
   ipcMain.handle(
     "invokePluginFunc",
-    async (event, modulePath, method, ...args) => {
+    async (_event, modulePath, method, ...args) => {
       const module = join(app.getPath("userData"), "plugins", modulePath);
       return await import(/* webpackIgnore: true */ module)
         .then((plugin) => {
@@ -68,88 +71,93 @@ const createMainWindow = () => {
   if (isDev) mainWindow.webContents.openDevTools();
 };
 
-app.whenReady().then(() => {
-  createMainWindow();
-  setupPlugins();
-  autoUpdater.checkForUpdates();
+app
+  .whenReady()
+  .then(migratePlugins)
+  .then(() => {
+    createMainWindow();
+    setupPlugins();
+    autoUpdater.checkForUpdates();
 
-  ipcMain.handle("basePlugins", async (event) => {
-    const basePluginPath = join(
-      __dirname,
-      "../",
-      isDev ? "/core/pre-install" : "../app.asar.unpacked/core/pre-install"
-    );
-    return readdirSync(basePluginPath)
-      .filter((file) => extname(file) === ".tgz")
-      .map((file) => join(basePluginPath, file));
-  });
-
-  ipcMain.handle("pluginPath", async (event) => {
-    return join(app.getPath("userData"), "plugins");
-  });
-  ipcMain.handle("appVersion", async (event) => {
-    return app.getVersion();
-  });
-  ipcMain.handle("openExternalUrl", async (event, url) => {
-    shell.openExternal(url);
-  });
-
-  /**
-   * Used to delete a file from the user data folder
-   */
-  ipcMain.handle("deleteFile", async (_event, filePath) => {
-    const userDataPath = app.getPath("userData");
-    const fullPath = join(userDataPath, filePath);
-
-    let result = "NULL";
-    unlink(fullPath, function (err) {
-      if (err && err.code == "ENOENT") {
-        result = `File not exist: ${err}`;
-      } else if (err) {
-        result = `File delete error: ${err}`;
-      } else {
-        result = "File deleted successfully";
-      }
-      console.log(`Delete file ${filePath} from ${fullPath} result: ${result}`);
+    ipcMain.handle("basePlugins", async (event) => {
+      const basePluginPath = join(
+        __dirname,
+        "../",
+        isDev ? "/core/pre-install" : "../app.asar.unpacked/core/pre-install"
+      );
+      return readdirSync(basePluginPath)
+        .filter((file) => extname(file) === ".tgz")
+        .map((file) => join(basePluginPath, file));
     });
 
-    return result;
-  });
+    ipcMain.handle("pluginPath", async (event) => {
+      return join(app.getPath("userData"), "plugins");
+    });
+    ipcMain.handle("appVersion", async (event) => {
+      return app.getVersion();
+    });
+    ipcMain.handle("openExternalUrl", async (event, url) => {
+      shell.openExternal(url);
+    });
 
-  /**
-   * Used to download a file from a given url
-   */
-  ipcMain.handle("downloadFile", async (_event, url, fileName) => {
-    const userDataPath = app.getPath("userData");
-    const destination = resolve(userDataPath, fileName);
+    /**
+     * Used to delete a file from the user data folder
+     */
+    ipcMain.handle("deleteFile", async (_event, filePath) => {
+      const userDataPath = app.getPath("userData");
+      const fullPath = join(userDataPath, filePath);
 
-    progress(request(url), {})
-      .on("progress", function (state: any) {
-        mainWindow?.webContents.send("FILE_DOWNLOAD_UPDATE", {
-          ...state,
-          fileName,
-        });
-      })
-      .on("error", function (err: Error) {
-        mainWindow?.webContents.send("FILE_DOWNLOAD_ERROR", {
-          fileName,
-          err,
-        });
-      })
-      .on("end", function () {
-        mainWindow?.webContents.send("FILE_DOWNLOAD_COMPLETE", {
-          fileName,
-        });
-      })
-      .pipe(createWriteStream(destination));
-  });
+      let result = "NULL";
+      unlink(fullPath, function (err) {
+        if (err && err.code == "ENOENT") {
+          result = `File not exist: ${err}`;
+        } else if (err) {
+          result = `File delete error: ${err}`;
+        } else {
+          result = "File deleted successfully";
+        }
+        console.log(
+          `Delete file ${filePath} from ${fullPath} result: ${result}`
+        );
+      });
 
-  app.on("activate", () => {
-    if (!BrowserWindow.getAllWindows().length) {
-      createMainWindow();
-    }
+      return result;
+    });
+
+    /**
+     * Used to download a file from a given url
+     */
+    ipcMain.handle("downloadFile", async (_event, url, fileName) => {
+      const userDataPath = app.getPath("userData");
+      const destination = resolve(userDataPath, fileName);
+
+      progress(request(url), {})
+        .on("progress", function (state: any) {
+          mainWindow?.webContents.send("FILE_DOWNLOAD_UPDATE", {
+            ...state,
+            fileName,
+          });
+        })
+        .on("error", function (err: Error) {
+          mainWindow?.webContents.send("FILE_DOWNLOAD_ERROR", {
+            fileName,
+            err,
+          });
+        })
+        .on("end", function () {
+          mainWindow?.webContents.send("FILE_DOWNLOAD_COMPLETE", {
+            fileName,
+          });
+        })
+        .pipe(createWriteStream(destination));
+    });
+
+    app.on("activate", () => {
+      if (!BrowserWindow.getAllWindows().length) {
+        createMainWindow();
+      }
+    });
   });
-});
 
 /*New Update Available*/
 autoUpdater.on("update-available", async (info: any) => {
@@ -191,6 +199,25 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+
+function migratePlugins() {
+  return new Promise((resolve) => {
+    if (store.get("migrated_version") !== app.getVersion()) {
+      console.log("start migration:", store.get("migrated_version"));
+      const userDataPath = app.getPath("userData");
+      const fullPath = join(userDataPath, "plugins");
+
+      rmdir(fullPath, { recursive: true }, function (err) {
+        if (err) console.log(err);
+        store.set("migrated_version", app.getVersion());
+        console.log("migrate plugins done");
+        resolve(undefined);
+      });
+    } else {
+      resolve(undefined);
+    }
+  });
+};
 
 function setupPlugins() {
   init({

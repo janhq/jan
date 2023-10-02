@@ -3,7 +3,7 @@ import { displayDate } from "@/_utils/datetime";
 import { TextCode } from "../TextCode";
 import { getMessageCode } from "@/_utils/message";
 import Image from "next/image";
-import { useAtom } from "jotai";
+import { useAtomValue } from "jotai";
 import { currentStreamingMessageAtom } from "@/_helpers/JotaiWrapper";
 
 type Props = {
@@ -21,7 +21,7 @@ const StreamTextMessage: React.FC<Props> = ({
   avatarUrl = "",
   text = "",
 }) => {
-  const [message, _] = useAtom(currentStreamingMessageAtom);
+  const message = useAtomValue(currentStreamingMessageAtom);
 
   return message?.text && message?.text?.length > 0 ? (
     <div className="flex items-start gap-2 ml-3">
