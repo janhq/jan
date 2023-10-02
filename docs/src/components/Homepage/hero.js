@@ -82,6 +82,7 @@ export default function HomepageHero() {
               width={2432}
               className="mt-16 rounded-lg md:rounded-2xl lg:rounded-3xl bg-white/5 shadow-2xl ring-1 ring-white/10 sm:mt-24"
             />
+            
           </div>
         </div>
         {/* Background top gradient styling */}
