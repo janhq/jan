@@ -7,7 +7,7 @@ on:
 jobs:
   build-macos-silocon:
     runs-on: [self-hosted, macOS, ARM64]
-
+    environment: production
     permissions:
       contents: write
     steps:
@@ -42,15 +42,23 @@ jobs:
           yarn install
           yarn build:plugins
 
+      - name: Get Firebase config
+        run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
+        shell: bash
+        env:
+          CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+
       - name: Build and publish app
         run: |
           yarn build:publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: "/tmp/codesign.p12"
+          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
 
   build-windows-x64:
     runs-on: windows-latest
-
     permissions:
       contents: write
     steps:
