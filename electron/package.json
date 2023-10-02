@@ -33,8 +33,7 @@
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "dev": "tsc -p . && electron .",
     "build": "tsc -p . && electron-builder -p never -mw",
-    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mw",
-    "postinstall": "electron-builder install-app-deps"
+    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mw"
   },
   "dependencies": {
     "electron-is-dev": "^2.0.0",
