@@ -3,7 +3,7 @@ import SimpleImageMessage from "../SimpleImageMessage";
 import SimpleTextMessage from "../SimpleTextMessage";
 import { ChatMessage, MessageType } from "@/_models/ChatMessage";
 import StreamTextMessage from "../StreamTextMessage";
-import { useAtom } from "jotai";
+import { useAtomValue } from "jotai";
 import { currentStreamingMessageAtom } from "@/_helpers/JotaiWrapper";
 
 export default function renderChatMessage({
@@ -13,11 +13,11 @@ export default function renderChatMessage({
   senderName,
   createdAt,
   imageUrls,
+  htmlText,
   text,
-  status,
 }: ChatMessage): React.ReactNode {
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  const [message, _] = useAtom(currentStreamingMessageAtom);
+  const message = useAtomValue(currentStreamingMessageAtom);
   switch (messageType) {
     case MessageType.ImageWithText:
       return (
@@ -48,7 +48,7 @@ export default function renderChatMessage({
           avatarUrl={senderAvatarUrl}
           senderName={senderName}
           createdAt={createdAt}
-          text={text}
+          text={htmlText && htmlText.trim().length > 0 ? htmlText : text}
         />
       ) : (
         <StreamTextMessage
@@ -57,7 +57,7 @@ export default function renderChatMessage({
           avatarUrl={senderAvatarUrl}
           senderName={senderName}
           createdAt={createdAt}
-          text={text}
+          text={htmlText && htmlText.trim().length > 0 ? htmlText : text}
         />
       );
     default:

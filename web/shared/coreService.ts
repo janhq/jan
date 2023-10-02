@@ -11,6 +11,7 @@ export enum DataService {
   CREATE_CONVERSATION = "createConversation",
   DELETE_CONVERSATION = "deleteConversation",
   CREATE_MESSAGE = "createMessage",
+  UPDATE_MESSAGE = "updateMessage",
   GET_CONVERSATION_MESSAGES = "getConversationMessages",
 
   STORE_MODEL = "storeModel",
@@ -27,7 +28,7 @@ export enum ModelService {
 }
 
 export enum InfereceService {
-  PROMPT = "prompt",
+  INFERENCE_URL = "inferenceUrl",
   INIT_MODEL = "initModel",
 }
 

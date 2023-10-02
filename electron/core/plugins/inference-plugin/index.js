@@ -1,14 +1,5 @@
 const MODULE_PATH = "inference-plugin/dist/module.js";
 
-const prompt = async (prompt) =>
-  new Promise(async (resolve) => {
-    if (window.electronAPI) {
-      window.electronAPI
-        .invokePluginFunc(MODULE_PATH, "prompt", prompt)
-        .then((res) => resolve(res));
-    }
-  });
-
 const initModel = async (product) =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
@@ -18,8 +9,19 @@ const initModel = async (product) =>
     }
   });
 
+const dispose = async () =>
+  new Promise(async (resolve) => {
+    if (window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "killSubprocess")
+        .then((res) => resolve(res));
+    }
+  });
+const inferenceUrl = () => "http://localhost:8080/llama/chat_completion";
+
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
   register("initModel", "initModel", initModel);
-  register("prompt", "prompt", prompt);
+  register("inferenceUrl", "inferenceUrl", inferenceUrl);
+  register("dispose", "dispose", dispose);
 }
