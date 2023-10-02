@@ -2,6 +2,7 @@
 const { app, Menu, dialog } = require("electron");
 const isMac = process.platform === "darwin";
 const { autoUpdater } = require("electron-updater");
+import { compareSemanticVersions } from "./versionDiff";
 
 const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   ...(isMac
@@ -14,7 +15,13 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
               label: "Check for Updates...",
               click: () =>
                 autoUpdater.checkForUpdatesAndNotify().then((e) => {
-                  if (!e || e.updateInfo.files.length === 0)
+                  if (
+                    !e ||
+                    compareSemanticVersions(
+                      app.getVersion(),
+                      e.updateInfo.version
+                    ) >= 0
+                  )
                     dialog.showMessageBox({
                       message: `There are currently no updates available.`,
                     });
