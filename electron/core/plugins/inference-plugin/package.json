@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "webpack --config webpack.config.js",
-    "build:package": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && rm -rf dist/nitro && cp -r nitro dist/nitro && npm pack",
+    "build:package": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\" && npm pack",
     "build:publish": "yarn build:package && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
