@@ -79,8 +79,8 @@ export default function HomepageHero() {
               src={
                 colorMode === "dark"
                   ? // TODO replace with darkmode image
-                    require("@site/static/img/desktop-llm-chat.png").default
-                  : require("@site/static/img/desktop-llm-chat.png").default
+                    require("@site/static/img/desktop-llm-chat-dark.png").default
+                  : require("@site/static/img/desktop-llm-chat-light.png").default
               }
               alt="App screenshot"
               width={2432}
