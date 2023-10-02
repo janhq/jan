@@ -71,7 +71,7 @@ export default function HomepageSectionOne() {
                   ? // TODO replace with darkmode image
                     require("@site/static/img/desktop-explore-models-dark.png")
                       .default
-                  : require("@site/static/img/desktop-explore-models.png")
+                  : require("@site/static/img/desktop-explore-models-light.png")
                       .default
               }
               alt="Product screenshot"

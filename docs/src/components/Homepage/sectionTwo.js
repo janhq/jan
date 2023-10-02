@@ -68,8 +68,8 @@ export default function sectionTwo() {
             src={
               colorMode === "dark"
                 ? // TODO replace with darkmode image
-                  require("@site/static/img/desktop-model-settings.png").default
-                : require("@site/static/img/desktop-model-settings.png").default
+                  require("@site/static/img/desktop-model-settings-dark.png").default
+                : require("@site/static/img/desktop-model-settings-light.png").default
             }
             alt="Product screenshot"
             className="w-[48rem] max-w-none rounded-xl shadow-xl ring-1 ring-gray-400/10 sm:w-[57rem] md:-ml-4 lg:-ml-0"
