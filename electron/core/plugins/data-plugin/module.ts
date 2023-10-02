@@ -184,6 +184,7 @@ function deleteDownloadModel(modelId: string) {
       const stmt = db.prepare("DELETE FROM models WHERE id = ?");
       stmt.run(modelId);
       stmt.finalize();
+      res(modelId);
     });
 
     db.close();
@@ -352,7 +353,7 @@ function deleteConversation(id: any) {
       );
       deleteMessages.run(id);
       deleteMessages.finalize();
-      res([]);
+      res(id);
     });
 
     db.close();
