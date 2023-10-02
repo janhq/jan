@@ -34,7 +34,7 @@ async function initModel(product) {
     killSubprocess();
   }
 
-  let binaryFolder = `${__dirname}/nitro`; // Current directory by default
+  let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
 
   // Read the existing config
   const configFilePath = `${binaryFolder}/config/config.json`;
@@ -58,9 +58,10 @@ async function initModel(product) {
 
   const binaryPath =
     process.platform === "win32"
-      ? `${binaryFolder}/nitro.exe`
-      : `${binaryFolder}/nitro`;
+      ? path.join(binaryFolder, "nitro.exe")
+      : path.join(binaryFolder, "nitro");
   // Execute the binary
+  console.log("spawn nitro subprocess at: " + binaryPath);
   subprocess = spawn(binaryPath, [configFilePath]);
 
   // Handle subprocess output
