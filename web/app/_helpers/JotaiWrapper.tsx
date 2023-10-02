@@ -38,7 +38,6 @@ export const showingMobilePaneAtom = atom<boolean>(false);
 export const showingTyping = atom<boolean>(false);
 
 export const appDownloadProgress = atom<number>(-1);
-export const activeModel = atom<string | undefined>(undefined);
 export const searchingModelText = atom<string>("");
 
 /**
@@ -259,7 +258,8 @@ export const getMainViewStateAtom = atom((get) =>
 
 export const setMainViewStateAtom = atom(
   null,
-  (_get, set, state: MainViewState) => {
+  (get, set, state: MainViewState) => {
+    if (get(getMainViewStateAtom) === state) return;
     if (state !== MainViewState.Conversation) {
       set(activeConversationIdAtom, undefined);
     }

@@ -2,11 +2,15 @@ import { searchAtom } from "@/_helpers/JotaiWrapper";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { useSetAtom } from "jotai";
 
-const SearchBar: React.FC = () => {
-  const setText = useSetAtom(searchAtom);
+type Props = {
+  placeholder?: string;
+};
 
+const SearchBar: React.FC<Props> = ({ placeholder }) => {
+  const setText = useSetAtom(searchAtom);
+  let placeholderText = placeholder ? placeholder : "Search (⌘K)";
   return (
-    <div className="relative mx-3 mt-3 flex items-center">
+    <div className="relative mt-3 flex items-center">
       <div className="absolute top-0 left-2 h-full flex items-center">
         <MagnifyingGlassIcon
           width={16}
@@ -19,7 +23,7 @@ const SearchBar: React.FC = () => {
         type="text"
         name="search"
         id="search"
-        placeholder="Search (⌘K)"
+        placeholder={placeholderText}
         onChange={(e) => setText(e.target.value)}
         className="block w-full rounded-md border-0 py-1.5 pl-8 pr-14 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
       />
