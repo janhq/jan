@@ -2,6 +2,7 @@ const path = require("path");
 const { app, dialog } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
+var exec = require("child_process").exec;
 
 let subprocess = null;
 
@@ -34,10 +35,10 @@ async function initModel(product) {
     killSubprocess();
   }
 
-  let binaryFolder = `${__dirname}/nitro`; // Current directory by default
+  let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
 
   // Read the existing config
-  const configFilePath = `${binaryFolder}/config/config.json`;
+  const configFilePath = path.join(binaryFolder, "config", "config.json");
   let config = {};
   if (fs.existsSync(configFilePath)) {
     const rawData = fs.readFileSync(configFilePath, "utf-8");
@@ -56,8 +57,13 @@ async function initModel(product) {
   // Write the updated config back to the file
   fs.writeFileSync(configFilePath, JSON.stringify(config, null, 4));
 
+  const binaryPath =
+    process.platform === "win32"
+      ? path.join(binaryFolder, "nitro.exe")
+      : path.join(binaryFolder, "nitro");
   // Execute the binary
-  subprocess = spawn(`${binaryFolder}/nitro`, [configFilePath]);
+
+  subprocess = spawn(binaryPath, [configFilePath], {cwd: binaryFolder});
 
   // Handle subprocess output
   subprocess.stdout.on("data", (data) => {
