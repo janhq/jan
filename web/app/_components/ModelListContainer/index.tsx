@@ -1,10 +1,5 @@
 "use client";
 
-import { executeSerial } from "@/_services/pluginService";
-import {
-  DataService,
-  ModelManagementService,
-} from "../../../shared/coreService";
 import { useAtomValue } from "jotai";
 import { searchingModelText } from "@/_helpers/JotaiWrapper";
 import { Product } from "@/_models/Product";
@@ -12,10 +7,12 @@ import DownloadedModelCard from "../DownloadedModelCard";
 import AvailableModelCard from "../AvailableModelCard";
 import useDeleteModel from "@/_hooks/useDeleteModel";
 import useGetAvailableModels from "@/_hooks/useGetAvailableModels";
+import useDownloadModel from "@/_hooks/useDownloadModel";
 
 const ModelListContainer: React.FC = () => {
   const searchText = useAtomValue(searchingModelText);
   const { deleteModel } = useDeleteModel();
+  const { downloadModel } = useDownloadModel();
 
   const {
     availableModels,
@@ -28,12 +25,8 @@ const ModelListContainer: React.FC = () => {
     await getAvailableModelExceptDownloaded();
   };
 
-  const onDownloadClick = async (product: Product) => {
-    await executeSerial(DataService.STORE_MODEL, product);
-    await executeSerial(ModelManagementService.DOWNLOAD_MODEL, {
-      downloadUrl: product.downloadUrl,
-      fileName: product.fileName,
-    });
+  const onDownloadClick = async (model: Product) => {
+    await downloadModel(model);
   };
 
   return (

@@ -2,16 +2,25 @@
 
 import ExploreModelItemHeader from "../ExploreModelItemHeader";
 import ModelVersionList from "../ModelVersionList";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Product } from "@/_models/Product";
 import SimpleTag, { TagType } from "../SimpleTag";
 import { displayDate } from "@/_utils/datetime";
+import useDownloadModel from "@/_hooks/useDownloadModel";
+import { modelDownloadStateAtom } from "@/_helpers/JotaiWrapper";
+import { atom, useAtomValue } from "jotai";
 
 type Props = {
   model: Product;
 };
 
 const ExploreModelItem: React.FC<Props> = ({ model }) => {
+  const downloadAtom = useMemo(
+    () => atom((get) => get(modelDownloadStateAtom)[model.fileName ?? ""]),
+    [model.fileName ?? ""]
+  );
+  const downloadState = useAtomValue(downloadAtom);
+  const { downloadModel } = useDownloadModel();
   const [show, setShow] = useState(false);
 
   return (
@@ -20,6 +29,8 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
         name={model.name}
         status={TagType.Recommended}
         total={model.totalSize}
+        downloadState={downloadState}
+        onDownloadClick={() => downloadModel(model)}
       />
       <div className="flex flex-col px-[26px] py-[22px]">
         <div className="flex justify-between">

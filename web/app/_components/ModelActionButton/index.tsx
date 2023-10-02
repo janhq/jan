@@ -1,5 +1,5 @@
 import React from "react";
-import ActionButton from "../ActionButton";
+import PrimaryButton from "../PrimaryButton";
 
 export enum ModelActionType {
   Start = "Start",
@@ -38,12 +38,7 @@ const ModelActionButton: React.FC<Props> = ({ type, onActionClick }) => {
 
   return (
     <td className="whitespace-nowrap px-6 py-4 text-sm">
-      <ActionButton
-        color={styles.backgroundColor}
-        text={styles.textColor}
-        onClick={onClick}
-        title={styles.title}
-      />
+      <PrimaryButton title={styles.title} onClick={onClick} />
     </td>
   );
 };

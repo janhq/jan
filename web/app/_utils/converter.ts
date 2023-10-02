@@ -9,3 +9,7 @@ export const toGigabytes = (input: number) => {
     return input + "B";
   }
 };
+
+export const formatDownloadPercentage = (input: number) => {
+  return (input * 100).toFixed(2) + "%";
+};
