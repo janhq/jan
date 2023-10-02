@@ -1,12 +1,15 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import { MainViewState, getMainViewStateAtom } from "@/_helpers/JotaiWrapper";
 import { ReactNode } from "react";
 import Welcome from "../WelcomeContainer";
 import { Preferences } from "../Preferences";
 import MyModelContainer from "../MyModelContainer";
 import ExploreModelContainer from "../ExploreModelContainer";
+import {
+  MainViewState,
+  getMainViewStateAtom,
+} from "@/_helpers/atoms/MainView.atom";
 
 type Props = {
   children: ReactNode;

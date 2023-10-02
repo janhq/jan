@@ -1,6 +1,6 @@
 import React from "react";
-import { MainViewState } from "@/_helpers/JotaiWrapper";
 import SidebarMenuItem from "../SidebarMenuItem";
+import { MainViewState } from "@/_helpers/atoms/MainView.atom";
 
 const menu = [
   {

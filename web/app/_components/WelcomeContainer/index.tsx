@@ -1,7 +1,10 @@
 import Image from "next/image";
 import { SidebarButton } from "../SidebarButton";
 import { useSetAtom } from "jotai";
-import { MainViewState, setMainViewStateAtom } from "@/_helpers/JotaiWrapper";
+import {
+  setMainViewStateAtom,
+  MainViewState,
+} from "@/_helpers/atoms/MainView.atom";
 
 const Welcome: React.FC = () => {
   const setMainViewState = useSetAtom(setMainViewStateAtom);

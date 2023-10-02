@@ -1,7 +1,7 @@
-import { currentProductAtom } from "@/_helpers/JotaiWrapper";
 import { useAtomValue } from "jotai";
 import React, { Fragment } from "react";
 import ModelTable from "../ModelTable";
+import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 
 const ActiveModelTable: React.FC = () => {
   const activeModel = useAtomValue(currentProductAtom);

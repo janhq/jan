@@ -3,8 +3,8 @@ import { executeSerial } from "@/_services/pluginService";
 import { ModelManagementService } from "../../shared/coreService";
 import { useEffect, useState } from "react";
 import { getModelFiles } from "./useGetDownloadedModels";
-import { modelDownloadStateAtom } from "@/_helpers/JotaiWrapper";
 import { useAtomValue } from "jotai";
+import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
 
 export default function useGetAvailableModels() {
   const downloadState = useAtomValue(modelDownloadStateAtom);

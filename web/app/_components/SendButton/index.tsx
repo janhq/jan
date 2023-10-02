@@ -1,7 +1,5 @@
-import {
-  currentConvoStateAtom,
-  currentPromptAtom,
-} from "@/_helpers/JotaiWrapper";
+import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
+import { currentConvoStateAtom } from "@/_helpers/atoms/Conversation.atom";
 import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtom, useAtomValue } from "jotai";
 import Image from "next/image";

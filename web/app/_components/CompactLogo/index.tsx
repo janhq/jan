@@ -1,7 +1,7 @@
 import React from "react";
 import JanImage from "../JanImage";
-import { setActiveConvoIdAtom } from "@/_helpers/JotaiWrapper";
 import { useSetAtom } from "jotai";
+import { setActiveConvoIdAtom } from "@/_helpers/atoms/Conversation.atom";
 
 const CompactLogo: React.FC = () => {
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);

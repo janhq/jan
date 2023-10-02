@@ -1,18 +1,20 @@
 import React from "react";
 import JanImage from "../JanImage";
-import {
-  MainViewState,
-  conversationStatesAtom,
-  currentProductAtom,
-  getActiveConvoIdAtom,
-  setActiveConvoIdAtom,
-  setMainViewStateAtom,
-} from "@/_helpers/JotaiWrapper";
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
 import { DataService, InfereceService } from "../../../shared/coreService";
 import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
+import {
+  conversationStatesAtom,
+  getActiveConvoIdAtom,
+  setActiveConvoIdAtom,
+} from "@/_helpers/atoms/Conversation.atom";
+import {
+  setMainViewStateAtom,
+  MainViewState,
+} from "@/_helpers/atoms/MainView.atom";
+import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 
 type Props = {
   conversation: Conversation;

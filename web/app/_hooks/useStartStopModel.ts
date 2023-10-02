@@ -1,7 +1,7 @@
-import { currentProductAtom } from "@/_helpers/JotaiWrapper";
 import { executeSerial } from "@/_services/pluginService";
 import { DataService, InfereceService } from "../../shared/coreService";
 import { useSetAtom } from "jotai";
+import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 
 export default function useStartStopModel() {
   const setActiveModel = useSetAtom(currentProductAtom);

@@ -1,6 +1,6 @@
 "use client";
 
-import { currentConversationAtom } from "@/_helpers/JotaiWrapper";
+import { currentConversationAtom } from "@/_helpers/atoms/Conversation.atom";
 import { useAtomValue } from "jotai";
 import Image from "next/image";
 

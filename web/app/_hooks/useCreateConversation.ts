@@ -1,15 +1,14 @@
-// import useGetCurrentUser from "./useGetCurrentUser";
 import { useAtom, useSetAtom } from "jotai";
-import {
-  addNewConversationStateAtom,
-  currentProductAtom,
-  setActiveConvoIdAtom,
-  userConversationsAtom,
-} from "@/_helpers/JotaiWrapper";
 import { Conversation } from "@/_models/Conversation";
 import { executeSerial } from "@/_services/pluginService";
 import { DataService, InfereceService } from "../../shared/coreService";
 import { Product } from "@/_models/Product";
+import {
+  userConversationsAtom,
+  setActiveConvoIdAtom,
+  addNewConversationStateAtom,
+} from "@/_helpers/atoms/Conversation.atom";
+import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 
 const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
