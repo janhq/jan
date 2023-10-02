@@ -168,11 +168,7 @@ function getFinishedDownloadModels() {
 
     const query = `SELECT * FROM models WHERE finish_download_at != -1 ORDER BY finish_download_at DESC`;
     db.all(query, (err: Error, row: any) => {
-      const products = [];
-      row.forEach((item: any) => {
-        products.push(parseToProduct(item));
-      });
-      res(products);
+      res(row.map((item: any) => parseToProduct(item)));
     });
     db.close();
   });

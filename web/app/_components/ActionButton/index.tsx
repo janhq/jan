@@ -15,7 +15,7 @@ const ActionButton: React.FC<Props> = ({
 }) => (
   <button
     onClick={onClick}
-    className={`px-[17px] py-[9px] ${color} rounded-md shadow-sm border ${text} border-gray-300 hover:opacity-70`}
+    className={`px-4 py-2 ${color} rounded-md shadow-sm border ${text} border-gray-300 hover:opacity-70`}
   >
     {title}
   </button>
