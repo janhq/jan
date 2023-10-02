@@ -5,14 +5,6 @@ const fs = require("fs");
 
 let subprocess = null;
 
-process.on("exit", () => {
-  // Perform cleanup tasks here
-  console.log("kill subprocess on exit");
-  if (subprocess) {
-    subprocess.kill();
-  }
-});
-
 async function initModel(product) {
   // fileName fallback
   if (!product.fileName) {
@@ -79,7 +71,7 @@ async function initModel(product) {
   });
 }
 
-function killSubprocess() {
+function dispose() {
   if (subprocess) {
     subprocess.kill();
     subprocess = null;
@@ -91,5 +83,5 @@ function killSubprocess() {
 
 module.exports = {
   initModel,
-  killSubprocess,
+  dispose,
 };

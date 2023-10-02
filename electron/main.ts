@@ -4,15 +4,15 @@ import { resolve, join, extname } from "path";
 import { rmdir, unlink, createWriteStream } from "fs";
 import { init } from "./core/plugin-manager/pluginMgr";
 import { setupMenu } from "./utils/menu";
+import { dispose } from "./utils/disposable";
 
-import isDev = require("electron-is-dev");
-// @ts-ignore
-import request = require("request");
-// @ts-ignore
-import progress = require("request-progress");
+const isDev = require("electron-is-dev");
+const request = require("request");
+const progress = require("request-progress");
 const { autoUpdater } = require("electron-updater");
 const Store = require("electron-store");
 
+const requiredModules: Record<string, any> = {};
 let mainWindow: BrowserWindow | undefined = undefined;
 
 app
@@ -32,6 +32,7 @@ app
   });
 
 app.on("window-all-closed", () => {
+  dispose(requiredModules);
   app.quit();
 });
 
@@ -106,22 +107,22 @@ function handleIPCs() {
   ipcMain.handle(
     "invokePluginFunc",
     async (_event, modulePath, method, ...args) => {
-      const module = join(app.getPath("userData"), "plugins", modulePath);
-      return await import(/* webpackIgnore: true */ module)
-        .then((plugin) => {
-          if (typeof plugin[method] === "function") {
-            return plugin[method](...args);
-          } else {
-            console.log(plugin[method]);
-            console.error(`Function "${method}" does not exist in the module.`);
-          }
-        })
-        .then((res) => {
-          return res;
-        })
-        .catch((err) => console.log(err));
+      const module = require(/* webpackIgnore: true */ join(
+        app.getPath("userData"),
+        "plugins",
+        modulePath
+      ));
+      requiredModules[modulePath] = module;
+
+      if (typeof module[method] === "function") {
+        return module[method](...args);
+      } else {
+        console.log(module[method]);
+        console.error(`Function "${method}" does not exist in the module.`);
+      }
     }
   );
+
   ipcMain.handle("basePlugins", async (_event) => {
     const basePluginPath = join(
       __dirname,
