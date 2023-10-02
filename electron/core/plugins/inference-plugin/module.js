@@ -62,19 +62,8 @@ async function initModel(product) {
       ? path.join(binaryFolder, "nitro.exe")
       : path.join(binaryFolder, "nitro");
   // Execute the binary
-  if (process.platform === "win32") {
-    exec(
-      "pwd",
-      {
-        cwd: binaryFolder,
-      },
-      function (error, stdout, stderr) {
-        if (error) console.log(error);
-      }
-    );
-  }
-  console.log("spawn nitro subprocess at: " + binaryPath);
-  subprocess = spawn(binaryPath, [configFilePath]);
+
+  subprocess = spawn(binaryPath, [configFilePath], {cwd: binaryFolder});
 
   // Handle subprocess output
   subprocess.stdout.on("data", (data) => {
