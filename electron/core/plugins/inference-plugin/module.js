@@ -56,8 +56,12 @@ async function initModel(product) {
   // Write the updated config back to the file
   fs.writeFileSync(configFilePath, JSON.stringify(config, null, 4));
 
+  const binaryPath =
+    process.platform === "win32"
+      ? `${binaryFolder}/nitro.exe`
+      : `${binaryFolder}/nitro`;
   // Execute the binary
-  subprocess = spawn(`${binaryFolder}/nitro`, [configFilePath]);
+  subprocess = spawn(binaryPath, [configFilePath]);
 
   // Handle subprocess output
   subprocess.stdout.on("data", (data) => {
