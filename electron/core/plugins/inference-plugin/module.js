@@ -2,7 +2,6 @@ const path = require("path");
 const { app, dialog } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
-var exec = require("child_process").exec;
 
 let subprocess = null;
 
@@ -63,7 +62,7 @@ async function initModel(product) {
       : path.join(binaryFolder, "nitro");
   // Execute the binary
 
-  subprocess = spawn(binaryPath, [configFilePath], {cwd: binaryFolder});
+  subprocess = spawn(binaryPath, [configFilePath], { cwd: binaryFolder });
 
   // Handle subprocess output
   subprocess.stdout.on("data", (data) => {
