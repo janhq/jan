@@ -4,10 +4,10 @@ import Image from "next/image";
 import { ModelStatus, ModelStatusComponent } from "../ModelStatusComponent";
 import ModelActionMenu from "../ModelActionMenu";
 import { useAtomValue } from "jotai";
-import { currentProductAtom } from "@/_helpers/JotaiWrapper";
 import ModelActionButton, { ModelActionType } from "../ModelActionButton";
 import useStartStopModel from "@/_hooks/useStartStopModel";
 import useDeleteModel from "@/_hooks/useDeleteModel";
+import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 
 type Props = {
   model: Product;

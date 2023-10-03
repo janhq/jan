@@ -7,8 +7,8 @@ import { Product } from "@/_models/Product";
 import SimpleTag, { TagType } from "../SimpleTag";
 import { displayDate } from "@/_utils/datetime";
 import useDownloadModel from "@/_hooks/useDownloadModel";
-import { modelDownloadStateAtom } from "@/_helpers/JotaiWrapper";
 import { atom, useAtomValue } from "jotai";
+import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
 
 type Props = {
   model: Product;

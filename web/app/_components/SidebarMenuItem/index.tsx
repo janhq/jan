@@ -1,11 +1,11 @@
 import React from "react";
+import { useAtomValue, useSetAtom } from "jotai";
+import Image from "next/image";
 import {
   MainViewState,
   getMainViewStateAtom,
   setMainViewStateAtom,
-} from "@/_helpers/JotaiWrapper";
-import { useAtomValue, useSetAtom } from "jotai";
-import Image from "next/image";
+} from "@/_helpers/atoms/MainView.atom";
 
 type Props = {
   title: string;

@@ -1,22 +1,45 @@
 "use client";
 
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
+import { getActiveConvoIdAtom } from "@/_helpers/atoms/Conversation.atom";
+import { selectedModelAtom } from "@/_helpers/atoms/Model.atom";
+import useCreateConversation from "@/_hooks/useCreateConversation";
+import useInitModel from "@/_hooks/useInitModel";
 import useSendChatMessage from "@/_hooks/useSendChatMessage";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
+import { ChangeEvent } from "react";
 
 const BasicPromptInput: React.FC = () => {
+  const activeConversationId = useAtomValue(getActiveConvoIdAtom);
+  const selectedModel = useAtomValue(selectedModelAtom);
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom);
   const { sendChatMessage } = useSendChatMessage();
+  const { requestCreateConvo } = useCreateConversation();
 
-  const handleMessageChange = (event: any) => {
+  const { initModel } = useInitModel();
+
+  const handleMessageChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(event.target.value);
   };
 
-  const handleKeyDown = (event: any) => {
+  const handleKeyDown = async (
+    event: React.KeyboardEvent<HTMLTextAreaElement>
+  ) => {
     if (event.key === "Enter") {
       if (!event.shiftKey) {
-        event.preventDefault();
-        sendChatMessage();
+        if (activeConversationId) {
+          event.preventDefault();
+          sendChatMessage();
+        } else {
+          if (!selectedModel) {
+            console.log("No model selected");
+            return;
+          }
+
+          await requestCreateConvo(selectedModel);
+          await initModel(selectedModel);
+          sendChatMessage();
+        }
       }
     }
   };

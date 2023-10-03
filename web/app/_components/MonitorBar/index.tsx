@@ -1,14 +1,12 @@
 import ProgressBar from "../ProgressBar";
 import SystemItem from "../SystemItem";
 import { useAtomValue } from "jotai";
-import {
-  appDownloadProgress,
-  currentProductAtom,
-  getSystemBarVisibilityAtom,
-} from "@/_helpers/JotaiWrapper";
+import { appDownloadProgress } from "@/_helpers/JotaiWrapper";
 import { useEffect, useState } from "react";
 import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
 import { SystemMonitoringService } from "../../../shared/coreService";
+import { getSystemBarVisibilityAtom } from "@/_helpers/atoms/SystemBar.atom";
+import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 
 const MonitorBar: React.FC = () => {
   const show = useAtomValue(getSystemBarVisibilityAtom);

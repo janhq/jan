@@ -1,14 +1,14 @@
-import {
-  addOldMessagesAtom,
-  conversationStatesAtom,
-  currentConversationAtom,
-  updateConversationHasMoreAtom,
-} from "@/_helpers/JotaiWrapper";
 import { ChatMessage, RawMessage, toChatMessage } from "@/_models/ChatMessage";
 import { executeSerial } from "@/_services/pluginService";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useState } from "react";
 import { DataService } from "../../shared/coreService";
+import { addOldMessagesAtom } from "@/_helpers/atoms/ChatMessage.atom";
+import {
+  currentConversationAtom,
+  conversationStatesAtom,
+  updateConversationHasMoreAtom,
+} from "@/_helpers/atoms/Conversation.atom";
 
 /**
  * Custom hooks to get chat messages for current(active) conversation

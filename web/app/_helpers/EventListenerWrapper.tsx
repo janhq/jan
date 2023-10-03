@@ -1,15 +1,15 @@
 "use client";
 
-import { useAtom, useSetAtom } from "jotai";
+import { useSetAtom } from "jotai";
 import { ReactNode, useEffect } from "react";
-import {
-  appDownloadProgress,
-  setDownloadStateAtom,
-  setDownloadStateSuccessAtom,
-} from "./JotaiWrapper";
+import { appDownloadProgress } from "./JotaiWrapper";
 import { DownloadState } from "@/_models/DownloadState";
 import { execute } from "../../../electron/core/plugin-manager/execution/extension-manager";
 import { DataService } from "../../shared/coreService";
+import {
+  setDownloadStateAtom,
+  setDownloadStateSuccessAtom,
+} from "./atoms/DownloadState.atom";
 
 type Props = {
   children: ReactNode;
