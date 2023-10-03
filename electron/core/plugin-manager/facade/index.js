@@ -1,30 +1,32 @@
-import { ipcRenderer, contextBridge } from "electron"
+const { ipcRenderer, contextBridge } = require("electron");
 
-export default function useFacade() {
+function useFacade() {
   const interfaces = {
     install(plugins) {
-      return ipcRenderer.invoke('pluggable:install', plugins)
+      return ipcRenderer.invoke("pluggable:install", plugins);
     },
     uninstall(plugins, reload) {
-      return ipcRenderer.invoke('pluggable:uninstall', plugins, reload)
+      return ipcRenderer.invoke("pluggable:uninstall", plugins, reload);
     },
     getActive() {
-      return ipcRenderer.invoke('pluggable:getActivePlugins')
+      return ipcRenderer.invoke("pluggable:getActivePlugins");
     },
     update(plugins, reload) {
-      return ipcRenderer.invoke('pluggable:update', plugins, reload)
+      return ipcRenderer.invoke("pluggable:update", plugins, reload);
     },
     updatesAvailable(plugin) {
-      return ipcRenderer.invoke('pluggable:updatesAvailable', plugin)
+      return ipcRenderer.invoke("pluggable:updatesAvailable", plugin);
     },
     toggleActive(plugin, active) {
-      return ipcRenderer.invoke('pluggable:togglePluginActive', plugin, active)
+      return ipcRenderer.invoke("pluggable:togglePluginActive", plugin, active);
     },
-  }
+  };
 
   if (contextBridge) {
-    contextBridge.exposeInMainWorld('pluggableElectronIpc', interfaces)
+    contextBridge.exposeInMainWorld("pluggableElectronIpc", interfaces);
   }
 
-  return interfaces
+  return interfaces;
 }
+
+module.exports = useFacade;
