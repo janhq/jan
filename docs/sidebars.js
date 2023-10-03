@@ -32,12 +32,7 @@ const sidebars = {
       collapsible: true,
       collapsed: false,
       link: { type: "doc", id: "features/features" },
-      items: [
-        "features/ai-models",
-        "features/control",
-        "features/acceleration",
-        "features/extensions",
-      ],
+      items: ["features/ai-models", "features/control", "features/acceleration", "features/extensions"],
     },
   ],
 
@@ -213,6 +208,24 @@ const sidebars = {
       collapsed: false,
       link: { type: "doc", id: "handbook/handbook" },
       items: ["handbook/remote-work"],
+    },
+  ],
+};
+
+module.exports = {
+  docs: [
+    {
+      type: "category",
+      label: "Overview",
+      link: {
+        type: "generated-index",
+        title: "Hardware Guides",
+        description: "Learn about the most important Docusaurus concepts!",
+        slug: "/category/docusaurus-guides",
+        keywords: ["guides"],
+        image: "/img/docusaurus.png",
+      },
+      items: ["pages", "docs", "blog", "search"],
     },
   ],
 };

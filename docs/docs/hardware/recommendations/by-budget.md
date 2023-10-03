@@ -16,7 +16,7 @@ title: Recommended AI Hardware by Budget
 | **Storage PCIe-SSD** | [ADATA XPG SX8200 Pro 512GB NVMe M.2 Solid State Drive](#) | $46.50   |
 | **Power Supply**     | [Corsair CX-M Series CX450M 450W ATX 2.4 Power Supply](#)  | $89.99   |
 | **Case**             | [be quiet! Pure Base 600 Black ATX Mid Tower Case](#)      | $97.00   |
-| **Total**            |                                                            | $870     |
+| **Total cost**       |                                                            | $870     |
 
 ## Entry-level PC Build at $1,500
 
@@ -30,7 +30,7 @@ title: Recommended AI Hardware by Budget
 | **Storage PCIe-SSD** | [ADATA XPG SX8200 Pro 1TB NVMe M.2 Solid State Drive](#) | $109.99 |
 | **Power Supply**     | [Corsair RMx Series RM650x 650W ATX 2.4 Power Supply](#) | $119.99 |
 | **Case**             | [Corsair Carbide Series 200R ATX Mid Tower Case](#)      | $59.99  |
-| **Total**            |                                                          | $1371   |
+| **Total cost**       |                                                          | $1371   |
 
 ## Mid-range PC Build at $3000
 
@@ -45,7 +45,7 @@ title: Recommended AI Hardware by Budget
 | **Case**         | [Fractal Design Pop Air ATX Mid Tower Case](https://de.pcpartpicker.com/product/QnD7YJ/fractal-design-pop-air-atx-mid-tower-case-fd-c-poa1a-02)                                                                          | $89.99    |
 | **Power Supply** | [Thermaltake Toughpower GF A3 - TT Premium Edition 1050 W 80+ Gold](https://de.pcpartpicker.com/product/4v3NnQ/thermaltake-toughpower-gf-a3-1050-w-80-gold-certified-fully-modular-atx-power-supply-ps-tpd-1050fnfagu-l) | $139.99   |
 |                  |
-| **Total**        | **$3000**                                                                                                                                                                                                                |
+| **Total cost**   | **$3000**                                                                                                                                                                                                                |
 
 ## High-End PC Build at $6,000
 
@@ -59,4 +59,4 @@ title: Recommended AI Hardware by Budget
 | **GPU**          | [PNY RTX A-Series RTX A6000 48 GB Video Card](https://pcpartpicker.com/product/HWt9TW/pny-rtx-a-series-rtx-a6000-48-gb-video-card-vcnrtxa6000-pb)                                        | $4269.00 |
 | **Power Supply** | [EVGA SuperNOVA 850 G2 850 W 80+ Gold ](https://pcpartpicker.com/product/LCfp99/evga-supernova-850-g2-850-w-80-gold-certified-fully-modular-atx-power-supply-220-g2-0850-xr)             | $322.42  |
 |                  |
-| **Total**        | **$6026.34**                                                                                                                                                                             |
+| **Total cost**   | **$6026.34**                                                                                                                                                                             |
