@@ -39,7 +39,7 @@ export default function HomepageHero() {
         )}
 
         {/* Main hero block */}
-        <div className="py-24 sm:py-32 lg:pb-40">
+        <div className="py-24 sm:py-32 lg:pb-40 animate-in fade-in zoom-in-50 duration-1000 ">
           <div className="mx-auto max-w-7xl px-6 lg:px-8">
             {/* Hero text and buttons */}
             <div className="mx-auto max-w-2xl text-center">
@@ -47,7 +47,7 @@ export default function HomepageHero() {
                 Run your own AI
               </h1>
               <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
-                Jan lets you run AI on your own hardware. 1-click to install the
+              Jan lets you run AI on your own hardware. 1-click to install the
                 latest open-source models. Monitor and manage software-hardware
                 performance.
                 <br></br>
@@ -79,13 +79,14 @@ export default function HomepageHero() {
               src={
                 colorMode === "dark"
                   ? // TODO replace with darkmode image
-                    require("@site/static/img/desktop-llm-chat.png").default
-                  : require("@site/static/img/desktop-llm-chat.png").default
+                    require("@site/static/img/desktop-llm-chat-dark.png").default
+                  : require("@site/static/img/desktop-llm-chat-light.png").default
               }
               alt="App screenshot"
               width={2432}
               className="mt-16 rounded-lg md:rounded-2xl lg:rounded-3xl bg-white/5 shadow-2xl ring-1 ring-white/10 sm:mt-24"
             />
+            
           </div>
         </div>
         {/* Background top gradient styling */}
