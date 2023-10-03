@@ -72,6 +72,11 @@ async function initModel(product) {
 }
 
 function dispose() {
+  killSubprocess();
+  // clean other registered resources here
+}
+
+function killSubprocess() {
   if (subprocess) {
     subprocess.kill();
     subprocess = null;
@@ -83,5 +88,6 @@ function dispose() {
 
 module.exports = {
   initModel,
+  killSubprocess,
   dispose,
 };

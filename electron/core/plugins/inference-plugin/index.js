@@ -13,7 +13,7 @@ const dispose = async () =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc(MODULE_PATH, "killSubprocess")
+        .invokePluginFunc(MODULE_PATH, "dispose")
         .then((res) => resolve(res));
     }
   });
