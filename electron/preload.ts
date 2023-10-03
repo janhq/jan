@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   openExternalUrl: (url: string) => ipcRenderer.invoke("openExternalUrl", url),
 
+  relaunch: () => ipcRenderer.invoke("relaunch"),
+
   deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
 
   downloadFile: (url: string, path: string) =>

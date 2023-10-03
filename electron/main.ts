@@ -144,6 +144,10 @@ function handleIPCs() {
   ipcMain.handle("openExternalUrl", async (_event, url) => {
     shell.openExternal(url);
   });
+  ipcMain.handle("relaunch", async (_event, url) => {
+    dispose(requiredModules);
+    app.relaunch();
+  });
 
   /**
    * Used to delete a file from the user data folder

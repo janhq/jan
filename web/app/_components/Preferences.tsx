@@ -81,9 +81,7 @@ export const Preferences = () => {
     // Send the filename of the to be installed plugin
     // to the main process for installation
     const installed = await plugins.install([pluginFile]);
-    if (typeof window !== "undefined") {
-      window.location.reload();
-    }
+    if (installed) window.electronAPI.relaunch();
   };
 
   // Uninstall a plugin on clicking uninstall
@@ -99,6 +97,7 @@ export const Preferences = () => {
         ? "Plugin successfully uninstalled"
         : "Plugin could not be uninstalled"
     );
+    if (res) window.electronAPI.relaunch();
   };
 
   // Update all plugins on clicking update plugins
@@ -106,6 +105,7 @@ export const Preferences = () => {
     if (typeof window !== "undefined") {
       // @ts-ignore
       await window.pluggableElectronIpc.update([plugin], true);
+      window.electronAPI.relaunch();
     }
     // plugins.update(active.map((plg) => plg.name));
   };
@@ -176,9 +176,7 @@ export const Preferences = () => {
                 type="submit"
                 className={classNames(
                   "rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600",
-                  fileName
-                    ? "bg-indigo-600 hover:bg-indigo-500"
-                    : "bg-gray-500"
+                  fileName ? "bg-indigo-600 hover:bg-indigo-500" : "bg-gray-500"
                 )}
               >
                 Install Plugin
