@@ -4,14 +4,12 @@ import React, { useCallback, useRef, useState } from "react";
 import ChatItem from "../ChatItem";
 import { ChatMessage } from "@/_models/ChatMessage";
 import useChatMessages from "@/_hooks/useChatMessages";
-import {
-  chatMessages,
-  getActiveConvoIdAtom,
-  showingTyping,
-} from "@/_helpers/JotaiWrapper";
+import { showingTyping } from "@/_helpers/JotaiWrapper";
 import { useAtomValue } from "jotai";
 import { selectAtom } from "jotai/utils";
 import LoadingIndicator from "../LoadingIndicator";
+import { getActiveConvoIdAtom } from "@/_helpers/atoms/Conversation.atom";
+import { chatMessages } from "@/_helpers/atoms/ChatMessage.atom";
 
 const ChatBody: React.FC = () => {
   const activeConversationId = useAtomValue(getActiveConvoIdAtom) ?? "";

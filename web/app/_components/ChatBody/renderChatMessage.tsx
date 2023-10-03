@@ -4,7 +4,7 @@ import SimpleTextMessage from "../SimpleTextMessage";
 import { ChatMessage, MessageType } from "@/_models/ChatMessage";
 import StreamTextMessage from "../StreamTextMessage";
 import { useAtomValue } from "jotai";
-import { currentStreamingMessageAtom } from "@/_helpers/JotaiWrapper";
+import { currentStreamingMessageAtom } from "@/_helpers/atoms/ChatMessage.atom";
 
 export default function renderChatMessage({
   id,

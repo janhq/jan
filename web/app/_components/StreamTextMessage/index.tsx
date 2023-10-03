@@ -4,7 +4,7 @@ import { TextCode } from "../TextCode";
 import { getMessageCode } from "@/_utils/message";
 import Image from "next/image";
 import { useAtomValue } from "jotai";
-import { currentStreamingMessageAtom } from "@/_helpers/JotaiWrapper";
+import { currentStreamingMessageAtom } from "@/_helpers/atoms/ChatMessage.atom";
 
 type Props = {
   id: string;

@@ -1,7 +1,7 @@
 import React from "react";
 import { useSetAtom } from "jotai";
 import { ChevronLeftIcon } from "@heroicons/react/24/outline";
-import { showingAdvancedPromptAtom } from "@/_helpers/JotaiWrapper";
+import { showingAdvancedPromptAtom } from "@/_helpers/atoms/Modal.atom";
 
 const BasicPromptButton: React.FC = () => {
   const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom);

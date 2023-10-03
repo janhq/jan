@@ -11,7 +11,7 @@
     "files": [
       "renderer/**/*",
       "build/*.{js,map}",
-      "build/core/plugin-manager/**/*",
+      "build/**/*.{js,map}",
       "core/pre-install"
     ],
     "asarUnpack": [

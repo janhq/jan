@@ -1,15 +1,17 @@
-import {
-  currentPromptAtom,
-  deleteConversationMessage,
-  getActiveConvoIdAtom,
-  setActiveConvoIdAtom,
-  showingAdvancedPromptAtom,
-  showingProductDetailAtom,
-  userConversationsAtom,
-} from "@/_helpers/JotaiWrapper";
+import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { execute } from "@/_services/pluginService";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { DataService } from "../../shared/coreService";
+import { deleteConversationMessage } from "@/_helpers/atoms/ChatMessage.atom";
+import {
+  userConversationsAtom,
+  getActiveConvoIdAtom,
+  setActiveConvoIdAtom,
+} from "@/_helpers/atoms/Conversation.atom";
+import {
+  showingProductDetailAtom,
+  showingAdvancedPromptAtom,
+} from "@/_helpers/atoms/Modal.atom";
 
 export default function useDeleteConversation() {
   const [userConversations, setUserConversations] = useAtom(

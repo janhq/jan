@@ -2,17 +2,8 @@ const path = require("path");
 const { app, dialog } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
-var exec = require("child_process").exec;
 
 let subprocess = null;
-
-process.on("exit", () => {
-  // Perform cleanup tasks here
-  console.log("kill subprocess on exit");
-  if (subprocess) {
-    subprocess.kill();
-  }
-});
 
 async function initModel(product) {
   // fileName fallback
@@ -63,7 +54,7 @@ async function initModel(product) {
       : path.join(binaryFolder, "nitro");
   // Execute the binary
 
-  subprocess = spawn(binaryPath, [configFilePath], {cwd: binaryFolder});
+  subprocess = spawn(binaryPath, [configFilePath], { cwd: binaryFolder });
 
   // Handle subprocess output
   subprocess.stdout.on("data", (data) => {
@@ -80,7 +71,7 @@ async function initModel(product) {
   });
 }
 
-function killSubprocess() {
+function dispose() {
   if (subprocess) {
     subprocess.kill();
     subprocess = null;
@@ -92,5 +83,5 @@ function killSubprocess() {
 
 module.exports = {
   initModel,
-  killSubprocess,
+  dispose,
 };

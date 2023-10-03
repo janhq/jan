@@ -1,4 +1,4 @@
-import { setActiveConvoIdAtom } from "@/_helpers/JotaiWrapper";
+import { setActiveConvoIdAtom } from "@/_helpers/atoms/Conversation.atom";
 import { useSetAtom } from "jotai";
 import Image from "next/image";
 import React from "react";

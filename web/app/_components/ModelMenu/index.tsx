@@ -1,12 +1,10 @@
 "use client";
 
 import { useAtomValue, useSetAtom } from "jotai";
-import {
-  currentProductAtom,
-  showConfirmDeleteConversationModalAtom,
-} from "@/_helpers/JotaiWrapper";
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import useCreateConversation from "@/_hooks/useCreateConversation";
+import { showConfirmDeleteConversationModalAtom } from "@/_helpers/atoms/Modal.atom";
+import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 
 const ModelMenu: React.FC = () => {
   const currentProduct = useAtomValue(currentProductAtom);
