@@ -69,7 +69,10 @@ export async function getActive() {
         plugin.name,
         plugin.url,
         plugin.activationPoints,
-        plugin.active
+        plugin.active,
+        plugin.description,
+        plugin.version,
+        plugin.icon
       )
   );
 }

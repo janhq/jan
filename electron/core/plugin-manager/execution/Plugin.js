@@ -16,11 +16,23 @@ class Plugin {
   /** @type {boolean} Whether this plugin should be activated when its activation points are triggered. */
   active
 
-  constructor(name, url, activationPoints, active) {
+  /** @type {string} Plugin's description. */
+  description
+
+  /** @type {string} Plugin's version. */
+  version
+
+  /** @type {string} Plugin's logo. */
+  icon
+
+  constructor(name, url, activationPoints, active, description, version, icon) {
     this.name = name
     this.url = url
     this.activationPoints = activationPoints
     this.active = active
+    this.description = description
+    this.version = version
+    this.icon = icon
   }
 
   /**

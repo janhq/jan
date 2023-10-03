@@ -5,7 +5,7 @@ import {
   plugins,
   extensionPoints,
   activationPoints,
-} from "../../../electron/core/plugin-manager/execution/index";
+} from "@/../../electron/core/plugin-manager/execution/index";
 import {
   ChartPieIcon,
   CommandLineIcon,
@@ -188,7 +188,7 @@ export const Preferences = () => {
             <CommandLineIcon width={30} />
             Installed Plugins
           </div>
-          <div className="flex flex-wrap">
+          <div className="grid grid-cols-2 items-stretch gap-4">
             {activePlugins
               .filter(
                 (e) =>
@@ -196,41 +196,51 @@ export const Preferences = () => {
                   e.name.toLowerCase().includes(search.toLowerCase())
               )
               .map((e) => (
-                <div key={e.name} className="mr-2 my-3 w-[400px]">
-                  <a
-                    href="#"
-                    className="block max-w-sm p-6 bg-white border border-gray-200 rounded-lg shadow dark:bg-gray-800 dark:border-gray-700"
-                  >
-                    <h5 className="mb-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-                      {e.name}
-                    </h5>
-                    <p className="font-normal text-gray-700 dark:text-gray-400">
-                      Activation: {e.activationPoints}
-                    </p>
-                    <p className="font-normal text-gray-700 dark:text-gray-400 h-[24px] truncate w-full">
-                      Url: {e.url}
-                    </p>
-                    <div className="flex flex-row space-x-5">
-                      <button
-                        type="submit"
-                        onClick={() => {
-                          uninstall(e.name);
-                        }}
-                        className="mt-5 rounded-md bg-red-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
-                      >
-                        Uninstall
-                      </button>
-                      <button
-                        type="submit"
-                        onClick={() => {
-                          update(e.name);
-                        }}
-                        className="mt-5 rounded-md bg-indigo-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-                      >
-                        Update
-                      </button>
+                <div
+                  key={e.name}
+                  className="flex flex-col h-full p-6 bg-white border border-gray-200 rounded-sm dark:border-gray-300"
+                >
+                  <div className="flex flex-row space-x-2 items-center">
+                    <span className="relative inline-block mt-1">
+                      <img
+                        className="h-14 w-14 rounded-md"
+                        src={e.icon ?? "icons/app_icon.svg"}
+                        alt=""
+                      />
+                    </span>
+                    <div className="flex flex-col">
+                      <p className="text-xl font-bold tracking-tight text-gray-900 dark:text-white capitalize">
+                        {e.name.replaceAll("-", " ")}
+                      </p>
+                      <p className="font-normal text-gray-700 dark:text-gray-400">
+                        Version: {e.version}
+                      </p>
                     </div>
-                  </a>
+                  </div>
+
+                  <p className="flex-1 mt-2 text-sm font-normal text-gray-500 dark:text-gray-400 w-full">
+                    {e.description ?? "Jan's Plugin"}
+                  </p>
+                  <div className="flex flex-row space-x-5">
+                    <button
+                      type="submit"
+                      onClick={() => {
+                        uninstall(e.name);
+                      }}
+                      className="mt-5 rounded-md bg-red-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+                    >
+                      Uninstall
+                    </button>
+                    <button
+                      type="submit"
+                      onClick={() => {
+                        update(e.name);
+                      }}
+                      className="mt-5 rounded-md bg-blue-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                    >
+                      Update
+                    </button>
+                  </div>
                 </div>
               ))}
           </div>
