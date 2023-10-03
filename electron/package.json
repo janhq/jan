@@ -37,8 +37,10 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "@npmcli/arborist": "^7.1.0",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
+    "pacote": "^17.0.4",
     "request": "^2.88.2",
     "request-progress": "^3.0.0"
   },
