@@ -3,7 +3,7 @@ import JanImage from "../JanImage";
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
-import { DataService, InfereceService } from "../../../shared/coreService";
+import { DataService } from "../../../shared/coreService";
 import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
 import {
   conversationStatesAtom,
@@ -14,7 +14,7 @@ import {
   setMainViewStateAtom,
   MainViewState,
 } from "@/_helpers/atoms/MainView.atom";
-import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
+import useInitModel from "@/_hooks/useInitModel";
 
 type Props = {
   conversation: Conversation;
@@ -35,7 +35,7 @@ const HistoryItem: React.FC<Props> = ({
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   const isSelected = activeConvoId === conversation.id;
 
-  const setActiveProduct = useSetAtom(currentProductAtom);
+  const { initModel } = useInitModel();
 
   const onClick = async () => {
     const model = await executeSerial(
@@ -47,10 +47,7 @@ const HistoryItem: React.FC<Props> = ({
         `Model ${conversation.model_id} not found! Please re-download the model first.`
       );
     } else {
-      setActiveProduct(model);
-      executeSerial(InfereceService.INIT_MODEL, model)
-        .then(() => console.info(`Init model success`))
-        .catch((err) => console.log(`Init model error ${err}`));
+      initModel(model);
     }
     if (activeConvoId !== conversation.id) {
       setMainViewState(MainViewState.Conversation);

@@ -50,9 +50,9 @@ export default function useSendChatMessage() {
 
     const newChatMessage = await toChatMessage(newMessage);
     addNewMessage(newChatMessage);
-
+    const messageHistory = chatMessagesHistory ?? [];
     const recentMessages = [
-      ...chatMessagesHistory.sort((a, b) => parseInt(a.id) - parseInt(b.id)),
+      ...messageHistory.sort((a, b) => parseInt(a.id) - parseInt(b.id)),
       newChatMessage,
     ]
       .slice(-10)

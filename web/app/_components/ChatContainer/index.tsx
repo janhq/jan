@@ -10,6 +10,7 @@ import {
   MainViewState,
   getMainViewStateAtom,
 } from "@/_helpers/atoms/MainView.atom";
+import EmptyChatContainer from "../EmptyChatContainer";
 
 type Props = {
   children: ReactNode;
@@ -19,6 +20,8 @@ export default function ChatContainer({ children }: Props) {
   const viewState = useAtomValue(getMainViewStateAtom);
 
   switch (viewState) {
+    case MainViewState.ConversationEmptyModel:
+      return <EmptyChatContainer />
     case MainViewState.ExploreModel:
       return <ExploreModelContainer />;
     case MainViewState.Setting:
