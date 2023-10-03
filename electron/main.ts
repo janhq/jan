@@ -6,7 +6,6 @@ import { init } from "./core/plugin-manager/pluginMgr";
 import { setupMenu } from "./utils/menu";
 import { dispose } from "./utils/disposable";
 
-const isDev = require("electron-is-dev");
 const request = require("request");
 const progress = require("request-progress");
 const { autoUpdater } = require("electron-updater");
@@ -49,9 +48,9 @@ function createMainWindow() {
     },
   });
 
-  const startURL = isDev
-    ? "http://localhost:3000"
-    : `file://${join(__dirname, "../renderer/index.html")}`;
+  const startURL = app.isPackaged
+    ? `file://${join(__dirname, "../renderer/index.html")}`
+    : "http://localhost:3000";
 
   mainWindow.loadURL(startURL);
 
@@ -60,7 +59,7 @@ function createMainWindow() {
     if (process.platform !== "darwin") app.quit();
   });
 
-  if (isDev) mainWindow.webContents.openDevTools();
+  if (!app.isPackaged) mainWindow.webContents.openDevTools();
 }
 
 function handleAppUpdates() {
@@ -127,7 +126,9 @@ function handleIPCs() {
     const basePluginPath = join(
       __dirname,
       "../",
-      isDev ? "/core/pre-install" : "../app.asar.unpacked/core/pre-install"
+      app.isPackaged
+        ? "../app.asar.unpacked/core/pre-install"
+        : "/core/pre-install"
     );
     return readdirSync(basePluginPath)
       .filter((file) => extname(file) === ".tgz")
