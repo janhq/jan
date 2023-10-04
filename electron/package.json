@@ -12,7 +12,8 @@
       "renderer/**/*",
       "build/*.{js,map}",
       "build/**/*.{js,map}",
-      "core/pre-install"
+      "core/pre-install",
+      "core/plugin-manager/facade"
     ],
     "asarUnpack": [
       "core/pre-install"
@@ -32,10 +33,14 @@
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "dev": "tsc -p . && electron .",
-    "build": "tsc -p . && electron-builder -p never -m --x64 --arm64",
-    "build-windows": "tsc -p . && electron-builder -p never -w",
-    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -m --x64 --arm64",
-    "build-windows:publish": "tsc -p . && electron-builder -p onTagOrDraft -w"
+    "build": "tsc -p . && electron-builder -p never -m",
+    "build:darwin": "tsc -p . && electron-builder -p never -m --x64 --arm64",
+    "build:win32": "tsc -p . && electron-builder -p never -w",
+    "build:linux": "tsc -p . && electron-builder -p never -l",
+    "build-publish": "tsc -p . && electron-builder -p onTagOrDraft -m",
+    "build-publish:darwin": "tsc -p . && electron-builder -p onTagOrDraft -m --x64 --arm64",
+    "build-publish:win32": "tsc -p . && electron-builder -p onTagOrDraft -w",
+    "build-publish:linux": "tsc -p . && electron-builder -p onTagOrDraft -l"
   },
   "dependencies": {
     "electron-is-dev": "^2.0.0",
