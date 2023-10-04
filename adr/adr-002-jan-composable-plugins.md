@@ -1,4 +1,4 @@
-# ADR #002: Jan replicant - Composable plugin
+# ADR #002: Jan composable AI
 
 ## Changelog
 - Oct 4th 2023: Initial draft
