@@ -57,6 +57,58 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
           CSC_IDENTITY_AUTO_DISCOVERY: "true"
 
+  build-macos-intel:
+    runs-on: macos-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq      
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Get tag
+        id: tag
+        uses: dawidd6/action-get-tag@v1
+  
+      - name: Update app version base on tag
+        run: |
+          if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: Tag is not valid!"
+              exit 1
+          fi
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+        env:
+          VERSION_TAG: ${{ steps.tag.outputs.tag }}
+
+      - name: Install yarn dependencies
+        run: |
+          yarn install
+          yarn build:plugins
+
+      - name: Get Firebase config
+        run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
+        shell: bash
+        env:
+          CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+
+      - name: Build and publish app
+        run: |
+          yarn build:publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: "/tmp/codesign.p12"
+          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+
   build-windows-x64:
     runs-on: windows-latest
     permissions:
