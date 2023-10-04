@@ -91,11 +91,13 @@ jobs:
 
       - name: Install yarn dependencies
         run: |
+          yarn set version 2
           yarn install
           yarn build:plugins
 
       - name: Build and publish app
         run: |
+          yarn set version 2
           yarn build-windows:publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
