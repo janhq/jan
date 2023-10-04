@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:package": "rimraf ./data-plugin*.tgz && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=darwin --target_libc=unknown --target_arch=x64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=darwin --target_libc=unknown --target_arch=arm64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=linux --target_libc=glibc --target_arch=x64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=win32 --target_libc=unknown --target_arch=x64 && npm run build && npm pack",
+    "build:package": "rimraf ./data-plugin*.tgz && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=darwin --target_libc=unknown --target_arch=x64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=darwin --target_libc=unknown --target_arch=arm64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=linux --target_libc=glibc --target_arch=x64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=linux --target_libc=musl --target_arch=x64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=win32 --target_libc=unknown --target_arch=x64 && npm run build && npm pack",
     "build:publish": "npm run build:package && cpx *.tgz ../../pre-install"
   },
   "exports": {
