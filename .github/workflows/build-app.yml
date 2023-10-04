@@ -146,7 +146,6 @@ jobs:
 
       - name: Build and publish app
         run: |
-          chmod +x ./node_modules/app-builder-bin/linux/x64/app-builder
           yarn build:publish-linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
