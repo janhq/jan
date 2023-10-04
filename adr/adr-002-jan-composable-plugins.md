@@ -1,4 +1,4 @@
-# ADR #002: {Jan replicant - Composable plugin}
+# ADR #002: Jan replicant - Composable plugin
 
 ## Changelog
 - Oct 4th 2023: Initial draft
@@ -13,7 +13,7 @@ Proposed
 ## Context
 
 ### Business context
-Jan can be a platform and let builders build their own `replicants` using existing tools
+Jan can be a platform and let builders build their own `composable AIs` using existing tools
 - Use-case 1: Medical AI startup uploads "case notes" to Jan, wants to ask it questions (i.e. medical audit)
 - Use-case 2: Legal e-discovery: very large amount of documents (~10-15k pages) are uploaded, data is very private and cannot be leaked
 - Use-case 3: Jan wants to use Jan to have a QnA chatbot to answer questions on docs
@@ -42,7 +42,7 @@ Jan can be a platform and let builders build their own `replicants` using existi
 ![Component design](images/adr-002-02.png "Component design")
 
 ## Consequences
-- Jan user can build their own replicants (and buy from others too) in an easy way
+- Jan user can build their own composable AIs (and buy from others too) in an easy way
 - Clear design for plugin and Jan platform development
 
 ## Reference
