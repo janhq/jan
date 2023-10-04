@@ -37,10 +37,6 @@ test.afterAll(async () => {
 test("shows settings", async () => {
   await page.getByRole("button", { name: "Settings" }).first().click();
 
-  const inputRequired = await page
-    .locator("input#plugin-file[required]:invalid")
-    .first();
-  expect(inputRequired).toBeDefined();
-  const pluginList = await page.getByTestId("plugin-item").all();
-  expect(pluginList.length).toBe(4);
+  const pluginList = await page.getByTestId("plugin-item").count();
+  expect(pluginList).toBe(4);
 });

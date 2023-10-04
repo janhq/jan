@@ -1,9 +1,9 @@
-
-import { PlaywrightTestConfig } from '@playwright/test'
+import { PlaywrightTestConfig } from "@playwright/test";
 
 const config: PlaywrightTestConfig = {
-  testDir: './tests',
+  testDir: "./tests",
   testIgnore: "./core/**",
-}
+  retries: 0
+};
 
-export default config
+export default config;
