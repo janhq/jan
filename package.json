@@ -24,10 +24,10 @@
     "build:darwin": "yarn build:web && yarn workspace jan-electron build:darwin",
     "build:win32": "yarn build:web && yarn workspace jan-electron build:win32",
     "build:linux": "yarn build:web && yarn workspace jan-electron build:linux",
-    "build-publish": "yarn build:web && yarn workspace jan-electron build-publish",
-    "build-publish:darwin": "yarn build:web && yarn workspace jan-electron build-publish:darwin",
-    "build-publish:win32": "yarn build:web && yarn workspace jan-electron build-publish:win32",
-    "build-publish:linux": "yarn build:web && yarn workspace jan-electron build-publish:linux"
+    "build:publish": "yarn build:web && yarn workspace jan-electron build:publish",
+    "build:publish-darwin": "yarn build:web && yarn workspace jan-electron build:publish-darwin",
+    "build:publish-win32": "yarn build:web && yarn workspace jan-electron build:publish-win32",
+    "build:publish-linux": "yarn build:web && yarn workspace jan-electron build:publish-linux"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",

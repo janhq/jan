@@ -50,7 +50,7 @@ jobs:
 
       - name: Build and publish app
         run: |
-          yarn build-publish:darwin
+          yarn build:publish-darwin
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: "/tmp/codesign.p12"
@@ -97,12 +97,15 @@ jobs:
 
       - name: Build and publish app
         run: |
-          yarn build-publish:win32
+          yarn build:publish-win32
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-linux-x64:
     runs-on: ubuntu-latest
+    environment: production
+    env:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_TOKEN }}
     permissions:
       contents: write
     steps:
@@ -116,6 +119,9 @@ jobs:
 
       - name: Install jq      
         uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install Snapcraft
+        uses: samuelmeuli/action-snapcraft@v2
 
       - name: Get tag
         id: tag
@@ -140,6 +146,7 @@ jobs:
 
       - name: Build and publish app
         run: |
-          yarn build-publish:linux
+          chmod +x ./node_modules/app-builder-bin/linux/x64/app-builder
+          yarn build:publish-linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
