@@ -1,7 +1,6 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import { ReactNode } from "react";
 import Welcome from "../WelcomeContainer";
 import { Preferences } from "../Preferences";
 import MyModelContainer from "../MyModelContainer";
@@ -11,17 +10,14 @@ import {
   getMainViewStateAtom,
 } from "@/_helpers/atoms/MainView.atom";
 import EmptyChatContainer from "../EmptyChatContainer";
+import MainChat from "../MainChat";
 
-type Props = {
-  children: ReactNode;
-};
-
-export default function ChatContainer({ children }: Props) {
+export default function ChatContainer() {
   const viewState = useAtomValue(getMainViewStateAtom);
 
   switch (viewState) {
     case MainViewState.ConversationEmptyModel:
-      return <EmptyChatContainer />
+      return <EmptyChatContainer />;
     case MainViewState.ExploreModel:
       return <ExploreModelContainer />;
     case MainViewState.Setting:
@@ -32,6 +28,6 @@ export default function ChatContainer({ children }: Props) {
     case MainViewState.Welcome:
       return <Welcome />;
     default:
-      return <div className="flex flex-1 overflow-hidden">{children}</div>;
+      return <MainChat />;
   }
 }

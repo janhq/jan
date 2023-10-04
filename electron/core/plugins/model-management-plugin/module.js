@@ -1,6 +1,7 @@
 const path = require("path");
 const { readdirSync, lstatSync } = require("fs");
 const { app } = require("electron");
+const { listModels, listFiles, fileDownloadInfo } = require("@huggingface/hub");
 
 const ALL_MODELS = [
   {
@@ -87,6 +88,49 @@ function getDownloadedModels() {
   return downloadedModels;
 }
 
+const searchHfModels = async (params) => {
+  const result = [];
+
+  var index = 0;
+
+  for await (const model of listModels({
+    search: params.search,
+    credentials: params.credentials,
+  })) {
+    const files = await listFilesByName(model.name);
+    result.push({
+      ...model,
+      files,
+    });
+
+    index++;
+    if (index === params.limit) break;
+  }
+
+  return result;
+};
+
+const listFilesByName = async (modelName) => {
+  const repo = { type: "model", name: modelName };
+  const fileDownloadInfoMap = {};
+  for await (const file of listFiles({
+    repo: repo,
+  })) {
+    if (file.type === "file" && file.path.endsWith(".bin")) {
+      const downloadInfo = await fileDownloadInfo({
+        repo: repo,
+        path: file.path,
+      });
+      fileDownloadInfoMap[file.path] = {
+        ...file,
+        ...downloadInfo,
+      };
+    }
+  }
+
+  return fileDownloadInfoMap;
+};
+
 function getAvailableModels() {
   const downloadedModelIds = getDownloadedModels().map((model) => model.id);
   return ALL_MODELS.filter((model) => {
@@ -99,4 +143,5 @@ function getAvailableModels() {
 module.exports = {
   getDownloadedModels,
   getAvailableModels,
+  searchHfModels,
 };

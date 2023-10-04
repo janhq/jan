@@ -19,12 +19,12 @@ const useCreateConversation = () => {
   const addNewConvoState = useSetAtom(addNewConversationStateAtom);
 
   const requestCreateConvo = async (model: Product) => {
+    const conversationName = model.name;
     const conv: Conversation = {
-      image: undefined,
       model_id: model.id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      name: "Conversation",
+      name: conversationName,
     };
     const id = await executeSerial(DataService.CREATE_CONVERSATION, conv);
     await initModel(model);
@@ -32,7 +32,7 @@ const useCreateConversation = () => {
     const mappedConvo: Conversation = {
       id,
       model_id: model.id,
-      name: "Conversation",
+      name: conversationName,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

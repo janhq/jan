@@ -21,7 +21,7 @@ const menu = [
 ];
 
 const SidebarMenu: React.FC = () => (
-  <div className="flex flex-col">
+  <div className="flex flex-col mx-3">
     <div className="text-gray-500 text-xs font-semibold py-2 pl-2 pr-3">
       Your Configurations
     </div>
