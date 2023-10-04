@@ -14,6 +14,8 @@
     ]
   },
   "scripts": {
+    "lint": "yarn workspace jan-electron lint && yarn workspace jan-web lint",
+    "test": "yarn workspace jan-electron test:e2e",
     "dev:electron": "yarn workspace jan-electron dev",
     "dev:web": "yarn workspace jan-web dev",
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",

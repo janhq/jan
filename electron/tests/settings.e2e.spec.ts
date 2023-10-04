@@ -1,0 +1,46 @@
+import { _electron as electron } from "playwright";
+import { ElectronApplication, Page, expect, test } from "@playwright/test";
+
+import {
+  findLatestBuild,
+  parseElectronApp,
+  stubDialog,
+} from "electron-playwright-helpers";
+
+let electronApp: ElectronApplication;
+let page: Page;
+
+test.beforeAll(async () => {
+  process.env.CI = "e2e";
+
+  const latestBuild = findLatestBuild("dist");
+  expect(latestBuild).toBeTruthy();
+
+  // parse the packaged Electron app and find paths and other info
+  const appInfo = parseElectronApp(latestBuild);
+  expect(appInfo).toBeTruthy();
+
+  electronApp = await electron.launch({
+    args: [appInfo.main], // main file from package.json
+    executablePath: appInfo.executable, // path to the Electron executable
+  });
+  await stubDialog(electronApp, "showMessageBox", { response: 1 });
+
+  page = await electronApp.firstWindow();
+});
+
+test.afterAll(async () => {
+  await electronApp.close();
+  await page.close();
+});
+
+test("shows settings", async () => {
+  await page.getByRole("button", { name: "Settings" }).first().click();
+
+  const inputRequired = await page
+    .locator("input#plugin-file[required]:invalid")
+    .first();
+  expect(inputRequired).toBeDefined();
+  const pluginList = await page.getByTestId("plugin-item").all();
+  expect(pluginList.length).toBe(4);
+});

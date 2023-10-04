@@ -198,6 +198,7 @@ export const Preferences = () => {
               .map((e) => (
                 <div
                   key={e.name}
+                  data-testid="plugin-item"
                   className="flex flex-col h-full p-6 bg-white border border-gray-200 rounded-sm dark:border-gray-300"
                 >
                   <div className="flex flex-row space-x-2 items-center">

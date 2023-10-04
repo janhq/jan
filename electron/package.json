@@ -12,7 +12,8 @@
       "renderer/**/*",
       "build/*.{js,map}",
       "build/**/*.{js,map}",
-      "core/pre-install"
+      "core/pre-install",
+      "core/plugin-manager/facade"
     ],
     "asarUnpack": [
       "core/pre-install"
@@ -31,6 +32,7 @@
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
+    "test:e2e": "playwright test --workers=2",
     "dev": "tsc -p . && electron .",
     "build": "tsc -p . && electron-builder -p never -mw",
     "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mw",
@@ -45,10 +47,12 @@
     "request-progress": "^3.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.38.1",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
     "electron": "26.2.1",
     "electron-builder": "^24.6.4",
+    "electron-playwright-helpers": "^1.6.0",
     "eslint-plugin-react": "^7.33.2"
   },
   "installConfig": {
