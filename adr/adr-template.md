@@ -3,6 +3,9 @@
 ## Changelog
 - {date}: {changelog}
 
+## Authors
+- @usernames
+
 ## Status
 
 What is the status, such as proposed, accepted, rejected, deprecated, superseded, etc.?
@@ -20,5 +23,7 @@ What is the change that we're proposing and/or doing?
 ## Consequences
 
 What becomes easier or more difficult to do because of this change?
+
+## Alternatives
 
 ## Reference
