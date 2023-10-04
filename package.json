@@ -19,14 +19,21 @@
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "yarn workspace jan-electron build",
-    "build:plugins": "rm -f ./electron/core/pre-install/*.tgz && concurrently \"cd ./electron/core/plugins/data-plugin && npm install && npm run build:publish\" \"cd ./electron/core/plugins/inference-plugin && npm install && npm run build:publish\" \"cd ./electron/core/plugins/model-management-plugin && npm install && npm run build:publish\" \"cd ./electron/core/plugins/monitoring-plugin && npm install && npm run build:publish\"",
+    "build:plugins": "rimraf ./electron/core/pre-install/*.tgz && concurrently \"cd ./electron/core/plugins/data-plugin && npm install && npm run build:publish\" \"cd ./electron/core/plugins/inference-plugin && npm install && npm run build:publish\" \"cd ./electron/core/plugins/model-management-plugin && npm install && npm run build:publish\" \"cd ./electron/core/plugins/monitoring-plugin && npm install && npm run build:publish\"",
     "build": "yarn build:web && yarn build:electron",
-    "build:publish": "yarn build:web && yarn workspace jan-electron build:publish"
+    "build:darwin": "yarn build:web && yarn workspace jan-electron build:darwin",
+    "build:win32": "yarn build:web && yarn workspace jan-electron build:win32",
+    "build:linux": "yarn build:web && yarn workspace jan-electron build:linux",
+    "build:publish": "yarn build:web && yarn workspace jan-electron build:publish",
+    "build:publish-darwin": "yarn build:web && yarn workspace jan-electron build:publish-darwin",
+    "build:publish-win32": "yarn build:web && yarn workspace jan-electron build:publish-win32",
+    "build:publish-linux": "yarn build:web && yarn workspace jan-electron build:publish-linux"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",
     "cpx": "^1.5.0",
-    "wait-on": "^7.0.1"
+    "wait-on": "^7.0.1",
+    "rimraf": "^3.0.2"
   },
   "version": "0.0.0"
 }

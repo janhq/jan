@@ -1,8 +1,8 @@
 {
   "name": "jan-electron",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "main": "./build/main.js",
-  "author": "Jan",
+  "author": "Jan <service@jan.ai>",
   "license": "MIT",
   "homepage": "./",
   "build": {
@@ -12,7 +12,8 @@
       "renderer/**/*",
       "build/*.{js,map}",
       "build/**/*.{js,map}",
-      "core/pre-install"
+      "core/pre-install",
+      "core/plugin-manager/facade"
     ],
     "asarUnpack": [
       "core/pre-install"
@@ -32,9 +33,14 @@
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "dev": "tsc -p . && electron .",
-    "build": "tsc -p . && electron-builder -p never -mw",
-    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -mw",
-    "postinstall": "electron-builder install-app-deps"
+    "build": "tsc -p . && electron-builder -p never -m",
+    "build:darwin": "tsc -p . && electron-builder -p never -m --x64 --arm64",
+    "build:win32": "tsc -p . && electron-builder -p never -w",
+    "build:linux": "tsc -p . && electron-builder -p never --linux deb",
+    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -m",
+    "build:publish-darwin": "tsc -p . && electron-builder -p onTagOrDraft -m --x64 --arm64",
+    "build:publish-win32": "tsc -p . && electron-builder -p onTagOrDraft -w",
+    "build:publish-linux": "tsc -p . && electron-builder -p onTagOrDraft --linux deb "
   },
   "dependencies": {
     "@npmcli/arborist": "^7.1.0",
