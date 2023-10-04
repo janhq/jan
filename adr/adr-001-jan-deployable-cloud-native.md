@@ -33,9 +33,12 @@ Introduce 2 components in Jan:
 
 ### Detailed Design
 #### FE
-- Middleware: TBD
+- Middleware: 
+  ![Middleware](images/adr-001-01.png "Middleware")
 - Httpserver: TBD
 - Custom build for httpweb/electron: TBD
+- IPC
+- Electron imports in plugins
 #### Devops:
 * Allow to pass username/password as environment variables
 * Assign a Public IP to the instance
