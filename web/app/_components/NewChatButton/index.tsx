@@ -32,7 +32,7 @@ const NewChatButton: React.FC = () => {
   };
 
   return (
-    <SecondaryButton title={"New Chat"} onClick={onClick} className="my-5" />
+    <SecondaryButton title={"New Chat"} onClick={onClick} className="my-5 mx-3" />
   );
 };
 

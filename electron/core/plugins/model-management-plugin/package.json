@@ -24,5 +24,11 @@
     "dist/*",
     "package.json",
     "README.md"
+  ],
+  "dependencies": {
+    "@huggingface/hub": "^0.8.5"
+  },
+  "bundledDependencies": [
+    "@huggingface/hub"
   ]
 }

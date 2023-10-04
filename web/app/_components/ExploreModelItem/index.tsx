@@ -2,13 +2,13 @@
 
 import ExploreModelItemHeader from "../ExploreModelItemHeader";
 import ModelVersionList from "../ModelVersionList";
-import { useMemo, useState } from "react";
-import { Product } from "@/_models/Product";
+import { Fragment, useMemo, useState } from "react";
 import SimpleTag, { TagType } from "../SimpleTag";
 import { displayDate } from "@/_utils/datetime";
 import useDownloadModel from "@/_hooks/useDownloadModel";
 import { atom, useAtomValue } from "jotai";
 import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
+import { Product } from "@/_models/Product";
 
 type Props = {
   model: Product;
@@ -16,8 +16,8 @@ type Props = {
 
 const ExploreModelItem: React.FC<Props> = ({ model }) => {
   const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[model.fileName ?? ""]),
-    [model.fileName ?? ""]
+    () => atom((get) => get(modelDownloadStateAtom)[model.name ?? ""]),
+    [model.name ?? ""]
   );
   const downloadState = useAtomValue(downloadAtom);
   const { downloadModel } = useDownloadModel();
@@ -28,9 +28,8 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
       <ExploreModelItemHeader
         name={model.name}
         status={TagType.Recommended}
-        total={model.totalSize}
+        versions={model.availableVersions}
         downloadState={downloadState}
-        onDownloadClick={() => downloadModel(model)}
       />
       <div className="flex flex-col px-[26px] py-[22px]">
         <div className="flex justify-between">
@@ -87,13 +86,17 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
           <span className="text-sm font-medium text-gray-500">Tags</span>
         </div>
       </div>
-      {show && <ModelVersionList />}
-      <button
-        onClick={() => setShow(!show)}
-        className="bg-[#FBFBFB] text-gray-500 text-sm text-left py-2 px-4 border-t border-gray-200"
-      >
-        {!show ? "+ Show Available Versions" : "- Collapse"}
-      </button>
+      {model.availableVersions.length > 0 && (
+        <Fragment>
+          {show && <ModelVersionList model={model} versions={model.availableVersions} />}
+          <button
+            onClick={() => setShow(!show)}
+            className="bg-[#FBFBFB] text-gray-500 text-sm text-left py-2 px-4 border-t border-gray-200"
+          >
+            {!show ? "+ Show Available Versions" : "- Collapse"}
+          </button>
+        </Fragment>
+      )}
     </div>
   );
 };
