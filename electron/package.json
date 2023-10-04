@@ -32,9 +32,9 @@
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "dev": "tsc -p . && electron .",
-    "build": "tsc -p . && electron-builder -p never -m",
+    "build": "tsc -p . && electron-builder -p never -m --x64 --arm64",
     "build-windows": "tsc -p . && electron-builder -p never -w",
-    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -m",
+    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -m --x64 --arm64",
     "build-windows:publish": "tsc -p . && electron-builder -p onTagOrDraft -w"
   },
   "dependencies": {
