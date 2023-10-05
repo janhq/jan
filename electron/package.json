@@ -27,8 +27,11 @@
     ],
     "extends": null,
     "mac": {
-      "type": "distribution"
-    }
+      "type": "distribution",
+      "entitlements": "./build/entitlements.mac.inherit.plist"
+    },
+    "afterSign": "./afterSignHook.js",
+    "afterAllArtifactBuild": "./fixMacDistributionArchive.js"
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
@@ -57,6 +60,7 @@
     "@typescript-eslint/parser": "^6.7.3",
     "electron": "26.2.1",
     "electron-builder": "^24.6.4",
+    "electron-notarize": "^1.2.2",
     "electron-playwright-helpers": "^1.6.0",
     "eslint-plugin-react": "^7.33.2"
   },

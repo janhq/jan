@@ -1,0 +1,54 @@
+name: Jan Build MacOS App
+
+on:
+  push:
+    branches: chore/notarize-mac-app
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install yarn dependencies
+        run: |
+          yarn install
+          yarn build:plugins
+
+      - name: Get Cer for code signing
+        run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
+        shell: bash
+        env:
+          CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+
+      - name: Build and publish app
+        run: |
+          yarn build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: "/tmp/codesign.p12"
+          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+
+      - name: Archive folder
+        uses: montudor/action-zip@v0.1.1
+        with:
+          args: zip -qq -r ./dist.zip ./electron/dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist.zip
