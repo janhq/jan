@@ -59,7 +59,7 @@ Jan supports core & 3rd party extensions:
 - [ ] **Multi-user support**: Share a single server across a team/friends (planned)
 - [ ] **Compliance**: Auditing and flagging features (planned)
 
-## Nitro (Jan's AI egine)
+## Nitro (Jan's AI engine)
 
 In the background, Jan runs [Nitro](https://nitro.jan.ai), an open source, C++ inference engine. It runs various model formats (GGUF/TensorRT) on various hardware (Mac M1/M2/Intel, Windows, Linux, and datacenter-grade Nvidia GPUs) with optional GPU acceleration.
 
