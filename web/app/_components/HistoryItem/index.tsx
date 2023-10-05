@@ -66,7 +66,7 @@ const HistoryItem: React.FC<Props> = ({
 
   return (
     <button
-      className={`flex flex-row mx-1 items-center gap-[10px] rounded-lg p-2 ${backgroundColor} hover:bg-hover-light`}
+      className={`flex flex-row mx-1 items-center gap-2.5 rounded-lg p-2 ${backgroundColor} hover:bg-hover-light`}
       onClick={onClick}
     >
       <Image
@@ -79,7 +79,7 @@ const HistoryItem: React.FC<Props> = ({
       <div className="flex flex-col justify-between text-sm leading-[20px] w-full">
         <div className="flex flex-row items-center justify-between">
           <span className="text-gray-900 text-left">{name}</span>
-          <span className="text-[11px] leading-[13px] tracking-[-0.4px] text-gray-400">
+          <span className="text-xs leading-[13px] tracking-[-0.4px] text-gray-400">
             {updatedAt && new Date(updatedAt).toDateString()}
           </span>
         </div>

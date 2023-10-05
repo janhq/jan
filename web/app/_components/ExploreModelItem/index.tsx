@@ -1,3 +1,5 @@
+/* eslint-disable react/display-name */
+
 "use client";
 
 import ExploreModelItemHeader from "../ExploreModelItemHeader";
@@ -11,9 +13,7 @@ type Props = {
   model: Product;
 };
 
-export type Ref = HTMLDivElement;
-
-const ExploreModelItem = forwardRef<Ref, Props>(({ model }, ref) => {
+const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
   const [show, setShow] = useState(false);
 
   return (
@@ -33,7 +33,7 @@ const ExploreModelItem = forwardRef<Ref, Props>(({ model }, ref) => {
               <div className="text-sm font-medium text-gray-500">
                 Model Format
               </div>
-              <div className="px-[10px] py-0.5 bg-gray-100 text-xs text-gray-800 w-fit">
+              <div className="px-2.5 py-0.5 bg-gray-100 text-xs text-gray-800 w-fit">
                 GGUF
               </div>
             </div>

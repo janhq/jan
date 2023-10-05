@@ -1,10 +1,12 @@
-import React, { Fragment } from "react";
+import React from "react";
 import SearchBar from "../SearchBar";
 import ModelTable from "../ModelTable";
 import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
 
 const DownloadedModelTable: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels();
+
+  if (!downloadedModels || downloadedModels.length === 0) return null;
 
   return (
     <div className="pl-[63px] pr-[89px]">
