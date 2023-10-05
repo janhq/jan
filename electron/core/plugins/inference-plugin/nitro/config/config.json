@@ -1,1 +1,13 @@
-{"custom_config": {"llama_model_path":"","ctx_len":2048,"ngl":100}}
+{
+	"listeners": [
+		{
+			"address": "0.0.0.0",
+			"port": 3928
+		}
+	],
+	"custom_config": {
+		"llama_model_path": "/Users/alandao/Documents/codes/nitro.cpp_temp/models/llama2_7b_chat_uncensored.Q4_0.gguf",
+		"ctx_len": 2048,
+		"ngl": 100
+	}
+}
