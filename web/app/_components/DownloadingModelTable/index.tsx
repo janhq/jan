@@ -17,10 +17,12 @@ const DownloadingModelTable: React.FC = () => {
   }
 
   return (
-    <Fragment>
-      <h3 className="text-xl leading-[25px] mt-[50px] mb-4">Downloading Models</h3>
+    <div className="pl-[63px] pr-[89px]">
+      <h3 className="text-xl leading-[25px] mt-[50px] mb-4">
+        Downloading Models
+      </h3>
       <ModelDownloadingTable downloadStates={downloadStates} />
-    </Fragment>
+    </div>
   );
 };
 
