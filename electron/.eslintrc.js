@@ -34,5 +34,11 @@ module.exports = {
       { name: "Link", linkAttribute: "to" },
     ],
   },
-  ignorePatterns: ["renderer/*", "node_modules/*", "core/plugins"],
+  ignorePatterns: [
+    "build",
+    "renderer",
+    "node_modules",
+    "core/plugins",
+    "core/**/*.test.js",
+  ],
 };
