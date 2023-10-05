@@ -1,15 +1,15 @@
 import React from "react";
-import { Product } from "@/_models/Product";
-import ModelRow from "../ModelRow";
 import ModelTableHeader from "../ModelTableHeader";
+import { DownloadState } from "@/_models/DownloadState";
+import ModelDownloadingRow from "../ModelDownloadingRow";
 
 type Props = {
-  models: Product[];
+  downloadStates: DownloadState[];
 };
 
-const tableHeaders = ["MODEL", "FORMAT", "SIZE", "STATUS", "ACTIONS"];
+const tableHeaders = ["MODEL", "TRANSFERRED", "SIZE", "PERCENTAGE", "SPEED"];
 
-const ModelTable: React.FC<Props> = ({ models }) => (
+const ModelDownloadingTable: React.FC<Props> = ({ downloadStates }) => (
   <div className="flow-root border rounded-lg border-gray-200 min-w-full align-middle shadow-lg">
     <table className="min-w-full">
       <thead className="bg-gray-50 border-b border-gray-200">
@@ -23,12 +23,12 @@ const ModelTable: React.FC<Props> = ({ models }) => (
         </tr>
       </thead>
       <tbody>
-        {models.map((model) => (
-          <ModelRow key={model.id} model={model} />
+        {downloadStates.map((state) => (
+          <ModelDownloadingRow key={state.fileName} downloadState={state} />
         ))}
       </tbody>
     </table>
   </div>
 );
 
-export default React.memo(ModelTable);
+export default React.memo(ModelDownloadingTable);

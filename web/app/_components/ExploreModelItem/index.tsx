@@ -2,12 +2,9 @@
 
 import ExploreModelItemHeader from "../ExploreModelItemHeader";
 import ModelVersionList from "../ModelVersionList";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useState } from "react";
 import SimpleTag, { TagType } from "../SimpleTag";
 import { displayDate } from "@/_utils/datetime";
-import useDownloadModel from "@/_hooks/useDownloadModel";
-import { atom, useAtomValue } from "jotai";
-import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
 import { Product } from "@/_models/Product";
 
 type Props = {
@@ -15,21 +12,14 @@ type Props = {
 };
 
 const ExploreModelItem: React.FC<Props> = ({ model }) => {
-  const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[model.name ?? ""]),
-    [model.name ?? ""]
-  );
-  const downloadState = useAtomValue(downloadAtom);
-  const { downloadModel } = useDownloadModel();
   const [show, setShow] = useState(false);
 
   return (
-    <div className="flex flex-col border border-gray-200 rounded-[5px]">
+    <div className="flex flex-col border border-gray-200 rounded-md mb-4">
       <ExploreModelItemHeader
         name={model.name}
         status={TagType.Recommended}
         versions={model.availableVersions}
-        downloadState={downloadState}
       />
       <div className="flex flex-col px-[26px] py-[22px]">
         <div className="flex justify-between">
@@ -88,7 +78,12 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
       </div>
       {model.availableVersions.length > 0 && (
         <Fragment>
-          {show && <ModelVersionList model={model} versions={model.availableVersions} />}
+          {show && (
+            <ModelVersionList
+              model={model}
+              versions={model.availableVersions}
+            />
+          )}
           <button
             onClick={() => setShow(!show)}
             className="bg-[#FBFBFB] text-gray-500 text-sm text-left py-2 px-4 border-t border-gray-200"
