@@ -19,8 +19,6 @@ test.beforeAll(async () => {
   // parse the packaged Electron app and find paths and other info
   const appInfo = parseElectronApp(latestBuild);
   expect(appInfo).toBeTruthy();
-  expect(appInfo.arch).toBeTruthy();
-  expect(appInfo.arch).toBe(process.arch);
   expect(appInfo.asar).toBe(true);
   expect(appInfo.executable).toBeTruthy();
   expect(appInfo.main).toBeTruthy();

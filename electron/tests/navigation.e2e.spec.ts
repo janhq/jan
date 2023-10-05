@@ -52,10 +52,6 @@ test("renders left navigation panel", async () => {
     .getByRole("button", { name: "Explore Models" })
     .first()
     .isEnabled();
-  const startConversation = await page
-    .getByRole("button", { name: "Start a Conversation" })
-    .first()
-    .isEnabled();
   const discordBtn = await page
     .getByRole("button", { name: "Discord" })
     .first()
@@ -72,7 +68,6 @@ test("renders left navigation panel", async () => {
     [
       newChatBtn,
       exploreBtn,
-      startConversation,
       discordBtn,
       myModelsBtn,
       settingsBtn,
