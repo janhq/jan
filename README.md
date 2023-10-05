@@ -20,9 +20,9 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers.
+**Use offline LLMs with your own data.** Run open source models like Llama2 or Falcon on your internal computers/servers.
 
-Jan runs on any hardware, from PCs to multi-GPU clusters. Jan supports both CPU and GPU on the following architecture:
+**Jan runs on any hardware.** From PCs to multi-GPU clusters, Jan supports universal architectures:
 
 - [x] Nvidia GPUs (fast)
 - [x] Apple M-series (fast)
