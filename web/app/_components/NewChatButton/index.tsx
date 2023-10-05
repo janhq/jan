@@ -11,6 +11,7 @@ import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 import useCreateConversation from "@/_hooks/useCreateConversation";
 import useInitModel from "@/_hooks/useInitModel";
 import { Product } from "@/_models/Product";
+import { PlusIcon } from "@heroicons/react/24/outline";
 
 const NewChatButton: React.FC = () => {
   const activeModel = useAtomValue(currentProductAtom);
@@ -32,8 +33,13 @@ const NewChatButton: React.FC = () => {
   };
 
   return (
-    <SecondaryButton title={"New Chat"} onClick={onClick} className="my-5 mx-3" />
+    <SecondaryButton
+      title={"New Chat"}
+      onClick={onClick}
+      className="my-5 mx-3"
+      icon={<PlusIcon width={16} height={16} />}
+    />
   );
 };
 
-export default NewChatButton;
+export default React.memo(NewChatButton);

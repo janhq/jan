@@ -51,6 +51,7 @@
   },
   "dependencies": {
     "@npmcli/arborist": "^7.1.0",
+    "@uiball/loaders": "^1.3.0",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
     "pacote": "^17.0.4",
