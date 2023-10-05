@@ -14,7 +14,7 @@ export default function useGetHuggingFaceModel() {
 
     const searchParams: SearchModelParamHf = {
       search: { owner },
-      limit: 5,
+      limit: 10,
     };
     const result = await searchHfModels(searchParams);
     console.debug("result", JSON.stringify(result));
