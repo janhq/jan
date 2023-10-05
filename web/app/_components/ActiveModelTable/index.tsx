@@ -9,10 +9,10 @@ const ActiveModelTable: React.FC = () => {
   if (!activeModel) return null;
 
   return (
-    <Fragment>
+    <div className="pl-[63px] pr-[89px]">
       <h3 className="text-xl leading-[25px] mb-[13px]">Active Model(s)</h3>
       <ModelTable models={[activeModel]} />
-    </Fragment>
+    </div>
   );
 };
 
