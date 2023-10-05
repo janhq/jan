@@ -32,7 +32,7 @@
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
-    "test:e2e": "playwright test --workers=2",
+    "test:e2e": "playwright test --workers=1",
     "dev": "tsc -p . && electron .",
     "build": "tsc -p . && electron-builder -p never -m",
     "build:darwin": "tsc -p . && electron-builder -p never -m --x64 --arm64",
