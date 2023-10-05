@@ -3,6 +3,9 @@ const { readdirSync, lstatSync } = require("fs");
 const { app } = require("electron");
 const { listModels, listFiles, fileDownloadInfo } = require("@huggingface/hub");
 
+let modelsIterator = undefined;
+let currentSearchOwner = undefined;
+
 const ALL_MODELS = [
   {
     id: "llama-2-7b-chat.Q4_K_M.gguf.bin",
@@ -88,26 +91,53 @@ function getDownloadedModels() {
   return downloadedModels;
 }
 
-const searchHfModels = async (params) => {
-  const result = [];
+const getNextModels = async (count) => {
+  const models = [];
+  let hasMore = true;
 
-  var index = 0;
+  while (models.length < count) {
+    const next = await modelsIterator.next();
 
-  for await (const model of listModels({
-    search: params.search,
-    credentials: params.credentials,
-  })) {
+    // end if we reached the end
+    if (next.done) {
+      hasMore = false;
+      break;
+    }
+
+    const model = next.value;
     const files = await listFilesByName(model.name);
-    result.push({
+
+    models.push({
       ...model,
       files,
     });
-
-    index++;
-    if (index === params.limit) break;
   }
 
+  const result = {
+    data: models,
+    hasMore,
+  };
   return result;
+};
+
+const searchHfModels = async (params) => {
+  if (currentSearchOwner === params.search.owner && modelsIterator != null) {
+    // paginated search
+    console.debug(`Paginated search owner: ${params.search.owner}`);
+    const models = await getNextModels(params.limit);
+    return models;
+  } else {
+    // new search
+    console.debug(`Init new search owner: ${params.search.owner}`);
+    currentSearchOwner = params.search.owner;
+    modelsIterator = listModels({
+      search: params.search,
+      credentials: params.credentials,
+    });
+
+    const models = await getNextModels(params.limit);
+    return models;
+  }
 };
 
 const listFilesByName = async (modelName) => {

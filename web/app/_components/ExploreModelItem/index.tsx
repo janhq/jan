@@ -2,7 +2,7 @@
 
 import ExploreModelItemHeader from "../ExploreModelItemHeader";
 import ModelVersionList from "../ModelVersionList";
-import { Fragment, useState } from "react";
+import { Fragment, forwardRef, useState } from "react";
 import SimpleTag, { TagType } from "../SimpleTag";
 import { displayDate } from "@/_utils/datetime";
 import { Product } from "@/_models/Product";
@@ -11,11 +11,16 @@ type Props = {
   model: Product;
 };
 
-const ExploreModelItem: React.FC<Props> = ({ model }) => {
+export type Ref = HTMLDivElement;
+
+const ExploreModelItem = forwardRef<Ref, Props>(({ model }, ref) => {
   const [show, setShow] = useState(false);
 
   return (
-    <div className="flex flex-col border border-gray-200 rounded-md mb-4">
+    <div
+      ref={ref}
+      className="flex flex-col border border-gray-200 rounded-md mb-4"
+    >
       <ExploreModelItemHeader
         name={model.name}
         status={TagType.Recommended}
@@ -94,6 +99,6 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
       )}
     </div>
   );
-};
+});
 
 export default ExploreModelItem;

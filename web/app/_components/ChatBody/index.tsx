@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useRef, useState, useEffect } from "react";
 import ChatItem from "../ChatItem";
 import { ChatMessage } from "@/_models/ChatMessage";
 import useChatMessages from "@/_hooks/useChatMessages";
@@ -16,8 +16,8 @@ const ChatBody: React.FC = () => {
   const messageList = useAtomValue(
     selectAtom(
       chatMessages,
-      useCallback((v) => v[activeConversationId], [activeConversationId])
-    )
+      useCallback((v) => v[activeConversationId], [activeConversationId]),
+    ),
   );
   const [content, setContent] = useState<React.JSX.Element[]>([]);
 
@@ -40,10 +40,10 @@ const ChatBody: React.FC = () => {
 
       if (message) intersectObs.current.observe(message);
     },
-    [loading, hasMore]
+    [loading, hasMore],
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     const list = messageList?.map((message, index) => {
       if (messageList?.length === index + 1) {
         return (
