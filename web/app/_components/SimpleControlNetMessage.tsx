@@ -30,15 +30,15 @@ const SimpleControlNetMessage: React.FC<Props> = ({
       />
       <div className="flex flex-col gap-1">
         <div className="flex gap-1 justify-start items-baseline">
-          <div className="text-[#1B1B1B] text-[13px] font-extrabold leading-[15.2px]">
+          <div className="text-[#1B1B1B] text-sm font-extrabold leading-[15.2px]">
             {senderName}
           </div>
-          <div className="text-[11px] leading-[13.2px] font-medium text-gray-400 ml-2">
+          <div className="text-xs leading-[13.2px] font-medium text-gray-400 ml-2">
             {displayDate(createdAt)}
           </div>
         </div>
         <div className="flex gap-3 flex-col">
-          <p className="leading-[20px] whitespace-break-spaces text-[14px] font-normal dark:text-[#d1d5db]">
+          <p className="leading-[20px] whitespace-break-spaces text-sm font-normal dark:text-[#d1d5db]">
             {text}
           </p>
           <JanImage
@@ -49,7 +49,7 @@ const SimpleControlNetMessage: React.FC<Props> = ({
             <Link
               href={imageUrls[0] || "#"}
               target="_blank_"
-              className="flex gap-1 items-center px-2 py-1 bg-[#F3F4F6] rounded-[12px]"
+              className="flex gap-1 items-center px-2 py-1 bg-[#F3F4F6] rounded-xl"
             >
               <Image src="icons/download.svg" width={16} height={16} alt="" />
               <span className="leading-[20px] text-[14px] text-[#111928]">

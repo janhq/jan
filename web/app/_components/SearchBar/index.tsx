@@ -1,7 +1,7 @@
 import { modelSearchAtom } from "@/_helpers/JotaiWrapper";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { useSetAtom } from "jotai";
-import { useState } from "react";
+import { useDebouncedCallback } from "use-debounce";
 
 export enum SearchType {
   Model = "model",
@@ -13,21 +13,12 @@ type Props = {
 };
 
 const SearchBar: React.FC<Props> = ({ type, placeholder }) => {
-  const [searchValue, setSearchValue] = useState("");
   const setModelSearch = useSetAtom(modelSearchAtom);
   let placeholderText = placeholder ? placeholder : "Search (⌘K)";
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      if (type === SearchType.Model) {
-        setModelSearch(searchValue);
-      }
-    }
-  };
-
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchValue(event.target.value);
-  };
+  const debounced = useDebouncedCallback((value) => {
+    setModelSearch(value);
+  }, 300);
 
   return (
     <div className="relative mt-3 flex items-center">
@@ -43,10 +34,8 @@ const SearchBar: React.FC<Props> = ({ type, placeholder }) => {
         type="text"
         name="search"
         id="search"
-        value={searchValue}
         placeholder={placeholderText}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
+        onChange={(e) => debounced(e.target.value)}
         className="block w-full rounded-md border-0 py-1.5 pl-8 pr-14 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
       />
     </div>

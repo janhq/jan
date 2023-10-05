@@ -1,11 +1,13 @@
 import { ModelVersion, Product, ProductType } from "@/_models/Product";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
 import { DataService, ModelManagementService } from "../../shared/coreService";
 import { SearchModelParamHf } from "@/_models/hf/SearchModelParam.hf";
+import { useAtom } from "jotai";
+import { downloadedModelAtom } from "@/_helpers/atoms/DownloadedModel.atom";
 
 export function useGetDownloadedModels() {
-  const [downloadedModels, setDownloadedModels] = useState<Product[]>([]);
+  const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelAtom);
 
   useEffect(() => {
     getDownloadedModels().then((downloadedModels) => {
@@ -42,11 +44,12 @@ export async function searchHfModels(
     const modelVersions: ModelVersion[] = [];
 
     for (const [, file] of Object.entries(model.files)) {
+      const fileData: any = file as any;
       const modelVersion: ModelVersion = {
-        path: file.path,
-        type: file.type,
-        downloadUrl: file.downloadLink,
-        size: file.size,
+        path: fileData.path,
+        type: fileData.type,
+        downloadUrl: fileData.downloadLink,
+        size: fileData.size,
       };
       modelVersions.push(modelVersion);
     }

@@ -11,7 +11,6 @@ export default function renderChatMessage({
   senderName,
   createdAt,
   imageUrls,
-  htmlText,
   text,
 }: ChatMessage): React.ReactNode {
   switch (messageType) {
@@ -45,7 +44,7 @@ export default function renderChatMessage({
           senderName={senderName}
           createdAt={createdAt}
           senderType={messageSenderType}
-          text={htmlText && htmlText.trim().length > 0 ? htmlText : text}
+          text={text}
         />
       );
     default:

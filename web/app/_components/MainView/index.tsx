@@ -12,7 +12,7 @@ import {
 import EmptyChatContainer from "../EmptyChatContainer";
 import MainChat from "../MainChat";
 
-export default function ChatContainer() {
+const MainView: React.FC = () => {
   const viewState = useAtomValue(getMainViewStateAtom);
 
   switch (viewState) {
@@ -30,4 +30,6 @@ export default function ChatContainer() {
     default:
       return <MainChat />;
   }
-}
+};
+
+export default MainView;

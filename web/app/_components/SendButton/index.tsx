@@ -1,8 +1,8 @@
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { currentConvoStateAtom } from "@/_helpers/atoms/Conversation.atom";
 import useSendChatMessage from "@/_hooks/useSendChatMessage";
+import { ArrowRightIcon } from "@heroicons/react/24/outline";
 import { useAtom, useAtomValue } from "jotai";
-import Image from "next/image";
 
 const SendButton: React.FC = () => {
   const [currentPrompt] = useAtom(currentPromptAtom);
@@ -25,9 +25,9 @@ const SendButton: React.FC = () => {
       onClick={sendChatMessage}
       style={disabled ? disabledStyle : enabledStyle}
       type="submit"
-      className="p-2 gap-[10px] inline-flex items-center rounded-[12px] text-sm font-semibold shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+      className="p-2 gap-2.5 inline-flex items-center rounded-xl text-sm font-semibold shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
     >
-      <Image src={"icons/ic_arrowright.svg"} width={24} height={24} alt="" />
+      <ArrowRightIcon width={16} height={16} />
     </button>
   );
 };

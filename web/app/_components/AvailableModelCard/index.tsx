@@ -47,7 +47,7 @@ const AvailableModelCard: React.FC<Props> = ({
 
   return (
     <div className="border rounded-lg border-gray-200">
-      <div className="flex justify-between py-4 px-3 gap-[10px]">
+      <div className="flex justify-between py-4 px-3 gap-2.5">
         <DownloadModelContent
           required={required}
           author={product.author}

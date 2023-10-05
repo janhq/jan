@@ -4,7 +4,7 @@ import ActiveModelTable from "../ActiveModelTable";
 import DownloadingModelTable from "../DownloadingModelTable";
 
 const MyModelContainer: React.FC = () => (
-  <div className="flex flex-col w-full h-full pt-[60px]">
+  <div className="flex flex-col flex-1 pt-[60px]">
     <HeaderTitle title="My Models" className="pl-[63px] pr-[89px]" />
     <div className="pb-6 overflow-y-auto scroll">
       <ActiveModelTable />
