@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
 import { DataService, ModelManagementService } from "../../shared/coreService";
 import { SearchModelParamHf } from "@/_models/hf/SearchModelParam.hf";
-import { ListModelOutputHf } from "@/_models/hf/ListModelOutput.hf";
 
 export function useGetDownloadedModels() {
   const [downloadedModels, setDownloadedModels] = useState<Product[]>([]);
@@ -33,13 +32,13 @@ export async function getModelFiles(): Promise<Product[]> {
 
 export async function searchHfModels(
   params: SearchModelParamHf
-): Promise<Product[]> {
-  const result: ListModelOutputHf[] = await executeSerial(
+): Promise<QueryProductResult> {
+  const result = await executeSerial(
     ModelManagementService.SEARCH_HF_MODELS,
     params
   );
 
-  const products: Product[] = result.map((model) => {
+  const products: Product[] = result.data.map((model: any) => {
     const modelVersions: ModelVersion[] = [];
 
     for (const [, file] of Object.entries(model.files)) {
@@ -78,5 +77,14 @@ export async function searchHfModels(
     return p;
   });
 
-  return products;
+  return {
+    data: products,
+    hasMore: result.hasMore,
+  };
 }
+
+// TODO define somewhere else
+export type QueryProductResult = {
+  data: Product[];
+  hasMore: boolean;
+};

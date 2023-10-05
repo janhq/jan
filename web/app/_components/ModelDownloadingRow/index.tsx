@@ -17,7 +17,6 @@ const ModelDownloadingRow: React.FC<Props> = ({ downloadState }) => (
   >
     <td className="flex flex-col whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
       {downloadState.fileName}
-      <span className="text-gray-500 font-normal">model.version</span>
     </td>
     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
       {toGigabytes(downloadState.size.transferred)}
