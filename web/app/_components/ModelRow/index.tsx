@@ -14,7 +14,7 @@ type Props = {
 };
 
 const ModelRow: React.FC<Props> = ({ model }) => {
-  const { startModel } = useStartStopModel();
+  const { startModel, stopModel } = useStartStopModel();
   const activeModel = useAtomValue(currentProductAtom);
   const { deleteModel } = useDeleteModel();
 
@@ -31,6 +31,8 @@ const ModelRow: React.FC<Props> = ({ model }) => {
   const onModelActionClick = (action: ModelActionType) => {
     if (action === ModelActionType.Start) {
       startModel(model.id);
+    } else {
+      stopModel(model.id);
     }
   };
 

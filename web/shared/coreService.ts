@@ -30,6 +30,7 @@ export enum ModelService {
 export enum InfereceService {
   INFERENCE_URL = "inferenceUrl",
   INIT_MODEL = "initModel",
+  STOP_MODEL = "stopModel",
 }
 
 export enum ModelManagementService {
