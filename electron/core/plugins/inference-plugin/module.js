@@ -53,10 +53,10 @@ async function initModel(product) {
   if (process.platform === "win32") {
     binaryName = "nitro.exe";
   } else if (process.platform === "darwin") { // Mac OS platform
-    binaryName = process.arch === "arm64" ? "nitro" : "nitro_mac_intel";
+    binaryName = process.arch === "arm64" ? "nitro_mac_amd64" : "nitro_mac_amd64";
   } else {
     // Linux
-    binaryName = "nitro_linux"; // For other platforms
+    binaryName = "nitro_linux_amd64_cuda"; // For other platforms
   }
 
   const binaryPath = path.join(binaryFolder, binaryName);
