@@ -11,7 +11,7 @@ const SidebarFooter: React.FC = () => (
       className="flex-1"
     />
     <SecondaryButton
-      title={"Discord"}
+      title={"Twitter"}
       onClick={() =>
         window.electronAPI?.openExternalUrl("https://twitter.com/jan_dotai")
       }
