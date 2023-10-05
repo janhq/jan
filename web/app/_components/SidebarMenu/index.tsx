@@ -21,21 +21,16 @@ const menu = [
 ];
 
 const SidebarMenu: React.FC = () => (
-  <div className="flex flex-col mx-3">
-    <div className="text-gray-500 text-xs font-semibold py-2 pl-2 pr-3">
-      Your Configurations
-    </div>
-    <ul role="list" className="-mx-2 mt-2 space-y-1 mb-2">
-      {menu.map((item) => (
-        <SidebarMenuItem
-          title={item.name}
-          viewState={item.state}
-          iconName={item.icon}
-          key={item.name}
-        />
-      ))}
-    </ul>
-  </div>
+  <ul role="list" className="mx-1 mt-2 space-y-1 mb-2">
+    {menu.map((item) => (
+      <SidebarMenuItem
+        title={item.name}
+        viewState={item.state}
+        iconName={item.icon}
+        key={item.name}
+      />
+    ))}
+  </ul>
 );
 
 export default React.memo(SidebarMenu);
