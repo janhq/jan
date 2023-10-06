@@ -147,6 +147,18 @@ function handleIPCs() {
   ipcMain.handle("relaunch", async (_event, url) => {
     dispose(requiredModules);
     app.relaunch();
+    app.exit();
+  });
+
+  ipcMain.handle("reloadPlugins", async (_event, url) => {
+    const userDataPath = app.getPath("userData");
+    const fullPath = join(userDataPath, "plugins");
+
+    rmdir(fullPath, { recursive: true }, function (err) {
+      if (err) console.log(err);
+      app.relaunch();
+      app.exit();
+    });
   });
 
   /**
