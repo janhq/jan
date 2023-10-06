@@ -25,10 +25,12 @@ module.exports = async function (params) {
 
   try {
     await notarize({
+      tool: "notarytool",
       appBundleId: appId,
       appPath: appPath,
-      appleId: process.env.APPLE_ID,
-      appleIdPassword: process.env.APPLE_ID_PASSWORD,
+      appleApiKey: process.env.APPLE_API_KEY,
+      appleApiKeyId: process.env.APPLE_KEY_ID,
+      appleApiIssuer: process.env.API_ISSUER
     });
   } catch (error) {
     console.error(error);

@@ -29,10 +29,10 @@
     "mac": {
       "type": "distribution",
       "entitlements": "entitlements.mac.plist",
-      "entitlementsInherit": "entitlements.mac.plist"
+      "entitlementsInherit": "entitlements.mac.plist",
+      "notarize": true
     },
-    "afterSign": "./afterSignHook.js",
-    "afterAllArtifactBuild": "./fixMacDistributionArchive.js"
+    "afterSign": "./afterSignHook.js"
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
