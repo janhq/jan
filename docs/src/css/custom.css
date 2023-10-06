@@ -34,3 +34,13 @@
   --ifm-color-primary-lightest: #3A8BFF;   /* Lightest Blue */
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
+
+.footer.footer--dark {
+  --ifm-footer-background-color: #1a212f;
+  --ifm-footer-color: var(--ifm-footer-link-color);
+  --ifm-footer-link-color: var(--ifm-color-secondary);
+  --ifm-footer-title-color: var(--ifm-color-white);
+
+  background-color: var(--ifm-footer-background-color);
+  color: var(--ifm-footer-color)
+}
