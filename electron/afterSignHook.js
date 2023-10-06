@@ -1,7 +1,7 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-var electron_notarize = require("electron-notarize");
+const { notarize } = require("@electron/notarize");
 
 module.exports = async function (params) {
   if (process.platform !== "darwin") {
@@ -24,7 +24,7 @@ module.exports = async function (params) {
   console.log(`Notarizing ${appId} found at ${appPath}`);
 
   try {
-    await electron_notarize.notarize({
+    await notarize({
       appBundleId: appId,
       appPath: appPath,
       appleId: process.env.APPLE_ID,
