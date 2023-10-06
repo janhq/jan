@@ -28,10 +28,8 @@
     "extends": null,
     "mac": {
       "type": "distribution",
-      "entitlements": "entitlements.mac.plist",
-      "entitlementsInherit": "entitlements.mac.plist",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
+      "entitlements": "./entitlements.mac.plist",
+      "entitlementsInherit": "./entitlements.mac.plist",
       "notarize": {
         "teamId": "YT49P7GXG4"
       }
