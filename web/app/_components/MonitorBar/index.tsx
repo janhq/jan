@@ -1,41 +1,21 @@
 import ProgressBar from "../ProgressBar";
 import SystemItem from "../SystemItem";
 import { useAtomValue } from "jotai";
-import {
-  activeModel,
-  appDownloadProgress,
-  getSystemBarVisibilityAtom,
-} from "@/_helpers/JotaiWrapper";
+import { appDownloadProgress } from "@/_helpers/JotaiWrapper";
 import { useEffect, useState } from "react";
 import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
 import { SystemMonitoringService } from "../../../shared/coreService";
+import { getSystemBarVisibilityAtom } from "@/_helpers/atoms/SystemBar.atom";
+import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 
 const MonitorBar: React.FC = () => {
   const show = useAtomValue(getSystemBarVisibilityAtom);
   const progress = useAtomValue(appDownloadProgress);
-  const modelName = useAtomValue(activeModel);
+  const activeModel = useAtomValue(currentProductAtom);
   const [ram, setRam] = useState<number>(0);
   const [gpu, setGPU] = useState<number>(0);
   const [cpu, setCPU] = useState<number>(0);
   const [version, setVersion] = useState<string>("");
-
-  const data = [
-    {
-      name: "CPU",
-      total: 1400,
-      used: 750,
-    },
-    {
-      name: "Ram",
-      total: 16000,
-      used: 4500,
-    },
-    {
-      name: "VRAM",
-      total: 1400,
-      used: 1300,
-    },
-  ];
 
   useEffect(() => {
     const getSystemResources = async () => {
@@ -77,8 +57,8 @@ const MonitorBar: React.FC = () => {
         <SystemItem name="CPU" value={`${cpu}%`} />
         <SystemItem name="Mem" value={`${ram}%`} />
 
-        {modelName && modelName.length > 0 && (
-          <SystemItem name="Active Models" value={"1"} />
+        {activeModel && (
+          <SystemItem name={`Active model: ${activeModel.name}`} value={"1"} />
         )}
         <span className="text-gray-900 text-sm">v{version}</span>
       </div>

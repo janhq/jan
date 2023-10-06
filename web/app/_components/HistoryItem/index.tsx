@@ -1,22 +1,20 @@
 import React from "react";
 import JanImage from "../JanImage";
-import {
-  MainViewState,
-  activeModel,
-  conversationStatesAtom,
-  currentProductAtom,
-  getActiveConvoIdAtom,
-  setActiveConvoIdAtom,
-  setMainViewStateAtom,
-} from "@/_helpers/JotaiWrapper";
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
-import { DataService, InfereceService } from "../../../shared/coreService";
+import { DataService } from "../../../shared/coreService";
+import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
 import {
-  execute,
-  executeSerial,
-} from "../../../../electron/core/plugin-manager/execution/extension-manager";
+  conversationStatesAtom,
+  getActiveConvoIdAtom,
+  setActiveConvoIdAtom,
+} from "@/_helpers/atoms/Conversation.atom";
+import {
+  setMainViewStateAtom,
+  MainViewState,
+} from "@/_helpers/atoms/MainView.atom";
+import useInitModel from "@/_hooks/useInitModel";
 
 type Props = {
   conversation: Conversation;
@@ -36,23 +34,20 @@ const HistoryItem: React.FC<Props> = ({
   const activeConvoId = useAtomValue(getActiveConvoIdAtom);
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   const isSelected = activeConvoId === conversation.id;
-  const setActiveModel = useSetAtom(activeModel);
-  const setActiveProduct = useSetAtom(currentProductAtom);
+
+  const { initModel } = useInitModel();
+
   const onClick = async () => {
-    const convoModel = await executeSerial(
+    const model = await executeSerial(
       DataService.GET_MODEL_BY_ID,
       conversation.model_id
     );
-    if (!convoModel) {
+    if (!model) {
       alert(
         `Model ${conversation.model_id} not found! Please re-download the model first.`
       );
     } else {
-      setActiveProduct(convoModel)
-      executeSerial(InfereceService.INIT_MODEL, convoModel)
-        .then(() => console.info(`Init model success`))
-        .catch((err) => console.log(`Init model error ${err}`));
-      setActiveModel(convoModel.name);
+      initModel(model);
     }
     if (activeConvoId !== conversation.id) {
       setMainViewState(MainViewState.Conversation);

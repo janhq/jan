@@ -2,17 +2,8 @@ const path = require("path");
 const { app, dialog } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
-var exec = require("child_process").exec;
 
 let subprocess = null;
-
-process.on("exit", () => {
-  // Perform cleanup tasks here
-  console.log("kill subprocess on exit");
-  if (subprocess) {
-    subprocess.kill();
-  }
-});
 
 async function initModel(product) {
   // fileName fallback
@@ -57,13 +48,22 @@ async function initModel(product) {
   // Write the updated config back to the file
   fs.writeFileSync(configFilePath, JSON.stringify(config, null, 4));
 
-  const binaryPath =
-    process.platform === "win32"
-      ? path.join(binaryFolder, "nitro.exe")
-      : path.join(binaryFolder, "nitro");
+  let binaryName;
+
+  if (process.platform === "win32") {
+    binaryName = "nitro.exe";
+  } else if (process.platform === "darwin") { // Mac OS platform
+    binaryName = process.arch === "arm64" ? "nitro" : "nitro_mac_intel";
+  } else {
+    // Linux
+    binaryName = "nitro_linux"; // For other platforms
+  }
+
+  const binaryPath = path.join(binaryFolder, binaryName);
+
   // Execute the binary
 
-  subprocess = spawn(binaryPath, [configFilePath], {cwd: binaryFolder});
+  subprocess = spawn(binaryPath, [configFilePath], { cwd: binaryFolder });
 
   // Handle subprocess output
   subprocess.stdout.on("data", (data) => {
@@ -80,6 +80,11 @@ async function initModel(product) {
   });
 }
 
+function dispose() {
+  killSubprocess();
+  // clean other registered resources here
+}
+
 function killSubprocess() {
   if (subprocess) {
     subprocess.kill();
@@ -93,4 +98,5 @@ function killSubprocess() {
 module.exports = {
   initModel,
   killSubprocess,
+  dispose,
 };

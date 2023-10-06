@@ -1,7 +1,10 @@
 import Image from "next/image";
-import { SidebarButton } from "../SidebarButton";
 import { useSetAtom } from "jotai";
-import { MainViewState, setMainViewStateAtom } from "@/_helpers/JotaiWrapper";
+import {
+  setMainViewStateAtom,
+  MainViewState,
+} from "@/_helpers/atoms/MainView.atom";
+import SecondaryButton from "../SecondaryButton";
 
 const Welcome: React.FC = () => {
   const setMainViewState = useSetAtom(setMainViewStateAtom);
@@ -15,13 +18,9 @@ const Welcome: React.FC = () => {
           <br />
           let’s download your first model
         </span>
-        <SidebarButton
-          callback={() => setMainViewState(MainViewState.ExploreModel)}
-          className="flex flex-row-reverse items-center rounded-lg gap-2 px-3 py-2 text-xs font-medium border border-gray-200"
-          icon={"icons/app_icon.svg"}
-          title="Explore models"
-          height={16}
-          width={16}
+        <SecondaryButton
+          title={"Explore models"}
+          onClick={() => setMainViewState(MainViewState.ExploreModel)}
         />
       </div>
     </div>

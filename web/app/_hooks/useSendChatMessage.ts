@@ -1,14 +1,4 @@
-import {
-  addNewMessageAtom,
-  chatMessages,
-  currentConversationAtom,
-  currentPromptAtom,
-  currentStreamingMessageAtom,
-  getActiveConvoIdAtom,
-  showingTyping,
-  updateMessageAtom,
-} from "@/_helpers/JotaiWrapper";
-
+import { currentPromptAtom, showingTyping } from "@/_helpers/JotaiWrapper";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { selectAtom } from "jotai/utils";
 import { DataService, InfereceService } from "../../shared/coreService";
@@ -19,6 +9,16 @@ import {
 } from "@/_models/ChatMessage";
 import { executeSerial } from "@/_services/pluginService";
 import { useCallback } from "react";
+import {
+  addNewMessageAtom,
+  updateMessageAtom,
+  chatMessages,
+  currentStreamingMessageAtom,
+} from "@/_helpers/atoms/ChatMessage.atom";
+import {
+  currentConversationAtom,
+  getActiveConvoIdAtom,
+} from "@/_helpers/atoms/Conversation.atom";
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom);
@@ -50,9 +50,9 @@ export default function useSendChatMessage() {
 
     const newChatMessage = await toChatMessage(newMessage);
     addNewMessage(newChatMessage);
-
+    const messageHistory = chatMessagesHistory ?? [];
     const recentMessages = [
-      ...chatMessagesHistory.sort((a, b) => parseInt(a.id) - parseInt(b.id)),
+      ...messageHistory.sort((a, b) => parseInt(a.id) - parseInt(b.id)),
       newChatMessage,
     ]
       .slice(-10)

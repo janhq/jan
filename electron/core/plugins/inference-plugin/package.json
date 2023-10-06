@@ -1,16 +1,17 @@
 {
   "name": "inference-plugin",
-  "version": "0.0.1",
-  "description": "",
+  "version": "1.0.0",
+  "description": "Inference Plugin, powered by @janhq/nitro, bring a high-performance Llama model inference in pure C++.",
+  "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/command-line.svg",
   "main": "dist/index.js",
-  "author": "James",
+  "author": "Jan",
   "license": "MIT",
   "activationPoints": [
     "init"
   ],
   "scripts": {
     "build": "webpack --config webpack.config.js",
-    "build:package": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && rm -rf dist/nitro && cp -r nitro dist/nitro && npm pack",
+    "build:package": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\" && npm pack",
     "build:publish": "yarn build:package && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
