@@ -38,11 +38,11 @@ const deleteModel = async (path) =>
     }
   });
 
-const searchHfModels = async (params) =>
+const searchModels = async (params) =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc(MODULE_PATH, "searchHfModels", params)
+        .invokePluginFunc(MODULE_PATH, "searchModels", params)
         .then((res) => resolve(res));
     }
   });
@@ -53,5 +53,5 @@ export function init({ register }) {
   register("getAvailableModels", "getAvailableModels", getAvailableModels);
   register("downloadModel", "downloadModel", downloadModel);
   register("deleteModel", "deleteModel", deleteModel);
-  register("searchHfModels", "searchHfModels", searchHfModels);
+  register("searchModels", "searchModels", searchModels);
 }

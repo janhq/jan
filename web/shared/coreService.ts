@@ -38,7 +38,7 @@ export enum ModelManagementService {
   GET_AVAILABLE_MODELS = "getAvailableModels",
   DELETE_MODEL = "deleteModel",
   DOWNLOAD_MODEL = "downloadModel",
-  SEARCH_HF_MODELS = "searchHfModels",
+  SEARCH_MODELS = "searchModels",
 }
 
 export enum PreferenceService {
