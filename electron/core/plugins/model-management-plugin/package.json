@@ -11,8 +11,8 @@
   ],
   "scripts": {
     "build": "webpack --config webpack.config.js",
-    "build:package": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && npm pack",
-    "build:publish": "yarn build:package && cpx *.tgz ../../pre-install"
+    "postinstall": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\"",
+    "build:publish": "npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "cpx": "^1.5.0",
