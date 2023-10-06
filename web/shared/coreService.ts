@@ -30,6 +30,7 @@ export enum ModelService {
 export enum InfereceService {
   INFERENCE_URL = "inferenceUrl",
   INIT_MODEL = "initModel",
+  STOP_MODEL = "stopModel",
 }
 
 export enum ModelManagementService {
@@ -37,6 +38,7 @@ export enum ModelManagementService {
   GET_AVAILABLE_MODELS = "getAvailableModels",
   DELETE_MODEL = "deleteModel",
   DOWNLOAD_MODEL = "downloadModel",
+  SEARCH_MODELS = "searchModels",
 }
 
 export enum PreferenceService {

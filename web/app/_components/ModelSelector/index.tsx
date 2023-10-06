@@ -1,17 +1,17 @@
 import { Fragment, useEffect } from "react";
 import { Listbox, Transition } from "@headlessui/react";
 import { CheckIcon, ChevronUpDownIcon } from "@heroicons/react/20/solid";
-import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
 import { Product } from "@/_models/Product";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { selectedModelAtom } from "@/_helpers/atoms/Model.atom";
+import { downloadedModelAtom } from "@/_helpers/atoms/DownloadedModel.atom";
 
 function classNames(...classes: any) {
   return classes.filter(Boolean).join(" ");
 }
 
 const SelectModels: React.FC = () => {
-  const { downloadedModels } = useGetDownloadedModels();
+  const downloadedModels = useAtomValue(downloadedModelAtom);
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom);
 
   useEffect(() => {

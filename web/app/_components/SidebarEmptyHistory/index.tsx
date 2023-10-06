@@ -2,7 +2,6 @@ import Image from "next/image";
 import useCreateConversation from "@/_hooks/useCreateConversation";
 import PrimaryButton from "../PrimaryButton";
 import { useAtomValue, useSetAtom } from "jotai";
-import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
 import { useEffect, useState } from "react";
 import {
   MainViewState,
@@ -11,6 +10,7 @@ import {
 import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 import useInitModel from "@/_hooks/useInitModel";
 import { Product } from "@/_models/Product";
+import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
 
 enum ActionButton {
   DownloadModel = "Download a Model",

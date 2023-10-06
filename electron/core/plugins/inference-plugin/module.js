@@ -23,7 +23,7 @@ async function initModel(product) {
     console.error(
       "A subprocess is already running. Attempt to kill then reinit."
     );
-    killSubprocess();
+    dispose();
   }
 
   let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default

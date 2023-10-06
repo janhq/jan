@@ -172,15 +172,30 @@ export const Preferences = () => {
                   />
                 </label>
               </div>
-              <button
-                type="submit"
-                className={classNames(
-                  "rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600",
-                  fileName ? "bg-indigo-600 hover:bg-indigo-500" : "bg-gray-500"
-                )}
-              >
-                Install Plugin
-              </button>
+              <div className="flex flex-col space-y-2">
+                <button
+                  type="submit"
+                  className={classNames(
+                    "rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600",
+                    fileName
+                      ? "bg-blue-500 hover:bg-blue-300"
+                      : "bg-gray-500"
+                  )}
+                >
+                  Install Plugin
+                </button>
+
+                <button
+                  className={classNames(
+                    "bg-blue-500 hover:bg-blue-300 rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                  )}
+                  onClick={() => {
+                    window.electronAPI.reloadPlugins();
+                  }}
+                >
+                  Reload Plugins
+                </button>
+              </div>
             </div>
           </form>
 

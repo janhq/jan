@@ -8,7 +8,7 @@ type Props = {
 
 const ExpandableHeader: React.FC<Props> = ({ title, expanded, onClick }) => (
   <button onClick={onClick} className="flex items-center justify-between px-2">
-    <h2 className="text-gray-400 font-bold text-[12px] leading-[12px] pl-1">
+    <h2 className="text-gray-400 font-bold text-xs leading-[12px] pl-1">
       {title}
     </h2>
     <div className="mr-2">

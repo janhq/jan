@@ -1,6 +1,10 @@
 const path = require("path");
 const { readdirSync, lstatSync } = require("fs");
 const { app } = require("electron");
+const { listModels, listFiles, fileDownloadInfo } = require("@huggingface/hub");
+
+let modelsIterator = undefined;
+let currentSearchOwner = undefined;
 
 const ALL_MODELS = [
   {
@@ -87,6 +91,76 @@ function getDownloadedModels() {
   return downloadedModels;
 }
 
+const getNextModels = async (count) => {
+  const models = [];
+  let hasMore = true;
+
+  while (models.length < count) {
+    const next = await modelsIterator.next();
+
+    // end if we reached the end
+    if (next.done) {
+      hasMore = false;
+      break;
+    }
+
+    const model = next.value;
+    const files = await listFilesByName(model.name);
+
+    models.push({
+      ...model,
+      files,
+    });
+  }
+
+  const result = {
+    data: models,
+    hasMore,
+  };
+  return result;
+};
+
+const searchModels = async (params) => {
+  if (currentSearchOwner === params.search.owner && modelsIterator != null) {
+    // paginated search
+    console.debug(`Paginated search owner: ${params.search.owner}`);
+    const models = await getNextModels(params.limit);
+    return models;
+  } else {
+    // new search
+    console.debug(`Init new search owner: ${params.search.owner}`);
+    currentSearchOwner = params.search.owner;
+    modelsIterator = listModels({
+      search: params.search,
+      credentials: params.credentials,
+    });
+
+    const models = await getNextModels(params.limit);
+    return models;
+  }
+};
+
+const listFilesByName = async (modelName) => {
+  const repo = { type: "model", name: modelName };
+  const fileDownloadInfoMap = {};
+  for await (const file of listFiles({
+    repo: repo,
+  })) {
+    if (file.type === "file" && file.path.endsWith(".bin")) {
+      const downloadInfo = await fileDownloadInfo({
+        repo: repo,
+        path: file.path,
+      });
+      fileDownloadInfoMap[file.path] = {
+        ...file,
+        ...downloadInfo,
+      };
+    }
+  }
+
+  return fileDownloadInfoMap;
+};
+
 function getAvailableModels() {
   const downloadedModelIds = getDownloadedModels().map((model) => model.id);
   return ALL_MODELS.filter((model) => {
@@ -99,4 +173,5 @@ function getAvailableModels() {
 module.exports = {
   getDownloadedModels,
   getAvailableModels,
+  searchModels,
 };
