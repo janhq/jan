@@ -32,11 +32,11 @@ export async function getModelFiles(): Promise<Product[]> {
   return downloadedModels ?? [];
 }
 
-export async function searchHfModels(
+export async function searchModels(
   params: SearchModelParamHf
 ): Promise<QueryProductResult> {
   const result = await executeSerial(
-    ModelManagementService.SEARCH_HF_MODELS,
+    ModelManagementService.SEARCH_MODELS,
     params
   );
 

@@ -120,7 +120,7 @@ const getNextModels = async (count) => {
   return result;
 };
 
-const searchHfModels = async (params) => {
+const searchModels = async (params) => {
   if (currentSearchOwner === params.search.owner && modelsIterator != null) {
     // paginated search
     console.debug(`Paginated search owner: ${params.search.owner}`);
@@ -173,5 +173,5 @@ function getAvailableModels() {
 module.exports = {
   getDownloadedModels,
   getAvailableModels,
-  searchHfModels,
+  searchModels,
 };
