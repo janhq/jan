@@ -48,10 +48,19 @@ async function initModel(product) {
   // Write the updated config back to the file
   fs.writeFileSync(configFilePath, JSON.stringify(config, null, 4));
 
-  const binaryPath =
-    process.platform === "win32"
-      ? path.join(binaryFolder, "nitro.exe")
-      : path.join(binaryFolder, "nitro");
+  let binaryName;
+
+  if (process.platform === "win32") {
+    binaryName = "nitro_windows_amd64.exe";
+  } else if (process.platform === "darwin") { // Mac OS platform
+    binaryName = process.arch === "arm64" ? "nitro_mac_arm64" : "nitro_mac_amd64";
+  } else {
+    // Linux
+    binaryName = "nitro_linux_amd64_cuda"; // For other platforms
+  }
+
+  const binaryPath = path.join(binaryFolder, binaryName);
+
   // Execute the binary
 
   subprocess = spawn(binaryPath, [configFilePath], { cwd: binaryFolder });
@@ -72,6 +81,11 @@ async function initModel(product) {
 }
 
 function dispose() {
+  killSubprocess();
+  // clean other registered resources here
+}
+
+function killSubprocess() {
   if (subprocess) {
     subprocess.kill();
     subprocess = null;
@@ -83,5 +97,6 @@ function dispose() {
 
 module.exports = {
   initModel,
+  killSubprocess,
   dispose,
 };

@@ -25,6 +25,7 @@ export async function install(plugins) {
   if (typeof window === "undefined") {
     return;
   }
+  // eslint-disable-next-line no-undef
   const plgList = await window.pluggableElectronIpc.install(plugins);
   if (plgList.cancelled) return false;
   return plgList.map((plg) => {
@@ -50,6 +51,7 @@ export function uninstall(plugins, reload = true) {
   if (typeof window === "undefined") {
     return;
   }
+  // eslint-disable-next-line no-undef
   return window.pluggableElectronIpc.uninstall(plugins, reload);
 }
 
@@ -62,6 +64,7 @@ export async function getActive() {
   if (typeof window === "undefined") {
     return;
   }
+  // eslint-disable-next-line no-undef
   const plgList = await window.pluggableElectronIpc.getActive();
   return plgList.map(
     (plugin) =>
@@ -69,7 +72,10 @@ export async function getActive() {
         plugin.name,
         plugin.url,
         plugin.activationPoints,
-        plugin.active
+        plugin.active,
+        plugin.description,
+        plugin.version,
+        plugin.icon
       )
   );
 }
@@ -83,6 +89,7 @@ export async function registerActive() {
   if (typeof window === "undefined") {
     return;
   }
+  // eslint-disable-next-line no-undef
   const plgList = await window.pluggableElectronIpc.getActive();
   plgList.forEach((plugin) =>
     register(
@@ -107,6 +114,7 @@ export async function update(plugins, reload = true) {
   if (typeof window === "undefined") {
     return;
   }
+  // eslint-disable-next-line no-undef
   const plgList = await window.pluggableElectronIpc.update(plugins, reload);
   return plgList.map(
     (plugin) =>
@@ -129,6 +137,7 @@ export function updatesAvailable(plugin) {
   if (typeof window === "undefined") {
     return;
   }
+  // eslint-disable-next-line no-undef
   return window.pluggableElectronIpc.updatesAvailable(plugin);
 }
 
@@ -143,6 +152,7 @@ export async function toggleActive(plugin, active) {
   if (typeof window === "undefined") {
     return;
   }
+  // eslint-disable-next-line no-undef
   const plg = await window.pluggableElectronIpc.toggleActive(plugin, active);
   return new Plugin(plg.name, plg.url, plg.activationPoints, plg.active);
 }

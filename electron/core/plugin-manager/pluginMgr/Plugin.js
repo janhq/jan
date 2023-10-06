@@ -18,6 +18,8 @@ class Plugin {
    * @property {string} version Version of the package as defined in the manifest.
    * @property {Array<string>} activationPoints List of {@link ./Execution-API#activationPoints|activation points}.
    * @property {string} main The entry point as defined in the main entry of the manifest.
+   * @property {string} description The description of plugin as defined in the manifest.
+   * @property {string} icon The icon of plugin as defined in the manifest.
    */
 
   /** @private */
@@ -75,6 +77,8 @@ class Plugin {
       this.version = mnf.version
       this.activationPoints = mnf.activationPoints || null
       this.main = mnf.main
+      this.description = mnf.description
+      this.icon = mnf.icon
 
     } catch (error) {
       throw new Error(`Package ${this.origin} does not contain a valid manifest: ${error}`)

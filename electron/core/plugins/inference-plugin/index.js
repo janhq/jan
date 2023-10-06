@@ -13,11 +13,11 @@ const dispose = async () =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       window.electronAPI
-        .invokePluginFunc(MODULE_PATH, "killSubprocess")
+        .invokePluginFunc(MODULE_PATH, "dispose")
         .then((res) => resolve(res));
     }
   });
-const inferenceUrl = () => "http://localhost:8080/llama/chat_completion";
+const inferenceUrl = () => "http://localhost:3928/llama/chat_completion";
 
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
