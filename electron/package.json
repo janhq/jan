@@ -28,7 +28,8 @@
     "extends": null,
     "mac": {
       "type": "distribution",
-      "entitlements": "./build/entitlements.mac.inherit.plist"
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist"
     },
     "afterSign": "./afterSignHook.js",
     "afterAllArtifactBuild": "./fixMacDistributionArchive.js"
