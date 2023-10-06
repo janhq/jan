@@ -4,10 +4,8 @@ import React, { useCallback, useRef, useState, useEffect } from "react";
 import ChatItem from "../ChatItem";
 import { ChatMessage } from "@/_models/ChatMessage";
 import useChatMessages from "@/_hooks/useChatMessages";
-import { showingTyping } from "@/_helpers/JotaiWrapper";
 import { useAtomValue } from "jotai";
 import { selectAtom } from "jotai/utils";
-import LoadingIndicator from "../LoadingIndicator";
 import { getActiveConvoIdAtom } from "@/_helpers/atoms/Conversation.atom";
 import { chatMessages } from "@/_helpers/atoms/ChatMessage.atom";
 
@@ -21,7 +19,6 @@ const ChatBody: React.FC = () => {
   );
   const [content, setContent] = useState<React.JSX.Element[]>([]);
 
-  const isTyping = useAtomValue(showingTyping);
   const [offset, setOffset] = useState(0);
   const { loading, hasMore } = useChatMessages(offset);
   const intersectObs = useRef<any>(null);
@@ -58,11 +55,6 @@ const ChatBody: React.FC = () => {
 
   return (
     <div className="flex flex-col-reverse flex-1 py-4 overflow-y-auto scroll">
-      {isTyping && (
-        <div className="ml-4 mb-2" key="indicator">
-          <LoadingIndicator />
-        </div>
-      )}
       {content}
     </div>
   );
