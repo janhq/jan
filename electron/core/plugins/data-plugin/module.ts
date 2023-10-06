@@ -46,7 +46,7 @@ INSERT INTO models (
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 function init() {
-  const db = new sqlite3.Database(path.join(app.getPath("userData"), "jan.db"));
+  const db = getDb()
   console.log(
     `Database located at ${path.join(app.getPath("userData"), "jan.db")}`
   );
@@ -75,9 +75,7 @@ function init() {
  */
 function storeModel(model: any) {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = getDb()
     console.debug("Inserting", JSON.stringify(model));
     db.serialize(() => {
       const stmt = db.prepare(MODEL_TABLE_INSERTION);
@@ -125,9 +123,7 @@ function storeModel(model: any) {
  */
 function updateFinishedDownloadAt(fileName: string, time: number) {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = getDb()
     console.debug(`Updating fileName ${fileName} to ${time}`);
     const stmt = `UPDATE models SET finish_download_at = ? WHERE file_name = ?`;
     db.run(stmt, [time, fileName], (err: any) => {
@@ -148,9 +144,7 @@ function updateFinishedDownloadAt(fileName: string, time: number) {
  */
 function getUnfinishedDownloadModels() {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = getDb()
 
     const query = `SELECT * FROM models WHERE finish_download_at = -1 ORDER BY start_download_at DESC`;
     db.all(query, (err: Error, row: any) => {
@@ -162,9 +156,7 @@ function getUnfinishedDownloadModels() {
 
 function getFinishedDownloadModels() {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = getDb()
 
     const query = `SELECT * FROM models WHERE finish_download_at != -1 ORDER BY finish_download_at DESC`;
     db.all(query, (err: Error, row: any) => {
@@ -237,9 +229,7 @@ function getModelById(modelId: string) {
 
 function getConversations() {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = getDb()
 
     db.all(
       "SELECT * FROM conversations ORDER BY updated_at DESC",
@@ -362,9 +352,7 @@ function deleteConversation(id: any) {
 
 function getConversationMessages(conversation_id: any) {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = getDb()
 
     const query = `SELECT * FROM messages WHERE conversation_id = ${conversation_id} ORDER BY id DESC`;
     db.all(query, (err: Error, row: any) => {
@@ -397,6 +385,17 @@ function parseToProduct(row: any) {
     downloadUrl: row.download_url,
   };
   return product;
+}
+
+function getDb(){
+  if(app){
+    return new sqlite3.Database(
+      path.join(app.getPath("userData"), "jan.db")
+    );
+  }
+  return new sqlite3.Database(
+    path.join("/Users/john-jan/Library/Application Support/jan-electron", "jan.db")
+  );
 }
 
 module.exports = {

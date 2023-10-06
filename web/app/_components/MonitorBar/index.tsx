@@ -3,10 +3,9 @@ import SystemItem from "../SystemItem";
 import { useAtomValue } from "jotai";
 import { appDownloadProgress } from "@/_helpers/JotaiWrapper";
 import { useEffect, useState } from "react";
-import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
-import { SystemMonitoringService } from "../../../shared/coreService";
 import { getSystemBarVisibilityAtom } from "@/_helpers/atoms/SystemBar.atom";
 import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
+import { appVersion, resourcesInfo, currentLoad } from "../../../middleware"
 
 const MonitorBar: React.FC = () => {
   const show = useAtomValue(getSystemBarVisibilityAtom);
@@ -19,19 +18,17 @@ const MonitorBar: React.FC = () => {
 
   useEffect(() => {
     const getSystemResources = async () => {
-      const resourceInfor = await executeSerial(
-        SystemMonitoringService.GET_RESOURCES_INFORMATION
-      );
-      const currentLoadInfor = await executeSerial(
-        SystemMonitoringService.GET_CURRENT_LOAD_INFORMATION
-      );
+      const resourceInfor = await resourcesInfo()
+      console.log(resourceInfor)
+      const currentLoadInfor = await currentLoad()
+      console.log(currentLoadInfor)
       const ram =
         (resourceInfor?.mem?.used ?? 0) / (resourceInfor?.mem?.total ?? 1);
       setRam(Math.round(ram * 100));
       setCPU(Math.round(currentLoadInfor?.currentLoad ?? 0));
     };
     const getAppVersion = () => {
-      window.electronAPI.appVersion().then((version: string | undefined) => {
+      appVersion().then((version: string | undefined) => {
         setVersion(version ?? "");
       });
     };

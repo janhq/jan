@@ -6,6 +6,7 @@ import {
   conversationStatesAtom,
   userConversationsAtom,
 } from "@/_helpers/atoms/Conversation.atom";
+import {getConversations} from "../../middleware"
 
 const useGetUserConversations = () => {
   const setConversationStates = useSetAtom(conversationStatesAtom);
@@ -13,9 +14,7 @@ const useGetUserConversations = () => {
 
   const getUserConversations = async () => {
     try {
-      const convos: Conversation[] | undefined = await executeSerial(
-        DataService.GET_CONVERSATIONS
-      );
+      const convos: Conversation[] | undefined = await getConversations();
       const convoStates: Record<string, ConversationState> = {};
       convos?.forEach((convo) => {
         convoStates[convo.id ?? ""] = {
