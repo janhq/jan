@@ -33,19 +33,24 @@ jobs:
         env:
           CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
 
+      - uses: apple-actions/import-codesign-certs@v2
+        with: 
+          p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          p12-password: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+
       - name: Build and publish app
         run: |
           yarn build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: "/tmp/codesign.p12"
-          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
       - name: Archive folder
-        uses: montudor/action-zip@v0.1.1
-        with:
-          args: zip -qq -r ./dist.zip ./electron/dist
+        run: zip -r ./dist.zip ./electron/dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3

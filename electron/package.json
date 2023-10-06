@@ -30,9 +30,10 @@
       "type": "distribution",
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
-      "notarize": true
-    },
-    "afterSign": "./afterSignHook.js"
+      "notarize": {
+        "teamId": "YT49P7GXG4"
+      }
+    }
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
