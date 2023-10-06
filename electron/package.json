@@ -30,6 +30,8 @@
       "type": "distribution",
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "notarize": {
         "teamId": "YT49P7GXG4"
       }
