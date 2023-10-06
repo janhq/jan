@@ -28,7 +28,8 @@
     "extends": null,
     "mac": {
       "type": "distribution"
-    }
+    },
+    "artifactName": "${name}-${os}-${arch}-${version}.${ext}"
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
