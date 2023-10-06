@@ -17,6 +17,9 @@ const ExploreModelList: React.FC = () => {
   });
 
   useEffect(() => {
+    if (modelList.length === 0 && modelSearch.length > 0) {
+      setLoadMoreInProress(true);
+    }
     getHuggingFaceModel(modelSearch);
   }, [modelSearch]);
 
