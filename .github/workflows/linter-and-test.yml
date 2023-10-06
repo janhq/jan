@@ -3,10 +3,24 @@ on:
   push:
     branches:
       - main
-      - fix/eslint-ignore-patterns
+    paths:
+      - 'electron/**'
+      - .github/workflows/linter-and-test.yml
+      - 'web/**'
+      - 'package.json'
+      - 'node_modules/**'
+      - 'yarn.lock'
+
   pull_request:
     branches:
       - main
+    paths:
+      - 'electron/**'
+      - .github/workflows/linter-and-test.yml
+      - 'web/**'
+      - 'package.json'
+      - 'node_modules/**'
+      - 'yarn.lock'
 
 jobs:
   test-on-macos:
