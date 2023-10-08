@@ -19,12 +19,13 @@ import {
 
 export default function useDeleteConversation() {
   const [userConversations, setUserConversations] = useAtom(
-    userConversationsAtom
+    userConversationsAtom,
   );
   const setCurrentPrompt = useSetAtom(currentPromptAtom);
   const setShowingProductDetail = useSetAtom(showingProductDetailAtom);
   const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom);
   const activeConvoId = useAtomValue(getActiveConvoIdAtom);
+
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   const deleteMessages = useSetAtom(deleteConversationMessage);
   const setMainViewState = useSetAtom(setMainViewStateAtom);
@@ -34,14 +35,17 @@ export default function useDeleteConversation() {
       try {
         await execute(DataService.DELETE_CONVERSATION, activeConvoId);
         const currentConversations = userConversations.filter(
-          (c) => c.id !== activeConvoId
+          (c) => c.id !== activeConvoId,
         );
         setUserConversations(currentConversations);
-        if (currentConversations.length === 0) {
-          setMainViewState(MainViewState.Welcome);
-        }
         deleteMessages(activeConvoId);
-        setActiveConvoId(undefined);
+
+        if (currentConversations.length > 0) {
+          setActiveConvoId(currentConversations[0].id);
+        } else {
+          setMainViewState(MainViewState.Welcome);
+          setActiveConvoId(undefined);
+        }
         setCurrentPrompt("");
         setShowingProductDetail(false);
         setShowingAdvancedPrompt(false);

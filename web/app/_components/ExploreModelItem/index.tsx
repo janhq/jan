@@ -1,36 +1,30 @@
+/* eslint-disable react/display-name */
+
 "use client";
 
 import ExploreModelItemHeader from "../ExploreModelItemHeader";
 import ModelVersionList from "../ModelVersionList";
-import { useMemo, useState } from "react";
-import { Product } from "@/_models/Product";
+import { Fragment, forwardRef, useState } from "react";
 import SimpleTag, { TagType } from "../SimpleTag";
 import { displayDate } from "@/_utils/datetime";
-import useDownloadModel from "@/_hooks/useDownloadModel";
-import { atom, useAtomValue } from "jotai";
-import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
+import { Product } from "@/_models/Product";
 
 type Props = {
   model: Product;
 };
 
-const ExploreModelItem: React.FC<Props> = ({ model }) => {
-  const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[model.fileName ?? ""]),
-    [model.fileName ?? ""]
-  );
-  const downloadState = useAtomValue(downloadAtom);
-  const { downloadModel } = useDownloadModel();
+const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
   const [show, setShow] = useState(false);
 
   return (
-    <div className="flex flex-col border border-gray-200 rounded-[5px]">
+    <div
+      ref={ref}
+      className="flex flex-col border border-gray-200 rounded-md mb-4"
+    >
       <ExploreModelItemHeader
         name={model.name}
         status={TagType.Recommended}
-        total={model.totalSize}
-        downloadState={downloadState}
-        onDownloadClick={() => downloadModel(model)}
+        versions={model.availableVersions}
       />
       <div className="flex flex-col px-[26px] py-[22px]">
         <div className="flex justify-between">
@@ -39,7 +33,7 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
               <div className="text-sm font-medium text-gray-500">
                 Model Format
               </div>
-              <div className="px-[10px] py-0.5 bg-gray-100 text-xs text-gray-800 w-fit">
+              <div className="px-2.5 py-0.5 bg-gray-100 text-xs text-gray-800 w-fit">
                 GGUF
               </div>
             </div>
@@ -87,15 +81,24 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
           <span className="text-sm font-medium text-gray-500">Tags</span>
         </div>
       </div>
-      {show && <ModelVersionList />}
-      <button
-        onClick={() => setShow(!show)}
-        className="bg-[#FBFBFB] text-gray-500 text-sm text-left py-2 px-4 border-t border-gray-200"
-      >
-        {!show ? "+ Show Available Versions" : "- Collapse"}
-      </button>
+      {model.availableVersions.length > 0 && (
+        <Fragment>
+          {show && (
+            <ModelVersionList
+              model={model}
+              versions={model.availableVersions}
+            />
+          )}
+          <button
+            onClick={() => setShow(!show)}
+            className="bg-[#FBFBFB] text-gray-500 text-sm text-left py-2 px-4 border-t border-gray-200"
+          >
+            {!show ? "+ Show Available Versions" : "- Collapse"}
+          </button>
+        </Fragment>
+      )}
     </div>
   );
-};
+});
 
 export default ExploreModelItem;

@@ -5,6 +5,7 @@ export * as activationPoints from "./activation-manager.js";
 export * as plugins from "./facade.js";
 export { default as ExtensionPoint } from "./ExtensionPoint.js";
 
+// eslint-disable-next-line no-undef
 if (typeof window !== "undefined" && !window.pluggableElectronIpc)
   console.warn(
     "Facade is not registered in preload. Facade functions will throw an error if used."

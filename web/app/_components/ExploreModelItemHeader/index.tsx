@@ -3,11 +3,13 @@ import PrimaryButton from "../PrimaryButton";
 import { formatDownloadPercentage, toGigabytes } from "@/_utils/converter";
 import { DownloadState } from "@/_models/DownloadState";
 import SecondaryButton from "../SecondaryButton";
+import { ModelVersion } from "@/_models/Product";
 
 type Props = {
   name: string;
-  total: number;
   status: TagType;
+  versions: ModelVersion[];
+  size?: number;
   downloadState?: DownloadState;
   onDownloadClick?: () => void;
 };
@@ -15,30 +17,41 @@ type Props = {
 const ExploreModelItemHeader: React.FC<Props> = ({
   name,
   status,
-  total,
+  size,
+  versions,
   downloadState,
   onDownloadClick,
-}) => (
-  <div className="flex items-center justify-between p-4 border-b border-gray-200">
-    <div className="flex items-center gap-2">
-      <span>{name}</span>
-      <SimpleTag title={status} type={status} clickable={false} />
-    </div>
-    {downloadState != null ? (
+}) => {
+  let downloadButton = (
+    <PrimaryButton
+      title={size ? `Download (${toGigabytes(size)})` : "Download"}
+      onClick={() => onDownloadClick?.()}
+    />
+  );
+
+  if (downloadState != null) {
+    // downloading
+    downloadButton = (
       <SecondaryButton
         disabled
         title={`Downloading (${formatDownloadPercentage(
           downloadState.percent
         )})`}
-        onClick={() => {}}
       />
-    ) : (
-      <PrimaryButton
-        title={total ? `Download (${toGigabytes(total)})` : "Download"}
-        onClick={() => onDownloadClick?.()}
-      />
-    )}
-  </div>
-);
+    );
+  } else if (versions.length === 0) {
+    downloadButton = <SecondaryButton disabled title="No files available" />;
+  }
+
+  return (
+    <div className="flex items-center justify-between p-4 border-b border-gray-200">
+      <div className="flex items-center gap-2">
+        <span>{name}</span>
+        <SimpleTag title={status} type={status} clickable={false} />
+      </div>
+      {downloadButton}
+    </div>
+  );
+};
 
 export default ExploreModelItemHeader;

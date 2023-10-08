@@ -63,8 +63,8 @@ const ConfirmDeleteConversationModal: React.FC = () => {
                     <div className="mt-2">
                       <p className="text-sm text-gray-500">
                         Are you sure you want to delete this conversation? All
-                        of messages will be permanently removed from our servers
-                        forever. This action cannot be undone.
+                        of messages will be permanently removed. This action
+                        cannot be undone.
                       </p>
                     </div>
                   </div>

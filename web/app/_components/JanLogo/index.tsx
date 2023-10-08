@@ -7,7 +7,7 @@ const JanLogo: React.FC = () => {
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   return (
     <button
-      className="p-3 flex gap-[2px] items-center"
+      className="p-3 flex gap-0.5 items-center"
       onClick={() => setActiveConvoId(undefined)}
     >
       <Image src={"icons/app_icon.svg"} width={28} height={28} alt="" />
