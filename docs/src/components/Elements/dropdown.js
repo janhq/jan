@@ -6,22 +6,22 @@ import { ChevronDownIcon } from "@heroicons/react/20/solid";
 const systems = [
   {
     name: "Download for Mac (M1/M2)",
-    href: "https://github.com/janhq/jan/releases/download/v0.1.2/Jan-0.1.2-arm64.dmg",
+    href: "https://github.com/janhq/jan/releases/download/v0.1.3/jan-electron-mac-arm64-0.1.3.dmg",
     logo: require("@site/static/img/apple-logo-white.png").default,
   },
   {
     name: "Download for Mac (Intel)",
-    href: "https://github.com/janhq/jan/releases/download/v0.1.2/Jan-0.1.2-arm64.dmg",
+    href: "https://github.com/janhq/jan/releases/download/v0.1.3/jan-electron-mac-x64-0.1.3.dmg",
     logo: require("@site/static/img/apple-logo-white.png").default,
   },
   {
     name: "Download for Windows",
-    href: "https://static.vecteezy.com/system/resources/previews/004/243/615/non_2x/creative-coming-soon-teaser-background-free-vector.jpg",
+    href: "https://github.com/janhq/jan/releases/download/v0.1.3/jan-electron-win-x64-0.1.3.exe",
     logo: require("@site/static/img/windows-logo-white.png").default,
   },
   {
     name: "Download for Linux",
-    href: "https://static.vecteezy.com/system/resources/previews/004/243/615/non_2x/creative-coming-soon-teaser-background-free-vector.jpg",
+    href: "https://github.com/janhq/jan/releases/download/v0.1.3/jan-electron-linux-amd64-0.1.3.deb",
     logo: require("@site/static/img/linux-logo-white.png").default,
   },
 ];
