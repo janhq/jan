@@ -53,7 +53,7 @@ const SimpleTextMessage: React.FC<Props> = ({
             </div>
           ))
         ) : (
-          <span className="text-sm">{text}</span>
+          <span className="text-sm leading-loose font-normal">{text}</span>
         )}
       </div>
     </div>
