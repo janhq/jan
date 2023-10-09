@@ -60,7 +60,7 @@ export default function HomepageHero() {
                 <Dropdown />
                 <button
                   type="button"
-                  className="cursor-pointer relative inline-flex items-center rounded px-3.5 py-2 dark:py-2.5 text-base font-semibold text-indigo-600 bg-white border-indigo-600 dark:border-0 hover:bg-indigo-600 dark:hover:bg-indigo-500 hover:text-white"
+                  className="cursor-pointer relative inline-flex items-center rounded px-3.5 py-2 dark:py-2.5 text-base font-semibold text-blue-600 bg-white border-blue-600 dark:border-0 hover:bg-blue-600 dark:hover:bg-blue-500 hover:text-white"
                   onClick={() =>
                     window.open(
                       "https://github.com/janhq/jan",

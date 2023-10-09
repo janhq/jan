@@ -51,7 +51,7 @@ export default function Dropdown() {
   return (
     <div className="inline-flex align-items-stretch">
       <a
-        className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-3.5 py-2.5 text-base font-semibold text-white bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400 hover:text-white"
+        className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-3.5 py-2.5 text-base font-semibold text-white bg-blue-600 dark:bg-blue-500 hover:bg-blue-500 dark:hover:bg-blue-400 hover:text-white"
         href={defaultSystem.href}
       >
         <img
@@ -62,7 +62,7 @@ export default function Dropdown() {
         {defaultSystem.name}
       </a>
       <Menu as="div" className="relative -ml-px block">
-        <Menu.Button className="cursor-pointer relative inline-flex items-center rounded-r-md border-0 border-l border-gray-300 active:border-l active:border-white h-full text-white bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400">
+        <Menu.Button className="cursor-pointer relative inline-flex items-center rounded-r-md border-0 border-l border-gray-300 active:border-l active:border-white h-full text-white bg-blue-600 dark:bg-blue-500 hover:bg-blue-500 dark:hover:bg-blue-400">
           <span className="sr-only">Open OS options</span>
           <ChevronDownIcon className="h-5 w-5" aria-hidden="true" />
         </Menu.Button>
@@ -75,7 +75,7 @@ export default function Dropdown() {
           leaveFrom="transform opacity-100 scale-100"
           leaveTo="transform opacity-0 scale-95"
         >
-          <Menu.Items className="absolute right-0 z-10 mt-2 w-72 text-left origin-top-right rounded-md bg-indigo-600 dark:bg-indigo-500 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+          <Menu.Items className="absolute right-0 z-10 mt-2 w-72 text-left origin-top-right rounded-md bg-blue-600 dark:bg-blue-500 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
             <div className="py-1">
               {systems.map((system) => (
                 <Menu.Item key={system.name}>
@@ -84,7 +84,7 @@ export default function Dropdown() {
                       href={system.href}
                       className={classNames(
                         active
-                          ? "bg-indigo-500 dark:hover:bg-indigo-400 hover:text-white"
+                          ? "bg-blue-500 dark:hover:bg-blue-400 hover:text-white"
                           : "text-white",
                         "block px-4 py-2"
                       )}
