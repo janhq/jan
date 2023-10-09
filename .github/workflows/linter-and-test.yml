@@ -78,8 +78,7 @@ jobs:
 
       - name: Linter and test
         run: |
-          w_output=$(w)
-          export DISPLAY=$(echo "$w_output" | awk '$3 ~ /:[0-9]+/ {print $3}')
+          export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
           echo -e "Display ID: $DISPLAY"
           yarn config set network-timeout 300000
           yarn install
