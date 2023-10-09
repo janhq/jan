@@ -32,7 +32,16 @@
       "entitlementsInherit": "./entitlements.mac.plist",
       "notarize": {
         "teamId": "YT49P7GXG4"
-      }
+      },
+      "icon": "icons/icon.png"
+    },
+    "linux": {
+      "target": ["deb"],
+      "category": "Utility",
+      "icon": "icons/"
+    },
+    "win": {
+      "icon": "icons/icon.png"
     },
     "artifactName": "jan-${os}-${arch}-${version}.${ext}"
   },
