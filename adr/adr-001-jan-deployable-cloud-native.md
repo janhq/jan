@@ -26,15 +26,21 @@
 
 
 ### Key Design Decisions
-![Key Design](images/adr-001-01.png "Key Design")
-Introduce 2 components in Jan:
-- Middleware: responsible for routing the user interface to the appropriate platform (Electron/WebApp) that is built when packaged.
-- Http server: a http server on cloud environment which interacts with plugin directly.
+![Key Design](images/adr-001-02.png "Key Design")
+#### Why middleware
+* The /web codebase needs to operate in both browser and electron environments
+* The /web codebase needs to route plugin routes accordingly, either to /server or /electron
+* Middleware takes care of this
+* We will have a /server codebase that takes care of routing to plugins
+#### Unsuitable Alternatives
+* Not possible to just run electron headless
+* /web is on a different chromium window
+* Does not have all the electron handlers
+* Does not have the IPC handler
 
 ### Detailed Design
 #### FE
 - Middleware: 
-  ![Middleware](images/adr-001-01.png "Middleware")
 - Httpserver: TBD
 - Custom build for httpweb/electron: TBD
 - IPC
