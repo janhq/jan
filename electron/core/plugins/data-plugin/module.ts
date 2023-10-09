@@ -61,10 +61,6 @@ function init() {
     );
   });
 
-  const stmt = db.prepare(
-    "INSERT INTO conversations (name, model_id, image, message) VALUES (?, ?, ?, ?)"
-  );
-  stmt.finalize();
   db.close();
 }
 
