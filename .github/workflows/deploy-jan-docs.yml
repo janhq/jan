@@ -26,7 +26,7 @@ jobs:
         run: yarn install
         working-directory: docs
       - name: Build website
-        run: yarn build
+        run: sed -i '/process.env.DEBUG = namespaces;/c\// process.env.DEBUG = namespaces;' ./node_modules/debug/src/node.js && yarn build
         working-directory: docs
       
       - name: Add Custome Domain file

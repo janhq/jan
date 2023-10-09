@@ -2,27 +2,33 @@ import React, { useState, useEffect } from "react";
 import { Fragment } from "react";
 import { Menu, Transition } from "@headlessui/react";
 import { ChevronDownIcon } from "@heroicons/react/20/solid";
+import axios from "axios";
+import yaml from "js-yaml";
 
-const systems = [
+const systemsTemplate = [
   {
     name: "Download for Mac (M1/M2)",
-    href: "https://github.com/janhq/jan/releases/download/v0.1.3/jan-electron-mac-arm64-0.1.3.dmg",
     logo: require("@site/static/img/apple-logo-white.png").default,
+    ymlFile: "latest-mac.yml",
+    ymlIndex: 3,  // Index of the M1/M2 file in the files array in latest-mac.yml
   },
   {
     name: "Download for Mac (Intel)",
-    href: "https://github.com/janhq/jan/releases/download/v0.1.3/jan-electron-mac-x64-0.1.3.dmg",
     logo: require("@site/static/img/apple-logo-white.png").default,
+    ymlFile: "latest-mac.yml",
+    ymlIndex: 2,  // Index of the Intel file in the files array in latest-mac.yml
   },
   {
     name: "Download for Windows",
-    href: "https://github.com/janhq/jan/releases/download/v0.1.3/jan-electron-win-x64-0.1.3.exe",
     logo: require("@site/static/img/windows-logo-white.png").default,
+    ymlFile: "latest.yml",
+    ymlIndex: 0,  // Index of the file in the files array in latest.yml
   },
   {
     name: "Download for Linux",
-    href: "https://github.com/janhq/jan/releases/download/v0.1.3/jan-electron-linux-amd64-0.1.3.deb",
     logo: require("@site/static/img/linux-logo-white.png").default,
+    ymlFile: "latest-linux.yml",
+    ymlIndex: 0,  // Index of the file in the files array in latest-linux.yml
   },
 ];
 
@@ -31,21 +37,65 @@ function classNames(...classes) {
 }
 
 export default function Dropdown() {
-  const [defaultSystem, setDefaultSystem] = useState(systems[0]);
+  const [systems, setSystems] = useState(systemsTemplate);
+  const [defaultSystem] = useState(systems[0]);
+
+  const getLatestReleaseInfo = async (repoOwner, repoName) => {
+    const url = `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`;
+    try {
+        const response = await axios.get(url);
+        return response.data;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+  };
+
+  const getDownloadUrlFromYml = async (tag_name, ymlFile, ymlIndex) => {
+    const url = `https://github.com/janhq/jan/releases/download/${tag_name}/${ymlFile}`;
+    try {
+        // Fetch the YAML file
+        const response = await fetch(url);
+        
+        // Check if the request was successful
+        if (!response.ok) {
+            console.error("Error fetching YAML file:", response.statusText);
+            return null;
+        }
+        
+        // Convert the response to text
+        const ymlText = await response.text();
+        
+        // Parse the YAML text
+        const parsedYml = yaml.load(ymlText);
+        
+        // Get the download URL from the parsed YAML
+        return parsedYml.files[ymlIndex].url;
+    } catch (error) {
+        console.error("Error fetching or parsing", url, ":", error);
+        return null;
+    };
+  };
+
 
   useEffect(() => {
-    const uAgent = window.navigator.userAgent;
+    const updateDownloadLinks = async () => {
+      try {
+        const releaseInfo = await getLatestReleaseInfo("janhq", "jan");
+        const updatedSystems = await Promise.all(systems.map(async (system) => {
+          const downloadUrl = await getDownloadUrlFromYml(releaseInfo.tag_name, system.ymlFile, system.ymlIndex);
+          return {
+            ...system,
+            href: `https://github.com/janhq/jan/releases/download/${releaseInfo.tag_name}/${downloadUrl}`
+          };
+        }));
+        setSystems(updatedSystems);
+      } catch (error) {
+        console.error("Failed to update download links:", error);
+      }
+    };
 
-    if (uAgent.indexOf("Win") !== -1) {
-      setDefaultSystem(systems[2]);
-    } else if (uAgent.indexOf("Mac") !== -1) {
-      // Note: There's no way to detect ARM architecture from browser. Hardcoding to M1/M2 for now.
-      setDefaultSystem(systems[0]);
-    } else if (uAgent.indexOf("Linux") !== -1) {
-      setDefaultSystem(systems[3]);
-    } else {
-      setDefaultSystem(systems[0]);
-    }
+    updateDownloadLinks();
   }, []);
 
   return (
