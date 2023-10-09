@@ -38,7 +38,7 @@ export const ModelStatusComponent: React.FC<Props> = ({ status }) => {
   const statusType = ModelStatusMapper[status];
   return (
     <div
-      className={`rounded-[10px] py-0.5 px-[10px] w-fit text-xs font-medium ${statusType.backgroundColor}`}
+      className={`rounded-[10px] py-0.5 px-2.5 w-fit text-xs font-medium ${statusType.backgroundColor}`}
     >
       {statusType.title}
     </div>

@@ -1,0 +1,29 @@
+name: Jan Docs Test Build
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - '.github/workflows/deploy-jan-docs.yml'
+      - '.github/workflows/jan-docs-test.yml'
+
+jobs:
+  deploy:
+    name: Test Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'yarn'
+          cache-dependency-path: './docs/yarn.lock'
+
+      - name: Install dependencies
+        run: yarn install
+        working-directory: docs
+      - name: Test Build Command
+        run: yarn build
+        working-directory: docs

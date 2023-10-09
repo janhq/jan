@@ -38,7 +38,7 @@ const ModelActionButton: React.FC<Props> = ({ type, onActionClick }) => {
 
   return (
     <td className="whitespace-nowrap px-6 py-4 text-sm">
-      <PrimaryButton title={styles.title} onClick={onClick} />
+      <PrimaryButton title={styles.title} onClick={onClick} className={styles.backgroundColor} />
     </td>
   );
 };

@@ -11,8 +11,8 @@
   ],
   "scripts": {
     "build": "webpack --config webpack.config.js",
-    "build:package": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\" && npm pack",
-    "build:publish": "yarn build:package && cpx *.tgz ../../pre-install"
+    "postinstall": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
+    "build:publish": "npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "cpx": "^1.5.0",
@@ -25,8 +25,7 @@
     "node-llama-cpp"
   ],
   "dependencies": {
-    "electron-is-dev": "^2.0.0",
-    "node-llama-cpp": "^2.4.1"
+    "electron-is-dev": "^2.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

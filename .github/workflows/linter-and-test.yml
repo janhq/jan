@@ -3,10 +3,24 @@ on:
   push:
     branches:
       - main
-      - fix/eslint-ignore-patterns
+    paths:
+      - 'electron/**'
+      - .github/workflows/linter-and-test.yml
+      - 'web/**'
+      - 'package.json'
+      - 'node_modules/**'
+      - 'yarn.lock'
+
   pull_request:
     branches:
       - main
+    paths:
+      - 'electron/**'
+      - .github/workflows/linter-and-test.yml
+      - 'web/**'
+      - 'package.json'
+      - 'node_modules/**'
+      - 'yarn.lock'
 
 jobs:
   test-on-macos:
@@ -64,11 +78,12 @@ jobs:
 
       - name: Linter and test
         run: |
+          w_output=$(w)
+          export DISPLAY=$(echo "$w_output" | awk '$3 ~ /:[0-9]+/ {print $3}')
+          echo -e "Display ID: $DISPLAY"
           yarn config set network-timeout 300000
           yarn install
           yarn lint
           yarn build:plugins
           yarn build:linux
           yarn test
-        env:
-            DISPLAY: ":0"

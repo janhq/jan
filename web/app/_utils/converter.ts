@@ -13,3 +13,8 @@ export const toGigabytes = (input: number) => {
 export const formatDownloadPercentage = (input: number) => {
   return (input * 100).toFixed(2) + "%";
 };
+
+export const formatDownloadSpeed = (input: number | undefined) => {
+  if (!input) return "0B/s";
+  return toGigabytes(input) + "/s";
+};

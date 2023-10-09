@@ -69,7 +69,7 @@ const SimpleTag: React.FC<Props> = ({
   if (!clickable) {
     return (
       <div
-        className={`px-[10px] py-0.5 rounded text-xs font-medium ${tagStyleMapper[type]}`}
+        className={`px-2.5 py-0.5 rounded text-xs font-medium ${tagStyleMapper[type]}`}
       >
         {title}
       </div>
@@ -79,7 +79,7 @@ const SimpleTag: React.FC<Props> = ({
   return (
     <button
       onClick={onClick}
-      className={`px-[10px] py-0.5 rounded text-xs font-medium ${tagStyleMapper[type]}`}
+      className={`px-2.5 py-0.5 rounded text-xs font-medium ${tagStyleMapper[type]}`}
     >
       {title} x
     </button>

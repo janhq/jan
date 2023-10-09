@@ -27,8 +27,14 @@
     ],
     "extends": null,
     "mac": {
-      "type": "distribution"
-    }
+      "type": "distribution",
+      "entitlements": "./entitlements.mac.plist",
+      "entitlementsInherit": "./entitlements.mac.plist",
+      "notarize": {
+        "teamId": "YT49P7GXG4"
+      }
+    },
+    "artifactName": "jan-${os}-${arch}-${version}.${ext}"
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
@@ -45,13 +51,17 @@
   },
   "dependencies": {
     "@npmcli/arborist": "^7.1.0",
+    "@uiball/loaders": "^1.3.0",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
     "pacote": "^17.0.4",
+    "react-intersection-observer": "^9.5.2",
     "request": "^2.88.2",
-    "request-progress": "^3.0.0"
+    "request-progress": "^3.0.0",
+    "use-debounce": "^9.0.4"
   },
   "devDependencies": {
+    "@electron/notarize": "^2.1.0",
     "@playwright/test": "^1.38.1",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",

@@ -32,7 +32,7 @@ const ConversationalCard: React.FC<Props> = ({ product }) => {
           {description}
         </span>
       </div>
-      <span className="flex text-xs leading-5 text-gray-500 items-center gap-[2px]">
+      <span className="flex text-xs leading-5 text-gray-500 items-center gap-0.5">
         <Image src={"icons/play.svg"} width={16} height={16} alt="" />
         32.2k runs
       </span>
