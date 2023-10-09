@@ -3,32 +3,27 @@ import { Fragment } from "react";
 import { Menu, Transition } from "@headlessui/react";
 import { ChevronDownIcon } from "@heroicons/react/20/solid";
 import axios from "axios";
-import yaml from "js-yaml";
 
 const systemsTemplate = [
   {
     name: "Download for Mac (M1/M2)",
     logo: require("@site/static/img/apple-logo-white.png").default,
-    ymlFile: "latest-mac.yml",
-    ymlIndex: 3,  // Index of the M1/M2 file in the files array in latest-mac.yml
+    fileFormat: "{appname}-mac-arm64-{tag}.dmg",
   },
   {
     name: "Download for Mac (Intel)",
     logo: require("@site/static/img/apple-logo-white.png").default,
-    ymlFile: "latest-mac.yml",
-    ymlIndex: 2,  // Index of the Intel file in the files array in latest-mac.yml
+    fileFormat: "{appname}-mac-x64-{tag}.dmg",
   },
   {
     name: "Download for Windows",
     logo: require("@site/static/img/windows-logo-white.png").default,
-    ymlFile: "latest.yml",
-    ymlIndex: 0,  // Index of the file in the files array in latest.yml
+    fileFormat: "{appname}-win-x64-{tag}.exe",
   },
   {
     name: "Download for Linux",
     logo: require("@site/static/img/linux-logo-white.png").default,
-    ymlFile: "latest-linux.yml",
-    ymlIndex: 0,  // Index of the file in the files array in latest-linux.yml
+    fileFormat: "{appname}-linux-amd64-{tag}.deb",
   },
 ];
 
@@ -38,63 +33,62 @@ function classNames(...classes) {
 
 export default function Dropdown() {
   const [systems, setSystems] = useState(systemsTemplate);
-  const [defaultSystem] = useState(systems[0]);
+  const [defaultSystem, setDefaultSystem] = useState(systems[0]);
 
   const getLatestReleaseInfo = async (repoOwner, repoName) => {
     const url = `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`;
     try {
-        const response = await axios.get(url);
-        return response.data;
+      const response = await axios.get(url);
+      return response.data;
     } catch (error) {
-        console.error(error);
-        return null;
+      console.error(error);
+      return null;
     }
   };
 
-  const getDownloadUrlFromYml = async (tag_name, ymlFile, ymlIndex) => {
-    const url = `https://github.com/janhq/jan/releases/download/${tag_name}/${ymlFile}`;
-    try {
-        // Fetch the YAML file
-        const response = await fetch(url);
-        
-        // Check if the request was successful
-        if (!response.ok) {
-            console.error("Error fetching YAML file:", response.statusText);
-            return null;
-        }
-        
-        // Convert the response to text
-        const ymlText = await response.text();
-        
-        // Parse the YAML text
-        const parsedYml = yaml.load(ymlText);
-        
-        // Get the download URL from the parsed YAML
-        return parsedYml.files[ymlIndex].url;
-    } catch (error) {
-        console.error("Error fetching or parsing", url, ":", error);
-        return null;
-    };
+  const extractAppName = (fileName) => {
+    // Extract appname using a regex that matches the provided file formats
+    const regex = /^(.*?)-(?:mac|win|linux)-(?:arm64|x64|amd64)-.*$/;
+    const match = fileName.match(regex);
+    return match ? match[1] : null;
   };
-
 
   useEffect(() => {
     const updateDownloadLinks = async () => {
       try {
         const releaseInfo = await getLatestReleaseInfo("janhq", "jan");
-        const updatedSystems = await Promise.all(systems.map(async (system) => {
-          const downloadUrl = await getDownloadUrlFromYml(releaseInfo.tag_name, system.ymlFile, system.ymlIndex);
+        
+        // Extract appname from the first asset name
+        const firstAssetName = releaseInfo.assets[0].name;
+        const appname = extractAppName(firstAssetName);
+  
+        if (!appname) {
+          console.error("Failed to extract appname from file name:", firstAssetName);
+          return;
+        }
+  
+        // Remove 'v' at the start of the tag_name
+        const tag = releaseInfo.tag_name.startsWith("v")
+          ? releaseInfo.tag_name.substring(1)
+          : releaseInfo.tag_name;
+  
+        const updatedSystems = systems.map((system) => {
+          const downloadUrl = system.fileFormat
+            .replace("{appname}", appname)
+            .replace("{tag}", tag);
           return {
             ...system,
-            href: `https://github.com/janhq/jan/releases/download/${releaseInfo.tag_name}/${downloadUrl}`
+            href: `https://github.com/janhq/jan/releases/download/${releaseInfo.tag_name}/${downloadUrl}`,
           };
-        }));
+        });
+  
         setSystems(updatedSystems);
+        setDefaultSystem(updatedSystems[0]);
       } catch (error) {
         console.error("Failed to update download links:", error);
       }
     };
-
+  
     updateDownloadLinks();
   }, []);
 
