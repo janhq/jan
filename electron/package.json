@@ -34,7 +34,7 @@
         "teamId": "YT49P7GXG4"
       }
     },
-    "artifactName": "${name}-${os}-${arch}-${version}.${ext}"
+    "artifactName": "jan-${os}-${arch}-${version}.${ext}"
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
