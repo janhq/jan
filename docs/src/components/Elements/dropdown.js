@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Fragment } from "react";
 import { Menu, Transition } from "@headlessui/react";
 import { ChevronDownIcon } from "@heroicons/react/20/solid";
@@ -31,19 +31,22 @@ function classNames(...classes) {
 }
 
 export default function Dropdown() {
-  const uAgent = window.navigator.userAgent;
-  let defaultSystem;
+  const [defaultSystem, setDefaultSystem] = useState(systems[0]);
 
-  if (uAgent.indexOf("Win") !== -1) {
-    defaultSystem = systems[2];
-  } else if (uAgent.indexOf("Mac") !== -1) {
-    // Note: There's no way to detect ARM architecture from browser. Hardcoding to M1/M2 for now.
-    defaultSystem = systems[0];
-  } else if (uAgent.indexOf("Linux") !== -1) {
-    defaultSystem = systems[3];
-  } else {
-    defaultSystem = systems[0];
-  }
+  useEffect(() => {
+    const uAgent = window.navigator.userAgent;
+
+    if (uAgent.indexOf("Win") !== -1) {
+      setDefaultSystem(systems[2]);
+    } else if (uAgent.indexOf("Mac") !== -1) {
+      // Note: There's no way to detect ARM architecture from browser. Hardcoding to M1/M2 for now.
+      setDefaultSystem(systems[0]);
+    } else if (uAgent.indexOf("Linux") !== -1) {
+      setDefaultSystem(systems[3]);
+    } else {
+      setDefaultSystem(systems[0]);
+    }
+  }, []);
 
   return (
     <div className="inline-flex align-items-stretch">
