@@ -10,9 +10,13 @@
     "init"
   ],
   "scripts": {
-    "build": "webpack --config webpack.config.js",
-    "postinstall": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\" && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
+    "build": "tsc -b . && webpack --config webpack.config.js",
+    "postinstall": "rimraf ./*.tgz && npm run build && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
     "build:publish": "npm pack && cpx *.tgz ../../pre-install"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/module.js"
   },
   "devDependencies": {
     "cpx": "^1.5.0",
@@ -20,13 +24,13 @@
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
   },
-  "bundledDependencies": [
-    "electron-is-dev",
-    "node-llama-cpp"
-  ],
   "dependencies": {
-    "electron-is-dev": "^2.0.0"
+    "tcp-port-used": "^1.0.2",
+    "ts-loader": "^9.5.0"
   },
+  "bundledDependencies": [
+    "tcp-port-used"
+  ],
   "engines": {
     "node": ">=18.0.0"
   },

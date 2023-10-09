@@ -13,8 +13,12 @@ export default function useInitModel() {
       return;
     }
     try {
-      await executeSerial(InfereceService.INIT_MODEL, model);
-      console.debug(`Init model ${model.name} successfully!`);
+      const res = await executeSerial(InfereceService.INIT_MODEL, model);
+      if (res?.error) {
+        console.log("error occured: ", res);
+      } else {
+        console.debug(`Init model ${model.name} successfully!`);
+      }
       setActiveModel(model);
     } catch (err) {
       console.error(`Init model ${model.name} failed: ${err}`);
