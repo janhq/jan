@@ -15,7 +15,7 @@ Jan can now understand images and help you with tasks according to your prompt:
 
 - Use-case 1: Jan is a documents manager (PDF, images), user can add data to Jan DB and ask question on the documents.
 - Use-case 2: Jan is a document manager, Jan can understand and categorize all of documents, user can search a document by prompt quickly.
-- Use-case 3: Jan have a pugin for personal finance, user can upload all of invoice images, Jan can understand and summarize spending situation, statistical dashboard.
+- Use-case 3: Jan have a plugin for personal finance, user can upload all of invoice images, Jan can understand and summarize spending situation, statistical dashboard.
 
 ## Decision
 - This works as a part in Nitro.
@@ -31,3 +31,4 @@ Jan can now understand images and help you with tasks according to your prompt:
 - Clear design for UI to interact with Jan, maybe we need user give hint for the image.
 
 ## Reference
+- https://github.com/lancedb/lancedb
