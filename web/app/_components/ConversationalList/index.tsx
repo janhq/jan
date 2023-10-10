@@ -1,12 +1,12 @@
-import { Product } from "@/_models/Product";
+import { AssistantModel } from "@/_models/AssistantModel";
 import ConversationalCard from "../ConversationalCard";
 import { ChatBubbleBottomCenterTextIcon } from "@heroicons/react/24/outline";
 
 type Props = {
-  products: Product[];
+  models: AssistantModel[];
 };
 
-const ConversationalList: React.FC<Props> = ({ products }) => (
+const ConversationalList: React.FC<Props> = ({ models }) => (
   <>
     <div className="flex items-center gap-3 mt-8 mb-2">
       <ChatBubbleBottomCenterTextIcon width={24} height={24} className="ml-6" />
@@ -15,8 +15,8 @@ const ConversationalList: React.FC<Props> = ({ products }) => (
       </span>
     </div>
     <div className="mt-2 pl-6 flex w-full gap-2 overflow-x-scroll scroll overflow-hidden">
-      {products.map((item) => (
-        <ConversationalCard key={item.slug} product={item} />
+      {models.map((item) => (
+        <ConversationalCard key={item.id} model={item} />
       ))}
     </div>
   </>

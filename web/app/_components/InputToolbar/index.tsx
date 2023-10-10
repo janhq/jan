@@ -8,13 +8,13 @@ import SecondaryButton from "../SecondaryButton";
 import { Fragment } from "react";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import useCreateConversation from "@/_hooks/useCreateConversation";
-import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
+import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";
 import LoadingIndicator from "../LoadingIndicator";
 import { currentConvoStateAtom } from "@/_helpers/atoms/Conversation.atom";
 
 const InputToolbar: React.FC = () => {
   const showingAdvancedPrompt = useAtomValue(showingAdvancedPromptAtom);
-  const currentProduct = useAtomValue(currentProductAtom);
+  const activeModel = useAtomValue(activeAssistantModelAtom);
   const { requestCreateConvo } = useCreateConversation();
   const currentConvoState = useAtomValue(currentConvoStateAtom);
 
@@ -26,8 +26,8 @@ const InputToolbar: React.FC = () => {
   // const onRegenerateClick = () => {};
 
   const onNewConversationClick = () => {
-    if (currentProduct) {
-      requestCreateConvo(currentProduct);
+    if (activeModel) {
+      requestCreateConvo(activeModel);
     }
   };
 
@@ -49,7 +49,6 @@ const InputToolbar: React.FC = () => {
               </div>
             )}
         </div>
-
         {/* <SecondaryButton title="Regenerate" onClick={onRegenerateClick} /> */}
         <SecondaryButton
           onClick={onNewConversationClick}

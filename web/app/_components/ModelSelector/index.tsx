@@ -1,10 +1,10 @@
 import { Fragment, useEffect } from "react";
 import { Listbox, Transition } from "@headlessui/react";
 import { CheckIcon, ChevronUpDownIcon } from "@heroicons/react/20/solid";
-import { Product } from "@/_models/Product";
 import { useAtom, useAtomValue } from "jotai";
 import { selectedModelAtom } from "@/_helpers/atoms/Model.atom";
 import { downloadedModelAtom } from "@/_helpers/atoms/DownloadedModel.atom";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 function classNames(...classes: any) {
   return classes.filter(Boolean).join(" ");
@@ -20,7 +20,7 @@ const SelectModels: React.FC = () => {
     }
   }, [downloadedModels]);
 
-  const onModelSelected = (model: Product) => {
+  const onModelSelected = (model: AssistantModel) => {
     setSelectedModel(model);
   };
 

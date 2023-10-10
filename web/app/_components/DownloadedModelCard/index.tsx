@@ -1,16 +1,16 @@
-import { Product } from "@/_models/Product";
+import { AssistantModel } from "@/_models/AssistantModel";
 import DownloadModelContent from "../DownloadModelContent";
 
 type Props = {
-  product: Product;
+  model: AssistantModel;
   isRecommend: boolean;
   required?: string;
   transferred?: number;
-  onDeleteClick?: (product: Product) => void;
+  onDeleteClick?: (model: AssistantModel) => void;
 };
 
 const DownloadedModelCard: React.FC<Props> = ({
-  product,
+  model,
   isRecommend,
   required,
   onDeleteClick,
@@ -19,14 +19,14 @@ const DownloadedModelCard: React.FC<Props> = ({
     <div className="flex justify-between py-4 px-3 gap-2.5">
       <DownloadModelContent
         required={required}
-        author={product.author}
-        description={product.description}
+        author={model.author}
+        description={model.shortDescription}
         isRecommend={isRecommend}
-        name={product.name}
-        type={product.type}
+        name={model.name}
+        type={model.type}
       />
       <div className="flex flex-col justify-center">
-        <button onClick={() => onDeleteClick?.(product)}>Delete</button>
+        <button onClick={() => onDeleteClick?.(model)}>Delete</button>
       </div>
     </div>
   </div>

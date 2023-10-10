@@ -47,6 +47,15 @@ const searchModels = async (params) =>
     }
   });
 
+const getConfiguredModels = async () =>
+  new Promise(async (resolve) => {
+    if (window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "getConfiguredModels")
+        .then((res) => resolve(res));
+    }
+  });
+
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
   register("getDownloadedModels", "getDownloadedModels", getDownloadedModels);
@@ -54,4 +63,5 @@ export function init({ register }) {
   register("downloadModel", "downloadModel", downloadModel);
   register("deleteModel", "deleteModel", deleteModel);
   register("searchModels", "searchModels", searchModels);
+  register("getConfiguredModels", "getConfiguredModels", getConfiguredModels);
 }

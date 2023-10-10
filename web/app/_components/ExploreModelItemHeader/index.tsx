@@ -3,7 +3,7 @@ import PrimaryButton from "../PrimaryButton";
 import { formatDownloadPercentage, toGigabytes } from "@/_utils/converter";
 import { DownloadState } from "@/_models/DownloadState";
 import SecondaryButton from "../SecondaryButton";
-import { ModelVersion } from "@/_models/Product";
+import { ModelVersion } from "@/_models/ModelVersion";
 
 type Props = {
   name: string;

@@ -81,7 +81,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
           <span className="text-sm font-medium text-gray-500">Tags</span>
         </div>
       </div>
-      {model.availableVersions.length > 0 && (
+      {model.availableVersions?.length > 0 && (
         <Fragment>
           {show && (
             <ModelVersionList

@@ -34,11 +34,10 @@ export enum InferenceService {
 }
 
 export enum ModelManagementService {
-  GET_DOWNLOADED_MODELS = "getDownloadedModels",
-  GET_AVAILABLE_MODELS = "getAvailableModels",
   DELETE_MODEL = "deleteModel",
   DOWNLOAD_MODEL = "downloadModel",
   SEARCH_MODELS = "searchModels",
+  GET_CONFIGURED_MODELS = "getConfiguredModels",
 }
 
 export enum PreferenceService {
