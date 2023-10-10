@@ -193,13 +193,10 @@ function getModelById(modelId: string) {
       path.join(app.getPath("userData"), "jan.db")
     );
 
-    console.debug("Get model by id", modelId);
     db.get(
       `SELECT * FROM models WHERE id = ?`,
       [modelId],
       (err: any, row: any) => {
-        console.debug("Get model by id result", row);
-
         if (row) {
           const product = {
             id: row.id,

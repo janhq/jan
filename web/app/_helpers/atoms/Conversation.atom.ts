@@ -59,6 +59,17 @@ export const updateConversationWaitingForResponseAtom = atom(
     set(conversationStatesAtom, currentState);
   }
 );
+export const updateConversationErrorAtom = atom(
+  null,
+  (get, set, conversationId: string, error?: Error) => {
+    const currentState = { ...get(conversationStatesAtom) };
+    currentState[conversationId] = {
+      ...currentState[conversationId],
+      error,
+    };
+    set(conversationStatesAtom, currentState);
+  }
+);
 export const updateConversationHasMoreAtom = atom(
   null,
   (get, set, conversationId: string, hasMore: boolean) => {

@@ -9,6 +9,8 @@ import {
   conversationStatesAtom,
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
+  updateConversationErrorAtom,
+  updateConversationWaitingForResponseAtom,
 } from "@/_helpers/atoms/Conversation.atom";
 import {
   setMainViewStateAtom,
@@ -33,6 +35,10 @@ const HistoryItem: React.FC<Props> = ({
   const conversationStates = useAtomValue(conversationStatesAtom);
   const activeConvoId = useAtomValue(getActiveConvoIdAtom);
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
+  const updateConvWaiting = useSetAtom(
+    updateConversationWaitingForResponseAtom
+  );
+  const updateConvError = useSetAtom(updateConversationErrorAtom);
   const isSelected = activeConvoId === conversation.id;
 
   const { initModel } = useInitModel();
@@ -42,13 +48,15 @@ const HistoryItem: React.FC<Props> = ({
       DataService.GET_MODEL_BY_ID,
       conversation.model_id
     );
-    if (!model) {
-      alert(
-        `Model ${conversation.model_id} not found! Please re-download the model first.`
-      );
-    } else {
-      initModel(model);
-    }
+
+    if (conversation.id) updateConvWaiting(conversation.id, true);
+    initModel(model).then((res: any) => {
+      if (res?.error && conversation.id) {
+        updateConvError(conversation.id, res.error);
+      }
+      if (conversation.id) updateConvWaiting(conversation.id, false);
+    });
+
     if (activeConvoId !== conversation.id) {
       setMainViewState(MainViewState.Conversation);
       setActiveConvoId(conversation.id);

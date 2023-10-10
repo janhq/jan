@@ -25,11 +25,13 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "kill-port-process": "^3.2.0",
     "tcp-port-used": "^1.0.2",
     "ts-loader": "^9.5.0"
   },
   "bundledDependencies": [
-    "tcp-port-used"
+    "tcp-port-used",
+    "kill-port-process"
   ],
   "engines": {
     "node": ">=18.0.0"

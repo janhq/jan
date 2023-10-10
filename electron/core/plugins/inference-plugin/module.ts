@@ -3,8 +3,10 @@ const { app, dialog } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const tcpPortUsed = require("tcp-port-used");
+const { killPortProcess } = require("kill-port-process");
 
 let subprocess = null;
+const PORT = 3928;
 
 const initModel = (product) =>
   new Promise<void>(async (res) => {
@@ -29,8 +31,12 @@ const initModel = (product) =>
     }
     res();
   })
-    .then(tcpPortUsed.waitUntilFree(3928, 200, 3000))
-    .then((res) => {
+    .then(() => tcpPortUsed.waitUntilFree(PORT, 200, 3000))
+    .catch(async () => {
+      await killPortProcess(PORT);
+      return;
+    })
+    .then(() => {
       let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
 
       // Read the existing config
@@ -86,7 +92,10 @@ const initModel = (product) =>
         subprocess = null;
       });
     })
-    .then(() => tcpPortUsed.waitUntilUsed(3928, 300, 4000))
+    .then(() => tcpPortUsed.waitUntilUsed(PORT, 300, 30000))
+    .then(() => {
+      return {};
+    })
     .catch((err) => {
       return { error: err };
     });
@@ -102,6 +111,7 @@ function killSubprocess() {
     subprocess = null;
     console.log("Subprocess terminated.");
   } else {
+    killPortProcess(PORT);
     console.error("No subprocess is currently running.");
   }
 }
