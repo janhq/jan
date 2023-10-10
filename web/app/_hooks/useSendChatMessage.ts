@@ -1,7 +1,7 @@
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { selectAtom } from "jotai/utils";
-import { DataService, InfereceService } from "../../shared/coreService";
+import { DataService, InferenceService } from "../../shared/coreService";
 import {
   MessageSenderType,
   RawMessage,
@@ -70,7 +70,7 @@ export default function useSendChatMessage() {
               : "assistant",
         };
       });
-    const url = await executeSerial(InfereceService.INFERENCE_URL);
+    const url = await executeSerial(InferenceService.INFERENCE_URL);
     const response = await fetch(url, {
       method: "POST",
       headers: {

@@ -1,9 +1,8 @@
 import { Product } from "@/_models/Product";
 import { executeSerial } from "@/_services/pluginService";
-import { InfereceService } from "../../shared/coreService";
-import { useAtom, useSetAtom } from "jotai";
+import { InferenceService } from "../../shared/coreService";
+import { useAtom } from "jotai";
 import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
-import { updateConversationWaitingForResponseAtom } from "@/_helpers/atoms/Conversation.atom";
 
 export default function useInitModel() {
   const [activeModel, setActiveModel] = useAtom(currentProductAtom);
@@ -13,7 +12,7 @@ export default function useInitModel() {
       console.debug(`Model ${model.id} is already init. Ignore..`);
       return;
     }
-    const res = await executeSerial(InfereceService.INIT_MODEL, model);
+    const res = await executeSerial(InferenceService.INIT_MODEL, model);
     if (res?.error) {
       console.log("error occured: ", res);
       return res;
