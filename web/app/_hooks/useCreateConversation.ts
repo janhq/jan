@@ -7,6 +7,8 @@ import {
   userConversationsAtom,
   setActiveConvoIdAtom,
   addNewConversationStateAtom,
+  updateConversationWaitingForResponseAtom,
+  updateConversationErrorAtom,
 } from "@/_helpers/atoms/Conversation.atom";
 import useInitModel from "./useInitModel";
 
@@ -17,6 +19,10 @@ const useCreateConversation = () => {
   );
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   const addNewConvoState = useSetAtom(addNewConversationStateAtom);
+  const updateConvWaiting = useSetAtom(
+    updateConversationWaitingForResponseAtom
+  );
+  const updateConvError = useSetAtom(updateConversationErrorAtom);
 
   const requestCreateConvo = async (model: Product) => {
     const conversationName = model.name;
@@ -27,7 +33,14 @@ const useCreateConversation = () => {
       name: conversationName,
     };
     const id = await executeSerial(DataService.CREATE_CONVERSATION, conv);
-    await initModel(model);
+
+    if (id) updateConvWaiting(id, true);
+    initModel(model).then((res: any) => {
+      if (id) updateConvWaiting(id, false);
+      if (res?.error) {
+        updateConvError(id, res.error);
+      }
+    });
 
     const mappedConvo: Conversation = {
       id,

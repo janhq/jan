@@ -1,5 +1,5 @@
 import { executeSerial } from "@/_services/pluginService";
-import { DataService, InfereceService } from "../../shared/coreService";
+import { DataService, InferenceService } from "../../shared/coreService";
 import useInitModel from "./useInitModel";
 import { useSetAtom } from "jotai";
 import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
@@ -18,7 +18,7 @@ export default function useStartStopModel() {
   };
 
   const stopModel = async (modelId: string) => {
-    await executeSerial(InfereceService.STOP_MODEL, modelId);
+    await executeSerial(InferenceService.STOP_MODEL, modelId);
     setActiveModel(undefined);
   };
 

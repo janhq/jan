@@ -1,7 +1,7 @@
-import { currentPromptAtom, showingTyping } from "@/_helpers/JotaiWrapper";
+import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { selectAtom } from "jotai/utils";
-import { DataService, InfereceService } from "../../shared/coreService";
+import { DataService, InferenceService } from "../../shared/coreService";
 import {
   MessageSenderType,
   RawMessage,
@@ -18,6 +18,7 @@ import {
 import {
   currentConversationAtom,
   getActiveConvoIdAtom,
+  updateConversationWaitingForResponseAtom,
 } from "@/_helpers/atoms/Conversation.atom";
 
 export default function useSendChatMessage() {
@@ -26,6 +27,9 @@ export default function useSendChatMessage() {
   const addNewMessage = useSetAtom(addNewMessageAtom);
   const updateMessage = useSetAtom(updateMessageAtom);
   const activeConversationId = useAtomValue(getActiveConvoIdAtom) ?? "";
+  const updateConvWaiting = useSetAtom(
+    updateConversationWaitingForResponseAtom
+  );
 
   const chatMessagesHistory = useAtomValue(
     selectAtom(
@@ -34,10 +38,11 @@ export default function useSendChatMessage() {
     )
   );
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom);
-  const [, setIsTyping] = useAtom(showingTyping);
+
   const sendChatMessage = async () => {
-    setIsTyping(true);
     setCurrentPrompt("");
+    const conversationId = activeConversationId;
+    updateConvWaiting(conversationId, true);
     const prompt = currentPrompt.trim();
     const newMessage: RawMessage = {
       conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,
@@ -65,7 +70,7 @@ export default function useSendChatMessage() {
               : "assistant",
         };
       });
-    const url = await executeSerial(InfereceService.INFERENCE_URL);
+    const url = await executeSerial(InferenceService.INFERENCE_URL);
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -108,7 +113,7 @@ export default function useSendChatMessage() {
       const lines = text.trim().split("\n");
       for (const line of lines) {
         if (line.startsWith("data: ") && !line.includes("data: [DONE]")) {
-          setIsTyping(false);
+          updateConvWaiting(conversationId, false);
           const data = JSON.parse(line.replace("data: ", ""));
           answer += data.choices[0]?.delta?.content ?? "";
           if (answer.startsWith("assistant: ")) {
@@ -139,7 +144,7 @@ export default function useSendChatMessage() {
         .replace("T", " ")
         .replace(/\.\d+Z$/, ""),
     });
-    setIsTyping(false);
+    updateConvWaiting(conversationId, false);
   };
   return {
     sendChatMessage,

@@ -9,14 +9,6 @@ const initModel = async (product) =>
     }
   });
 
-const dispose = async () =>
-  new Promise(async (resolve) => {
-    if (window.electronAPI) {
-      window.electronAPI
-        .invokePluginFunc(MODULE_PATH, "dispose")
-        .then((res) => resolve(res));
-    }
-  });
 const inferenceUrl = () => "http://localhost:3928/llama/chat_completion";
 
 const stopModel = () => {
@@ -27,6 +19,5 @@ const stopModel = () => {
 export function init({ register }) {
   register("initModel", "initModel", initModel);
   register("inferenceUrl", "inferenceUrl", inferenceUrl);
-  register("dispose", "dispose", dispose);
   register("stopModel", "stopModel", stopModel);
 }
