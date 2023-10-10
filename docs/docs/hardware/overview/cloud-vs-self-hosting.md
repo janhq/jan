@@ -2,7 +2,7 @@
 title: Cloud vs. Self-hosting Your AI
 ---
 
-The choice of where to run your AI - on GPU cloud services, on-prem, vs. outright subscribing to an API provider - involves various trade-offs. The following is a naive exploration of the pros and cons of renting vs self-hosting.
+The choice of how to run your AI - on GPU cloud services, on-prem, or just using an API provider - involves various trade-offs. The following is a naive exploration of the pros and cons of renting vs self-hosting.
 
 ## Cost Comparison
 
@@ -15,11 +15,15 @@ The following estimations use these general assumptions:
 - 800 average tokens (input & output) in a single request
 - Inference speed is at 24 tokens per second
 
+### Low Usage
+
 When operating at low capacity:
 
 |                  | Self-Hosted | GPT 4.0 | GPU Rental |
 | ---------------- | ----------- | ------- | ---------- |
 | Cost per Request | $2.33       | $0.10   | $0.04      |
+
+### High Usage
 
 When operating at high capacity, i.e. 24 hours in a day, ~77.8k requests per month:
 
@@ -27,7 +31,9 @@ When operating at high capacity, i.e. 24 hours in a day, ~77.8k requests per mon
 | -------------- | ------------ | ------- | ---------- |
 | Cost per Month | $166 (fixed) | $7465   | $3182      |
 
-The incremental cost for large context use cases. For example, if you had to write a 500 word essay summarizing Tolstoy's "War and Peace":
+### Incremental Costs
+
+Large context use cases are also interesting to evaluate. For example, if you had to write a 500 word essay summarizing Tolstoy's "War and Peace":
 
 |                         | Self-Hosted          | GPT 4.0 | GPU Rental |
 | ----------------------- | -------------------- | ------- | ---------- |
@@ -35,9 +41,9 @@ The incremental cost for large context use cases. For example, if you had to wri
 
 > **Takeaway**: Renting on cloud or using an API is great for initially scaling. However, it can quickly become expensive when dealing with large datasets and context windows. For predictable costs, self-hosting is an attractive option.
 
-## Business Comparison
+## Business Considerations
 
-Other considerations include
+Other business level considerations may include:
 
 |                         | Self-Hosted | GPT 4.0 | GPU Rental |
 | ----------------------- | ----------- | ------- | ---------- |
