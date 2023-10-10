@@ -1,6 +1,4 @@
 ---
 sidebar_position: 1
-title: Hardware
+title: Introduction
 ---
-
-TODO
