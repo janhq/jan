@@ -92,8 +92,8 @@ const sidebars = {
       items: [
         {
           type: "doc",
-          label: "Cloud vs. Buy",
-          id: "hardware/overview/cloud-vs-buy",
+          label: "Cloud vs. Self-Hosting",
+          id: "hardware/overview/cloud-vs-self-hosting",
         },
         {
           type: "doc",
