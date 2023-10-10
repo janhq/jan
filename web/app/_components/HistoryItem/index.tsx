@@ -1,22 +1,20 @@
 import React from "react";
 import JanImage from "../JanImage";
-import {
-  MainViewState,
-  activeModel,
-  conversationStatesAtom,
-  currentProductAtom,
-  getActiveConvoIdAtom,
-  setActiveConvoIdAtom,
-  setMainViewStateAtom,
-} from "@/_helpers/JotaiWrapper";
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
-import { DataService, InfereceService } from "../../../shared/coreService";
+import { DataService } from "../../../shared/coreService";
+import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
 import {
-  execute,
-  executeSerial,
-} from "../../../../electron/core/plugin-manager/execution/extension-manager";
+  conversationStatesAtom,
+  getActiveConvoIdAtom,
+  setActiveConvoIdAtom,
+} from "@/_helpers/atoms/Conversation.atom";
+import {
+  setMainViewStateAtom,
+  MainViewState,
+} from "@/_helpers/atoms/MainView.atom";
+import useInitModel from "@/_hooks/useInitModel";
 
 type Props = {
   conversation: Conversation;
@@ -36,23 +34,20 @@ const HistoryItem: React.FC<Props> = ({
   const activeConvoId = useAtomValue(getActiveConvoIdAtom);
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   const isSelected = activeConvoId === conversation.id;
-  const setActiveModel = useSetAtom(activeModel);
-  const setActiveProduct = useSetAtom(currentProductAtom);
+
+  const { initModel } = useInitModel();
+
   const onClick = async () => {
-    const convoModel = await executeSerial(
+    const model = await executeSerial(
       DataService.GET_MODEL_BY_ID,
       conversation.model_id
     );
-    if (!convoModel) {
+    if (!model) {
       alert(
         `Model ${conversation.model_id} not found! Please re-download the model first.`
       );
     } else {
-      setActiveProduct(convoModel)
-      executeSerial(InfereceService.INIT_MODEL, convoModel)
-        .then(() => console.info(`Init model success`))
-        .catch((err) => console.log(`Init model error ${err}`));
-      setActiveModel(convoModel.name);
+      initModel(model);
     }
     if (activeConvoId !== conversation.id) {
       setMainViewState(MainViewState.Conversation);
@@ -71,7 +66,7 @@ const HistoryItem: React.FC<Props> = ({
 
   return (
     <button
-      className={`flex flex-row mx-1 items-center gap-[10px] rounded-lg p-2 ${backgroundColor} hover:bg-hover-light`}
+      className={`flex flex-row mx-1 items-center gap-2.5 rounded-lg p-2 ${backgroundColor} hover:bg-hover-light`}
       onClick={onClick}
     >
       <Image
@@ -84,7 +79,7 @@ const HistoryItem: React.FC<Props> = ({
       <div className="flex flex-col justify-between text-sm leading-[20px] w-full">
         <div className="flex flex-row items-center justify-between">
           <span className="text-gray-900 text-left">{name}</span>
-          <span className="text-[11px] leading-[13px] tracking-[-0.4px] text-gray-400">
+          <span className="text-xs leading-[13px] tracking-[-0.4px] text-gray-400">
             {updatedAt && new Date(updatedAt).toDateString()}
           </span>
         </div>

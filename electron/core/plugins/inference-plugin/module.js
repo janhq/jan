@@ -5,14 +5,6 @@ const fs = require("fs");
 
 let subprocess = null;
 
-process.on("exit", () => {
-  // Perform cleanup tasks here
-  console.log("kill subprocess on exit");
-  if (subprocess) {
-    subprocess.kill();
-  }
-});
-
 async function initModel(product) {
   // fileName fallback
   if (!product.fileName) {
@@ -31,13 +23,13 @@ async function initModel(product) {
     console.error(
       "A subprocess is already running. Attempt to kill then reinit."
     );
-    killSubprocess();
+    dispose();
   }
 
-  let binaryFolder = `${__dirname}/nitro`; // Current directory by default
+  let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
 
   // Read the existing config
-  const configFilePath = `${binaryFolder}/config/config.json`;
+  const configFilePath = path.join(binaryFolder, "config", "config.json");
   let config = {};
   if (fs.existsSync(configFilePath)) {
     const rawData = fs.readFileSync(configFilePath, "utf-8");
@@ -56,8 +48,22 @@ async function initModel(product) {
   // Write the updated config back to the file
   fs.writeFileSync(configFilePath, JSON.stringify(config, null, 4));
 
+  let binaryName;
+
+  if (process.platform === "win32") {
+    binaryName = "nitro_windows_amd64.exe";
+  } else if (process.platform === "darwin") { // Mac OS platform
+    binaryName = process.arch === "arm64" ? "nitro_mac_arm64" : "nitro_mac_amd64";
+  } else {
+    // Linux
+    binaryName = "nitro_linux_amd64_cuda"; // For other platforms
+  }
+
+  const binaryPath = path.join(binaryFolder, binaryName);
+
   // Execute the binary
-  subprocess = spawn(`${binaryFolder}/nitro`, [configFilePath]);
+
+  subprocess = spawn(binaryPath, [configFilePath], { cwd: binaryFolder });
 
   // Handle subprocess output
   subprocess.stdout.on("data", (data) => {
@@ -74,6 +80,11 @@ async function initModel(product) {
   });
 }
 
+function dispose() {
+  killSubprocess();
+  // clean other registered resources here
+}
+
 function killSubprocess() {
   if (subprocess) {
     subprocess.kill();
@@ -87,4 +98,5 @@ function killSubprocess() {
 module.exports = {
   initModel,
   killSubprocess,
+  dispose,
 };

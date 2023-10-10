@@ -1,28 +1,56 @@
 import Image from "next/image";
-import { SidebarButton } from "../SidebarButton";
-import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
-import { DataService } from "../../../shared/coreService";
 import useCreateConversation from "@/_hooks/useCreateConversation";
+import PrimaryButton from "../PrimaryButton";
+import { useAtomValue, useSetAtom } from "jotai";
+import { useEffect, useState } from "react";
+import {
+  MainViewState,
+  setMainViewStateAtom,
+} from "@/_helpers/atoms/MainView.atom";
+import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
+import useInitModel from "@/_hooks/useInitModel";
+import { Product } from "@/_models/Product";
+import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
+
+enum ActionButton {
+  DownloadModel = "Download a Model",
+  StartChat = "Start a Conversation",
+}
 
 const SidebarEmptyHistory: React.FC = () => {
+  const { downloadedModels } = useGetDownloadedModels();
+  const activeModel = useAtomValue(currentProductAtom);
+  const setMainView = useSetAtom(setMainViewStateAtom);
   const { requestCreateConvo } = useCreateConversation();
-  const startChat = async () => {
-    // Host
-    if (window && !window.electronAPI) {
-      // requestCreateConvo(); // TODO: get model id from somewhere
-    }
-    // Electron
-    const downloadedModels = await executeSerial(
-      DataService.GET_FINISHED_DOWNLOAD_MODELS
-    );
-    if (!downloadedModels || downloadedModels?.length === 0) {
-      alert(
-        "Seems like there is no model downloaded yet. Please download a model first."
-      );
+  const [action, setAction] = useState(ActionButton.DownloadModel);
+
+  const { initModel } = useInitModel();
+
+  useEffect(() => {
+    if (downloadedModels.length > 0) {
+      setAction(ActionButton.StartChat);
     } else {
-      requestCreateConvo(downloadedModels[0]);
+      setAction(ActionButton.DownloadModel);
+    }
+  }, [downloadedModels]);
+
+  const onClick = () => {
+    if (action === ActionButton.DownloadModel) {
+      setMainView(MainViewState.ExploreModel);
+    } else {
+      if (!activeModel) {
+        setMainView(MainViewState.ConversationEmptyModel);
+      } else {
+        createConversationAndInitModel(activeModel);
+      }
     }
   };
+
+  const createConversationAndInitModel = async (model: Product) => {
+    await requestCreateConvo(model);
+    await initModel(model);
+  };
+
   return (
     <div className="flex flex-col items-center py-10 gap-3">
       <Image
@@ -32,22 +60,11 @@ const SidebarEmptyHistory: React.FC = () => {
         alt=""
       />
       <div className="flex flex-col items-center gap-6">
-        <div>
-          <div className="text-center text-gray-900 text-sm">
-            No Chat History
-          </div>
-          <div className="text-center text-gray-500 text-sm">
-            Get started by creating a new chat.
-          </div>
+        <div className="text-center text-gray-900 text-sm">No Chat History</div>
+        <div className="text-center text-gray-500 text-sm">
+          Get started by creating a new chat.
         </div>
-        <SidebarButton
-          callback={startChat}
-          className="flex items-center border bg-blue-600 rounded-lg py-[9px] pl-[15px] pr-[17px] gap-2 text-white font-medium text-sm"
-          height={14}
-          icon="icons/Icon_plus.svg"
-          title="New chat"
-          width={14}
-        />
+        <PrimaryButton title={action} onClick={onClick} />
       </div>
     </div>
   );

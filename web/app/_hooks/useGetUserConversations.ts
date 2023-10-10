@@ -1,11 +1,11 @@
 import { Conversation, ConversationState } from "@/_models/Conversation";
 import { useSetAtom } from "jotai";
+import { executeSerial } from "@/_services/pluginService";
+import { DataService } from "../../shared/coreService";
 import {
   conversationStatesAtom,
   userConversationsAtom,
-} from "@/_helpers/JotaiWrapper";
-import { executeSerial } from "@/_services/pluginService";
-import { DataService } from "../../shared/coreService";
+} from "@/_helpers/atoms/Conversation.atom";
 
 const useGetUserConversations = () => {
   const setConversationStates = useSetAtom(conversationStatesAtom);

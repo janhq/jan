@@ -5,7 +5,7 @@ import {
   LockClosedIcon,
 } from "@heroicons/react/20/solid";
 
-const features = [
+const systems = [
   {
     name: "Mac",
     description:
@@ -47,20 +47,20 @@ export default function HomepageDownloads() {
         </div>
         <div className="mx-auto mt-16 max-w-2xl sm:mt-20 lg:mt-24 lg:max-w-none">
           <dl className="grid max-w-xl grid-cols-1 gap-x-8 gap-y-16 lg:max-w-none lg:grid-cols-3">
-            {features.map((feature) => (
-              <div key={feature.name} className="flex flex-col">
+            {systems.map((system) => (
+              <div key={system.name} className="flex flex-col">
                 <dt className="flex items-center gap-x-3 text-base font-semibold leading-7 text-gray-900 dark: text-white">
-                  <feature.icon
+                  <system.icon
                     className="h-5 w-5 flex-none text-indigo-600 dark:text-indigo-400"
                     aria-hidden="true"
                   />
-                  {feature.name}
+                  {system.name}
                 </dt>
                 <dd className="mt-4 flex flex-auto flex-col text-base leading-7 text-gray-600 dark:text-gray-300">
-                  <p className="flex-auto">{feature.description}</p>
+                  <p className="flex-auto">{system.description}</p>
                   <p className="mt-6">
                     <a
-                      href={feature.href}
+                      href={system.href}
                       className="text-sm font-semibold leading-6 text-indigo-600 dark:text-indigo-400"
                     >
                       Learn more <span aria-hidden="true">→</span>

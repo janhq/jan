@@ -1,15 +1,17 @@
 "use client";
 
-import { useAtom, useSetAtom } from "jotai";
+import { useSetAtom } from "jotai";
 import { ReactNode, useEffect } from "react";
+import { appDownloadProgress } from "./JotaiWrapper";
+import { DownloadState } from "@/_models/DownloadState";
+import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
+import { DataService } from "../../shared/coreService";
 import {
-  appDownloadProgress,
   setDownloadStateAtom,
   setDownloadStateSuccessAtom,
-} from "./JotaiWrapper";
-import { DownloadState } from "@/_models/DownloadState";
-import { execute } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { DataService } from "../../shared/coreService";
+} from "./atoms/DownloadState.atom";
+import { getDownloadedModels } from "@/_hooks/useGetDownloadedModels";
+import { downloadedModelAtom } from "./atoms/DownloadedModel.atom";
 
 type Props = {
   children: ReactNode;
@@ -19,6 +21,7 @@ export default function EventListenerWrapper({ children }: Props) {
   const setDownloadState = useSetAtom(setDownloadStateAtom);
   const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom);
   const setProgress = useSetAtom(appDownloadProgress);
+  const setDownloadedModels = useSetAtom(downloadedModelAtom);
 
   useEffect(() => {
     if (window && window.electronAPI) {
@@ -39,7 +42,15 @@ export default function EventListenerWrapper({ children }: Props) {
         (_event: string, callback: any) => {
           if (callback && callback.fileName) {
             setDownloadStateSuccess(callback.fileName);
-            execute(DataService.UPDATE_FINISHED_DOWNLOAD, callback.fileName);
+
+            executeSerial(
+              DataService.UPDATE_FINISHED_DOWNLOAD,
+              callback.fileName
+            ).then(() => {
+              getDownloadedModels().then((models) => {
+                setDownloadedModels(models);
+              });
+            });
           }
         }
       );

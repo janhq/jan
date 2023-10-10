@@ -17,7 +17,7 @@ export const TabModelDetail: React.FC<Props> = ({ onTabClick, tab }) => {
   ];
 
   return (
-    <div className="flex gap-[2px] rounded p-1 w-full bg-gray-200">
+    <div className="flex gap-0.5 rounded p-1 w-full bg-gray-200">
       {btns.map((item, index) => (
         <button
           key={index}

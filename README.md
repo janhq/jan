@@ -20,64 +20,75 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan lets you run AI on your own hardware, with helpful tools to manage models and monitor your hardware performance.
+**Use offline LLMs with your own data.** Run open source models like Llama2 or Falcon on your internal computers/servers.
 
-In the background, Jan runs [Nitro](https://nitro.jan.ai), a C++ inference engine. It runs various model formats (GGUF/TensorRT) on various hardware (Mac M1/M2/Intel, Windows, Linux, and datacenter-grade Nvidia GPUs) with optional GPU acceleration.
+**Jan runs on any hardware.** From PCs to multi-GPU clusters, Jan supports universal architectures:
 
-> See the Nitro codebase at https://nitro.jan.ai.
+- [x] Nvidia GPUs (fast)
+- [x] Apple M-series (fast)
+- [x] Apple Intel
+- [x] Linux Debian
+- [x] Windows x64
 
-<!-- TODO: uncomment this later when we have this feature -->
-<!-- Jan can be run as a server or cloud-native application for enterprise. We offer enterprise plugins for LDAP integration and Audit Logs. Contact us at [hello@jan.ai](mailto:hello@jan.ai) for more details. -->
+> Download Jan at https://jan.ai/
 
 ## Demo
 
 <p align="center">
-  <img style='border:1px solid #000000' src="https://github.com/janhq/jan/assets/69952136/1f9bb48c-2e70-4633-9f68-7881cd925972" alt="Jan Web GIF">
+  <img style='border:1px solid #000000' src="https://github.com/janhq/jan/assets/69952136/1db9c3d3-79b1-4988-afb5-afd4f4afd0d9" alt="Jan Web GIF">
 </p>
+
+_Screenshot: Jan v0.1.3 on Mac M1 Pro, 16GB Sonoma_
 
 ## Quicklinks
 
-- Developer documentation: https://jan.ai/docs (Work in Progress)
-- Desktop app: Download at https://jan.ai/
-- Mobile app shell: Download via [App Store](https://apps.apple.com/us/app/jan-on-device-ai-cloud-ais/id6449664703) | [Android](https://play.google.com/store/apps/details?id=com.jan.ai)
-- Nitro (C++ AI Engine): https://nitro.jan.ai
+- [Developer docs](https://jan.ai/docs) (WIP)
+- Mobile App shell: [App Store](https://apps.apple.com/us/app/jan-on-device-ai-cloud-ais/id6449664703) | [Android](https://play.google.com/store/apps/details?id=com.jan.ai)
+- [Nitro Github](https://nitro.jan.ai): Jan's AI engine
 
 ## Plugins
 
 Jan supports core & 3rd party extensions:
 
 - [x] **LLM chat**: Self-hosted Llama2 and LLMs
-- [x] **Model Manager**: 1-click to install, swap, and delete models
-- [x] **Storage**: Optionally store your conversation history and other data in SQLite/your storage of choice
+- [x] **Model Manager**: 1-click to install, swap, and delete models with HuggingFace integration
+- [x] **Storage**: Optionally save conversation history and other data in SQLite
 - [ ] **3rd-party AIs**: Connect to ChatGPT, Claude via API Key (in progress)
 - [ ] **Cross device support**: Mobile & Web support for custom shared servers (in progress)
-- [ ] **File retrieval**: User can upload private and run a vectorDB (planned)
+- [ ] **File retrieval**: User can chat with docs
 - [ ] **Multi-user support**: Share a single server across a team/friends (planned)
 - [ ] **Compliance**: Auditing and flagging features (planned)
 
-## Hardware Support
+## Nitro (Jan's AI engine)
 
-Nitro provides both CPU and GPU support, via [llama.cpp](https://github.com/ggerganov/llama.cpp) and [TensorRT](https://github.com/NVIDIA/TensorRT), respectively.
+In the background, Jan runs [Nitro](https://nitro.jan.ai), an open source, C++ inference engine. It runs various model formats (GGUF/TensorRT) on various hardware (Mac M1/M2/Intel, Windows, Linux, and datacenter-grade Nvidia GPUs) with optional GPU acceleration.
 
-- [x] Nvidia GPUs (accelerated)
-- [x] Apple M-series (accelerated)
-- [x] Linux DEB
-- [x] Windows x64
+> See the open source Nitro codebase at https://nitro.jan.ai.
 
-Not supported yet: Apple Intel, Linux RPM, Windows x86|ARM64, AMD ROCm
+## Troubleshooting
+As Jan is development mode, you might get stuck on a broken build.
 
-> See [developer docs](https://docs.jan.ai/docs/) for detailed installation instructions.
+To reset your installation: 
+
+1. Delete Jan Application from /Applications
+
+1. Clear cache:
+`rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron`
+OR 
+`rm -rf /Users/$(whoami)/Library/Application\ Support/jan`
+
+---
 
 ## Contributing
 
 Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file
 
 ### Pre-requisites
+
 - node >= 20.0.0
 - yarn >= 1.22.0
 
-### Use as complete suite (in progress)
-### For interactive development
+### Instructions
 
 Note: This instruction is tested on MacOS only.
 
@@ -85,7 +96,7 @@ Note: This instruction is tested on MacOS only.
 
    ```
    git clone https://github.com/janhq/jan
-   git checkout feature/hackathon-refactor-jan-into-electron-app
+   git checkout DESIRED_BRANCH
    cd jan
    ```
 
@@ -98,28 +109,29 @@ Note: This instruction is tested on MacOS only.
    yarn build:plugins
    ```
 
-4. **Run development and Using Jan Desktop**
+3. **Run development and Using Jan Desktop**
 
    ```
    yarn dev
    ```
+
    This will start the development server and open the desktop app.
    In this step, there are a few notification about installing base plugin, just click `OK` and `Next` to continue.
 
 ### For production build
 
-   ```bash
-   # Do step 1 and 2 in previous section
-   git clone https://github.com/janhq/jan
-   cd jan
-   yarn install
-   yarn build:plugins
+```bash
+# Do step 1 and 2 in previous section
+git clone https://github.com/janhq/jan
+cd jan
+yarn install
+yarn build:plugins
 
-   # Build the app
-   yarn build
-   ```
+# Build the app
+yarn build
+```
 
-   This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
+This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
 
 ## License
 

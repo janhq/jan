@@ -2,9 +2,8 @@ import { Product } from "@/_models/Product";
 import DownloadModelContent from "../DownloadModelContent";
 import ModelDownloadButton from "../ModelDownloadButton";
 import ModelDownloadingButton from "../ModelDownloadingButton";
-import ViewModelDetailButton from "../ViewModelDetailButton";
 import { useAtomValue } from "jotai";
-import { modelDownloadStateAtom } from "@/_helpers/JotaiWrapper";
+import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
 
 type Props = {
   product: Product;
@@ -36,8 +35,6 @@ const AvailableModelCard: React.FC<Props> = ({
     }
   }
 
-  const handleViewDetails = () => {};
-
   const downloadButton = isDownloading ? (
     <div className="w-1/5 flex items-start justify-end">
       <ModelDownloadingButton total={total} value={transferred} />
@@ -50,7 +47,7 @@ const AvailableModelCard: React.FC<Props> = ({
 
   return (
     <div className="border rounded-lg border-gray-200">
-      <div className="flex justify-between py-4 px-3 gap-[10px]">
+      <div className="flex justify-between py-4 px-3 gap-2.5">
         <DownloadModelContent
           required={required}
           author={product.author}

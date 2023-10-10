@@ -1,43 +1,38 @@
-// import useGetCurrentUser from "./useGetCurrentUser";
 import { useAtom, useSetAtom } from "jotai";
-import {
-  activeModel,
-  addNewConversationStateAtom,
-  currentProductAtom,
-  setActiveConvoIdAtom,
-  userConversationsAtom,
-} from "@/_helpers/JotaiWrapper";
 import { Conversation } from "@/_models/Conversation";
 import { executeSerial } from "@/_services/pluginService";
-import { DataService, InfereceService } from "../../shared/coreService";
+import { DataService } from "../../shared/coreService";
 import { Product } from "@/_models/Product";
+import {
+  userConversationsAtom,
+  setActiveConvoIdAtom,
+  addNewConversationStateAtom,
+} from "@/_helpers/atoms/Conversation.atom";
+import useInitModel from "./useInitModel";
 
 const useCreateConversation = () => {
+  const { initModel } = useInitModel();
   const [userConversations, setUserConversations] = useAtom(
     userConversationsAtom
   );
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom);
   const addNewConvoState = useSetAtom(addNewConversationStateAtom);
-  const setActiveModel = useSetAtom(activeModel);
-  const setActiveProduct = useSetAtom(currentProductAtom);
 
   const requestCreateConvo = async (model: Product) => {
+    const conversationName = model.name;
     const conv: Conversation = {
-      image: undefined,
       model_id: model.id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      name: "Conversation",
+      name: conversationName,
     };
     const id = await executeSerial(DataService.CREATE_CONVERSATION, conv);
-    await executeSerial(InfereceService.INIT_MODEL, model);
-    setActiveProduct(model);
-    setActiveModel(model.name);
+    await initModel(model);
 
     const mappedConvo: Conversation = {
       id,
       model_id: model.id,
-      name: "Conversation",
+      name: conversationName,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

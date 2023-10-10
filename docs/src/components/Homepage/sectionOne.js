@@ -58,7 +58,7 @@ export default function HomepageSectionOne() {
                       />
                       {feature.name}
                     </dt>{" "}
-                    <dd className="inline">{feature.description}</dd>
+                    <dt>{feature.description}</dt>
                   </div>
                 ))}
               </dl>
@@ -71,7 +71,7 @@ export default function HomepageSectionOne() {
                   ? // TODO replace with darkmode image
                     require("@site/static/img/desktop-explore-models-dark.png")
                       .default
-                  : require("@site/static/img/desktop-explore-models.png")
+                  : require("@site/static/img/desktop-explore-models-light.png")
                       .default
               }
               alt="Product screenshot"

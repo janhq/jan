@@ -1,17 +1,13 @@
 import React, { Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
-import { showConfirmDeleteModalAtom } from "@/_helpers/JotaiWrapper";
 import { useAtom } from "jotai";
-import useSignOut from "@/_hooks/useSignOut";
+import { showConfirmDeleteModalAtom } from "@/_helpers/atoms/Modal.atom";
 
 const ConfirmDeleteModelModal: React.FC = () => {
   const [show, setShow] = useAtom(showConfirmDeleteModalAtom);
-  const { signOut } = useSignOut();
 
-  const onLogOutClick = () => {
-    signOut().then(() => setShow(false));
-  };
+  const onConfirmDelete = () => {};
 
   return (
     <Transition.Root show={show} as={Fragment}>
@@ -65,7 +61,7 @@ const ConfirmDeleteModelModal: React.FC = () => {
                   <button
                     type="button"
                     className="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto"
-                    onClick={onLogOutClick}
+                    onClick={onConfirmDelete}
                   >
                     Log out
                   </button>

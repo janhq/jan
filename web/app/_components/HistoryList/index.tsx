@@ -2,9 +2,10 @@ import HistoryItem from "../HistoryItem";
 import { useEffect, useState } from "react";
 import ExpandableHeader from "../ExpandableHeader";
 import { useAtomValue } from "jotai";
-import { searchAtom, userConversationsAtom } from "@/_helpers/JotaiWrapper";
+import { searchAtom } from "@/_helpers/JotaiWrapper";
 import useGetUserConversations from "@/_hooks/useGetUserConversations";
 import SidebarEmptyHistory from "../SidebarEmptyHistory";
+import { userConversationsAtom } from "@/_helpers/atoms/Conversation.atom";
 
 const HistoryList: React.FC = () => {
   const conversations = useAtomValue(userConversationsAtom);
@@ -17,14 +18,14 @@ const HistoryList: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col flex-grow pt-3 gap-2">
+    <div className="flex flex-col flex-grow pt-3 gap-2 overflow-hidden">
       <ExpandableHeader
         title="CHAT HISTORY"
         expanded={expand}
         onClick={() => setExpand(!expand)}
       />
       <div
-        className={`flex flex-col gap-1 mt-1 ${!expand ? "hidden " : "block"}`}
+        className={`flex flex-col gap-1 mt-1 overflow-y-auto scroll ${!expand ? "hidden " : "block"}`}
       >
         {conversations.length > 0 ? (
           conversations
