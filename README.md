@@ -65,6 +65,20 @@ In the background, Jan runs [Nitro](https://nitro.jan.ai), an open source, C++ i
 
 > See the open source Nitro codebase at https://nitro.jan.ai.
 
+## Troubleshooting
+As Jan is development mode, you might get stuck on a broken build.
+
+To reset your installation: 
+
+1. Delete Jan Application from /Applications
+
+1. Clear cache:
+`rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron`
+OR 
+`rm -rf /Users/$(whoami)/Library/Application\ Support/jan`
+
+---
+
 ## Contributing
 
 Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file
@@ -74,9 +88,7 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 - node >= 20.0.0
 - yarn >= 1.22.0
 
-### Use as complete suite (in progress)
-
-### For interactive development
+### Instructions
 
 Note: This instruction is tested on MacOS only.
 
@@ -84,7 +96,7 @@ Note: This instruction is tested on MacOS only.
 
    ```
    git clone https://github.com/janhq/jan
-   git checkout feature/hackathon-refactor-jan-into-electron-app
+   git checkout DESIRED_BRANCH
    cd jan
    ```
 
