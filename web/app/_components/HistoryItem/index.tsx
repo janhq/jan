@@ -49,21 +49,14 @@ const HistoryItem: React.FC<Props> = ({
       conversation.model_id
     );
 
-    if (model) {
-      if (conversation.id) updateConvWaiting(conversation.id, true);
-      initModel(model).then((res: any) => {
-        if (conversation.id) updateConvWaiting(conversation.id, false);
+    if (conversation.id) updateConvWaiting(conversation.id, true);
+    initModel(model).then((res: any) => {
+      if (conversation.id) updateConvWaiting(conversation.id, false);
 
-        if (res?.error && conversation.id) {
-          updateConvError(conversation.id, res.error);
-        }
-      });
-    } else if (conversation.id) {
-      updateConvError(
-        conversation.id,
-        Error("Model not found. Please download the model again.")
-      );
-    }
+      if (res?.error && conversation.id) {
+        updateConvError(conversation.id, res.error);
+      }
+    });
 
     if (activeConvoId !== conversation.id) {
       setMainViewState(MainViewState.Conversation);
