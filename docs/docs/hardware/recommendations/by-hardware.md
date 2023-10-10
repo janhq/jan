@@ -1,38 +1,6 @@
 ---
-title: Recommended AI Hardware
+title: Selecting AI Hardware
 ---
-
-## Overview
-
-Large language models(LLMs) have changed how computers handle human-like text and language tasks. However using them through APIs or cloud services can be costly and limiting. What if you could use these powerful models directly on your personal computer, without extra expenses? Running them on your own machine provides flexibility, control, and cost savings. In this guide, I'll show you how to do just that, unlocking their potential without relying on expensive APIs or cloud services.
-
-To run Large language models(LLMs) model at home machine, you will need a computer built with a GPU that can handle the large amount of data and computation required for inferencing.
-
-The GPU stands as the pivotal component for running LLMs, bearing the primary responsibility for processing tasks associated with model execution. The performance of the GPU directly dictates the speed of inference.
-
-While certain model variations and implementations may demand less potent hardware, the GPU retains its central role as the cornerstone of the system. The advantage of the GPU is that it can significantly improve performance compared to the CPU.
-
-## GPU Selection
-
-Selecting the optimal GPU for running Large Language Models (LLMs) on your home PC is a decision influenced by your budget and the specific LLMs you intend to work with. Your choice should strike a balance between performance, efficiency, and cost-effectiveness.
-
-In general, the following GPU features are important for running LLMs:
-
-- **High VRAM:** LLMs are typically very large and complex models, so they require a GPU with a high amount of VRAM. This will allow the model to be loaded into memory and processed efficiently.
-- **CUDA Compatibility:** When running LLMs on a GPU, CUDA compatibility is paramount. CUDA is NVIDIA's parallel computing platform, and it plays a vital role in accelerating deep learning tasks. LLMs, with their extensive matrix calculations, heavily rely on parallel processing. Ensuring your GPU supports CUDA is like having the right tool for the job. It allows the LLM to leverage the GPU's parallel processing capabilities, significantly speeding up model training and inference.
-- **Number of CUDA, Tensor, and RT Cores:** High-performance NVIDIA GPUs have both CUDA and Tensor cores. These cores are responsible for executing the neural network computations that underpin LLMs' language understanding and generation. The more CUDA cores your GPU has, the better equipped it is to handle the massive computational load that LLMs impose. Tensor cores in your GPU, further enhance LLM performance by accelerating the critical matrix operations integral to language modeling tasks.
-- **Generation (Series)**: When selecting a GPU for LLMs, consider its generation or series (e.g., RTX 30 series). Newer GPU generations often come with improved architectures and features. For LLM tasks, opting for the latest generation can mean better performance, energy efficiency, and support for emerging AI technologies. Avoid purchasing, RTX-2000 series GPUs which are much outdated nowadays.
-
-### Here are some of the best GPU options for this purpose:
-
-1. **NVIDIA RTX 3090**: The NVIDIA RTX 3090 is a high-end GPU with a substantial 24GB of VRAM. This copious VRAM capacity makes it exceptionally well-suited for handling large LLMs. Moreover, it's known for its relative efficiency, meaning it won't overheat or strain your home PC's cooling system excessively. The RTX 3090's robust capabilities are a boon for those who need to work with hefty language models.
-2. **NVIDIA RTX 4090**: If you're looking for peak performance and can afford the investment, the NVIDIA RTX 4090 represents the pinnacle of GPU power. Boasting 24GB of VRAM and featuring a cutting-edge Tensor Core architecture tailored for AI workloads, it outshines the RTX 3090 in terms of sheer capability. However, it's important to note that the RTX 4090 is also pricier and more power-hungry than its predecessor, the RTX 3090.
-3. **AMD Radeon RX 6900 XT**: On the AMD side, the Radeon RX 6900 XT stands out as a high-end GPU with 16GB of VRAM. While it may not quite match the raw power of the RTX 3090 or RTX 4090, it strikes a balance between performance and affordability. Additionally, it tends to be more power-efficient, which could translate to a more sustainable and quieter setup in your home PC.
-
-If budget constraints are a consideration, there are more cost-effective GPU options available:
-
-- **NVIDIA RTX 3070**: The RTX 3070 is a solid mid-range GPU that can handle LLMs effectively. While it may not excel with the most massive or complex language models, it's a reliable choice for users looking for a balance between price and performance.
-- **AMD Radeon RX 6800 XT**: Similarly, the RX 6800 XT from AMD offers commendable performance without breaking the bank. It's well-suited for running mid-sized LLMs and provides a competitive option in terms of both power and cost.
 
 When selecting a GPU for LLMs, remember that it's not just about the GPU itself. Consider the synergy with other components in your PC:
 
@@ -41,6 +9,41 @@ When selecting a GPU for LLMs, remember that it's not just about the GPU itself.
 - **Cooling System**: LLMs can push your PC's hardware to the limit. A robust cooling system helps maintain optimal temperatures, preventing overheating and performance throttling.
 
 By taking all of these factors into account, you can build a home PC setup that's well-equipped to handle the demands of running LLMs effectively and efficiently.
+
+## GPU Selection
+
+Selecting the optimal GPU for running Large Language Models (LLMs) on your home PC is a decision influenced by your budget and the specific LLMs you intend to work with. Your choice should strike a balance between performance, efficiency, and cost-effectiveness.
+
+### GPU Comparison
+
+| GPU                   | Price | Cores | VRAM (GB) | Bandwth (T/s) | Power |
+| --------------------- | ----- | ----- | --------- | ------------- | ----- |
+| Nvidia H100           | 40000 | 18432 | 80        | 2             |       |
+| Nvidia A100           | 15000 | 6912  | 80        |               |       |
+| Nvidia A100           | 7015  | 6912  | 40        |               |       |
+| Nvidia A10            | 2799  | 9216  | 24        |               |       |
+| Nvidia RTX A6000      | 4100  | 10752 | 48        | 0.768         |       |
+| Nvidia RTX 6000       | 6800  | 4608  | 46        |               |       |
+| Nvidia RTX 4090 Ti    | 2000  | 18176 | 24        |               |       |
+| Nvidia RTX 4090       | 1800  | 16384 | 24        | 1.008         |       |
+| Nvidia RTX 3090       | 1450  | 10496 | 24        |               |       |
+| Nvidia RTX 3080       | 700   | 8704  | 12        |               |       |
+| Nvidia RTX 3070       | 900   | 6144  | 8         |               |       |
+| Nvidia L4             | 2711  | 7424  | 24        |               |       |
+| Nvidia T4             | 2299  | 2560  | 16        |               |       |
+| AMD Radeon RX 6900 XT | 1000  | 5120  | 16        |               |       |
+| AMD Radeon RX 6800 XT | 420   | 4608  | 16        |               |       |
+
+\*Market prices as of Oct 2023 via Amazon/PCMag
+
+### Other Considerations
+
+In general, the following GPU features are important for running LLMs:
+
+- **High VRAM:** LLMs are typically very large and complex models, so they require a GPU with a high amount of VRAM. This will allow the model to be loaded into memory and processed efficiently.
+- **CUDA Compatibility:** When running LLMs on a GPU, CUDA compatibility is paramount. CUDA is NVIDIA's parallel computing platform, and it plays a vital role in accelerating deep learning tasks. LLMs, with their extensive matrix calculations, heavily rely on parallel processing. Ensuring your GPU supports CUDA is like having the right tool for the job. It allows the LLM to leverage the GPU's parallel processing capabilities, significantly speeding up model training and inference.
+- **Number of CUDA, Tensor, and RT Cores:** High-performance NVIDIA GPUs have both CUDA and Tensor cores. These cores are responsible for executing the neural network computations that underpin LLMs' language understanding and generation. The more CUDA cores your GPU has, the better equipped it is to handle the massive computational load that LLMs impose. Tensor cores in your GPU, further enhance LLM performance by accelerating the critical matrix operations integral to language modeling tasks.
+- **Generation (Series)**: When selecting a GPU for LLMs, consider its generation or series (e.g., RTX 30 series). Newer GPU generations often come with improved architectures and features. For LLM tasks, opting for the latest generation can mean better performance, energy efficiency, and support for emerging AI technologies. Avoid purchasing, RTX-2000 series GPUs which are much outdated nowadays.
 
 ## CPU Selection
 
@@ -132,30 +135,7 @@ Unified Memory Architecture, as implemented in Apple's M1 and M2 series processo
 
 The M1 and M2 Pro/Max chips offer varying levels of unified memory bandwidth, further underscoring their prowess in handling data-intensive tasks like AI processing. The M1/M2 Pro chip boasts an impressive capacity of up to 200 GB/s of unified memory bandwidth, while the M1/M2 Max takes it a step further, supporting up to a staggering 400 GB/s of unified memory bandwidth. This means that regardless of the complexity and demands of the AI tasks at hand, these Apple laptops armed with M1 or M2 processors are well-equipped to handle them with unparalleled efficiency and speed.
 
-## Optimizing Memory Speed for AI Models
-
-When it comes to utilizing LLMs effectively, you must delve into the intricacies of memory speed, as it plays a critical role in determining inference speed. These large language models necessitate full loading into RAM or VRAM each time they generate a new token, which is essentially a piece of text. For instance, a 4-bit 13-billion-parameter CodeLlama model consumes roughly 7.5GB of RAM.
-
-To understand the impact of memory bandwidth, let's consider an example. If your system boasts a RAM bandwidth of 50 Gbps (achieved with components like DDR4-3200 in tandem with a Ryzen 5 5600X), you can generate approximately 6 tokens per second. However, if you aspire to attain faster speeds, such as 11 tokens per second, you'll need a higher memory bandwidth, like DDR5-5600 with around 90 Gbps.
-
-For a broader context, consider top-tier GPUs like the Nvidia RTX 3090, which offers an impressive 930 Gbps of VRAM bandwidth. In contrast, the latest DDR5 RAM can provide up to 100GB/s of memory bandwidth. Recognizing and optimizing for memory bandwidth is paramount to efficiently running models like CodeLlama, as it directly influences the speed at which you can generate text tokens during inference.
-
-## How to choose LLMs for your work
-
-Choosing the right Large Language Model (LLM) doesn't have to be complicated. It's all about finding one that works well for your needs. Here's a simple guide to help you pick the perfect LLM:
-
-1. **Set Up the Basics**: First, get everything ready on your computer. Make sure you have the right software and tools to run these models. Then, give them a try on your system.
-2. **Watch Your Memory**: Pay attention to how much memory these models are using. Some are bigger than others, and you need to make sure your computer can handle them.
-3. **Find Compatible Models**: Look for the models that are like the top players in the game. These models are known to work well with the tools you're using. Keep these models in your shortlist.
-4. **Test Them Out**: Take the models on your shortlist and give them a try with your specific task. This is like comparing different cars by taking them for a test drive. It helps you see which one works best for what you need.
-5. **Pick the Best Fit**: After testing, you'll have a better idea of which model is the winner for your project. Consider things like how well it performs, how fast it is, if it works with your computer, and the software you're using.
-6. **Stay Updated**: Remember that this field is always changing and improving. Keep an eye out for updates and new models that might be even better for your needs.
-
-And the good news is, finding the right LLM is easier now. We've got a handy tool called Extractum LLM Explorer that you can use online. It helps you discover, compare, and rank lots of different LLMs. Check it out at **[Extractum](http://llm.extractum.io/)**, and it'll make your selection process a breeze!
-
-You can also use [Model Memory Calculator](https://huggingface.co/spaces/hf-accelerate/model-memory-usage) tool designed to assist in determining the required vRAM for training and conducting inference with large models hosted on the Hugging Face Hub. The tool identifies the minimum recommended vRAM based on the size of the 'largest layer' within the model. Additionally, it's worth noting that model training typically necessitates approximately four times the size of the model, especially when using the Adam optimization. Keep in mind When performing inference, expect to add up to an additional 20% to this as found by [EleutherAI](https://blog.eleuther.ai/transformer-math/). More tests will be performed in the future to get a more accurate benchmark for each model.
-
-## How to Calculate How Much vRAM is Required to My Selected LLM
+## Calculating vRAM Requirements for an LLM
 
 **For example:** Calculating the VRAM required to run a 13-billion-parameter Large Language Model (LLM) involves considering the model size, batch size, sequence length, token size, and any additional overhead. Here's how you can estimate the VRAM required for a 13B LLM:
 

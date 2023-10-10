@@ -32,7 +32,12 @@ const sidebars = {
       collapsible: true,
       collapsed: false,
       link: { type: "doc", id: "features/features" },
-      items: ["features/ai-models", "features/control", "features/acceleration", "features/extensions"],
+      items: [
+        "features/ai-models",
+        "features/control",
+        "features/acceleration",
+        "features/extensions",
+      ],
     },
   ],
 
@@ -87,8 +92,8 @@ const sidebars = {
       items: [
         {
           type: "doc",
-          label: "Cloud vs. Buy",
-          id: "hardware/overview/cloud-vs-buy",
+          label: "Cloud vs. Self-Hosting",
+          id: "hardware/overview/cloud-vs-self-hosting",
         },
         {
           type: "doc",

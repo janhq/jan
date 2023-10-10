@@ -2,7 +2,7 @@
 title: Recommended AI Hardware by Budget
 ---
 
-> :warning: **Warning:** Hardware suggestions on this site are only recommendations. Do your own research before any purchase. I'm not liable for compatibility, performance or other issues. Products can become outdated quickly. Use judgement and check return policies. Treat as informative guide only.
+> :warning: **Warning:** Do your own research before any purchase. Jan is not liable for compatibility, performance or other issues. Products can become outdated quickly.
 
 ## Entry-level PC Build at $1000
 
