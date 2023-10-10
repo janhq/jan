@@ -129,6 +129,7 @@ function updateFinishedDownloadAt(fileName: string, time: number) {
     db.run(stmt, [time, fileName], (err: any) => {
       if (err) {
         console.log(err);
+        res(undefined);
       } else {
         console.log("Updated 1 row");
         res("Updated");
@@ -150,7 +151,11 @@ function getUnfinishedDownloadModels() {
 
     const query = `SELECT * FROM models WHERE finish_download_at = -1 ORDER BY start_download_at DESC`;
     db.all(query, (err: Error, row: any) => {
-      res(row);
+      if (row) {
+        res(row);
+      } else {
+        res([]);
+      }
     });
     db.close();
   });
@@ -220,6 +225,8 @@ function getModelById(modelId: string) {
             downloadUrl: row.download_url,
           };
           res(product);
+        } else {
+          res(undefined);
         }
       }
     );

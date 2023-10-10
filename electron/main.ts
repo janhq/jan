@@ -156,7 +156,13 @@ function handleIPCs() {
 
     rmdir(fullPath, { recursive: true }, function (err) {
       if (err) console.log(err);
-      app.relaunch();
+      dispose(requiredModules);
+
+      // just relaunch if packaged, should launch manually in development mode
+      if (app.isPackaged) {
+        app.relaunch();
+      }
+
       app.exit();
     });
   });
