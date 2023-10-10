@@ -161,9 +161,18 @@ function handleIPCs() {
       // just relaunch if packaged, should launch manually in development mode
       if (app.isPackaged) {
         app.relaunch();
+        app.exit();
+      } else {
+        for (const modulePath in requiredModules) {
+          delete require.cache[
+            require.resolve(
+              join(app.getPath("userData"), "plugins", modulePath)
+            )
+          ];
+        }
+        setupPlugins();
+        mainWindow?.reload();
       }
-
-      app.exit();
     });
   });
 
