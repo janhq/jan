@@ -7,9 +7,6 @@ import { updateConversationWaitingForResponseAtom } from "@/_helpers/atoms/Conve
 
 export default function useInitModel() {
   const [activeModel, setActiveModel] = useAtom(currentProductAtom);
-  const updateConvWaiting = useSetAtom(
-    updateConversationWaitingForResponseAtom
-  );
 
   const initModel = async (model: Product) => {
     if (activeModel && activeModel.id === model.id) {

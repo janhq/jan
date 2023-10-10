@@ -55,6 +55,7 @@ export const updateConversationWaitingForResponseAtom = atom(
     currentState[conversationId] = {
       ...currentState[conversationId],
       waitingForResponse,
+      error: undefined,
     };
     set(conversationStatesAtom, currentState);
   }

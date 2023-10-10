@@ -36,10 +36,10 @@ const useCreateConversation = () => {
 
     if (id) updateConvWaiting(id, true);
     initModel(model).then((res: any) => {
+      if (id) updateConvWaiting(id, false);
       if (res?.error) {
         updateConvError(id, res.error);
       }
-      if (id) updateConvWaiting(id, false);
     });
 
     const mappedConvo: Conversation = {

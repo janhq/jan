@@ -51,10 +51,11 @@ const HistoryItem: React.FC<Props> = ({
 
     if (conversation.id) updateConvWaiting(conversation.id, true);
     initModel(model).then((res: any) => {
+      if (conversation.id) updateConvWaiting(conversation.id, false);
+
       if (res?.error && conversation.id) {
         updateConvError(conversation.id, res.error);
       }
-      if (conversation.id) updateConvWaiting(conversation.id, false);
     });
 
     if (activeConvoId !== conversation.id) {
