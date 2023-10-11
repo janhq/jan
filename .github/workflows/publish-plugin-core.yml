@@ -1,0 +1,22 @@
+name: Publish Plugin-core Package to npmjs
+on:
+  push:
+    branches:
+      - feat/#306-plugin-core-module
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      # Setup .npmrc file to publish to npm
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm install && npm run build
+        working-directory: ./plugin-core
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: ./plugin-core
