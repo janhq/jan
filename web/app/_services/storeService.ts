@@ -1,4 +1,4 @@
-import { Core } from "@janhq/plugin-core";
+import { StoreService } from "@janhq/plugin-core";
 import { executeSerial } from "./pluginService";
 
 /**
@@ -9,7 +9,7 @@ import { executeSerial } from "./pluginService";
  *
  */
 function createCollection(name: string): Promise<void> {
-  return executeSerial(Core.StoreService.CreateCollection, name);
+  return executeSerial(StoreService.CreateCollection, name);
 }
 
 /**
@@ -20,7 +20,7 @@ function createCollection(name: string): Promise<void> {
  *
  */
 function deleteCollection(name: string): Promise<void> {
-  return executeSerial(Core.StoreService.DeleteCollection, name);
+  return executeSerial(StoreService.DeleteCollection, name);
 }
 
 /**
@@ -32,7 +32,7 @@ function deleteCollection(name: string): Promise<void> {
  *
  */
 function insertValue(collectionName: string, value: any): Promise<any> {
-  return executeSerial(Core.StoreService.InsertValue, {
+  return executeSerial(StoreService.InsertValue, {
     collectionName,
     value,
   });
@@ -52,7 +52,7 @@ function updateValue(
   key: string,
   value: any
 ): Promise<void> {
-  return executeSerial(Core.StoreService.UpdateValue, {
+  return executeSerial(StoreService.UpdateValue, {
     collectionName,
     key,
     value,
@@ -68,7 +68,7 @@ function updateValue(
  *
  */
 function deleteValue(collectionName: string, key: string): Promise<void> {
-  return executeSerial(Core.StoreService.DeleteValue, { collectionName, key });
+  return executeSerial(StoreService.DeleteValue, { collectionName, key });
 }
 
 export const store = {

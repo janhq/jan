@@ -6,5 +6,7 @@ declare global {
   }
   interface Window {
     corePlugin?: CorePlugin;
+    coreAPI?: any | undefined;
+    electronAPI?: any | undefined;
   }
 }

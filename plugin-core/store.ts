@@ -1,45 +1,42 @@
 /**
- * Create a collection on data store
- *
- * @param     name     name of the collection to create
- * @returns   Promise<void>
- *
+ * Creates, reads, updates, and deletes data in a data store.
+ * @module
+ */
+
+/**
+ * Creates a new collection in the data store.
+ * @param {string} name - The name of the collection to create.
+ * @returns {Promise<void>} A promise that resolves when the collection is created.
  */
 function createCollection(name: string): Promise<void> {
   return window.corePlugin?.store?.createCollection(name);
 }
 
 /**
- * Delete a collection
- *
- * @param     name     name of the collection to delete
- * @returns   Promise<void>
- *
+ * Deletes a collection from the data store.
+ * @param {string} name - The name of the collection to delete.
+ * @returns {Promise<void>} A promise that resolves when the collection is deleted.
  */
 function deleteCollection(name: string): Promise<void> {
   return window.corePlugin?.store?.deleteCollection(name);
 }
 
 /**
- * Insert a value to a collection
- *
- * @param     collectionName     name of the collection
- * @param     value              value to insert
- * @returns   Promise<any>
- *
+ * Inserts a value into a collection in the data store.
+ * @param {string} collectionName - The name of the collection to insert the value into.
+ * @param {any} value - The value to insert into the collection.
+ * @returns {Promise<any>} A promise that resolves with the inserted value.
  */
 function insertValue(collectionName: string, value: any): Promise<any> {
   return window.corePlugin?.store?.insertValue(collectionName, value);
 }
 
 /**
- * Update value of a collection's record
- *
- * @param     collectionName     name of the collection
- * @param     key                key of the record to update
- * @param     value              value to update
- * @returns   Promise<void>
- *
+ * Updates the value of a record in a collection in the data store.
+ * @param {string} collectionName - The name of the collection containing the record to update.
+ * @param {string} key - The key of the record to update.
+ * @param {any} value - The new value for the record.
+ * @returns {Promise<void>} A promise that resolves when the record is updated.
  */
 function updateValue(
   collectionName: string,
@@ -50,19 +47,17 @@ function updateValue(
 }
 
 /**
- * Delete a collection's record
- *
- * @param     collectionName     name of the collection
- * @param     key                key of the record to delete
- * @returns   Promise<void>
- *
+ * Deletes a record from a collection in the data store.
+ * @param {string} collectionName - The name of the collection containing the record to delete.
+ * @param {string} key - The key of the record to delete.
+ * @returns {Promise<void>} A promise that resolves when the record is deleted.
  */
 function deleteValue(collectionName: string, key: string): Promise<void> {
   return window.corePlugin?.store?.deleteValue(collectionName, key);
 }
 
 /**
- * Operation exports
+ * Exports the data store operations as an object.
  */
 export const store = {
   createCollection,
