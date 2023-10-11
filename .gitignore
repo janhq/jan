@@ -13,3 +13,4 @@ build
 electron/renderer
 
 *.log
+plugin-core/lib

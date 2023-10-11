@@ -1,3 +1,5 @@
+import { DataService } from "@janhq/plugin-core";
+
 // Provide an async method to manipulate the price provided by the extension point
 const MODULE_PATH = "data-plugin/dist/module.js";
 
@@ -142,28 +144,49 @@ const setupDb = () => {
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }: { register: any }) {
   setupDb();
-  register("getConversations", "getConv", getConversations, 1);
-  register("createConversation", "insertConv", createConversation);
-  register("updateMessage", "updateMessage", updateMessage);
-  register("deleteConversation", "deleteConv", deleteConversation);
-  register("createMessage", "insertMessage", createMessage);
-  register("getConversationMessages", "getMessages", getConversationMessages);
-  register("storeModel", "storeModel", storeModel);
   register(
-    "updateFinishedDownloadAt",
-    "updateFinishedDownloadAt",
+    DataService.GET_CONVERSATIONS,
+    getConversations.name,
+    getConversations,
+    1
+  );
+  register(
+    DataService.CREATE_CONVERSATION,
+    createConversation.name,
+    createConversation
+  );
+  register(DataService.UPDATE_MESSAGE, updateMessage.name, updateMessage);
+  register(
+    DataService.DELETE_CONVERSATION,
+    deleteConversation.name,
+    deleteConversation
+  );
+  register(DataService.CREATE_MESSAGE, createMessage.name, createMessage);
+  register(
+    DataService.GET_CONVERSATION_MESSAGES,
+    getConversationMessages.name,
+    getConversationMessages
+  );
+  register(DataService.STORE_MODEL, storeModel.name, storeModel);
+  register(
+    DataService.UPDATE_FINISHED_DOWNLOAD,
+    updateFinishedDownloadAt.name,
     updateFinishedDownloadAt
   );
   register(
-    "getUnfinishedDownloadModels",
-    "getUnfinishedDownloadModels",
+    DataService.GET_UNFINISHED_DOWNLOAD_MODELS,
+    getUnfinishedDownloadModels.name,
     getUnfinishedDownloadModels
   );
-  register("deleteDownloadModel", "deleteDownloadModel", deleteDownloadModel);
-  register("getModelById", "getModelById", getModelById);
   register(
-    "getFinishedDownloadModels",
-    "getFinishedDownloadModels",
+    DataService.DELETE_DOWNLOAD_MODEL,
+    deleteDownloadModel.name,
+    deleteDownloadModel
+  );
+  register(DataService.GET_MODEL_BY_ID, getModelById.name, getModelById);
+  register(
+    DataService.GET_FINISHED_DOWNLOAD_MODELS,
+    getFinishedDownloadModels.name,
     getFinishedDownloadModels
   );
 }

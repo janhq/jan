@@ -37,6 +37,7 @@
     "node_modules"
   ],
   "dependencies": {
+    "@janhq/plugin-core": "file:../../../../plugin-core",
     "node-pre-gyp": "^0.17.0",
     "sqlite3": "^5.1.6"
   }
