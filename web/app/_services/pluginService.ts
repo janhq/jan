@@ -8,13 +8,13 @@ import {
   DataService,
   InferenceService,
   ModelManagementService,
-} from "../../shared/coreService";
+} from "@janhq/plugin-core";
 
 export const isCorePluginInstalled = () => {
-  if (!extensionPoints.get(DataService.GET_CONVERSATIONS)) {
+  if (!extensionPoints.get(DataService.GetConversations)) {
     return false;
   }
-  if (!extensionPoints.get(InferenceService.INIT_MODEL)) {
+  if (!extensionPoints.get(InferenceService.InitModel)) {
     return false;
   }
   if (!extensionPoints.get(ModelManagementService.DOWNLOAD_MODEL)) {
@@ -32,9 +32,9 @@ export const setupBasePlugins = async () => {
   const basePlugins = await window.electronAPI.basePlugins();
 
   if (
-    !extensionPoints.get(DataService.GET_CONVERSATIONS) ||
-    !extensionPoints.get(InferenceService.INIT_MODEL) ||
-    !extensionPoints.get(ModelManagementService.DOWNLOAD_MODEL)
+    !extensionPoints.get(DataService.GetConversations) ||
+    !extensionPoints.get(InferenceService.InitModel) ||
+    !extensionPoints.get(ModelManagementService.GetDownloadedModels)
   ) {
     const installed = await plugins.install(basePlugins);
     if (installed) {

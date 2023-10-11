@@ -1,5 +1,5 @@
 import { execute, executeSerial } from "@/_services/pluginService";
-import { DataService, ModelManagementService } from "../../shared/coreService";
+import { DataService, ModelManagementService } from "@janhq/plugin-core";
 import { useSetAtom } from "jotai";
 import { downloadedModelAtom } from "@/_helpers/atoms/DownloadedModel.atom";
 import { getDownloadedModels } from "./useGetDownloadedModels";

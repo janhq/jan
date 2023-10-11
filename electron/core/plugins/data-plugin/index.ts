@@ -145,47 +145,47 @@ const setupDb = () => {
 export function init({ register }: { register: any }) {
   setupDb();
   register(
-    DataService.GET_CONVERSATIONS,
+    DataService.GetConversations,
     getConversations.name,
     getConversations,
     1
   );
   register(
-    DataService.CREATE_CONVERSATION,
+    DataService.CreateConversation,
     createConversation.name,
     createConversation
   );
-  register(DataService.UPDATE_MESSAGE, updateMessage.name, updateMessage);
+  register(DataService.UpdateMessage, updateMessage.name, updateMessage);
   register(
-    DataService.DELETE_CONVERSATION,
+    DataService.DeleteConversation,
     deleteConversation.name,
     deleteConversation
   );
-  register(DataService.CREATE_MESSAGE, createMessage.name, createMessage);
+  register(DataService.CreateMessage, createMessage.name, createMessage);
   register(
-    DataService.GET_CONVERSATION_MESSAGES,
+    DataService.GetConversationMessages,
     getConversationMessages.name,
     getConversationMessages
   );
-  register(DataService.STORE_MODEL, storeModel.name, storeModel);
+  register(DataService.StoreModel, storeModel.name, storeModel);
   register(
-    DataService.UPDATE_FINISHED_DOWNLOAD,
+    DataService.UpdateFinishedDownloadAt,
     updateFinishedDownloadAt.name,
     updateFinishedDownloadAt
   );
   register(
-    DataService.GET_UNFINISHED_DOWNLOAD_MODELS,
+    DataService.GetUnfinishedDownloadModels,
     getUnfinishedDownloadModels.name,
     getUnfinishedDownloadModels
   );
   register(
-    DataService.DELETE_DOWNLOAD_MODEL,
+    DataService.DeleteDownloadModel,
     deleteDownloadModel.name,
     deleteDownloadModel
   );
-  register(DataService.GET_MODEL_BY_ID, getModelById.name, getModelById);
+  register(DataService.GetModelById, getModelById.name, getModelById);
   register(
-    DataService.GET_FINISHED_DOWNLOAD_MODELS,
+    DataService.GetFinishedDownloadModels,
     getFinishedDownloadModels.name,
     getFinishedDownloadModels
   );

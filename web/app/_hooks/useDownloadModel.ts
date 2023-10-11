@@ -1,7 +1,7 @@
 import { executeSerial } from "@/_services/pluginService";
-import { DataService, ModelManagementService } from "../../shared/coreService";
-import { Product } from "@/_models/Product";
+import { DataService, ModelManagementService } from "@janhq/plugin-core";
 import { ModelVersion } from "@/_models/ModelVersion";
+import { Product } from "@/_models/Product";
 
 export default function useDownloadModel() {
   const downloadModel = async (model: Product, modelVersion: ModelVersion) => {

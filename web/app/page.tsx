@@ -18,10 +18,16 @@ import {
 } from "./_services/pluginService";
 import LeftContainer from "./_components/LeftContainer";
 import EventListenerWrapper from "./_helpers/EventListenerWrapper";
+import { setupCoreServices } from "./_services/coreService";
 
 const Page: React.FC = () => {
   const [activated, setActivated] = useState(false);
+
+  // Services Setup
   useEffect(() => {
+    // Setup Core Service
+    setupCoreServices();
+
     async function setupPE() {
       // Enable activation point management
       setup({

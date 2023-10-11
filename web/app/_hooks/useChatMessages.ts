@@ -2,7 +2,7 @@ import { ChatMessage, RawMessage, toChatMessage } from "@/_models/ChatMessage";
 import { executeSerial } from "@/_services/pluginService";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useState } from "react";
-import { DataService } from "../../shared/coreService";
+import { DataService } from "@janhq/plugin-core";
 import { addOldMessagesAtom } from "@/_helpers/atoms/ChatMessage.atom";
 import {
   currentConversationAtom,
@@ -32,7 +32,7 @@ const useChatMessages = (offset = 0) => {
 
     const getMessages = async () => {
       executeSerial(
-        DataService.GET_CONVERSATION_MESSAGES,
+        DataService.GetConversationMessages,
         currentConvo.id
       ).then((data: any) => {
         if (!data) {

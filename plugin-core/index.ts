@@ -1,10 +1,14 @@
 /**
  * CoreService exports
  */
+
+import { StoreService } from "./core";
+
 export type CoreService =
+  | StoreService
   | DataService
   | ModelService
-  | InfereceService
+  | InferenceService
   | ModelManagementService
   | SystemMonitoringService
   | PreferenceService;
@@ -13,62 +17,63 @@ export type CoreService =
  * DataService exports
  */
 export enum DataService {
-  GET_CONVERSATIONS = "getConversations",
-  CREATE_CONVERSATION = "createConversation",
-  DELETE_CONVERSATION = "deleteConversation",
-  CREATE_MESSAGE = "createMessage",
-  UPDATE_MESSAGE = "updateMessage",
-  GET_CONVERSATION_MESSAGES = "getConversationMessages",
+  GetConversations = "getConversations",
+  CreateConversation = "createConversation",
+  DeleteConversation = "deleteConversation",
+  CreateMessage = "createMessage",
+  UpdateMessage = "updateMessage",
+  GetConversationMessages = "getConversationMessages",
 
-  STORE_MODEL = "storeModel",
-  UPDATE_FINISHED_DOWNLOAD = "updateFinishedDownloadAt",
-  GET_UNFINISHED_DOWNLOAD_MODELS = "getUnfinishedDownloadModels",
-  GET_FINISHED_DOWNLOAD_MODELS = "getFinishedDownloadModels",
-  DELETE_DOWNLOAD_MODEL = "deleteDownloadModel",
+  StoreModel = "storeModel",
+  UpdateFinishedDownloadAt = "updateFinishedDownloadAt",
+  GetUnfinishedDownloadModels = "getUnfinishedDownloadModels",
+  GetFinishedDownloadModels = "getFinishedDownloadModels",
+  DeleteDownloadModel = "deleteDownloadModel",
 
-  GET_MODEL_BY_ID = "getModelById",
+  GetModelById = "getModelById",
 }
 
 /**
  * ModelService exports
  */
 export enum ModelService {
-  GET_MODELS = "getModels",
+  GetModels = "getModels",
 }
 
 /**
  * ModelService exports
  */
-export enum InfereceService {
-  INFERENCE_URL = "inferenceUrl",
-  INIT_MODEL = "initModel",
-  STOP_MODEL = "stopModel",
+export enum InferenceService {
+  InferenceUrl = "inferenceUrl",
+  InitModel = "initModel",
+  StopModel = "stopModel",
 }
 
 /**
  * ModelManagementService exports
  */
 export enum ModelManagementService {
-  GET_DOWNLOADED_MODELS = "getDownloadedModels",
-  GET_AVAILABLE_MODELS = "getAvailableModels",
-  DELETE_MODEL = "deleteModel",
-  DOWNLOAD_MODEL = "downloadModel",
-  SEARCH_MODELS = "searchModels",
+  GetDownloadedModels = "getDownloadedModels",
+  GetAvailableModels = "getAvailableModels",
+  DeleteModel = "deleteModel",
+  DownloadModel = "downloadModel",
+  SearchModels = "searchModels",
 }
 
 /**
  * PreferenceService exports
  */
 export enum PreferenceService {
-  GET_EXPERIMENT_COMPONENT = "experimentComponent",
+  ExperimentComponent = "experimentComponent",
 }
 
 /**
  * SystemMonitoringService exports
  */
 export enum SystemMonitoringService {
-  GET_RESOURCES_INFORMATION = "getResourcesInfo",
-  GET_CURRENT_LOAD_INFORMATION = "getCurrentLoad",
+  GetResourcesInfo = "getResourcesInfo",
+  GetCurrentLoad = "getCurrentLoad",
 }
 
 export { store } from "./store";
+export { Core } from "./core";

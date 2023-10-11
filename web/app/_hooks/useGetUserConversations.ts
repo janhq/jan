@@ -1,7 +1,7 @@
 import { Conversation, ConversationState } from "@/_models/Conversation";
 import { useSetAtom } from "jotai";
 import { executeSerial } from "@/_services/pluginService";
-import { DataService } from "../../shared/coreService";
+import { DataService } from "@janhq/plugin-core";
 import {
   conversationStatesAtom,
   userConversationsAtom,
@@ -14,7 +14,7 @@ const useGetUserConversations = () => {
   const getUserConversations = async () => {
     try {
       const convos: Conversation[] | undefined = await executeSerial(
-        DataService.GET_CONVERSATIONS
+        DataService.GetConversations
       );
       const convoStates: Record<string, ConversationState> = {};
       convos?.forEach((convo) => {

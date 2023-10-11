@@ -1,5 +1,5 @@
 import { executeSerial } from "@/_services/pluginService";
-import { InferenceService } from "../../shared/coreService";
+import { InferenceService } from "@janhq/plugin-core";
 import { useAtom } from "jotai";
 import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";
 import { AssistantModel } from "@/_models/AssistantModel";

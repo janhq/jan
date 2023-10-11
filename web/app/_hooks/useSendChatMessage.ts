@@ -1,7 +1,7 @@
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { selectAtom } from "jotai/utils";
-import { DataService, InferenceService } from "../../shared/coreService";
+import { DataService, InferenceService } from "@janhq/plugin-core";
 import {
   MessageSenderType,
   RawMessage,
@@ -50,7 +50,7 @@ export default function useSendChatMessage() {
       user: "user",
       created_at: new Date().toISOString(),
     };
-    const id = await executeSerial(DataService.CREATE_MESSAGE, newMessage);
+    const id = await executeSerial(DataService.CreateMessage, newMessage);
     newMessage.id = id;
 
     const newChatMessage = await toChatMessage(newMessage);
@@ -70,7 +70,7 @@ export default function useSendChatMessage() {
               : "assistant",
         };
       });
-    const url = await executeSerial(InferenceService.INFERENCE_URL);
+    const url = await executeSerial(InferenceService.InferenceUrl);
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -98,7 +98,7 @@ export default function useSendChatMessage() {
       user: "assistant",
       created_at: new Date().toISOString(),
     };
-    const respId = await executeSerial(DataService.CREATE_MESSAGE, newResponse);
+    const respId = await executeSerial(DataService.CreateMessage, newResponse);
     newResponse.id = respId;
     const responseChatMessage = await toChatMessage(newResponse);
     addNewMessage(responseChatMessage);
@@ -136,7 +136,7 @@ export default function useSendChatMessage() {
       responseChatMessage.conversationId,
       answer.trimEnd()
     );
-    await executeSerial(DataService.UPDATE_MESSAGE, {
+    await executeSerial(DataService.UpdateMessage, {
       ...newResponse,
       message: answer.trimEnd(),
       updated_at: new Date()

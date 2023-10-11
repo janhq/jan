@@ -1,7 +1,7 @@
 import { useAtom, useSetAtom } from "jotai";
 import { Conversation } from "@/_models/Conversation";
 import { executeSerial } from "@/_services/pluginService";
-import { DataService } from "../../shared/coreService";
+import { DataService } from "@janhq/plugin-core";
 import {
   userConversationsAtom,
   setActiveConvoIdAtom,
@@ -32,7 +32,7 @@ const useCreateConversation = () => {
       updated_at: new Date().toISOString(),
       name: conversationName,
     };
-    const id = await executeSerial(DataService.CREATE_CONVERSATION, conv);
+    const id = await executeSerial(DataService.CreateConversation, conv);
 
     if (id) updateConvWaiting(id, true);
     initModel(model).then((res: any) => {
