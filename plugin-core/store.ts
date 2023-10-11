@@ -32,6 +32,25 @@ function insertValue(collectionName: string, value: any): Promise<any> {
 }
 
 /**
+ * Retrieve all records from a collection in the data store.
+ * @param {string} collectionName - The name of the collection to retrieve.
+ * @returns {Promise<any>} A promise that resolves when all records are retrieved.
+ */
+function getAllValues(collectionName: string): Promise<any> {
+  return window.corePlugin?.store?.getAllValues(collectionName);
+}
+
+/**
+ * Retrieve a record from a collection in the data store.
+ * @param {string} collectionName - The name of the collection containing the record to retrieve.
+ * @param {string} key - The key of the record to retrieve.
+ * @returns {Promise<any>} A promise that resolves when the record is retrieved.
+ */
+function getValue(collectionName: string, key: string): Promise<any> {
+  return window.corePlugin?.store?.getVale(collectionName, key);
+}
+
+/**
  * Updates the value of a record in a collection in the data store.
  * @param {string} collectionName - The name of the collection containing the record to update.
  * @param {string} key - The key of the record to update.
@@ -65,4 +84,6 @@ export const store = {
   insertValue,
   updateValue,
   deleteValue,
+  getAllValues,
+  getValue,
 };

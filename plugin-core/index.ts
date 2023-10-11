@@ -40,6 +40,16 @@ export enum StoreService {
    * Deletes an existing value from an existing collection in the database store.
    */
   DeleteValue = "deleteValue",
+
+  /**
+   * Retrieve all records from a collection in the data store
+   */
+  GetAllValues = "getAllValues",
+  
+  /**
+   * Deletes an existing value from an existing collection in the database store.
+   */
+  GetValue = "getValue",
 }
 
 /**
@@ -208,4 +218,4 @@ export { store } from "./store";
  * Core module exports.
  * @module
  */
-export { core } from "./core";
+export { core, RegisterExtensionPoint } from "./core";
