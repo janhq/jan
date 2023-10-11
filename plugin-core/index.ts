@@ -47,7 +47,7 @@ export enum StoreService {
   GetAllValues = "getAllValues",
   
   /**
-   * Deletes an existing value from an existing collection in the database store.
+   * Retrieve a record from a collection in the data store.
    */
   GetValue = "getValue",
 }
