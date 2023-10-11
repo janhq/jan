@@ -24,8 +24,8 @@ export interface Product {
   outputs?: ProductOutput;
   createdAt: number;
   updatedAt?: number;
-  status: string; // TODO: add this in the database // Downloaded, Active
-  releaseDate: number; // TODO: add this in the database
+  status: string;
+  releaseDate: number;
   tags: string[];
   availableVersions: ModelVersion[];
 }

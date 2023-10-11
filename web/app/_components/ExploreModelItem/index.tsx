@@ -4,10 +4,11 @@
 
 import ExploreModelItemHeader from "../ExploreModelItemHeader";
 import ModelVersionList from "../ModelVersionList";
-import { Fragment, forwardRef, useState } from "react";
-import SimpleTag, { TagType } from "../SimpleTag";
+import { Fragment, forwardRef, useEffect, useState } from "react";
+import SimpleTag from "../SimpleTag";
 import { displayDate } from "@/_utils/datetime";
 import { Product } from "@/_models/Product";
+import useGetMostSuitableModelVersion from "@/_hooks/useGetMostSuitableModelVersion";
 
 type Props = {
   model: Product;
@@ -16,15 +17,26 @@ type Props = {
 const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
   const [show, setShow] = useState(false);
 
+  const { availableVersions } = model;
+  const { suitableModel, getMostSuitableModelVersion } =
+    useGetMostSuitableModelVersion();
+
+  useEffect(() => {
+    getMostSuitableModelVersion(availableVersions);
+  }, [availableVersions]);
+
+  if (!suitableModel) {
+    return null;
+  }
+
   return (
     <div
       ref={ref}
       className="flex flex-col border border-gray-200 rounded-md mb-4"
     >
       <ExploreModelItemHeader
-        name={model.name}
-        status={TagType.Recommended}
-        versions={model.availableVersions}
+        suitableModel={suitableModel}
+        exploreModel={model}
       />
       <div className="flex flex-col px-[26px] py-[22px]">
         <div className="flex justify-between">
@@ -42,11 +54,11 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
                 Hardware Compatibility
               </div>
               <div className="flex gap-2">
-                <SimpleTag
+                {/* <SimpleTag
                   clickable={false}
                   title={TagType.Compatible}
                   type={TagType.Compatible}
-                />
+                /> */}
               </div>
             </div>
           </div>
@@ -63,11 +75,11 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
               <div className="text-sm font-medium text-gray-500">
                 Expected Performance
               </div>
-              <SimpleTag
+              {/* <SimpleTag
                 title={TagType.Medium}
                 type={TagType.Medium}
                 clickable={false}
-              />
+              /> */}
             </div>
           </div>
         </div>
@@ -77,8 +89,14 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
             {model.longDescription}
           </span>
         </div>
-        <div className="flex flex-col">
+        <div className="flex flex-col mt-5">
           <span className="text-sm font-medium text-gray-500">Tags</span>
+          <div className="flex flex-wrap gap-2">
+            {model.tags.map((tag) => (
+              // @ts-ignore
+              <SimpleTag key={tag} title={tag} type={tag} clickable={false} />
+            ))}
+          </div>
         </div>
       </div>
       {model.availableVersions?.length > 0 && (
@@ -87,6 +105,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
             <ModelVersionList
               model={model}
               versions={model.availableVersions}
+              recommendedVersion={suitableModel?.id ?? ""}
             />
           )}
           <button

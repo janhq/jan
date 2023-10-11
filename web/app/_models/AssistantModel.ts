@@ -57,9 +57,9 @@ export type AssistantModel = {
 
   updatedAt?: number;
 
-  status: string; // TODO: add this in the database // Downloaded, Active
+  status: string;
 
-  releaseDate: number; // TODO: add this in the database
+  releaseDate: number;
 
   tags: string[];
 };

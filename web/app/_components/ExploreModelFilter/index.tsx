@@ -1,7 +1,8 @@
 import React from "react";
 import SearchBar from "../SearchBar";
 import SimpleCheckbox from "../SimpleCheckbox";
-import SimpleTag, { TagType } from "../SimpleTag";
+import SimpleTag from "../SimpleTag";
+import { TagType } from "../SimpleTag/TagType";
 
 const tags = [
   "Roleplay",

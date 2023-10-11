@@ -6,14 +6,26 @@ import useDownloadModel from "@/_hooks/useDownloadModel";
 import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
 import { atom, useAtomValue } from "jotai";
 import { ModelVersion } from "@/_models/ModelVersion";
+import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
+import SimpleTag from "../SimpleTag";
+import { ModelPerformance } from "../SimpleTag/TagType";
 
 type Props = {
   model: Product;
   modelVersion: ModelVersion;
+  isRecommended: boolean;
 };
 
-const ModelVersionItem: React.FC<Props> = ({ model, modelVersion }) => {
+const ModelVersionItem: React.FC<Props> = ({
+  model,
+  modelVersion,
+  isRecommended,
+}) => {
   const { downloadModel } = useDownloadModel();
+  const { downloadedModels } = useGetDownloadedModels();
+  const isDownloaded =
+    downloadedModels.find((model) => model.id === modelVersion.id) != null;
+
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[modelVersion.id ?? ""]),
     [modelVersion.id ?? ""]
@@ -37,6 +49,8 @@ const ModelVersionItem: React.FC<Props> = ({ model, modelVersion }) => {
     downloadButton = (
       <div>{formatDownloadPercentage(downloadState.percent)}</div>
     );
+  } else if (isDownloaded) {
+    downloadButton = <div>Downloaded</div>;
   }
 
   return (
@@ -46,6 +60,13 @@ const ModelVersionItem: React.FC<Props> = ({ model, modelVersion }) => {
         <span className="font-sm text-gray-900">{modelVersion.name}</span>
       </div>
       <div className="flex items-center gap-4">
+        {isRecommended && (
+          <SimpleTag
+            title={"Recommended"}
+            type={ModelPerformance.PerformancePositive}
+            clickable={false}
+          />
+        )}
         <div className="px-2.5 py-0.5 bg-gray-200 text-xs font-medium rounded">
           {toGigabytes(modelVersion.size)}
         </div>

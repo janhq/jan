@@ -116,22 +116,10 @@ function storeModel(params: any) {
         model.nsfw,
         modelTags,
         model.greeting,
-        model.type,
-        function (err: any) {
-          if (err) {
-            // Handle the insertion error here
-            console.error(err.message);
-            res(undefined);
-            return;
-          }
-          // @ts-ignoreF
-          const id = this.lastID;
-          res(id);
-          return;
-        }
+        model.type
       );
+      stmt.finalize();
 
-      // insert modelVersion to MODEL_VERSION_TABLE_INSERTION
       const stmt2 = db.prepare(MODEL_VERSION_TABLE_INSERTION);
       stmt2.run(
         modelVersion.id,
@@ -143,25 +131,14 @@ function storeModel(params: any) {
         modelVersion.usecase,
         modelVersion.downloadLink,
         model.id,
-        modelVersion.startDownloadAt,
-        function (err: any) {
-          if (err) {
-            // Handle the insertion error here
-            console.error(err.message);
-            res(undefined);
-            return;
-          }
-          // @ts-ignoreF
-          const id = this.lastID;
-          res(id);
-          return;
-        }
+        modelVersion.startDownloadAt
       );
-      stmt.finalize();
+
       stmt2.finalize();
     });
 
     db.close();
+    res(undefined);
   });
 }
 
@@ -171,7 +148,7 @@ function storeModel(params: any) {
  * @param model Product
  */
 function updateFinishedDownloadAt(modelVersionId: string) {
-  return new Promise((res) => {
+  return new Promise((res, rej) => {
     const db = new sqlite3.Database(getDbPath());
     const time = Date.now();
     console.debug(
@@ -181,7 +158,7 @@ function updateFinishedDownloadAt(modelVersionId: string) {
     db.run(stmt, [time, modelVersionId], (err: any) => {
       if (err) {
         console.log(err);
-        res(undefined);
+        rej(err);
       } else {
         console.log("Updated 1 row");
         res("Updated");
@@ -299,7 +276,7 @@ function deleteDownloadModel(modelId: string) {
   });
 }
 
-async function fetchModelVersion(db: any, versionId: string) {
+function fetchModelVersion(db: any, versionId: string) {
   return new Promise((resolve, reject) => {
     db.get(
       "SELECT * FROM model_versions WHERE id = ?",
@@ -308,32 +285,7 @@ async function fetchModelVersion(db: any, versionId: string) {
         if (err) {
           reject(err);
         } else {
-          if (row) {
-            const product = {
-              id: row.id,
-              slug: row.slug,
-              name: row.name,
-              description: row.description,
-              avatarUrl: row.avatar_url,
-              longDescription: row.long_description,
-              technicalDescription: row.technical_description,
-              author: row.author,
-              version: row.version,
-              modelUrl: row.model_url,
-              nsfw: row.nsfw,
-              greeting: row.greeting,
-              type: row.type,
-              inputs: row.inputs,
-              outputs: row.outputs,
-              createdAt: new Date(row.created_at),
-              updatedAt: new Date(row.updated_at),
-              fileName: row.file_name,
-              downloadUrl: row.download_url,
-            };
-            resolve(product);
-          } else {
-            resolve(undefined);
-          }
+          resolve(row);
         }
       }
     );
