@@ -1,5 +1,9 @@
-import { core, StoreService, DataService } from "@janhq/plugin-core";
-import { RegisterExtensionPoint } from "@janhq/plugin-core/lib/core";
+import {
+  core,
+  RegisterExtensionPoint,
+  StoreService,
+  DataService,
+} from "@janhq/plugin-core";
 
 // Provide an async method to manipulate the price provided by the extension point
 const MODULE_PATH = "data-plugin/dist/module.js";
@@ -8,11 +12,20 @@ const MODULE_PATH = "data-plugin/dist/module.js";
  * Create a collection on data store
  *
  * @param     name     name of the collection to create
+ * @param     schema   schema of the collection to create, include fields and their types
  * @returns   Promise<void>
  *
  */
-function createCollection(name: string): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, createCollection.name, name);
+function createCollection(
+  name: string,
+  schema: { [key: string]: any }
+): Promise<void> {
+  return core.invokePluginFunc(
+    MODULE_PATH,
+    createCollection.name,
+    name,
+    schema
+  );
 }
 
 /**
@@ -78,101 +91,81 @@ function deleteValue(collectionName: string, key: string): Promise<void> {
   return core.invokePluginFunc(MODULE_PATH, deleteValue.name, collectionName);
 }
 
+/**
+ * Retrieve all records from a collection in the data store.
+ * @param {string} collectionName - The name of the collection to retrieve.
+ * @returns {Promise<any>} A promise that resolves when all records are retrieved.
+ */
+function getAllValues(collectionName: string): Promise<any> {
+  return core.invokePluginFunc(MODULE_PATH, getAllValues.name, collectionName);
+}
+
+/**
+ * Retrieve a record from a collection in the data store.
+ * @param {string} collectionName - The name of the collection containing the record to retrieve.
+ * @param {string} key - The key of the record to retrieve.
+ * @returns {Promise<any>} A promise that resolves when the record is retrieved.
+ */
+function getValue(collectionName: string, key: string): Promise<any> {
+  return core.invokePluginFunc(MODULE_PATH, getValue.name, collectionName, key);
+}
+
+/**
+ * Gets records in a collection in the data store using a selector.
+ * @param {string} collectionName - The name of the collection containing the record to get the value from.
+ * @param {{ [key: string]: any }} selector - The selector to use to get the value from the record.
+ * @returns {Promise<any>} A promise that resolves with the selected value.
+ */
+function getValuesBySelector(
+  collectionName: string,
+  selector: { [key: string]: any }
+): Promise<any> {
+  return core.invokePluginFunc(
+    MODULE_PATH,
+    getValuesBySelector.name,
+    collectionName,
+    selector
+  );
+}
+
 const storeModel = (model: any) =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "storeModel", model)
-      .then((res: any) => resolve(res));
-  });
+  core.invokePluginFunc(MODULE_PATH, "storeModel", model);
 
 const getFinishedDownloadModels = () =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "getFinishedDownloadModels")
-      .then((res: any) => resolve(res));
-  });
+  core.invokePluginFunc(MODULE_PATH, "getFinishedDownloadModels");
 
 const getModelById = (modelId: string) =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "getModelById", modelId)
-      .then((res: any) => resolve(res));
-  });
+  core.invokePluginFunc(MODULE_PATH, "getModelById", modelId);
 
 const updateFinishedDownloadAt = (fileName: string) =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(
-        MODULE_PATH,
-        "updateFinishedDownloadAt",
-        fileName,
-        Date.now()
-      )
-      .then((res: any) => resolve(res));
-  });
+  core.invokePluginFunc(
+    MODULE_PATH,
+    "updateFinishedDownloadAt",
+    fileName,
+    Date.now()
+  );
 
 const getUnfinishedDownloadModels = () =>
-  new Promise<any>((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "getUnfinishedDownloadModels")
-      .then((res: any[]) => resolve(res));
-  });
+  core.invokePluginFunc(MODULE_PATH, "getUnfinishedDownloadModels");
 
 const deleteDownloadModel = (modelId: string) =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "deleteDownloadModel", modelId)
-      .then((res: any) => resolve(res));
-  });
+  core.invokePluginFunc(MODULE_PATH, "deleteDownloadModel", modelId);
 
 const getConversations = () =>
-  new Promise<any>((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "getConversations")
-      .then((res: any[]) => resolve(res));
-  });
+  core.invokePluginFunc(MODULE_PATH, "getConversations");
 const getConversationMessages = (id: any) =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "getConversationMessages", id)
-      .then((res: any[]) => resolve(res));
-  });
+  core.invokePluginFunc(MODULE_PATH, "getConversationMessages", id);
 
 const createConversation = (conversation: any) =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "storeConversation", conversation)
-      .then((res: any) => {
-        resolve(res);
-      });
-  });
-
+  core.invokePluginFunc(MODULE_PATH, "storeConversation", conversation);
 const createMessage = (message: any) =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "storeMessage", message)
-      .then((res: any) => {
-        resolve(res);
-      });
-  });
+  core.invokePluginFunc(MODULE_PATH, "storeMessage", message);
 
 const updateMessage = (message: any) =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "updateMessage", message)
-      .then((res: any) => {
-        resolve(res);
-      });
-  });
+  core.invokePluginFunc(MODULE_PATH, "updateMessage", message);
 
 const deleteConversation = (id: any) =>
-  new Promise((resolve) => {
-    core
-      .invokePluginFunc(MODULE_PATH, "deleteConversation", id)
-      .then((res: any) => {
-        resolve(res);
-      });
-  });
+  core.invokePluginFunc(MODULE_PATH, "deleteConversation", id);
 
 const setupDb = () => {
   core.invokePluginFunc(MODULE_PATH, setupDb.name);
@@ -195,6 +188,13 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(StoreService.InsertValue, insertValue.name, insertValue);
   register(StoreService.UpdateValue, updateValue.name, updateValue);
   register(StoreService.DeleteValue, deleteValue.name, deleteValue);
+  register(StoreService.GetAllValues, getAllValues.name, getAllValues);
+  register(StoreService.GetValue, getValue.name, getValue);
+  register(
+    StoreService.GetValuesBySelector,
+    getValuesBySelector.name,
+    getValuesBySelector
+  );
 
   register(
     DataService.GetConversations,

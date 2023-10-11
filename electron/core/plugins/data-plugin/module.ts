@@ -2,6 +2,105 @@ const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const { app } = require("electron");
 
+/**
+ * Create a collection on data store
+ *
+ * @param     name     name of the collection to create
+ * @param     schema   schema of the collection to create, include fields and their types
+ * @returns   Promise<void>
+ *
+ */
+function createCollection(
+  name: string,
+  schema: { [key: string]: any }
+): Promise<void> {
+  return Promise.resolve();
+}
+
+/**
+ * Delete a collection
+ *
+ * @param     name     name of the collection to delete
+ * @returns   Promise<void>
+ *
+ */
+function deleteCollection(name: string): Promise<void> {
+  return Promise.resolve();
+}
+
+/**
+ * Insert a value to a collection
+ *
+ * @param     collectionName     name of the collection
+ * @param     value              value to insert
+ * @returns   Promise<any>
+ *
+ */
+function insertValue(collectionName: string, value: any): Promise<any> {
+  return Promise.resolve();
+}
+
+/**
+ * Update value of a collection's record
+ *
+ * @param     collectionName     name of the collection
+ * @param     key                key of the record to update
+ * @param     value              value to update
+ * @returns   Promise<void>
+ *
+ */
+function updateValue(
+  collectionName: string,
+  key: string,
+  value: any
+): Promise<void> {
+  return Promise.resolve();
+}
+
+/**
+ * Delete a collection's record
+ *
+ * @param     collectionName     name of the collection
+ * @param     key                key of the record to delete
+ * @returns   Promise<void>
+ *
+ */
+function deleteValue(collectionName: string, key: string): Promise<void> {
+  return Promise.resolve();
+}
+
+/**
+ * Retrieve all records from a collection in the data store.
+ * @param {string} collectionName - The name of the collection to retrieve.
+ * @returns {Promise<any>} A promise that resolves when all records are retrieved.
+ */
+function getAllValues(collectionName: string): Promise<any> {
+  return Promise.resolve();
+}
+
+/**
+ * Retrieve a record from a collection in the data store.
+ * @param {string} collectionName - The name of the collection containing the record to retrieve.
+ * @param {string} key - The key of the record to retrieve.
+ * @returns {Promise<any>} A promise that resolves when the record is retrieved.
+ */
+function getValue(collectionName: string, key: string): Promise<any> {
+  return Promise.resolve();
+}
+
+/**
+ * Gets records in a collection in the data store using a selector.
+ * @param {string} collectionName - The name of the collection containing the record to get the value from.
+ * @param {{ [key: string]: any }} selector - The selector to use to get the value from the record.
+ * @returns {Promise<any>} A promise that resolves with the selected value.
+ */
+function getValuesBySelector(
+  collectionName: string,
+  selector: { [key: string]: any }
+): Promise<any> {
+  return Promise.resolve();
+}
+
 const MODEL_TABLE_CREATION = `
 CREATE TABLE IF NOT EXISTS models (
   id TEXT PRIMARY KEY,
@@ -70,9 +169,11 @@ const getDbPath = () => {
   return path.join(app.getPath("userData"), "jan.db");
 };
 
-function init() {
-  const db = new sqlite3.Database(getDbPath());
-  console.debug(`Database located at ${getDbPath()}`);
+function setupDb() {
+  const db = new sqlite3.Database(path.join(app.getPath("userData"), "jan.db"));
+  console.log(
+    `Database located at ${path.join(app.getPath("userData"), "jan.db")}`
+  );
 
   db.serialize(() => {
     db.run(MODEL_TABLE_CREATION);
@@ -481,7 +582,7 @@ function getConversationMessages(conversation_id: any) {
 }
 
 module.exports = {
-  init,
+  setupDb,
   getConversations,
   deleteConversation,
   storeConversation,

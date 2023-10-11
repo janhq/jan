@@ -5,11 +5,15 @@
 
 /**
  * Creates a new collection in the data store.
- * @param {string} name - The name of the collection to create.
+ * @param {string}               name - The name of the collection to create.
+ * @param { [key: string]: any } schema - schema of the collection to create, include fields and their types
  * @returns {Promise<void>} A promise that resolves when the collection is created.
  */
-function createCollection(name: string): Promise<void> {
-  return window.corePlugin?.store?.createCollection(name);
+function createCollection(
+  name: string,
+  schema: { [key: string]: any }
+): Promise<void> {
+  return window.corePlugin?.store?.createCollection(name, schema);
 }
 
 /**
@@ -60,7 +64,10 @@ function getValuesBySelector(
   collectionName: string,
   selector: { [key: string]: any }
 ): Promise<any> {
-  return window.corePlugin?.store?.getValuesBySelector(collectionName, selector);
+  return window.corePlugin?.store?.getValuesBySelector(
+    collectionName,
+    selector
+  );
 }
 
 /**

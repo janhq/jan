@@ -58,6 +58,22 @@ function getValue(collectionName: string, key: string): Promise<any> {
 }
 
 /**
+ * Gets records in a collection in the data store using a selector.
+ * @param {string} collectionName - The name of the collection containing the record to get the value from.
+ * @param {{ [key: string]: any }} selector - The selector to use to get the value from the record.
+ * @returns {Promise<any>} A promise that resolves with the selected value.
+ */
+function getValuesBySelector(
+  collectionName: string,
+  selector: { [key: string]: any }
+): Promise<any> {
+  return executeSerial(StoreService.GetValuesBySelector, {
+    collectionName,
+    selector,
+  });
+}
+
+/**
  * Update value of a collection's record
  *
  * @param     collectionName     name of the collection
@@ -98,4 +114,5 @@ export const store = {
   deleteValue,
   getAllValues,
   getValue,
+  getValuesBySelector,
 };
