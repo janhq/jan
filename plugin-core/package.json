@@ -21,6 +21,9 @@
   },
   "files": [
     "lib",
+    "README.md",
+    "LICENSE.md",
+    "package.json",
     "!.DS_Store"
   ],
   "scripts": {

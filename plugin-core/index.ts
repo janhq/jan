@@ -45,11 +45,16 @@ export enum StoreService {
    * Retrieve all records from a collection in the data store
    */
   GetAllValues = "getAllValues",
-  
+
   /**
    * Retrieve a record from a collection in the data store.
    */
   GetValue = "getValue",
+
+  /**
+   * Retrieve records from a collection in the data store with selector.
+   */
+  GetValuesBySelector = "getValuesBySelector",
 }
 
 /**

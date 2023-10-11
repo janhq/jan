@@ -51,6 +51,19 @@ function getValue(collectionName: string, key: string): Promise<any> {
 }
 
 /**
+ * Retrieve records from a collection in the data store with selector.
+ * @param {string} collectionName - The name of the collection containing records to retrieve.
+ * @param {{ [key: string]: any }} selector - The selector to use to get records from the collection.
+ * @returns {Promise<any>} A promise that resolves when records are retrieved.
+ */
+function getValuesBySelector(
+  collectionName: string,
+  selector: { [key: string]: any }
+): Promise<any> {
+  return window.corePlugin?.store?.getValuesBySelector(collectionName, selector);
+}
+
+/**
  * Updates the value of a record in a collection in the data store.
  * @param {string} collectionName - The name of the collection containing the record to update.
  * @param {string} key - The key of the record to update.
@@ -86,4 +99,5 @@ export const store = {
   deleteValue,
   getAllValues,
   getValue,
+  getValuesBySelector,
 };
