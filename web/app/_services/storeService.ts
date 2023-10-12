@@ -60,7 +60,6 @@ function findMany(
   selector?: { [key: string]: any },
   sort?: [{ [key: string]: any }]
 ): Promise<any> {
-  console.log("selector ne: ", selector);
   return executeSerial(StoreService.FindMany, {
     collectionName,
     selector,
@@ -101,7 +100,7 @@ function updateMany(
   value: any,
   selector?: { [key: string]: any }
 ): Promise<void> {
-  return executeSerial(StoreService.UpdateOne, {
+  return executeSerial(StoreService.UpdateMany, {
     collectionName,
     value,
     selector,
@@ -124,18 +123,15 @@ function deleteOne(collectionName: string, key: string): Promise<void> {
  * Deletes all records with a matching key from a collection in the data store.
  * @param {string} collectionName - The name of the collection to delete the records from.
  * @param {{ [key: string]: any }} selector - The selector to use to get the records to delete.
- * @param {[{ [key: string]: any }]} sort - The sort options to use to retrieve records.
  * @returns {Promise<void>} A promise that resolves when the records are deleted.
  */
 function deleteMany(
   collectionName: string,
-  selector?: { [key: string]: any },
-  sort?: [{ [key: string]: any }]
+  selector?: { [key: string]: any }
 ): Promise<void> {
-  return executeSerial(StoreService.DeleteOne, {
+  return executeSerial(StoreService.DeleteMany, {
     collectionName,
     selector,
-    sort,
   });
 }
 

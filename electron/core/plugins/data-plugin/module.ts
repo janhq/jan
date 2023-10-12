@@ -5,6 +5,13 @@ var { app } = require("electron");
 var fs = require("fs");
 
 const dbs: Record<string, any> = {};
+
+const getDb = (collectionName: string) => {
+  return (
+    dbs[collectionName] ??
+    createCollection(collectionName, {}).then(() => dbs[collectionName])
+  );
+};
 /**
  * Create a collection on data store
  *
@@ -83,21 +90,24 @@ function updateMany(
   selector?: { [key: string]: any }
 ): Promise<any> {
   const keys = selector ? Object.keys(selector) : [];
-  return dbs[collectionName]
-    .createIndex({
-      index: { fields: keys },
-    })
+  return (
+    keys.length > 0
+      ? dbs[collectionName].createIndex({
+          index: { fields: keys },
+        })
+      : Promise.resolve()
+  )
     .then(() =>
       dbs[collectionName].find({
         selector,
       })
     )
-    .then((docs) => {
-      docs.forEach((doc) => {
-        doc = {
+    .then((data) => {
+      const docs = data.docs.map((doc) => {
+        return (doc = {
           ...doc,
           ...value,
-        };
+        });
       });
       return dbs[collectionName].bulkDocs(docs);
     });
@@ -139,10 +149,10 @@ function deleteMany(
         selector,
       })
     )
-    .then((docs) => {
+    .then((data) => {
       return Promise.all(
-        docs.map((doc) => {
-          return dbs[collectionName].delete(doc);
+        data.docs.map((doc) => {
+          return dbs[collectionName].remove(doc);
         })
       );
     });
@@ -155,7 +165,7 @@ function deleteMany(
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
 function findOne(collectionName: string, key: string): Promise<any> {
-  return dbs[collectionName](key);
+  return dbs[collectionName].get(key);
 }
 
 /**
@@ -171,7 +181,18 @@ function findMany(
   sort?: [{ [key: string]: any }]
 ): Promise<any> {
   const keys = selector ? Object.keys(selector) : [];
-  const sortKeys = sort ? sort.flatMap((e) => Object.keys(e)) : [];
+  const sortKeys = sort
+    ? sort.flatMap((e) => (e ? Object.keys(e) : undefined))
+    : [];
+  if (keys.concat(sortKeys).length === 0) {
+    return dbs[collectionName]
+      .allDocs({
+        include_docs: true,
+        endkey: "_design",
+        inclusive_end: false,
+      })
+      .then((data) => data.rows.map((row) => row.doc));
+  }
   return dbs[collectionName]
     .createIndex({
       index: { fields: keys.concat(sortKeys) },
@@ -179,9 +200,10 @@ function findMany(
     .then(() =>
       dbs[collectionName].find({
         selector,
-        sort: sortKeys,
+        sort,
       })
-    );
+    )
+    .then((data) => data.docs);
 }
 
 module.exports = {

@@ -142,10 +142,12 @@ function deleteMany({
   collectionName: string;
   selector?: { [key: string]: any };
 }): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, "deleteMany", {
+  return core.invokePluginFunc(
+    MODULE_PATH,
+    "deleteMany",
     collectionName,
-    selector,
-  });
+    selector
+  );
 }
 
 /**
@@ -180,7 +182,6 @@ function findMany({
   selector: { [key: string]: any };
   sort?: [{ [key: string]: any }];
 }): Promise<any> {
-  console.log("yolo: ", collectionName);
   return core.invokePluginFunc(
     MODULE_PATH,
     "findMany",
@@ -279,21 +280,25 @@ function storeModel(model: any) {
  *
  * @param model Product
  */
-function updateFinishedDownloadAt(fileName: string) {
-  store.updateMany("models", { fileName }, { time: Date.now() });
+function updateFinishedDownloadAt(fileName: string): Promise<any> {
+  return store.updateMany(
+    "models",
+    { fileName },
+    { time: Date.now(), finish_download_at: 1 }
+  );
 }
 
 /**
  * Get all unfinished models from the database
  */
-function getUnfinishedDownloadModels() {
-  store.findMany("models", { finish_download_at: -1 }, [
+function getUnfinishedDownloadModels(): Promise<any> {
+  return store.findMany("models", { finish_download_at: -1 }, [
     { start_download_at: "desc" },
   ]);
 }
 
-function getFinishedDownloadModels() {
-  store.findMany("models", { finish_download_at: 1 }, [
+function getFinishedDownloadModels(): Promise<any> {
+  return store.findMany("models", { finish_download_at: 1 }, [
     { finish_download_at: "desc" },
   ]);
 }
