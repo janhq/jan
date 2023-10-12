@@ -13,6 +13,9 @@ categories:
     labels: 
       - 'type: chore'
       - 'type: ci'
+  - title: '📖 Documentaion'
+    labels: 
+      - 'type: documentation'
 change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
 change-title-escapes: '\<*_&' # You can add # and @ to disable mentions, and add ` to disable code blocks.
 template: |
