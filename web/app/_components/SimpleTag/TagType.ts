@@ -24,9 +24,39 @@ export enum FreestyleTag {
   FreeStyle = "FreeStyle",
 }
 
+export enum VersionTag {
+  Version = "Version",
+}
+
+export enum QuantMethodTag {
+  Default = "Default",
+}
+
+export enum NumOfBit {
+  Default = "Default",
+}
+
+export enum RamRequired {
+  RamDefault = "RamDefault",
+}
+
+export enum UsecaseTag {
+  UsecaseDefault = "UsecaseDefault",
+}
+
+export enum MiscellanousTag {
+  MiscellanousDefault = "MiscellanousDefault",
+}
+
 export type TagType =
   | ModelPerformance
   | HardwareCompatibility
   | ExpectedPerformance
   | ModelFormat
-  | FreestyleTag;
+  | FreestyleTag
+  | VersionTag
+  | QuantMethodTag
+  | NumOfBit
+  | RamRequired
+  | UsecaseTag
+  | MiscellanousTag;

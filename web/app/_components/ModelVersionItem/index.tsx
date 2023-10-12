@@ -8,7 +8,7 @@ import { atom, useAtomValue } from "jotai";
 import { ModelVersion } from "@/_models/ModelVersion";
 import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
 import SimpleTag from "../SimpleTag";
-import { ModelPerformance } from "../SimpleTag/TagType";
+import { RamRequired, UsecaseTag } from "../SimpleTag/TagType";
 
 type Props = {
   model: Product;
@@ -53,20 +53,29 @@ const ModelVersionItem: React.FC<Props> = ({
     downloadButton = <div>Downloaded</div>;
   }
 
+  const { maxRamRequired, usecase } = modelVersion;
+
   return (
     <div className="flex justify-between items-center gap-4 pl-3 pt-3 pr-4 pb-3 border-t border-gray-200 first:border-t-0">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
         <Image src={"/icons/app_icon.svg"} width={14} height={20} alt="" />
-        <span className="font-sm text-gray-900">{modelVersion.name}</span>
+        <span className="font-sm text-gray-900 flex-1">
+          {modelVersion.name}
+        </span>
       </div>
       <div className="flex items-center gap-4">
-        {isRecommended && (
+        <div className="flex gap-2 justify-end">
           <SimpleTag
-            title={"Recommended"}
-            type={ModelPerformance.PerformancePositive}
+            title={usecase}
+            type={UsecaseTag.UsecaseDefault}
             clickable={false}
           />
-        )}
+          <SimpleTag
+            title={`${toGigabytes(maxRamRequired)} RAM required`}
+            type={RamRequired.RamDefault}
+            clickable={false}
+          />
+        </div>
         <div className="px-2.5 py-0.5 bg-gray-200 text-xs font-medium rounded">
           {toGigabytes(modelVersion.size)}
         </div>
