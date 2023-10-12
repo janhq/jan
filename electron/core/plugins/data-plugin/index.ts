@@ -7,7 +7,7 @@ import {
 } from "@janhq/plugin-core";
 
 // Provide an async method to manipulate the price provided by the extension point
-const MODULE_PATH = "data-plugin/dist/module.js";
+const MODULE_PATH = "data-plugin/dist/cjs/module.js";
 
 /**
  * Create a collection on data store
@@ -21,12 +21,7 @@ function createCollection(
   name: string,
   schema: { [key: string]: any }
 ): Promise<void> {
-  return core.invokePluginFunc(
-    MODULE_PATH,
-    createCollection.name,
-    name,
-    schema
-  );
+  return core.invokePluginFunc(MODULE_PATH, "createCollection", name, schema);
 }
 
 /**
@@ -37,7 +32,7 @@ function createCollection(
  *
  */
 function deleteCollection(name: string): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, deleteCollection.name, name);
+  return core.invokePluginFunc(MODULE_PATH, "deleteCollection", name);
 }
 
 /**
@@ -49,12 +44,7 @@ function deleteCollection(name: string): Promise<void> {
  *
  */
 function insertOne(collectionName: string, value: any): Promise<any> {
-  return core.invokePluginFunc(
-    MODULE_PATH,
-    insertOne.name,
-    collectionName,
-    value
-  );
+  return core.invokePluginFunc(MODULE_PATH, "insertOne", collectionName, value);
 }
 
 /**
@@ -73,7 +63,7 @@ function updateOne(
 ): Promise<void> {
   return core.invokePluginFunc(
     MODULE_PATH,
-    updateOne.name,
+    "updateOne",
     collectionName,
     key,
     value
@@ -94,7 +84,7 @@ function updateMany(
 ): Promise<void> {
   return core.invokePluginFunc(
     MODULE_PATH,
-    updateMany.name,
+    "updateMany",
     collectionName,
     value,
     selector
@@ -110,7 +100,7 @@ function updateMany(
  *
  */
 function deleteOne(collectionName: string, key: string): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, deleteOne.name, collectionName);
+  return core.invokePluginFunc(MODULE_PATH, "deleteOne", collectionName);
 }
 
 /**
@@ -125,7 +115,7 @@ function deleteMany(
   collectionName: string,
   selector?: { [key: string]: any }
 ): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, deleteOne.name, {
+  return core.invokePluginFunc(MODULE_PATH, "deleteMany", {
     collectionName,
     selector,
   });
@@ -138,7 +128,7 @@ function deleteMany(
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
 function getOne(collectionName: string, key: string): Promise<any> {
-  return core.invokePluginFunc(MODULE_PATH, getOne.name, collectionName, key);
+  return core.invokePluginFunc(MODULE_PATH, "getOne", collectionName, key);
 }
 
 /**
@@ -155,7 +145,7 @@ function getMany(
 ): Promise<any> {
   return core.invokePluginFunc(
     MODULE_PATH,
-    getMany.name,
+    "getMany",
     collectionName,
     selector,
     sort
@@ -302,33 +292,33 @@ function getFinishedDownloadModels() {
 }
 
 function deleteDownloadModel(modelId: string): Promise<any> {
-  return deleteOne("models", modelId);
+  return store.deleteOne("models", modelId);
 }
 
 function getModelById(modelId: string): Promise<any> {
-  return getOne("models", modelId);
+  return store.getOne("models", modelId);
 }
 
 function getConversations(): Promise<any> {
-  return getMany("conversations", [{ updated_at: "desc" }]);
+  return store.getMany("conversations", [{ updated_at: "desc" }]);
 }
 function createConversation(conversation: any): Promise<number | undefined> {
-  return insertOne("conversations", conversation);
+  return store.insertOne("conversations", conversation);
 }
 
 function createMessage(message: any): Promise<number | undefined> {
-  return insertOne("messages", message);
+  return store.insertOne("messages", message);
 }
 function updateMessage(message: any): Promise<void> {
-  return updateOne("messages", message.id, message);
+  return store.updateOne("messages", message.id, message);
 }
 
 function deleteConversation(id: any) {
-  return deleteOne("conversations", id).then(() =>
-    deleteMany("messages", { conversation_id: id })
-  );
+  return store
+    .deleteOne("conversations", id)
+    .then(() => store.deleteMany("messages", { conversation_id: id }));
 }
 
 function getConversationMessages(conversation_id: any) {
-  return getMany("messages", { conversation_id }, [{ id: "desc" }]);
+  return store.getMany("messages", { conversation_id }, [{ id: "desc" }]);
 }

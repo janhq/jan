@@ -1,6 +1,7 @@
-import { createRxDatabase, RxDatabase } from "rxdb";
+import { addRxPlugin, createRxDatabase, RxDatabase } from "rxdb";
 import { getRxStorageLoki } from "rxdb/plugins/storage-lokijs";
-
+import { RxDBDevModePlugin } from "rxdb/plugins/dev-mode";
+addRxPlugin(RxDBDevModePlugin);
 /**
  * Get LokiJS Database Instance
  *
@@ -11,6 +12,7 @@ function getDb(): Promise<RxDatabase> {
   const db = createRxDatabase({
     name: "jandb",
     storage: getRxStorageLoki(),
+    ignoreDuplicate: true,
   });
   return db;
 }

@@ -11,8 +11,9 @@ const invokePluginFunc: (
   plugin: any,
   method: any,
   ...args: any[]
-) => Promise<any> =
-  window.coreAPI?.invokePluginFunc ?? window.electronAPI?.invokePluginFunc;
+) => Promise<any> = (plugin, method, ...args) =>
+  window.coreAPI?.invokePluginFunc(plugin, method, args) ??
+  window.electronAPI?.invokePluginFunc(plugin, method, args);
 
 /** Register extension point function type definition
  *
