@@ -38,22 +38,6 @@
 * Does not have all the electron handlers
 * Does not have the IPC handler
 
-### Detailed Design
-#### FE
-- Middleware: 
-- Httpserver: TBD
-- Custom build for httpweb/electron: TBD
-- IPC
-- Electron imports in plugins
-#### Devops:
-* Allow to pass username/password as environment variables
-* Assign a Public IP to the instance
-* Customize instance types on-demand.
-- Runpod: TBD
-- AWS: TBD
-- Azure: TBD
-- GCP: TBD
-
 ## Alternative Approaches
 Separated server process runs along side with electron. https://github.com/janhq/jan/pull/184/commits/6005409a945bb0e80a61132b9eb77f47f19d0aa6 
 
