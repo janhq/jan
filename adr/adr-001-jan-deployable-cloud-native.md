@@ -58,6 +58,7 @@
 Separated server process runs along side with electron. https://github.com/janhq/jan/pull/184/commits/6005409a945bb0e80a61132b9eb77f47f19d0aa6 
 
 ## Considerations
+* In the first version, all current plugins will be loaded in the web version by default, and users will not be allowed to add, remove, or update plugins.
 
 ## References
 
