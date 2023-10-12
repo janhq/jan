@@ -17,10 +17,14 @@ const MODULE_PATH = "data-plugin/dist/cjs/module.js";
  * @returns   Promise<void>
  *
  */
-function createCollection(
-  name: string,
-  schema: { [key: string]: any }
-): Promise<void> {
+function createCollection({
+  name,
+  schema,
+}: {
+  name: string;
+  schema: { [key: string]: any };
+}): Promise<void> {
+  console.log("renderer: creating collection:", name, schema);
   return core.invokePluginFunc(MODULE_PATH, "createCollection", name, schema);
 }
 
@@ -43,7 +47,13 @@ function deleteCollection(name: string): Promise<void> {
  * @returns   Promise<any>
  *
  */
-function insertOne(collectionName: string, value: any): Promise<any> {
+function insertOne({
+  collectionName,
+  value,
+}: {
+  collectionName: string;
+  value: any;
+}): Promise<any> {
   return core.invokePluginFunc(MODULE_PATH, "insertOne", collectionName, value);
 }
 
@@ -56,11 +66,15 @@ function insertOne(collectionName: string, value: any): Promise<any> {
  * @returns   Promise<void>
  *
  */
-function updateOne(
-  collectionName: string,
-  key: string,
-  value: any
-): Promise<void> {
+function updateOne({
+  collectionName,
+  key,
+  value,
+}: {
+  collectionName: string;
+  key: string;
+  value: any;
+}): Promise<void> {
   return core.invokePluginFunc(
     MODULE_PATH,
     "updateOne",
@@ -77,11 +91,15 @@ function updateOne(
  * @param       value - The new value for the records.
  * @returns     {Promise<void>} A promise that resolves when the records are updated.
  */
-function updateMany(
-  collectionName: string,
-  value: any,
-  selector?: { [key: string]: any }
-): Promise<void> {
+function updateMany({
+  collectionName,
+  value,
+  selector,
+}: {
+  collectionName: string;
+  value: any;
+  selector?: { [key: string]: any };
+}): Promise<void> {
   return core.invokePluginFunc(
     MODULE_PATH,
     "updateMany",
@@ -99,8 +117,14 @@ function updateMany(
  * @returns   Promise<void>
  *
  */
-function deleteOne(collectionName: string, key: string): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, "deleteOne", collectionName);
+function deleteOne({
+  collectionName,
+  key,
+}: {
+  collectionName: string;
+  key: string;
+}): Promise<void> {
+  return core.invokePluginFunc(MODULE_PATH, "deleteOne", collectionName, key);
 }
 
 /**
@@ -111,10 +135,13 @@ function deleteOne(collectionName: string, key: string): Promise<void> {
  * @returns   {Promise<void>}
  *
  */
-function deleteMany(
-  collectionName: string,
-  selector?: { [key: string]: any }
-): Promise<void> {
+function deleteMany({
+  collectionName,
+  selector,
+}: {
+  collectionName: string;
+  selector?: { [key: string]: any };
+}): Promise<void> {
   return core.invokePluginFunc(MODULE_PATH, "deleteMany", {
     collectionName,
     selector,
@@ -127,8 +154,14 @@ function deleteMany(
  * @param {string} key - The key of the record to retrieve.
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
-function getOne(collectionName: string, key: string): Promise<any> {
-  return core.invokePluginFunc(MODULE_PATH, "getOne", collectionName, key);
+function findOne({
+  collectionName,
+  key,
+}: {
+  collectionName: string;
+  key: string;
+}): Promise<any> {
+  return core.invokePluginFunc(MODULE_PATH, "findOne", collectionName, key);
 }
 
 /**
@@ -138,14 +171,19 @@ function getOne(collectionName: string, key: string): Promise<any> {
  * @param {[{ [key: string]: any }]} sort - The sort options to use to retrieve records.
  * @returns {Promise<any>} A promise that resolves with the selected value.
  */
-function getMany(
-  collectionName: string,
-  selector: { [key: string]: any },
-  sort?: [{ [key: string]: any }]
-): Promise<any> {
+function findMany({
+  collectionName,
+  selector,
+  sort,
+}: {
+  collectionName: string;
+  selector: { [key: string]: any };
+  sort?: [{ [key: string]: any }];
+}): Promise<any> {
+  console.log("yolo: ", collectionName);
   return core.invokePluginFunc(
     MODULE_PATH,
-    "getMany",
+    "findMany",
     collectionName,
     selector,
     sort
@@ -153,40 +191,9 @@ function getMany(
 }
 
 const setupDb = () => {
-  createCollection("conversations", {
-    name: { type: "string" },
-    model_id: { type: "string" },
-    image: { type: "string" },
-    message: { type: "string" },
-    created_at: { type: "number" },
-    updated_at: { type: "number" },
-  });
-  createCollection("messages", {
-    name: { type: "string" },
-    conversation_id: { type: "string" },
-    user: { type: "string" },
-    message: { type: "string" },
-    created_at: { type: "number" },
-    updated_at: { type: "number" },
-  });
-  createCollection("models", {
-    slug: { type: "string" },
-    name: { type: "string" },
-    description: { type: "string" },
-    avatar_url: { type: "string" },
-    long_description: { type: "string" },
-    technical_description: { type: "string" },
-    author: { type: "string" },
-    version: { type: "string" },
-    model_url: { type: "string" },
-    type: { type: "string" },
-    file_name: { type: "string" },
-    download_url: { type: "string" },
-    start_download_at: { type: "number" },
-    finish_download_at: { type: "number" },
-    created_at: { type: "number" },
-    updated_at: { type: "number" },
-  });
+  createCollection({ name: "conversations", schema: {} });
+  createCollection({ name: "messages", schema: {} });
+  createCollection({ name: "models", schema: {} });
 };
 
 // Register all the above functions and objects with the relevant extension points
@@ -208,8 +215,8 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(StoreService.UpdateMany, updateMany.name, updateMany);
   register(StoreService.DeleteOne, deleteOne.name, deleteOne);
   register(StoreService.DeleteMany, deleteMany.name, deleteMany);
-  register(StoreService.GetOne, getOne.name, getOne);
-  register(StoreService.GetMany, getMany.name, getMany);
+  register(StoreService.FindOne, findOne.name, findOne);
+  register(StoreService.FindMany, findMany.name, findMany);
 
   register(
     DataService.GetConversations,
@@ -280,13 +287,13 @@ function updateFinishedDownloadAt(fileName: string) {
  * Get all unfinished models from the database
  */
 function getUnfinishedDownloadModels() {
-  store.getMany("models", { finish_download_at: -1 }, [
+  store.findMany("models", { finish_download_at: -1 }, [
     { start_download_at: "desc" },
   ]);
 }
 
 function getFinishedDownloadModels() {
-  store.getMany("models", { finish_download_at: 1 }, [
+  store.findMany("models", { finish_download_at: 1 }, [
     { finish_download_at: "desc" },
   ]);
 }
@@ -296,11 +303,11 @@ function deleteDownloadModel(modelId: string): Promise<any> {
 }
 
 function getModelById(modelId: string): Promise<any> {
-  return store.getOne("models", modelId);
+  return store.findOne("models", modelId);
 }
 
 function getConversations(): Promise<any> {
-  return store.getMany("conversations", [{ updated_at: "desc" }]);
+  return store.findMany("conversations", {}, [{ updated_at: "desc" }]);
 }
 function createConversation(conversation: any): Promise<number | undefined> {
   return store.insertOne("conversations", conversation);
@@ -320,5 +327,5 @@ function deleteConversation(id: any) {
 }
 
 function getConversationMessages(conversation_id: any) {
-  return store.getMany("messages", { conversation_id }, [{ id: "desc" }]);
+  return store.findMany("messages", { conversation_id }, [{ id: "desc" }]);
 }

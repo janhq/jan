@@ -1,22 +1,10 @@
-import { addRxPlugin, createRxDatabase, RxDatabase } from "rxdb";
-import { getRxStorageLoki } from "rxdb/plugins/storage-lokijs";
-import { RxDBDevModePlugin } from "rxdb/plugins/dev-mode";
-addRxPlugin(RxDBDevModePlugin);
-/**
- * Get LokiJS Database Instance
- *
- * @returns   Promise<RxDatabase>
- *
- */
-function getDb(): Promise<RxDatabase> {
-  const db = createRxDatabase({
-    name: "jandb",
-    storage: getRxStorageLoki(),
-    ignoreDuplicate: true,
-  });
-  return db;
-}
+var PouchDB = require("pouchdb-node");
+PouchDB.plugin(require("pouchdb-find"));
+var path = require("path");
+var { app } = require("electron");
+var fs = require("fs");
 
+const dbs: Record<string, any> = {};
 /**
  * Create a collection on data store
  *
@@ -29,21 +17,11 @@ function createCollection(
   name: string,
   schema: { [key: string]: any }
 ): Promise<void> {
-  return getDb()
-    .then((db) =>
-      db.addCollections({
-        [name]: {
-          schema: {
-            title: name,
-            version: 0,
-            primaryKey: "id",
-            properties: schema,
-            type: "object",
-          },
-        },
-      })
-    )
-    .then(() => {});
+  const dbPath = path.join(app.getPath("userData"), "databases");
+  if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath);
+  const db = new PouchDB(`${path.join(dbPath, name)}`);
+  dbs[name] = db;
+  return Promise.resolve();
 }
 
 /**
@@ -54,7 +32,8 @@ function createCollection(
  *
  */
 function deleteCollection(name: string): Promise<void> {
-  return getDb().then((db) => db[name].remove());
+  // Do nothing with Unstructured Database
+  return Promise.resolve();
 }
 
 /**
@@ -66,7 +45,7 @@ function deleteCollection(name: string): Promise<void> {
  *
  */
 function insertOne(collectionName: string, value: any): Promise<any> {
-  return getDb().then((db) => db[collectionName].insert(value));
+  return dbs[collectionName].post(value);
 }
 
 /**
@@ -83,7 +62,10 @@ function updateOne(
   key: string,
   value: any
 ): Promise<void> {
-  return getDb().then((db) => db[collectionName].findOne(key).update(value));
+  return dbs[collectionName].put({
+    _id: key,
+    ...value,
+  });
 }
 
 /**
@@ -100,9 +82,25 @@ function updateMany(
   value: any,
   selector?: { [key: string]: any }
 ): Promise<any> {
-  return getDb().then((db) =>
-    db[collectionName].find({ selector }).update(value)
-  );
+  const keys = selector ? Object.keys(selector) : [];
+  return dbs[collectionName]
+    .createIndex({
+      index: { fields: keys },
+    })
+    .then(() =>
+      dbs[collectionName].find({
+        selector,
+      })
+    )
+    .then((docs) => {
+      docs.forEach((doc) => {
+        doc = {
+          ...doc,
+          ...value,
+        };
+      });
+      return dbs[collectionName].bulkDocs(docs);
+    });
 }
 
 /**
@@ -114,7 +112,9 @@ function updateMany(
  *
  */
 function deleteOne(collectionName: string, key: string): Promise<void> {
-  return getDb().then((db) => db[collectionName].findOne(key).remove());
+  return findOne(collectionName, key).then((doc) =>
+    dbs[collectionName].remove(doc)
+  );
 }
 
 /**
@@ -129,9 +129,23 @@ function deleteMany(
   collectionName: string,
   selector?: { [key: string]: any }
 ): Promise<void> {
-  return getDb()
-    .then((db) => db[collectionName].find({ selector }).remove())
-    .then();
+  const keys = selector ? Object.keys(selector) : [];
+  return dbs[collectionName]
+    .createIndex({
+      index: { fields: keys },
+    })
+    .then(() =>
+      dbs[collectionName].find({
+        selector,
+      })
+    )
+    .then((docs) => {
+      return Promise.all(
+        docs.map((doc) => {
+          return dbs[collectionName].delete(doc);
+        })
+      );
+    });
 }
 
 /**
@@ -140,8 +154,8 @@ function deleteMany(
  * @param {string} key - The key of the record to retrieve.
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
-function getOne(collectionName: string, key: string): Promise<any> {
-  return getDb().then((db) => db[collectionName].findOne(key));
+function findOne(collectionName: string, key: string): Promise<any> {
+  return dbs[collectionName](key);
 }
 
 /**
@@ -151,20 +165,31 @@ function getOne(collectionName: string, key: string): Promise<any> {
  * @param {[{ [key: string]: any }]} sort - The sort options to use to retrieve records.
  * @returns {Promise<any>} A promise that resolves with the selected records.
  */
-function getMany(
+function findMany(
   collectionName: string,
   selector?: { [key: string]: any },
   sort?: [{ [key: string]: any }]
 ): Promise<any> {
-  return getDb().then((db) => db[collectionName].find({ selector, sort }));
+  const keys = selector ? Object.keys(selector) : [];
+  const sortKeys = sort ? sort.flatMap((e) => Object.keys(e)) : [];
+  return dbs[collectionName]
+    .createIndex({
+      index: { fields: keys.concat(sortKeys) },
+    })
+    .then(() =>
+      dbs[collectionName].find({
+        selector,
+        sort: sortKeys,
+      })
+    );
 }
 
 module.exports = {
   createCollection,
   deleteCollection,
   insertOne,
-  getOne,
-  getMany,
+  findOne,
+  findMany,
   updateOne,
   updateMany,
   deleteOne,

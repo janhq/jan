@@ -41,8 +41,8 @@ function insertOne(collectionName: string, value: any): Promise<any> {
  * @param {string} key - The key of the record to retrieve.
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
-function getOne(collectionName: string, key: string): Promise<any> {
-  return window.corePlugin?.store?.getOne(collectionName, key);
+function findOne(collectionName: string, key: string): Promise<any> {
+  return window.corePlugin?.store?.findOne(collectionName, key);
 }
 
 /**
@@ -52,12 +52,12 @@ function getOne(collectionName: string, key: string): Promise<any> {
  * @param {[{ [key: string]: any }]} sort - The sort options to use to retrieve records.
  * @returns {Promise<any>} A promise that resolves when all records are retrieved.
  */
-function getMany(
+function findMany(
   collectionName: string,
   selector?: { [key: string]: any },
   sort?: [{ [key: string]: any }]
 ): Promise<any> {
-  return window.corePlugin?.store?.getMany(collectionName, selector, sort);
+  return window.corePlugin?.store?.findMany(collectionName, selector, sort);
 }
 
 /**
@@ -120,8 +120,8 @@ export const store = {
   createCollection,
   deleteCollection,
   insertOne,
-  getOne,
-  getMany,
+  findOne,
+  findMany,
   updateOne,
   updateMany,
   deleteOne,

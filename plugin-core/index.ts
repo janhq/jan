@@ -54,12 +54,12 @@ export enum StoreService {
   /**
    * Retrieve multiple records from a collection in the data store
    */
-  GetMany = "getMany",
+  FindMany = "findMany",
 
   /**
    * Retrieve a record from a collection in the data store.
    */
-  GetOne = "getOne",
+  FindOne = "findOne",
 }
 
 /**

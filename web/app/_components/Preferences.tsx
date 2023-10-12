@@ -105,7 +105,7 @@ export const Preferences = () => {
     if (typeof window !== "undefined") {
       // @ts-ignore
       await window.pluggableElectronIpc.update([plugin], true);
-      window.electronAPI.relaunch();
+      window.electronAPI.reloadPlugins();
     }
     // plugins.update(active.map((plg) => plg.name));
   };

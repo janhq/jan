@@ -44,8 +44,8 @@ function insertOne(collectionName: string, value: any): Promise<any> {
  * @param {string} key - The key of the record to retrieve.
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
-function getOne(collectionName: string, key: string): Promise<any> {
-  return executeSerial(StoreService.GetOne, { collectionName, key });
+function findOne(collectionName: string, key: string): Promise<any> {
+  return executeSerial(StoreService.FindOne, { collectionName, key });
 }
 
 /**
@@ -55,12 +55,13 @@ function getOne(collectionName: string, key: string): Promise<any> {
  * @param   sort            - The sort options to use to retrieve records.
  * @returns {Promise<any>}
  */
-function getMany(
+function findMany(
   collectionName: string,
   selector?: { [key: string]: any },
   sort?: [{ [key: string]: any }]
 ): Promise<any> {
-  return executeSerial(StoreService.GetMany, {
+  console.log("selector ne: ", selector);
+  return executeSerial(StoreService.FindMany, {
     collectionName,
     selector,
     sort,
@@ -131,7 +132,11 @@ function deleteMany(
   selector?: { [key: string]: any },
   sort?: [{ [key: string]: any }]
 ): Promise<void> {
-  return executeSerial(StoreService.DeleteOne, { collectionName, selector, sort });
+  return executeSerial(StoreService.DeleteOne, {
+    collectionName,
+    selector,
+    sort,
+  });
 }
 
 export const store = {
@@ -142,6 +147,6 @@ export const store = {
   updateMany,
   deleteOne,
   deleteMany,
-  getOne,
-  getMany,
+  findOne,
+  findMany,
 };

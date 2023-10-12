@@ -30,8 +30,8 @@
     "webpack-cli": "^5.1.4"
   },
   "bundledDependencies": [
-    "rxdb",
-    "rxjs"
+    "pouchdb-node",
+    "pouchdb-find"
   ],
   "files": [
     "dist/**",
@@ -40,11 +40,7 @@
   ],
   "dependencies": {
     "@janhq/plugin-core": "file:../../../../plugin-core",
-    "rxdb": "^14.17.1",
-    "rxjs": "^7.8.1"
-  },
-  "bundleDependencies": [
-    "rxdb",
-    "rxjs"
-  ]
+    "pouchdb-find": "^8.0.1",
+    "pouchdb-node": "^8.0.1"
+  }
 }
