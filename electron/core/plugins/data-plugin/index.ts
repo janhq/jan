@@ -1,5 +1,6 @@
 import {
   core,
+  store,
   RegisterExtensionPoint,
   StoreService,
   DataService,
@@ -47,10 +48,10 @@ function deleteCollection(name: string): Promise<void> {
  * @returns   Promise<any>
  *
  */
-function insertValue(collectionName: string, value: any): Promise<any> {
+function insertOne(collectionName: string, value: any): Promise<any> {
   return core.invokePluginFunc(
     MODULE_PATH,
-    insertValue.name,
+    insertOne.name,
     collectionName,
     value
   );
@@ -65,17 +66,38 @@ function insertValue(collectionName: string, value: any): Promise<any> {
  * @returns   Promise<void>
  *
  */
-function updateValue(
+function updateOne(
   collectionName: string,
   key: string,
   value: any
 ): Promise<void> {
   return core.invokePluginFunc(
     MODULE_PATH,
-    updateValue.name,
+    updateOne.name,
     collectionName,
     key,
     value
+  );
+}
+
+/**
+ * Updates all records that match a selector in a collection in the data store.
+ * @param       collectionName - The name of the collection containing the records to update.
+ * @param       selector - The selector to use to get the records to update.
+ * @param       value - The new value for the records.
+ * @returns     {Promise<void>} A promise that resolves when the records are updated.
+ */
+function updateMany(
+  collectionName: string,
+  value: any,
+  selector?: { [key: string]: any }
+): Promise<void> {
+  return core.invokePluginFunc(
+    MODULE_PATH,
+    updateMany.name,
+    collectionName,
+    value,
+    selector
   );
 }
 
@@ -87,17 +109,26 @@ function updateValue(
  * @returns   Promise<void>
  *
  */
-function deleteValue(collectionName: string, key: string): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, deleteValue.name, collectionName);
+function deleteOne(collectionName: string, key: string): Promise<void> {
+  return core.invokePluginFunc(MODULE_PATH, deleteOne.name, collectionName);
 }
 
 /**
- * Retrieve all records from a collection in the data store.
- * @param {string} collectionName - The name of the collection to retrieve.
- * @returns {Promise<any>} A promise that resolves when all records are retrieved.
+ * Deletes all records with a matching key from a collection in the data store.
+ *
+ * @param     collectionName     name of the collection
+ * @param     selector           selector to use to get the records to delete.
+ * @returns   {Promise<void>}
+ *
  */
-function getAllValues(collectionName: string): Promise<any> {
-  return core.invokePluginFunc(MODULE_PATH, getAllValues.name, collectionName);
+function deleteMany(
+  collectionName: string,
+  selector?: { [key: string]: any }
+): Promise<void> {
+  return core.invokePluginFunc(MODULE_PATH, deleteOne.name, {
+    collectionName,
+    selector,
+  });
 }
 
 /**
@@ -106,69 +137,66 @@ function getAllValues(collectionName: string): Promise<any> {
  * @param {string} key - The key of the record to retrieve.
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
-function getValue(collectionName: string, key: string): Promise<any> {
-  return core.invokePluginFunc(MODULE_PATH, getValue.name, collectionName, key);
+function getOne(collectionName: string, key: string): Promise<any> {
+  return core.invokePluginFunc(MODULE_PATH, getOne.name, collectionName, key);
 }
 
 /**
  * Gets records in a collection in the data store using a selector.
  * @param {string} collectionName - The name of the collection containing the record to get the value from.
  * @param {{ [key: string]: any }} selector - The selector to use to get the value from the record.
+ * @param {[{ [key: string]: any }]} sort - The sort options to use to retrieve records.
  * @returns {Promise<any>} A promise that resolves with the selected value.
  */
-function getValuesBySelector(
+function getMany(
   collectionName: string,
-  selector: { [key: string]: any }
+  selector: { [key: string]: any },
+  sort?: [{ [key: string]: any }]
 ): Promise<any> {
   return core.invokePluginFunc(
     MODULE_PATH,
-    getValuesBySelector.name,
+    getMany.name,
     collectionName,
-    selector
+    selector,
+    sort
   );
 }
 
-const storeModel = (model: any) =>
-  core.invokePluginFunc(MODULE_PATH, "storeModel", model);
-
-const getFinishedDownloadModels = () =>
-  core.invokePluginFunc(MODULE_PATH, "getFinishedDownloadModels");
-
-const getModelById = (modelId: string) =>
-  core.invokePluginFunc(MODULE_PATH, "getModelById", modelId);
-
-const updateFinishedDownloadAt = (fileName: string) =>
-  core.invokePluginFunc(
-    MODULE_PATH,
-    "updateFinishedDownloadAt",
-    fileName,
-    Date.now()
-  );
-
-const getUnfinishedDownloadModels = () =>
-  core.invokePluginFunc(MODULE_PATH, "getUnfinishedDownloadModels");
-
-const deleteDownloadModel = (modelId: string) =>
-  core.invokePluginFunc(MODULE_PATH, "deleteDownloadModel", modelId);
-
-const getConversations = () =>
-  core.invokePluginFunc(MODULE_PATH, "getConversations");
-const getConversationMessages = (id: any) =>
-  core.invokePluginFunc(MODULE_PATH, "getConversationMessages", id);
-
-const createConversation = (conversation: any) =>
-  core.invokePluginFunc(MODULE_PATH, "storeConversation", conversation);
-const createMessage = (message: any) =>
-  core.invokePluginFunc(MODULE_PATH, "storeMessage", message);
-
-const updateMessage = (message: any) =>
-  core.invokePluginFunc(MODULE_PATH, "updateMessage", message);
-
-const deleteConversation = (id: any) =>
-  core.invokePluginFunc(MODULE_PATH, "deleteConversation", id);
-
 const setupDb = () => {
-  core.invokePluginFunc(MODULE_PATH, setupDb.name);
+  createCollection("conversations", {
+    name: { type: "string" },
+    model_id: { type: "string" },
+    image: { type: "string" },
+    message: { type: "string" },
+    created_at: { type: "number" },
+    updated_at: { type: "number" },
+  });
+  createCollection("messages", {
+    name: { type: "string" },
+    conversation_id: { type: "string" },
+    user: { type: "string" },
+    message: { type: "string" },
+    created_at: { type: "number" },
+    updated_at: { type: "number" },
+  });
+  createCollection("models", {
+    slug: { type: "string" },
+    name: { type: "string" },
+    description: { type: "string" },
+    avatar_url: { type: "string" },
+    long_description: { type: "string" },
+    technical_description: { type: "string" },
+    author: { type: "string" },
+    version: { type: "string" },
+    model_url: { type: "string" },
+    type: { type: "string" },
+    file_name: { type: "string" },
+    download_url: { type: "string" },
+    start_download_at: { type: "number" },
+    finish_download_at: { type: "number" },
+    created_at: { type: "number" },
+    updated_at: { type: "number" },
+  });
 };
 
 // Register all the above functions and objects with the relevant extension points
@@ -185,16 +213,13 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
     deleteCollection.name,
     deleteCollection
   );
-  register(StoreService.InsertValue, insertValue.name, insertValue);
-  register(StoreService.UpdateValue, updateValue.name, updateValue);
-  register(StoreService.DeleteValue, deleteValue.name, deleteValue);
-  register(StoreService.GetAllValues, getAllValues.name, getAllValues);
-  register(StoreService.GetValue, getValue.name, getValue);
-  register(
-    StoreService.GetValuesBySelector,
-    getValuesBySelector.name,
-    getValuesBySelector
-  );
+  register(StoreService.InsertOne, insertOne.name, insertOne);
+  register(StoreService.UpdateOne, updateOne.name, updateOne);
+  register(StoreService.UpdateMany, updateMany.name, updateMany);
+  register(StoreService.DeleteOne, deleteOne.name, deleteOne);
+  register(StoreService.DeleteMany, deleteMany.name, deleteMany);
+  register(StoreService.GetOne, getOne.name, getOne);
+  register(StoreService.GetMany, getMany.name, getMany);
 
   register(
     DataService.GetConversations,
@@ -242,4 +267,68 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
     getFinishedDownloadModels.name,
     getFinishedDownloadModels
   );
+}
+/**
+ * Store a model in the database when user start downloading it
+ *
+ * @param model Product
+ */
+function storeModel(model: any) {
+  return store.insertOne("models", model);
+}
+
+/**
+ * Update the finished download time of a model
+ *
+ * @param model Product
+ */
+function updateFinishedDownloadAt(fileName: string) {
+  store.updateMany("models", { fileName }, { time: Date.now() });
+}
+
+/**
+ * Get all unfinished models from the database
+ */
+function getUnfinishedDownloadModels() {
+  store.getMany("models", { finish_download_at: -1 }, [
+    { start_download_at: "desc" },
+  ]);
+}
+
+function getFinishedDownloadModels() {
+  store.getMany("models", { finish_download_at: 1 }, [
+    { finish_download_at: "desc" },
+  ]);
+}
+
+function deleteDownloadModel(modelId: string): Promise<any> {
+  return deleteOne("models", modelId);
+}
+
+function getModelById(modelId: string): Promise<any> {
+  return getOne("models", modelId);
+}
+
+function getConversations(): Promise<any> {
+  return getMany("conversations", [{ updated_at: "desc" }]);
+}
+function createConversation(conversation: any): Promise<number | undefined> {
+  return insertOne("conversations", conversation);
+}
+
+function createMessage(message: any): Promise<number | undefined> {
+  return insertOne("messages", message);
+}
+function updateMessage(message: any): Promise<void> {
+  return updateOne("messages", message.id, message);
+}
+
+function deleteConversation(id: any) {
+  return deleteOne("conversations", id).then(() =>
+    deleteMany("messages", { conversation_id: id })
+  );
+}
+
+function getConversationMessages(conversation_id: any) {
+  return getMany("messages", { conversation_id }, [{ id: "desc" }]);
 }

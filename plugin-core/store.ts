@@ -31,17 +31,8 @@ function deleteCollection(name: string): Promise<void> {
  * @param {any} value - The value to insert into the collection.
  * @returns {Promise<any>} A promise that resolves with the inserted value.
  */
-function insertValue(collectionName: string, value: any): Promise<any> {
-  return window.corePlugin?.store?.insertValue(collectionName, value);
-}
-
-/**
- * Retrieve all records from a collection in the data store.
- * @param {string} collectionName - The name of the collection to retrieve.
- * @returns {Promise<any>} A promise that resolves when all records are retrieved.
- */
-function getAllValues(collectionName: string): Promise<any> {
-  return window.corePlugin?.store?.getAllValues(collectionName);
+function insertOne(collectionName: string, value: any): Promise<any> {
+  return window.corePlugin?.store?.insertOne(collectionName, value);
 }
 
 /**
@@ -50,24 +41,23 @@ function getAllValues(collectionName: string): Promise<any> {
  * @param {string} key - The key of the record to retrieve.
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
-function getValue(collectionName: string, key: string): Promise<any> {
-  return window.corePlugin?.store?.getVale(collectionName, key);
+function getOne(collectionName: string, key: string): Promise<any> {
+  return window.corePlugin?.store?.getOne(collectionName, key);
 }
 
 /**
- * Retrieve records from a collection in the data store with selector.
- * @param {string} collectionName - The name of the collection containing records to retrieve.
+ * Retrieves all records that match a selector in a collection in the data store.
+ * @param {string} collectionName - The name of the collection to retrieve.
  * @param {{ [key: string]: any }} selector - The selector to use to get records from the collection.
- * @returns {Promise<any>} A promise that resolves when records are retrieved.
+ * @param {[{ [key: string]: any }]} sort - The sort options to use to retrieve records.
+ * @returns {Promise<any>} A promise that resolves when all records are retrieved.
  */
-function getValuesBySelector(
+function getMany(
   collectionName: string,
-  selector: { [key: string]: any }
+  selector?: { [key: string]: any },
+  sort?: [{ [key: string]: any }]
 ): Promise<any> {
-  return window.corePlugin?.store?.getValuesBySelector(
-    collectionName,
-    selector
-  );
+  return window.corePlugin?.store?.getMany(collectionName, selector, sort);
 }
 
 /**
@@ -77,22 +67,50 @@ function getValuesBySelector(
  * @param {any} value - The new value for the record.
  * @returns {Promise<void>} A promise that resolves when the record is updated.
  */
-function updateValue(
+function updateOne(
   collectionName: string,
   key: string,
   value: any
 ): Promise<void> {
-  return window.corePlugin?.store?.updateValue(collectionName, key, value);
+  return window.corePlugin?.store?.updateOne(collectionName, key, value);
 }
 
 /**
- * Deletes a record from a collection in the data store.
+ * Updates all records that match a selector in a collection in the data store.
+ * @param {string} collectionName - The name of the collection containing the records to update.
+ * @param {{ [key: string]: any }} selector - The selector to use to get the records to update.
+ * @param {any} value - The new value for the records.
+ * @returns {Promise<void>} A promise that resolves when the records are updated.
+ */
+function updateMany(
+  collectionName: string,
+  value: any,
+  selector?: { [key: string]: any }
+): Promise<void> {
+  return window.corePlugin?.store?.updateMany(collectionName, selector, value);
+}
+
+/**
+ * Deletes a single record from a collection in the data store.
  * @param {string} collectionName - The name of the collection containing the record to delete.
  * @param {string} key - The key of the record to delete.
  * @returns {Promise<void>} A promise that resolves when the record is deleted.
  */
-function deleteValue(collectionName: string, key: string): Promise<void> {
-  return window.corePlugin?.store?.deleteValue(collectionName, key);
+function deleteOne(collectionName: string, key: string): Promise<void> {
+  return window.corePlugin?.store?.deleteOne(collectionName, key);
+}
+
+/**
+ * Deletes all records with a matching key from a collection in the data store.
+ * @param {string} collectionName           - The name of the collection to delete the records from.
+ * @param {{ [key: string]: any }} selector - The selector to use to get the records to delete.
+ * @returns {Promise<void>}                 A promise that resolves when the records are deleted.
+ */
+function deleteMany(
+  collectionName: string,
+  selector?: { [key: string]: any }
+): Promise<void> {
+  return window.corePlugin?.store?.deleteMany(collectionName, selector);
 }
 
 /**
@@ -101,10 +119,11 @@ function deleteValue(collectionName: string, key: string): Promise<void> {
 export const store = {
   createCollection,
   deleteCollection,
-  insertValue,
-  updateValue,
-  deleteValue,
-  getAllValues,
-  getValue,
-  getValuesBySelector,
+  insertOne,
+  getOne,
+  getMany,
+  updateOne,
+  updateMany,
+  deleteOne,
+  deleteMany,
 };

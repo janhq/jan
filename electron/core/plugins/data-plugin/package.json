@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "postinstall": "rimraf ./data-plugin*.tgz && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=darwin --target_libc=unknown --target_arch=x64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=darwin --target_libc=unknown --target_arch=arm64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=linux --target_libc=glibc --target_arch=x64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=linux --target_libc=musl --target_arch=x64 && node-pre-gyp install --directory=./node_modules/sqlite3 --target_platform=win32 --target_libc=unknown --target_arch=x64 && npm run build",
+    "postinstall": "rimraf ./data-plugin*.tgz && npm run build",
     "build:publish": "npm pack && cpx *.tgz ../../pre-install"
   },
   "exports": {
@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "cpx": "^1.5.0",
+    "node-pre-gyp": "^0.17.0",
     "rimraf": "^3.0.2",
     "ts-loader": "^9.4.4",
     "ts-node": "^10.9.1",
@@ -28,8 +29,8 @@
     "webpack-cli": "^5.1.4"
   },
   "bundledDependencies": [
-    "sql.js",
-    "sqlite3"
+    "rxdb",
+    "rxjs"
   ],
   "files": [
     "dist/**",
@@ -38,7 +39,7 @@
   ],
   "dependencies": {
     "@janhq/plugin-core": "file:../../../../plugin-core",
-    "node-pre-gyp": "^0.17.0",
-    "sqlite3": "^5.1.6"
+    "rxdb": "^14.17.1",
+    "rxjs": "^7.8.1"
   }
 }

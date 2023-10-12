@@ -29,32 +29,37 @@ export enum StoreService {
   /**
    * Inserts a new value into an existing collection in the database store.
    */
-  InsertValue = "insertValue",
+  InsertOne = "insertOne",
 
   /**
    * Updates an existing value in an existing collection in the database store.
    */
-  UpdateValue = "updateValue",
+  UpdateOne = "updateOne",
+
+  /**
+   * Updates multiple records in a collection in the database store.
+   */
+  UpdateMany = "updateMany",
 
   /**
    * Deletes an existing value from an existing collection in the database store.
    */
-  DeleteValue = "deleteValue",
+  DeleteOne = "deleteOne",
 
   /**
-   * Retrieve all records from a collection in the data store
+   * Delete multiple records in a collection in the database store.
    */
-  GetAllValues = "getAllValues",
+  DeleteMany = "deleteMany",
+
+  /**
+   * Retrieve multiple records from a collection in the data store
+   */
+  GetMany = "getMany",
 
   /**
    * Retrieve a record from a collection in the data store.
    */
-  GetValue = "getValue",
-
-  /**
-   * Retrieve records from a collection in the data store with selector.
-   */
-  GetValuesBySelector = "getValuesBySelector",
+  GetOne = "getOne",
 }
 
 /**

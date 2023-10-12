@@ -5,7 +5,7 @@ import { executeSerial } from "./pluginService";
  * Create a collection on data store
  *
  * @param     name     name of the collection to create
- * @returns   Promise<void>
+ * @returns   {Promise<void>}
  *
  */
 function createCollection(name: string): Promise<void> {
@@ -16,7 +16,7 @@ function createCollection(name: string): Promise<void> {
  * Delete a collection
  *
  * @param     name     name of the collection to delete
- * @returns   Promise<void>
+ * @returns   {Promise<void>}
  *
  */
 function deleteCollection(name: string): Promise<void> {
@@ -28,23 +28,14 @@ function deleteCollection(name: string): Promise<void> {
  *
  * @param     collectionName     name of the collection
  * @param     value              value to insert
- * @returns   Promise<any>
+ * @returns   {Promise<any>}
  *
  */
-function insertValue(collectionName: string, value: any): Promise<any> {
-  return executeSerial(StoreService.InsertValue, {
+function insertOne(collectionName: string, value: any): Promise<any> {
+  return executeSerial(StoreService.InsertOne, {
     collectionName,
     value,
   });
-}
-
-/**
- * Retrieve all records from a collection in the data store.
- * @param {string} collectionName - The name of the collection to retrieve.
- * @returns {Promise<any>} A promise that resolves when all records are retrieved.
- */
-function getAllValues(collectionName: string): Promise<any> {
-  return executeSerial(StoreService.GetAllValues, collectionName);
 }
 
 /**
@@ -53,23 +44,26 @@ function getAllValues(collectionName: string): Promise<any> {
  * @param {string} key - The key of the record to retrieve.
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
-function getValue(collectionName: string, key: string): Promise<any> {
-  return executeSerial(StoreService.GetValue, { collectionName, key });
+function getOne(collectionName: string, key: string): Promise<any> {
+  return executeSerial(StoreService.GetOne, { collectionName, key });
 }
 
 /**
- * Gets records in a collection in the data store using a selector.
- * @param {string} collectionName - The name of the collection containing the record to get the value from.
- * @param {{ [key: string]: any }} selector - The selector to use to get the value from the record.
- * @returns {Promise<any>} A promise that resolves with the selected value.
+ * Retrieves all records that match a selector in a collection in the data store.
+ * @param   collectionName  - The name of the collection to retrieve.
+ * @param   selector        - The selector to use to get records from the collection.
+ * @param   sort            - The sort options to use to retrieve records.
+ * @returns {Promise<any>}
  */
-function getValuesBySelector(
+function getMany(
   collectionName: string,
-  selector: { [key: string]: any }
+  selector?: { [key: string]: any },
+  sort?: [{ [key: string]: any }]
 ): Promise<any> {
-  return executeSerial(StoreService.GetValuesBySelector, {
+  return executeSerial(StoreService.GetMany, {
     collectionName,
     selector,
+    sort,
   });
 }
 
@@ -82,15 +76,34 @@ function getValuesBySelector(
  * @returns   Promise<void>
  *
  */
-function updateValue(
+function updateOne(
   collectionName: string,
   key: string,
   value: any
 ): Promise<void> {
-  return executeSerial(StoreService.UpdateValue, {
+  return executeSerial(StoreService.UpdateOne, {
     collectionName,
     key,
     value,
+  });
+}
+
+/**
+ * Updates all records that match a selector in a collection in the data store.
+ * @param collectionName - The name of the collection containing the records to update.
+ * @param selector - The selector to use to get the records to update.
+ * @param value - The new value for the records.
+ * @returns {Promise<void>} A promise that resolves when the records are updated.
+ */
+function updateMany(
+  collectionName: string,
+  value: any,
+  selector?: { [key: string]: any }
+): Promise<void> {
+  return executeSerial(StoreService.UpdateOne, {
+    collectionName,
+    value,
+    selector,
   });
 }
 
@@ -102,17 +115,33 @@ function updateValue(
  * @returns   Promise<void>
  *
  */
-function deleteValue(collectionName: string, key: string): Promise<void> {
-  return executeSerial(StoreService.DeleteValue, { collectionName, key });
+function deleteOne(collectionName: string, key: string): Promise<void> {
+  return executeSerial(StoreService.DeleteOne, { collectionName, key });
+}
+
+/**
+ * Deletes all records with a matching key from a collection in the data store.
+ * @param {string} collectionName - The name of the collection to delete the records from.
+ * @param {{ [key: string]: any }} selector - The selector to use to get the records to delete.
+ * @param {[{ [key: string]: any }]} sort - The sort options to use to retrieve records.
+ * @returns {Promise<void>} A promise that resolves when the records are deleted.
+ */
+function deleteMany(
+  collectionName: string,
+  selector?: { [key: string]: any },
+  sort?: [{ [key: string]: any }]
+): Promise<void> {
+  return executeSerial(StoreService.DeleteOne, { collectionName, selector, sort });
 }
 
 export const store = {
   createCollection,
   deleteCollection,
-  insertValue,
-  updateValue,
-  deleteValue,
-  getAllValues,
-  getValue,
-  getValuesBySelector,
+  insertOne,
+  updateOne,
+  updateMany,
+  deleteOne,
+  deleteMany,
+  getOne,
+  getMany,
 };
