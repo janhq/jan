@@ -190,75 +190,83 @@ function getUnfinishedDownloadModels() {
 
 async function getFinishedDownloadModels() {
   const db = new sqlite3.Database(getDbPath());
-
-  const query = `SELECT * FROM model_versions WHERE finish_download_at != -1 ORDER BY finish_download_at DESC`;
-  const modelVersions: any = await new Promise((resolve, reject) => {
-    db.all(query, (err: Error, rows: any[]) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(rows);
-      }
-    });
-  });
-
-  const models = await Promise.all(
-    modelVersions.map(async (modelVersion) => {
-      const modelQuery = `SELECT * FROM models WHERE id = ?`;
-      return new Promise((resolve, reject) => {
-        db.get(modelQuery, [modelVersion.model_id], (err: Error, row: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(row);
-          }
-        });
+  try {
+    const query = `SELECT * FROM model_versions WHERE finish_download_at != -1 ORDER BY finish_download_at DESC`;
+    const modelVersions: any = await new Promise((resolve, reject) => {
+      db.all(query, (err: Error, rows: any[]) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
       });
-    })
-  );
+    });
 
-  const downloadedModels = [];
-  modelVersions.forEach((modelVersion: any) => {
-    const model = models.find((m: any) => m.id === modelVersion.model_id);
+    const models = await Promise.all(
+      modelVersions.map(async (modelVersion) => {
+        const modelQuery = `SELECT * FROM models WHERE id = ?`;
+        return new Promise((resolve, reject) => {
+          db.get(
+            modelQuery,
+            [modelVersion.model_id],
+            (err: Error, row: any) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(row);
+              }
+            }
+          );
+        });
+      })
+    );
 
-    if (!model) {
-      return;
-    }
+    const downloadedModels = [];
+    modelVersions.forEach((modelVersion: any) => {
+      const model = models.find((m: any) => m.id === modelVersion.model_id);
 
-    const assistantModel = {
-      id: modelVersion.id,
-      name: modelVersion.name,
-      quantMethod: modelVersion.quant_method,
-      bits: modelVersion.bits,
-      size: modelVersion.size,
-      maxRamRequired: modelVersion.max_ram_required,
-      usecase: modelVersion.usecase,
-      downloadLink: modelVersion.download_link,
-      startDownloadAt: modelVersion.start_download_at,
-      finishDownloadAt: modelVersion.finish_download_at,
-      productId: model.id,
-      productName: model.name,
-      shortDescription: model.short_description,
-      longDescription: model.long_description,
-      avatarUrl: model.avatar_url,
-      author: model.author,
-      version: model.version,
-      modelUrl: model.model_url,
-      nsfw: model.nsfw === 0 ? false : true,
-      greeting: model.default_greeting,
-      type: model.type,
-      createdAt: new Date(model.created_at).getTime(),
-      updatedAt: new Date(model.updated_at ?? "").getTime(),
-      status: "",
-      releaseDate: -1,
-      tags: model.tags.split(","),
-    };
-    downloadedModels.push(assistantModel);
-  });
+      if (!model) {
+        return;
+      }
 
-  db.close();
+      const assistantModel = {
+        id: modelVersion.id,
+        name: modelVersion.name,
+        quantMethod: modelVersion.quant_method,
+        bits: modelVersion.bits,
+        size: modelVersion.size,
+        maxRamRequired: modelVersion.max_ram_required,
+        usecase: modelVersion.usecase,
+        downloadLink: modelVersion.download_link,
+        startDownloadAt: modelVersion.start_download_at,
+        finishDownloadAt: modelVersion.finish_download_at,
+        productId: model.id,
+        productName: model.name,
+        shortDescription: model.short_description,
+        longDescription: model.long_description,
+        avatarUrl: model.avatar_url,
+        author: model.author,
+        version: model.version,
+        modelUrl: model.model_url,
+        nsfw: model.nsfw === 0 ? false : true,
+        greeting: model.default_greeting,
+        type: model.type,
+        createdAt: new Date(model.created_at).getTime(),
+        updatedAt: new Date(model.updated_at ?? "").getTime(),
+        status: "",
+        releaseDate: -1,
+        tags: model.tags.split(","),
+      };
+      downloadedModels.push(assistantModel);
+    });
 
-  return downloadedModels;
+    db.close();
+
+    return downloadedModels;
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
 }
 
 function deleteDownloadModel(modelId: string) {
