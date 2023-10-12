@@ -22,9 +22,9 @@ test.beforeAll(async () => {
   expect(appInfo.asar).toBe(true);
   expect(appInfo.executable).toBeTruthy();
   expect(appInfo.main).toBeTruthy();
-  expect(appInfo.name).toBe("jan-electron");
+  expect(appInfo.name).toBe("jan");
   expect(appInfo.packageJson).toBeTruthy();
-  expect(appInfo.packageJson.name).toBe("jan-electron");
+  expect(appInfo.packageJson.name).toBe("jan");
   expect(appInfo.platform).toBeTruthy();
   expect(appInfo.platform).toBe(process.platform);
   expect(appInfo.resourcesDir).toBeTruthy();

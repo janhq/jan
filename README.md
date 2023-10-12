@@ -73,7 +73,7 @@ To reset your installation:
 1. Delete Jan Application from /Applications
 
 1. Clear cache:
-`rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron`
+`rm -rf /Users/$(whoami)/Library/Application\ Support/jan`
 OR 
 `rm -rf /Users/$(whoami)/Library/Application\ Support/jan`
 
