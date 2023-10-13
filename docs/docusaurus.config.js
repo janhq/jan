@@ -127,7 +127,7 @@ const config = {
             type: "docSidebar",
             sidebarId: "solutionsSidebar",
             position: "left",
-            label: "Use Cases",
+            label: "Solutions",
           },
           {
             type: "docSidebar",
@@ -175,7 +175,7 @@ const config = {
                 to: "/platform",
               },
               {
-                label: "Use Cases",
+                label: "Solutions",
                 to: "/solutions",
               },
             ],
