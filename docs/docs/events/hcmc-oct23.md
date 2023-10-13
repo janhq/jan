@@ -1,6 +1,6 @@
 ---
-title: "Jan's HCMC AI Hacker House"
-description: 24-27 Oct 2023, Thao Dien, HCMC 
+title: "Jan's AI Hacker House (Ho Chi Minh City)"
+description: "24-27 Oct 2023, Thao Dien, HCMC. AI-focused talks, workshops and social events. Hosted by Jan.ai"
 slug: /events/hcmc-oct23
 image: /img/hcmc-villa-1.jpeg
 ---
