@@ -51,7 +51,8 @@ const BasicPromptInput: React.FC = () => {
   };
 
   // Auto adjust textarea height based on content
-  const MAX_ROWS = 10;
+  const MAX_ROWS = 30;
+
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto"; // 1 row
