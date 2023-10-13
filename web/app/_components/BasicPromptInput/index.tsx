@@ -7,7 +7,7 @@ import useCreateConversation from "@/_hooks/useCreateConversation";
 import useInitModel from "@/_hooks/useInitModel";
 import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtom, useAtomValue } from "jotai";
-import { ChangeEvent } from "react";
+import { ChangeEvent, useEffect, useRef } from "react";
 
 const BasicPromptInput: React.FC = () => {
   const activeConversationId = useAtomValue(getActiveConvoIdAtom);
@@ -17,10 +17,6 @@ const BasicPromptInput: React.FC = () => {
   const { requestCreateConvo } = useCreateConversation();
 
   const { initModel } = useInitModel();
-
-  const handleMessageChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    setCurrentPrompt(event.target.value);
-  };
 
   const handleKeyDown = async (
     event: React.KeyboardEvent<HTMLTextAreaElement>
@@ -44,20 +40,45 @@ const BasicPromptInput: React.FC = () => {
     }
   };
 
+  // Auto adjust textarea height based on content
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const MAX_ROWS = 10;
+  const adjustTextareaHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      const scrollHeight = textareaRef.current.scrollHeight;
+      const maxScrollHeight =
+        parseInt(window.getComputedStyle(textareaRef.current).lineHeight, 10) *
+        MAX_ROWS;
+      textareaRef.current.style.height = `${Math.min(
+        scrollHeight,
+        maxScrollHeight
+      )}px`;
+    }
+  };
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, []);
+
+  const handleMessageChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setCurrentPrompt(event.target.value);
+    adjustTextareaHeight();
+  };
+
   return (
     <div className="overflow-hidden rounded-lg shadow-sm ring-1 ring-inset ring-gray-300 focus-within:ring-2 focus-within:ring-indigo-600">
-      <label htmlFor="comment" className="sr-only">
-        Message ...
-      </label>
       <textarea
+        ref={textareaRef}
         onKeyDown={handleKeyDown}
         value={currentPrompt}
         onChange={handleMessageChange}
-        rows={2}
         name="comment"
         id="comment"
         className="block w-full resize-none border-0 bg-transparent py-1.5 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm sm:leading-6"
         placeholder="Message ..."
+        rows={1}
+        style={{ overflow: "auto" }}
       />
       {/* Spacer element to match the height of the toolbar */}
       <div className="py-2" aria-hidden="true">

@@ -59,7 +59,7 @@ const InputToolbar: React.FC = () => {
         />
       </div>
       {/* My text input */}
-      <div className="flex items-start space-x-4 mx-12 md:mx-32 2xl:mx-80 mb-3">
+      <div className="flex items-start space-x-4 mx-12 md:mx-32 2xl:mx-64 mb-3">
         <div className="min-w-0 flex-1 relative">
           <BasicPromptInput />
           <BasicPromptAccessories />
