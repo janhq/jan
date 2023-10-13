@@ -8,10 +8,10 @@ const { killPortProcess } = require("kill-port-process");
 let subprocess = null;
 const PORT = 3928;
 
-const initModel = (product) => {
+const initModel = (fileName) => {
   return (
     new Promise<void>(async (resolve, reject) => {
-      if (!product?.fileName) {
+      if (!fileName) {
         reject("Model not found, please download again.");
       }
       if (subprocess) {
@@ -20,7 +20,7 @@ const initModel = (product) => {
         );
         killSubprocess();
       }
-      resolve(product?.fileName);
+      resolve(fileName);
     })
       // Kill port process if it is already in use
       .then((fileName) =>
@@ -46,7 +46,7 @@ const initModel = (product) => {
           config.custom_config = {};
         }
 
-        const modelPath = path.join(app.getPath("userData"), product.fileName);
+        const modelPath = path.join(app.getPath("userData"), fileName);
 
         config.custom_config.llama_model_path = modelPath;
 

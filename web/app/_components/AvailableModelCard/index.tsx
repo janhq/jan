@@ -1,19 +1,19 @@
-import { Product } from "@/_models/Product";
 import DownloadModelContent from "../DownloadModelContent";
 import ModelDownloadButton from "../ModelDownloadButton";
 import ModelDownloadingButton from "../ModelDownloadingButton";
 import { useAtomValue } from "jotai";
 import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 type Props = {
-  product: Product;
+  model: AssistantModel;
   isRecommend: boolean;
   required?: string;
-  onDownloadClick?: (product: Product) => void;
+  onDownloadClick?: (model: AssistantModel) => void;
 };
 
 const AvailableModelCard: React.FC<Props> = ({
-  product,
+  model,
   isRecommend,
   required,
   onDownloadClick,
@@ -24,14 +24,14 @@ const AvailableModelCard: React.FC<Props> = ({
   let total = 0;
   let transferred = 0;
 
-  if (product.fileName && downloadState[product.fileName]) {
+  if (model.id && downloadState[model.id]) {
     isDownloading =
-      downloadState[product.fileName].error == null &&
-      downloadState[product.fileName].percent < 1;
+      downloadState[model.id].error == null &&
+      downloadState[model.id].percent < 1;
 
     if (isDownloading) {
-      total = downloadState[product.fileName].size.total;
-      transferred = downloadState[product.fileName].size.transferred;
+      total = downloadState[model.id].size.total;
+      transferred = downloadState[model.id].size.transferred;
     }
   }
 
@@ -41,7 +41,7 @@ const AvailableModelCard: React.FC<Props> = ({
     </div>
   ) : (
     <div className="w-1/5 flex items-center justify-end">
-      <ModelDownloadButton callback={() => onDownloadClick?.(product)} />
+      <ModelDownloadButton callback={() => onDownloadClick?.(model)} />
     </div>
   );
 
@@ -50,11 +50,11 @@ const AvailableModelCard: React.FC<Props> = ({
       <div className="flex justify-between py-4 px-3 gap-2.5">
         <DownloadModelContent
           required={required}
-          author={product.author}
-          description={product.description}
+          author={model.author}
+          description={model.shortDescription}
           isRecommend={isRecommend}
-          name={product.name}
-          type={product.type}
+          name={model.name}
+          type={model.type}
         />
         {downloadButton}
       </div>

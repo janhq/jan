@@ -95,6 +95,7 @@ const createConversation = (conversation: any) =>
       resolve(undefined);
     }
   });
+
 const createMessage = (message: any) =>
   new Promise((resolve) => {
     if (window && window.electronAPI) {

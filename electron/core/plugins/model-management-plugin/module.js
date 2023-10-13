@@ -1,95 +1,16 @@
-const path = require("path");
-const { readdirSync, lstatSync } = require("fs");
-const { app } = require("electron");
 const { listModels, listFiles, fileDownloadInfo } = require("@huggingface/hub");
+const https = require("https");
 
 let modelsIterator = undefined;
 let currentSearchOwner = undefined;
 
-const ALL_MODELS = [
-  {
-    id: "llama-2-7b-chat.Q4_K_M.gguf.bin",
-    slug: "llama-2-7b-chat.Q4_K_M.gguf.bin",
-    name: "Llama 2 7B Chat - GGUF",
-    description: "medium, balanced quality - recommended",
-    avatarUrl:
-      "https://aeiljuispo.cloudimg.io/v7/https://cdn-uploads.huggingface.co/production/uploads/6426d3f3a7723d62b53c259b/tvPikpAzKTKGN5wrpadOJ.jpeg?w=200&h=200&f=face",
-    longDescription:
-      "GGUF is a new format introduced by the llama.cpp team on August 21st 2023. It is a replacement for GGML, which is no longer supported by llama.cpp. GGUF offers numerous advantages over GGML, such as better tokenisation, and support for special tokens. It is also supports metadata, and is designed to be extensible.",
-    technicalDescription:
-      'GGML_TYPE_Q4_K - "type-1" 4-bit quantization in super-blocks containing 8 blocks, each block having 32 weights. Scales and mins are quantized with 6 bits. This ends up using 4.5 bpw.',
-    author: "The Bloke",
-    version: "1.0.0",
-    modelUrl: "https://google.com",
-    nsfw: false,
-    greeting: "Hello there",
-    type: "LLM",
-    inputs: undefined,
-    outputs: undefined,
-    createdAt: 0,
-    updatedAt: undefined,
-    fileName: "llama-2-7b-chat.Q4_K_M.gguf.bin",
-    downloadUrl:
-      "https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_K_M.gguf",
-  },
-  {
-    id: "llama-2-13b-chat.Q4_K_M.gguf",
-    slug: "llama-2-13b-chat.Q4_K_M.gguf",
-    name: "Llama 2 13B Chat - GGUF",
-    description:
-      "medium, balanced quality - not recommended for RAM 16GB and below",
-    avatarUrl:
-      "https://aeiljuispo.cloudimg.io/v7/https://cdn-uploads.huggingface.co/production/uploads/6426d3f3a7723d62b53c259b/tvPikpAzKTKGN5wrpadOJ.jpeg?w=200&h=200&f=face",
-    longDescription:
-      "GGUF is a new format introduced by the llama.cpp team on August 21st 2023. It is a replacement for GGML, which is no longer supported by llama.cpp. GGUF offers numerous advantages over GGML, such as better tokenisation, and support for special tokens. It is also supports metadata, and is designed to be extensible.",
-    technicalDescription:
-      'GGML_TYPE_Q4_K - "type-1" 4-bit quantization in super-blocks containing 8 blocks, each block having 32 weights. Scales and mins are quantized with 6 bits. This ends up using 4.5 bpw.',
-    author: "The Bloke",
-    version: "1.0.0",
-    modelUrl: "https://google.com",
-    nsfw: false,
-    greeting: "Hello there",
-    type: "LLM",
-    inputs: undefined,
-    outputs: undefined,
-    createdAt: 0,
-    updatedAt: undefined,
-    fileName: "llama-2-13b-chat.Q4_K_M.gguf.bin",
-    downloadUrl:
-      "https://huggingface.co/TheBloke/Llama-2-13B-chat-GGUF/resolve/main/llama-2-13b-chat.Q4_K_M.gguf",
-  },
-];
-
-function getDownloadedModels() {
-  const userDataPath = app.getPath("userData");
-
-  const allBinariesName = [];
-  var files = readdirSync(userDataPath);
-  for (var i = 0; i < files.length; i++) {
-    var filename = path.join(userDataPath, files[i]);
-    var stat = lstatSync(filename);
-    if (stat.isDirectory()) {
-      // ignore
-    } else if (filename.endsWith(".bin")) {
-      var binaryName = path.basename(filename);
-      allBinariesName.push(binaryName);
-    }
-  }
-
-  const downloadedModels = ALL_MODELS.map((model) => {
-    if (
-      model.fileName &&
-      allBinariesName
-        .map((t) => t.toLowerCase())
-        .includes(model.fileName.toLowerCase())
-    ) {
-      return model;
-    }
-    return undefined;
-  }).filter((m) => m !== undefined);
-
-  return downloadedModels;
-}
+// Github API
+const githubHostName = "api.github.com";
+const githubHeaders = {
+  "User-Agent": "node.js",
+  Accept: "application/vnd.github.v3+json",
+};
+const githubPath = "/repos/janhq/models/contents";
 
 const getNextModels = async (count) => {
   const models = [];
@@ -161,17 +82,131 @@ const listFilesByName = async (modelName) => {
   return fileDownloadInfoMap;
 };
 
-function getAvailableModels() {
-  const downloadedModelIds = getDownloadedModels().map((model) => model.id);
-  return ALL_MODELS.filter((model) => {
-    if (!downloadedModelIds.includes(model.id)) {
-      return model;
-    }
+async function getConfiguredModels() {
+  const files = await getModelFiles();
+
+  const promises = files.map((file) => getContent(file));
+  const response = await Promise.all(promises);
+
+  const models = [];
+  response.forEach((model) => {
+    models.push(parseToModel(model));
   });
+
+  return models;
+}
+
+const parseToModel = (model) => {
+  const modelVersions = [];
+  model.versions.forEach((v) => {
+    const version = {
+      id: `${model.author}-${v.name}`,
+      name: v.name,
+      quantMethod: v.quantMethod,
+      bits: v.bits,
+      size: v.size,
+      maxRamRequired: v.maxRamRequired,
+      usecase: v.usecase,
+      downloadLink: v.downloadLink,
+      productId: model.id,
+    };
+    modelVersions.push(version);
+  });
+
+  const product = {
+    id: model.id,
+    name: model.name,
+    shortDescription: model.shortDescription,
+    avatarUrl: model.avatarUrl,
+    author: model.author,
+    version: model.version,
+    modelUrl: model.modelUrl,
+    nsfw: model.nsfw,
+    tags: model.tags,
+    greeting: model.defaultGreeting,
+    type: model.type,
+    createdAt: model.createdAt,
+    longDescription: model.longDescription,
+    status: "Downloadable",
+    releaseDate: 0,
+    availableVersions: modelVersions,
+  };
+  return product;
+};
+
+async function getModelFiles() {
+  const options = {
+    hostname: githubHostName,
+    path: githubPath,
+    headers: githubHeaders,
+  };
+
+  const data = await new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let data = "";
+
+      res.on("data", (chunk) => {
+        data += chunk;
+      });
+
+      res.on("end", () => {
+        const files = JSON.parse(data);
+
+        if (files.filter == null) {
+          console.error(files.message);
+          reject(files.message ?? "No files found");
+        }
+        if (!files || files.length === 0) {
+          resolve([]);
+        }
+        const jsonFiles = files.filter((file) => file.name.endsWith(".json"));
+        resolve(jsonFiles);
+      });
+    });
+
+    req.on("error", (error) => {
+      console.error(error);
+    });
+
+    req.end();
+  });
+
+  return data;
+}
+
+async function getContent(file) {
+  const options = {
+    hostname: githubHostName,
+    path: `${githubPath}/${file.path}`,
+    headers: githubHeaders,
+  };
+
+  const data = await new Promise((resolve) => {
+    const req = https.request(options, (res) => {
+      let data = "";
+
+      res.on("data", (chunk) => {
+        data += chunk;
+      });
+
+      res.on("end", () => {
+        const fileData = JSON.parse(data);
+        const fileContent = Buffer.from(fileData.content, "base64").toString();
+        resolve(JSON.parse(fileContent));
+      });
+    });
+
+    req.on("error", (error) => {
+      console.error(error);
+    });
+
+    req.end();
+  });
+
+  return data;
 }
 
 module.exports = {
-  getDownloadedModels,
-  getAvailableModels,
   searchModels,
+  getConfiguredModels,
 };

@@ -2,7 +2,6 @@ import { useAtom, useSetAtom } from "jotai";
 import { Conversation } from "@/_models/Conversation";
 import { executeSerial } from "@/_services/pluginService";
 import { DataService } from "../../shared/coreService";
-import { Product } from "@/_models/Product";
 import {
   userConversationsAtom,
   setActiveConvoIdAtom,
@@ -11,6 +10,7 @@ import {
   updateConversationErrorAtom,
 } from "@/_helpers/atoms/Conversation.atom";
 import useInitModel from "./useInitModel";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 const useCreateConversation = () => {
   const { initModel } = useInitModel();
@@ -24,7 +24,7 @@ const useCreateConversation = () => {
   );
   const updateConvError = useSetAtom(updateConversationErrorAtom);
 
-  const requestCreateConvo = async (model: Product) => {
+  const requestCreateConvo = async (model: AssistantModel) => {
     const conversationName = model.name;
     const conv: Conversation = {
       model_id: model.id,

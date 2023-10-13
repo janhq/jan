@@ -1,10 +1,10 @@
 import React from "react";
-import { Product } from "@/_models/Product";
 import ModelRow from "../ModelRow";
 import ModelTableHeader from "../ModelTableHeader";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 type Props = {
-  models: Product[];
+  models: AssistantModel[];
 };
 
 const tableHeaders = ["MODEL", "FORMAT", "SIZE", "STATUS", "ACTIONS"];

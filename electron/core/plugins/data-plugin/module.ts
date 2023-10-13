@@ -5,54 +5,78 @@ const { app } = require("electron");
 const MODEL_TABLE_CREATION = `
 CREATE TABLE IF NOT EXISTS models (
   id TEXT PRIMARY KEY,
-  slug TEXT NOT NULL,
   name TEXT NOT NULL,
-  description TEXT NOT NULL,
+  short_description TEXT NOT NULL,
   avatar_url TEXT,
   long_description TEXT NOT NULL,
-  technical_description TEXT NOT NULL,
   author TEXT NOT NULL,
   version TEXT NOT NULL,
   model_url TEXT NOT NULL,
   nsfw INTEGER NOT NULL,
-  greeting TEXT NOT NULL,
+  tags TEXT NOT NULL,
+  default_greeting TEXT NOT NULL,
   type TEXT NOT NULL,
-  file_name TEXT NOT NULL,
-  download_url TEXT NOT NULL,
-  start_download_at INTEGER DEFAULT -1,
-  finish_download_at INTEGER DEFAULT -1,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );`;
 
+const MODEL_VERSION_TABLE_CREATION = `
+CREATE TABLE IF NOT EXISTS model_versions (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  quant_method TEXT NOT NULL,
+  bits INTEGER NOT NULL,
+  size INTEGER NOT NULL,
+  max_ram_required INTEGER NOT NULL,
+  usecase TEXT NOT NULL,
+  download_link TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  start_download_at INTEGER DEFAULT -1,
+  finish_download_at INTEGER DEFAULT -1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);`;
+
 const MODEL_TABLE_INSERTION = `
-INSERT INTO models (
+INSERT OR IGNORE INTO models (
   id,
-  slug,
   name,
-  description,
+  short_description,
   avatar_url,
   long_description,
-  technical_description,
   author,
   version,
   model_url,
   nsfw,
-  greeting,
-  type,
-  file_name,
-  download_url,
+  tags,
+  default_greeting,
+  type
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`;
+
+const MODEL_VERSION_TABLE_INSERTION = `
+INSERT INTO model_versions (
+  id,
+  name,
+  quant_method,
+  bits,
+  size,
+  max_ram_required,
+  usecase,
+  download_link,
+  model_id,
   start_download_at
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+) VALUES (?,?,?,?,?,?,?,?,?,?)`;
+
+const getDbPath = () => {
+  return path.join(app.getPath("userData"), "jan.db");
+};
 
 function init() {
-  const db = new sqlite3.Database(path.join(app.getPath("userData"), "jan.db"));
-  console.log(
-    `Database located at ${path.join(app.getPath("userData"), "jan.db")}`
-  );
+  const db = new sqlite3.Database(getDbPath());
+  console.debug(`Database located at ${getDbPath()}`);
 
   db.serialize(() => {
     db.run(MODEL_TABLE_CREATION);
+    db.run(MODEL_VERSION_TABLE_CREATION);
     db.run(
       "CREATE TABLE IF NOT EXISTS conversations ( id INTEGER PRIMARY KEY, name TEXT, model_id TEXT, image TEXT, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);"
     );
@@ -67,50 +91,54 @@ function init() {
 /**
  * Store a model in the database when user start downloading it
  *
- * @param model Product
+ * @param params: { model, modelVersion }
  */
-function storeModel(model: any) {
+function storeModel(params: any) {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
-    console.debug("Inserting", JSON.stringify(model));
+    const db = new sqlite3.Database(getDbPath());
+    console.debug("Inserting", JSON.stringify(params));
+
+    const model = params.model;
+    const modelTags = model.tags.join(",");
+    const modelVersion = params.modelVersion;
+
     db.serialize(() => {
       const stmt = db.prepare(MODEL_TABLE_INSERTION);
       stmt.run(
         model.id,
-        model.slug,
         model.name,
-        model.description,
+        model.shortDescription,
         model.avatarUrl,
         model.longDescription,
-        model.technicalDescription,
         model.author,
         model.version,
         model.modelUrl,
         model.nsfw,
+        modelTags,
         model.greeting,
-        model.type,
-        model.fileName,
-        model.downloadUrl,
-        Date.now(),
-        function (err: any) {
-          if (err) {
-            // Handle the insertion error here
-            console.error(err.message);
-            res(undefined);
-            return;
-          }
-          // @ts-ignoreF
-          const id = this.lastID;
-          res(id);
-          return;
-        }
+        model.type
       );
       stmt.finalize();
+
+      const stmt2 = db.prepare(MODEL_VERSION_TABLE_INSERTION);
+      stmt2.run(
+        modelVersion.id,
+        modelVersion.name,
+        modelVersion.quantMethod,
+        modelVersion.bits,
+        modelVersion.size,
+        modelVersion.maxRamRequired,
+        modelVersion.usecase,
+        modelVersion.downloadLink,
+        model.id,
+        modelVersion.startDownloadAt
+      );
+
+      stmt2.finalize();
     });
 
     db.close();
+    res(undefined);
   });
 }
 
@@ -119,17 +147,18 @@ function storeModel(model: any) {
  *
  * @param model Product
  */
-function updateFinishedDownloadAt(fileName: string, time: number) {
-  return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
+function updateFinishedDownloadAt(modelVersionId: string) {
+  return new Promise((res, rej) => {
+    const db = new sqlite3.Database(getDbPath());
+    const time = Date.now();
+    console.debug(
+      `Updating finished downloaded model version ${modelVersionId}`
     );
-    console.debug(`Updating fileName ${fileName} to ${time}`);
-    const stmt = `UPDATE models SET finish_download_at = ? WHERE file_name = ?`;
-    db.run(stmt, [time, fileName], (err: any) => {
+    const stmt = `UPDATE model_versions SET finish_download_at = ? WHERE id = ?`;
+    db.run(stmt, [time, modelVersionId], (err: any) => {
       if (err) {
         console.log(err);
-        res(undefined);
+        rej(err);
       } else {
         console.log("Updated 1 row");
         res("Updated");
@@ -145,11 +174,9 @@ function updateFinishedDownloadAt(fileName: string, time: number) {
  */
 function getUnfinishedDownloadModels() {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = new sqlite3.Database(getDbPath());
 
-    const query = `SELECT * FROM models WHERE finish_download_at = -1 ORDER BY start_download_at DESC`;
+    const query = `SELECT * FROM model_versions WHERE finish_download_at = -1 ORDER BY start_download_at DESC`;
     db.all(query, (err: Error, row: any) => {
       if (row) {
         res(row);
@@ -161,28 +188,93 @@ function getUnfinishedDownloadModels() {
   });
 }
 
-function getFinishedDownloadModels() {
-  return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
+async function getFinishedDownloadModels() {
+  const db = new sqlite3.Database(getDbPath());
+  try {
+    const query = `SELECT * FROM model_versions WHERE finish_download_at != -1 ORDER BY finish_download_at DESC`;
+    const modelVersions: any = await new Promise((resolve, reject) => {
+      db.all(query, (err: Error, rows: any[]) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+
+    const models = await Promise.all(
+      modelVersions.map(async (modelVersion) => {
+        const modelQuery = `SELECT * FROM models WHERE id = ?`;
+        return new Promise((resolve, reject) => {
+          db.get(
+            modelQuery,
+            [modelVersion.model_id],
+            (err: Error, row: any) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(row);
+              }
+            }
+          );
+        });
+      })
     );
 
-    const query = `SELECT * FROM models WHERE finish_download_at != -1 ORDER BY finish_download_at DESC`;
-    db.all(query, (err: Error, row: any) => {
-      res(row?.map((item: any) => parseToProduct(item)) ?? []);
+    const downloadedModels = [];
+    modelVersions.forEach((modelVersion: any) => {
+      const model = models.find((m: any) => m.id === modelVersion.model_id);
+
+      if (!model) {
+        return;
+      }
+
+      const assistantModel = {
+        id: modelVersion.id,
+        name: modelVersion.name,
+        quantMethod: modelVersion.quant_method,
+        bits: modelVersion.bits,
+        size: modelVersion.size,
+        maxRamRequired: modelVersion.max_ram_required,
+        usecase: modelVersion.usecase,
+        downloadLink: modelVersion.download_link,
+        startDownloadAt: modelVersion.start_download_at,
+        finishDownloadAt: modelVersion.finish_download_at,
+        productId: model.id,
+        productName: model.name,
+        shortDescription: model.short_description,
+        longDescription: model.long_description,
+        avatarUrl: model.avatar_url,
+        author: model.author,
+        version: model.version,
+        modelUrl: model.model_url,
+        nsfw: model.nsfw === 0 ? false : true,
+        greeting: model.default_greeting,
+        type: model.type,
+        createdAt: new Date(model.created_at).getTime(),
+        updatedAt: new Date(model.updated_at ?? "").getTime(),
+        status: "",
+        releaseDate: -1,
+        tags: model.tags.split(","),
+      };
+      downloadedModels.push(assistantModel);
     });
+
     db.close();
-  });
+
+    return downloadedModels;
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
 }
 
 function deleteDownloadModel(modelId: string) {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
-    console.log(`Deleting ${modelId}`);
+    const db = new sqlite3.Database(getDbPath());
+    console.debug(`Deleting ${modelId}`);
     db.serialize(() => {
-      const stmt = db.prepare("DELETE FROM models WHERE id = ?");
+      const stmt = db.prepare("DELETE FROM model_versions WHERE id = ?");
       stmt.run(modelId);
       stmt.finalize();
       res(modelId);
@@ -192,54 +284,76 @@ function deleteDownloadModel(modelId: string) {
   });
 }
 
-function getModelById(modelId: string) {
-  return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
-
+function fetchModelVersion(db: any, versionId: string) {
+  return new Promise((resolve, reject) => {
     db.get(
-      `SELECT * FROM models WHERE id = ?`,
-      [modelId],
-      (err: any, row: any) => {
-        if (row) {
-          const product = {
-            id: row.id,
-            slug: row.slug,
-            name: row.name,
-            description: row.description,
-            avatarUrl: row.avatar_url,
-            longDescription: row.long_description,
-            technicalDescription: row.technical_description,
-            author: row.author,
-            version: row.version,
-            modelUrl: row.model_url,
-            nsfw: row.nsfw,
-            greeting: row.greeting,
-            type: row.type,
-            inputs: row.inputs,
-            outputs: row.outputs,
-            createdAt: new Date(row.created_at),
-            updatedAt: new Date(row.updated_at),
-            fileName: row.file_name,
-            downloadUrl: row.download_url,
-          };
-          res(product);
+      "SELECT * FROM model_versions WHERE id = ?",
+      [versionId],
+      (err, row) => {
+        if (err) {
+          reject(err);
         } else {
-          res(undefined);
+          resolve(row);
         }
       }
     );
-
-    db.close();
   });
 }
 
+async function fetchModel(db: any, modelId: string) {
+  return new Promise((resolve, reject) => {
+    db.get("SELECT * FROM models WHERE id = ?", [modelId], (err, row) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
+  });
+}
+
+const getModelById = async (versionId: string): Promise<any | undefined> => {
+  const db = new sqlite3.Database(getDbPath());
+  const modelVersion: any | undefined = await fetchModelVersion(db, versionId);
+  if (!modelVersion) return undefined;
+  const model: any | undefined = await fetchModel(db, modelVersion.model_id);
+  if (!model) return undefined;
+
+  const assistantModel = {
+    id: modelVersion.id,
+    name: modelVersion.name,
+    quantMethod: modelVersion.quant_method,
+    bits: modelVersion.bits,
+    size: modelVersion.size,
+    maxRamRequired: modelVersion.max_ram_required,
+    usecase: modelVersion.usecase,
+    downloadLink: modelVersion.download_link,
+    startDownloadAt: modelVersion.start_download_at,
+    finishDownloadAt: modelVersion.finish_download_at,
+    productId: model.id,
+    productName: model.name,
+    shortDescription: model.short_description,
+    longDescription: model.long_description,
+    avatarUrl: model.avatar_url,
+    author: model.author,
+    version: model.version,
+    modelUrl: model.model_url,
+    nsfw: model.nsfw === 0 ? false : true,
+    greeting: model.default_greeting,
+    type: model.type,
+    createdAt: new Date(model.created_at).getTime(),
+    updatedAt: new Date(model.updated_at ?? "").getTime(),
+    status: "",
+    releaseDate: -1,
+    tags: model.tags.split(","),
+  };
+
+  return assistantModel;
+};
+
 function getConversations() {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = new sqlite3.Database(getDbPath());
 
     db.all(
       "SELECT * FROM conversations ORDER BY updated_at DESC",
@@ -250,11 +364,10 @@ function getConversations() {
     db.close();
   });
 }
+
 function storeConversation(conversation: any): Promise<number | undefined> {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = new sqlite3.Database(getDbPath());
 
     db.serialize(() => {
       const stmt = db.prepare(
@@ -287,9 +400,7 @@ function storeConversation(conversation: any): Promise<number | undefined> {
 
 function storeMessage(message: any): Promise<number | undefined> {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = new sqlite3.Database(getDbPath());
 
     db.serialize(() => {
       const stmt = db.prepare(
@@ -319,11 +430,10 @@ function storeMessage(message: any): Promise<number | undefined> {
     db.close();
   });
 }
+
 function updateMessage(message: any): Promise<number | undefined> {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = new sqlite3.Database(getDbPath());
 
     db.serialize(() => {
       const stmt = db.prepare(
@@ -340,9 +450,7 @@ function updateMessage(message: any): Promise<number | undefined> {
 
 function deleteConversation(id: any) {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = new sqlite3.Database(getDbPath());
 
     db.serialize(() => {
       const deleteConv = db.prepare("DELETE FROM conversations WHERE id = ?");
@@ -362,9 +470,7 @@ function deleteConversation(id: any) {
 
 function getConversationMessages(conversation_id: any) {
   return new Promise((res) => {
-    const db = new sqlite3.Database(
-      path.join(app.getPath("userData"), "jan.db")
-    );
+    const db = new sqlite3.Database(getDbPath());
 
     const query = `SELECT * FROM messages WHERE conversation_id = ${conversation_id} ORDER BY id DESC`;
     db.all(query, (err: Error, row: any) => {
@@ -372,31 +478,6 @@ function getConversationMessages(conversation_id: any) {
     });
     db.close();
   });
-}
-
-function parseToProduct(row: any) {
-  const product = {
-    id: row.id,
-    slug: row.slug,
-    name: row.name,
-    description: row.description,
-    avatarUrl: row.avatar_url,
-    longDescription: row.long_description,
-    technicalDescription: row.technical_description,
-    author: row.author,
-    version: row.version,
-    modelUrl: row.model_url,
-    nsfw: row.nsfw,
-    greeting: row.greeting,
-    type: row.type,
-    inputs: row.inputs,
-    outputs: row.outputs,
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
-    fileName: row.file_name,
-    downloadUrl: row.download_url,
-  };
-  return product;
 }
 
 module.exports = {

@@ -1,6 +1,6 @@
 const MODULE_PATH = "model-management-plugin/dist/module.js";
 
-const getDownloadedModels = async () =>
+const getDownloadedModels = () =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       window.electronAPI
@@ -9,7 +9,7 @@ const getDownloadedModels = async () =>
     }
   });
 
-const getAvailableModels = async () =>
+const getAvailableModels = () =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       window.electronAPI
@@ -18,7 +18,7 @@ const getAvailableModels = async () =>
     }
   });
 
-const downloadModel = async (product) =>
+const downloadModel = (product) =>
   new Promise(async (resolve) => {
     if (window && window.electronAPI) {
       window.electronAPI
@@ -29,7 +29,7 @@ const downloadModel = async (product) =>
     }
   });
 
-const deleteModel = async (path) =>
+const deleteModel = (path) =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       console.debug(`Delete model model management plugin: ${path}`);
@@ -38,11 +38,20 @@ const deleteModel = async (path) =>
     }
   });
 
-const searchModels = async (params) =>
+const searchModels = (params) =>
   new Promise(async (resolve) => {
     if (window.electronAPI) {
       window.electronAPI
         .invokePluginFunc(MODULE_PATH, "searchModels", params)
+        .then((res) => resolve(res));
+    }
+  });
+
+const getConfiguredModels = () =>
+  new Promise(async (resolve) => {
+    if (window.electronAPI) {
+      window.electronAPI
+        .invokePluginFunc(MODULE_PATH, "getConfiguredModels")
         .then((res) => resolve(res));
     }
   });
@@ -54,4 +63,5 @@ export function init({ register }) {
   register("downloadModel", "downloadModel", downloadModel);
   register("deleteModel", "deleteModel", deleteModel);
   register("searchModels", "searchModels", searchModels);
+  register("getConfiguredModels", "getConfiguredModels", getConfiguredModels);
 }
