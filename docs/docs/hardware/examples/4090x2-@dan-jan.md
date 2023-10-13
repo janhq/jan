@@ -21,4 +21,4 @@ Jan uses a 2 x 4090 Workstation to run Codellama for internal use.[^1]
 | **Total cost**       |                                                                | $8,334     |             |
 
 
-[^1]: https://www.reddit.com/r/LocalLLaMA/comments/16lxt6a/case_for_dual_4090s/.  
+[^1]: https://www.reddit.com/r/LocalLLaMA/comments/16lxt6a/case_for_dual_4090s/.  ideb
