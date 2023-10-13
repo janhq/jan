@@ -27,20 +27,20 @@ const useChatMessages = (offset = 0) => {
     if (!currentConvo) {
       return;
     }
-    const hasMore = convoStates[currentConvo.id ?? ""]?.hasMore ?? true;
+    const hasMore = convoStates[currentConvo._id ?? ""]?.hasMore ?? true;
     if (!hasMore) return;
 
     const getMessages = async () => {
       executeSerial(
         DataService.GetConversationMessages,
-        currentConvo.id
+        currentConvo._id
       ).then((data: any) => {
         if (!data) {
           return;
         }
         parseMessages(data ?? []).then((newMessages) => {
           addOldChatMessages(newMessages);
-          updateConvoHasMore(currentConvo.id ?? "", false);
+          updateConvoHasMore(currentConvo._id ?? "", false);
           setLoading(false);
         });
       });
@@ -48,7 +48,7 @@ const useChatMessages = (offset = 0) => {
     getMessages();
   }, [
     offset,
-    currentConvo?.id,
+    currentConvo?._id,
     convoStates,
     addOldChatMessages,
     updateConvoHasMore,
@@ -57,7 +57,7 @@ const useChatMessages = (offset = 0) => {
   return {
     loading: loading,
     error: undefined,
-    hasMore: convoStates[currentConvo?.id ?? ""]?.hasMore ?? true,
+    hasMore: convoStates[currentConvo?._id ?? ""]?.hasMore ?? true,
   };
 };
 

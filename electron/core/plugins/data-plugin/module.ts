@@ -6,12 +6,6 @@ var fs = require("fs");
 
 const dbs: Record<string, any> = {};
 
-const getDb = (collectionName: string) => {
-  return (
-    dbs[collectionName] ??
-    createCollection(collectionName, {}).then(() => dbs[collectionName])
-  );
-};
 /**
  * Create a collection on data store
  *
@@ -24,11 +18,13 @@ function createCollection(
   name: string,
   schema: { [key: string]: any }
 ): Promise<void> {
-  const dbPath = path.join(app.getPath("userData"), "databases");
-  if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath);
-  const db = new PouchDB(`${path.join(dbPath, name)}`);
-  dbs[name] = db;
-  return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const dbPath = path.join(app.getPath("userData"), "databases");
+    if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath);
+    const db = new PouchDB(`${path.join(dbPath, name)}`);
+    dbs[name] = db;
+    resolve();
+  });
 }
 
 /**
@@ -40,7 +36,7 @@ function createCollection(
  */
 function deleteCollection(name: string): Promise<void> {
   // Do nothing with Unstructured Database
-  return Promise.resolve();
+  return dbs[name].destroy();
 }
 
 /**
@@ -52,7 +48,7 @@ function deleteCollection(name: string): Promise<void> {
  *
  */
 function insertOne(collectionName: string, value: any): Promise<any> {
-  return dbs[collectionName].post(value);
+  return dbs[collectionName].post(value).then((doc) => doc.id);
 }
 
 /**
@@ -69,9 +65,13 @@ function updateOne(
   key: string,
   value: any
 ): Promise<void> {
-  return dbs[collectionName].put({
-    _id: key,
-    ...value,
+  return dbs[collectionName].get(key).then((doc) => {
+    return dbs[collectionName].put({
+      _id: key,
+      _rev: doc._rev,
+      force: true,
+      ...value,
+    });
   });
 }
 
@@ -184,7 +184,14 @@ function findMany(
   const sortKeys = sort
     ? sort.flatMap((e) => (e ? Object.keys(e) : undefined))
     : [];
-  if (keys.concat(sortKeys).length === 0) {
+
+  sortKeys.forEach((key) => {
+    if (!keys.includes(key)) {
+      selector = { ...selector, [key]: { $gt: null } };
+    }
+  });
+
+  if (sortKeys.concat(keys).length === 0) {
     return dbs[collectionName]
       .allDocs({
         include_docs: true,
@@ -195,14 +202,14 @@ function findMany(
   }
   return dbs[collectionName]
     .createIndex({
-      index: { fields: keys.concat(sortKeys) },
+      index: { fields: sortKeys.concat(keys) },
     })
-    .then(() =>
-      dbs[collectionName].find({
+    .then(() => {
+      return dbs[collectionName].find({
         selector,
         sort,
-      })
-    )
+      });
+    })
     .then((data) => data.docs);
 }
 

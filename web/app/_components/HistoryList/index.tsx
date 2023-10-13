@@ -36,7 +36,7 @@ const HistoryList: React.FC = () => {
             )
             .map((convo) => (
               <HistoryItem
-                key={convo.id}
+                key={convo._id}
                 conversation={convo}
                 avatarUrl={convo.image}
                 name={convo.name || "Jan"}

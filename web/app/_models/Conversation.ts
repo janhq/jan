@@ -1,5 +1,5 @@
 export interface Conversation {
-  id?: string;
+  _id?: string;
   model_id?: string;
   name?: string;
   image?: string;

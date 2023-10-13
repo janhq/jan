@@ -85,17 +85,17 @@ export const updateConversationHasMoreAtom = atom(
  */
 export const userConversationsAtom = atom<Conversation[]>([]);
 export const currentConversationAtom = atom<Conversation | undefined>((get) =>
-  get(userConversationsAtom).find((c) => c.id === get(getActiveConvoIdAtom))
+  get(userConversationsAtom).find((c) => c._id === get(getActiveConvoIdAtom))
 );
 export const setConvoUpdatedAtAtom = atom(null, (get, set, convoId: string) => {
-  const convo = get(userConversationsAtom).find((c) => c.id === convoId);
+  const convo = get(userConversationsAtom).find((c) => c._id === convoId);
   if (!convo) return;
   const newConvo: Conversation = {
     ...convo,
     updated_at: new Date().toISOString(),
   };
   const newConversations: Conversation[] = get(userConversationsAtom).map((c) =>
-    c.id === convoId ? newConvo : c
+    c._id === convoId ? newConvo : c
   );
 
   set(userConversationsAtom, newConversations);
@@ -104,11 +104,11 @@ export const setConvoUpdatedAtAtom = atom(null, (get, set, convoId: string) => {
 export const setConvoLastImageAtom = atom(
   null,
   (get, set, convoId: string, lastImageUrl: string) => {
-    const convo = get(userConversationsAtom).find((c) => c.id === convoId);
+    const convo = get(userConversationsAtom).find((c) => c._id === convoId);
     if (!convo) return;
     const newConvo: Conversation = { ...convo };
     const newConversations: Conversation[] = get(userConversationsAtom).map(
-      (c) => (c.id === convoId ? newConvo : c)
+      (c) => (c._id === convoId ? newConvo : c)
     );
 
     set(userConversationsAtom, newConversations);

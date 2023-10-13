@@ -27,7 +27,7 @@ const useCreateConversation = () => {
   const requestCreateConvo = async (model: AssistantModel) => {
     const conversationName = model.name;
     const conv: Conversation = {
-      model_id: model.id,
+      model_id: model._id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       name: conversationName,
@@ -43,8 +43,8 @@ const useCreateConversation = () => {
     });
 
     const mappedConvo: Conversation = {
-      id,
-      model_id: model.id,
+      _id: id,
+      model_id: model._id,
       name: conversationName,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

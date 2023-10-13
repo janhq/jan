@@ -19,20 +19,20 @@ const ModelRow: React.FC<Props> = ({ model }) => {
   const { deleteModel } = useDeleteModel();
 
   let status = ModelStatus.Installed;
-  if (activeModel && activeModel.id === model.id) {
+  if (activeModel && activeModel._id === model._id) {
     status = ModelStatus.Active;
   }
 
   let actionButtonType = ModelActionType.Start;
-  if (activeModel && activeModel.id === model.id) {
+  if (activeModel && activeModel._id === model._id) {
     actionButtonType = ModelActionType.Stop;
   }
 
   const onModelActionClick = (action: ModelActionType) => {
     if (action === ModelActionType.Start) {
-      startModel(model.id);
+      startModel(model._id);
     } else {
-      stopModel(model.id);
+      stopModel(model._id);
     }
   };
 

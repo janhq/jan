@@ -298,9 +298,7 @@ function getUnfinishedDownloadModels(): Promise<any> {
 }
 
 function getFinishedDownloadModels(): Promise<any> {
-  return store.findMany("models", { finish_download_at: 1 }, [
-    { finish_download_at: "desc" },
-  ]);
+  return store.findMany("models", { author: "bhlim" });
 }
 
 function deleteDownloadModel(modelId: string): Promise<any> {
@@ -322,7 +320,7 @@ function createMessage(message: any): Promise<number | undefined> {
   return store.insertOne("messages", message);
 }
 function updateMessage(message: any): Promise<void> {
-  return store.updateOne("messages", message.id, message);
+  return store.updateOne("messages", message._id, message);
 }
 
 function deleteConversation(id: any) {
@@ -332,5 +330,7 @@ function deleteConversation(id: any) {
 }
 
 function getConversationMessages(conversation_id: any) {
-  return store.findMany("messages", { conversation_id }, [{ id: "desc" }]);
+  return store.findMany("messages", { conversation_id }, [
+    { created_at: "desc" },
+  ]);
 }

@@ -18,7 +18,7 @@ const useGetUserConversations = () => {
       );
       const convoStates: Record<string, ConversationState> = {};
       convos?.forEach((convo) => {
-        convoStates[convo.id ?? ""] = {
+        convoStates[convo._id ?? ""] = {
           hasMore: true,
           waitingForResponse: false,
         };

@@ -35,13 +35,13 @@ export default function useDeleteConversation() {
       try {
         await execute(DataService.DeleteConversation, activeConvoId);
         const currentConversations = userConversations.filter(
-          (c) => c.id !== activeConvoId,
+          (c) => c._id !== activeConvoId,
         );
         setUserConversations(currentConversations);
         deleteMessages(activeConvoId);
 
         if (currentConversations.length > 0) {
-          setActiveConvoId(currentConversations[0].id);
+          setActiveConvoId(currentConversations[0]._id);
         } else {
           setMainViewState(MainViewState.Welcome);
           setActiveConvoId(undefined);

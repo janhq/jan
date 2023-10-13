@@ -45,13 +45,13 @@ export default function useSendChatMessage() {
     updateConvWaiting(conversationId, true);
     const prompt = currentPrompt.trim();
     const newMessage: RawMessage = {
-      conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,
+      conversation_id: currentConvo?._id,
       message: prompt,
       user: "user",
       created_at: new Date().toISOString(),
     };
     const id = await executeSerial(DataService.CreateMessage, newMessage);
-    newMessage.id = id;
+    newMessage._id = id;
 
     const newChatMessage = await toChatMessage(newMessage);
     addNewMessage(newChatMessage);
@@ -93,13 +93,13 @@ export default function useSendChatMessage() {
 
     // Cache received response
     const newResponse: RawMessage = {
-      conversation_id: parseInt(currentConvo?.id ?? "0") ?? 0,
+      conversation_id: currentConvo?._id,
       message: answer,
       user: "assistant",
       created_at: new Date().toISOString(),
     };
     const respId = await executeSerial(DataService.CreateMessage, newResponse);
-    newResponse.id = respId;
+    newResponse._id = respId;
     const responseChatMessage = await toChatMessage(newResponse);
     addNewMessage(responseChatMessage);
 
