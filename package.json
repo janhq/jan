@@ -19,7 +19,7 @@
     "dev:electron": "yarn workspace jan dev",
     "dev:web": "yarn workspace jan-web dev",
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
-    "build:core": "cd plugin-core && npm install && npm run build",
+    "build:core": "cd plugin-core && yarn install && yarn run build",
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "yarn workspace jan build",
     "build:plugins": "rimraf ./electron/core/pre-install/*.tgz && concurrently \"cd ./electron/core/plugins/data-plugin && npm ci\" \"cd ./electron/core/plugins/inference-plugin && npm ci\" \"cd ./electron/core/plugins/model-management-plugin && npm ci\" \"cd ./electron/core/plugins/monitoring-plugin && npm ci\" && concurrently \"cd ./electron/core/plugins/data-plugin && npm run build:publish\" \"cd ./electron/core/plugins/inference-plugin && npm run build:publish\" \"cd ./electron/core/plugins/model-management-plugin && npm run build:publish\" \"cd ./electron/core/plugins/monitoring-plugin && npm run build:publish\"",
