@@ -18,6 +18,8 @@ const BasicPromptInput: React.FC = () => {
 
   const { initModel } = useInitModel();
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const handleKeyDown = async (
     event: React.KeyboardEvent<HTMLTextAreaElement>
   ) => {
@@ -40,12 +42,19 @@ const BasicPromptInput: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [currentPrompt]);
+
+  const handleMessageChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setCurrentPrompt(event.target.value);
+  };
+
   // Auto adjust textarea height based on content
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const MAX_ROWS = 10;
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = "auto"; // 1 row
       const scrollHeight = textareaRef.current.scrollHeight;
       const maxScrollHeight =
         parseInt(window.getComputedStyle(textareaRef.current).lineHeight, 10) *
@@ -55,15 +64,6 @@ const BasicPromptInput: React.FC = () => {
         maxScrollHeight
       )}px`;
     }
-  };
-
-  useEffect(() => {
-    adjustTextareaHeight();
-  }, []);
-
-  const handleMessageChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    setCurrentPrompt(event.target.value);
-    adjustTextareaHeight();
   };
 
   return (
