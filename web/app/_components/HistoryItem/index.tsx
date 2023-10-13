@@ -3,7 +3,7 @@ import JanImage from "../JanImage";
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
-import { DataService } from "@janhq/plugin-core";
+import { ModelManagementService } from "@janhq/plugin-core";
 import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
 import {
   conversationStatesAtom,
@@ -45,7 +45,7 @@ const HistoryItem: React.FC<Props> = ({
 
   const onClick = async () => {
     const model = await executeSerial(
-      DataService.GetModelById,
+      ModelManagementService.GetModelById,
       conversation.modelId
     );
 

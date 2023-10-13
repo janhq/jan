@@ -95,36 +95,6 @@ export enum DataService {
    * Gets a list of messages for an existing conversation from the server.
    */
   GetConversationMessages = "getConversationMessages",
-
-  /**
-   * Stores a model in the database.
-   */
-  StoreModel = "storeModel",
-
-  /**
-   * Updates the finished download time for a model in the database.
-   */
-  UpdateFinishedDownloadAt = "updateFinishedDownloadAt",
-
-  /**
-   * Gets a list of unfinished download models from the database.
-   */
-  GetUnfinishedDownloadModels = "getUnfinishedDownloadModels",
-
-  /**
-   * Gets a list of finished download models from the database.
-   */
-  GetFinishedDownloadModels = "getFinishedDownloadModels",
-
-  /**
-   * Deletes a download model from the database.
-   */
-  DeleteDownloadModel = "deleteDownloadModel",
-
-  /**
-   * Gets a model by its ID from the database.
-   */
-  GetModelById = "getModelById",
 }
 
 /**
@@ -182,6 +152,36 @@ export enum ModelManagementService {
    * Gets configued models from the database.
    */
   GetConfiguredModels = "getConfiguredModels",
+
+  /**
+   * Stores a model in the database.
+   */
+  StoreModel = "storeModel",
+
+  /**
+   * Updates the finished download time for a model in the database.
+   */
+  UpdateFinishedDownloadAt = "updateFinishedDownloadAt",
+
+  /**
+   * Gets a list of unfinished download models from the database.
+   */
+  GetUnfinishedDownloadModels = "getUnfinishedDownloadModels",
+
+  /**
+   * Gets a list of finished download models from the database.
+   */
+  GetFinishedDownloadModels = "getFinishedDownloadModels",
+
+  /**
+   * Deletes a download model from the database.
+   */
+  DeleteDownloadModel = "deleteDownloadModel",
+
+  /**
+   * Gets a model by its ID from the database.
+   */
+  GetModelById = "getModelById",
 }
 
 /**

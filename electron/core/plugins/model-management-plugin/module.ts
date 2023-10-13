@@ -83,7 +83,7 @@ const listFilesByName = async (modelName) => {
 };
 
 async function getConfiguredModels() {
-  const files = await getModelFiles();
+  const files: any = await getModelFiles();
 
   const promises = files.map((file) => getContent(file));
   const response = await Promise.all(promises);

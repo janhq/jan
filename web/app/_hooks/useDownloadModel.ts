@@ -42,7 +42,7 @@ export default function useDownloadModel() {
   const downloadModel = async (model: Product, modelVersion: ModelVersion) => {
     modelVersion.startDownloadAt = Date.now();
     const assistantModel = assistanModel(model, modelVersion);
-    await executeSerial(DataService.StoreModel, assistantModel);
+    await executeSerial(ModelManagementService.StoreModel, assistantModel);
     await executeSerial(ModelManagementService.DownloadModel, {
       downloadUrl: modelVersion.downloadLink,
       fileName: modelVersion._id,

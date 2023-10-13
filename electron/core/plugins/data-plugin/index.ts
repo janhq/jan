@@ -191,15 +191,14 @@ function findMany({
   );
 }
 
-const setupDb = () => {
+function onStart() {
   createCollection({ name: "conversations", schema: {} });
   createCollection({ name: "messages", schema: {} });
-  createCollection({ name: "models", schema: {} });
-};
+}
 
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }: { register: RegisterExtensionPoint }) {
-  setupDb();
+  onStart();
 
   register(
     StoreService.CreateCollection,
@@ -241,77 +240,6 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
     getConversationMessages.name,
     getConversationMessages
   );
-
-  // TODO: Move to Model Management Plugin
-  register(DataService.StoreModel, storeModel.name, storeModel);
-  register(
-    DataService.UpdateFinishedDownloadAt,
-    updateFinishedDownloadAt.name,
-    updateFinishedDownloadAt
-  );
-  register(
-    DataService.GetUnfinishedDownloadModels,
-    getUnfinishedDownloadModels.name,
-    getUnfinishedDownloadModels
-  );
-  register(
-    DataService.DeleteDownloadModel,
-    deleteDownloadModel.name,
-    deleteDownloadModel
-  );
-  register(DataService.GetModelById, getModelById.name, getModelById);
-  register(
-    DataService.GetFinishedDownloadModels,
-    getFinishedDownloadModels.name,
-    getFinishedDownloadModels
-  );
-}
-/**
- * Store a model in the database when user start downloading it
- *
- * @param model Product
- */
-function storeModel(model: any) {
-  return store.insertOne("models", model);
-}
-
-/**
- * Update the finished download time of a model
- *
- * @param model Product
- */
-function updateFinishedDownloadAt(fileName: string): Promise<any> {
-  return store.updateMany(
-    "models",
-    { fileName },
-    { time: Date.now(), finishDownloadAt: 1 }
-  );
-}
-
-/**
- * Get all unfinished models from the database
- */
-function getUnfinishedDownloadModels(): Promise<any> {
-  return store.findMany("models", { finishDownloadAt: -1 }, [
-    { startDownloadAt: "desc" },
-  ]);
-}
-
-function getFinishedDownloadModels(): Promise<any> {
-  const test = async () => {
-    console.log(await store.findMany("models"));
-  };
-  console.log("yolo");
-  test();
-  return store.findMany("models");
-}
-
-function deleteDownloadModel(modelId: string): Promise<any> {
-  return store.deleteOne("models", modelId);
-}
-
-function getModelById(modelId: string): Promise<any> {
-  return store.findOne("models", modelId);
 }
 
 function getConversations(): Promise<any> {
