@@ -21,12 +21,8 @@ const invokePluginFunc: (
  * @param {string} fileName - The name to use for the downloaded file.
  * @returns {Promise<any>} A promise that resolves when the file is downloaded.
  */
-const downloadFile: (url: string, fileName: string) => Promise<any> = (
-  url,
-  fileName
-) =>
-  window.coreAPI?.downloadFile(url, fileName) ??
-  window.electronAPI?.downloadFile(url, fileName);
+const downloadFile: (url: string, fileName: string) => Promise<any> = (url, fileName) =>
+  window.coreAPI?.downloadFile(url, fileName) ?? window.electronAPI?.downloadFile(url, fileName);
 
 /**
  * Deletes a file from the local file system.
