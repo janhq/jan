@@ -14,7 +14,7 @@ export default function useGetSystemResources() {
       SystemMonitoringService.GET_CURRENT_LOAD_INFORMATION
     );
     const ram =
-      (resourceInfor?.mem?.used ?? 0) / (resourceInfor?.mem?.total ?? 1);
+      (resourceInfor?.mem?.active ?? 0) / (resourceInfor?.mem?.total ?? 1);
     setRam(Math.round(ram * 100));
     setCPU(Math.round(currentLoadInfor?.currentLoad ?? 0));
   };

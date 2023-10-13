@@ -8,7 +8,7 @@ export default function HomepageHero() {
 
   return (
     <div className="bg-white dark:bg-gray-900">
-      <div className="relative isolate pt-14">
+      <div className="relative isolate md:pt-14 pt-0">
         {/* Background top gradient styling */}
         {colorMode === "dark" ? (
           <div
@@ -39,7 +39,7 @@ export default function HomepageHero() {
         )}
 
         {/* Main hero block */}
-        <div className="py-24 sm:py-32 lg:pb-40 animate-in fade-in zoom-in-50 duration-1000 ">
+        <div className="py-24 lg:pb-40 animate-in fade-in zoom-in-50 duration-1000 ">
           <div className="mx-auto max-w-7xl px-6 lg:px-8">
             {/* Hero text and buttons */}
             <div className="mx-auto max-w-2xl text-center">
@@ -47,7 +47,7 @@ export default function HomepageHero() {
                 Run your own AI
               </h1>
               <p className="mt-6 text-lg leading-8 text-gray-600 dark:text-gray-300">
-              Jan lets you run AI on your own hardware. 1-click to install the
+                Jan lets you run AI on your own hardware. 1-click to install the
                 latest open-source models. Monitor and manage software-hardware
                 performance.
                 <br></br>
@@ -60,7 +60,7 @@ export default function HomepageHero() {
                 <Dropdown />
                 <button
                   type="button"
-                  className="cursor-pointer relative inline-flex items-center rounded px-3.5 py-2 dark:py-2.5 text-base font-semibold text-indigo-600 bg-white border-indigo-600 dark:border-0 hover:bg-indigo-600 dark:hover:bg-indigo-500 hover:text-white"
+                  className="cursor-pointer relative inline-flex items-center rounded px-3.5 py-2 dark:py-2.5 text-base font-semibold text-blue-600 bg-white border-blue-600 dark:border-0 hover:bg-blue-600 dark:hover:bg-blue-500 hover:text-white"
                   onClick={() =>
                     window.open(
                       "https://github.com/janhq/jan",
@@ -79,14 +79,15 @@ export default function HomepageHero() {
               src={
                 colorMode === "dark"
                   ? // TODO replace with darkmode image
-                    require("@site/static/img/desktop-llm-chat-dark.png").default
-                  : require("@site/static/img/desktop-llm-chat-light.png").default
+                    require("@site/static/img/desktop-llm-chat-dark.png")
+                      .default
+                  : require("@site/static/img/desktop-llm-chat-light.png")
+                      .default
               }
               alt="App screenshot"
               width={2432}
               className="mt-16 rounded-lg md:rounded-2xl lg:rounded-3xl bg-white/5 shadow-2xl ring-1 ring-white/10 sm:mt-24"
             />
-            
           </div>
         </div>
         {/* Background top gradient styling */}

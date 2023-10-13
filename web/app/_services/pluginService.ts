@@ -6,7 +6,7 @@ import {
 import {
   CoreService,
   DataService,
-  InfereceService,
+  InferenceService,
   ModelManagementService,
 } from "../../shared/coreService";
 
@@ -14,10 +14,10 @@ export const isCorePluginInstalled = () => {
   if (!extensionPoints.get(DataService.GET_CONVERSATIONS)) {
     return false;
   }
-  if (!extensionPoints.get(InfereceService.INIT_MODEL)) {
+  if (!extensionPoints.get(InferenceService.INIT_MODEL)) {
     return false;
   }
-  if (!extensionPoints.get(ModelManagementService.GET_DOWNLOADED_MODELS)) {
+  if (!extensionPoints.get(ModelManagementService.DOWNLOAD_MODEL)) {
     return false;
   }
   return true;
@@ -33,8 +33,8 @@ export const setupBasePlugins = async () => {
 
   if (
     !extensionPoints.get(DataService.GET_CONVERSATIONS) ||
-    !extensionPoints.get(InfereceService.INIT_MODEL) ||
-    !extensionPoints.get(ModelManagementService.GET_DOWNLOADED_MODELS)
+    !extensionPoints.get(InferenceService.INIT_MODEL) ||
+    !extensionPoints.get(ModelManagementService.DOWNLOAD_MODEL)
   ) {
     const installed = await plugins.install(basePlugins);
     if (installed) {

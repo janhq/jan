@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { searchModels } from "./useGetDownloadedModels";
 import { SearchModelParamHf } from "@/_models/hf/SearchModelParam.hf";
 import { Product } from "@/_models/Product";
 import { useSetAtom } from "jotai";
@@ -22,14 +21,14 @@ export default function useGetHuggingFaceModel() {
       search: { owner },
       limit: 5,
     };
-    const result = await searchModels(searchParams);
-    console.debug("result", JSON.stringify(result));
-    if (owner !== currentOwner) {
-      setModelList(result.data);
-      setCurrentOwner(owner);
-    } else {
-      setModelList([...modelList, ...result.data]);
-    }
+    // const result = await searchModels(searchParams);
+    // console.debug("result", JSON.stringify(result));
+    // if (owner !== currentOwner) {
+    //   setModelList(result.data);
+    //   setCurrentOwner(owner);
+    // } else {
+    //   setModelList([...modelList, ...result.data]);
+    // }
     setLoadMoreInProgress(false);
   };
 

@@ -2,7 +2,7 @@ const path = require("path");
 
 module.exports = {
   experiments: { outputModule: true },
-  entry: "./index.js", // Adjust the entry point to match your project's main file
+  entry: "./index.ts", // Adjust the entry point to match your project's main file
   mode: "production",
   module: {
     rules: [
@@ -19,7 +19,7 @@ module.exports = {
     library: { type: "module" }, // Specify ESM output format
   },
   resolve: {
-    extensions: [".js"],
+    extensions: [".ts", ".js"],
   },
   // Add loaders and other configuration as needed for your project
 };

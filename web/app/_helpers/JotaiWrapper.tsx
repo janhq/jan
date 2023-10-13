@@ -13,8 +13,6 @@ export default function JotaiWrapper({ children }: Props) {
 
 export const currentPromptAtom = atom<string>("");
 
-export const showingTyping = atom<boolean>(false);
-
 export const appDownloadProgress = atom<number>(-1);
 export const searchingModelText = atom<string>("");
 

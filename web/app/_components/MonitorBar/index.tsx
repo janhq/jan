@@ -2,16 +2,16 @@ import ProgressBar from "../ProgressBar";
 import SystemItem from "../SystemItem";
 import { useAtomValue } from "jotai";
 import { appDownloadProgress } from "@/_helpers/JotaiWrapper";
-import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
 import useGetAppVersion from "@/_hooks/useGetAppVersion";
 import useGetSystemResources from "@/_hooks/useGetSystemResources";
 import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
 import { DownloadState } from "@/_models/DownloadState";
 import { formatDownloadPercentage } from "@/_utils/converter";
+import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";
 
 const MonitorBar: React.FC = () => {
   const progress = useAtomValue(appDownloadProgress);
-  const activeModel = useAtomValue(currentProductAtom);
+  const activeModel = useAtomValue(activeAssistantModelAtom);
   const { version } = useGetAppVersion();
   const { ram, cpu } = useGetSystemResources();
   const modelDownloadStates = useAtomValue(modelDownloadStateAtom);

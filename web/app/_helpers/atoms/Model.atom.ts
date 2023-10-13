@@ -1,6 +1,8 @@
-import { Product } from "@/_models/Product";
+import { AssistantModel } from "@/_models/AssistantModel";
 import { atom } from "jotai";
 
-export const currentProductAtom = atom<Product | undefined>(undefined);
+export const selectedModelAtom = atom<AssistantModel | undefined>(undefined);
 
-export const selectedModelAtom = atom<Product | undefined>(undefined);
+export const activeAssistantModelAtom = atom<AssistantModel | undefined>(
+  undefined
+);

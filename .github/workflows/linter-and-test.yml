@@ -26,6 +26,12 @@ jobs:
   test-on-macos:
     runs-on: [self-hosted, macOS, macos-desktop]
     steps:
+      - name: 'Cleanup build folder'
+        run: |
+          ls -la ./
+          rm -rf ./* || true
+          rm -rf ./.??* || true
+          ls -la ./
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -48,6 +54,9 @@ jobs:
   test-on-windows:
     runs-on: [self-hosted, Windows, windows-desktop]
     steps:
+      - name: Clean workspace
+        run: |
+          Remove-Item -Path .\* -Force -Recurse
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -68,6 +77,12 @@ jobs:
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
     steps:
+      - name: 'Cleanup build folder'
+        run: |
+          ls -la ./
+          rm -rf ./* || true
+          rm -rf ./.??* || true
+          ls -la ./
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -78,11 +93,11 @@ jobs:
 
       - name: Linter and test
         run: |
+          export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
+          echo -e "Display ID: $DISPLAY"
           yarn config set network-timeout 300000
           yarn install
           yarn lint
           yarn build:plugins
           yarn build:linux
           yarn test
-        env:
-            DISPLAY: ":0"

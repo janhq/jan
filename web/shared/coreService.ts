@@ -1,7 +1,7 @@
 export type CoreService =
   | DataService
   | ModelService
-  | InfereceService
+  | InferenceService
   | ModelManagementService
   | SystemMonitoringService
   | PreferenceService;
@@ -27,18 +27,17 @@ export enum ModelService {
   GET_MODELS = "getModels",
 }
 
-export enum InfereceService {
+export enum InferenceService {
   INFERENCE_URL = "inferenceUrl",
   INIT_MODEL = "initModel",
   STOP_MODEL = "stopModel",
 }
 
 export enum ModelManagementService {
-  GET_DOWNLOADED_MODELS = "getDownloadedModels",
-  GET_AVAILABLE_MODELS = "getAvailableModels",
   DELETE_MODEL = "deleteModel",
   DOWNLOAD_MODEL = "downloadModel",
   SEARCH_MODELS = "searchModels",
+  GET_CONFIGURED_MODELS = "getConfiguredModels",
 }
 
 export enum PreferenceService {

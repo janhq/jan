@@ -2,7 +2,7 @@
 name: Discussion thread
 about: Start an open ended discussion
 title: 'Discussion: [TOPIC HERE]'
-labels: ''
+labels: 'type: discussion'
 assignees: ''
 
 ---
@@ -10,5 +10,7 @@ assignees: ''
 **Motivation**
 
 **Discussion**
+
+**Alternatives**
 
 **Resources**

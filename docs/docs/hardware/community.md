@@ -1,5 +1,5 @@
 ---
-title: Community Examples
+title: Hardware Examples
 ---
 
 ## Add your own example
