@@ -197,7 +197,7 @@ const sidebars = {
       collapsed: true,
       link: { type: "doc", id: "about/about" },
       items: [
-        "about/roadmap",
+        "about/team",
         {
           type: "link",
           label: "Careers",
