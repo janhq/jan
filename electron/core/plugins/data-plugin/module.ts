@@ -14,7 +14,7 @@ const dbs: Record<string, any> = {};
  * @returns   Promise<void>
  *
  */
-function createCollection(name: string, schema: { [key: string]: any }): Promise<void> {
+function createCollection(name: string, schema?: { [key: string]: any }): Promise<void> {
   return new Promise<void>((resolve) => {
     const dbPath = path.join(app.getPath("userData"), "databases");
     if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath);

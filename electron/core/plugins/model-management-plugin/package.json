@@ -3,19 +3,14 @@
   "version": "1.0.0",
   "description": "Model Management Plugin provides model exploration and seamless downloads",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/queue-list.svg",
-  "main": "dist/esm/index.js",
+  "main": "dist/index.js",
   "author": "James",
   "license": "MIT",
   "activationPoints": [
     "init"
   ],
-  "exports": {
-    "import": "./dist/esm/index.js",
-    "require": "./dist/cjs/module.js",
-    "default": "./dist/esm/index.js"
-  },
   "scripts": {
-    "build": "tsc -b tsconfig.esm.json && tsc -b tsconfig.cjs.json && webpack --config webpack.config.js",
+    "build": "tsc -b && webpack --config webpack.config.js",
     "postinstall": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\"",
     "build:publish": "npm pack && cpx *.tgz ../../pre-install"
   },

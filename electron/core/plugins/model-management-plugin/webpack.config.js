@@ -14,7 +14,7 @@ module.exports = {
     ],
   },
   output: {
-    filename: "esm/index.js", // Adjust the output file name as needed
+    filename: "index.js", // Adjust the output file name as needed
     path: path.resolve(__dirname, "dist"),
     library: { type: "module" }, // Specify ESM output format
   },

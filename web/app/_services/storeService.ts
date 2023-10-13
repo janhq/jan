@@ -5,11 +5,12 @@ import { executeSerial } from "./pluginService";
  * Create a collection on data store
  *
  * @param     name     name of the collection to create
+ * @param     schema   schema of the collection to create, include fields and their types, optional for relational database engine
  * @returns   {Promise<void>}
  *
  */
-function createCollection(name: string): Promise<void> {
-  return executeSerial(StoreService.CreateCollection, name);
+function createCollection(name: string, schema?: { [key: string]: any }): Promise<void> {
+  return executeSerial(StoreService.CreateCollection, { name, schema });
 }
 
 /**
@@ -76,11 +77,7 @@ function findMany(
  * @returns   Promise<void>
  *
  */
-function updateOne(
-  collectionName: string,
-  key: string,
-  value: any
-): Promise<void> {
+function updateOne(collectionName: string, key: string, value: any): Promise<void> {
   return executeSerial(StoreService.UpdateOne, {
     collectionName,
     key,
@@ -95,11 +92,7 @@ function updateOne(
  * @param value - The new value for the records.
  * @returns {Promise<void>} A promise that resolves when the records are updated.
  */
-function updateMany(
-  collectionName: string,
-  value: any,
-  selector?: { [key: string]: any }
-): Promise<void> {
+function updateMany(collectionName: string, value: any, selector?: { [key: string]: any }): Promise<void> {
   return executeSerial(StoreService.UpdateMany, {
     collectionName,
     value,
@@ -125,10 +118,7 @@ function deleteOne(collectionName: string, key: string): Promise<void> {
  * @param {{ [key: string]: any }} selector - The selector to use to get the records to delete.
  * @returns {Promise<void>} A promise that resolves when the records are deleted.
  */
-function deleteMany(
-  collectionName: string,
-  selector?: { [key: string]: any }
-): Promise<void> {
+function deleteMany(collectionName: string, selector?: { [key: string]: any }): Promise<void> {
   return executeSerial(StoreService.DeleteMany, {
     collectionName,
     selector,

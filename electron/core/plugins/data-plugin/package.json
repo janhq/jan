@@ -10,7 +10,7 @@
     "init"
   ],
   "scripts": {
-    "build": "tsc -b tsconfig.esm.json && tsc -b tsconfig.cjs.json && webpack --config webpack.config.js",
+    "build": "tsc -b config/tsconfig.esm.json && tsc -b config/tsconfig.cjs.json && webpack --config webpack.config.js",
     "postinstall": "rimraf ./data-plugin*.tgz && npm run build",
     "build:publish": "npm pack && cpx *.tgz ../../pre-install"
   },
