@@ -23,7 +23,6 @@
     "autoprefixer": "^10.4.16",
     "axios": "^1.5.1",
     "clsx": "^1.2.1",
-    "embla-carousel-react": "^8.0.0-rc14",
     "js-yaml": "^4.1.0",
     "postcss": "^8.4.30",
     "prism-react-renderer": "^1.3.5",
