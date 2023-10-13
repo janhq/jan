@@ -12,10 +12,6 @@ const SendButton: React.FC = () => {
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false;
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse;
 
-  const enabledStyle = {
-    backgroundColor: "#FACA15",
-  };
-
   const disabledStyle = {
     backgroundColor: "#F3F4F6",
   };
@@ -23,11 +19,11 @@ const SendButton: React.FC = () => {
   return (
     <button
       onClick={sendChatMessage}
-      style={disabled ? disabledStyle : enabledStyle}
+      style={disabled ? disabledStyle : {}}
       type="submit"
-      className="p-2 gap-2.5 inline-flex items-center rounded-xl text-sm font-semibold shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+      className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
     >
-      <ArrowRightIcon width={16} height={16} />
+      Send
     </button>
   );
 };
