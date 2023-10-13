@@ -4,6 +4,7 @@ import { TextCode } from "../TextCode";
 import { getMessageCode } from "@/_utils/message";
 import Image from "next/image";
 import { MessageSenderType } from "@/_models/ChatMessage";
+import LoadingIndicator from "../LoadingIndicator";
 
 type Props = {
   avatarUrl: string;
@@ -11,6 +12,17 @@ type Props = {
   createdAt: number;
   senderType: MessageSenderType;
   text?: string;
+};
+
+const renderMessageCode = (text: string) => {
+  return getMessageCode(text).map((item, i) => (
+    <div className="flex gap-1 flex-col" key={i}>
+      <p className="leading-[20px] whitespace-break-spaces text-sm font-normal dark:text-[#d1d5db]">
+        {item.text}
+      </p>
+      {item.code.trim().length > 0 && <TextCode text={item.code} />}
+    </div>
+  ));
 };
 
 const SimpleTextMessage: React.FC<Props> = ({
@@ -43,15 +55,10 @@ const SimpleTextMessage: React.FC<Props> = ({
             {displayDate(createdAt)}
           </div>
         </div>
-        {text.includes("```") ? (
-          getMessageCode(text).map((item, i) => (
-            <div className="flex gap-1 flex-col" key={i}>
-              <p className="leading-[20px] whitespace-break-spaces text-sm font-normal dark:text-[#d1d5db]">
-                {item.text}
-              </p>
-              {item.code.trim().length > 0 && <TextCode text={item.code} />}
-            </div>
-          ))
+        {text === "" ? (
+          <LoadingIndicator />
+        ) : text.includes("```") ? (
+          renderMessageCode(text)
         ) : (
           <span className="text-sm leading-loose font-normal">{text}</span>
         )}

@@ -34,23 +34,16 @@ const InputToolbar: React.FC = () => {
 
   return (
     <Fragment>
+      <div className="h-6 space-x-5">
+        {currentConvoState?.error && (
+          <div className="flex flex-row justify-center">
+            <span className="mx-5 my-2 text-red-500 text-sm">
+              {currentConvoState?.error?.toString()}
+            </span>
+          </div>
+        )}
+      </div>
       <div className="flex justify-center gap-2 my-5">
-        {/* TODO: take loading out of input toolbar and into response */}
-        <div className="h-6 space-x-5">
-          {currentConvoState?.waitingForResponse === true && (
-            <div className="ml-1 my-2" key="indicator">
-              <LoadingIndicator />
-            </div>
-          )}
-          {!currentConvoState?.waitingForResponse &&
-            currentConvoState?.error && (
-              <div className="flex flex-row justify-center">
-                <span className="mx-5 my-2 text-red-500 text-sm">
-                  {currentConvoState?.error?.toString()}
-                </span>
-              </div>
-            )}
-        </div>
         {/* <SecondaryButton title="Regenerate" onClick={onRegenerateClick} /> */}
         <SecondaryButton
           onClick={onNewConversationClick}
