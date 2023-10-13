@@ -46,7 +46,7 @@ const HistoryItem: React.FC<Props> = ({
   const onClick = async () => {
     const model = await executeSerial(
       DataService.GetModelById,
-      conversation.model_id
+      conversation.modelId
     );
 
     if (conversation._id) updateConvWaiting(conversation._id, true);

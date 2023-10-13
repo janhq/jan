@@ -24,14 +24,14 @@ const AvailableModelCard: React.FC<Props> = ({
   let total = 0;
   let transferred = 0;
 
-  if (model.id && downloadState[model.id]) {
+  if (model._id && downloadState[model._id]) {
     isDownloading =
-      downloadState[model.id].error == null &&
-      downloadState[model.id].percent < 1;
+      downloadState[model._id].error == null &&
+      downloadState[model._id].percent < 1;
 
     if (isDownloading) {
-      total = downloadState[model.id].size.total;
-      transferred = downloadState[model.id].size.transferred;
+      total = downloadState[model._id].size.total;
+      transferred = downloadState[model._id].size.transferred;
     }
   }
 

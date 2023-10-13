@@ -284,7 +284,7 @@ function updateFinishedDownloadAt(fileName: string): Promise<any> {
   return store.updateMany(
     "models",
     { fileName },
-    { time: Date.now(), finish_download_at: 1 }
+    { time: Date.now(), finishDownloadAt: 1 }
   );
 }
 
@@ -292,13 +292,18 @@ function updateFinishedDownloadAt(fileName: string): Promise<any> {
  * Get all unfinished models from the database
  */
 function getUnfinishedDownloadModels(): Promise<any> {
-  return store.findMany("models", { finish_download_at: -1 }, [
-    { start_download_at: "desc" },
+  return store.findMany("models", { finishDownloadAt: -1 }, [
+    { startDownloadAt: "desc" },
   ]);
 }
 
 function getFinishedDownloadModels(): Promise<any> {
-  return store.findMany("models", { author: "bhlim" });
+  const test = async () => {
+    console.log(await store.findMany("models"));
+  };
+  console.log("yolo");
+  test();
+  return store.findMany("models");
 }
 
 function deleteDownloadModel(modelId: string): Promise<any> {
@@ -310,7 +315,7 @@ function getModelById(modelId: string): Promise<any> {
 }
 
 function getConversations(): Promise<any> {
-  return store.findMany("conversations", {}, [{ updated_at: "desc" }]);
+  return store.findMany("conversations", {}, [{ updatedAt: "desc" }]);
 }
 function createConversation(conversation: any): Promise<number | undefined> {
   return store.insertOne("conversations", conversation);
@@ -326,11 +331,11 @@ function updateMessage(message: any): Promise<void> {
 function deleteConversation(id: any) {
   return store
     .deleteOne("conversations", id)
-    .then(() => store.deleteMany("messages", { conversation_id: id }));
+    .then(() => store.deleteMany("messages", { conversationId: id }));
 }
 
-function getConversationMessages(conversation_id: any) {
-  return store.findMany("messages", { conversation_id }, [
-    { created_at: "desc" },
+function getConversationMessages(conversationId: any) {
+  return store.findMany("messages", { conversationId }, [
+    { createdAt: "desc" },
   ]);
 }

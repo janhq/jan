@@ -40,7 +40,7 @@ const HistoryList: React.FC = () => {
                 conversation={convo}
                 avatarUrl={convo.image}
                 name={convo.name || "Jan"}
-                updatedAt={convo.updated_at ?? ""}
+                updatedAt={convo.updatedAt ?? ""}
               />
             ))
         ) : (

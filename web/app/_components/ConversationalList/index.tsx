@@ -16,7 +16,7 @@ const ConversationalList: React.FC<Props> = ({ models }) => (
     </div>
     <div className="mt-2 pl-6 flex w-full gap-2 overflow-x-scroll scroll overflow-hidden">
       {models.map((item) => (
-        <ConversationalCard key={item.id} model={item} />
+        <ConversationalCard key={item._id} model={item} />
       ))}
     </div>
   </>

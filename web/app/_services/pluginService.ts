@@ -17,7 +17,7 @@ export const isCorePluginInstalled = () => {
   if (!extensionPoints.get(InferenceService.InitModel)) {
     return false;
   }
-  if (!extensionPoints.get(ModelManagementService.DOWNLOAD_MODEL)) {
+  if (!extensionPoints.get(ModelManagementService.DownloadModel)) {
     return false;
   }
   return true;

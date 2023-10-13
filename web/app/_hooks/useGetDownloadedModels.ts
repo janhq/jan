@@ -20,11 +20,11 @@ export function useGetDownloadedModels() {
 
 export async function getDownloadedModels(): Promise<AssistantModel[]> {
   const downloadedModels: AssistantModel[] = await executeSerial(
-    DataService.GET_FINISHED_DOWNLOAD_MODELS
+    DataService.GetFinishedDownloadModels
   );
   return downloadedModels ?? [];
 }
 
 export async function getConfiguredModels(): Promise<Product[]> {
-  return executeSerial(ModelManagementService.GET_CONFIGURED_MODELS);
+  return executeSerial(ModelManagementService.GetConfiguredModels);
 }

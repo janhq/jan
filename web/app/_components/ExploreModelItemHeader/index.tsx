@@ -29,8 +29,8 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   const { performanceTag, title, getPerformanceForModel } =
     useGetPerformanceTag();
   const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[suitableModel.id]),
-    [suitableModel.id]
+    () => atom((get) => get(modelDownloadStateAtom)[suitableModel._id]),
+    [suitableModel._id]
   );
   const downloadState = useAtomValue(downloadAtom);
   const setMainViewState = useSetAtom(setMainViewStateAtom);
@@ -44,7 +44,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   }, [exploreModel, suitableModel]);
 
   const isDownloaded =
-    downloadedModels.find((model) => model.id === suitableModel.id) != null;
+    downloadedModels.find((model) => model._id === suitableModel._id) != null;
 
   let downloadButton = (
     <PrimaryButton

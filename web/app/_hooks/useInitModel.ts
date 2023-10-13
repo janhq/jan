@@ -8,12 +8,12 @@ export default function useInitModel() {
   const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom);
 
   const initModel = async (model: AssistantModel) => {
-    if (activeModel && activeModel.id === model.id) {
-      console.debug(`Model ${model.id} is already init. Ignore..`);
+    if (activeModel && activeModel._id === model._id) {
+      console.debug(`Model ${model._id} is already init. Ignore..`);
       return;
     }
 
-    const res = await executeSerial(InferenceService.INIT_MODEL, model.id);
+    const res = await executeSerial(InferenceService.InitModel, model._id);
     if (res?.error) {
       console.log("error occured: ", res);
       return res;

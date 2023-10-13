@@ -5,7 +5,6 @@
 export type CoreService =
   | StoreService
   | DataService
-  | ModelService
   | InferenceService
   | ModelManagementService
   | SystemMonitoringService
@@ -129,17 +128,6 @@ export enum DataService {
 }
 
 /**
- * ModelService exports.
- * @enum {string}
- */
-export enum ModelService {
-  /**
-   * Gets a list of models from the server.
-   */
-  GetModels = "getModels",
-}
-
-/**
  * InferenceService exports.
  * @enum {string}
  */
@@ -189,6 +177,11 @@ export enum ModelManagementService {
    * Searches for models on the server.
    */
   SearchModels = "searchModels",
+
+  /**
+   * Gets configued models from the database.
+   */
+  GetConfiguredModels = "getConfiguredModels",
 }
 
 /**

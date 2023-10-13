@@ -48,7 +48,8 @@ function deleteCollection(name: string): Promise<void> {
  *
  */
 function insertOne(collectionName: string, value: any): Promise<any> {
-  return dbs[collectionName].post(value).then((doc) => doc.id);
+  if (!value._id) return dbs[collectionName].post(value).then((doc) => doc.id);
+  return dbs[collectionName].put(value).then((doc) => doc.id);
 }
 
 /**

@@ -6,7 +6,7 @@ export type ModelVersion = {
    * Combination of owner and model name.
    * Being used as file name. Should be unique.
    */
-  id: string;
+  _id: string;
   name: string;
   quantMethod: string;
   bits: number;

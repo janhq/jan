@@ -1,11 +1,11 @@
 export interface Conversation {
   _id?: string;
-  model_id?: string;
+  modelId?: string;
   name?: string;
   image?: string;
   message?: string;
-  created_at?: string;
-  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /**

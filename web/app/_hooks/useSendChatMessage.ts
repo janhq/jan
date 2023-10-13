@@ -45,10 +45,10 @@ export default function useSendChatMessage() {
     updateConvWaiting(conversationId, true);
     const prompt = currentPrompt.trim();
     const newMessage: RawMessage = {
-      conversation_id: currentConvo?._id,
+      conversationId: currentConvo?._id,
       message: prompt,
       user: "user",
-      created_at: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
     const id = await executeSerial(DataService.CreateMessage, newMessage);
     newMessage._id = id;
@@ -93,10 +93,10 @@ export default function useSendChatMessage() {
 
     // Cache received response
     const newResponse: RawMessage = {
-      conversation_id: currentConvo?._id,
+      conversationId: currentConvo?._id,
       message: answer,
       user: "assistant",
-      created_at: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
     const respId = await executeSerial(DataService.CreateMessage, newResponse);
     newResponse._id = respId;
@@ -139,7 +139,7 @@ export default function useSendChatMessage() {
     await executeSerial(DataService.UpdateMessage, {
       ...newResponse,
       message: answer.trimEnd(),
-      updated_at: new Date()
+      updatedAt: new Date()
         .toISOString()
         .replace("T", " ")
         .replace(/\.\d+Z$/, ""),

@@ -133,7 +133,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
             <ModelVersionList
               model={model}
               versions={model.availableVersions}
-              recommendedVersion={suitableModel?.id ?? ""}
+              recommendedVersion={suitableModel?._id ?? ""}
             />
           )}
           <button

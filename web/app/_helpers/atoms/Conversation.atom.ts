@@ -92,7 +92,7 @@ export const setConvoUpdatedAtAtom = atom(null, (get, set, convoId: string) => {
   if (!convo) return;
   const newConvo: Conversation = {
     ...convo,
-    updated_at: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
   const newConversations: Conversation[] = get(userConversationsAtom).map((c) =>
     c._id === convoId ? newConvo : c

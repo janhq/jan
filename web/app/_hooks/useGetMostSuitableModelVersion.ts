@@ -1,5 +1,5 @@
 import { executeSerial } from "@/_services/pluginService";
-import { SystemMonitoringService } from "../../shared/coreService";
+import { SystemMonitoringService } from "@janhq/plugin-core";
 import { ModelVersion } from "@/_models/ModelVersion";
 import { useState } from "react";
 
@@ -8,7 +8,7 @@ export default function useGetMostSuitableModelVersion() {
 
   const getMostSuitableModelVersion = async (modelVersions: ModelVersion[]) => {
     const resourceInfo = await executeSerial(
-      SystemMonitoringService.GET_RESOURCES_INFORMATION
+      SystemMonitoringService.GetResourcesInfo
     );
     const totalRam = resourceInfo.mem.total;
 

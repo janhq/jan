@@ -27,9 +27,9 @@ const useCreateConversation = () => {
   const requestCreateConvo = async (model: AssistantModel) => {
     const conversationName = model.name;
     const conv: Conversation = {
-      model_id: model._id,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      modelId: model._id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       name: conversationName,
     };
     const id = await executeSerial(DataService.CreateConversation, conv);
@@ -44,10 +44,10 @@ const useCreateConversation = () => {
 
     const mappedConvo: Conversation = {
       _id: id,
-      model_id: model._id,
+      modelId: model._id,
       name: conversationName,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     addNewConvoState(id ?? "", {

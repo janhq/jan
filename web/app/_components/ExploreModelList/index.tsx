@@ -19,7 +19,7 @@ const ExploreModelList: React.FC = () => {
         </div>
       )}
       {models.map((item) => (
-        <ExploreModelItem key={item.id} model={item} />
+        <ExploreModelItem key={item._id} model={item} />
       ))}
     </div>
   );

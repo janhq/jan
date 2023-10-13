@@ -9,8 +9,8 @@ export default function useDeleteModel() {
   const setDownloadedModels = useSetAtom(downloadedModelAtom);
 
   const deleteModel = async (model: AssistantModel) => {
-    execute(DataService.DELETE_DOWNLOAD_MODEL, model.id);
-    await executeSerial(ModelManagementService.DELETE_MODEL, model.id);
+    execute(DataService.DeleteDownloadModel, model._id);
+    await executeSerial(ModelManagementService.DeleteModel, model._id);
 
     // reload models
     const downloadedModels = await getDownloadedModels();
