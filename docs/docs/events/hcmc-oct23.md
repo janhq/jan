@@ -9,11 +9,11 @@ image: /img/hcmc-villa-1.jpeg
 
 ## Ho Chi Minh City
 
-[Jan's Hacker House](https://jan.ai) is a four-day offline event where the Jan team gathers at a hacker house prior to a major release. We use the time to work on the release, bond as a team and get Jan across the finish line. 
+[Jan's Hacker House](https://jan.ai) is a 4-day offline event where we have an open AI Hacker House and invite the local AI community to join us. There are free snacks, drinks and pizza. 
 
-Jan hosts a series of talks, workshops and social events at night, inviting the local AI community to join us.
+We also host a series of talks, workshops and social events at night. We usually start off the week with a "Intro to LLMs" that targets local university students, and then progress to more in-depth technical and research areas. 
 
-Jan is a fully remote team. We use the money we save from not having an office, to hold Hack Weeks where we eat pizza and work on Jan together before major releases. 
+Jan is a fully remote team. We use the money we save from not having an office, to hold Hack Weeks where we meet in a city, eat pizza and work to ship major releases. 
 
 ### Date & Time
 
