@@ -34,16 +34,14 @@ const InputToolbar: React.FC = () => {
 
   return (
     <Fragment>
-      <div className="h-6 space-x-5">
-        {currentConvoState?.error && (
-          <div className="flex flex-row justify-center">
-            <span className="mx-5 my-2 text-red-500 text-sm">
-              {currentConvoState?.error?.toString()}
-            </span>
-          </div>
-        )}
-      </div>
-      <div className="flex justify-center gap-2 my-5">
+      {currentConvoState?.error && (
+        <div className="flex flex-row justify-center">
+          <span className="mx-5 my-2 text-red-500 text-sm">
+            {currentConvoState?.error?.toString()}
+          </span>
+        </div>
+      )}
+      <div className="flex justify-center gap-2 my-3">
         {/* <SecondaryButton title="Regenerate" onClick={onRegenerateClick} /> */}
         <SecondaryButton
           onClick={onNewConversationClick}
@@ -52,7 +50,7 @@ const InputToolbar: React.FC = () => {
         />
       </div>
       {/* My text input */}
-      <div className="flex items-start space-x-4 mx-12 md:mx-32 2xl:mx-64 mb-3">
+      <div className="flex items-start space-x-4 mx-12 md:mx-32 2xl:mx-64 mb-5">
         <div className="min-w-0 flex-1 relative">
           <BasicPromptInput />
           <BasicPromptAccessories />
