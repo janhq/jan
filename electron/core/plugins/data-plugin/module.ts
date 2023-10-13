@@ -14,10 +14,7 @@ const dbs: Record<string, any> = {};
  * @returns   Promise<void>
  *
  */
-function createCollection(
-  name: string,
-  schema: { [key: string]: any }
-): Promise<void> {
+function createCollection(name: string, schema: { [key: string]: any }): Promise<void> {
   return new Promise<void>((resolve) => {
     const dbPath = path.join(app.getPath("userData"), "databases");
     if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath);
@@ -61,11 +58,7 @@ function insertOne(collectionName: string, value: any): Promise<any> {
  * @returns   Promise<void>
  *
  */
-function updateOne(
-  collectionName: string,
-  key: string,
-  value: any
-): Promise<void> {
+function updateOne(collectionName: string, key: string, value: any): Promise<void> {
   return dbs[collectionName].get(key).then((doc) => {
     return dbs[collectionName].put({
       _id: key,
@@ -85,11 +78,7 @@ function updateOne(
  * @returns   Promise<void>
  *
  */
-function updateMany(
-  collectionName: string,
-  value: any,
-  selector?: { [key: string]: any }
-): Promise<any> {
+function updateMany(collectionName: string, value: any, selector?: { [key: string]: any }): Promise<any> {
   // Creates keys from selector for indexing
   const keys = selector ? Object.keys(selector) : [];
 
@@ -130,9 +119,7 @@ function updateMany(
  *
  */
 function deleteOne(collectionName: string, key: string): Promise<void> {
-  return findOne(collectionName, key).then((doc) =>
-    dbs[collectionName].remove(doc)
-  );
+  return findOne(collectionName, key).then((doc) => dbs[collectionName].remove(doc));
 }
 
 /**
@@ -143,10 +130,7 @@ function deleteOne(collectionName: string, key: string): Promise<void> {
  * @returns   Promise<void>
  *
  */
-function deleteMany(
-  collectionName: string,
-  selector?: { [key: string]: any }
-): Promise<void> {
+function deleteMany(collectionName: string, selector?: { [key: string]: any }): Promise<void> {
   // Creates keys from selector for indexing
   const keys = selector ? Object.keys(selector) : [];
 
@@ -199,9 +183,7 @@ function findMany(
   sort?: [{ [key: string]: any }]
 ): Promise<any> {
   const keys = selector ? Object.keys(selector) : [];
-  const sortKeys = sort
-    ? sort.flatMap((e) => (e ? Object.keys(e) : undefined))
-    : [];
+  const sortKeys = sort ? sort.flatMap((e) => (e ? Object.keys(e) : undefined)) : [];
 
   // Note that we are specifying that the field must be greater than or equal to null
   // which is a workaround for the fact that the Mango query language requires us to have a selector.

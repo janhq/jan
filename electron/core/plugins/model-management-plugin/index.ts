@@ -1,27 +1,17 @@
-import {
-  ModelManagementService,
-  RegisterExtensionPoint,
-  core,
-  store,
-} from "@janhq/plugin-core";
+import { ModelManagementService, RegisterExtensionPoint, core, store } from "@janhq/plugin-core";
 const MODULE_PATH = "model-management-plugin/dist/module.js";
 
-const getDownloadedModels = () =>
-  core.invokePluginFunc(MODULE_PATH, "getDownloadedModels");
+const getDownloadedModels = () => core.invokePluginFunc(MODULE_PATH, "getDownloadedModels");
 
-const getAvailableModels = () =>
-  core.invokePluginFunc(MODULE_PATH, "getAvailableModels");
+const getAvailableModels = () => core.invokePluginFunc(MODULE_PATH, "getAvailableModels");
 
-const downloadModel = (product) =>
-  core.downloadFile(product.downloadUrl, product.fileName);
+const downloadModel = (product) => core.downloadFile(product.downloadUrl, product.fileName);
 
 const deleteModel = (path) => core.deleteFile(path);
 
-const searchModels = (params) =>
-  core.invokePluginFunc(MODULE_PATH, "searchModels", params);
+const searchModels = (params) => core.invokePluginFunc(MODULE_PATH, "searchModels", params);
 
-const getConfiguredModels = () =>
-  core.invokePluginFunc(MODULE_PATH, "getConfiguredModels");
+const getConfiguredModels = () => core.invokePluginFunc(MODULE_PATH, "getConfiguredModels");
 
 /**
  * Store a model in the database when user start downloading it
@@ -38,20 +28,14 @@ function storeModel(model: any) {
  * @param model Product
  */
 function updateFinishedDownloadAt(fileName: string): Promise<any> {
-  return store.updateMany(
-    "models",
-    { fileName },
-    { time: Date.now(), finishDownloadAt: 1 }
-  );
+  return store.updateMany("models", { fileName }, { time: Date.now(), finishDownloadAt: 1 });
 }
 
 /**
  * Get all unfinished models from the database
  */
 function getUnfinishedDownloadModels(): Promise<any> {
-  return store.findMany("models", { finishDownloadAt: -1 }, [
-    { startDownloadAt: "desc" },
-  ]);
+  return store.findMany("models", { finishDownloadAt: -1 }, [{ startDownloadAt: "desc" }]);
 }
 
 function getFinishedDownloadModels(): Promise<any> {
@@ -73,57 +57,21 @@ function onStart() {
 export function init({ register }: { register: RegisterExtensionPoint }) {
   onStart();
 
-  register(
-    ModelManagementService.GetDownloadedModels,
-    getDownloadedModels.name,
-    getDownloadedModels
-  );
-  register(
-    ModelManagementService.GetAvailableModels,
-    getAvailableModels.name,
-    getAvailableModels
-  );
-  register(
-    ModelManagementService.DownloadModel,
-    downloadModel.name,
-    downloadModel
-  );
+  register(ModelManagementService.GetDownloadedModels, getDownloadedModels.name, getDownloadedModels);
+  register(ModelManagementService.GetAvailableModels, getAvailableModels.name, getAvailableModels);
+  register(ModelManagementService.DownloadModel, downloadModel.name, downloadModel);
   register(ModelManagementService.DeleteModel, deleteModel.name, deleteModel);
-  register(
-    ModelManagementService.SearchModels,
-    searchModels.name,
-    searchModels
-  );
-  register(
-    ModelManagementService.GetConfiguredModels,
-    getConfiguredModels.name,
-    getConfiguredModels
-  );
+  register(ModelManagementService.SearchModels, searchModels.name, searchModels);
+  register(ModelManagementService.GetConfiguredModels, getConfiguredModels.name, getConfiguredModels);
 
   register(ModelManagementService.StoreModel, storeModel.name, storeModel);
-  register(
-    ModelManagementService.UpdateFinishedDownloadAt,
-    updateFinishedDownloadAt.name,
-    updateFinishedDownloadAt
-  );
+  register(ModelManagementService.UpdateFinishedDownloadAt, updateFinishedDownloadAt.name, updateFinishedDownloadAt);
   register(
     ModelManagementService.GetUnfinishedDownloadModels,
     getUnfinishedDownloadModels.name,
     getUnfinishedDownloadModels
   );
-  register(
-    ModelManagementService.DeleteDownloadModel,
-    deleteDownloadModel.name,
-    deleteDownloadModel
-  );
-  register(
-    ModelManagementService.GetModelById,
-    getModelById.name,
-    getModelById
-  );
-  register(
-    ModelManagementService.GetFinishedDownloadModels,
-    getFinishedDownloadModels.name,
-    getFinishedDownloadModels
-  );
+  register(ModelManagementService.DeleteDownloadModel, deleteDownloadModel.name, deleteDownloadModel);
+  register(ModelManagementService.GetModelById, getModelById.name, getModelById);
+  register(ModelManagementService.GetFinishedDownloadModels, getFinishedDownloadModels.name, getFinishedDownloadModels);
 }

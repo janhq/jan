@@ -1,10 +1,4 @@
-import {
-  core,
-  store,
-  RegisterExtensionPoint,
-  StoreService,
-  DataService,
-} from "@janhq/plugin-core";
+import { core, store, RegisterExtensionPoint, StoreService, DataService } from "@janhq/plugin-core";
 
 // Provide an async method to manipulate the price provided by the extension point
 const MODULE_PATH = "data-plugin/dist/cjs/module.js";
@@ -17,13 +11,7 @@ const MODULE_PATH = "data-plugin/dist/cjs/module.js";
  * @returns   Promise<void>
  *
  */
-function createCollection({
-  name,
-  schema,
-}: {
-  name: string;
-  schema: { [key: string]: any };
-}): Promise<void> {
+function createCollection({ name, schema }: { name: string; schema: { [key: string]: any } }): Promise<void> {
   console.log("renderer: creating collection:", name, schema);
   return core.invokePluginFunc(MODULE_PATH, "createCollection", name, schema);
 }
@@ -47,13 +35,7 @@ function deleteCollection(name: string): Promise<void> {
  * @returns   Promise<any>
  *
  */
-function insertOne({
-  collectionName,
-  value,
-}: {
-  collectionName: string;
-  value: any;
-}): Promise<any> {
+function insertOne({ collectionName, value }: { collectionName: string; value: any }): Promise<any> {
   return core.invokePluginFunc(MODULE_PATH, "insertOne", collectionName, value);
 }
 
@@ -66,22 +48,8 @@ function insertOne({
  * @returns   Promise<void>
  *
  */
-function updateOne({
-  collectionName,
-  key,
-  value,
-}: {
-  collectionName: string;
-  key: string;
-  value: any;
-}): Promise<void> {
-  return core.invokePluginFunc(
-    MODULE_PATH,
-    "updateOne",
-    collectionName,
-    key,
-    value
-  );
+function updateOne({ collectionName, key, value }: { collectionName: string; key: string; value: any }): Promise<void> {
+  return core.invokePluginFunc(MODULE_PATH, "updateOne", collectionName, key, value);
 }
 
 /**
@@ -100,13 +68,7 @@ function updateMany({
   value: any;
   selector?: { [key: string]: any };
 }): Promise<void> {
-  return core.invokePluginFunc(
-    MODULE_PATH,
-    "updateMany",
-    collectionName,
-    value,
-    selector
-  );
+  return core.invokePluginFunc(MODULE_PATH, "updateMany", collectionName, value, selector);
 }
 
 /**
@@ -117,13 +79,7 @@ function updateMany({
  * @returns   Promise<void>
  *
  */
-function deleteOne({
-  collectionName,
-  key,
-}: {
-  collectionName: string;
-  key: string;
-}): Promise<void> {
+function deleteOne({ collectionName, key }: { collectionName: string; key: string }): Promise<void> {
   return core.invokePluginFunc(MODULE_PATH, "deleteOne", collectionName, key);
 }
 
@@ -142,12 +98,7 @@ function deleteMany({
   collectionName: string;
   selector?: { [key: string]: any };
 }): Promise<void> {
-  return core.invokePluginFunc(
-    MODULE_PATH,
-    "deleteMany",
-    collectionName,
-    selector
-  );
+  return core.invokePluginFunc(MODULE_PATH, "deleteMany", collectionName, selector);
 }
 
 /**
@@ -156,13 +107,7 @@ function deleteMany({
  * @param {string} key - The key of the record to retrieve.
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
-function findOne({
-  collectionName,
-  key,
-}: {
-  collectionName: string;
-  key: string;
-}): Promise<any> {
+function findOne({ collectionName, key }: { collectionName: string; key: string }): Promise<any> {
   return core.invokePluginFunc(MODULE_PATH, "findOne", collectionName, key);
 }
 
@@ -182,13 +127,7 @@ function findMany({
   selector: { [key: string]: any };
   sort?: [{ [key: string]: any }];
 }): Promise<any> {
-  return core.invokePluginFunc(
-    MODULE_PATH,
-    "findMany",
-    collectionName,
-    selector,
-    sort
-  );
+  return core.invokePluginFunc(MODULE_PATH, "findMany", collectionName, selector, sort);
 }
 
 function onStart() {
@@ -200,16 +139,8 @@ function onStart() {
 export function init({ register }: { register: RegisterExtensionPoint }) {
   onStart();
 
-  register(
-    StoreService.CreateCollection,
-    createCollection.name,
-    createCollection
-  );
-  register(
-    StoreService.DeleteCollection,
-    deleteCollection.name,
-    deleteCollection
-  );
+  register(StoreService.CreateCollection, createCollection.name, createCollection);
+  register(StoreService.DeleteCollection, deleteCollection.name, deleteCollection);
   register(StoreService.InsertOne, insertOne.name, insertOne);
   register(StoreService.UpdateOne, updateOne.name, updateOne);
   register(StoreService.UpdateMany, updateMany.name, updateMany);
@@ -218,28 +149,12 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(StoreService.FindOne, findOne.name, findOne);
   register(StoreService.FindMany, findMany.name, findMany);
 
-  register(
-    DataService.GetConversations,
-    getConversations.name,
-    getConversations
-  );
-  register(
-    DataService.CreateConversation,
-    createConversation.name,
-    createConversation
-  );
+  register(DataService.GetConversations, getConversations.name, getConversations);
+  register(DataService.CreateConversation, createConversation.name, createConversation);
   register(DataService.UpdateMessage, updateMessage.name, updateMessage);
-  register(
-    DataService.DeleteConversation,
-    deleteConversation.name,
-    deleteConversation
-  );
+  register(DataService.DeleteConversation, deleteConversation.name, deleteConversation);
   register(DataService.CreateMessage, createMessage.name, createMessage);
-  register(
-    DataService.GetConversationMessages,
-    getConversationMessages.name,
-    getConversationMessages
-  );
+  register(DataService.GetConversationMessages, getConversationMessages.name, getConversationMessages);
 }
 
 function getConversations(): Promise<any> {
@@ -257,13 +172,9 @@ function updateMessage(message: any): Promise<void> {
 }
 
 function deleteConversation(id: any) {
-  return store
-    .deleteOne("conversations", id)
-    .then(() => store.deleteMany("messages", { conversationId: id }));
+  return store.deleteOne("conversations", id).then(() => store.deleteMany("messages", { conversationId: id }));
 }
 
 function getConversationMessages(conversationId: any) {
-  return store.findMany("messages", { conversationId }, [
-    { createdAt: "desc" },
-  ]);
+  return store.findMany("messages", { conversationId }, [{ createdAt: "desc" }]);
 }
