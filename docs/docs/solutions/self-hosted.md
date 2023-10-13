@@ -1,3 +1,3 @@
 ---
-title: Self-hosted ChatGPT
+title: Self-Hosted ChatGPT
 ---

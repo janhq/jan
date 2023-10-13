@@ -5,4 +5,4 @@ slug: /about
 
 ## Team
 
-## History
+## Timeline
