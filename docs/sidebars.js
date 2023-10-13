@@ -194,7 +194,7 @@ const sidebars = {
       type: "category",
       label: "About Jan",
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       link: { type: "doc", id: "about/about" },
       items: [
         "about/roadmap",
@@ -203,14 +203,26 @@ const sidebars = {
           label: "Careers",
           href: "https://janai.bamboohr.com/careers",
         },
-        "about/brand-assets",
+      ],
+    },
+    {
+      type: "category",
+      label: "Events",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          type: "doc",
+          label: "Ho Chi Minh City (Oct 2023)",
+          id: "events/hcmc-oct23",
+        },
       ],
     },
     {
       type: "category",
       label: "Company Handbook",
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       link: { type: "doc", id: "handbook/handbook" },
       items: ["handbook/remote-work"],
     },
