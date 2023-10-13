@@ -89,21 +89,28 @@ function updateMany(
   value: any,
   selector?: { [key: string]: any }
 ): Promise<any> {
+  // Creates keys from selector for indexing
   const keys = selector ? Object.keys(selector) : [];
+
+  // At a basic level, there are two steps to running a query: createIndex()
+  // (to define which fields to index) and find() (to query the index).
   return (
     keys.length > 0
       ? dbs[collectionName].createIndex({
+          // There is selector so we need to create index
           index: { fields: keys },
         })
       : Promise.resolve()
-  )
+  ) // No selector, so no need to create index
     .then(() =>
       dbs[collectionName].find({
+        // Find documents using Mango queries
         selector,
       })
     )
     .then((data) => {
       const docs = data.docs.map((doc) => {
+        // Update doc with new value
         return (doc = {
           ...doc,
           ...value,
@@ -139,18 +146,28 @@ function deleteMany(
   collectionName: string,
   selector?: { [key: string]: any }
 ): Promise<void> {
+  // Creates keys from selector for indexing
   const keys = selector ? Object.keys(selector) : [];
-  return dbs[collectionName]
-    .createIndex({
-      index: { fields: keys },
-    })
+
+  // At a basic level, there are two steps to running a query: createIndex()
+  // (to define which fields to index) and find() (to query the index).
+  return (
+    keys.length > 0
+      ? dbs[collectionName].createIndex({
+          // There is selector so we need to create index
+          index: { fields: keys },
+        })
+      : Promise.resolve()
+  ) // No selector, so no need to create index
     .then(() =>
       dbs[collectionName].find({
+        // Find documents using Mango queries
         selector,
       })
     )
     .then((data) => {
       return Promise.all(
+        // Remove documents
         data.docs.map((doc) => {
           return dbs[collectionName].remove(doc);
         })
@@ -185,12 +202,16 @@ function findMany(
     ? sort.flatMap((e) => (e ? Object.keys(e) : undefined))
     : [];
 
+  // Note that we are specifying that the field must be greater than or equal to null
+  // which is a workaround for the fact that the Mango query language requires us to have a selector.
+  // In CouchDB collation order, null is the "lowest" value, and so this will return all documents regardless of their field value.
   sortKeys.forEach((key) => {
     if (!keys.includes(key)) {
       selector = { ...selector, [key]: { $gt: null } };
     }
   });
 
+  // There is no selector & sort, so we can just use allDocs() to get all the documents.
   if (sortKeys.concat(keys).length === 0) {
     return dbs[collectionName]
       .allDocs({
@@ -200,17 +221,21 @@ function findMany(
       })
       .then((data) => data.rows.map((row) => row.doc));
   }
+  // At a basic level, there are two steps to running a query: createIndex()
+  // (to define which fields to index) and find() (to query the index).
   return dbs[collectionName]
     .createIndex({
+      // Create index for selector & sort
       index: { fields: sortKeys.concat(keys) },
     })
     .then(() => {
+      // Find documents using Mango queries
       return dbs[collectionName].find({
         selector,
         sort,
       });
     })
-    .then((data) => data.docs);
+    .then((data) => data.docs); // Return documents
 }
 
 module.exports = {
