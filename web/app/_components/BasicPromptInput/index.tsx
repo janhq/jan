@@ -45,16 +45,28 @@ const BasicPromptInput: React.FC = () => {
   };
 
   return (
-    <textarea
-      onKeyDown={handleKeyDown}
-      value={currentPrompt}
-      onChange={handleMessageChange}
-      rows={2}
-      name="comment"
-      id="comment"
-      className="overflow-hidden block w-full scroll resize-none border-0 bg-transparent py-1.5 text-gray-900 transition-height duration-200 placeholder:text-gray-400 sm:text-sm sm:leading-6 dark:text-white"
-      placeholder="Add your comment..."
-    />
+    <div className="overflow-hidden rounded-lg shadow-sm ring-1 ring-inset ring-gray-300 focus-within:ring-2 focus-within:ring-indigo-600">
+      <label htmlFor="comment" className="sr-only">
+        Message ...
+      </label>
+      <textarea
+        onKeyDown={handleKeyDown}
+        value={currentPrompt}
+        onChange={handleMessageChange}
+        rows={2}
+        name="comment"
+        id="comment"
+        className="block w-full resize-none border-0 bg-transparent py-1.5 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm sm:leading-6"
+        placeholder="Message ..."
+      />
+      {/* Spacer element to match the height of the toolbar */}
+      <div className="py-2" aria-hidden="true">
+        {/* Matches height of button in toolbar (1px border + 36px content height) */}
+        <div className="py-px">
+          <div className="h-9" />
+        </div>
+      </div>
+    </div>
   );
 };
 
