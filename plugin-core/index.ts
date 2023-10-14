@@ -108,11 +108,6 @@ export enum DataService {
  */
 export enum InferenceService {
   /**
-   * The URL for the inference server.
-   */
-  InferenceUrl = "inferenceUrl",
-
-  /**
    * Initializes a model for inference.
    */
   InitModel = "initModel",
@@ -227,3 +222,9 @@ export { store } from "./store";
  * @module
  */
 export { core, RegisterExtensionPoint } from "./core";
+
+/**
+ * Events module exports.
+ * @module
+ */
+export { events, EventName, NewMessageRequest, NewMessageResponse } from "./events";

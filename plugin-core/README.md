@@ -224,7 +224,6 @@ The `DataService` enum represents methods related to managing conversations and 
 
 The `InferenceService` enum exports:
 
-- `InferenceUrl`: The URL for the inference server.
 - `InitModel`: Initializes a model for inference.
 - `StopModel`: Stops a running inference model.
 

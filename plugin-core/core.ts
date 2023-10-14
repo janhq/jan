@@ -7,11 +7,7 @@
  * @returns   Promise<any>
  *
  */
-const invokePluginFunc: (
-  plugin: string,
-  method: string,
-  ...args: any[]
-) => Promise<any> = (plugin, method, ...args) =>
+const invokePluginFunc: (plugin: string, method: string, ...args: any[]) => Promise<any> = (plugin, method, ...args) =>
   window.coreAPI?.invokePluginFunc(plugin, method, ...args) ??
   window.electronAPI?.invokePluginFunc(plugin, method, ...args);
 
