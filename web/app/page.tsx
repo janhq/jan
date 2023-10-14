@@ -19,45 +19,51 @@ import { setupCoreServices } from "./_services/coreService";
 import MainContainer from "./_components/MainContainer";
 
 const Page: React.FC = () => {
+  const [setupCore, setSetupCore] = useState(false);
   const [activated, setActivated] = useState(false);
+
+  async function setupPE() {
+    // Enable activation point management
+    setup({
+      importer: (plugin: string) =>
+        import(/* webpackIgnore: true */ plugin).catch((err) => {
+          console.log(err);
+        }),
+    });
+
+    // Register all active plugins with their activation points
+    await plugins.registerActive();
+    setTimeout(async () => {
+      // Trigger activation points
+      await activationPoints.trigger("init");
+      if (!isCorePluginInstalled()) {
+        setupBasePlugins();
+        return;
+      }
+      setActivated(true);
+    }, 500);
+  }
 
   // Services Setup
   useEffect(() => {
-    // Setup Core Service
     setupCoreServices();
-
-    async function setupPE() {
-      // Enable activation point management
-      setup({
-        importer: (plugin: string) =>
-          import(/* webpackIgnore: true */ plugin).catch((err) => {
-            console.log(err);
-          }),
-      });
-
-      // Register all active plugins with their activation points
-      await plugins.registerActive();
-      setTimeout(async () => {
-        // Trigger activation points
-        await activationPoints.trigger("init");
-        if (!isCorePluginInstalled()) {
-          setupBasePlugins();
-          return;
-        }
-        setActivated(true);
-      }, 500);
-    }
-    // Electron
-    if (window && window.electronAPI) {
-      setupPE();
-    } else {
-      // Host
-      setActivated(true);
-    }
+    setSetupCore(true);
   }, []);
+  useEffect(() => {
+    if (setupCore) {
+      // Electron
+      if (window && window.electronAPI) {
+        setupPE();
+      } else {
+        // Host
+        setActivated(true);
+      }
+    }
+  }, [setupCore]);
 
   return (
     <JotaiWrapper>
+      {setupCore && (
       <EventListenerWrapper>
         <ThemeWrapper>
           <ModalWrapper>
@@ -71,6 +77,7 @@ const Page: React.FC = () => {
           </ModalWrapper>
         </ThemeWrapper>
       </EventListenerWrapper>
+      )}
     </JotaiWrapper>
   );
 };
