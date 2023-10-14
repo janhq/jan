@@ -24,8 +24,10 @@ const HistoryList: React.FC = () => {
         expanded={expand}
         onClick={() => setExpand(!expand)}
       />
-      <div
-        className={`flex flex-col gap-1 mt-1 overflow-y-auto scroll ${!expand ? "hidden " : "block"}`}
+      <ul
+        className={`flex flex-col gap-1 mt-1 overflow-y-auto scroll ${
+          !expand ? "hidden " : "block"
+        }`}
       >
         {conversations.length > 0 ? (
           conversations
@@ -46,7 +48,7 @@ const HistoryList: React.FC = () => {
         ) : (
           <SidebarEmptyHistory />
         )}
-      </div>
+      </ul>
     </div>
   );
 };
