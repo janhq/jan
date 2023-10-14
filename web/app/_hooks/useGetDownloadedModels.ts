@@ -1,7 +1,7 @@
 import { Product } from "@/_models/Product";
 import { useEffect } from "react";
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { DataService, ModelManagementService } from "../../shared/coreService";
+import { ModelManagementService } from "@janhq/plugin-core";
 import { useAtom } from "jotai";
 import { downloadedModelAtom } from "@/_helpers/atoms/DownloadedModel.atom";
 import { AssistantModel } from "@/_models/AssistantModel";
@@ -20,11 +20,11 @@ export function useGetDownloadedModels() {
 
 export async function getDownloadedModels(): Promise<AssistantModel[]> {
   const downloadedModels: AssistantModel[] = await executeSerial(
-    DataService.GET_FINISHED_DOWNLOAD_MODELS
+    ModelManagementService.GetFinishedDownloadModels
   );
   return downloadedModels ?? [];
 }
 
 export async function getConfiguredModels(): Promise<Product[]> {
-  return executeSerial(ModelManagementService.GET_CONFIGURED_MODELS);
+  return executeSerial(ModelManagementService.GetConfiguredModels);
 }

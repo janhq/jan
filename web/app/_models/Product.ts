@@ -9,7 +9,7 @@ export enum ProductType {
 }
 
 export interface Product {
-  id: string;
+  _id: string;
   name: string;
   shortDescription: string;
   avatarUrl: string;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { SystemMonitoringService } from "../../shared/coreService";
+import { SystemMonitoringService } from "@janhq/plugin-core";
 
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0);
@@ -8,10 +8,10 @@ export default function useGetSystemResources() {
 
   const getSystemResources = async () => {
     const resourceInfor = await executeSerial(
-      SystemMonitoringService.GET_RESOURCES_INFORMATION
+      SystemMonitoringService.GetResourcesInfo
     );
     const currentLoadInfor = await executeSerial(
-      SystemMonitoringService.GET_CURRENT_LOAD_INFORMATION
+      SystemMonitoringService.GetCurrentLoad
     );
     const ram =
       (resourceInfor?.mem?.active ?? 0) / (resourceInfor?.mem?.total ?? 1);

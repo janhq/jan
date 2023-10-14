@@ -5,7 +5,7 @@ import { ReactNode, useEffect } from "react";
 import { appDownloadProgress } from "./JotaiWrapper";
 import { DownloadState } from "@/_models/DownloadState";
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { DataService } from "../../shared/coreService";
+import { ModelManagementService } from "@janhq/plugin-core";
 import {
   setDownloadStateAtom,
   setDownloadStateSuccessAtom,
@@ -44,7 +44,7 @@ export default function EventListenerWrapper({ children }: Props) {
             setDownloadStateSuccess(callback.fileName);
 
             executeSerial(
-              DataService.UPDATE_FINISHED_DOWNLOAD,
+              ModelManagementService.UpdateFinishedDownloadAt,
               callback.fileName
             ).then(() => {
               getDownloadedModels().then((models) => {

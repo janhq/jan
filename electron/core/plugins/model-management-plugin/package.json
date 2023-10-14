@@ -1,7 +1,7 @@
 {
   "name": "model-management-plugin",
   "version": "1.0.0",
-  "description": "Model Management Plugin leverages the HuggingFace API for model exploration and seamless downloads",
+  "description": "Model Management Plugin provides model exploration and seamless downloads",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/queue-list.svg",
   "main": "dist/index.js",
   "author": "James",
@@ -10,8 +10,8 @@
     "init"
   ],
   "scripts": {
-    "build": "webpack --config webpack.config.js",
-    "postinstall": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\"",
+    "build": "tsc -b . && webpack --config webpack.config.js",
+    "postinstall": "rimraf ./*.tgz && npm run build",
     "build:publish": "npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
@@ -26,7 +26,9 @@
     "README.md"
   ],
   "dependencies": {
-    "@huggingface/hub": "^0.8.5"
+    "@huggingface/hub": "^0.8.5",
+    "@janhq/plugin-core": "file:../../../../plugin-core",
+    "ts-loader": "^9.5.0"
   },
   "bundledDependencies": [
     "@huggingface/hub"

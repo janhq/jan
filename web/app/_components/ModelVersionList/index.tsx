@@ -22,10 +22,10 @@ const ModelVersionList: React.FC<Props> = ({
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         {versions.map((item) => (
           <ModelVersionItem
-            key={item.id}
+            key={item._id}
             model={model}
             modelVersion={item}
-            isRecommended={item.id === recommendedVersion}
+            isRecommended={item._id === recommendedVersion}
           />
         ))}
       </div>

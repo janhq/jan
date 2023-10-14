@@ -3,7 +3,7 @@ import JanImage from "../JanImage";
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
-import { DataService } from "../../../shared/coreService";
+import { ModelManagementService } from "@janhq/plugin-core";
 import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
 import {
   conversationStatesAtom,
@@ -39,28 +39,28 @@ const HistoryItem: React.FC<Props> = ({
     updateConversationWaitingForResponseAtom
   );
   const updateConvError = useSetAtom(updateConversationErrorAtom);
-  const isSelected = activeConvoId === conversation.id;
+  const isSelected = activeConvoId === conversation._id;
 
   const { initModel } = useInitModel();
 
   const onClick = async () => {
     const model = await executeSerial(
-      DataService.GET_MODEL_BY_ID,
-      conversation.model_id
+      ModelManagementService.GetModelById,
+      conversation.modelId
     );
 
-    if (conversation.id) updateConvWaiting(conversation.id, true);
+    if (conversation._id) updateConvWaiting(conversation._id, true);
     initModel(model).then((res: any) => {
-      if (conversation.id) updateConvWaiting(conversation.id, false);
+      if (conversation._id) updateConvWaiting(conversation._id, false);
 
-      if (res?.error && conversation.id) {
-        updateConvError(conversation.id, res.error);
+      if (res?.error && conversation._id) {
+        updateConvError(conversation._id, res.error);
       }
     });
 
-    if (activeConvoId !== conversation.id) {
+    if (activeConvoId !== conversation._id) {
       setMainViewState(MainViewState.Conversation);
-      setActiveConvoId(conversation.id);
+      setActiveConvoId(conversation._id);
     }
   };
 
@@ -69,7 +69,7 @@ const HistoryItem: React.FC<Props> = ({
     : "bg-white dark:bg-gray-500";
 
   let rightImageUrl: string | undefined;
-  if (conversationStates[conversation.id ?? ""]?.waitingForResponse === true) {
+  if (conversationStates[conversation._id ?? ""]?.waitingForResponse === true) {
     rightImageUrl = "icons/loading.svg";
   }
 

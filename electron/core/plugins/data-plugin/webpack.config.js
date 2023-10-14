@@ -14,12 +14,15 @@ module.exports = {
     ],
   },
   output: {
-    filename: "index.js", // Adjust the output file name as needed
+    filename: "esm/index.js", // Adjust the output file name as needed
     path: path.resolve(__dirname, "dist"),
     library: { type: "module" }, // Specify ESM output format
   },
   resolve: {
     extensions: [".ts", ".js"],
+  },
+  optimization: {
+    minimize: false
   },
   // Add loaders and other configuration as needed for your project
 };

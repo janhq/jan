@@ -8,7 +8,7 @@ export type AssistantModel = {
    * Combination of owner and model name.
    * Being used as file name. MUST be unique.
    */
-  id: string;
+  _id: string;
 
   name: string;
 

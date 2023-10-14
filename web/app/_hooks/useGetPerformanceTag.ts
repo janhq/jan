@@ -1,5 +1,5 @@
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { SystemMonitoringService } from "../../shared/coreService";
+import { SystemMonitoringService } from "@janhq/plugin-core";
 import { useState } from "react";
 import { ModelVersion } from "@/_models/ModelVersion";
 import { ModelPerformance, TagType } from "@/_components/SimpleTag/TagType";
@@ -14,7 +14,7 @@ export default function useGetPerformanceTag() {
 
   const getPerformanceForModel = async (modelVersion: ModelVersion) => {
     const resourceInfo = await executeSerial(
-      SystemMonitoringService.GET_RESOURCES_INFORMATION
+      SystemMonitoringService.GetResourcesInfo
     );
     const totalRam = resourceInfo.mem.total;
     const requiredRam = modelVersion.maxRamRequired;

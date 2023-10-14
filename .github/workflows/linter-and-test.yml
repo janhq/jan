@@ -43,6 +43,7 @@ jobs:
       - name: Linter and test
         run: |
           yarn config set network-timeout 300000
+          yarn build:core
           yarn install
           yarn lint
           yarn build:plugins
@@ -68,6 +69,7 @@ jobs:
       - name: Linter and test
         run: |
           yarn config set network-timeout 300000
+          yarn build:core
           yarn install
           yarn lint
           yarn build:plugins
@@ -96,6 +98,7 @@ jobs:
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
           echo -e "Display ID: $DISPLAY"
           yarn config set network-timeout 300000
+          yarn build:core
           yarn install
           yarn lint
           yarn build:plugins

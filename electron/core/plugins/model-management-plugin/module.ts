@@ -83,7 +83,7 @@ const listFilesByName = async (modelName) => {
 };
 
 async function getConfiguredModels() {
-  const files = await getModelFiles();
+  const files: any = await getModelFiles();
 
   const promises = files.map((file) => getContent(file));
   const response = await Promise.all(promises);
@@ -100,7 +100,7 @@ const parseToModel = (model) => {
   const modelVersions = [];
   model.versions.forEach((v) => {
     const version = {
-      id: `${model.author}-${v.name}`,
+      _id: `${model.author}-${v.name}`,
       name: v.name,
       quantMethod: v.quantMethod,
       bits: v.bits,
@@ -114,7 +114,7 @@ const parseToModel = (model) => {
   });
 
   const product = {
-    id: model.id,
+    _id: model.id,
     name: model.name,
     shortDescription: model.shortDescription,
     avatarUrl: model.avatarUrl,

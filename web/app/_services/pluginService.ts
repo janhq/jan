@@ -1,40 +1,29 @@
 "use client";
-import {
-  extensionPoints,
-  plugins,
-} from "../../../electron/core/plugin-manager/execution/index";
-import {
-  CoreService,
-  DataService,
-  InferenceService,
-  ModelManagementService,
-} from "../../shared/coreService";
+import { extensionPoints, plugins } from "../../../electron/core/plugin-manager/execution/index";
+import { CoreService, DataService, InferenceService, ModelManagementService } from "@janhq/plugin-core";
 
 export const isCorePluginInstalled = () => {
-  if (!extensionPoints.get(DataService.GET_CONVERSATIONS)) {
+  if (!extensionPoints.get(DataService.GetConversations)) {
     return false;
   }
-  if (!extensionPoints.get(InferenceService.INIT_MODEL)) {
+  if (!extensionPoints.get(InferenceService.InitModel)) {
     return false;
   }
-  if (!extensionPoints.get(ModelManagementService.DOWNLOAD_MODEL)) {
+  if (!extensionPoints.get(ModelManagementService.DownloadModel)) {
     return false;
   }
   return true;
 };
 export const setupBasePlugins = async () => {
-  if (
-    typeof window === "undefined" ||
-    typeof window.electronAPI === "undefined"
-  ) {
+  if (typeof window === "undefined" || typeof window.electronAPI === "undefined") {
     return;
   }
   const basePlugins = await window.electronAPI.basePlugins();
 
   if (
-    !extensionPoints.get(DataService.GET_CONVERSATIONS) ||
-    !extensionPoints.get(InferenceService.INIT_MODEL) ||
-    !extensionPoints.get(ModelManagementService.DOWNLOAD_MODEL)
+    !extensionPoints.get(DataService.GetConversations) ||
+    !extensionPoints.get(InferenceService.InitModel) ||
+    !extensionPoints.get(ModelManagementService.DownloadModel)
   ) {
     const installed = await plugins.install(basePlugins);
     if (installed) {

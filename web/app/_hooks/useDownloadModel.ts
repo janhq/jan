@@ -1,16 +1,51 @@
 import { executeSerial } from "@/_services/pluginService";
-import { DataService, ModelManagementService } from "../../shared/coreService";
-import { Product } from "@/_models/Product";
+import { DataService, ModelManagementService } from "@janhq/plugin-core";
 import { ModelVersion } from "@/_models/ModelVersion";
+import { Product } from "@/_models/Product";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 export default function useDownloadModel() {
+  const assistanModel = (
+    model: Product,
+    modelVersion: ModelVersion
+  ): AssistantModel => {
+    return {
+      _id: modelVersion._id,
+      name: modelVersion.name,
+      quantMethod: modelVersion.quantMethod,
+      bits: modelVersion.bits,
+      size: modelVersion.size,
+      maxRamRequired: modelVersion.maxRamRequired,
+      usecase: modelVersion.usecase,
+      downloadLink: modelVersion.downloadLink,
+      startDownloadAt: modelVersion.startDownloadAt,
+      finishDownloadAt: modelVersion.finishDownloadAt,
+      productId: model._id,
+      productName: model.name,
+      shortDescription: model.shortDescription,
+      longDescription: model.longDescription,
+      avatarUrl: model.avatarUrl,
+      author: model.author,
+      version: model.version,
+      modelUrl: model.modelUrl,
+      nsfw: model.nsfw === true ? false : true,
+      greeting: model.greeting,
+      type: model.type,
+      createdAt: new Date(model.createdAt).getTime(),
+      updatedAt: new Date(model.updatedAt ?? "").getTime(),
+      status: "",
+      releaseDate: -1,
+      tags: model.tags,
+    };
+  };
+
   const downloadModel = async (model: Product, modelVersion: ModelVersion) => {
     modelVersion.startDownloadAt = Date.now();
-
-    await executeSerial(DataService.STORE_MODEL, { model, modelVersion });
-    await executeSerial(ModelManagementService.DOWNLOAD_MODEL, {
+    const assistantModel = assistanModel(model, modelVersion);
+    await executeSerial(ModelManagementService.StoreModel, assistantModel);
+    await executeSerial(ModelManagementService.DownloadModel, {
       downloadUrl: modelVersion.downloadLink,
-      fileName: modelVersion.id,
+      fileName: modelVersion._id,
     });
   };
 

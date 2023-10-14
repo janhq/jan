@@ -24,11 +24,11 @@ const ModelVersionItem: React.FC<Props> = ({
   const { downloadModel } = useDownloadModel();
   const { downloadedModels } = useGetDownloadedModels();
   const isDownloaded =
-    downloadedModels.find((model) => model.id === modelVersion.id) != null;
+    downloadedModels.find((model) => model._id === modelVersion._id) != null;
 
   const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[modelVersion.id ?? ""]),
-    [modelVersion.id ?? ""]
+    () => atom((get) => get(modelDownloadStateAtom)[modelVersion._id ?? ""]),
+    [modelVersion._id]
   );
   const downloadState = useAtomValue(downloadAtom);
 

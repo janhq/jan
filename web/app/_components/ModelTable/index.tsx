@@ -24,7 +24,7 @@ const ModelTable: React.FC<Props> = ({ models }) => (
       </thead>
       <tbody>
         {models.map((model) => (
-          <ModelRow key={model.id} model={model} />
+          <ModelRow key={model._id} model={model} />
         ))}
       </tbody>
     </table>

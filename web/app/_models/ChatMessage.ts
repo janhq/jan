@@ -34,16 +34,16 @@ export interface ChatMessage {
 }
 
 export interface RawMessage {
-  id?: number;
-  conversation_id: number;
+  _id?: string;
+  conversationId?: string;
   user?: string;
   message?: string;
-  created_at?: string;
-  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export const toChatMessage = async (m: RawMessage): Promise<ChatMessage> => {
-  const createdAt = new Date(m.created_at ?? "").getTime();
+  const createdAt = new Date(m.createdAt ?? "").getTime();
   const imageUrls: string[] = [];
   const imageUrl = undefined;
   if (imageUrl) {
@@ -59,8 +59,8 @@ export const toChatMessage = async (m: RawMessage): Promise<ChatMessage> => {
   const contentHtml = processedContent.toString();
 
   return {
-    id: (m.id ?? 0).toString(),
-    conversationId: (m.conversation_id ?? 0).toString(),
+    id: (m._id ?? 0).toString(),
+    conversationId: (m.conversationId ?? 0).toString(),
     messageType: messageType,
     messageSenderType: messageSenderType,
     senderUid: m.user?.toString() || "0",
