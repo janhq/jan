@@ -167,7 +167,7 @@ function deleteMany(collectionName: string, selector?: { [key: string]: any }): 
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
 function findOne(collectionName: string, key: string): Promise<any> {
-  return dbs[collectionName].get(key);
+  return dbs[collectionName].get(key).catch(() => undefined);
 }
 
 /**

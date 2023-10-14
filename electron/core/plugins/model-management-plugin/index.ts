@@ -19,7 +19,13 @@ const getConfiguredModels = () => core.invokePluginFunc(MODULE_PATH, "getConfigu
  * @param model Product
  */
 function storeModel(model: any) {
-  return store.insertOne("models", model);
+  return store.findOne("models", model._id).then((doc) => {
+    if (doc) {
+      return store.updateOne("models", model._id, model);
+    } else {
+      return store.insertOne("models", model);
+    }
+  });
 }
 
 /**
@@ -27,25 +33,44 @@ function storeModel(model: any) {
  *
  * @param model Product
  */
-function updateFinishedDownloadAt(fileName: string): Promise<any> {
-  return store.updateMany("models", { fileName }, { time: Date.now(), finishDownloadAt: 1 });
+function updateFinishedDownloadAt(_id: string): Promise<any> {
+  return store.updateMany("models", { _id }, { time: Date.now(), finishDownloadAt: 1 });
 }
 
 /**
- * Get all unfinished models from the database
+ * Retrieves all unfinished models from the database.
+ *
+ * @returns A promise that resolves with an array of unfinished models.
  */
 function getUnfinishedDownloadModels(): Promise<any> {
   return store.findMany("models", { finishDownloadAt: -1 }, [{ startDownloadAt: "desc" }]);
 }
 
+/**
+ * Retrieves all finished models from the database.
+ *
+ * @returns A promise that resolves with an array of finished models.
+ */
 function getFinishedDownloadModels(): Promise<any> {
-  return store.findMany("models");
+  return store.findMany("models", { finishDownloadAt: 1 });
 }
 
+/**
+ * Deletes a model from the database.
+ *
+ * @param modelId The ID of the model to delete.
+ * @returns A promise that resolves when the model is deleted.
+ */
 function deleteDownloadModel(modelId: string): Promise<any> {
   return store.deleteOne("models", modelId);
 }
 
+/**
+ * Retrieves a model from the database by ID.
+ *
+ * @param modelId The ID of the model to retrieve.
+ * @returns A promise that resolves with the model.
+ */
 function getModelById(modelId: string): Promise<any> {
   return store.findOne("models", modelId);
 }
@@ -53,6 +78,7 @@ function getModelById(modelId: string): Promise<any> {
 function onStart() {
   store.createCollection("models", {});
 }
+
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }: { register: RegisterExtensionPoint }) {
   onStart();
