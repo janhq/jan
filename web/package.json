@@ -24,6 +24,7 @@
     "embla-carousel-react": "^8.0.0-rc11",
     "eslint": "8.45.0",
     "eslint-config-next": "13.4.10",
+    "framer-motion": "^10.16.4",
     "jotai": "^2.4.0",
     "jotai-optics": "^0.3.1",
     "jwt-decode": "^3.1.2",

@@ -17,6 +17,7 @@ import {
   MainViewState,
 } from "@/_helpers/atoms/MainView.atom";
 import useInitModel from "@/_hooks/useInitModel";
+import { displayDate } from "@/_utils/datetime";
 
 type Props = {
   conversation: Conversation;
@@ -79,17 +80,17 @@ const HistoryItem: React.FC<Props> = ({
       onClick={onClick}
     >
       <Image
-        width={36}
-        height={36}
+        width={32}
+        height={32}
         src={avatarUrl ?? "icons/app_icon.svg"}
-        className="w-9 aspect-square rounded-full"
+        className="aspect-square rounded-full"
         alt=""
       />
       <div className="flex flex-col justify-between text-sm leading-[20px] w-full">
         <div className="flex flex-row items-center justify-between">
-          <span className="text-gray-900 text-left">{name}</span>
-          <span className="text-xs leading-[13px] tracking-[-0.4px] text-gray-400">
-            {updatedAt && new Date(updatedAt).toDateString()}
+          <span className="text-gray-900 text-left line-clamp-1">{name}</span>
+          <span className="text-xs leading-5 text-gray-500">
+            {updatedAt && displayDate(new Date(updatedAt).getTime())}
           </span>
         </div>
         <div className="flex items-center justify-between gap-1">
