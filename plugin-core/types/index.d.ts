@@ -3,6 +3,7 @@ export {};
 declare global {
   interface CorePlugin {
     store?: any | undefined;
+    events?: any | undefined;
   }
   interface Window {
     corePlugin?: CorePlugin;
