@@ -61,6 +61,6 @@ jobs:
           git config --global user.name "Service Account"
           git add plugin-core/package.json
           git commit -m "${GITHUB_REPOSITORY}: Update tag build $version"
-          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:feat/#306-plugin-core-module
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:main
           git tag -a plugin-core-$version -m "${GITHUB_REPOSITORY}: Update tag build $version for plugin-core"
           git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin plugin-core-$version
