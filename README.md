@@ -1,8 +1,6 @@
 # Jan - Run your own AI
 
-<p align="center">
-  <img alt="janlogo" src="https://user-images.githubusercontent.com/69952136/266827788-b37d6f41-fc34-4677-aa1f-3e2ca6d3c91a.png">
-</p>
+![](./docs/static/img/github-readme-banner.png)
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
@@ -20,7 +18,9 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-**Use offline LLMs with your own data.** Run open source models like Llama2 or Falcon on your internal computers/servers.
+Jan runs Large Language Models and AIs on your own Windows, Mac or Linux computer. Jan can be run as a desktop app, or as a cloud-native deployment. 
+
+Jan is free and open source, under the GPLv3 license. 
 
 **Jan runs on any hardware.** From PCs to multi-GPU clusters, Jan supports universal architectures:
 
