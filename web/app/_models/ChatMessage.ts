@@ -6,8 +6,8 @@ export enum MessageType {
 }
 
 export enum MessageSenderType {
-  Ai = "Ai",
-  User = "User",
+  Ai = "assistant",
+  User = "user",
 }
 
 export enum MessageStatus {
@@ -38,7 +38,7 @@ export interface RawMessage {
   updatedAt?: string;
 }
 
-export const toChatMessage = async (m: RawMessage): Promise<ChatMessage> => {
+export const toChatMessage = (m: RawMessage): ChatMessage => {
   const createdAt = new Date(m.createdAt ?? "").getTime();
   const imageUrls: string[] = [];
   const imageUrl = undefined;

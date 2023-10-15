@@ -40,6 +40,7 @@ const HistoryList: React.FC = () => {
               <HistoryItem
                 key={convo._id}
                 conversation={convo}
+                summary={convo.summary}
                 avatarUrl={convo.image}
                 name={convo.name || "Jan"}
                 updatedAt={convo.updatedAt ?? ""}

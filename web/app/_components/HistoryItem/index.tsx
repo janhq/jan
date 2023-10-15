@@ -22,6 +22,7 @@ type Props = {
   conversation: Conversation;
   avatarUrl?: string;
   name: string;
+  summary?: string;
   updatedAt?: string;
 };
 
@@ -29,6 +30,7 @@ const HistoryItem: React.FC<Props> = ({
   conversation,
   avatarUrl,
   name,
+  summary,
   updatedAt,
 }) => {
   const setMainViewState = useSetAtom(setMainViewStateAtom);
@@ -94,7 +96,9 @@ const HistoryItem: React.FC<Props> = ({
       <div className="flex flex-col ml-2 flex-1">
         {/* title */}
         <div className="flex">
-          <span className="flex-1 text-gray-900 line-clamp-1">{name}</span>
+          <span className="flex-1 text-gray-900 line-clamp-1">
+            {summary ?? name}
+          </span>
           <span className="text-xs leading-5 text-gray-500 line-clamp-1">
             {updatedAt && displayDate(new Date(updatedAt).getTime())}
           </span>

@@ -19,6 +19,9 @@ const marked = new Marked(
   markedHighlight({
     langPrefix: "hljs",
     highlight(code, lang) {
+      if (lang === undefined || lang === "") {
+        return hljs.highlightAuto(code).value;
+      }
       return hljs.highlight(code, { language: lang }).value;
     },
   }),
@@ -56,7 +59,7 @@ const SimpleTextMessage: React.FC<Props> = ({
         height={32}
         alt=""
       />
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 w-full">
         <div className="flex gap-1 justify-start items-baseline">
           <div className="text-[#1B1B1B] text-sm font-extrabold leading-[15.2px] dark:text-[#d1d5db]">
             {senderName}

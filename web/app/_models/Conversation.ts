@@ -5,6 +5,7 @@ export interface Conversation {
   image?: string;
   message?: string;
   lastMessage?: string;
+  summary?: string;
   createdAt?: string;
   updatedAt?: string;
 }
