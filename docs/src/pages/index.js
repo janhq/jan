@@ -19,7 +19,7 @@ export default function Home() {
       title={`${siteConfig.tagline}`}
       description="Description will go into a meta tag in <head />"
     >
-      <HomepageBanner />
+      {/* <HomepageBanner /> */}
       <main className={styles.main}>
         <HomepageHero />
         <HomepageSectionOne />
