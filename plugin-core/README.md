@@ -34,20 +34,7 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
 }
 ```
 
-### Access Core API
-
-To access the Core API in your plugin, you can follow the code examples and explanations provided below.
-
-##### Import Core API and Store Module
-
-In your main entry code (e.g., `index.ts`), start by importing the necessary modules and functions from the `@janhq/plugin-core` library.
-
-```js
-// index.ts
-import { store, core } from "@janhq/plugin-core";
-```
-
-#### Interact with Local Data Storage
+### Interact with Local Data Storage
 
 The Core API allows you to interact with local data storage. Here are a couple of examples of how you can use it:
 
@@ -56,6 +43,8 @@ The Core API allows you to interact with local data storage. Here are a couple o
 You can use the store.insertOne function to insert data into a specific collection in the local data store.
 
 ```js
+import { store } from "@janhq/plugin-core";
+
 function insertData() {
   store.insertOne("conversations", { name: "meow" });
   // Insert a new document with { name: "meow" } into the "conversations" collection.
@@ -70,6 +59,8 @@ store.getOne(collectionName, key) retrieves a single document that matches the p
 store.getMany(collectionName, selector, sort) retrieves multiple documents that match the provided selector in the specified collection.
 
 ```js
+import { store } from "@janhq/plugin-core";
+
 function getData() {
   const selector = { name: "meow" };
   const data = store.findMany("conversations", selector);
@@ -108,7 +99,7 @@ function deleteData() {
 }
 ```
 
-#### Events
+### Events
 
 You can subscribe to NewMessageRequest events by defining a function to handle the event and registering it with the events object:
 
@@ -145,6 +136,56 @@ function handleMessageRequest(data: NewMessageRequest) {
 }
 ```
 
+### Preferences
+
+To register plugin preferences, you can use the preferences object from the @janhq/plugin-core package. Here's an example of how to register and retrieve plugin preferences:
+
+```js
+import { PluginService, preferences } from "@janhq/plugin-core";
+
+const PluginName = "your-first-plugin";
+
+export function init({ register }: { register: RegisterExtensionPoint }) {
+  // Register preference update handlers. E.g. update plugin instance with new configuration
+  register(PluginService.OnPreferencesUpdate, PluginName, onPreferencesUpdate);
+
+  // Register plugin preferences. E.g. Plugin need apiKey and endpoint to connect to your service
+  preferences.registerPreferences<string>(register, PluginName, "apiKey", "");
+  preferences.registerPreferences<string>(register, PluginName, "endpoint", "");
+}
+```
+
+In this example, we're registering preference update handlers and plugin preferences using the preferences object. We're also defining a PluginName constant to use as the name of the plugin.
+
+To retrieve the values of the registered preferences, we're using the get method of the preferences object and passing in the name of the plugin and the name of the preference.
+
+```js
+import { preferences } from "@janhq/plugin-core";
+
+const PluginName = "your-first-plugin";
+
+const setup = async () => {
+  // Retrieve apiKey
+  const apiKey: string = (await preferences.get(PluginName, "apiKey")) ?? "";
+
+  // Retrieve endpoint
+  const endpoint: string = (await preferences.get(PluginName, "endpoint")) ?? "";
+}
+```
+
+### Access Core API
+
+To access the Core API in your plugin, you can follow the code examples and explanations provided below.
+
+##### Import Core API and Store Module
+
+In your main entry code (e.g., `index.ts`), start by importing the necessary modules and functions from the `@janhq/plugin-core` library.
+
+```js
+// index.ts
+import { core } from "@janhq/plugin-core";
+```
+
 #### Perform File Operations
 
 The Core API also provides functions to perform file operations. Here are a couple of examples:
@@ -169,7 +210,7 @@ function deleteModel(filePath: string) {
 }
 ```
 
-### Execute plugin module in main process
+#### Execute plugin module in main process
 
 To execute a plugin module in the main process of your application, you can follow the steps outlined below.
 

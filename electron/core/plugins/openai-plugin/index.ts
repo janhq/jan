@@ -5,7 +5,6 @@ import {
   events,
   store,
   preferences,
-  InferenceService,
   RegisterExtensionPoint,
 } from "@janhq/plugin-core";
 import { Configuration, OpenAIApi } from "azure-openai";
