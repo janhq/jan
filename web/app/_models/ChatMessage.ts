@@ -1,6 +1,3 @@
-import { remark } from "remark";
-import html from "remark-html";
-
 export enum MessageType {
   Text = "Text",
   Image = "Image",
@@ -26,7 +23,6 @@ export interface ChatMessage {
   senderUid: string;
   senderName: string;
   senderAvatarUrl: string;
-  htmlText?: string | undefined;
   text: string | undefined;
   imageUrls?: string[] | undefined;
   createdAt: number;
@@ -55,8 +51,6 @@ export const toChatMessage = async (m: RawMessage): Promise<ChatMessage> => {
     m.user === "user" ? MessageSenderType.User : MessageSenderType.Ai;
 
   const content = m.message ?? "";
-  const processedContent = await remark().use(html).process(content);
-  const contentHtml = processedContent.toString();
 
   return {
     id: (m._id ?? 0).toString(),
@@ -68,7 +62,6 @@ export const toChatMessage = async (m: RawMessage): Promise<ChatMessage> => {
     senderAvatarUrl:
       m.user === "user" ? "icons/avatar.svg" : "icons/app_icon.svg",
     text: content,
-    htmlText: contentHtml,
     imageUrls: imageUrls,
     createdAt: createdAt,
     status: MessageStatus.Ready,

@@ -13,12 +13,17 @@ export default function useInitModel() {
       return;
     }
 
+    const currentTime = Date.now();
+    console.debug("Init model: ", model._id);
+
     const res = await executeSerial(InferenceService.InitModel, model._id);
     if (res?.error) {
       console.log("error occured: ", res);
       return res;
     } else {
-      console.log(`Init model successfully!`);
+      console.debug(
+        `Init model successfully!, take ${Date.now() - currentTime}ms`
+      );
       setActiveModel(model);
       return {};
     }

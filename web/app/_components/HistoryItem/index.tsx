@@ -73,7 +73,7 @@ const HistoryItem: React.FC<Props> = ({
     rightImageUrl = "icons/loading.svg";
   }
 
-  const description = conversation?.message ?? "No new message";
+  const description = conversation?.lastMessage ?? "No new message";
 
   return (
     <li

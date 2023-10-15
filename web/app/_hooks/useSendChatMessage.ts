@@ -18,11 +18,14 @@ import {
 import {
   currentConversationAtom,
   getActiveConvoIdAtom,
+  updateConversationAtom,
   updateConversationWaitingForResponseAtom,
 } from "@/_helpers/atoms/Conversation.atom";
+import { Conversation } from "@/_models/Conversation";
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom);
+  const updateConversation = useSetAtom(updateConversationAtom);
   const updateStreamMessage = useSetAtom(currentStreamingMessageAtom);
   const addNewMessage = useSetAtom(addNewMessageAtom);
   const updateMessage = useSetAtom(updateMessageAtom);
@@ -144,6 +147,15 @@ export default function useSendChatMessage() {
         .replace("T", " ")
         .replace(/\.\d+Z$/, ""),
     });
+
+    const updatedConvo: Conversation = {
+      ...currentConvo,
+      lastMessage: answer.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await executeSerial(DataService.UpdateConversation, updatedConvo);
+    updateConversation(updatedConvo);
     updateConvWaiting(conversationId, false);
   };
   return {

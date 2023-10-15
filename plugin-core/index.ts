@@ -77,6 +77,11 @@ export enum DataService {
   CreateConversation = "createConversation",
 
   /**
+   * Updates an existing conversation on the server.
+   */
+  UpdateConversation = "updateConversation",
+
+  /**
    * Deletes an existing conversation from the server.
    */
   DeleteConversation = "deleteConversation",
