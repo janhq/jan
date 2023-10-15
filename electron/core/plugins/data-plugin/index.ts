@@ -12,7 +12,6 @@ const MODULE_PATH = "data-plugin/dist/cjs/module.js";
  *
  */
 function createCollection({ name, schema }: { name: string; schema?: { [key: string]: any } }): Promise<void> {
-  console.log("renderer: creating collection:", name, schema);
   return core.invokePluginFunc(MODULE_PATH, "createCollection", name, schema);
 }
 

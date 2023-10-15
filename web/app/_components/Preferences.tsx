@@ -6,11 +6,7 @@ import {
   extensionPoints,
   activationPoints,
 } from "@/../../electron/core/plugin-manager/execution/index";
-import {
-  ChartPieIcon,
-  CommandLineIcon,
-  PlayIcon,
-} from "@heroicons/react/24/outline";
+import { ChartPieIcon, CommandLineIcon, PlayIcon } from "@heroicons/react/24/outline";
 
 import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 import classNames from "classnames";
@@ -19,8 +15,11 @@ import classNames from "classnames";
 export const Preferences = () => {
   const [search, setSearch] = useState<string>("");
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
+  const [preferences, setPreferences] = useState<any[]>([]);
   const [isTestAvailable, setIsTestAvailable] = useState(false);
   const [fileName, setFileName] = useState("");
+  const experimentRef = useRef(null);
+  const preferenceRef = useRef(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -31,7 +30,6 @@ export const Preferences = () => {
     }
   };
 
-  const preferenceRef = useRef(null);
   useEffect(() => {
     async function setupPE() {
       // Enable activation point management
@@ -54,12 +52,20 @@ export const Preferences = () => {
       setTimeout(async () => {
         await activationPoints.trigger("init");
         if (extensionPoints.get("experimentComponent")) {
-          const components = await Promise.all(
-            extensionPoints.execute("experimentComponent")
-          );
+          const components = await Promise.all(extensionPoints.execute("experimentComponent"));
           if (components.length > 0) {
             setIsTestAvailable(true);
           }
+          components.forEach((e) => {
+            if (experimentRef.current) {
+              // @ts-ignore
+              experimentRef.current.appendChild(e);
+            }
+          });
+        }
+
+        if (extensionPoints.get("PluginPreferences")) {
+          const components = await Promise.all(extensionPoints.execute("PluginPreferences"));
           components.forEach((e) => {
             if (preferenceRef.current) {
               // @ts-ignore
@@ -92,11 +98,7 @@ export const Preferences = () => {
     // to the main process for removal
     //@ts-ignore
     const res = await plugins.uninstall([name]);
-    console.log(
-      res
-        ? "Plugin successfully uninstalled"
-        : "Plugin could not be uninstalled"
-    );
+    console.log(res ? "Plugin successfully uninstalled" : "Plugin could not be uninstalled");
     if (res) window.electronAPI.relaunch();
   };
 
@@ -152,12 +154,9 @@ export const Preferences = () => {
                   {!fileName ? (
                     <div className="flex flex-col items-center justify-center pt-5 pb-6">
                       <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                        <span className="font-semibold">Click to upload</span>{" "}
-                        or drag and drop
+                        <span className="font-semibold">Click to upload</span> or drag and drop
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        TGZ (MAX 50MB)
-                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">TGZ (MAX 50MB)</p>
                     </div>
                   ) : (
                     <>{fileName}</>
@@ -177,9 +176,7 @@ export const Preferences = () => {
                   type="submit"
                   className={classNames(
                     "rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600",
-                    fileName
-                      ? "bg-blue-500 hover:bg-blue-300"
-                      : "bg-gray-500"
+                    fileName ? "bg-blue-500 hover:bg-blue-300" : "bg-gray-500"
                   )}
                 >
                   Install Plugin
@@ -205,11 +202,7 @@ export const Preferences = () => {
           </div>
           <div className="grid grid-cols-2 items-stretch gap-4">
             {activePlugins
-              .filter(
-                (e) =>
-                  search.trim() === "" ||
-                  e.name.toLowerCase().includes(search.toLowerCase())
-              )
+              .filter((e) => search.trim() === "" || e.name.toLowerCase().includes(search.toLowerCase()))
               .map((e) => (
                 <div
                   key={e.name}
@@ -218,19 +211,13 @@ export const Preferences = () => {
                 >
                   <div className="flex flex-row space-x-2 items-center">
                     <span className="relative inline-block mt-1">
-                      <img
-                        className="h-14 w-14 rounded-md"
-                        src={e.icon ?? "icons/app_icon.svg"}
-                        alt=""
-                      />
+                      <img className="h-14 w-14 rounded-md" src={e.icon ?? "icons/app_icon.svg"} alt="" />
                     </span>
                     <div className="flex flex-col">
                       <p className="text-xl font-bold tracking-tight text-gray-900 dark:text-white capitalize">
                         {e.name.replaceAll("-", " ")}
                       </p>
-                      <p className="font-normal text-gray-700 dark:text-gray-400">
-                        Version: {e.version}
-                      </p>
+                      <p className="font-normal text-gray-700 dark:text-gray-400">Version: {e.version}</p>
                     </div>
                   </div>
 
@@ -266,8 +253,13 @@ export const Preferences = () => {
               Test Plugins
             </div>
           )}
+          <div className="h-full w-full" ref={experimentRef}></div>
+
+          <div className="flex flex-row items-center my-4">
+            <PlayIcon width={30} />
+            Preferences
+          </div>
           <div className="h-full w-full" ref={preferenceRef}></div>
-          {/* Content */}
         </div>
       </main>
     </div>

@@ -1,5 +1,5 @@
 "use client";
-
+import { PluginService } from "@janhq/plugin-core";
 import { ThemeWrapper } from "./_helpers/ThemeWrapper";
 import JotaiWrapper from "./_helpers/JotaiWrapper";
 import { ModalWrapper } from "./_helpers/ModalWrapper";
@@ -17,6 +17,7 @@ import {
 import EventListenerWrapper from "./_helpers/EventListenerWrapper";
 import { setupCoreServices } from "./_services/coreService";
 import MainContainer from "./_components/MainContainer";
+import { executeSerial } from "../../electron/core/plugin-manager/execution/extension-manager";
 
 const Page: React.FC = () => {
   const [setupCore, setSetupCore] = useState(false);
@@ -40,6 +41,7 @@ const Page: React.FC = () => {
         setupBasePlugins();
         return;
       }
+      await executeSerial(PluginService.OnStart);
       setActivated(true);
     }, 500);
   }
@@ -49,6 +51,7 @@ const Page: React.FC = () => {
     setupCoreServices();
     setSetupCore(true);
   }, []);
+
   useEffect(() => {
     if (setupCore) {
       // Electron

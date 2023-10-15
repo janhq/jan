@@ -294,4 +294,11 @@ The `SystemMonitoringService` enum includes methods for monitoring system resour
 - `GetResourcesInfo`: Gets information about system resources.
 - `GetCurrentLoad`: Gets the current system load.
 
+## PluginService
+
+The `PluginService` enum includes plugin cycle handlers:
+
+- `OnStart`: Handler for starting. E.g. Create a collection.
+- `OnPreferencesUpdate`: Handler for preferences update. E.g. Update instances with new configurations.
+
 For more detailed information on each of these components, please refer to the source code.

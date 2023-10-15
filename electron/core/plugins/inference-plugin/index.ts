@@ -1,10 +1,10 @@
-import { EventName, InferenceService, NewMessageRequest, core, events, store } from "@janhq/plugin-core";
+import { EventName, InferenceService, NewMessageRequest, PluginService, core, events, store } from "@janhq/plugin-core";
 
-const MODULE_PATH = "inference-plugin/dist/module.js";
+const PluginName = "inference-plugin"
+const MODULE_PATH = `${PluginName}/dist/module.js`;
+const inferenceUrl = "http://localhost:3928/llama/chat_completion";
 
 const initModel = async (product) => core.invokePluginFunc(MODULE_PATH, "initModel", product);
-
-const inferenceUrl = () => "http://localhost:3928/llama/chat_completion";
 
 const stopModel = () => {
   core.invokePluginFunc(MODULE_PATH, "killSubprocess");
@@ -33,7 +33,7 @@ async function handleMessageRequest(data: NewMessageRequest) {
   message._id = id;
   events.emit(EventName.OnNewMessageResponse, message);
 
-  const response = await fetch(inferenceUrl(), {
+  const response = await fetch(inferenceUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -80,9 +80,13 @@ async function handleMessageRequest(data: NewMessageRequest) {
 const registerListener = () => {
   events.on(EventName.OnNewMessageRequest, handleMessageRequest);
 };
+
+const onStart = async () => {
+  registerListener()
+}
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
-  registerListener();
+  register(PluginService.OnStart, PluginName, onStart);
   register(InferenceService.InitModel, initModel.name, initModel);
   register(InferenceService.StopModel, stopModel.name, stopModel);
 }

@@ -212,6 +212,32 @@ export enum SystemMonitoringService {
 }
 
 /**
+ * PluginService exports.
+ * @enum {string}
+ */
+export enum PluginService {
+  /**
+   * The plugin is being started.
+   */
+  OnStart = "pluginOnStart",
+
+  /**
+   * The plugin is being started.
+   */
+  OnPreferencesUpdate = "pluginPreferencesUpdate",
+
+  /**
+   * The plugin is being stopped.
+   */
+  OnStop = "pluginOnStop",
+
+  /**
+   * The plugin is being destroyed.
+   */
+  OnDestroy = "pluginOnDestroy",
+}
+
+/**
  * Store module exports.
  * @module
  */
@@ -228,3 +254,9 @@ export { core, RegisterExtensionPoint } from "./core";
  * @module
  */
 export { events, EventName, NewMessageRequest, NewMessageResponse } from "./events";
+
+/**
+ * Preferences module exports.
+ * @module
+ */
+export { preferences } from "./preferences";
