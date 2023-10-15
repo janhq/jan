@@ -1,5 +1,4 @@
 import React from "react";
-import JanImage from "../JanImage";
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
@@ -17,11 +16,13 @@ import {
   MainViewState,
 } from "@/_helpers/atoms/MainView.atom";
 import useInitModel from "@/_hooks/useInitModel";
+import { displayDate } from "@/_utils/datetime";
 
 type Props = {
   conversation: Conversation;
   avatarUrl?: string;
   name: string;
+  summary?: string;
   updatedAt?: string;
 };
 
@@ -29,6 +30,7 @@ const HistoryItem: React.FC<Props> = ({
   conversation,
   avatarUrl,
   name,
+  summary,
   updatedAt,
 }) => {
   const setMainViewState = useSetAtom(setMainViewStateAtom);
@@ -73,49 +75,39 @@ const HistoryItem: React.FC<Props> = ({
     rightImageUrl = "icons/loading.svg";
   }
 
+  const description = conversation?.lastMessage ?? "No new message";
+
   return (
-    <button
-      className={`flex flex-row mx-1 items-center gap-2.5 rounded-lg p-2 ${backgroundColor} hover:bg-hover-light`}
+    <li
+      role="button"
+      className={`flex flex-row ml-3 mr-2 rounded p-3 ${backgroundColor} hover:bg-hover-light`}
       onClick={onClick}
     >
-      <Image
-        width={36}
-        height={36}
-        src={avatarUrl ?? "icons/app_icon.svg"}
-        className="w-9 aspect-square rounded-full"
-        alt=""
-      />
-      <div className="flex flex-col justify-between text-sm leading-[20px] w-full">
-        <div className="flex flex-row items-center justify-between">
-          <span className="text-gray-900 text-left">{name}</span>
-          <span className="text-xs leading-[13px] tracking-[-0.4px] text-gray-400">
-            {updatedAt && new Date(updatedAt).toDateString()}
+      <div className="w-8 h-8">
+        <Image
+          width={32}
+          height={32}
+          src={avatarUrl ?? "icons/app_icon.svg"}
+          className="aspect-square rounded-full"
+          alt=""
+        />
+      </div>
+
+      <div className="flex flex-col ml-2 flex-1">
+        {/* title */}
+        <div className="flex">
+          <span className="flex-1 text-gray-900 line-clamp-1">
+            {summary ?? name}
+          </span>
+          <span className="text-xs leading-5 text-gray-500 line-clamp-1">
+            {updatedAt && displayDate(new Date(updatedAt).getTime())}
           </span>
         </div>
-        <div className="flex items-center justify-between gap-1">
-          <div className="flex-1">
-            <span className="text-gray-400 hidden-text text-left">
-              {conversation?.message ?? (
-                <span>
-                  No new message
-                  <br className="h-5 block" />
-                </span>
-              )}
-            </span>
-          </div>
-          <>
-            {rightImageUrl != null ? (
-              <JanImage
-                imageUrl={rightImageUrl ?? ""}
-                className="rounded"
-                width={24}
-                height={24}
-              />
-            ) : undefined}
-          </>
-        </div>
+
+        {/* description */}
+        <span className="mt-1 text-gray-400 line-clamp-2">{description}</span>
       </div>
-    </button>
+    </li>
   );
 };
 

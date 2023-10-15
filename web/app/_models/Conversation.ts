@@ -4,6 +4,8 @@ export interface Conversation {
   name?: string;
   image?: string;
   message?: string;
+  lastMessage?: string;
+  summary?: string;
   createdAt?: string;
   updatedAt?: string;
 }
