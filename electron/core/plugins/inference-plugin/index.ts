@@ -75,8 +75,6 @@ async function handleMessageRequest(data: NewMessageRequest) {
   }
   // TODO: Common collections should be able to access via core functions instead of store
   await store.updateOne("messages", message._id, message);
-
-  events.emit(EventName.OnMessageResponseFinished, message);
 }
 
 const registerListener = () => {
