@@ -8,8 +8,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const addNewMessage = useSetAtom(addNewMessageAtom);
   const updateMessage = useSetAtom(updateMessageAtom);
 
-  async function handleNewMessageResponse(message: NewMessageResponse) {
-    const newResponse = await toChatMessage(message);
+  function handleNewMessageResponse(message: NewMessageResponse) {
+    const newResponse = toChatMessage(message);
     addNewMessage(newResponse);
   }
   async function handleMessageResponseUpdate(messageResponse: NewMessageResponse) {
