@@ -19,7 +19,7 @@ async function handleMessageRequest(data: NewMessageRequest) {
     .slice(-10)
     .map((message) => {
       return {
-        content: message.message,
+        content: message.message.trim(),
         role: message.user === "user" ? "user" : "assistant",
       };
     });
@@ -77,6 +77,7 @@ async function handleMessageRequest(data: NewMessageRequest) {
       }
     }
   }
+  message.message = answer.trim();
   // TODO: Common collections should be able to access via core functions instead of store
   await store.updateOne("messages", message._id, message);
 }
