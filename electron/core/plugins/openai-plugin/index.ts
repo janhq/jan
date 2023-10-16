@@ -93,7 +93,21 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(PluginService.OnStart, PluginName, onStart);
   register(PluginService.OnPreferencesUpdate, PluginName, onPreferencesUpdate);
 
-  preferences.registerPreferences<string>(register, PluginName, "apiKey", "");
-  preferences.registerPreferences<string>(register, PluginName, "endpoint", "");
-  preferences.registerPreferences<string>(register, PluginName, "deploymentName", "");
+  preferences.registerPreferences<string>(register, PluginName, "apiKey", "API Key", "Azure Project API Key", "");
+  preferences.registerPreferences<string>(
+    register,
+    PluginName,
+    "endpoint",
+    "API Endpoint",
+    "Azure Deployment Endpoint API",
+    ""
+  );
+  preferences.registerPreferences<string>(
+    register,
+    PluginName,
+    "deploymentName",
+    "Deployment Name",
+    "The deployment name you chose when you deployed the model",
+    ""
+  );
 }

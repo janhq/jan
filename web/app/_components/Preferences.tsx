@@ -10,12 +10,13 @@ import { ChartPieIcon, CommandLineIcon, PlayIcon } from "@heroicons/react/24/out
 
 import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 import classNames from "classnames";
+import { preferences } from "@janhq/plugin-core";
 
-/* eslint-disable @next/next/no-sync-scripts */
 export const Preferences = () => {
   const [search, setSearch] = useState<string>("");
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
-  const [preferences, setPreferences] = useState<any[]>([]);
+  const [preferenceItems, setPreferenceItems] = useState<any[]>([]);
+  const [preferenceValues, setPreferenceValues] = useState<any[]>([]);
   const [isTestAvailable, setIsTestAvailable] = useState(false);
   const [fileName, setFileName] = useState("");
   const experimentRef = useRef(null);
@@ -65,13 +66,8 @@ export const Preferences = () => {
         }
 
         if (extensionPoints.get("PluginPreferences")) {
-          const components = await Promise.all(extensionPoints.execute("PluginPreferences"));
-          components.forEach((e) => {
-            if (preferenceRef.current) {
-              // @ts-ignore
-              preferenceRef.current.appendChild(e);
-            }
-          });
+          const data = await Promise.all(extensionPoints.execute("PluginPreferences"));
+          setPreferenceItems(Array.isArray(data) ? data : []);
         }
       }, 500);
     };
@@ -92,13 +88,9 @@ export const Preferences = () => {
 
   // Uninstall a plugin on clicking uninstall
   const uninstall = async (name: string) => {
-    //@ts-ignore
-
     // Send the filename of the to be uninstalled plugin
     // to the main process for removal
-    //@ts-ignore
     const res = await plugins.uninstall([name]);
-    console.log(res ? "Plugin successfully uninstalled" : "Plugin could not be uninstalled");
     if (res) window.electronAPI.relaunch();
   };
 
@@ -111,6 +103,18 @@ export const Preferences = () => {
     }
     // plugins.update(active.map((plg) => plg.name));
   };
+
+  useEffect(() => {
+    if (preferenceItems) {
+      Promise.all(
+        preferenceItems.map((e) =>
+          preferences.get(e.pluginName, e.preferenceKey).then((k) => ({ key: e.preferenceKey, value: k }))
+        )
+      ).then((data) => {
+        setPreferenceValues(data);
+      });
+    }
+  }, [preferenceItems]);
 
   return (
     <div className="w-full h-screen overflow-scroll">
@@ -259,7 +263,24 @@ export const Preferences = () => {
             <PlayIcon width={30} />
             Preferences
           </div>
-          <div className="h-full w-full" ref={preferenceRef}></div>
+          <div className="h-full w-full flex flex-col" ref={preferenceRef}>
+            {preferenceItems?.map((e) => (
+              <div key={e.preferenceKey} className="flex flex-col mb-4">
+                <div>
+                  <span className="text-[16px] text-gray-600">Setting:</span>{" "}
+                  <span className="text-[16px] text-gray-900">{e.preferenceName}</span>
+                </div>
+                <span className="text-[14px] text-gray-400">{e.preferenceDescription}</span>
+                <div className="flex flex-row space-x-4 items-center mt-2">
+                  <input
+                    className="text-gray-500 w-1/3 rounded-sm border-gray-300 border-[1px] h-8"
+                    defaultValue={preferenceValues.filter((v) => v.key === e.preferenceKey)[0]?.value}
+                    onChange={(event) => preferences.set(e.pluginName, e.preferenceKey, event.target.value)}
+                  ></input>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </main>
     </div>

@@ -54,10 +54,19 @@ function clear(pluginName: string): Promise<void> {
  * @param preferenceName The name of the preference.
  * @param defaultValue The default value of the preference.
  */
-function registerPreferences<T>(register: Function, pluginName: string, preferenceName: string, defaultValue: T) {
-  register("PluginPreferences", `${pluginName}.${preferenceName}`, () => ({
+function registerPreferences<T>(
+  register: Function,
+  pluginName: string,
+  preferenceKey: string,
+  preferenceName: string,
+  preferenceDescription: string,
+  defaultValue: T
+) {
+  register("PluginPreferences", `${pluginName}.${preferenceKey}`, () => ({
     pluginName,
+    preferenceKey,
     preferenceName,
+    preferenceDescription,
     defaultValue,
   }));
 }
