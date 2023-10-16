@@ -25,7 +25,7 @@ jobs:
           git config --global user.email "service@jan.ai"
           git config --global user.name "Service Account"
           echo "Changes in these directories trigger the build:"
-          changed_dirs=$(git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.GITHUB_TOKEN }}" diff --name-only HEAD HEAD~1 | grep 'plugins/' | awk -F/ '{print $2}' | uniq)
+          changed_dirs=$(git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.GITHUB_TOKEN }}" diff --name-only HEAD HEAD~1 | grep '^plugins/' | awk -F/ '{print $2}' | uniq)
           echo $changed_dirs > /tmp/change_dir.txt
 
       - name: "Auto Increase package Version"
