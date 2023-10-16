@@ -25,7 +25,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@janhq/plugin-core": "file:../../../../plugin-core",
+    "@janhq/plugin-core": "^0.1.5",
     "azure-openai": "^0.9.4",
     "kill-port-process": "^3.2.0",
     "tcp-port-used": "^1.0.2",
