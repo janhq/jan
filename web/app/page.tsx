@@ -5,15 +5,8 @@ import JotaiWrapper from "./_helpers/JotaiWrapper";
 import { ModalWrapper } from "./_helpers/ModalWrapper";
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import {
-  setup,
-  plugins,
-  activationPoints,
-} from "../../electron/core/plugin-manager/execution/index";
-import {
-  isCorePluginInstalled,
-  setupBasePlugins,
-} from "./_services/pluginService";
+import { setup, plugins, activationPoints, extensionPoints } from "../../electron/core/plugin-manager/execution/index";
+import { isCorePluginInstalled, setupBasePlugins } from "./_services/pluginService";
 import EventListenerWrapper from "./_helpers/EventListenerWrapper";
 import { setupCoreServices } from "./_services/coreService";
 import MainContainer from "./_components/MainContainer";
@@ -41,7 +34,9 @@ const Page: React.FC = () => {
         setupBasePlugins();
         return;
       }
-      await executeSerial(PluginService.OnStart);
+      if (extensionPoints.get(PluginService.OnStart)) {
+        await executeSerial(PluginService.OnStart);
+      }
       setActivated(true);
     }, 500);
   }
@@ -67,19 +62,19 @@ const Page: React.FC = () => {
   return (
     <JotaiWrapper>
       {setupCore && (
-      <EventListenerWrapper>
-        <ThemeWrapper>
-          <ModalWrapper>
-            {activated ? (
-              <MainContainer />
-            ) : (
-              <div className="bg-white w-screen h-screen items-center justify-center flex">
-                <Image width={50} height={50} src="icons/app_icon.svg" alt="" />
-              </div>
-            )}
-          </ModalWrapper>
-        </ThemeWrapper>
-      </EventListenerWrapper>
+        <EventListenerWrapper>
+          <ThemeWrapper>
+            <ModalWrapper>
+              {activated ? (
+                <MainContainer />
+              ) : (
+                <div className="bg-white w-screen h-screen items-center justify-center flex">
+                  <Image width={50} height={50} src="icons/app_icon.svg" alt="" />
+                </div>
+              )}
+            </ModalWrapper>
+          </ThemeWrapper>
+        </EventListenerWrapper>
       )}
     </JotaiWrapper>
   );
