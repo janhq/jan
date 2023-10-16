@@ -2,7 +2,7 @@
   "name": "azure-openai-plugin",
   "version": "1.0.0",
   "description": "Inference plugin for Azure OpenAI",
-  "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/command-line.svg",
+  "icon": "https://static-assets.jan.ai/openai-icon.jpg",
   "main": "dist/index.js",
   "author": "Jan",
   "license": "MIT",
