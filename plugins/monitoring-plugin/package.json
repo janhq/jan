@@ -12,7 +12,7 @@
   "scripts": {
     "build": "webpack --config webpack.config.js",
     "postinstall": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\"",
-    "build:publish": "npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "devDependencies": {
     "rimraf": "^3.0.2",
