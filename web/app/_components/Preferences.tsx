@@ -10,7 +10,8 @@ import { ChartPieIcon, CommandLineIcon, PlayIcon } from "@heroicons/react/24/out
 
 import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 import classNames from "classnames";
-import { preferences } from "@janhq/plugin-core";
+import { PluginService, preferences } from "@janhq/plugin-core";
+import { execute } from "../../../electron/core/plugin-manager/execution/extension-manager";
 
 export const Preferences = () => {
   const [search, setSearch] = useState<string>("");
@@ -103,6 +104,14 @@ export const Preferences = () => {
     }
     // plugins.update(active.map((plg) => plg.name));
   };
+
+  let timeout: any | undefined = undefined;
+  function notifyPreferenceUpdate() {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 500);
+  }
 
   useEffect(() => {
     if (preferenceItems) {
@@ -275,7 +284,11 @@ export const Preferences = () => {
                   <input
                     className="text-gray-500 w-1/3 rounded-sm border-gray-300 border-[1px] h-8"
                     defaultValue={preferenceValues.filter((v) => v.key === e.preferenceKey)[0]?.value}
-                    onChange={(event) => preferences.set(e.pluginName, e.preferenceKey, event.target.value)}
+                    onChange={(event) =>
+                      preferences
+                        .set(e.pluginName, e.preferenceKey, event.target.value)
+                        .then(() => notifyPreferenceUpdate())
+                    }
                   ></input>
                 </div>
               </div>
