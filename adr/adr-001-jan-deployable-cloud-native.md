@@ -3,6 +3,7 @@
 ## Changelog
 
 - 23.10.03: Initial unfinished draft
+- 23.10.16: Remove authentication
 
 ## Authors
 
@@ -22,7 +23,6 @@
 * This ADR aims to outline design decisions for deploying Jan in cloud native environments such as: Runpod, AWS, Azure, GCP in a fast and simple way.
 * The current code-base should not change too much.
 * The current plugins must be reusable across enviroments (Desktop, Cloud-native).
-* Simple authentication (username/password) must be supported.
 
 
 ### Key Design Decisions
@@ -43,6 +43,7 @@ Separated server process runs along side with electron. https://github.com/janhq
 
 ## Considerations
 * Due to the limitation of accessing the file system in web browsers, the first version of the web app will load all the current plugins by default, and users will not be able to add, remove, or update plugins.
+* Simple authentication will be implemented as a plugin.
 
 ## References
 
