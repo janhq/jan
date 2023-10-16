@@ -18,6 +18,9 @@ import React from 'react'
 
 import BaseLayout from '@containers/Layout'
 
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
 const Page: React.FC = () => {
   const viewState = useAtomValue(getMainViewStateAtom)
 
@@ -53,7 +56,10 @@ const Page: React.FC = () => {
       break
   }
 
-  return <BaseLayout>{children}</BaseLayout>
+  return <BaseLayout>
+  {children}
+  <div><ToastContainer /></div>
+  </BaseLayout>
 }
 
 export default Page

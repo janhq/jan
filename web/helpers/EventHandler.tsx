@@ -11,6 +11,10 @@ import {
 } from './atoms/Conversation.atom'
 import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
 import { debounce } from 'lodash'
+import { setDownloadStateAtom, setDownloadStateSuccessAtom } from "./atoms/DownloadState.atom";
+import { downloadedModelAtom } from "./atoms/DownloadedModel.atom";
+import { ModelManagementService } from "@janhq/core";
+import { getDownloadedModels } from "../hooks/useGetDownloadedModels";
 
 let currentConversation: Conversation | undefined = undefined
 
@@ -21,6 +25,7 @@ const debouncedUpdateConversation = debounce(
   1000
 )
 
+
 export default function EventHandler({ children }: { children: ReactNode }) {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
@@ -29,6 +34,9 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const { getConversationById } = useGetUserConversations()
 
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
+  const setDownloadState = useSetAtom(setDownloadStateAtom);
+  const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom);
+  const setDownloadedModels = useSetAtom(downloadedModelAtom);
 
   async function handleNewMessageResponse(message: NewMessageResponse) {
     if (message.conversationId) {
@@ -88,6 +96,22 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     updateConvWaiting(messageResponse.conversationId, false)
   }
 
+  function handleDownloadUpdate(state: any) {
+    if (!state) return;
+    setDownloadState(state);
+  }
+
+  function handleDownloadSuccess(state: any) {
+    if (state && state.fileName && state.success === true) {
+      setDownloadStateSuccess(state.fileName);
+      executeSerial(ModelManagementService.UpdateFinishedDownloadAt, state.fileName).then(() => {
+        getDownloadedModels().then((models) => {
+          setDownloadedModels(models);
+        });
+      });
+    }
+  }
+
   useEffect(() => {
     if (window.corePlugin.events) {
       events.on(EventName.OnNewMessageResponse, handleNewMessageResponse)
@@ -97,6 +121,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         // EventName.OnMessageResponseFinished,
         handleMessageResponseFinished
       )
+      events.on(EventName.OnDownloadUpdate, handleDownloadUpdate);
+      events.on(EventName.OnDownloadSuccess, handleDownloadSuccess);
     }
   }, [])
 
@@ -109,6 +135,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         // EventName.OnMessageResponseFinished,
         handleMessageResponseFinished
       )
+      events.off(EventName.OnDownloadUpdate, handleDownloadUpdate);
+      events.off(EventName.OnDownloadSuccess, handleDownloadSuccess);
     }
   }, [])
   return <>{children}</>
