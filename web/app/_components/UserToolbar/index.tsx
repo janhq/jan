@@ -8,7 +8,7 @@ const UserToolbar: React.FC = () => {
   const currentConvo = useAtomValue(currentConversationAtom);
 
   const avatarUrl = currentConvo?.image;
-  const title = currentConvo?.name ?? "";
+  const title = currentConvo?.summary ?? currentConvo?.name ?? "";
 
   return (
     <div className="flex items-center gap-3 p-1">
@@ -19,7 +19,7 @@ const UserToolbar: React.FC = () => {
         width={36}
         height={36}
       />
-      <span className="flex gap-[2px] leading-6 text-base font-semibold">
+      <span className="flex gap-0.5 leading-6 text-base font-semibold">
         {title}
       </span>
     </div>

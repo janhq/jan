@@ -1,65 +1,58 @@
-import React from "react";
-import { Product } from "@/_models/Product";
-import Image from "next/image";
+import React, { useCallback } from "react";
 import { ModelStatus, ModelStatusComponent } from "../ModelStatusComponent";
 import ModelActionMenu from "../ModelActionMenu";
 import { useAtomValue } from "jotai";
 import ModelActionButton, { ModelActionType } from "../ModelActionButton";
 import useStartStopModel from "@/_hooks/useStartStopModel";
 import useDeleteModel from "@/_hooks/useDeleteModel";
-import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
+import { AssistantModel } from "@/_models/AssistantModel";
+import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";
+import { toGigabytes } from "@/_utils/converter";
 
 type Props = {
-  model: Product;
+  model: AssistantModel;
 };
 
 const ModelRow: React.FC<Props> = ({ model }) => {
-  const { startModel } = useStartStopModel();
-  const activeModel = useAtomValue(currentProductAtom);
+  const { startModel, stopModel } = useStartStopModel();
+  const activeModel = useAtomValue(activeAssistantModelAtom);
   const { deleteModel } = useDeleteModel();
 
   let status = ModelStatus.Installed;
-  if (activeModel && activeModel.id === model.id) {
+  if (activeModel && activeModel._id === model._id) {
     status = ModelStatus.Active;
   }
 
   let actionButtonType = ModelActionType.Start;
-  if (activeModel && activeModel.id === model.id) {
+  if (activeModel && activeModel._id === model._id) {
     actionButtonType = ModelActionType.Stop;
   }
 
   const onModelActionClick = (action: ModelActionType) => {
     if (action === ModelActionType.Start) {
-      startModel(model.id);
+      startModel(model._id);
+    } else {
+      stopModel(model._id);
     }
   };
 
-  const onDeleteClick = () => {
+  const onDeleteClick = useCallback(() => {
     deleteModel(model);
-  };
+  }, [model]);
 
   return (
-    <tr
-      className="border-b border-gray-200 last:border-b-0 last:rounded-lg"
-      key={model.id}
-    >
+    <tr className="border-b border-gray-200 last:border-b-0 last:rounded-lg">
       <td className="flex flex-col whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
         {model.name}
         <span className="text-gray-500 font-normal">{model.version}</span>
       </td>
       <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
         <div className="flex flex-col justify-start">
-          <span>{model.format}</span>
-          {model.accelerated && (
-            <span className="flex items-center text-gray-500 text-sm font-normal gap-0.5">
-              <Image src={"/icons/flash.svg"} width={20} height={20} alt="" />
-              GPU Accelerated
-            </span>
-          )}
+          <span>GGUF</span>
         </div>
       </td>
       <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-        {model.totalSize}
+        {toGigabytes(model.size)}
       </td>
       <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
         <ModelStatusComponent status={status} />

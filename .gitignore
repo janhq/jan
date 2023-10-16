@@ -5,7 +5,6 @@
 models/**
 error.log
 node_modules
-package-lock.json
 *.tgz
 yarn.lock
 dist
@@ -14,3 +13,4 @@ build
 electron/renderer
 
 *.log
+plugin-core/lib

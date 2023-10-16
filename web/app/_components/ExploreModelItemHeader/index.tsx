@@ -1,44 +1,97 @@
-import SimpleTag, { TagType } from "../SimpleTag";
+import SimpleTag from "../SimpleTag";
 import PrimaryButton from "../PrimaryButton";
 import { formatDownloadPercentage, toGigabytes } from "@/_utils/converter";
-import { DownloadState } from "@/_models/DownloadState";
 import SecondaryButton from "../SecondaryButton";
+import { Product } from "@/_models/Product";
+import { useCallback, useEffect, useMemo } from "react";
+import { ModelVersion } from "@/_models/ModelVersion";
+import useGetPerformanceTag from "@/_hooks/useGetPerformanceTag";
+import useDownloadModel from "@/_hooks/useDownloadModel";
+import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
+import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
+import { atom, useAtomValue, useSetAtom } from "jotai";
+import {
+  MainViewState,
+  setMainViewStateAtom,
+} from "@/_helpers/atoms/MainView.atom";
 
 type Props = {
-  name: string;
-  total: number;
-  status: TagType;
-  downloadState?: DownloadState;
-  onDownloadClick?: () => void;
+  suitableModel: ModelVersion;
+  exploreModel: Product;
 };
 
 const ExploreModelItemHeader: React.FC<Props> = ({
-  name,
-  status,
-  total,
-  downloadState,
-  onDownloadClick,
-}) => (
-  <div className="flex items-center justify-between p-4 border-b border-gray-200">
-    <div className="flex items-center gap-2">
-      <span>{name}</span>
-      <SimpleTag title={status} type={status} clickable={false} />
-    </div>
-    {downloadState != null ? (
+  suitableModel,
+  exploreModel,
+}) => {
+  const { downloadModel } = useDownloadModel();
+  const { downloadedModels } = useGetDownloadedModels();
+  const { performanceTag, title, getPerformanceForModel } =
+    useGetPerformanceTag();
+  const downloadAtom = useMemo(
+    () => atom((get) => get(modelDownloadStateAtom)[suitableModel._id]),
+    [suitableModel._id]
+  );
+  const downloadState = useAtomValue(downloadAtom);
+  const setMainViewState = useSetAtom(setMainViewStateAtom);
+
+  useEffect(() => {
+    getPerformanceForModel(suitableModel);
+  }, [suitableModel]);
+
+  const onDownloadClick = useCallback(() => {
+    downloadModel(exploreModel, suitableModel);
+  }, [exploreModel, suitableModel]);
+
+  const isDownloaded =
+    downloadedModels.find((model) => model._id === suitableModel._id) != null;
+
+  let downloadButton = (
+    <PrimaryButton
+      title={
+        suitableModel.size
+          ? `Download (${toGigabytes(suitableModel.size)})`
+          : "Download"
+      }
+      onClick={() => onDownloadClick()}
+    />
+  );
+
+  if (isDownloaded) {
+    downloadButton = (
+      <PrimaryButton
+        title="View Downloaded Model"
+        onClick={() => {
+          setMainViewState(MainViewState.MyModel);
+        }}
+        className="bg-green-500 hover:bg-green-400"
+      />
+    );
+  }
+
+  if (downloadState != null) {
+    // downloading
+    downloadButton = (
       <SecondaryButton
         disabled
         title={`Downloading (${formatDownloadPercentage(
           downloadState.percent
         )})`}
-        onClick={() => {}}
       />
-    ) : (
-      <PrimaryButton
-        title={total ? `Download (${toGigabytes(total)})` : "Download"}
-        onClick={() => onDownloadClick?.()}
-      />
-    )}
-  </div>
-);
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between p-4 border-b border-gray-200">
+      <div className="flex items-center gap-2">
+        <span>{exploreModel.name}</span>
+        {performanceTag && (
+          <SimpleTag title={title} type={performanceTag} clickable={false} />
+        )}
+      </div>
+      {downloadButton}
+    </div>
+  );
+};
 
 export default ExploreModelItemHeader;

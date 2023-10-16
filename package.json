@@ -14,19 +14,30 @@
     ]
   },
   "scripts": {
-    "dev:electron": "yarn workspace jan-electron dev",
+    "lint": "yarn workspace jan lint && yarn workspace jan-web lint",
+    "test": "yarn workspace jan test:e2e",
+    "dev:electron": "yarn workspace jan dev",
     "dev:web": "yarn workspace jan-web dev",
-    "dev": "concurrently --kill-others-on-fail \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
+    "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
+    "build:core": "cd plugin-core && yarn install && yarn run build",
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
-    "build:electron": "yarn workspace jan-electron build",
-    "build:plugins": "rm -f ./electron/core/pre-install/*.tgz && concurrently \"cd ./electron/core/plugins/data-plugin && npm install && npm run build:publish\" \"cd ./electron/core/plugins/inference-plugin && npm install && npm run build:publish\" \"cd ./electron/core/plugins/model-management-plugin && npm install && npm run build:publish\" \"cd ./electron/core/plugins/monitoring-plugin && npm install && npm run build:publish\"",
+    "build:electron": "yarn workspace jan build",
+    "build:plugins": "rimraf ./electron/core/pre-install/*.tgz && concurrently \"cd ./electron/core/plugins/data-plugin && npm ci\" \"cd ./electron/core/plugins/inference-plugin && npm ci\" \"cd ./electron/core/plugins/model-management-plugin && npm ci\" \"cd ./electron/core/plugins/monitoring-plugin && npm ci\" && concurrently \"cd ./electron/core/plugins/data-plugin && npm run build:publish\" \"cd ./electron/core/plugins/inference-plugin && npm run build:publish\" \"cd ./electron/core/plugins/model-management-plugin && npm run build:publish\" \"cd ./electron/core/plugins/monitoring-plugin && npm run build:publish\"",
+    "build:plugins-darwin": "rimraf ./electron/core/pre-install/*.tgz && concurrently \"cd ./electron/core/plugins/data-plugin && npm ci\" \"cd ./electron/core/plugins/inference-plugin && npm ci\" \"cd ./electron/core/plugins/model-management-plugin && npm ci\" \"cd ./electron/core/plugins/monitoring-plugin && npm ci\" && chmod +x ./electron/auto-sign.sh && ./electron/auto-sign.sh && concurrently \"cd ./electron/core/plugins/data-plugin && npm run build:publish\" \"cd ./electron/core/plugins/inference-plugin && npm run build:publish\" \"cd ./electron/core/plugins/model-management-plugin && npm run build:publish\" \"cd ./electron/core/plugins/monitoring-plugin && npm run build:publish\"",
     "build": "yarn build:web && yarn build:electron",
-    "build:publish": "yarn build:web && yarn workspace jan-electron build:publish"
+    "build:darwin": "yarn build:web && yarn workspace jan build:darwin",
+    "build:win32": "yarn build:web && yarn workspace jan build:win32",
+    "build:linux": "yarn build:web && yarn workspace jan build:linux",
+    "build:publish": "yarn build:web && yarn workspace jan build:publish",
+    "build:publish-darwin": "yarn build:web && yarn workspace jan build:publish-darwin",
+    "build:publish-win32": "yarn build:web && yarn workspace jan build:publish-win32",
+    "build:publish-linux": "yarn build:web && yarn workspace jan build:publish-linux"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",
     "cpx": "^1.5.0",
-    "wait-on": "^7.0.1"
+    "wait-on": "^7.0.1",
+    "rimraf": "^3.0.2"
   },
   "version": "0.0.0"
 }

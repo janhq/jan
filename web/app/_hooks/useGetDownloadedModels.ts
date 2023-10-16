@@ -1,10 +1,13 @@
 import { Product } from "@/_models/Product";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { DataService, ModelManagementService } from "../../shared/coreService";
+import { ModelManagementService } from "@janhq/plugin-core";
+import { useAtom } from "jotai";
+import { downloadedModelAtom } from "@/_helpers/atoms/DownloadedModel.atom";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 export function useGetDownloadedModels() {
-  const [downloadedModels, setDownloadedModels] = useState<Product[]>([]);
+  const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelAtom);
 
   useEffect(() => {
     getDownloadedModels().then((downloadedModels) => {
@@ -15,16 +18,13 @@ export function useGetDownloadedModels() {
   return { downloadedModels };
 }
 
-export async function getDownloadedModels(): Promise<Product[]> {
-  const downloadedModels: Product[] = await executeSerial(
-    DataService.GET_FINISHED_DOWNLOAD_MODELS
+export async function getDownloadedModels(): Promise<AssistantModel[]> {
+  const downloadedModels: AssistantModel[] = await executeSerial(
+    ModelManagementService.GetFinishedDownloadModels
   );
   return downloadedModels ?? [];
 }
 
-export async function getModelFiles(): Promise<Product[]> {
-  const downloadedModels: Product[] = await executeSerial(
-    ModelManagementService.GET_DOWNLOADED_MODELS
-  );
-  return downloadedModels ?? [];
+export async function getConfiguredModels(): Promise<Product[]> {
+  return executeSerial(ModelManagementService.GetConfiguredModels);
 }

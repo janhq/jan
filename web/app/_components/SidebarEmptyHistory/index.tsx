@@ -2,15 +2,15 @@ import Image from "next/image";
 import useCreateConversation from "@/_hooks/useCreateConversation";
 import PrimaryButton from "../PrimaryButton";
 import { useAtomValue, useSetAtom } from "jotai";
-import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
 import { useEffect, useState } from "react";
 import {
   MainViewState,
   setMainViewStateAtom,
 } from "@/_helpers/atoms/MainView.atom";
-import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
+import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";
 import useInitModel from "@/_hooks/useInitModel";
-import { Product } from "@/_models/Product";
+import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 enum ActionButton {
   DownloadModel = "Download a Model",
@@ -19,7 +19,7 @@ enum ActionButton {
 
 const SidebarEmptyHistory: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels();
-  const activeModel = useAtomValue(currentProductAtom);
+  const activeModel = useAtomValue(activeAssistantModelAtom);
   const setMainView = useSetAtom(setMainViewStateAtom);
   const { requestCreateConvo } = useCreateConversation();
   const [action, setAction] = useState(ActionButton.DownloadModel);
@@ -46,7 +46,7 @@ const SidebarEmptyHistory: React.FC = () => {
     }
   };
 
-  const createConversationAndInitModel = async (model: Product) => {
+  const createConversationAndInitModel = async (model: AssistantModel) => {
     await requestCreateConvo(model);
     await initModel(model);
   };

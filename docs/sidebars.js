@@ -43,28 +43,28 @@ const sidebars = {
 
   // Note: Tab name is "Use Cases"
   solutionsSidebar: [
-    "solutions/solutions",
+    // "solutions/solutions",
     {
       type: "category",
-      label: "Use cases",
+      label: "Solutions",
       collapsible: true,
       collapsed: false,
-      items: ["solutions/personal-ai", "solutions/self-hosted"],
+      items: ["solutions/self-hosted", "solutions/personal-ai"],
     },
-    {
-      type: "category",
-      label: "Industries",
-      collapsible: true,
-      collapsed: false,
-      items: [
-        "solutions/industries/software",
-        "solutions/industries/education",
-        "solutions/industries/law",
-        "solutions/industries/public-sector",
-        "solutions/industries/finance",
-        "solutions/industries/healthcare",
-      ],
-    },
+    // {
+    //   type: "category",
+    //   label: "Industries",
+    //   collapsible: true,
+    //   collapsed: false,
+    //   items: [
+    //     "solutions/industries/software",
+    //     "solutions/industries/education",
+    //     "solutions/industries/law",
+    //     "solutions/industries/public-sector",
+    //     "solutions/industries/finance",
+    //     "solutions/industries/healthcare",
+    //   ],
+    // },
   ],
 
   docsSidebar: [
@@ -83,101 +83,101 @@ const sidebars = {
   ],
 
   hardwareSidebar: [
-    {
-      type: "category",
-      label: "Overview",
-      collapsible: true,
-      collapsed: true,
-      link: { type: "doc", id: "hardware/hardware" },
-      items: [
-        {
-          type: "doc",
-          label: "Cloud vs. Buy",
-          id: "hardware/overview/cloud-vs-buy",
-        },
-        {
-          type: "doc",
-          label: "CPUs vs. GPUs",
-          id: "hardware/overview/cpu-vs-gpu",
-        },
-      ],
-    },
-    {
-      type: "category",
-      label: "Recommendations",
-      collapsible: true,
-      collapsed: false,
-      items: [
-        {
-          type: "doc",
-          label: "By Hardware",
-          id: "hardware/recommendations/by-hardware",
-        },
-        {
-          type: "doc",
-          label: "By Budget",
-          id: "hardware/recommendations/by-budget",
-        },
-        {
-          type: "doc",
-          label: "By Model",
-          id: "hardware/recommendations/by-model",
-        },
-        {
-          type: "doc",
-          label: "By Use Case",
-          id: "hardware/recommendations/by-usecase",
-        },
-      ],
-    },
-    {
-      type: "category",
-      label: "Anatomy of a Thinking Machine",
-      collapsible: true,
-      collapsed: true,
-      link: { type: "doc", id: "hardware/concepts/concepts" },
-      items: [
-        {
-          type: "doc",
-          label: "Chassis",
-          id: "hardware/concepts/chassis",
-        },
-        {
-          type: "doc",
-          label: "Motherboard",
-          id: "hardware/concepts/motherboard",
-        },
-        {
-          type: "doc",
-          label: "CPU and RAM",
-          id: "hardware/concepts/cpu-and-ram",
-        },
-        {
-          type: "doc",
-          label: "GPU and VRAM",
-          id: "hardware/concepts/gpu-and-vram",
-        },
-        {
-          type: "doc",
-          label: "Storage",
-          id: "hardware/concepts/storage",
-        },
-        {
-          type: "doc",
-          label: "Network",
-          id: "hardware/concepts/network",
-        },
+    // {
+    //   type: "category",
+    //   label: "Overview",
+    //   collapsible: true,
+    //   collapsed: true,
+    //   link: { type: "doc", id: "hardware/hardware" },
+    //   items: [
+    //     {
+    //       type: "doc",
+    //       label: "Cloud vs. Self-Hosting",
+    //       id: "hardware/overview/cloud-vs-self-hosting",
+    //     },
+    //     {
+    //       type: "doc",
+    //       label: "CPUs vs. GPUs",
+    //       id: "hardware/overview/cpu-vs-gpu",
+    //     },
+    //   ],
+    // },
+    // {
+    //   type: "category",
+    //   label: "Recommendations",
+    //   collapsible: true,
+    //   collapsed: false,
+    //   items: [
+    //     {
+    //       type: "doc",
+    //       label: "By Hardware",
+    //       id: "hardware/recommendations/by-hardware",
+    //     },
+    //     {
+    //       type: "doc",
+    //       label: "By Budget",
+    //       id: "hardware/recommendations/by-budget",
+    //     },
+    //     {
+    //       type: "doc",
+    //       label: "By Model",
+    //       id: "hardware/recommendations/by-model",
+    //     },
+    //     {
+    //       type: "doc",
+    //       label: "By Use Case",
+    //       id: "hardware/recommendations/by-usecase",
+    //     },
+    //   ],
+    // },
+    // {
+    //   type: "category",
+    //   label: "Anatomy of a Thinking Machine",
+    //   collapsible: true,
+    //   collapsed: true,
+    //   link: { type: "doc", id: "hardware/concepts/concepts" },
+    //   items: [
+    //     {
+    //       type: "doc",
+    //       label: "Chassis",
+    //       id: "hardware/concepts/chassis",
+    //     },
+    //     {
+    //       type: "doc",
+    //       label: "Motherboard",
+    //       id: "hardware/concepts/motherboard",
+    //     },
+    //     {
+    //       type: "doc",
+    //       label: "CPU and RAM",
+    //       id: "hardware/concepts/cpu-and-ram",
+    //     },
+    //     {
+    //       type: "doc",
+    //       label: "GPU and VRAM",
+    //       id: "hardware/concepts/gpu-and-vram",
+    //     },
+    //     {
+    //       type: "doc",
+    //       label: "Storage",
+    //       id: "hardware/concepts/storage",
+    //     },
+    //     {
+    //       type: "doc",
+    //       label: "Network",
+    //       id: "hardware/concepts/network",
+    //     },
 
-        {
-          type: "doc",
-          label: "Power Supply",
-          id: "hardware/concepts/power",
-        },
-      ],
-    },
+    //     {
+    //       type: "doc",
+    //       label: "Power Supply",
+    //       id: "hardware/concepts/power",
+    //     },
+    //   ],
+    // },
     {
       type: "category",
-      label: "Community Examples",
+      label: "Hardware Examples",
       collapsible: true,
       collapsed: true,
       link: { type: "doc", id: "hardware/community" },
@@ -194,23 +194,35 @@ const sidebars = {
       type: "category",
       label: "About Jan",
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       link: { type: "doc", id: "about/about" },
       items: [
-        "about/roadmap",
+        "about/team",
         {
           type: "link",
           label: "Careers",
           href: "https://janai.bamboohr.com/careers",
         },
-        "about/brand-assets",
+      ],
+    },
+    {
+      type: "category",
+      label: "Events",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          type: "doc",
+          label: "Ho Chi Minh City (Oct 2023)",
+          id: "events/hcmc-oct23",
+        },
       ],
     },
     {
       type: "category",
       label: "Company Handbook",
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       link: { type: "doc", id: "handbook/handbook" },
       items: ["handbook/remote-work"],
     },

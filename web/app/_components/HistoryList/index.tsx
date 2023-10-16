@@ -18,14 +18,16 @@ const HistoryList: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col flex-grow pt-3 gap-2">
+    <div className="flex flex-col flex-grow pt-3 gap-2 overflow-hidden">
       <ExpandableHeader
         title="CHAT HISTORY"
         expanded={expand}
         onClick={() => setExpand(!expand)}
       />
-      <div
-        className={`flex flex-col gap-1 mt-1 ${!expand ? "hidden " : "block"}`}
+      <ul
+        className={`flex flex-col gap-1 mt-1 overflow-y-auto scroll ${
+          !expand ? "hidden " : "block"
+        }`}
       >
         {conversations.length > 0 ? (
           conversations
@@ -36,17 +38,18 @@ const HistoryList: React.FC = () => {
             )
             .map((convo) => (
               <HistoryItem
-                key={convo.id}
+                key={convo._id}
                 conversation={convo}
+                summary={convo.summary}
                 avatarUrl={convo.image}
                 name={convo.name || "Jan"}
-                updatedAt={convo.updated_at ?? ""}
+                updatedAt={convo.updatedAt ?? ""}
               />
             ))
         ) : (
           <SidebarEmptyHistory />
         )}
-      </div>
+      </ul>
     </div>
   );
 };

@@ -1,23 +1,31 @@
-import { Product } from "@/_models/Product";
 import { executeSerial } from "@/_services/pluginService";
-import { InfereceService } from "../../shared/coreService";
+import { InferenceService } from "@janhq/plugin-core";
 import { useAtom } from "jotai";
-import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
+import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 export default function useInitModel() {
-  const [activeModel, setActiveModel] = useAtom(currentProductAtom);
+  const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom);
 
-  const initModel = async (model: Product) => {
-    if (activeModel && activeModel.id === model.id) {
-      console.debug(`Model ${model.id} is already init. Ignore..`);
+  const initModel = async (model: AssistantModel) => {
+    if (activeModel && activeModel._id === model._id) {
+      console.debug(`Model ${model._id} is already init. Ignore..`);
       return;
     }
-    try {
-      await executeSerial(InfereceService.INIT_MODEL, model);
-      console.debug(`Init model ${model.name} successfully!`);
+
+    const currentTime = Date.now();
+    console.debug("Init model: ", model._id);
+
+    const res = await executeSerial(InferenceService.InitModel, model._id);
+    if (res?.error) {
+      console.log("error occured: ", res);
+      return res;
+    } else {
+      console.debug(
+        `Init model successfully!, take ${Date.now() - currentTime}ms`
+      );
       setActiveModel(model);
-    } catch (err) {
-      console.error(`Init model ${model.name} failed: ${err}`);
+      return {};
     }
   };
 

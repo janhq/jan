@@ -1,7 +1,6 @@
-/* eslint-disable react-hooks/rules-of-hooks */
 // Make Pluggable Electron's facade available to the renderer on window.plugins
 //@ts-ignore
-const useFacade = require("pluggable-electron/facade");
+const useFacade = require("../core/plugin-manager/facade");
 useFacade();
 //@ts-ignore
 const { contextBridge, ipcRenderer } = require("electron");
@@ -14,9 +13,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   pluginPath: () => ipcRenderer.invoke("pluginPath"),
 
+  reloadPlugins: () => ipcRenderer.invoke("reloadPlugins"),
+
   appVersion: () => ipcRenderer.invoke("appVersion"),
 
   openExternalUrl: (url: string) => ipcRenderer.invoke("openExternalUrl", url),
+
+  relaunch: () => ipcRenderer.invoke("relaunch"),
 
   deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
 

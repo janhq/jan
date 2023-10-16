@@ -1,14 +1,12 @@
-import ChatContainer from "../ChatContainer";
-import MainChat from "../MainChat";
+import { Fragment } from "react";
+import MainView from "../MainView";
 import MonitorBar from "../MonitorBar";
 
 const RightContainer = () => (
-  <div className="flex flex-col flex-1 h-screen">
-    <ChatContainer>
-      <MainChat />
-    </ChatContainer>
+  <Fragment>
+    <MainView />
     <MonitorBar />
-  </div>
+  </Fragment>
 );
 
 export default RightContainer;

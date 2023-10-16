@@ -103,7 +103,3 @@ export const updateLastMessageAsReadyAtom = atom(
     set(chatMessages, newData);
   }
 );
-
-export const currentStreamingMessageAtom = atom<ChatMessage | undefined>(
-  undefined
-);

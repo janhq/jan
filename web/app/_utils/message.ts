@@ -25,18 +25,3 @@ export function mergeAndRemoveDuplicates(
 
   return result.reverse();
 }
-
-export function getMessageCode(stringCode: string) {
-  const blocks = stringCode.split("```");
-
-  const resultArray = [];
-
-  for (let i = 0; i < blocks.length; i += 2) {
-    const text = blocks[i] ? blocks[i].trim() : "";
-    const code = blocks[i + 1] ? blocks[i + 1].trim() : "";
-    if (text || code) {
-      resultArray.push({ text, code });
-    }
-  }
-  return resultArray;
-}
