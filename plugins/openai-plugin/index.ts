@@ -9,7 +9,7 @@ import {
 } from "@janhq/plugin-core";
 import { Configuration, OpenAIApi } from "azure-openai";
 
-const PluginName = "openai-plugin";
+const PluginName = "@janhq/openai-plugin";
 
 const setRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
 XMLHttpRequest.prototype.setRequestHeader = function newSetRequestHeader(key: string, val: string) {

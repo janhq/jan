@@ -1,7 +1,7 @@
 import { ModelManagementService, PluginService, RegisterExtensionPoint, core, store } from "@janhq/plugin-core";
 
-const PluginName = "model-management-plugin";
-const MODULE_PATH = "model-management-plugin/dist/module.js";
+const PluginName = "@janhq/model-management-plugin";
+const MODULE_PATH = "@janhq/model-management-plugin/dist/module.js";
 
 const getDownloadedModels = () => core.invokePluginFunc(MODULE_PATH, "getDownloadedModels");
 
