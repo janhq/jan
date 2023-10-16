@@ -50,7 +50,7 @@ async function handleMessageRequest(data: NewMessageRequest) {
       ...data,
       message: "Your API key is not set. Please set it in the plugin preferences.",
       user: "GPT-3",
-      avatar: "",
+      avatar: "https://static-assets.jan.ai/openai-icon.jpg",
       createdAt: new Date().toISOString(),
       _id: undefined,
     };
@@ -64,7 +64,7 @@ async function handleMessageRequest(data: NewMessageRequest) {
     ...data,
     message: "",
     user: "GPT-3",
-    avatar: "",
+    avatar: "https://static-assets.jan.ai/openai-icon.jpg",
     createdAt: new Date().toISOString(),
     _id: undefined,
   };
