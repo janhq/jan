@@ -143,15 +143,20 @@ To register plugin preferences, you can use the preferences object from the @jan
 ```js
 import { PluginService, preferences } from "@janhq/plugin-core";
 
-const PluginName = "your-first-plugin";
+const pluginName = "your-first-plugin";
+const preferenceKey = "";
+const preferenceName = "Your First Preference";
+const preferenceDescription = "This is for example only";
+const defaultValue = "";
 
 export function init({ register }: { register: RegisterExtensionPoint }) {
   // Register preference update handlers. E.g. update plugin instance with new configuration
-  register(PluginService.OnPreferencesUpdate, PluginName, onPreferencesUpdate);
+  register(PluginService.OnPreferencesUpdate, pluginName, onPreferencesUpdate);
 
-  // Register plugin preferences. E.g. Plugin need apiKey and endpoint to connect to your service
-  preferences.registerPreferences<string>(register, PluginName, "apiKey", "");
-  preferences.registerPreferences<string>(register, PluginName, "endpoint", "");
+  // Register plugin preferences. E.g. Plugin need apiKey to connect to your service
+  preferences.registerPreferences <
+    string >
+    (register, pluginName, preferenceKey, preferenceName, preferenceDescription, defaultValue);
 }
 ```
 
@@ -162,15 +167,13 @@ To retrieve the values of the registered preferences, we're using the get method
 ```js
 import { preferences } from "@janhq/plugin-core";
 
-const PluginName = "your-first-plugin";
+const pluginName = "your-first-plugin";
+const preferenceKey = "apiKey";
 
 const setup = async () => {
   // Retrieve apiKey
-  const apiKey: string = (await preferences.get(PluginName, "apiKey")) ?? "";
-
-  // Retrieve endpoint
-  const endpoint: string = (await preferences.get(PluginName, "endpoint")) ?? "";
-}
+  const apiKey: string = (await preferences.get(pluginName, preferenceKey)) ?? "";
+};
 ```
 
 ### Access Core API
