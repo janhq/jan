@@ -1,6 +1,6 @@
 import { EventName, InferenceService, NewMessageRequest, PluginService, core, events, store } from "@janhq/plugin-core";
 
-const PluginName = "inference-plugin"
+const PluginName = "inference-plugin";
 const MODULE_PATH = `${PluginName}/dist/module.js`;
 const inferenceUrl = "http://localhost:3928/llama/chat_completion";
 
@@ -12,13 +12,17 @@ const stopModel = () => {
 
 async function handleMessageRequest(data: NewMessageRequest) {
   // TODO: Common collections should be able to access via core functions instead of store
-  const messageHistory = (await store.findMany("messages", { conversationId: data.conversationId })) ?? [];
-  const recentMessages = messageHistory.slice(-10).map((message) => {
-    return {
-      content: message.message,
-      role: message.user === "user" ? "user" : "assistant",
-    };
-  });
+  const messageHistory =
+    (await store.findMany("messages", { conversationId: data.conversationId }, [{ createdAt: "asc" }])) ?? [];
+  const recentMessages = messageHistory
+    .filter((e) => e.message !== "" && (e.user === "user" || e.user === "assistant"))
+    .slice(-10)
+    .map((message) => {
+      return {
+        content: message.message,
+        role: message.user === "user" ? "user" : "assistant",
+      };
+    });
 
   const message = {
     ...data,
@@ -82,8 +86,8 @@ const registerListener = () => {
 };
 
 const onStart = async () => {
-  registerListener()
-}
+  registerListener();
+};
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
   register(PluginService.OnStart, PluginName, onStart);
