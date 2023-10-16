@@ -1,7 +1,7 @@
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { execute } from "@/_services/pluginService";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { DataService } from "../../shared/coreService";
+import { DataService } from "@janhq/plugin-core";
 import { deleteConversationMessage } from "@/_helpers/atoms/ChatMessage.atom";
 import {
   userConversationsAtom,
@@ -33,15 +33,15 @@ export default function useDeleteConversation() {
   const deleteConvo = async () => {
     if (activeConvoId) {
       try {
-        await execute(DataService.DELETE_CONVERSATION, activeConvoId);
+        await execute(DataService.DeleteConversation, activeConvoId);
         const currentConversations = userConversations.filter(
-          (c) => c.id !== activeConvoId,
+          (c) => c._id !== activeConvoId,
         );
         setUserConversations(currentConversations);
         deleteMessages(activeConvoId);
 
         if (currentConversations.length > 0) {
-          setActiveConvoId(currentConversations[0].id);
+          setActiveConvoId(currentConversations[0]._id);
         } else {
           setMainViewState(MainViewState.Welcome);
           setActiveConvoId(undefined);

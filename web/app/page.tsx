@@ -2,11 +2,9 @@
 
 import { ThemeWrapper } from "./_helpers/ThemeWrapper";
 import JotaiWrapper from "./_helpers/JotaiWrapper";
-import RightContainer from "./_components/RightContainer";
 import { ModalWrapper } from "./_helpers/ModalWrapper";
 import { useEffect, useState } from "react";
 import Image from "next/image";
-
 import {
   setup,
   plugins,
@@ -16,12 +14,18 @@ import {
   isCorePluginInstalled,
   setupBasePlugins,
 } from "./_services/pluginService";
-import LeftContainer from "./_components/LeftContainer";
 import EventListenerWrapper from "./_helpers/EventListenerWrapper";
+import { setupCoreServices } from "./_services/coreService";
+import MainContainer from "./_components/MainContainer";
 
 const Page: React.FC = () => {
   const [activated, setActivated] = useState(false);
+
+  // Services Setup
   useEffect(() => {
+    // Setup Core Service
+    setupCoreServices();
+
     async function setupPE() {
       // Enable activation point management
       setup({
@@ -57,13 +61,9 @@ const Page: React.FC = () => {
       <EventListenerWrapper>
         <ThemeWrapper>
           <ModalWrapper>
-            {activated && (
-              <div className="flex">
-                <LeftContainer />
-                <RightContainer />
-              </div>
-            )}
-            {!activated && (
+            {activated ? (
+              <MainContainer />
+            ) : (
               <div className="bg-white w-screen h-screen items-center justify-center flex">
                 <Image width={50} height={50} src="icons/app_icon.svg" alt="" />
               </div>

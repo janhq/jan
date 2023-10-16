@@ -1,0 +1,37 @@
+{
+  "name": "@janhq/plugin-core",
+  "version": "0.1.6",
+  "description": "Plugin core lib",
+  "keywords": [
+    "jan",
+    "plugin",
+    "core"
+  ],
+  "homepage": "https://github.com/janhq",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "directories": {
+    "lib": "lib",
+    "test": "__tests__"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./store": "./lib/store.js"
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "LICENSE.md",
+    "package.json",
+    "!.DS_Store"
+  ],
+  "scripts": {
+    "test": "echo \"Error: run tests from root\" && exit 1",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^12.0.2",
+    "typescript": "^5.2.2"
+  }
+}

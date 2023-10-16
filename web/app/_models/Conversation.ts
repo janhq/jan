@@ -1,11 +1,13 @@
 export interface Conversation {
-  id?: string;
-  model_id?: string;
+  _id?: string;
+  modelId?: string;
   name?: string;
   image?: string;
   message?: string;
-  created_at?: string;
-  updated_at?: string;
+  lastMessage?: string;
+  summary?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /**
@@ -14,4 +16,5 @@ export interface Conversation {
 export type ConversationState = {
   hasMore: boolean;
   waitingForResponse: boolean;
+  error?: Error;
 };

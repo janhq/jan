@@ -1,15 +1,15 @@
 import { executeSerial } from "@/_services/pluginService";
-import { DataService, InfereceService } from "../../shared/coreService";
+import { ModelManagementService, InferenceService } from "@janhq/plugin-core";
 import useInitModel from "./useInitModel";
 import { useSetAtom } from "jotai";
-import { currentProductAtom } from "@/_helpers/atoms/Model.atom";
+import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";
 
 export default function useStartStopModel() {
   const { initModel } = useInitModel();
-  const setActiveModel = useSetAtom(currentProductAtom);
+  const setActiveModel = useSetAtom(activeAssistantModelAtom);
 
   const startModel = async (modelId: string) => {
-    const model = await executeSerial(DataService.GET_MODEL_BY_ID, modelId);
+    const model = await executeSerial(ModelManagementService.GetModelById, modelId);
     if (!model) {
       alert(`Model ${modelId} not found! Please re-download the model first.`);
     } else {
@@ -18,7 +18,7 @@ export default function useStartStopModel() {
   };
 
   const stopModel = async (modelId: string) => {
-    await executeSerial(InfereceService.STOP_MODEL, modelId);
+    await executeSerial(InferenceService.StopModel, modelId);
     setActiveModel(undefined);
   };
 

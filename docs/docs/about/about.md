@@ -3,6 +3,8 @@ title: About Jan
 slug: /about
 ---
 
-## Team
+## Problem
 
-## History
+## Ideal Customer Persona
+
+## Business Model

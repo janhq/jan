@@ -1,20 +1,20 @@
 import React from "react";
 import Image from "next/image";
 import useCreateConversation from "@/_hooks/useCreateConversation";
-import { Product } from "@/_models/Product";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 type Props = {
-  product: Product;
+  model: AssistantModel;
 };
 
-const ConversationalCard: React.FC<Props> = ({ product }) => {
+const ConversationalCard: React.FC<Props> = ({ model }) => {
   const { requestCreateConvo } = useCreateConversation();
 
-  const { name, avatarUrl, description } = product;
+  const { name, avatarUrl, shortDescription } = model;
 
   return (
     <button
-      onClick={() => requestCreateConvo(product)}
+      onClick={() => requestCreateConvo(model)}
       className="flex flex-col justify-between flex-shrink-0 gap-3 bg-white p-4 w-52 rounded-lg text-left dark:bg-gray-700 hover:opacity-20"
     >
       <div className="flex flex-col gap-2 box-border">
@@ -29,7 +29,7 @@ const ConversationalCard: React.FC<Props> = ({ product }) => {
           {name}
         </h2>
         <span className="text-gray-600 mt-1 font-normal line-clamp-2">
-          {description}
+          {shortDescription}
         </span>
       </div>
       <span className="flex text-xs leading-5 text-gray-500 items-center gap-0.5">

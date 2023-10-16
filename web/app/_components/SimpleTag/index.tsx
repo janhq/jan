@@ -1,57 +1,6 @@
 import React from "react";
-
-export enum TagType {
-  Roleplay = "Roleplay",
-  Llama = "Llama",
-  Story = "Story",
-  Casual = "Casual",
-  Professional = "Professional",
-  CodeLlama = "CodeLlama",
-  Coding = "Coding",
-
-  // Positive
-  Recommended = "Recommended",
-  Compatible = "Compatible",
-
-  // Neutral
-  SlowOnDevice = "This model will be slow on your device",
-
-  // Negative
-  InsufficientRam = "Insufficient RAM",
-  Incompatible = "Incompatible with your device",
-  TooLarge = "This model is too large for your device",
-
-  // Performance
-  Medium = "Medium",
-  BalancedQuality = "Balanced Quality",
-}
-
-const tagStyleMapper: Record<TagType, string> = {
-  [TagType.Roleplay]: "bg-red-100 text-red-800",
-  [TagType.Llama]: "bg-green-100 text-green-800",
-  [TagType.Story]: "bg-blue-100 text-blue-800",
-  [TagType.Casual]: "bg-yellow-100 text-yellow-800",
-  [TagType.Professional]: "text-indigo-800 bg-indigo-100",
-  [TagType.CodeLlama]: "bg-pink-100 text-pink-800",
-  [TagType.Coding]: "text-purple-800 bg-purple-100",
-
-  [TagType.Recommended]:
-    "text-green-700 ring-1 ring-inset ring-green-600/20 bg-green-50",
-  [TagType.Compatible]:
-    "bg-red-50 ext-red-700 ring-1 ring-inset ring-red-600/10",
-
-  [TagType.SlowOnDevice]:
-    "bg-yellow-50 text-yellow-800 ring-1 ring-inset ring-yellow-600/20",
-
-  [TagType.Incompatible]:
-    "bg-red-50 ext-red-700 ring-1 ring-inset ring-red-600/10",
-  [TagType.InsufficientRam]:
-    "bg-red-50 ext-red-700 ring-1 ring-inset ring-red-600/10",
-  [TagType.TooLarge]: "bg-red-50 ext-red-700 ring-1 ring-inset ring-red-600/10",
-
-  [TagType.Medium]: "bg-yellow-100 text-yellow-800",
-  [TagType.BalancedQuality]: "bg-yellow-100 text-yellow-800",
-};
+import { TagType } from "./TagType";
+import { tagStyleMapper } from "./TagStyleMapper";
 
 type Props = {
   title: string;
@@ -66,10 +15,11 @@ const SimpleTag: React.FC<Props> = ({
   title,
   type,
 }) => {
+  if (!title || title.length === 0) return null;
   if (!clickable) {
     return (
       <div
-        className={`px-2.5 py-0.5 rounded text-xs font-medium ${tagStyleMapper[type]}`}
+        className={`px-2.5 py-0.5 rounded text-xs font-medium items-center line-clamp-1 max-w-[40%] ${tagStyleMapper[type]}`}
       >
         {title}
       </div>
@@ -79,7 +29,7 @@ const SimpleTag: React.FC<Props> = ({
   return (
     <button
       onClick={onClick}
-      className={`px-2.5 py-0.5 rounded text-xs font-medium ${tagStyleMapper[type]}`}
+      className={`px-2.5 py-0.5 rounded text-xs font-medium items-center line-clamp-1 max-w-[40%] ${tagStyleMapper[type]}`}
     >
       {title} x
     </button>

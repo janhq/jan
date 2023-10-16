@@ -7,7 +7,7 @@ import useCreateConversation from "@/_hooks/useCreateConversation";
 import useInitModel from "@/_hooks/useInitModel";
 import useSendChatMessage from "@/_hooks/useSendChatMessage";
 import { useAtom, useAtomValue } from "jotai";
-import { ChangeEvent } from "react";
+import { ChangeEvent, useEffect, useRef } from "react";
 
 const BasicPromptInput: React.FC = () => {
   const activeConversationId = useAtomValue(getActiveConvoIdAtom);
@@ -18,9 +18,7 @@ const BasicPromptInput: React.FC = () => {
 
   const { initModel } = useInitModel();
 
-  const handleMessageChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    setCurrentPrompt(event.target.value);
-  };
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleKeyDown = async (
     event: React.KeyboardEvent<HTMLTextAreaElement>
@@ -44,17 +42,53 @@ const BasicPromptInput: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [currentPrompt]);
+
+  const handleMessageChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setCurrentPrompt(event.target.value);
+  };
+
+  // Auto adjust textarea height based on content
+  const MAX_ROWS = 30;
+
+  const adjustTextareaHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto"; // 1 row
+      const scrollHeight = textareaRef.current.scrollHeight;
+      const maxScrollHeight =
+        parseInt(window.getComputedStyle(textareaRef.current).lineHeight, 10) *
+        MAX_ROWS;
+      textareaRef.current.style.height = `${Math.min(
+        scrollHeight,
+        maxScrollHeight
+      )}px`;
+    }
+  };
+
   return (
-    <textarea
-      onKeyDown={handleKeyDown}
-      value={currentPrompt}
-      onChange={handleMessageChange}
-      rows={2}
-      name="comment"
-      id="comment"
-      className="overflow-hidden block w-full scroll resize-none border-0 bg-transparent py-1.5 text-gray-900 transition-height duration-200 placeholder:text-gray-400 sm:text-sm sm:leading-6 dark:text-white"
-      placeholder="Add your comment..."
-    />
+    <div className="overflow-hidden rounded-lg shadow-sm ring-1 ring-inset ring-gray-300 focus-within:ring-2 focus-within:ring-indigo-600">
+      <textarea
+        ref={textareaRef}
+        onKeyDown={handleKeyDown}
+        value={currentPrompt}
+        onChange={handleMessageChange}
+        name="comment"
+        id="comment"
+        className="block w-full resize-none border-0 bg-transparent py-1.5 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm sm:leading-6"
+        placeholder="Message ..."
+        rows={1}
+        style={{ overflow: "auto" }}
+      />
+      {/* Spacer element to match the height of the toolbar */}
+      <div className="py-2" aria-hidden="true">
+        {/* Matches height of button in toolbar (1px border + 36px content height) */}
+        <div className="py-px">
+          <div className="h-9" />
+        </div>
+      </div>
+    </div>
   );
 };
 

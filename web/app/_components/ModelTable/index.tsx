@@ -1,10 +1,10 @@
 import React from "react";
-import { Product } from "@/_models/Product";
 import ModelRow from "../ModelRow";
 import ModelTableHeader from "../ModelTableHeader";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 type Props = {
-  models: Product[];
+  models: AssistantModel[];
 };
 
 const tableHeaders = ["MODEL", "FORMAT", "SIZE", "STATUS", "ACTIONS"];
@@ -24,7 +24,7 @@ const ModelTable: React.FC<Props> = ({ models }) => (
       </thead>
       <tbody>
         {models.map((model) => (
-          <ModelRow key={model.id} model={model} />
+          <ModelRow key={model._id} model={model} />
         ))}
       </tbody>
     </table>

@@ -1,10 +1,10 @@
 import { Fragment, useEffect } from "react";
 import { Listbox, Transition } from "@headlessui/react";
 import { CheckIcon, ChevronUpDownIcon } from "@heroicons/react/20/solid";
-import { Product } from "@/_models/Product";
 import { useAtom, useAtomValue } from "jotai";
 import { selectedModelAtom } from "@/_helpers/atoms/Model.atom";
 import { downloadedModelAtom } from "@/_helpers/atoms/DownloadedModel.atom";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 function classNames(...classes: any) {
   return classes.filter(Boolean).join(" ");
@@ -20,7 +20,7 @@ const SelectModels: React.FC = () => {
     }
   }, [downloadedModels]);
 
-  const onModelSelected = (model: Product) => {
+  const onModelSelected = (model: AssistantModel) => {
     setSelectedModel(model);
   };
 
@@ -65,7 +65,7 @@ const SelectModels: React.FC = () => {
               <Listbox.Options className="absolute z-10 mt-1 max-h-[188px] w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
                 {downloadedModels.map((model) => (
                   <Listbox.Option
-                    key={model.id}
+                    key={model._id}
                     className={({ active }) =>
                       classNames(
                         active ? "bg-blue-600 text-white" : "text-gray-900",

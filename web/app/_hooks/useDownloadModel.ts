@@ -1,38 +1,55 @@
 import { executeSerial } from "@/_services/pluginService";
-import { DataService, ModelManagementService } from "../../shared/coreService";
-import { ModelVersion, Product } from "@/_models/Product";
+import { DataService, ModelManagementService } from "@janhq/plugin-core";
+import { ModelVersion } from "@/_models/ModelVersion";
+import { Product } from "@/_models/Product";
+import { AssistantModel } from "@/_models/AssistantModel";
 
 export default function useDownloadModel() {
-  const downloadModel = async (model: Product) => {
-    await executeSerial(DataService.STORE_MODEL, model);
-    await executeSerial(ModelManagementService.DOWNLOAD_MODEL, {
-      downloadUrl: model.downloadUrl,
-      fileName: model.fileName,
-    });
-  };
-
-  const downloadHfModel = async (
+  const assistanModel = (
     model: Product,
     modelVersion: ModelVersion
-  ) => {
-    const hfModel: Product = {
-      ...model,
-      id: `${model.author}.${modelVersion.path}`,
-      slug: `${model.author}.${modelVersion.path}`,
-      name: `${model.name} - ${modelVersion.path}`,
-      fileName: modelVersion.path,
-      totalSize: modelVersion.size,
-      downloadUrl: modelVersion.downloadUrl,
+  ): AssistantModel => {
+    return {
+      _id: modelVersion._id,
+      name: modelVersion.name,
+      quantMethod: modelVersion.quantMethod,
+      bits: modelVersion.bits,
+      size: modelVersion.size,
+      maxRamRequired: modelVersion.maxRamRequired,
+      usecase: modelVersion.usecase,
+      downloadLink: modelVersion.downloadLink,
+      startDownloadAt: modelVersion.startDownloadAt,
+      finishDownloadAt: modelVersion.finishDownloadAt,
+      productId: model._id,
+      productName: model.name,
+      shortDescription: model.shortDescription,
+      longDescription: model.longDescription,
+      avatarUrl: model.avatarUrl,
+      author: model.author,
+      version: model.version,
+      modelUrl: model.modelUrl,
+      nsfw: model.nsfw === true ? false : true,
+      greeting: model.greeting,
+      type: model.type,
+      createdAt: new Date(model.createdAt).getTime(),
+      updatedAt: new Date(model.updatedAt ?? "").getTime(),
+      status: "",
+      releaseDate: -1,
+      tags: model.tags,
     };
-    await executeSerial(DataService.STORE_MODEL, hfModel);
-    await executeSerial(ModelManagementService.DOWNLOAD_MODEL, {
-      downloadUrl: hfModel.downloadUrl,
-      fileName: hfModel.fileName,
+  };
+
+  const downloadModel = async (model: Product, modelVersion: ModelVersion) => {
+    modelVersion.startDownloadAt = Date.now();
+    const assistantModel = assistanModel(model, modelVersion);
+    await executeSerial(ModelManagementService.StoreModel, assistantModel);
+    await executeSerial(ModelManagementService.DownloadModel, {
+      downloadUrl: modelVersion.downloadLink,
+      fileName: modelVersion._id,
     });
   };
 
   return {
     downloadModel,
-    downloadHfModel,
   };
 }

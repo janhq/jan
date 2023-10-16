@@ -1,9 +1,11 @@
 import React from "react";
 import { displayDate } from "@/_utils/datetime";
-import { TextCode } from "../TextCode";
-import { getMessageCode } from "@/_utils/message";
 import Image from "next/image";
 import { MessageSenderType } from "@/_models/ChatMessage";
+import LoadingIndicator from "../LoadingIndicator";
+import { Marked } from "marked";
+import { markedHighlight } from "marked-highlight";
+import hljs from "highlight.js";
 
 type Props = {
   avatarUrl: string;
@@ -12,6 +14,27 @@ type Props = {
   senderType: MessageSenderType;
   text?: string;
 };
+
+const marked = new Marked(
+  markedHighlight({
+    langPrefix: "hljs",
+    highlight(code, lang) {
+      if (lang === undefined || lang === "") {
+        return hljs.highlightAuto(code).value;
+      }
+      return hljs.highlight(code, { language: lang }).value;
+    },
+  }),
+  {
+    renderer: {
+      code(code, lang, escaped) {
+        return `<pre class="hljs"><code class="language-${escape(
+          lang ?? ""
+        )}">${escaped ? code : escape(code)}</code></pre>`;
+      },
+    },
+  }
+);
 
 const SimpleTextMessage: React.FC<Props> = ({
   senderName,
@@ -23,9 +46,11 @@ const SimpleTextMessage: React.FC<Props> = ({
   const backgroundColor =
     senderType === MessageSenderType.User ? "" : "bg-gray-100";
 
+  const parsedText = marked.parse(text);
+
   return (
     <div
-      className={`flex items-start gap-2 px-[148px] ${backgroundColor} py-5`}
+      className={`flex items-start gap-2 px-12 md:px-32 2xl:px-64 ${backgroundColor} py-5`}
     >
       <Image
         className="rounded-full"
@@ -34,7 +59,7 @@ const SimpleTextMessage: React.FC<Props> = ({
         height={32}
         alt=""
       />
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 w-full">
         <div className="flex gap-1 justify-start items-baseline">
           <div className="text-[#1B1B1B] text-sm font-extrabold leading-[15.2px] dark:text-[#d1d5db]">
             {senderName}
@@ -43,17 +68,13 @@ const SimpleTextMessage: React.FC<Props> = ({
             {displayDate(createdAt)}
           </div>
         </div>
-        {text.includes("```") ? (
-          getMessageCode(text).map((item, i) => (
-            <div className="flex gap-1 flex-col" key={i}>
-              <p className="leading-[20px] whitespace-break-spaces text-sm font-normal dark:text-[#d1d5db]">
-                {item.text}
-              </p>
-              {item.code.trim().length > 0 && <TextCode text={item.code} />}
-            </div>
-          ))
+        {text === "" ? (
+          <LoadingIndicator />
         ) : (
-          <span className="text-sm leading-loose font-normal">{text}</span>
+          <span
+            className="text-sm leading-loose font-normal"
+            dangerouslySetInnerHTML={{ __html: parsedText }}
+          />
         )}
       </div>
     </div>
