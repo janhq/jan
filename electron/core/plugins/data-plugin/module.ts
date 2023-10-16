@@ -59,13 +59,18 @@ function insertOne(collectionName: string, value: any): Promise<any> {
  *
  */
 function updateOne(collectionName: string, key: string, value: any): Promise<void> {
+  console.debug(`updateOne ${collectionName}: ${key} - ${JSON.stringify(value)}`);
   return dbs[collectionName].get(key).then((doc) => {
     return dbs[collectionName].put({
       _id: key,
       _rev: doc._rev,
-      force: true,
       ...value,
-    });
+    }, 
+    { force: true });
+  }).then((res: any) => {
+    console.info(`updateOne ${collectionName} result: ${JSON.stringify(res)}`);
+  }).catch((err: any) => {
+    console.error(`updateOne ${collectionName} error: ${err}`);
   });
 }
 

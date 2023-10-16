@@ -6,12 +6,10 @@ import { useAtomValue } from "jotai";
 import { showingAdvancedPromptAtom } from "@/_helpers/atoms/Modal.atom";
 import SecondaryButton from "../SecondaryButton";
 import { Fragment } from "react";
-import { PlusIcon, FaceSmileIcon } from "@heroicons/react/24/outline";
+import { PlusIcon } from "@heroicons/react/24/outline";
 import useCreateConversation from "@/_hooks/useCreateConversation";
 import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";
-import LoadingIndicator from "../LoadingIndicator";
 import { currentConvoStateAtom } from "@/_helpers/atoms/Conversation.atom";
-import SendButton from "../SendButton";
 
 const InputToolbar: React.FC = () => {
   const showingAdvancedPrompt = useAtomValue(showingAdvancedPromptAtom);

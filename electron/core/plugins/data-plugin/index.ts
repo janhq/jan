@@ -151,6 +151,7 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
 
   register(DataService.GetConversations, getConversations.name, getConversations);
   register(DataService.CreateConversation, createConversation.name, createConversation);
+  register(DataService.UpdateConversation, updateConversation.name, updateConversation);
   register(DataService.UpdateMessage, updateMessage.name, updateMessage);
   register(DataService.DeleteConversation, deleteConversation.name, deleteConversation);
   register(DataService.CreateMessage, createMessage.name, createMessage);
@@ -160,13 +161,19 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
 function getConversations(): Promise<any> {
   return store.findMany("conversations", {}, [{ updatedAt: "desc" }]);
 }
+
 function createConversation(conversation: any): Promise<number | undefined> {
   return store.insertOne("conversations", conversation);
+}
+
+function updateConversation(conversation: any): Promise<void> {
+  return store.updateOne("conversations", conversation._id, conversation);
 }
 
 function createMessage(message: any): Promise<number | undefined> {
   return store.insertOne("messages", message);
 }
+
 function updateMessage(message: any): Promise<void> {
   return store.updateOne("messages", message._id, message);
 }

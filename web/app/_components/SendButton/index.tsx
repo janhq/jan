@@ -1,7 +1,6 @@
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { currentConvoStateAtom } from "@/_helpers/atoms/Conversation.atom";
 import useSendChatMessage from "@/_hooks/useSendChatMessage";
-import { ArrowRightIcon } from "@heroicons/react/24/outline";
 import { useAtom, useAtomValue } from "jotai";
 
 const SendButton: React.FC = () => {

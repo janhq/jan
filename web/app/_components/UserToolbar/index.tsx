@@ -8,7 +8,7 @@ const UserToolbar: React.FC = () => {
   const currentConvo = useAtomValue(currentConversationAtom);
 
   const avatarUrl = currentConvo?.image;
-  const title = currentConvo?.name ?? "";
+  const title = currentConvo?.summary ?? currentConvo?.name ?? "";
 
   return (
     <div className="flex items-center gap-3 p-1">
