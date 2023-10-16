@@ -4,13 +4,13 @@ import { store } from "./store";
  * Returns the value of the specified preference for the specified plugin.
  *
  * @param pluginName The name of the plugin.
- * @param preferenceName The name of the preference.
+ * @param preferenceKey The key of the preference.
  * @returns A promise that resolves to the value of the preference.
  */
-function get(pluginName: string, preferenceName: string): Promise<any> {
+function get(pluginName: string, preferenceKey: string): Promise<any> {
   return store
     .createCollection("preferences", {})
-    .then(() => store.findOne("preferences", `${pluginName}.${preferenceName}`))
+    .then(() => store.findOne("preferences", `${pluginName}.${preferenceKey}`))
     .then((doc) => doc?.value ?? "");
 }
 
@@ -18,20 +18,20 @@ function get(pluginName: string, preferenceName: string): Promise<any> {
  * Sets the value of the specified preference for the specified plugin.
  *
  * @param pluginName The name of the plugin.
- * @param preferenceName The name of the preference.
+ * @param preferenceKey The key of the preference.
  * @param value The value of the preference.
  * @returns A promise that resolves when the preference has been set.
  */
-function set(pluginName: string, preferenceName: string, value: any): Promise<any> {
+function set(pluginName: string, preferenceKey: string, value: any): Promise<any> {
   return store
     .createCollection("preferences", {})
     .then(() =>
       store
-        .findOne("preferences", `${pluginName}.${preferenceName}`)
+        .findOne("preferences", `${pluginName}.${preferenceKey}`)
         .then((doc) =>
           doc
-            ? store.updateOne("preferences", `${pluginName}.${preferenceName}`, { value })
-            : store.insertOne("preferences", { _id: `${pluginName}.${preferenceName}`, value })
+            ? store.updateOne("preferences", `${pluginName}.${preferenceKey}`, { value })
+            : store.insertOne("preferences", { _id: `${pluginName}.${preferenceKey}`, value })
         )
     );
 }
@@ -51,7 +51,9 @@ function clear(pluginName: string): Promise<void> {
  *
  * @param register The function to use for registering the preference.
  * @param pluginName The name of the plugin.
+ * @param preferenceKey The key of the preference.
  * @param preferenceName The name of the preference.
+ * @param preferenceDescription The description of the preference.
  * @param defaultValue The default value of the preference.
  */
 function registerPreferences<T>(

@@ -25,18 +25,20 @@ const setup = async () => {
   const apiKey: string = (await preferences.get(PluginName, "apiKey")) ?? "";
   const endpoint: string = (await preferences.get(PluginName, "endpoint")) ?? "";
   const deploymentName: string = (await preferences.get(PluginName, "deploymentName")) ?? "";
-  if (apiKey === "") {
-    return;
+  try {
+    openai = new OpenAIApi(
+      new Configuration({
+        azure: {
+          apiKey, //Your API key goes here
+          endpoint, //Your endpoint goes here. It is like: "https://endpointname.openai.azure.com/"
+          deploymentName, //Your deployment name goes here. It is like "chatgpt"
+        },
+      })
+    );
+  } catch (err) {
+    openai = undefined;
+    console.log(err);
   }
-  openai = new OpenAIApi(
-    new Configuration({
-      azure: {
-        apiKey, //Your API key goes here
-        endpoint, //Your endpoint goes here. It is like: "https://endpointname.openai.azure.com/"
-        deploymentName, //Your deployment name goes here. It is like "chatgpt"
-      },
-    })
-  );
 };
 
 async function onStart() {

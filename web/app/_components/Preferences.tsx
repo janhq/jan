@@ -110,7 +110,7 @@ export const Preferences = () => {
     if (timeout) {
       clearTimeout(timeout);
     }
-    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 500);
+    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100);
   }
 
   useEffect(() => {
@@ -284,11 +284,11 @@ export const Preferences = () => {
                   <input
                     className="text-gray-500 w-1/3 rounded-sm border-gray-300 border-[1px] h-8"
                     defaultValue={preferenceValues.filter((v) => v.key === e.preferenceKey)[0]?.value}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       preferences
                         .set(e.pluginName, e.preferenceKey, event.target.value)
-                        .then(() => notifyPreferenceUpdate())
-                    }
+                        .then(() => notifyPreferenceUpdate());
+                    }}
                   ></input>
                 </div>
               </div>
