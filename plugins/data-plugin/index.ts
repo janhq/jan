@@ -1,7 +1,7 @@
 import { core, store, RegisterExtensionPoint, StoreService, DataService, PluginService } from "@janhq/plugin-core";
 
-const PluginName = "data-plugin";
-const MODULE_PATH = "data-plugin/dist/cjs/module.js";
+const PluginName = "@janhq/data-plugin";
+const MODULE_PATH = "@janhq/data-plugin/dist/cjs/module.js";
 
 /**
  * Create a collection on data store

@@ -1,0 +1,91 @@
+name: Publish plugins/$dir Package to npmjs
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "plugins/**"
+      - ".github/workflows/publish-plugins.yml"
+      - "!plugins/*/package.json"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: "0"
+          token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Check Path Change
+        run: |
+          git config --global user.email "service@jan.ai"
+          git config --global user.name "Service Account"
+          echo "Changes in these directories trigger the build:"
+          changed_dirs=$(git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.GITHUB_TOKEN }}" diff --name-only HEAD HEAD~1 | grep 'plugins/' | awk -F/ '{print $2}' | uniq)
+          echo $changed_dirs > /tmp/change_dir.txt
+
+      - name: "Auto Increase package Version"
+        run: |
+          cd plugins
+          for dir in $(cat /tmp/change_dir.txt)
+          do
+            echo "$dir"
+            # Extract current version
+            current_version=$(jq -r '.version' $dir/package.json)
+
+            # Break the version into its components
+            major_version=$(echo $current_version | cut -d "." -f 1)
+            minor_version=$(echo $current_version | cut -d "." -f 2)
+            patch_version=$(echo $current_version | cut -d "." -f 3)
+
+            # Increment the patch version by one
+            new_patch_version=$((patch_version+1))
+
+            # Construct the new version
+            new_version="$major_version.$minor_version.$new_patch_version"
+
+            # Replace the old version with the new version in package.json
+            jq --arg version "$new_version" '.version = $version' $dir/package.json > /tmp/package.json && mv /tmp/package.json $dir/package.json
+
+            # Print the new version
+            echo "Updated $dir package.json version to: $new_version"
+          done
+
+      # Setup .npmrc file to publish to npm
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "20.x"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish npm packages
+        run: |
+          cd plugins
+          for dir in $(cat /tmp/change_dir.txt)
+          do
+            echo $dir
+            cd $dir
+            npm install && npm run build
+            npm publish --access public
+            cd ..
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: "Commit new version to main and create tag"
+        run: |
+          for dir in $(cat /tmp/change_dir.txt)
+          do
+            echo "$dir"
+            version=$(jq -r '.version' plugins/$dir/package.json)
+            git config --global user.email "service@jan.ai"
+            git config --global user.name "Service Account"
+            git add plugins/$dir/package.json
+            git commit -m "${GITHUB_REPOSITORY}: Update tag build $version for $dir"
+            git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:main
+            git tag -a $dir-$version -m "${GITHUB_REPOSITORY}: Update tag build $version for $dir"
+            git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin $dir-$version
+          done

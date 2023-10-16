@@ -1,5 +1,5 @@
 {
-  "name": "model-management-plugin",
+  "name": "@janhq/model-management-plugin",
   "version": "1.0.0",
   "description": "Model Management Plugin provides model exploration and seamless downloads",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/queue-list.svg",
@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
     "postinstall": "rimraf ./*.tgz && npm run build",
-    "build:publish": "npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "devDependencies": {
     "cpx": "^1.5.0",
@@ -27,7 +27,7 @@
   ],
   "dependencies": {
     "@huggingface/hub": "^0.8.5",
-    "@janhq/plugin-core": "^0.1.7",
+    "@janhq/plugin-core": "^0.1.8",
     "ts-loader": "^9.5.0"
   },
   "bundledDependencies": [

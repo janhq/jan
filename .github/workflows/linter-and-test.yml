@@ -32,6 +32,7 @@ jobs:
           rm -rf ./* || true
           rm -rf ./.??* || true
           ls -la ./
+          rm -rf ~/Library/Application\ Support/jan
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -58,6 +59,7 @@ jobs:
       - name: Clean workspace
         run: |
           Remove-Item -Path .\* -Force -Recurse
+          Remove-Item -Path "$Env:APPDATA\jan" -Force -Recurse 
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -85,6 +87,7 @@ jobs:
           rm -rf ./* || true
           rm -rf ./.??* || true
           ls -la ./
+          rm -rf ~/.config/jan
       - name: Getting the repo
         uses: actions/checkout@v3
 

@@ -1,5 +1,5 @@
 // Provide an async method to manipulate the price provided by the extension point
-const PLUGIN_NAME = "monitoring-plugin/dist/module.js";
+const PLUGIN_NAME = "@janhq/monitoring-plugin/dist/module.js";
 
 const getResourcesInfo = () => {
   return new Promise((resolve) => {

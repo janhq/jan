@@ -1,5 +1,5 @@
 {
-  "name": "monitoring-plugin",
+  "name": "@janhq/monitoring-plugin",
   "version": "1.0.0",
   "description": "Utilizing systeminformation, it provides essential System and OS information retrieval",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/cpu-chip.svg",
@@ -12,7 +12,7 @@
   "scripts": {
     "build": "webpack --config webpack.config.js",
     "postinstall": "rimraf ./*.tgz && npm run build && cpx \"module.js\" \"dist\"",
-    "build:publish": "npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "devDependencies": {
     "rimraf": "^3.0.2",

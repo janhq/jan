@@ -1,6 +1,6 @@
 import { EventName, InferenceService, NewMessageRequest, PluginService, core, events, store } from "@janhq/plugin-core";
 
-const PluginName = "inference-plugin";
+const PluginName = "@janhq/inference-plugin";
 const MODULE_PATH = `${PluginName}/dist/module.js`;
 const inferenceUrl = "http://localhost:3928/llama/chat_completion";
 
