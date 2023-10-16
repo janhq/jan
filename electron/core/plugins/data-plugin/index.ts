@@ -1,6 +1,6 @@
-import { core, store, RegisterExtensionPoint, StoreService, DataService } from "@janhq/plugin-core";
+import { core, store, RegisterExtensionPoint, StoreService, DataService, PluginService } from "@janhq/plugin-core";
 
-// Provide an async method to manipulate the price provided by the extension point
+const PluginName = "data-plugin";
 const MODULE_PATH = "data-plugin/dist/cjs/module.js";
 
 /**
@@ -12,7 +12,6 @@ const MODULE_PATH = "data-plugin/dist/cjs/module.js";
  *
  */
 function createCollection({ name, schema }: { name: string; schema?: { [key: string]: any } }): Promise<void> {
-  console.log("renderer: creating collection:", name, schema);
   return core.invokePluginFunc(MODULE_PATH, "createCollection", name, schema);
 }
 
@@ -137,8 +136,7 @@ function onStart() {
 
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }: { register: RegisterExtensionPoint }) {
-  onStart();
-
+  register(PluginService.OnStart, PluginName, onStart);
   register(StoreService.CreateCollection, createCollection.name, createCollection);
   register(StoreService.DeleteCollection, deleteCollection.name, deleteCollection);
   register(StoreService.InsertOne, insertOne.name, insertOne);

@@ -6,21 +6,22 @@ import {
   extensionPoints,
   activationPoints,
 } from "@/../../electron/core/plugin-manager/execution/index";
-import {
-  ChartPieIcon,
-  CommandLineIcon,
-  PlayIcon,
-} from "@heroicons/react/24/outline";
+import { ChartPieIcon, CommandLineIcon, PlayIcon } from "@heroicons/react/24/outline";
 
 import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 import classNames from "classnames";
+import { PluginService, preferences } from "@janhq/plugin-core";
+import { execute } from "../../../electron/core/plugin-manager/execution/extension-manager";
 
-/* eslint-disable @next/next/no-sync-scripts */
 export const Preferences = () => {
   const [search, setSearch] = useState<string>("");
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
+  const [preferenceItems, setPreferenceItems] = useState<any[]>([]);
+  const [preferenceValues, setPreferenceValues] = useState<any[]>([]);
   const [isTestAvailable, setIsTestAvailable] = useState(false);
   const [fileName, setFileName] = useState("");
+  const experimentRef = useRef(null);
+  const preferenceRef = useRef(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -31,7 +32,6 @@ export const Preferences = () => {
     }
   };
 
-  const preferenceRef = useRef(null);
   useEffect(() => {
     async function setupPE() {
       // Enable activation point management
@@ -54,18 +54,21 @@ export const Preferences = () => {
       setTimeout(async () => {
         await activationPoints.trigger("init");
         if (extensionPoints.get("experimentComponent")) {
-          const components = await Promise.all(
-            extensionPoints.execute("experimentComponent")
-          );
+          const components = await Promise.all(extensionPoints.execute("experimentComponent"));
           if (components.length > 0) {
             setIsTestAvailable(true);
           }
           components.forEach((e) => {
-            if (preferenceRef.current) {
+            if (experimentRef.current) {
               // @ts-ignore
-              preferenceRef.current.appendChild(e);
+              experimentRef.current.appendChild(e);
             }
           });
+        }
+
+        if (extensionPoints.get("PluginPreferences")) {
+          const data = await Promise.all(extensionPoints.execute("PluginPreferences"));
+          setPreferenceItems(Array.isArray(data) ? data : []);
         }
       }, 500);
     };
@@ -86,17 +89,9 @@ export const Preferences = () => {
 
   // Uninstall a plugin on clicking uninstall
   const uninstall = async (name: string) => {
-    //@ts-ignore
-
     // Send the filename of the to be uninstalled plugin
     // to the main process for removal
-    //@ts-ignore
     const res = await plugins.uninstall([name]);
-    console.log(
-      res
-        ? "Plugin successfully uninstalled"
-        : "Plugin could not be uninstalled"
-    );
     if (res) window.electronAPI.relaunch();
   };
 
@@ -109,6 +104,26 @@ export const Preferences = () => {
     }
     // plugins.update(active.map((plg) => plg.name));
   };
+
+  let timeout: any | undefined = undefined;
+  function notifyPreferenceUpdate() {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100);
+  }
+
+  useEffect(() => {
+    if (preferenceItems) {
+      Promise.all(
+        preferenceItems.map((e) =>
+          preferences.get(e.pluginName, e.preferenceKey).then((k) => ({ key: e.preferenceKey, value: k }))
+        )
+      ).then((data) => {
+        setPreferenceValues(data);
+      });
+    }
+  }, [preferenceItems]);
 
   return (
     <div className="w-full h-screen overflow-scroll">
@@ -152,12 +167,9 @@ export const Preferences = () => {
                   {!fileName ? (
                     <div className="flex flex-col items-center justify-center pt-5 pb-6">
                       <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                        <span className="font-semibold">Click to upload</span>{" "}
-                        or drag and drop
+                        <span className="font-semibold">Click to upload</span> or drag and drop
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        TGZ (MAX 50MB)
-                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">TGZ (MAX 50MB)</p>
                     </div>
                   ) : (
                     <>{fileName}</>
@@ -177,9 +189,7 @@ export const Preferences = () => {
                   type="submit"
                   className={classNames(
                     "rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600",
-                    fileName
-                      ? "bg-blue-500 hover:bg-blue-300"
-                      : "bg-gray-500"
+                    fileName ? "bg-blue-500 hover:bg-blue-300" : "bg-gray-500"
                   )}
                 >
                   Install Plugin
@@ -205,11 +215,7 @@ export const Preferences = () => {
           </div>
           <div className="grid grid-cols-2 items-stretch gap-4">
             {activePlugins
-              .filter(
-                (e) =>
-                  search.trim() === "" ||
-                  e.name.toLowerCase().includes(search.toLowerCase())
-              )
+              .filter((e) => search.trim() === "" || e.name.toLowerCase().includes(search.toLowerCase()))
               .map((e) => (
                 <div
                   key={e.name}
@@ -218,19 +224,13 @@ export const Preferences = () => {
                 >
                   <div className="flex flex-row space-x-2 items-center">
                     <span className="relative inline-block mt-1">
-                      <img
-                        className="h-14 w-14 rounded-md"
-                        src={e.icon ?? "icons/app_icon.svg"}
-                        alt=""
-                      />
+                      <img className="h-14 w-14 rounded-md" src={e.icon ?? "icons/app_icon.svg"} alt="" />
                     </span>
                     <div className="flex flex-col">
                       <p className="text-xl font-bold tracking-tight text-gray-900 dark:text-white capitalize">
                         {e.name.replaceAll("-", " ")}
                       </p>
-                      <p className="font-normal text-gray-700 dark:text-gray-400">
-                        Version: {e.version}
-                      </p>
+                      <p className="font-normal text-gray-700 dark:text-gray-400">Version: {e.version}</p>
                     </div>
                   </div>
 
@@ -266,8 +266,34 @@ export const Preferences = () => {
               Test Plugins
             </div>
           )}
-          <div className="h-full w-full" ref={preferenceRef}></div>
-          {/* Content */}
+          <div className="h-full w-full" ref={experimentRef}></div>
+
+          <div className="flex flex-row items-center my-4">
+            <PlayIcon width={30} />
+            Preferences
+          </div>
+          <div className="h-full w-full flex flex-col" ref={preferenceRef}>
+            {preferenceItems?.map((e) => (
+              <div key={e.preferenceKey} className="flex flex-col mb-4">
+                <div>
+                  <span className="text-[16px] text-gray-600">Setting:</span>{" "}
+                  <span className="text-[16px] text-gray-900">{e.preferenceName}</span>
+                </div>
+                <span className="text-[14px] text-gray-400">{e.preferenceDescription}</span>
+                <div className="flex flex-row space-x-4 items-center mt-2">
+                  <input
+                    className="text-gray-500 w-1/3 rounded-sm border-gray-300 border-[1px] h-8"
+                    defaultValue={preferenceValues.filter((v) => v.key === e.preferenceKey)[0]?.value}
+                    onChange={(event) => {
+                      preferences
+                        .set(e.pluginName, e.preferenceKey, event.target.value)
+                        .then(() => notifyPreferenceUpdate());
+                    }}
+                  ></input>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </main>
     </div>

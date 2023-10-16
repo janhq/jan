@@ -39,7 +39,7 @@
     "node_modules"
   ],
   "dependencies": {
-    "@janhq/plugin-core": "file:../../../../plugin-core",
+    "@janhq/plugin-core": "^0.1.7",
     "pouchdb-find": "^8.0.1",
     "pouchdb-node": "^8.0.1"
   }

@@ -8,7 +8,8 @@ export type CoreService =
   | InferenceService
   | ModelManagementService
   | SystemMonitoringService
-  | PreferenceService;
+  | PreferenceService
+  | PluginService;
 
 /**
  * Represents the available methods for the StoreService.
