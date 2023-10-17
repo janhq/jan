@@ -44,7 +44,6 @@ jobs:
       - name: Linter and test
         run: |
           yarn config set network-timeout 300000
-          yarn build:core
           yarn install
           yarn lint
           yarn build:plugins
@@ -59,7 +58,12 @@ jobs:
       - name: Clean workspace
         run: |
           Remove-Item -Path .\* -Force -Recurse
-          Remove-Item -Path "$Env:APPDATA\jan" -Force -Recurse 
+          $path = "$Env:APPDATA\jan"
+          if (Test-Path $path) {
+              Remove-Item $path -Recurse -Force
+          } else {
+              Write-Output "Folder does not exist."
+          }
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -71,7 +75,6 @@ jobs:
       - name: Linter and test
         run: |
           yarn config set network-timeout 300000
-          yarn build:core
           yarn install
           yarn lint
           yarn build:plugins
@@ -101,7 +104,6 @@ jobs:
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
           echo -e "Display ID: $DISPLAY"
           yarn config set network-timeout 300000
-          yarn build:core
           yarn install
           yarn lint
           yarn build:plugins
