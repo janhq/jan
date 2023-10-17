@@ -8,7 +8,7 @@ on:
       - ".github/workflows/publish-core.yml"
       - "!core/package.json"
 jobs:
-  build:
+  build-and-publish-plugins:
     runs-on: ubuntu-latest
     environment: production
     steps:
