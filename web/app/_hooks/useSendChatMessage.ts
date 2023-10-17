@@ -1,14 +1,15 @@
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { DataService, EventName, events } from "@janhq/core";
+import { DataService, EventName, InferenceService, events } from "@janhq/core";
 import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
 import { executeSerial } from "@/_services/pluginService";
 import { addNewMessageAtom } from "@/_helpers/atoms/ChatMessage.atom";
-import { currentConversationAtom } from "@/_helpers/atoms/Conversation.atom";
+import { currentConversationAtom, updateConversationAtom } from "@/_helpers/atoms/Conversation.atom";
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom);
   const addNewMessage = useSetAtom(addNewMessageAtom);
+  const updateConversation = useSetAtom(updateConversationAtom);
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom);
 
@@ -27,6 +28,20 @@ export default function useSendChatMessage() {
     const newChatMessage = toChatMessage(newMessage);
     addNewMessage(newChatMessage);
     events.emit(EventName.OnNewMessageRequest, newMessage);
+    const conv = currentConvo;
+    if (!currentConvo?.summary || currentConvo.summary === "") {
+      // Request convo summary
+      setTimeout(async () => {
+        newMessage.message = "summary this conversation in 5 words";
+        const result = await executeSerial(InferenceService.InferenceRequest, newMessage);
+        if (result?.message) {
+          updateConversation({
+            ...conv,
+            summary: result.message,
+          });
+        }
+      }, 2000);
+    }
   };
 
   return {
