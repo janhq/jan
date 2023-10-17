@@ -33,10 +33,8 @@ To help us manage RSVPs, please use the Eventbrite links below to RSVP for each 
 | Day            | Eventbrite Link            | Signups                                                |
 | -------------- | -------------------------- | ------------------------------------------------------ |
 | Mon (23 Oct)   | Jan Team & Partners Dinner | Invite-only                                            |
-| Tues (24 Oct)  | AI Talks Day 1             | [Eventbrite](https://jan-tech-talks-1.eventbrite.com)  |
-| Wed (25 Oct)   | AI Talks Day 2             | [Eventbrite](https://jan-tech-talks-2.eventbrite.com)  |
-| Thurs (26 Oct) | VC Night                   | [Eventbrite](https://jan-hcmc-vc-night.eventbrite.com) |
-| Fri (27 Oct)   | Jan Launch Party           | [Eventbrite](https://jan-launch-party.eventbrite.com)  |
+| Wed (25 Oct)   | AI Talks: LLMs, Tools and Workflows             | [Eventbrite](https://jan-tech-talks.eventbrite.sg/)  |
+| Fri (27 Oct)   | Jan Launch Party           | [Eventbrite](https://jan-launch-party.eventbrite.sg/)  |
 
 ### OKRs
 
