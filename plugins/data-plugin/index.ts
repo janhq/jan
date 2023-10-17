@@ -1,7 +1,4 @@
-import { core, store, RegisterExtensionPoint, StoreService, DataService, PluginService } from "@janhq/plugin-core";
-
-const PluginName = "@janhq/data-plugin";
-const MODULE_PATH = "@janhq/data-plugin/dist/cjs/module.js";
+import { core, store, RegisterExtensionPoint, StoreService, DataService, PluginService } from "@janhq/core";
 
 /**
  * Create a collection on data store
@@ -136,7 +133,7 @@ function onStart() {
 
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }: { register: RegisterExtensionPoint }) {
-  register(PluginService.OnStart, PluginName, onStart);
+  register(PluginService.OnStart, PLUGIN_NAME, onStart);
   register(StoreService.CreateCollection, createCollection.name, createCollection);
   register(StoreService.DeleteCollection, deleteCollection.name, deleteCollection);
   register(StoreService.InsertOne, insertOne.name, insertOne);

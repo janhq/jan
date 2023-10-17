@@ -1,4 +1,6 @@
 const path = require("path");
+const webpack = require("webpack");
+const packageJson = require("./package.json");
 
 module.exports = {
   experiments: { outputModule: true },
@@ -18,6 +20,12 @@ module.exports = {
     path: path.resolve(__dirname, "dist"),
     library: { type: "module" }, // Specify ESM output format
   },
+  plugins: [
+    new webpack.DefinePlugin({
+      PLUGIN_NAME: JSON.stringify(packageJson.name),
+      MODULE_PATH: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
+    }),
+  ],
   resolve: {
     extensions: [".ts", ".js"],
   },
