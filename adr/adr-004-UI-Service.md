@@ -1,8 +1,8 @@
-# ADR 005: UiService
+# ADR 004: UI Service
 
 ## Changelog
 
-- 10 Oct 2023: @dan-jan @0xSage
+- 10 Oct 2023: initial vision @dan-jan @0xSage
 
 ## Status
 
