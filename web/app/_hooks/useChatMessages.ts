@@ -31,28 +31,18 @@ const useChatMessages = (offset = 0) => {
     if (!hasMore) return;
 
     const getMessages = async () => {
-      executeSerial(
-        DataService.GetConversationMessages,
-        currentConvo._id
-      ).then((data: any) => {
+      executeSerial(DataService.GetConversationMessages, currentConvo._id).then((data: any) => {
         if (!data) {
           return;
         }
-        parseMessages(data ?? []).then((newMessages) => {
-          addOldChatMessages(newMessages);
-          updateConvoHasMore(currentConvo._id ?? "", false);
-          setLoading(false);
-        });
+        const newMessages = parseMessages(data ?? []);
+        addOldChatMessages(newMessages);
+        updateConvoHasMore(currentConvo._id ?? "", false);
+        setLoading(false);
       });
     };
     getMessages();
-  }, [
-    offset,
-    currentConvo?._id,
-    convoStates,
-    addOldChatMessages,
-    updateConvoHasMore,
-  ]);
+  }, [offset, currentConvo?._id, convoStates, addOldChatMessages, updateConvoHasMore]);
 
   return {
     loading: loading,
@@ -61,10 +51,10 @@ const useChatMessages = (offset = 0) => {
   };
 };
 
-async function parseMessages(messages: RawMessage[]): Promise<ChatMessage[]> {
+function parseMessages(messages: RawMessage[]): ChatMessage[] {
   const newMessages: ChatMessage[] = [];
   for (const m of messages) {
-    const chatMessage = await toChatMessage(m);
+    const chatMessage = toChatMessage(m);
     newMessages.push(chatMessage);
   }
   return newMessages;

@@ -8,7 +8,8 @@ export type CoreService =
   | InferenceService
   | ModelManagementService
   | SystemMonitoringService
-  | PreferenceService;
+  | PreferenceService
+  | PluginService;
 
 /**
  * Represents the available methods for the StoreService.
@@ -107,11 +108,6 @@ export enum DataService {
  * @enum {string}
  */
 export enum InferenceService {
-  /**
-   * The URL for the inference server.
-   */
-  InferenceUrl = "inferenceUrl",
-
   /**
    * Initializes a model for inference.
    */
@@ -217,6 +213,32 @@ export enum SystemMonitoringService {
 }
 
 /**
+ * PluginService exports.
+ * @enum {string}
+ */
+export enum PluginService {
+  /**
+   * The plugin is being started.
+   */
+  OnStart = "pluginOnStart",
+
+  /**
+   * The plugin is being started.
+   */
+  OnPreferencesUpdate = "pluginPreferencesUpdate",
+
+  /**
+   * The plugin is being stopped.
+   */
+  OnStop = "pluginOnStop",
+
+  /**
+   * The plugin is being destroyed.
+   */
+  OnDestroy = "pluginOnDestroy",
+}
+
+/**
  * Store module exports.
  * @module
  */
@@ -227,3 +249,15 @@ export { store } from "./store";
  * @module
  */
 export { core, RegisterExtensionPoint } from "./core";
+
+/**
+ * Events module exports.
+ * @module
+ */
+export { events, EventName, NewMessageRequest, NewMessageResponse } from "./events";
+
+/**
+ * Preferences module exports.
+ * @module
+ */
+export { preferences } from "./preferences";
