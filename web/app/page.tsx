@@ -1,10 +1,10 @@
-'use client'
-import { PluginService } from '@janhq/core'
-import { ThemeWrapper } from './_helpers/ThemeWrapper'
-import JotaiWrapper from './_helpers/JotaiWrapper'
-import { ModalWrapper } from './_helpers/ModalWrapper'
-import { useEffect, useState } from 'react'
-import Image from 'next/image'
+"use client"
+import { PluginService } from "@janhq/core"
+import { ThemeWrapper } from "./_helpers/ThemeWrapper"
+import JotaiWrapper from "./_helpers/JotaiWrapper"
+import { ModalWrapper } from "./_helpers/ModalWrapper"
+import { useEffect, useState } from "react"
+import Image from "next/image"
 import {
   setup,
   plugins,
@@ -72,20 +72,20 @@ const Page: React.FC = () => {
       {setupCore && (
         <EventListenerWrapper>
           <ThemeWrapper>
-            <ModalWrapper>
-              {activated ? (
+            {activated ? (
+              <ModalWrapper>
                 <MainContainer />
-              ) : (
-                <div className="flex h-screen w-screen items-center justify-center bg-white">
-                  <Image
-                    width={50}
-                    height={50}
-                    src="icons/app_icon.svg"
-                    alt=""
-                  />
-                </div>
-              )}
-            </ModalWrapper>
+              </ModalWrapper>
+            ) : (
+              <div className="flex h-screen w-screen items-center justify-center bg-white">
+                <Image
+                  width={50}
+                  height={50}
+                  src="icons/app_icon.svg"
+                  alt=""
+                />
+              </div>
+            )}
           </ThemeWrapper>
         </EventListenerWrapper>
       )}

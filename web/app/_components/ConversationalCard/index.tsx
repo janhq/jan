@@ -2,6 +2,7 @@ import React from 'react'
 import Image from 'next/image'
 import useCreateConversation from '@/_hooks/useCreateConversation'
 import { AssistantModel } from '@/_models/AssistantModel'
+import { PlayIcon } from "@heroicons/react/24/outline"
 
 type Props = {
   model: AssistantModel
@@ -33,7 +34,7 @@ const ConversationalCard: React.FC<Props> = ({ model }) => {
         </span>
       </div>
       <span className="flex items-center gap-0.5 text-xs leading-5 text-gray-500">
-        <Image src={'icons/play.svg'} width={16} height={16} alt="" />
+        <PlayIcon width={16} height={16} />
         32.2k runs
       </span>
     </button>

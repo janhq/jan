@@ -1,7 +1,7 @@
-import { useAtom, useSetAtom } from 'jotai'
-import { Conversation } from '@/_models/Conversation'
-import { executeSerial } from '@/_services/pluginService'
-import { DataService } from '@janhq/core'
+import { useAtom, useSetAtom } from "jotai"
+import { Conversation } from "@/_models/Conversation"
+import { executeSerial } from "@/_services/pluginService"
+import { DataService, ModelManagementService } from "@janhq/core"
 import {
   userConversationsAtom,
   setActiveConvoIdAtom,
@@ -11,6 +11,7 @@ import {
 } from '@/_helpers/atoms/Conversation.atom'
 import useInitModel from './useInitModel'
 import { AssistantModel } from '@/_models/AssistantModel'
+import { Bot } from "@/_models/Bot"
 
 const useCreateConversation = () => {
   const { initModel } = useInitModel()
@@ -22,13 +23,30 @@ const useCreateConversation = () => {
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
   const updateConvError = useSetAtom(updateConversationErrorAtom)
 
-  const requestCreateConvo = async (model: AssistantModel) => {
+  const createConvoByBot = async (bot: Bot) => {
+    const model = await executeSerial(
+      ModelManagementService.GetModelById,
+      bot.modelId
+    )
+
+    if (!model) {
+      alert(
+        `Model ${bot.modelId} not found! Please re-download the model first.`
+      )
+      return
+    }
+
+    return requestCreateConvo(model, bot)
+  }
+
+  const requestCreateConvo = async (model: AssistantModel, bot?: Bot) => {
     const conversationName = model.name
     const conv: Conversation = {
       modelId: model._id,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       name: conversationName,
+      botId: bot?._id ?? undefined,
     }
     const id = await executeSerial(DataService.CreateConversation, conv)
 
@@ -46,6 +64,7 @@ const useCreateConversation = () => {
       name: conversationName,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      botId: bot?._id ?? undefined,
     }
 
     addNewConvoState(id ?? '', {
@@ -57,6 +76,7 @@ const useCreateConversation = () => {
   }
 
   return {
+    createConvoByBot,
     requestCreateConvo,
   }
 }

@@ -64,16 +64,33 @@ function requestInference(recentMessages: any[]): Observable<string> {
 
 async function retrieveLastTenMessages(conversationId: string) {
   // TODO: Common collections should be able to access via core functions instead of store
+  const conversation = await store.findOne("conversations", conversationId);
+  let bot = undefined;
+  if (conversation.botId != null) {
+    bot = await store.findOne("bots", conversation.botId);
+  }
+
   const messageHistory = (await store.findMany("messages", { conversationId }, [{ createdAt: "asc" }])) ?? [];
-  return messageHistory
+
+  let recentMessages = messageHistory
     .filter((e) => e.message !== "" && (e.user === "user" || e.user === "assistant"))
-    .slice(-10)
-    .map((message) => {
-      return {
-        content: message.message.trim(),
-        role: message.user === "user" ? "user" : "assistant",
-      };
-    });
+    .slice(-9)
+    .map((message) => ({
+      content: message.message.trim(),
+      role: message.user === "user" ? "user" : "assistant",
+    }));
+
+  if (bot && bot.systemPrompt) {
+    // append bot's system prompt
+    recentMessages = [{
+      content: `[INST] ${bot.systemPrompt}`,
+      role: 'system'
+    },...recentMessages];
+  }
+
+  console.debug(`Sending: ${JSON.stringify(recentMessages)}`);
+
+  return recentMessages;
 }
 
 async function handleMessageRequest(data: NewMessageRequest) {

@@ -4,6 +4,7 @@ import { systemBarVisibilityAtom } from './SystemBar.atom'
 
 export enum MainViewState {
   Welcome,
+  CreateBot,
   ExploreModel,
   MyModel,
   ResourceMonitor,

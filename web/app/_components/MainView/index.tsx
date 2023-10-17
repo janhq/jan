@@ -8,28 +8,41 @@ import ExploreModelContainer from '../ExploreModelContainer'
 import {
   MainViewState,
   getMainViewStateAtom,
-} from '@/_helpers/atoms/MainView.atom'
-import EmptyChatContainer from '../EmptyChatContainer'
-import MainChat from '../MainChat'
+} from "@/_helpers/atoms/MainView.atom"
+import EmptyChatContainer from "../EmptyChatContainer"
+import MainChat from "../MainChat"
+import CreateBotContainer from "../CreateBotContainer"
 
 const MainView: React.FC = () => {
   const viewState = useAtomValue(getMainViewStateAtom)
 
+  let children = null
   switch (viewState) {
     case MainViewState.ConversationEmptyModel:
-      return <EmptyChatContainer />
+      children = <EmptyChatContainer />
+      break
     case MainViewState.ExploreModel:
-      return <ExploreModelContainer />
+      children = <ExploreModelContainer />
+      break
     case MainViewState.Setting:
-      return <Preferences />
+      children = <Preferences />
+      break
     case MainViewState.ResourceMonitor:
     case MainViewState.MyModel:
-      return <MyModelContainer />
+      children = <MyModelContainer />
+      break
+    case MainViewState.CreateBot:
+      children = <CreateBotContainer />
+      break
     case MainViewState.Welcome:
-      return <Welcome />
+      children = <Welcome />
+      break
     default:
-      return <MainChat />
+      children = <MainChat />
+      break
   }
+
+  return <div className="flex-1 overflow-hidden">{children}</div>
 }
 
 export default MainView

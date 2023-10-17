@@ -8,6 +8,7 @@ export interface Conversation {
   summary?: string
   createdAt?: string
   updatedAt?: string
+  botId?: string
 }
 
 /**

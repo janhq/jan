@@ -129,6 +129,7 @@ function findMany({
 function onStart() {
   createCollection({ name: "conversations", schema: {} });
   createCollection({ name: "messages", schema: {} });
+  createCollection({ name: "bots", schema: {} });
 }
 
 // Register all the above functions and objects with the relevant extension points
@@ -151,10 +152,21 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(DataService.DeleteConversation, deleteConversation.name, deleteConversation);
   register(DataService.CreateMessage, createMessage.name, createMessage);
   register(DataService.GetConversationMessages, getConversationMessages.name, getConversationMessages);
+
+  register("getConversationById", getConversationById.name, getConversationById);
+  register("createBot", createBot.name, createBot);
+  register("getBots", getBots.name, getBots);
+  register("getBotById", getBotById.name, getBotById);
+  register("deleteBot", deleteBot.name, deleteBot);
+  register("updateBot", updateBot.name, updateBot);
 }
 
 function getConversations(): Promise<any> {
   return store.findMany("conversations", {}, [{ updatedAt: "desc" }]);
+}
+
+function getConversationById(id: string): Promise<any> {
+  return store.findOne("conversations", id);
 }
 
 function createConversation(conversation: any): Promise<number | undefined> {
@@ -179,4 +191,24 @@ function deleteConversation(id: any) {
 
 function getConversationMessages(conversationId: any) {
   return store.findMany("messages", { conversationId }, [{ createdAt: "desc" }]);
+}
+
+function createBot(bot: any): Promise<void> {
+  return store.insertOne("bots", bot);
+}
+
+function getBots(): Promise<any> {
+  return store.findMany("bots", {});
+}
+
+function deleteBot(id: any): Promise<any> {
+  return store.deleteOne("bots", id);
+}
+
+function updateBot(bot: any): Promise<void> {
+  return store.updateOne("bots", bot._id, bot);
+}
+
+function getBotById(botId: string): Promise<any> {
+  return store.findOne("bots", botId);
 }
