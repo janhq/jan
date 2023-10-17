@@ -4,5 +4,6 @@
     "outDir": "./../dist/esm",
     "module": "esnext"
   },
-  "files": ["../index.ts"]
+  "include": ["@types/*"],
+  "files": ["../@types/global.d.ts", "../index.ts"]
 }

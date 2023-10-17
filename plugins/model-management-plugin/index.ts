@@ -1,8 +1,5 @@
 import { ModelManagementService, PluginService, RegisterExtensionPoint, core, store } from "@janhq/plugin-core";
 
-const PluginName = "@janhq/model-management-plugin";
-const MODULE_PATH = "@janhq/model-management-plugin/dist/module.js";
-
 const getDownloadedModels = () => core.invokePluginFunc(MODULE_PATH, "getDownloadedModels");
 
 const getAvailableModels = () => core.invokePluginFunc(MODULE_PATH, "getAvailableModels");
@@ -83,7 +80,7 @@ function onStart() {
 
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }: { register: RegisterExtensionPoint }) {
-  register(PluginService.OnStart, PluginName, onStart);
+  register(PluginService.OnStart, PLUGIN_NAME, onStart);
 
   register(ModelManagementService.GetDownloadedModels, getDownloadedModels.name, getDownloadedModels);
   register(ModelManagementService.GetAvailableModels, getAvailableModels.name, getAvailableModels);

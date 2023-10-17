@@ -1,7 +1,5 @@
 import { EventName, InferenceService, NewMessageRequest, PluginService, core, events, store } from "@janhq/plugin-core";
 
-const PluginName = "@janhq/inference-plugin";
-const MODULE_PATH = `${PluginName}/dist/module.js`;
 const inferenceUrl = "http://localhost:3928/llama/chat_completion";
 
 const initModel = async (product) => core.invokePluginFunc(MODULE_PATH, "initModel", product);
@@ -91,7 +89,7 @@ const onStart = async () => {
 };
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }) {
-  register(PluginService.OnStart, PluginName, onStart);
+  register(PluginService.OnStart, PLUGIN_NAME, onStart);
   register(InferenceService.InitModel, initModel.name, initModel);
   register(InferenceService.StopModel, stopModel.name, stopModel);
 }

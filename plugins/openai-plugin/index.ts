@@ -9,8 +9,6 @@ import {
 } from "@janhq/plugin-core";
 import { Configuration, OpenAIApi } from "azure-openai";
 
-const PluginName = "@janhq/openai-plugin";
-
 const setRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
 XMLHttpRequest.prototype.setRequestHeader = function newSetRequestHeader(key: string, val: string) {
   if (key.toLocaleLowerCase() === "user-agent") {
@@ -22,9 +20,9 @@ XMLHttpRequest.prototype.setRequestHeader = function newSetRequestHeader(key: st
 var openai: OpenAIApi | undefined = undefined;
 
 const setup = async () => {
-  const apiKey: string = (await preferences.get(PluginName, "apiKey")) ?? "";
-  const endpoint: string = (await preferences.get(PluginName, "endpoint")) ?? "";
-  const deploymentName: string = (await preferences.get(PluginName, "deploymentName")) ?? "";
+  const apiKey: string = (await preferences.get(PLUGIN_NAME, "apiKey")) ?? "";
+  const endpoint: string = (await preferences.get(PLUGIN_NAME, "endpoint")) ?? "";
+  const deploymentName: string = (await preferences.get(PLUGIN_NAME, "deploymentName")) ?? "";
   try {
     openai = new OpenAIApi(
       new Configuration({
@@ -92,13 +90,13 @@ const onPreferencesUpdate = () => {
 };
 // Register all the above functions and objects with the relevant extension points
 export function init({ register }: { register: RegisterExtensionPoint }) {
-  register(PluginService.OnStart, PluginName, onStart);
-  register(PluginService.OnPreferencesUpdate, PluginName, onPreferencesUpdate);
+  register(PluginService.OnStart, PLUGIN_NAME, onStart);
+  register(PluginService.OnPreferencesUpdate, PLUGIN_NAME, onPreferencesUpdate);
 
-  preferences.registerPreferences<string>(register, PluginName, "apiKey", "API Key", "Azure Project API Key", "");
+  preferences.registerPreferences<string>(register, PLUGIN_NAME, "apiKey", "API Key", "Azure Project API Key", "");
   preferences.registerPreferences<string>(
     register,
-    PluginName,
+    PLUGIN_NAME,
     "endpoint",
     "API Endpoint",
     "Azure Deployment Endpoint API",
@@ -106,7 +104,7 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   );
   preferences.registerPreferences<string>(
     register,
-    PluginName,
+    PLUGIN_NAME,
     "deploymentName",
     "Deployment Name",
     "The deployment name you chose when you deployed the model",
