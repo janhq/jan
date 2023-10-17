@@ -11,7 +11,7 @@
 const core = require("@janhq/core");
 
 // typescript
-import { core } from "@janhq/core";
+import * as core from "@janhq/core";
 ```
 
 ### Register Plugin Extensions
