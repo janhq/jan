@@ -1,5 +1,5 @@
 import { executeSerial } from "@/_services/pluginService";
-import { DataService, ModelManagementService } from "@janhq/plugin-core";
+import { DataService, ModelManagementService } from "@janhq/core";
 import { ModelVersion } from "@/_models/ModelVersion";
 import { Product } from "@/_models/Product";
 import { AssistantModel } from "@/_models/AssistantModel";

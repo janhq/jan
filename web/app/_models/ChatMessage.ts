@@ -1,4 +1,4 @@
-import { NewMessageResponse } from "@janhq/plugin-core";
+import { NewMessageResponse } from "@janhq/core";
 export enum MessageType {
   Text = "Text",
   Image = "Image",

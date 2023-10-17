@@ -1,5 +1,5 @@
 import { executeSerial } from "@/_services/pluginService";
-import { ModelManagementService, InferenceService } from "@janhq/plugin-core";
+import { ModelManagementService, InferenceService } from "@janhq/core";
 import useInitModel from "./useInitModel";
 import { useSetAtom } from "jotai";
 import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";

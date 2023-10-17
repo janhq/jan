@@ -5,7 +5,7 @@ import { ReactNode, useEffect } from "react";
 import { appDownloadProgress } from "./JotaiWrapper";
 import { DownloadState } from "@/_models/DownloadState";
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { ModelManagementService } from "@janhq/plugin-core";
+import { ModelManagementService } from "@janhq/core";
 import { setDownloadStateAtom, setDownloadStateSuccessAtom } from "./atoms/DownloadState.atom";
 import { getDownloadedModels } from "@/_hooks/useGetDownloadedModels";
 import { downloadedModelAtom } from "./atoms/DownloadedModel.atom";

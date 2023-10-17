@@ -37,11 +37,18 @@ export type RegisterExtensionPoint = (
   method: Function,
   priority?: number
 ) => void;
+
 /**
- * Core exports
+ * @deprecated This object is deprecated and should not be used.
+ * Use individual functions instead.
  */
 export const core = {
   invokePluginFunc,
   downloadFile,
   deleteFile,
 };
+
+/**
+ * Functions exports
+ */
+export { invokePluginFunc, downloadFile, deleteFile };
