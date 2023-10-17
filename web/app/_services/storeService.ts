@@ -1,4 +1,4 @@
-import { StoreService } from "@janhq/plugin-core";
+import { StoreService } from "@janhq/core";
 import { executeSerial } from "./pluginService";
 
 /**

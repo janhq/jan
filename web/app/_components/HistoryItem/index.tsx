@@ -2,7 +2,7 @@ import React from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import Image from "next/image";
 import { Conversation } from "@/_models/Conversation";
-import { ModelManagementService } from "@janhq/plugin-core";
+import { ModelManagementService } from "@janhq/core";
 import { executeSerial } from "../../../../electron/core/plugin-manager/execution/extension-manager";
 import {
   conversationStatesAtom,

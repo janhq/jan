@@ -117,6 +117,11 @@ export enum InferenceService {
    * Stops a running inference model.
    */
   StopModel = "stopModel",
+
+  /**
+   * Single inference response.
+   */
+  InferenceRequest = "inferenceRequest",
 }
 
 /**
@@ -124,16 +129,6 @@ export enum InferenceService {
  * @enum {string}
  */
 export enum ModelManagementService {
-  /**
-   * Gets a list of downloaded models.
-   */
-  GetDownloadedModels = "getDownloadedModels",
-
-  /**
-   * Gets a list of available models from the server.
-   */
-  GetAvailableModels = "getAvailableModels",
-
   /**
    * Deletes a downloaded model.
    */
@@ -143,11 +138,6 @@ export enum ModelManagementService {
    * Downloads a model from the server.
    */
   DownloadModel = "downloadModel",
-
-  /**
-   * Searches for models on the server.
-   */
-  SearchModels = "searchModels",
 
   /**
    * Gets configued models from the database.
@@ -163,11 +153,6 @@ export enum ModelManagementService {
    * Updates the finished download time for a model in the database.
    */
   UpdateFinishedDownloadAt = "updateFinishedDownloadAt",
-
-  /**
-   * Gets a list of unfinished download models from the database.
-   */
-  GetUnfinishedDownloadModels = "getUnfinishedDownloadModels",
 
   /**
    * Gets a list of finished download models from the database.
@@ -245,10 +230,16 @@ export enum PluginService {
 export { store } from "./store";
 
 /**
+ * @deprecated This object is deprecated and should not be used.
+ * Use individual functions instead.
+ */
+export { core } from "./core";
+
+/**
  * Core module exports.
  * @module
  */
-export { core, RegisterExtensionPoint } from "./core";
+export { RegisterExtensionPoint, deleteFile, downloadFile, invokePluginFunc } from "./core";
 
 /**
  * Events module exports.

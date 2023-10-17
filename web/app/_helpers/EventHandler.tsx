@@ -1,6 +1,6 @@
 import { addNewMessageAtom, updateMessageAtom } from "@/_helpers/atoms/ChatMessage.atom";
 import { toChatMessage } from "@/_models/ChatMessage";
-import { events, EventName, NewMessageResponse } from "@janhq/plugin-core";
+import { events, EventName, NewMessageResponse } from "@janhq/core";
 import { useSetAtom } from "jotai";
 import { ReactNode, useEffect } from "react";
 

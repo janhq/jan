@@ -11,7 +11,7 @@
 const core = require("@janhq/core");
 
 // typescript
-import { core } from "@janhq/core";
+import * as core from "@janhq/core";
 ```
 
 ### Register Plugin Extensions
@@ -186,7 +186,7 @@ In your main entry code (e.g., `index.ts`), start by importing the necessary mod
 
 ```js
 // index.ts
-import { core } from "@janhq/core";
+import * as core from "@janhq/core";
 ```
 
 #### Perform File Operations
@@ -223,7 +223,7 @@ In your main process code (e.g., `index.ts`), start by importing the `core` obje
 
 ```js
 // index.ts
-import { core } from "@janhq/core";
+import * as core from "@janhq/core";
 ```
 
 ##### Define the Module Path

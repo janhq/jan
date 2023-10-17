@@ -1,7 +1,7 @@
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { execute } from "@/_services/pluginService";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { DataService } from "@janhq/plugin-core";
+import { DataService } from "@janhq/core";
 import { deleteConversationMessage } from "@/_helpers/atoms/ChatMessage.atom";
 import {
   userConversationsAtom,

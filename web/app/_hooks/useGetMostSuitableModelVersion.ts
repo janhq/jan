@@ -1,5 +1,5 @@
 import { executeSerial } from "@/_services/pluginService";
-import { SystemMonitoringService } from "@janhq/plugin-core";
+import { SystemMonitoringService } from "@janhq/core";
 import { ModelVersion } from "@/_models/ModelVersion";
 import { useState } from "react";
 

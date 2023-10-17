@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { SystemMonitoringService } from "@janhq/plugin-core";
+import { SystemMonitoringService } from "@janhq/core";
 
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0);
