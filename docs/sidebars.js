@@ -190,21 +190,21 @@ const sidebars = {
     },
   ],
   companySidebar: [
-    {
-      type: "category",
-      label: "About Jan",
-      collapsible: true,
-      collapsed: true,
-      link: { type: "doc", id: "about/about" },
-      items: [
-        "about/team",
-        {
-          type: "link",
-          label: "Careers",
-          href: "https://janai.bamboohr.com/careers",
-        },
-      ],
-    },
+    // {
+    //   type: "category",
+    //   label: "About Jan",
+    //   collapsible: true,
+    //   collapsed: true,
+    //   link: { type: "doc", id: "about/about" },
+    //   items: [
+    //     "about/team",
+    //     {
+    //       type: "link",
+    //       label: "Careers",
+    //       href: "https://janai.bamboohr.com/careers",
+    //     },
+    //   ],
+    // },
     {
       type: "category",
       label: "Events",
@@ -218,14 +218,14 @@ const sidebars = {
         },
       ],
     },
-    {
-      type: "category",
-      label: "Company Handbook",
-      collapsible: true,
-      collapsed: true,
-      link: { type: "doc", id: "handbook/handbook" },
-      items: ["handbook/remote-work"],
-    },
+    // {
+    //   type: "category",
+    //   label: "Company Handbook",
+    //   collapsible: true,
+    //   collapsed: true,
+    //   link: { type: "doc", id: "handbook/handbook" },
+    //   items: ["handbook/remote-work"],
+    // },
   ],
 };
 
