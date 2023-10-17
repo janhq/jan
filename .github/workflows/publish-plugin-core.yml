@@ -1,12 +1,12 @@
-name: Publish Plugin-core Package to npmjs
+name: Publish plugin core Package to npmjs
 on:
   push:
     branches:
       - main
     paths:
-      - "plugin-core/**"
-      - ".github/workflows/publish-plugin-core.yml"
-      - "!plugin-core/package.json"
+      - "core/**"
+      - ".github/workflows/publish-core.yml"
+      - "!core/package.json"
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,7 +23,7 @@ jobs:
       - name: "Auto Increase package Version"
         run: |
           # Extract current version
-          current_version=$(jq -r '.version' plugin-core/package.json)
+          current_version=$(jq -r '.version' core/package.json)
 
           # Break the version into its components
           major_version=$(echo $current_version | cut -d "." -f 1)
@@ -37,7 +37,7 @@ jobs:
           new_version="$major_version.$minor_version.$new_patch_version"
 
           # Replace the old version with the new version in package.json
-          jq --arg version "$new_version" '.version = $version' plugin-core/package.json > /tmp/package.json && mv /tmp/package.json plugin-core/package.json
+          jq --arg version "$new_version" '.version = $version' core/package.json > /tmp/package.json && mv /tmp/package.json core/package.json
 
           # Print the new version
           echo "Updated package.json version to: $new_version"
@@ -48,19 +48,19 @@ jobs:
           node-version: "20.x"
           registry-url: "https://registry.npmjs.org"
       - run: npm install && npm run build
-        working-directory: ./plugin-core
+        working-directory: ./core
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        working-directory: ./plugin-core
+        working-directory: ./core
 
       - name: "Commit new version to main and create tag"
         run: |
-          version=$(jq -r '.version' plugin-core/package.json)
+          version=$(jq -r '.version' core/package.json)
           git config --global user.email "service@jan.ai"
           git config --global user.name "Service Account"
-          git add plugin-core/package.json
+          git add core/package.json
           git commit -m "${GITHUB_REPOSITORY}: Update tag build $version"
           git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:main
-          git tag -a plugin-core-$version -m "${GITHUB_REPOSITORY}: Update tag build $version for plugin-core"
-          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin plugin-core-$version
+          git tag -a core-$version -m "${GITHUB_REPOSITORY}: Update tag build $version for core"
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin core-$version

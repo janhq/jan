@@ -1,4 +1,4 @@
-## @janhq/plugin-core
+## @janhq/core
 
 > The module includes functions for communicating with core APIs, registering plugin extensions, and exporting type definitions.
 
@@ -8,10 +8,10 @@
 
 ```js
 // javascript
-const core = require("@janhq/plugin-core");
+const core = require("@janhq/core");
 
 // typescript
-import { core } from "@janhq/plugin-core";
+import { core } from "@janhq/core";
 ```
 
 ### Register Plugin Extensions
@@ -23,7 +23,7 @@ You can `register` any function as a plugin extension using `CoreServiceAPI` bel
 Once the extension is registered, it can be used by other plugins or components in the Jan platform. For example, a UI component might use the DataService.GetConversations extension to retrieve a list of conversations to display to the user.
 
 ```js
-import { RegisterExtensionPoint, DataService } from "@janhq/plugin-core";
+import { RegisterExtensionPoint, DataService } from "@janhq/core";
 
 function getConversations() {
   // Your logic here
@@ -43,7 +43,7 @@ The Core API allows you to interact with local data storage. Here are a couple o
 You can use the store.insertOne function to insert data into a specific collection in the local data store.
 
 ```js
-import { store } from "@janhq/plugin-core";
+import { store } from "@janhq/core";
 
 function insertData() {
   store.insertOne("conversations", { name: "meow" });
@@ -59,7 +59,7 @@ store.getOne(collectionName, key) retrieves a single document that matches the p
 store.getMany(collectionName, selector, sort) retrieves multiple documents that match the provided selector in the specified collection.
 
 ```js
-import { store } from "@janhq/plugin-core";
+import { store } from "@janhq/core";
 
 function getData() {
   const selector = { name: "meow" };
@@ -104,7 +104,7 @@ function deleteData() {
 You can subscribe to NewMessageRequest events by defining a function to handle the event and registering it with the events object:
 
 ```js
-import { events } from "@janhq/plugin-core";
+import { events } from "@janhq/core";
 
 function handleMessageRequest(message: NewMessageRequest) {
   // Your logic here. For example:
@@ -122,7 +122,7 @@ export function init({ register }) {
 In this example, we're defining a function called handleMessageRequest that takes a NewMessageRequest object as its argument. We're also defining a function called registerListener that registers the handleMessageRequest function as a listener for NewMessageRequest events using the on method of the events object.
 
 ```js
-import { events } from "@janhq/plugin-core";
+import { events } from "@janhq/core";
 
 function handleMessageRequest(data: NewMessageRequest) {
   // Your logic here. For example:
@@ -138,10 +138,10 @@ function handleMessageRequest(data: NewMessageRequest) {
 
 ### Preferences
 
-To register plugin preferences, you can use the preferences object from the @janhq/plugin-core package. Here's an example of how to register and retrieve plugin preferences:
+To register plugin preferences, you can use the preferences object from the @janhq/core package. Here's an example of how to register and retrieve plugin preferences:
 
 ```js
-import { PluginService, preferences } from "@janhq/plugin-core";
+import { PluginService, preferences } from "@janhq/core";
 
 const pluginName = "your-first-plugin";
 const preferenceKey = "";
@@ -165,7 +165,7 @@ In this example, we're registering preference update handlers and plugin prefere
 To retrieve the values of the registered preferences, we're using the get method of the preferences object and passing in the name of the plugin and the name of the preference.
 
 ```js
-import { preferences } from "@janhq/plugin-core";
+import { preferences } from "@janhq/core";
 
 const pluginName = "your-first-plugin";
 const preferenceKey = "apiKey";
@@ -182,11 +182,11 @@ To access the Core API in your plugin, you can follow the code examples and expl
 
 ##### Import Core API and Store Module
 
-In your main entry code (e.g., `index.ts`), start by importing the necessary modules and functions from the `@janhq/plugin-core` library.
+In your main entry code (e.g., `index.ts`), start by importing the necessary modules and functions from the `@janhq/core` library.
 
 ```js
 // index.ts
-import { core } from "@janhq/plugin-core";
+import { core } from "@janhq/core";
 ```
 
 #### Perform File Operations
@@ -219,11 +219,11 @@ To execute a plugin module in the main process of your application, you can foll
 
 ##### Import the `core` Object
 
-In your main process code (e.g., `index.ts`), start by importing the `core` object from the `@janhq/plugin-core` library.
+In your main process code (e.g., `index.ts`), start by importing the `core` object from the `@janhq/core` library.
 
 ```js
 // index.ts
-import { core } from "@janhq/plugin-core";
+import { core } from "@janhq/core";
 ```
 
 ##### Define the Module Path
