@@ -1,6 +1,6 @@
 {
   "name": "@janhq/azure-openai-plugin",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Inference plugin for Azure OpenAI",
   "icon": "https://static-assets.jan.ai/openai-icon.jpg",
   "main": "dist/index.js",
