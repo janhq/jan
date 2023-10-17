@@ -1,4 +1,4 @@
-import { ModelManagementService, PluginService, RegisterExtensionPoint, core, store } from "@janhq/plugin-core";
+import { ModelManagementService, PluginService, RegisterExtensionPoint, core, store } from "@janhq/core";
 
 const getDownloadedModels = () => core.invokePluginFunc(MODULE_PATH, "getDownloadedModels");
 

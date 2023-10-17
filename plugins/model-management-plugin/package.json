@@ -28,7 +28,7 @@
   ],
   "dependencies": {
     "@huggingface/hub": "^0.8.5",
-    "@janhq/plugin-core": "^0.1.8",
+    "@janhq/core": "^0.1.1",
     "ts-loader": "^9.5.0"
   },
   "bundledDependencies": [

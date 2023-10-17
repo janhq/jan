@@ -1,4 +1,4 @@
-import { core, store, RegisterExtensionPoint, StoreService, DataService, PluginService } from "@janhq/plugin-core";
+import { core, store, RegisterExtensionPoint, StoreService, DataService, PluginService } from "@janhq/core";
 
 /**
  * Create a collection on data store

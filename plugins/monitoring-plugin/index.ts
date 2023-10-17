@@ -1,4 +1,4 @@
-import { core, SystemMonitoringService } from "@janhq/plugin-core";
+import { core, SystemMonitoringService } from "@janhq/core";
 
 // Provide an async method to manipulate the price provided by the extension point
 const getResourcesInfo = () => core.invokePluginFunc(MODULE_PATH, "getResourcesInfo");

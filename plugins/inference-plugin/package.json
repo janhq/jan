@@ -26,7 +26,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@janhq/plugin-core": "^0.1.8",
+    "@janhq/core": "^0.1.1",
     "kill-port-process": "^3.2.0",
     "tcp-port-used": "^1.0.2",
     "ts-loader": "^9.5.0"

@@ -6,7 +6,7 @@ import {
   store,
   preferences,
   RegisterExtensionPoint,
-} from "@janhq/plugin-core";
+} from "@janhq/core";
 import { Configuration, OpenAIApi } from "azure-openai";
 
 const setRequestHeader = XMLHttpRequest.prototype.setRequestHeader;

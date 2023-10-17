@@ -1,4 +1,4 @@
-import { EventName, InferenceService, NewMessageRequest, PluginService, core, events, store } from "@janhq/plugin-core";
+import { EventName, InferenceService, NewMessageRequest, PluginService, core, events, store } from "@janhq/core";
 
 const inferenceUrl = "http://localhost:3928/llama/chat_completion";
 

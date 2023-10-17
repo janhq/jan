@@ -21,7 +21,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@janhq/plugin-core": "^0.1.8",
+    "@janhq/core": "^0.1.1",
     "systeminformation": "^5.21.8",
     "ts-loader": "^9.5.0"
   },
