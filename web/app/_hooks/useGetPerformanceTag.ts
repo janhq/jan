@@ -1,5 +1,5 @@
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { SystemMonitoringService } from "@janhq/plugin-core";
+import { SystemMonitoringService } from "@janhq/core";
 import { useState } from "react";
 import { ModelVersion } from "@/_models/ModelVersion";
 import { ModelPerformance, TagType } from "@/_components/SimpleTag/TagType";

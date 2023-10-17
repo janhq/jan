@@ -1,6 +1,6 @@
 "use client";
 import { extensionPoints, plugins } from "../../../electron/core/plugin-manager/execution/index";
-import { CoreService, DataService, InferenceService, ModelManagementService } from "@janhq/plugin-core";
+import { CoreService, DataService, InferenceService, ModelManagementService } from "@janhq/core";
 
 export const isCorePluginInstalled = () => {
   if (!extensionPoints.get(DataService.GetConversations)) {

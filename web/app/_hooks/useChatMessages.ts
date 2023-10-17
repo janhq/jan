@@ -2,7 +2,7 @@ import { ChatMessage, RawMessage, toChatMessage } from "@/_models/ChatMessage";
 import { executeSerial } from "@/_services/pluginService";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useState } from "react";
-import { DataService } from "@janhq/plugin-core";
+import { DataService } from "@janhq/core";
 import { addOldMessagesAtom } from "@/_helpers/atoms/ChatMessage.atom";
 import {
   currentConversationAtom,

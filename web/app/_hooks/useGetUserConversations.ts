@@ -1,7 +1,7 @@
 import { Conversation, ConversationState } from "@/_models/Conversation";
 import { useSetAtom } from "jotai";
 import { executeSerial } from "@/_services/pluginService";
-import { DataService } from "@janhq/plugin-core";
+import { DataService } from "@janhq/core";
 import {
   conversationStatesAtom,
   userConversationsAtom,

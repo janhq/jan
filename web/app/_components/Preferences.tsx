@@ -10,7 +10,7 @@ import { ChartPieIcon, CommandLineIcon, PlayIcon } from "@heroicons/react/24/out
 
 import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 import classNames from "classnames";
-import { PluginService, preferences } from "@janhq/plugin-core";
+import { PluginService, preferences } from "@janhq/core";
 import { execute } from "../../../electron/core/plugin-manager/execution/extension-manager";
 
 export const Preferences = () => {

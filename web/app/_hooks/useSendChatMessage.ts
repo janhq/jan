@@ -1,6 +1,6 @@
 import { currentPromptAtom } from "@/_helpers/JotaiWrapper";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { DataService, EventName, events } from "@janhq/plugin-core";
+import { DataService, EventName, events } from "@janhq/core";
 import { RawMessage, toChatMessage } from "@/_models/ChatMessage";
 import { executeSerial } from "@/_services/pluginService";
 import { addNewMessageAtom } from "@/_helpers/atoms/ChatMessage.atom";
