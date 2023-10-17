@@ -133,17 +133,12 @@ yarn build
 
 This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
 
-## License
-
-Jan is free, [open core](https://en.wikipedia.org/wiki/Open-core_model), and Sustainable Use Licensed.
-
 ## Acknowledgements
 
 Jan builds on top of other open-source projects:
 
 - [llama.cpp](https://github.com/ggerganov/llama.cpp)
 - [TensorRT](https://github.com/NVIDIA/TensorRT)
-- [Keycloak Community](https://github.com/keycloak/keycloak) (Apache-2.0)
 
 ## Contact
 
