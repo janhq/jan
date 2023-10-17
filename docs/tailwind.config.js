@@ -1,15 +1,29 @@
 // tailwind.config.js
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  corePlugins: {
-    preflight: false, // disable Tailwind's reset
-  },
-  content: ["./src/**/*.{js,jsx,ts,tsx}"], // Only affects code in /src; can also add ./docs/**/*.mdx to use tailwind in docs
-  darkMode: ["class", '[data-theme="dark"]'], // hooks into docusaurus' dark mode settings
+  content: ["./src/**/*.{js,jsx,ts,tsx}"],
+  darkMode: ["class", '[data-theme="dark"]'],
   theme: {
+    container: {
+      center: true,
+      padding: "16px",
+      screens: {
+        "2xl": "1400px",
+      },
+    },
+    fontFamily: {
+      sans: [
+        "-apple-system",
+        "BlinkMacSystemFont",
+        "Segoe UI",
+        "Roboto",
+        "Oxygen-Sans",
+        "Ubuntu,Cantarell",
+        "Helvetica",
+        "sans-serif",
+      ],
+    },
     extend: {},
   },
-  plugins: [
-    require("tailwindcss-animate"),
-  ],
+  plugins: [require("tailwindcss-animate")],
 };
