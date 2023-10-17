@@ -1,11 +1,29 @@
+import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
 import { showingBotListModalAtom } from '@/_helpers/atoms/Modal.atom'
+import useGetBots from '@/_hooks/useGetBots'
+import { Bot } from '@/_models/Bot'
 import { Dialog, Transition } from '@headlessui/react'
 import { useAtom } from 'jotai'
-import React, { Fragment } from 'react'
-import BotListContainer from '../BotListContainer'
+import React, { Fragment, useEffect, useState } from 'react'
 
 const BotListModal: React.FC = () => {
   const [open, setOpen] = useAtom(showingBotListModalAtom)
+  const [bots, setBots] = useState<Bot[]>([])
+  const [activeBot, setActiveBot] = useAtom(activeBotAtom)
+  const { getAllBots } = useGetBots()
+
+  useEffect(() => {
+    getAllBots().then((res) => {
+      setBots(res)
+    })
+  }, [open])
+
+  const onBotSelected = (bot: Bot) => {
+    if (bot._id !== activeBot?._id) {
+      setActiveBot(bot)
+    }
+    setOpen(false)
+  }
 
   return (
     <Transition.Root show={open} as={Fragment}>
@@ -34,8 +52,20 @@ const BotListModal: React.FC = () => {
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
               <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-sm sm:p-6">
-                <h1 className="mb-4 text-lg text-black font-bold">Your bots</h1>
-                <BotListContainer />
+                <div className="overflow-hidden bg-white shadow sm:rounded-md">
+                  <ul role="list" className="divide-y divide-gray-200">
+                    {bots.map((bot) => (
+                      <li
+                        role="button"
+                        key={bot._id}
+                        className="px-4 py-4 sm:px-6"
+                        onClick={() => onBotSelected(bot)}
+                      >
+                        <p>{bot.name}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </Dialog.Panel>
             </Transition.Child>
           </div>

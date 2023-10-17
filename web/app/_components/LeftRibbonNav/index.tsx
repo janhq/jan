@@ -101,7 +101,6 @@ const LeftRibbonNav: React.FC = () => {
             return (
               <li
                 role="button"
-                data-testid={item.name}
                 key={item.name}
                 className={`rounded-lg p-4 ${bgColor} hover:bg-gray-400`}
                 onClick={() => onMenuClick(item.state)}

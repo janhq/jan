@@ -1,53 +1,21 @@
 import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
 import { useAtomValue } from 'jotai'
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import ExpandableHeader from '../ExpandableHeader'
 import { useDebouncedCallback } from 'use-debounce'
 import useUpdateBot from '@/_hooks/useUpdateBot'
-import ProgressSetting from '../ProgressSetting'
-import { set } from 'react-hook-form'
+import { formatTwoDigits } from '@/_utils/converter'
 
 const delayBeforeUpdateInMs = 1000
 
 const BotSetting: React.FC = () => {
   const activeBot = useAtomValue(activeBotAtom)
-  const [temperature, setTemperature] = useState(0)
-  const [maxTokens, setMaxTokens] = useState(0)
-  const [frequencyPenalty, setFrequencyPenalty] = useState(0)
-  const [presencePenalty, setPresencePenalty] = useState(0)
-
-  useEffect(() => {
-    if (!activeBot) return
-    setMaxTokens(activeBot.maxTokens ?? 0)
-    setTemperature(activeBot.customTemperature ?? 0)
-    setFrequencyPenalty(activeBot.frequencyPenalty ?? 0)
-    setPresencePenalty(activeBot.presencePenalty ?? 0)
-  }, [activeBot?._id])
-
   const { updateBot } = useUpdateBot()
 
   const debouncedTemperature = useDebouncedCallback((value) => {
     if (!activeBot) return
     if (activeBot.customTemperature === value) return
     updateBot(activeBot, { customTemperature: value })
-  }, delayBeforeUpdateInMs)
-
-  const debouncedMaxToken = useDebouncedCallback((value) => {
-    if (!activeBot) return
-    if (activeBot.maxTokens === value) return
-    updateBot(activeBot, { maxTokens: value })
-  }, delayBeforeUpdateInMs)
-
-  const debouncedFreqPenalty = useDebouncedCallback((value) => {
-    if (!activeBot) return
-    if (activeBot.frequencyPenalty === value) return
-    updateBot(activeBot, { frequencyPenalty: value })
-  }, delayBeforeUpdateInMs)
-
-  const debouncedPresencePenalty = useDebouncedCallback((value) => {
-    if (!activeBot) return
-    if (activeBot.presencePenalty === value) return
-    updateBot(activeBot, { presencePenalty: value })
   }, delayBeforeUpdateInMs)
 
   const debouncedSystemPrompt = useDebouncedCallback((value) => {
@@ -87,44 +55,22 @@ const BotSetting: React.FC = () => {
           </div>
         </div>
 
-        <ProgressSetting
-          title="Max tokens"
-          min={0}
-          max={4096}
-          step={1}
-          value={maxTokens}
-          onValueChanged={(value) => debouncedMaxToken(value)}
-        />
-
-        <ProgressSetting
-          min={0}
-          max={1}
-          step={0.01}
-          title="Temperature"
-          value={temperature}
-          onValueChanged={(value) => debouncedTemperature(value)}
-        />
-
-        <ProgressSetting
-          title="Frequency penalty"
-          value={frequencyPenalty}
-          min={0}
-          max={1}
-          step={0.01}
-          onValueChanged={(value) => debouncedFreqPenalty(value)}
-        />
-
-        <ProgressSetting
-          min={0}
-          max={1}
-          step={0.01}
-          title="Presence penalty"
-          value={presencePenalty}
-          onValueChanged={(value) => {
-            setPresencePenalty(value)
-            debouncedPresencePenalty(value)
-          }}
-        />
+        {/* Custom temp */}
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            className="flex-1"
+            type="range"
+            id="volume"
+            name="volume"
+            min="0"
+            max="1"
+            step="0.01"
+            onChange={(e) => debouncedTemperature(e.target.value)}
+          />
+          {/* <span className="border border-[#737d7d] rounded-md py-1 px-2 text-gray-900">
+            {formatTwoDigits(value)}
+          </span> */}
+        </div>
       </div>
     </div>
   )

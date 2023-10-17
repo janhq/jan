@@ -69,6 +69,12 @@ function requestInference(recentMessages: any[], bot?: any): Observable<string> 
 
 async function retrieveLastTenMessages(conversationId: string, bot?: any) {
   // TODO: Common collections should be able to access via core functions instead of store
+  const conversation = await store.findOne("conversations", conversationId);
+  let bot = undefined;
+  if (conversation.botId != null) {
+    bot = await store.findOne("bots", conversation.botId);
+  }
+
   const messageHistory = (await store.findMany("messages", { conversationId }, [{ createdAt: "asc" }])) ?? [];
 
   let recentMessages = messageHistory
@@ -87,7 +93,11 @@ async function retrieveLastTenMessages(conversationId: string, bot?: any) {
     },...recentMessages];
   }
 
+<<<<<<< HEAD
   console.debug(`Last 10 messages: ${JSON.stringify(recentMessages, null, 2)}`);
+=======
+  console.debug(`Sending: ${JSON.stringify(recentMessages)}`);
+>>>>>>> f809f66 (feat: adding create bot functionality)
 
   return recentMessages;
 }

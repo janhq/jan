@@ -19,11 +19,6 @@ export const formatDownloadSpeed = (input: number | undefined) => {
   return toGigabytes(input) + '/s'
 }
 
-export const formatAsFixed = (input: number) => {
-  input = Number(input)
-  return input.toFixed(0)
-}
-
 export const formatTwoDigits = (input: number) => {
   // convert input from string to number
   input = Number(input)

@@ -32,6 +32,14 @@ const InputToolbar: React.FC = () => {
   const [error, setError] = useState<string | undefined>()
   const { downloadedModels } = useGetDownloadedModels()
 
+  const setActiveBot = useSetAtom(activeBotAtom)
+  const { getBotById } = useGetBots()
+  const [inputState, setInputState] = useState<
+    'available' | 'disabled' | 'loading'
+  >()
+  const [error, setError] = useState<string | undefined>()
+  const { downloadedModels } = useGetDownloadedModels()
+
   useEffect(() => {
     const getReplyState = async () => {
       setInputState('loading')
@@ -68,10 +76,6 @@ const InputToolbar: React.FC = () => {
     if (activeModel) {
       requestCreateConvo(activeModel)
     }
-  }
-
-  if (showingAdvancedPrompt) {
-    return <div />
   }
 
   if (inputState === 'loading') {

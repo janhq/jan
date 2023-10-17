@@ -6,5 +6,3 @@ import { atom } from 'jotai'
 export const leftSideBarExpandStateAtom = atom<boolean>(true)
 
 export const rightSideBarExpandStateAtom = atom<boolean>(false)
-
-export const showRightSideBarToggleAtom = atom<boolean>(true)

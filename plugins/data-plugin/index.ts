@@ -210,12 +210,21 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(DataService.CreateMessage, createMessage.name, createMessage);
   register(DataService.GetConversationMessages, getConversationMessages.name, getConversationMessages);
 
+<<<<<<< HEAD
   // for bots management
   register(DataService.CreateBot, createBot.name, createBot);
   register(DataService.GetBots, getBots.name, getBots);
   register(DataService.GetBotById, getBotById.name, getBotById);
   register(DataService.DeleteBot, deleteBot.name, deleteBot);
   register(DataService.UpdateBot, updateBot.name, updateBot);
+=======
+  register("getConversationById", getConversationById.name, getConversationById);
+  register("createBot", createBot.name, createBot);
+  register("getBots", getBots.name, getBots);
+  register("getBotById", getBotById.name, getBotById);
+  register("deleteBot", deleteBot.name, deleteBot);
+  register("updateBot", updateBot.name, updateBot);
+>>>>>>> f809f66 (feat: adding create bot functionality)
 }
 
 function getConversations(): Promise<any> {
@@ -322,4 +331,24 @@ function getBotById(botId: string): Promise<any> {
       console.error("Error getting bot", err);
       return Promise.reject(err);
     });
+}
+
+function createBot(bot: any): Promise<void> {
+  return store.insertOne("bots", bot);
+}
+
+function getBots(): Promise<any> {
+  return store.findMany("bots", {});
+}
+
+function deleteBot(id: any): Promise<any> {
+  return store.deleteOne("bots", id);
+}
+
+function updateBot(bot: any): Promise<void> {
+  return store.updateOne("bots", bot._id, bot);
+}
+
+function getBotById(botId: string): Promise<any> {
+  return store.findOne("bots", botId);
 }

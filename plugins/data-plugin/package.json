@@ -40,7 +40,11 @@
     "node_modules"
   ],
   "dependencies": {
+<<<<<<< HEAD
     "@janhq/core": "^0.1.6",
+=======
+    "@janhq/core": "file:../../core", // revert back this line to the original one
+>>>>>>> f809f66 (feat: adding create bot functionality)
     "pouchdb-find": "^8.0.1",
     "pouchdb-node": "^8.0.1"
   },
