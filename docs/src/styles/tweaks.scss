@@ -84,3 +84,12 @@
 .table-of-contents__left-border {
   @apply border-gray-200 dark:border-gray-800;
 }
+
+.docMainContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Main-styles-module,
+.docSidebarContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Sidebar-styles-module {
+  table {
+    a {
+      @apply text-blue-600 dark:text-blue-400;
+    }
+  }
+}
