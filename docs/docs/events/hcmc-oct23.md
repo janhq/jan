@@ -43,8 +43,6 @@ To help us manage RSVPs, please use the Eventbrite links below to RSVP for each 
 | Key Result    | *Stretch Goal:* Core Process API for Plugins               |
 | Key Result    | *Stretch Goal:* UI API for Plugins                         |
 
-![](/img/hcmc-villa-1.jpeg)
-
 ## Photos
-
+![](/img/hcmc-villa-1.jpeg)
 ![](/img/hcmc-villa-2.jpeg)
