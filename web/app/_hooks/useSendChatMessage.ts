@@ -59,7 +59,7 @@ export default function useSendChatMessage() {
     if (!currentConvo?.summary && currentConvo) {
       const updatedConv = {
         ...currentConvo,
-        summary: `User request: ${prompt}`,
+        summary: `Prompt: ${prompt}`,
       };
       updateConversation(updatedConv);
       await executeSerial(DataService.UpdateConversation, updatedConv);
