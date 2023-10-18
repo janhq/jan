@@ -1,15 +1,16 @@
-import { ModelManagementService, PluginService, RegisterExtensionPoint, core, store } from "@janhq/core";
+import {
+  ModelManagementService,
+  PluginService,
+  RegisterExtensionPoint,
+  downloadFile,
+  deleteFile,
+  store,
+} from "@janhq/core";
 import { parseToModel } from "./helper";
 
-const getDownloadedModels = () => core.invokePluginFunc(MODULE_PATH, "getDownloadedModels");
+const downloadModel = (product) => downloadFile(product.downloadUrl, product.fileName);
 
-const getAvailableModels = () => core.invokePluginFunc(MODULE_PATH, "getAvailableModels");
-
-const downloadModel = (product) => core.downloadFile(product.downloadUrl, product.fileName);
-
-const deleteModel = (path) => core.deleteFile(path);
-
-const searchModels = (params) => core.invokePluginFunc(MODULE_PATH, "searchModels", params);
+const deleteModel = (path) => deleteFile(path);
 
 async function getConfiguredModels() {
   // Clear cache to get the latest model catalog
@@ -92,20 +93,13 @@ function onStart() {
 export function init({ register }: { register: RegisterExtensionPoint }) {
   register(PluginService.OnStart, PLUGIN_NAME, onStart);
 
-  register(ModelManagementService.GetDownloadedModels, getDownloadedModels.name, getDownloadedModels);
-  register(ModelManagementService.GetAvailableModels, getAvailableModels.name, getAvailableModels);
   register(ModelManagementService.DownloadModel, downloadModel.name, downloadModel);
   register(ModelManagementService.DeleteModel, deleteModel.name, deleteModel);
-  register(ModelManagementService.SearchModels, searchModels.name, searchModels);
   register(ModelManagementService.GetConfiguredModels, getConfiguredModels.name, getConfiguredModels);
 
   register(ModelManagementService.StoreModel, storeModel.name, storeModel);
   register(ModelManagementService.UpdateFinishedDownloadAt, updateFinishedDownloadAt.name, updateFinishedDownloadAt);
-  register(
-    ModelManagementService.GetUnfinishedDownloadModels,
-    getUnfinishedDownloadModels.name,
-    getUnfinishedDownloadModels
-  );
+
   register(ModelManagementService.DeleteDownloadModel, deleteDownloadModel.name, deleteDownloadModel);
   register(ModelManagementService.GetModelById, getModelById.name, getModelById);
   register(ModelManagementService.GetFinishedDownloadModels, getFinishedDownloadModels.name, getFinishedDownloadModels);
