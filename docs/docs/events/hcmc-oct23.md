@@ -4,8 +4,7 @@ description: "24-27 Oct 2023, Thao Dien, HCMC. AI-focused talks, workshops and s
 slug: /events/hcmc-oct23
 image: /img/hcmc-villa-1.jpeg
 ---
-
-![](/img/hcmc-villa-1.jpeg)
+![](https://img.evbuc.com/https%3A%2F%2Fcdn.evbuc.com%2Fimages%2F622863119%2F1835665938193%2F1%2Foriginal.20231018-020624?w=940&auto=format%2Ccompress&q=75&sharp=10&rect=0%2C0%2C3240%2C1620&s=2408a9d180947bbc83ccbf0b76e7ab85)
 
 ## Ho Chi Minh City
 
@@ -43,6 +42,8 @@ To help us manage RSVPs, please use the Eventbrite links below to RSVP for each 
 | Key Result    | "Create Bot" feature w/ Saved Prompts                      |
 | Key Result    | *Stretch Goal:* Core Process API for Plugins               |
 | Key Result    | *Stretch Goal:* UI API for Plugins                         |
+
+![](/img/hcmc-villa-1.jpeg)
 
 ## Photos
 
