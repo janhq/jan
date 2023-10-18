@@ -5,7 +5,7 @@
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/queue-list.svg",
   "main": "dist/index.js",
   "module": "dist/module.js",
-  "author": "James",
+  "author": "@janhq",
   "license": "MIT",
   "activationPoints": [
     "init"
@@ -27,11 +27,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@huggingface/hub": "^0.8.5",
     "@janhq/core": "^0.1.1",
     "ts-loader": "^9.5.0"
-  },
-  "bundledDependencies": [
-    "@huggingface/hub"
-  ]
+  }
 }
