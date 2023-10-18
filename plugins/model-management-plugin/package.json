@@ -1,6 +1,6 @@
 {
   "name": "@janhq/model-management-plugin",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Model Management Plugin provides model exploration and seamless downloads",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/queue-list.svg",
   "main": "dist/index.js",
