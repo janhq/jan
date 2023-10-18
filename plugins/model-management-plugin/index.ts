@@ -12,11 +12,14 @@ const deleteModel = (path) => core.deleteFile(path);
 const searchModels = (params) => core.invokePluginFunc(MODULE_PATH, "searchModels", params);
 
 async function getConfiguredModels() {
-  return import(MODEL_CATALOG_URL).then((module) =>
-    module.default.map((e) => {
-      return parseToModel(e);
-    })
-  );
+  // Clear cache to get the latest model catalog
+  delete require.cache[MODEL_CATALOG_URL];
+
+  // Import the remote model catalog
+  const module = require(MODEL_CATALOG_URL);
+  return module.default.map((e) => {
+    return parseToModel(e);
+  });
 }
 
 /**
