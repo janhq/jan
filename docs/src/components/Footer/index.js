@@ -22,20 +22,21 @@ const menus = [
     name: "For Developers",
     child: [
       {
-        menu: "Documentations",
+        menu: "Documentation (WIP)",
         path: "/docs",
       },
       {
-        menu: "Hardware",
+        menu: "Hardware (WIP)",
         path: "/hardware",
       },
       {
-        menu: "API",
+        menu: "API (WIP)",
         path: "/api",
       },
       {
         menu: "Changelog",
-        path: "/changelog",
+        path: "https://github.com/janhq/jan/releases",
+        external: true,
       },
     ],
   },
@@ -54,7 +55,7 @@ const menus = [
       },
       {
         menu: "Twitter",
-        path: "https://twitter.com/jan_dotai",
+        path: "https://twitter.com/janhq_",
         external: true,
       },
     ],
