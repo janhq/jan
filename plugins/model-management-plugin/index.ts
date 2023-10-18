@@ -48,15 +48,6 @@ function updateFinishedDownloadAt(_id: string): Promise<any> {
 }
 
 /**
- * Retrieves all unfinished models from the database.
- *
- * @returns A promise that resolves with an array of unfinished models.
- */
-function getUnfinishedDownloadModels(): Promise<any> {
-  return store.findMany("models", { finishDownloadAt: -1 }, [{ startDownloadAt: "desc" }]);
-}
-
-/**
  * Retrieves all finished models from the database.
  *
  * @returns A promise that resolves with an array of finished models.
