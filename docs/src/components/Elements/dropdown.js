@@ -122,7 +122,7 @@ export default function Dropdown() {
           leaveFrom="transform opacity-100 scale-100"
           leaveTo="transform opacity-0 scale-95"
         >
-          <Menu.Items className="absolute right-0 z-10 mt-2 w-72 text-left origin-top-right rounded-md bg-blue-600 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none overflow-hidden">
+          <Menu.Items className="absolute right-0 z-10 mt-1 w-72 text-left origin-top-right rounded-md bg-blue-600 shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none overflow-hidden">
             <div className="overflow-hidden">
               {systems.map((system) => (
                 <Menu.Item key={system.name}>
