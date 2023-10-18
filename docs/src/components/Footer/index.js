@@ -85,8 +85,8 @@ export default function Footer() {
           <div className="col-span-2 lg:col-span-1">
             <h6 className="mb-3">Jan</h6>
             <p className="dark:text-gray-400 text-gray-600">
-              is a source-available, cross device, and privacy focused AI engine
-              and Desktop app that runs locally on your machine.
+              Run Large Language Models locally on Windows, Mac and Linux.
+              Available on Desktop and Cloud-Native.
             </p>
           </div>
           {menus.map((menu, i) => {

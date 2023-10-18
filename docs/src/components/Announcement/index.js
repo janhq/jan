@@ -60,7 +60,7 @@ export default function AnnoncementBanner() {
           </div>
           <p className="text-white">
             <span className="font-bold capitalize">{release.tagVersion}</span>
-            &nbsp;is now live on GitHub. Check it out
+            &nbsp;is now live on GitHub. Check it out!
           </p>
         </a>
         <div className="flex items-center gap-x-3">
