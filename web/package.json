@@ -13,7 +13,7 @@
   "dependencies": {
     "@headlessui/react": "^1.7.15",
     "@heroicons/react": "^2.0.18",
-    "@janhq/core": "^0.1.1",
+    "@janhq/core": "^0.1.2",
     "@tailwindcss/typography": "^0.5.9",
     "@types/react": "18.2.15",
     "@types/react-dom": "18.2.7",
