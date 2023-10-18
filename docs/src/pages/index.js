@@ -54,7 +54,11 @@ export default function Home() {
   return (
     <>
       <AnnoncementBanner />
-      <Layout title={`${siteConfig.tagline}`} description="Jan ">
+      <Layout
+        title={`${siteConfig.tagline}`}
+        description="Jan runs Large Language Models locally on Windows, Mac and Linux.
+              Available on Desktop and Cloud-Native."
+      >
         <main className="bg-gray-50 dark:bg-gray-950/95 relative">
           <div className="relative">
             <ThemedImage
