@@ -13,14 +13,14 @@
 
 <p align="center">
   <a href="https://docs.jan.ai/">Getting Started</a> - <a href="https://docs.jan.ai">Docs</a> 
-  - <a href="https://docs.jan.ai/changelog/">Changelog</a> - <a href="https://github.com/janhq/jan/issues">Bug reports</a> - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
+  - <a href="https://github.com/janhq/jan/releases">Changelog</a> - <a href="https://github.com/janhq/jan/issues">Bug reports</a> - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan runs Large Language Models and AIs on your own Windows, Mac or Linux computer. Jan can be run as a desktop app, or as a cloud-native deployment. 
+Jan runs Large Language Models and AIs on your own Windows, Mac or Linux computer. Jan can be run as a desktop app, or as a cloud-native deployment.
 
-Jan is free and open source, under the GPLv3 license. 
+Jan is free and open source, under the GPLv3 license.
 
 **Jan runs on any hardware.** From PCs to multi-GPU clusters, Jan supports universal architectures:
 
@@ -66,16 +66,17 @@ In the background, Jan runs [Nitro](https://nitro.jan.ai), an open source, C++ i
 > See the open source Nitro codebase at https://nitro.jan.ai.
 
 ## Troubleshooting
+
 As Jan is development mode, you might get stuck on a broken build.
 
-To reset your installation: 
+To reset your installation:
 
 1. Delete Jan Application from /Applications
 
 1. Clear cache:
-`rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron`
-OR 
-`rm -rf /Users/$(whoami)/Library/Application\ Support/jan`
+   `rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron`
+   OR
+   `rm -rf /Users/$(whoami)/Library/Application\ Support/jan`
 
 ---
 

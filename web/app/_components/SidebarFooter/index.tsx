@@ -13,7 +13,7 @@ const SidebarFooter: React.FC = () => (
     <SecondaryButton
       title={"Twitter"}
       onClick={() =>
-        window.electronAPI?.openExternalUrl("https://twitter.com/jan_dotai")
+        window.electronAPI?.openExternalUrl("https://twitter.com/janhq_")
       }
       className="flex-1"
     />
