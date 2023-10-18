@@ -167,8 +167,9 @@ const config = {
         additionalLanguages: ["python"],
       },
       colorMode: {
+        defaultMode: "dark",
         disableSwitch: false,
-        respectPrefersColorScheme: true,
+        respectPrefersColorScheme: false,
       },
     }),
 };
