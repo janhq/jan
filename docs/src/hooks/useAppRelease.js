@@ -12,12 +12,9 @@ export const useAppRelease = () => {
   useEffect(() => {
     const updateStargazers = async () => {
       try {
-        const { data } =
-          (await axios.get) <
-          {
-            tag_name: string,
-          } >
-          "https://api.github.com/repos/janhq/jan/releases/latest";
+        const { data } = await axios.get(
+          "https://api.github.com/repos/janhq/jan/releases/latest"
+        );
         setRelease({
           tagVersion: data.tag_name,
         });
