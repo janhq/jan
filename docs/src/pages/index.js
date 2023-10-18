@@ -66,8 +66,8 @@ export default function Home() {
               className="absolute w-full h-full opacity-30 dark:opacity-20 top-0 object-cover blur-3xl"
             />
             <div className="container py-16">
-              <div className="grid grid-cols-1 lg:grid-cols-2 items-center gap-4">
-                <div className="relative z-10 text-center lg:text-left ">
+              <div className="grid grid-cols-1 items-center gap-4">
+                <div className="relative z-10 text-center ">
                   <div className="bg-red-50 mb-4 inline-flex items-center py-1 rounded-full px-4 gap-x-2">
                     <span className="font-bold uppercase text-blue-600">
                       Event
@@ -91,7 +91,7 @@ export default function Home() {
                     <span className="dark:text-white text-black">Linux</span>.
                   </p>
 
-                  <div className="my-6 flex flex-col-reverse md:flex-row items-center justify-center lg:justify-start gap-4 relative z-20">
+                  <div className="my-6 flex flex-col-reverse md:flex-row items-center justify-center gap-4 relative z-20">
                     <button
                       type="button"
                       className="cursor-pointer relative hidden md:inline-flex items-center px-4 py-2.5  text-base font-semibold rounded-lg border border-gray-400 dark:border-gray-700 text-gray-600 dark:text-white"
@@ -109,7 +109,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="text-center relative lg:w-[120%] lg:-left-36">
+                <div className="text-center relative ">
                   <div className="el-blur-hero absolute -left-40 w-full top-1/2 -translate-y-1/2" />
                   <div className="p-3 border dark:border-gray-500 border-gray-400 inline-block rounded-lg relative z-10">
                     <ThemedImage
@@ -118,7 +118,7 @@ export default function Home() {
                         light: useBaseUrl("/img/desktop-llm-chat-light.png"),
                         dark: useBaseUrl("/img/desktop-llm-chat-dark.png"),
                       }}
-                      width={1800}
+                      width={1000}
                       className="rounded-md mx-auto"
                     />
                   </div>
