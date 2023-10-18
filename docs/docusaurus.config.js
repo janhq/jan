@@ -34,6 +34,7 @@ const config = {
 
   // Plugins we added
   plugins: [
+    "docusaurus-plugin-sass",
     async function myPlugin(context, options) {
       return {
         name: "docusaurus-tailwindcss",
@@ -75,7 +76,7 @@ const config = {
         blog: false,
         // Will be passed to @docusaurus/theme-classic.
         theme: {
-          customCss: require.resolve("./src/css/custom.css"),
+          customCss: require.resolve("./src/styles/main.scss"),
         },
         // Will be passed to @docusaurus/plugin-content-pages (false to disable)
         // pages: {},
@@ -153,86 +154,12 @@ const config = {
           //   label: "API",
           //   to: "/api",
           // },
-          {
-            href: "https://github.com/janhq/jan",
-            label: "GitHub",
-            position: "right",
-          },
+          // {
+          //   href: "https://github.com/janhq/jan",
+          //   label: "GitHub",
+          //   position: "right",
+          // },
         ],
-      },
-      footer: {
-        style: "dark",
-        links: [
-          {
-            title: "Jan",
-            items: [
-              {
-                label: "Home",
-                to: "/",
-              },
-              {
-                label: "Platform",
-                to: "/platform",
-              },
-              {
-                label: "Solutions",
-                to: "/solutions",
-              },
-            ],
-          },
-          {
-            title: "Docs",
-            items: [
-              {
-                label: "Docs",
-                to: "/docs",
-              },
-              {
-                label: "Hardware",
-                to: "/hardware",
-              },
-              {
-                label: "API",
-                to: "/api",
-              },
-              {
-                label: "Changelog",
-                to: "/changelog",
-              },
-            ],
-          },
-          {
-            title: "Community",
-            items: [
-              {
-                label: "Discord",
-                href: "https://discord.gg/FTk2MvZwJH",
-              },
-              {
-                label: "Twitter",
-                href: "https://twitter.com/jan_dotai",
-              },
-            ],
-          },
-          {
-            title: "Company",
-            items: [
-              {
-                label: "About",
-                to: "/about",
-              },
-              {
-                label: "Careers",
-                href: "https://janai.bamboohr.com/careers",
-              },
-              {
-                label: "GitHub",
-                href: "https://github.com/janhq/jan",
-              },
-            ],
-          },
-        ],
-        copyright: `Copyright © ${new Date().getFullYear()} Jan AI Pte Ltd.`,
       },
       prism: {
         theme: lightCodeTheme,
@@ -240,6 +167,7 @@ const config = {
         additionalLanguages: ["python"],
       },
       colorMode: {
+        defaultMode: "dark",
         disableSwitch: false,
         respectPrefersColorScheme: false,
       },

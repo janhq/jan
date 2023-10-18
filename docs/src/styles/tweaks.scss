@@ -1,0 +1,95 @@
+.redocusaurus {
+  div[data-section-id] {
+    min-height: auto;
+  }
+}
+
+.col.docItemCol_node_modules-\@docusaurus-theme-classic-lib-theme-DocItem-Layout-styles-module {
+  @apply p-4 lg:px-16 lg:py-4;
+}
+
+.breadcrumbsContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocBreadcrumbs-styles-module {
+  margin-bottom: 40px !important;
+}
+
+.theme-doc-footer {
+  margin-top: 40px;
+  margin-bottom: 20px;
+}
+
+.menu.thin-scrollbar {
+  padding: 32px 10px;
+}
+
+.iconExternalLink_node_modules-\@docusaurus-theme-classic-lib-theme-Icon-ExternalLink-styles-module {
+  display: none;
+}
+
+.navbar {
+  @apply px-0 lg:h-16 border-b border-gray-200 dark:border-gray-800 bg-white/50 backdrop-blur-lg dark:bg-black/50 shadow-none;
+
+  .navbar__toggle {
+    width: 24px;
+  }
+
+  .navbar-sidebar__backdrop {
+    height: 100dvh;
+  }
+
+  .navbar-sidebar {
+    height: 100dvh;
+    .navbar-sidebar__close {
+      width: 14px;
+    }
+    // .toggle_node_modules-\@docusaurus-theme-classic-lib-theme-ColorModeToggle-styles-module {
+    //   width: 24px;
+    //   height: 24px;
+    // }
+  }
+
+  .navbar__title {
+    @apply text-lg;
+  }
+  .navbar__brand {
+    margin-right: 24px;
+    &:hover {
+      color: inherit;
+    }
+  }
+  .navbar__inner {
+    @apply container;
+  }
+}
+
+.breadcrumbs__item {
+  position: relative;
+  &:first-child {
+    .breadcrumbs__link {
+      vertical-align: middle;
+      margin-top: -2px;
+    }
+  }
+}
+
+.docMainContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Main-styles-module,
+.docSidebarContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Sidebar-styles-module {
+  @apply bg-gray-50 dark:bg-gray-950/95;
+}
+
+.navbar-sidebar {
+  @apply bg-gray-50 dark:bg-gray-900;
+}
+
+.docSidebarContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Sidebar-styles-module,
+.table-of-contents__left-border {
+  @apply border-gray-200 dark:border-gray-800;
+}
+
+.docMainContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Main-styles-module,
+.docSidebarContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Sidebar-styles-module {
+  table {
+    a {
+      @apply text-blue-600 dark:text-blue-400;
+    }
+  }
+}

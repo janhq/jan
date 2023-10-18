@@ -23,12 +23,15 @@
     "autoprefixer": "^10.4.16",
     "axios": "^1.5.1",
     "clsx": "^1.2.1",
+    "docusaurus-plugin-sass": "^0.2.5",
     "js-yaml": "^4.1.0",
     "postcss": "^8.4.30",
     "prism-react-renderer": "^1.3.5",
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
+    "react-icons": "^4.11.0",
     "redocusaurus": "^1.6.3",
+    "sass": "^1.69.3",
     "tailwindcss": "^3.3.3"
   },
   "devDependencies": {
