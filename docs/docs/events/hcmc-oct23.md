@@ -27,13 +27,11 @@ Jan is a fully remote team. We use the money we save from not having an office, 
 
 To help us manage RSVPs, please use the Eventbrite links below to RSVP for each event.
 
-### Schedule
-
 | Day            | Eventbrite Link            | Signups                                                |
 | -------------- | -------------------------- | ------------------------------------------------------ |
 | Mon (23 Oct)   | Jan Team & Partners Dinner | Invite-only                                            |
-| Wed (25 Oct)   | AI Talks: LLMs, Tools and Workflows             | [Eventbrite](https://jan-tech-talks.eventbrite.sg/)  |
-| Fri (27 Oct)   | Jan Launch Party           | [Eventbrite](https://jan-launch-party.eventbrite.sg/)  |
+| Wed (25 Oct)   | AI Talks: LLMs, Tools and Workflows             | [RSVP here](https://jan-tech-talks.eventbrite.sg/)  |
+| Fri (27 Oct)   | Jan Launch Party           | [RSVP here](https://jan-launch-party.eventbrite.sg/)  |
 
 ### OKRs
 
