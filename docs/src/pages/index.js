@@ -110,8 +110,8 @@ export default function Home() {
                 </div>
 
                 <div className="text-center relative ">
-                  <div className="el-blur-hero absolute -left-40 w-full top-1/2 -translate-y-1/2" />
-                  <div className="p-3 border dark:border-gray-500 border-gray-400 inline-block rounded-lg relative z-10">
+                  {/* <div className="el-blur-hero absolute -left-40 w-full top-1/2 -translate-y-1/2" /> */}
+                  <div className="p-3 border dark:border-gray-500 border-gray-400 inline-block rounded-lg">
                     <ThemedImage
                       alt="App screenshot"
                       sources={{
