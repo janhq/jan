@@ -1,4 +1,5 @@
 import { ModelManagementService, PluginService, RegisterExtensionPoint, core, store } from "@janhq/core";
+import { parseToModel } from "./helper";
 
 const getDownloadedModels = () => core.invokePluginFunc(MODULE_PATH, "getDownloadedModels");
 
@@ -10,7 +11,16 @@ const deleteModel = (path) => core.deleteFile(path);
 
 const searchModels = (params) => core.invokePluginFunc(MODULE_PATH, "searchModels", params);
 
-const getConfiguredModels = () => core.invokePluginFunc(MODULE_PATH, "getConfiguredModels");
+async function getConfiguredModels() {
+  // Clear cache to get the latest model catalog
+  delete require.cache[MODEL_CATALOG_URL];
+
+  // Import the remote model catalog
+  const module = require(MODEL_CATALOG_URL);
+  return module.default.map((e) => {
+    return parseToModel(e);
+  });
+}
 
 /**
  * Store a model in the database when user start downloading it
