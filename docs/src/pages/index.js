@@ -54,10 +54,7 @@ export default function Home() {
   return (
     <>
       <AnnoncementBanner />
-      <Layout
-        title={`${siteConfig.tagline}`}
-        description="Description will go into a meta tag in <head />"
-      >
+      <Layout title={`${siteConfig.tagline}`} description="Jan ">
         <main className="bg-gray-50 dark:bg-gray-950/95 relative">
           <div className="relative">
             <ThemedImage
@@ -77,7 +74,7 @@ export default function Home() {
                     </span>
                     <a href="/events/hcmc-oct23">
                       <p className="font-bold">
-                        Jan's AI Hacker House (Ho Chi Minh City)
+                        24-28 Oct: Jan's AI Hacker House (Ho Chi Minh City)
                       </p>
                     </a>
                   </div>
@@ -86,8 +83,8 @@ export default function Home() {
                     Run Your Own AI
                   </h1>
                   <p className="text-xl leading-relaxed lg:text-2xl lg:leading-relaxed text-gray-500 dark:text-gray-400">
-                    Run large Language Models locally on&nbsp;
-                    <span className="dark:text-white text-black">Macbook</span>
+                    Run Large Language Models locally on&nbsp;
+                    <span className="dark:text-white text-black">Mac</span>
                     ,&nbsp;
                     <span className="dark:text-white text-black">Windows</span>
                     &nbsp;or&nbsp;
@@ -133,8 +130,8 @@ export default function Home() {
           <div className="container mt-10 mb-20 text-center">
             <h2>AI that you control</h2>
             <p className="text-base mt-2 w-full lg:w-2/5 mx-auto leading-relaxed">
-              Jan is a source-available, cross device, and privacy focused AI
-              engine and Desktop app that runs locally on your machine.
+              Jan runs Large Language Models locally on Windows, Mac and Linux.
+              Available on Desktop and Cloud-Native.
             </p>
             <div className="grid text-left lg:grid-cols-3 mt-16 gap-8">
               {features.map((feat, i) => {
