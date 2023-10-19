@@ -6,6 +6,9 @@ export enum EventName {
   OnNewMessageRequest = "onNewMessageRequest",
   OnNewMessageResponse = "onNewMessageResponse",
   OnMessageResponseUpdate = "onMessageResponseUpdate",
+  OnDownloadUpdate = "onDownloadUpdate",
+  OnDownloadSuccess = "onDownloadSuccess",
+  OnDownloadError = "onDownloadError",
 }
 
 /**
