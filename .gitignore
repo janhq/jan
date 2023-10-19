@@ -11,6 +11,7 @@ dist
 build
 .DS_Store
 electron/renderer
+package-lock.json
 
 *.log
 plugin-core/lib
