@@ -1,7 +1,7 @@
 import { EventName, InferenceService, NewMessageRequest, PluginService, core, events, store } from "@janhq/core";
 import { Observable } from "rxjs";
 
-const inferenceUrl = "http://localhost:3928/llama/chat_completion";
+const inferenceUrl = "http://127.0.0.1:3928/llama/chat_completion";
 
 const initModel = async (product) => core.invokePluginFunc(MODULE_PATH, "initModel", product);
 
