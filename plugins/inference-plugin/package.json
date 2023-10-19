@@ -1,6 +1,6 @@
 {
   "name": "@janhq/inference-plugin",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Inference Plugin, powered by @janhq/nitro, bring a high-performance Llama model inference in pure C++.",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/command-line.svg",
   "main": "dist/index.js",

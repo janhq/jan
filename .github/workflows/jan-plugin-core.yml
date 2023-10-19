@@ -5,7 +5,6 @@ on:
       - main
     paths:
       - "core/**"
-      - ".github/workflows/jan-plugin-core.yml"
       - "!core/package.json"
   pull_request:
     branches:

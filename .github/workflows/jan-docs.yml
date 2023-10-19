@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'docs/**'
-      - '.github/workflows/jan-docs.yml'
   pull_request:
     branches:
       - main
