@@ -23,24 +23,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
 
-  downloadFile: (url: string, path: string) =>
-    ipcRenderer.invoke("downloadFile", url, path),
+  installRemotePlugin: (pluginName: string) => ipcRenderer.invoke("installRemotePlugin", pluginName),
 
-  onFileDownloadUpdate: (callback: any) =>
-    ipcRenderer.on("FILE_DOWNLOAD_UPDATE", callback),
+  downloadFile: (url: string, path: string) => ipcRenderer.invoke("downloadFile", url, path),
 
-  onFileDownloadError: (callback: any) =>
-    ipcRenderer.on("FILE_DOWNLOAD_ERROR", callback),
+  onFileDownloadUpdate: (callback: any) => ipcRenderer.on("FILE_DOWNLOAD_UPDATE", callback),
 
-  onFileDownloadSuccess: (callback: any) =>
-    ipcRenderer.on("FILE_DOWNLOAD_COMPLETE", callback),
+  onFileDownloadError: (callback: any) => ipcRenderer.on("FILE_DOWNLOAD_ERROR", callback),
 
-  onAppUpdateDownloadUpdate: (callback: any) =>
-    ipcRenderer.on("APP_UPDATE_PROGRESS", callback),
+  onFileDownloadSuccess: (callback: any) => ipcRenderer.on("FILE_DOWNLOAD_COMPLETE", callback),
 
-  onAppUpdateDownloadError: (callback: any) =>
-    ipcRenderer.on("APP_UPDATE_ERROR", callback),
+  onAppUpdateDownloadUpdate: (callback: any) => ipcRenderer.on("APP_UPDATE_PROGRESS", callback),
 
-  onAppUpdateDownloadSuccess: (callback: any) =>
-    ipcRenderer.on("APP_UPDATE_COMPLETE", callback),
+  onAppUpdateDownloadError: (callback: any) => ipcRenderer.on("APP_UPDATE_ERROR", callback),
+
+  onAppUpdateDownloadSuccess: (callback: any) => ipcRenderer.on("APP_UPDATE_COMPLETE", callback),
 });

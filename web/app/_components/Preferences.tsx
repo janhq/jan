@@ -22,6 +22,7 @@ export const Preferences = () => {
   const [fileName, setFileName] = useState("");
   const experimentRef = useRef(null);
   const preferenceRef = useRef(null);
+  const [pluginCatalog, setPluginCatalog] = useState<any[]>([]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -84,7 +85,7 @@ export const Preferences = () => {
     // Send the filename of the to be installed plugin
     // to the main process for installation
     const installed = await plugins.install([pluginFile]);
-    if (installed) window.electronAPI.relaunch();
+    if (installed) window.coreAPI?.relaunch();
   };
 
   // Uninstall a plugin on clicking uninstall
@@ -92,7 +93,7 @@ export const Preferences = () => {
     // Send the filename of the to be uninstalled plugin
     // to the main process for removal
     const res = await plugins.uninstall([name]);
-    if (res) window.electronAPI.relaunch();
+    if (res) window.coreAPI?.relaunch();
   };
 
   // Update all plugins on clicking update plugins
@@ -100,7 +101,7 @@ export const Preferences = () => {
     if (typeof window !== "undefined") {
       // @ts-ignore
       await window.pluggableElectronIpc.update([plugin], true);
-      window.electronAPI.reloadPlugins();
+      window.coreAPI?.reloadPlugins();
     }
     // plugins.update(active.map((plg) => plg.name));
   };
@@ -124,6 +125,19 @@ export const Preferences = () => {
       });
     }
   }, [preferenceItems]);
+
+  useEffect(() => {
+    // @ts-ignore
+    import(/* webpackIgnore: true */ PLUGIN_CATALOGS).then((module) => {
+      setPluginCatalog(module.default);
+    });
+  }, []);
+
+  const downloadTarball = async (pluginName: string) => {
+    const pluginPath = await window.coreAPI?.installRemotePlugin(pluginName);
+    const installed = await plugins.install([pluginPath]);
+    if (installed) window.coreAPI.relaunch();
+  };
 
   return (
     <div className="w-full h-screen overflow-scroll">
@@ -200,7 +214,7 @@ export const Preferences = () => {
                     "bg-blue-500 hover:bg-blue-300 rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
                   )}
                   onClick={() => {
-                    window.electronAPI.reloadPlugins();
+                    window.coreAPI?.reloadPlugins();
                   }}
                 >
                   Reload Plugins
@@ -255,6 +269,51 @@ export const Preferences = () => {
                       className="mt-5 rounded-md bg-blue-500 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                     >
                       Update
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+
+          <div className="flex flex-row items-center my-4">
+            <CommandLineIcon width={30} />
+            Explore Plugins
+          </div>
+          <div className="grid grid-cols-2 items-stretch gap-4">
+            {pluginCatalog
+              .filter((e: any) => search.trim() === "" || e.name.toLowerCase().includes(search.toLowerCase()))
+              .map((e: any) => (
+                <div
+                  key={e.name}
+                  data-testid="plugin-item"
+                  className="flex flex-col h-full p-6 bg-white border border-gray-200 rounded-sm dark:border-gray-300"
+                >
+                  <div className="flex flex-row space-x-2 items-center">
+                    <span className="relative inline-block mt-1">
+                      <img className="h-14 w-14 rounded-md" src={e.icon ?? "icons/app_icon.svg"} alt="" />
+                    </span>
+                    <div className="flex flex-col">
+                      <p className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">{e.name}</p>
+                      <p className="font-normal text-gray-700 dark:text-gray-400">Version: {e.version}</p>
+                    </div>
+                  </div>
+
+                  <p className="flex-1 mt-2 text-sm font-normal text-gray-500 dark:text-gray-400 w-full">
+                    {e.description ?? "Jan's Plugin"}
+                  </p>
+
+                  <div className="flex flex-row space-x-5">
+                    <button
+                      type="submit"
+                      onClick={() => downloadTarball(e.name)}
+                      className={classNames(
+                        "mt-5 rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600",
+                        activePlugins.some((p) => p.name === e.name)
+                          ? "bg-blue-500 hover:bg-blue-600"
+                          : "bg-red-500 hover:bg-red-600"
+                      )}
+                    >
+                      {activePlugins.some((p) => p.name === e.name) ? "Update" : "Install"}
                     </button>
                   </div>
                 </div>
