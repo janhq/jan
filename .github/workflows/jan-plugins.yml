@@ -1,11 +1,17 @@
-name: Publish plugins/$dir Package to npmjs
+name: Jan Default Plugins
 on:
   push:
     branches:
       - main
     paths:
       - "plugins/**"
-      - ".github/workflows/publish-plugins.yml"
+      - "!plugins/*/package.json"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "plugins/**"
+      - ".github/workflows/jan-plugins.yml"
       - "!plugins/*/package.json"
 jobs:
   build:
@@ -69,13 +75,16 @@ jobs:
             echo $dir
             cd $dir
             npm install && npm run build
-            npm publish --access public
+            if [[ $GITHUB_EVENT_NAME == 'push' && $GITHUB_EVENT_PULL_REQUEST_HEAD_REPO_FULL_NAME != $GITHUB_REPOSITORY ]]; then
+              npm publish --access public
+            fi
             cd ..
           done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: "Commit new version to main and create tag"
+        if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
         run: |
           for dir in $(cat /tmp/change_dir.txt)
           do

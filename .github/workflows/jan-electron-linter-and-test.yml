@@ -1,11 +1,11 @@
-name: Linter & Test
+name: Jan Electron Linter & Test
 on:
   push:
     branches:
       - main
     paths:
       - 'electron/**'
-      - .github/workflows/linter-and-test.yml
+      - .github/workflows/jan-electron-linter-and-test.yml
       - 'web/**'
       - 'package.json'
       - 'node_modules/**'

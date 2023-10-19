@@ -1,11 +1,17 @@
-name: Publish plugin core Package to npmjs
+name: Plugin Core
 on:
   push:
     branches:
       - main
     paths:
       - "core/**"
-      - ".github/workflows/publish-core.yml"
+      - "!core/package.json"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "core/**"
+      - ".github/workflows/jan-plugin-core.yml"
       - "!core/package.json"
 jobs:
   build-and-publish-plugins:
@@ -50,11 +56,13 @@ jobs:
       - run: npm install && npm run build
         working-directory: ./core
       - run: npm publish --access public
+        if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: ./core
 
       - name: "Commit new version to main and create tag"
+        if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
         run: |
           version=$(jq -r '.version' core/package.json)
           git config --global user.email "service@jan.ai"

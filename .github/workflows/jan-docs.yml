@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Jan Docs
 
 on:
   push:
@@ -6,7 +6,12 @@ on:
       - main
     paths:
       - 'docs/**'
-      - '.github/workflows/deploy-jan-docs.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - '.github/workflows/jan-docs.yml'
     # Review gh actions docs if you want to further define triggers, paths, etc
     # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
 
@@ -19,8 +24,6 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 18
-          cache: 'yarn'
-          cache-dependency-path: './docs/yarn.lock'
 
       - name: Install dependencies
         run: yarn install
@@ -30,11 +33,13 @@ jobs:
         working-directory: docs
       
       - name: Add Custome Domain file
+        if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
         run: echo "${{ vars.DOCUSAURUS_DOMAIN }}" > ./docs/build/CNAME
 
       # Popular action to deploy to GitHub Pages:
       # Docs: https://github.com/peaceiris/actions-gh-pages#%EF%B8%8F-docusaurus
       - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

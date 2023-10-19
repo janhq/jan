@@ -27,11 +27,11 @@ Jan is a fully remote team. We use the money we save from not having an office, 
 
 To help us manage RSVPs, please use the Eventbrite links below to RSVP for each event.
 
-| Day          | Eventbrite Link                      | Signups                                              |
-| ------------ | ------------------------------------ | ---------------------------------------------------- |
-| Mon (23 Oct) | Jan Team & Partners Dinner           | Invite-only                                          |
-| Wed (25 Oct) | Intro to LLMs                        | [RSVP here](https://jan-tech-talks.eventbrite.sg/)   |
-| Fri (27 Oct) | Jan Launch Party: Build your own LLM | [RSVP here](https://jan-launch-party.eventbrite.sg/) |
+| Day          | Eventbrite Link                       | Signups                                                                                      |
+| ------------ | ------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Mon (23 Oct) | Jan Team & Partners Dinner            | Invite-only                                                                                  |
+| Wed (25 Oct) | Intro to LLMs                         | [RSVP here](https://www.eventbrite.sg/e/intro-to-large-language-models-tickets-737819045627) |
+| Fri (27 Oct) | Jan Launch Party + Build your own LLM | [RSVP here](https://jan-launch-party.eventbrite.sg/)                                         |
 
 ### OKRs
 
