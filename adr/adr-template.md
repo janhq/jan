@@ -1,10 +1,12 @@
 # ADR {ADR-NUM}: {TITLE}
 
 ## Changelog
-- {date}: {changelog}
+
+- {DATE}: Initial draft
 
 ## Authors
-- @usernames
+
+- {USERNAMES}
 
 ## Status
 
