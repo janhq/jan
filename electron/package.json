@@ -37,7 +37,9 @@
       "icon": "icons/icon.png"
     },
     "linux": {
-      "target": ["deb"],
+      "target": [
+        "deb"
+      ],
       "category": "Utility",
       "icon": "icons/"
     },

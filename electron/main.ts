@@ -1,11 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
-import { readdirSync } from "fs";
+import { readdirSync, writeFileSync } from "fs";
 import { resolve, join, extname } from "path";
 import { rmdir, unlink, createWriteStream } from "fs";
 import { init } from "./core/plugin-manager/pluginMgr";
 import { setupMenu } from "./utils/menu";
 import { dispose } from "./utils/disposable";
 
+const pacote = require("pacote");
 const request = require("request");
 const progress = require("request-progress");
 const { autoUpdater } = require("electron-updater");
@@ -224,6 +225,24 @@ function handleIPCs() {
         });
       })
       .pipe(createWriteStream(destination));
+  });
+
+  /**
+   * Installs a remote plugin by downloading its tarball and writing it to a tgz file.
+   * @param _event - The IPC event object.
+   * @param pluginName - The name of the remote plugin to install.
+   * @returns A Promise that resolves to the path of the installed plugin file.
+   */
+  ipcMain.handle("installRemotePlugin", async (_event, pluginName) => {
+    const destination = join(app.getPath("userData"), pluginName.replace(/^@.*\//, "") + ".tgz");
+    return pacote
+      .manifest(pluginName)
+      .then(async (manifest: any) => {
+        await pacote.tarball(manifest._resolved).then((data: Buffer) => {
+          writeFileSync(destination, data);
+        });
+      })
+      .then(() => destination);
   });
 }
 
