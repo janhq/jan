@@ -5,8 +5,8 @@ import { rmdir, unlink, createWriteStream } from "fs";
 import { init } from "./core/plugin-manager/pluginMgr";
 import { setupMenu } from "./utils/menu";
 import { dispose } from "./utils/disposable";
-const pacote = require("pacote");
 
+const pacote = require("pacote");
 const request = require("request");
 const progress = require("request-progress");
 const { autoUpdater } = require("electron-updater");

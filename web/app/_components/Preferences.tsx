@@ -1,11 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import {
-  setup,
-  plugins,
-  extensionPoints,
-  activationPoints,
-} from "@/../../electron/core/plugin-manager/execution/index";
+import { plugins, extensionPoints } from "@/../../electron/core/plugin-manager/execution/index";
 import { ChartPieIcon, CommandLineIcon, PlayIcon } from "@heroicons/react/24/outline";
 
 import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
@@ -24,59 +19,63 @@ export const Preferences = () => {
   const preferenceRef = useRef(null);
   const [pluginCatalog, setPluginCatalog] = useState<any[]>([]);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setFileName(file.name);
-    } else {
-      setFileName("");
-    }
-  };
-
+  /**
+   * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
+   * The `webpackIgnore` comment is used to prevent Webpack from bundling the module.
+   */
   useEffect(() => {
-    async function setupPE() {
-      // Enable activation point management
-      setup({
-        //@ts-ignore
-        importer: (plugin) =>
-          import(/* webpackIgnore: true */ plugin).catch((err) => {
-            console.log(err);
-          }),
-      });
-
-      // Register all active plugins with their activation points
-      await plugins.registerActive();
-    }
-
-    const activePlugins = async () => {
-      const plgs = await plugins.getActive();
-      setActivePlugins(plgs);
-      // Activate alls
-      setTimeout(async () => {
-        await activationPoints.trigger("init");
-        if (extensionPoints.get("experimentComponent")) {
-          const components = await Promise.all(extensionPoints.execute("experimentComponent"));
-          if (components.length > 0) {
-            setIsTestAvailable(true);
-          }
-          components.forEach((e) => {
-            if (experimentRef.current) {
-              // @ts-ignore
-              experimentRef.current.appendChild(e);
-            }
-          });
-        }
-
-        if (extensionPoints.get("PluginPreferences")) {
-          const data = await Promise.all(extensionPoints.execute("PluginPreferences"));
-          setPreferenceItems(Array.isArray(data) ? data : []);
-        }
-      }, 500);
-    };
-    setupPE().then(() => activePlugins());
+    // @ts-ignore
+    import(/* webpackIgnore: true */ PLUGIN_CATALOGS).then((module) => {
+      console.log(module);
+      setPluginCatalog(module.default);
+    });
   }, []);
 
-  // Install a new plugin on clicking the install button
+  /**
+   * Fetches the active plugins and their preferences from the `plugins` and `preferences` modules.
+   * If the `experimentComponent` extension point is available, it executes the extension point and
+   * appends the returned components to the `experimentRef` element.
+   * If the `PluginPreferences` extension point is available, it executes the extension point and
+   * fetches the preferences for each plugin using the `preferences.get` function.
+   */
+  useEffect(() => {
+    const getActivePlugins = async () => {
+      const plgs = await plugins.getActive();
+      setActivePlugins(plgs);
+
+      if (extensionPoints.get("experimentComponent")) {
+        const components = await Promise.all(extensionPoints.execute("experimentComponent"));
+        if (components.length > 0) {
+          setIsTestAvailable(true);
+        }
+        components.forEach((e) => {
+          if (experimentRef.current) {
+            // @ts-ignore
+            experimentRef.current.appendChild(e);
+          }
+        });
+      }
+
+      if (extensionPoints.get("PluginPreferences")) {
+        const data = await Promise.all(extensionPoints.execute("PluginPreferences"));
+        setPreferenceItems(Array.isArray(data) ? data : []);
+        Promise.all(
+          (Array.isArray(data) ? data : []).map((e) =>
+            preferences.get(e.pluginName, e.preferenceKey).then((k) => ({ key: e.preferenceKey, value: k }))
+          )
+        ).then((data) => {
+          setPreferenceValues(data);
+        });
+      }
+    };
+    getActivePlugins();
+  }, []);
+
+  /**
+   * Installs a plugin by calling the `plugins.install` function with the plugin file path.
+   * If the installation is successful, the application is relaunched using the `coreAPI.relaunch` function.
+   * @param e - The event object.
+   */
   const install = async (e: any) => {
     e.preventDefault();
     //@ts-ignore
@@ -88,7 +87,11 @@ export const Preferences = () => {
     if (installed) window.coreAPI?.relaunch();
   };
 
-  // Uninstall a plugin on clicking uninstall
+  /**
+   * Uninstalls a plugin by calling the `plugins.uninstall` function with the plugin name.
+   * If the uninstallation is successful, the application is relaunched using the `coreAPI.relaunch` function.
+   * @param name - The name of the plugin to uninstall.
+   */
   const uninstall = async (name: string) => {
     // Send the filename of the to be uninstalled plugin
     // to the main process for removal
@@ -96,16 +99,34 @@ export const Preferences = () => {
     if (res) window.coreAPI?.relaunch();
   };
 
-  // Update all plugins on clicking update plugins
+  /**
+   * Updates a plugin by calling the `window.pluggableElectronIpc.update` function with the plugin name.
+   * If the update is successful, the application is relaunched using the `window.coreAPI.relaunch` function.
+   * TODO: should update using window.coreAPI rather than pluggableElectronIpc (Plugin Manager Facades)
+   * @param plugin - The name of the plugin to update.
+   */
   const update = async (plugin: string) => {
     if (typeof window !== "undefined") {
       // @ts-ignore
       await window.pluggableElectronIpc.update([plugin], true);
-      window.coreAPI?.reloadPlugins();
+      window.coreAPI?.relaunch();
     }
-    // plugins.update(active.map((plg) => plg.name));
   };
 
+  /**
+   * Downloads a remote plugin tarball and installs it using the `plugins.install` function.
+   * If the installation is successful, the application is relaunched using the `coreAPI.relaunch` function.
+   * @param pluginName - The name of the remote plugin to download and install.
+   */
+  const downloadTarball = async (pluginName: string) => {
+    const pluginPath = await window.coreAPI?.installRemotePlugin(pluginName);
+    const installed = await plugins.install([pluginPath]);
+    if (installed) window.coreAPI.relaunch();
+  };
+  /**
+   * Notifies plugins of a preference update by executing the `PluginService.OnPreferencesUpdate` event.
+   * If a timeout is already set, it is cleared before setting a new timeout to execute the event.
+   */
   let timeout: any | undefined = undefined;
   function notifyPreferenceUpdate() {
     if (timeout) {
@@ -114,29 +135,18 @@ export const Preferences = () => {
     timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100);
   }
 
-  useEffect(() => {
-    if (preferenceItems) {
-      Promise.all(
-        preferenceItems.map((e) =>
-          preferences.get(e.pluginName, e.preferenceKey).then((k) => ({ key: e.preferenceKey, value: k }))
-        )
-      ).then((data) => {
-        setPreferenceValues(data);
-      });
+  /**
+   * Handles the change event of the plugin file input element by setting the file name state.
+   * Its to be used to display the plugin file name of the selected file.
+   * @param event - The change event object.
+   */
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setFileName(file.name);
+    } else {
+      setFileName("");
     }
-  }, [preferenceItems]);
-
-  useEffect(() => {
-    // @ts-ignore
-    import(/* webpackIgnore: true */ PLUGIN_CATALOGS).then((module) => {
-      setPluginCatalog(module.default);
-    });
-  }, []);
-
-  const downloadTarball = async (pluginName: string) => {
-    const pluginPath = await window.coreAPI?.installRemotePlugin(pluginName);
-    const installed = await plugins.install([pluginPath]);
-    if (installed) window.coreAPI.relaunch();
   };
 
   return (
@@ -241,9 +251,7 @@ export const Preferences = () => {
                       <img className="h-14 w-14 rounded-md" src={e.icon ?? "icons/app_icon.svg"} alt="" />
                     </span>
                     <div className="flex flex-col">
-                      <p className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
-                        {e.name}
-                      </p>
+                      <p className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">{e.name}</p>
                       <p className="font-normal text-gray-700 dark:text-gray-400">Version: {e.version}</p>
                     </div>
                   </div>
