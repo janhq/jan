@@ -1,8 +1,8 @@
-import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
-import { SystemMonitoringService } from "@janhq/core";
 import { useState } from "react";
 import { ModelVersion } from "@/_models/ModelVersion";
 import { ModelPerformance, TagType } from "@/_components/SimpleTag/TagType";
+import { useAtomValue } from "jotai";
+import { totalRamAtom } from "@/_helpers/atoms/SystemBar.atom";
 
 // Recommendation:
 // `Recommended (green)`: "Max RAM required" is 80% of users max  RAM.
@@ -11,12 +11,9 @@ import { ModelPerformance, TagType } from "@/_components/SimpleTag/TagType";
 
 export default function useGetPerformanceTag() {
   const [performanceTag, setPerformanceTag] = useState<TagType | undefined>();
+  const totalRam = useAtomValue(totalRamAtom);
 
   const getPerformanceForModel = async (modelVersion: ModelVersion) => {
-    const resourceInfo = await executeSerial(
-      SystemMonitoringService.GetResourcesInfo
-    );
-    const totalRam = resourceInfo.mem.total;
     const requiredRam = modelVersion.maxRamRequired;
     setPerformanceTag(calculateRamPerformance(requiredRam, totalRam));
   };
@@ -37,10 +34,7 @@ export default function useGetPerformanceTag() {
   return { performanceTag, title, getPerformanceForModel };
 }
 
-const calculateRamPerformance = (
-  requiredRamAmt: number,
-  totalRamAmt: number
-) => {
+const calculateRamPerformance = (requiredRamAmt: number, totalRamAmt: number) => {
   const percentage = requiredRamAmt / totalRamAmt;
 
   if (percentage < 0.8) {
