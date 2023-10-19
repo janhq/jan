@@ -38,7 +38,7 @@ To help us manage RSVPs, please use the Eventbrite links below to RSVP for each 
 | **Objective** | Jan v1.0 should be bug-free and run on Windows, Max, Linux |
 | ------------- | ---------------------------------------------------------- |
 | Key Result    | Polished UI with "Create Bot" w/ saved prompts             |
-| Key Result    | Documentation of Jan Codebase                              |
+| Key Result    | Documentation of Jan Codebase for Plugin Developers        |
 | Key Result    | Roadmap for 4Q 2023                                        |
 | Key Result    | *Stretch Goal:* Core Process API for Plugins               |
 
