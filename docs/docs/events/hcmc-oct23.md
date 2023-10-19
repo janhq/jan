@@ -27,20 +27,22 @@ Jan is a fully remote team. We use the money we save from not having an office, 
 
 To help us manage RSVPs, please use the Eventbrite links below to RSVP for each event.
 
-| Day            | Eventbrite Link            | Signups                                                |
-| -------------- | -------------------------- | ------------------------------------------------------ |
-| Mon (23 Oct)   | Jan Team & Partners Dinner | Invite-only                                            |
-| Wed (25 Oct)   | AI Talks: LLMs, Tools and Workflows             | [RSVP here](https://jan-tech-talks.eventbrite.sg/)  |
-| Fri (27 Oct)   | Jan Launch Party           | [RSVP here](https://jan-launch-party.eventbrite.sg/)  |
+| Day          | Eventbrite Link                      | Signups                                              |
+| ------------ | ------------------------------------ | ---------------------------------------------------- |
+| Mon (23 Oct) | Jan Team & Partners Dinner           | Invite-only                                          |
+| Wed (25 Oct) | Intro to LLMs                        | [RSVP here](https://jan-tech-talks.eventbrite.sg/)   |
+| Fri (27 Oct) | Jan Launch Party: Build your own LLM | [RSVP here](https://jan-launch-party.eventbrite.sg/) |
 
 ### OKRs
 
 | **Objective** | Jan v1.0 should be bug-free and run on Windows, Max, Linux |
 | ------------- | ---------------------------------------------------------- |
-| Key Result    | "Create Bot" feature w/ Saved Prompts                      |
+| Key Result    | Polished UI with "Create Bot" w/ saved prompts             |
+| Key Result    | Documentation of Jan Codebase                              |
+| Key Result    | Roadmap for 4Q 2023                                        |
 | Key Result    | *Stretch Goal:* Core Process API for Plugins               |
-| Key Result    | *Stretch Goal:* UI API for Plugins                         |
 
 ## Photos
 ![](/img/hcmc-villa-1.jpeg)
+
 ![](/img/hcmc-villa-2.jpeg)
