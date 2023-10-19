@@ -7,6 +7,7 @@ import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 import classNames from "classnames";
 import { PluginService, preferences } from "@janhq/core";
 import { execute } from "../../../electron/core/plugin-manager/execution/extension-manager";
+import LoadingIndicator from "./LoadingIndicator";
 
 export const Preferences = () => {
   const [search, setSearch] = useState<string>("");
@@ -15,9 +16,10 @@ export const Preferences = () => {
   const [preferenceValues, setPreferenceValues] = useState<any[]>([]);
   const [isTestAvailable, setIsTestAvailable] = useState(false);
   const [fileName, setFileName] = useState("");
+  const [pluginCatalog, setPluginCatalog] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const experimentRef = useRef(null);
   const preferenceRef = useRef(null);
-  const [pluginCatalog, setPluginCatalog] = useState<any[]>([]);
 
   /**
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
@@ -119,8 +121,10 @@ export const Preferences = () => {
    * @param pluginName - The name of the remote plugin to download and install.
    */
   const downloadTarball = async (pluginName: string) => {
+    setIsLoading(true);
     const pluginPath = await window.coreAPI?.installRemotePlugin(pluginName);
     const installed = await plugins.install([pluginPath]);
+    setIsLoading(false);
     if (installed) window.coreAPI.relaunch();
   };
   /**
@@ -311,18 +315,20 @@ export const Preferences = () => {
                   </p>
 
                   <div className="flex flex-row space-x-5">
-                    <button
-                      type="submit"
-                      onClick={() => downloadTarball(e.name)}
-                      className={classNames(
-                        "mt-5 rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600",
-                        activePlugins.some((p) => p.name === e.name)
-                          ? "bg-blue-500 hover:bg-blue-600"
-                          : "bg-red-500 hover:bg-red-600"
-                      )}
-                    >
-                      {activePlugins.some((p) => p.name === e.name) ? "Update" : "Install"}
-                    </button>
+                    {e.version !== activePlugins.filter((p) => p.name === e.name)[0]?.version && (
+                      <button
+                        type="submit"
+                        onClick={() => downloadTarball(e.name)}
+                        className={classNames(
+                          "mt-5 rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600",
+                          activePlugins.some((p) => p.name === e.name)
+                            ? "bg-blue-500 hover:bg-blue-600"
+                            : "bg-red-500 hover:bg-red-600"
+                        )}
+                      >
+                        {activePlugins.some((p) => p.name === e.name) ? "Update" : "Install"}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -363,6 +369,12 @@ export const Preferences = () => {
           </div>
         </div>
       </main>
+      {isLoading && (
+        <div className="z-50 absolute inset-0 bg-gray-900/90 flex justify-center items-center text-white">
+          <LoadingIndicator />
+          Installing...
+        </div>
+      )}
     </div>
   );
 };
