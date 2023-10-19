@@ -56,7 +56,7 @@ const initModel = (fileName) => {
         let binaryName;
 
         if (process.platform === "win32") {
-          binaryName = "nitro_windows_amd64.exe";
+          binaryName = "nitro_windows_amd64_cuda.exe";
         } else if (process.platform === "darwin") {
           // Mac OS platform
           binaryName =
