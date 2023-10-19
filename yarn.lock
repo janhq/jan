@@ -194,10 +194,10 @@
   resolved "https://registry.npmjs.org/@isaacs/string-locale-compare/-/string-locale-compare-1.1.0.tgz"
   integrity sha512-SQ7Kzhh9+D+ZW9MA0zkYv3VXhIDNx+LzM6EJ+/65I3QY+enU6Itte7E5XX7EWrqLW2FN4n06GWzBnPoC3th2aQ==
 
-"@janhq/plugin-core@^0.1.8":
-  version "0.1.8"
-  resolved "https://registry.yarnpkg.com/@janhq/plugin-core/-/plugin-core-0.1.8.tgz#abd61ce05831ee03f16be1f4d18512cfb22ebb4e"
-  integrity sha512-wJe+8ndMQLGLSV36Jt1V3s5lmH+nQw87ol2NMhHuVWXfwf+DAO1GTdTeHfemHWdcB/oUY1HVRvsNh8DvBgbh/w==
+"@janhq/core@^0.1.2":
+  version "0.1.3"
+  resolved "https://registry.yarnpkg.com/@janhq/core/-/core-0.1.3.tgz#9315bc19c692183e64ada17b85276c629df91eb4"
+  integrity sha512-MZhNp6dPqd7pZaou81c+BBH5CXnyh9ZF2GH5ri+JNHiMs+LaZd1GlxQBzseWnaoVZWghOUI1hf8GxlrCdLb7ew==
 
 "@jridgewell/gen-mapping@^0.3.2":
   version "0.3.3"
