@@ -1,17 +1,13 @@
-import { executeSerial } from "@/_services/pluginService";
-import { SystemMonitoringService } from "@janhq/core";
 import { ModelVersion } from "@/_models/ModelVersion";
 import { useState } from "react";
+import { useAtomValue } from "jotai";
+import { totalRamAtom } from "@/_helpers/atoms/SystemBar.atom";
 
 export default function useGetMostSuitableModelVersion() {
   const [suitableModel, setSuitableModel] = useState<ModelVersion | undefined>();
+  const totalRam = useAtomValue(totalRamAtom);
 
   const getMostSuitableModelVersion = async (modelVersions: ModelVersion[]) => {
-    const resourceInfo = await executeSerial(
-      SystemMonitoringService.GetResourcesInfo
-    );
-    const totalRam = resourceInfo.mem.total;
-
     // find the model version with the highest required RAM that is still below the user's RAM by 80%
     const modelVersion = modelVersions.reduce((prev, current) => {
       if (current.maxRamRequired > prev.maxRamRequired) {
