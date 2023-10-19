@@ -9,7 +9,7 @@ import { BiLogoDiscordAlt } from "react-icons/bi";
 const socials = [
   {
     icon: <AiOutlineTwitter className="text-xl text-white" />,
-    href: "https://twitter.com/jan_dotai",
+    href: "https://twitter.com/janhq_",
   },
   {
     icon: <BiLogoDiscordAlt className="text-xl text-white" />,
