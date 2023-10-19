@@ -1,4 +1,4 @@
-name: Jan Build MacOS App
+name: Jan Build Electron App
 
 on:
   push:
