@@ -67,7 +67,7 @@ export default function Home() {
                 light: useBaseUrl("/img/bg-hero-light.svg"),
                 dark: useBaseUrl("/img/bg-hero-dark.svg"),
               }}
-              className="absolute w-full h-full opacity-30 dark:opacity-20 top-0 object-cover blur-3xl"
+              className="absolute w-full h-full opacity-10 dark:opacity-20 top-0 object-cover blur-3xl"
             />
             <div className="container py-16">
               <div className="grid grid-cols-1 items-center gap-4">
