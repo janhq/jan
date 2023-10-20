@@ -101,6 +101,16 @@ export enum DataService {
    * Gets a list of messages for an existing conversation from the server.
    */
   GetConversationMessages = "getConversationMessages",
+
+  /**
+   * Gets a conversation matching an ID on the server.
+   */
+  GetConversationById = "getConversationById",
+
+  /**
+   * Creates a new conversation using the prompt instruction.
+   */
+  CreateBot = "createBot",
 }
 
 /**
@@ -179,6 +189,11 @@ export enum PreferenceService {
    * The experiment component for which preferences are being managed.
    */
   ExperimentComponent = "experimentComponent",
+
+  /**
+   * Gets the plugin preferences.
+   */
+  PluginPreferences = "pluginPreferences",
 }
 
 /**
