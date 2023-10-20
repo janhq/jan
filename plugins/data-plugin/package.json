@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc -b ./config/tsconfig.esm.json && tsc -b ./config/tsconfig.cjs.json && webpack --config webpack.config.js",
-    "postinstall": "rimraf ./data-plugin*.tgz && npm run build",
+    "postinstall": "rimraf *.tgz --glob && npm run build",
     "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {

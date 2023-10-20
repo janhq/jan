@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "postinstall": "rimraf ./*.tgz && npm run build && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
+    "postinstall": "rimraf *.tgz --glob && npm run build && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
     "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {
