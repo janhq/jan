@@ -1,7 +1,9 @@
-import { atom } from "jotai";
+import { atom } from 'jotai'
 
-export const systemBarVisibilityAtom = atom<boolean>(true);
+export const systemBarVisibilityAtom = atom<boolean>(true)
 
-export const getSystemBarVisibilityAtom = atom((get) => get(systemBarVisibilityAtom));
+export const getSystemBarVisibilityAtom = atom((get) =>
+  get(systemBarVisibilityAtom)
+)
 
-export const totalRamAtom = atom<number>(0);
+export const totalRamAtom = atom<number>(0)

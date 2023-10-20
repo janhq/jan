@@ -1,17 +1,17 @@
-import React, { Fragment } from "react";
-import { Dialog, Transition } from "@headlessui/react";
-import { QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
-import { useAtom } from "jotai";
-import useSignOut from "@/_hooks/useSignOut";
-import { showConfirmSignOutModalAtom } from "@/_helpers/atoms/Modal.atom";
+import React, { Fragment } from 'react'
+import { Dialog, Transition } from '@headlessui/react'
+import { QuestionMarkCircleIcon } from '@heroicons/react/24/outline'
+import { useAtom } from 'jotai'
+import useSignOut from '@/_hooks/useSignOut'
+import { showConfirmSignOutModalAtom } from '@/_helpers/atoms/Modal.atom'
 
 const ConfirmSignOutModal: React.FC = () => {
-  const [show, setShow] = useAtom(showConfirmSignOutModalAtom);
-  const { signOut } = useSignOut();
+  const [show, setShow] = useAtom(showConfirmSignOutModalAtom)
+  const { signOut } = useSignOut()
 
   const onLogOutClick = () => {
-    signOut().then(() => setShow(false));
-  };
+    signOut().then(() => setShow(false))
+  }
 
   return (
     <Transition.Root show={show} as={Fragment}>
@@ -83,7 +83,7 @@ const ConfirmSignOutModal: React.FC = () => {
         </div>
       </Dialog>
     </Transition.Root>
-  );
-};
+  )
+}
 
-export default React.memo(ConfirmSignOutModal);
+export default React.memo(ConfirmSignOutModal)

@@ -1,13 +1,13 @@
-import React, { Fragment } from "react";
-import { Dialog, Transition } from "@headlessui/react";
-import { QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
-import { useAtom } from "jotai";
-import { showConfirmDeleteModalAtom } from "@/_helpers/atoms/Modal.atom";
+import React, { Fragment } from 'react'
+import { Dialog, Transition } from '@headlessui/react'
+import { QuestionMarkCircleIcon } from '@heroicons/react/24/outline'
+import { useAtom } from 'jotai'
+import { showConfirmDeleteModalAtom } from '@/_helpers/atoms/Modal.atom'
 
 const ConfirmDeleteModelModal: React.FC = () => {
-  const [show, setShow] = useAtom(showConfirmDeleteModalAtom);
+  const [show, setShow] = useAtom(showConfirmDeleteModalAtom)
 
-  const onConfirmDelete = () => {};
+  const onConfirmDelete = () => {}
 
   return (
     <Transition.Root show={show} as={Fragment}>
@@ -79,7 +79,7 @@ const ConfirmDeleteModelModal: React.FC = () => {
         </div>
       </Dialog>
     </Transition.Root>
-  );
-};
+  )
+}
 
-export default React.memo(ConfirmDeleteModelModal);
+export default React.memo(ConfirmDeleteModelModal)

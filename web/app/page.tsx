@@ -1,63 +1,71 @@
-"use client";
-import { PluginService } from "@janhq/core";
-import { ThemeWrapper } from "./_helpers/ThemeWrapper";
-import JotaiWrapper from "./_helpers/JotaiWrapper";
-import { ModalWrapper } from "./_helpers/ModalWrapper";
-import { useEffect, useState } from "react";
-import Image from "next/image";
-import { setup, plugins, activationPoints, extensionPoints } from "../../electron/core/plugin-manager/execution/index";
-import { isCorePluginInstalled, setupBasePlugins } from "./_services/pluginService";
-import EventListenerWrapper from "./_helpers/EventListenerWrapper";
-import { setupCoreServices } from "./_services/coreService";
-import MainContainer from "./_components/MainContainer";
-import { executeSerial } from "../../electron/core/plugin-manager/execution/extension-manager";
+'use client'
+import { PluginService } from '@janhq/core'
+import { ThemeWrapper } from './_helpers/ThemeWrapper'
+import JotaiWrapper from './_helpers/JotaiWrapper'
+import { ModalWrapper } from './_helpers/ModalWrapper'
+import { useEffect, useState } from 'react'
+import Image from 'next/image'
+import {
+  setup,
+  plugins,
+  activationPoints,
+  extensionPoints,
+} from '../../electron/core/plugin-manager/execution/index'
+import {
+  isCorePluginInstalled,
+  setupBasePlugins,
+} from './_services/pluginService'
+import EventListenerWrapper from './_helpers/EventListenerWrapper'
+import { setupCoreServices } from './_services/coreService'
+import MainContainer from './_components/MainContainer'
+import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
 
 const Page: React.FC = () => {
-  const [setupCore, setSetupCore] = useState(false);
-  const [activated, setActivated] = useState(false);
+  const [setupCore, setSetupCore] = useState(false)
+  const [activated, setActivated] = useState(false)
 
   async function setupPE() {
     // Enable activation point management
     setup({
       importer: (plugin: string) =>
         import(/* webpackIgnore: true */ plugin).catch((err) => {
-          console.log(err);
+          console.log(err)
         }),
-    });
+    })
 
     // Register all active plugins with their activation points
-    await plugins.registerActive();
+    await plugins.registerActive()
     setTimeout(async () => {
       // Trigger activation points
-      await activationPoints.trigger("init");
+      await activationPoints.trigger('init')
       if (!isCorePluginInstalled()) {
-        setupBasePlugins();
-        return;
+        setupBasePlugins()
+        return
       }
       if (extensionPoints.get(PluginService.OnStart)) {
-        await executeSerial(PluginService.OnStart);
+        await executeSerial(PluginService.OnStart)
       }
-      setActivated(true);
-    }, 500);
+      setActivated(true)
+    }, 500)
   }
 
   // Services Setup
   useEffect(() => {
-    setupCoreServices();
-    setSetupCore(true);
-  }, []);
+    setupCoreServices()
+    setSetupCore(true)
+  }, [])
 
   useEffect(() => {
     if (setupCore) {
       // Electron
       if (window && window.electronAPI) {
-        setupPE();
+        setupPE()
       } else {
         // Host
-        setActivated(true);
+        setActivated(true)
       }
     }
-  }, [setupCore]);
+  }, [setupCore])
 
   return (
     <JotaiWrapper>
@@ -68,8 +76,13 @@ const Page: React.FC = () => {
               {activated ? (
                 <MainContainer />
               ) : (
-                <div className="bg-white w-screen h-screen items-center justify-center flex">
-                  <Image width={50} height={50} src="icons/app_icon.svg" alt="" />
+                <div className="flex h-screen w-screen items-center justify-center bg-white">
+                  <Image
+                    width={50}
+                    height={50}
+                    src="icons/app_icon.svg"
+                    alt=""
+                  />
                 </div>
               )}
             </ModalWrapper>
@@ -77,7 +90,7 @@ const Page: React.FC = () => {
         </EventListenerWrapper>
       )}
     </JotaiWrapper>
-  );
-};
+  )
+}
 
-export default Page;
+export default Page

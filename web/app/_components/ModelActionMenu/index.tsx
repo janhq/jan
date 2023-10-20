@@ -1,10 +1,10 @@
-import { Menu, Transition } from "@headlessui/react";
-import { EllipsisVerticalIcon } from "@heroicons/react/20/solid";
-import { Fragment } from "react";
+import { Menu, Transition } from '@headlessui/react'
+import { EllipsisVerticalIcon } from '@heroicons/react/20/solid'
+import { Fragment } from 'react'
 
 type Props = {
-  onDeleteClick: () => void;
-};
+  onDeleteClick: () => void
+}
 
 const ModelActionMenu: React.FC<Props> = ({ onDeleteClick }) => (
   <Menu as="div" className="relative flex-none">
@@ -26,7 +26,7 @@ const ModelActionMenu: React.FC<Props> = ({ onDeleteClick }) => (
           {({ active }) => (
             <button
               className={`${
-                active ? "bg-violet-500 text-white" : "text-gray-900"
+                active ? 'bg-violet-500 text-white' : 'text-gray-900'
               } group flex w-full items-center rounded-md px-2 py-2 text-sm`}
               onClick={onDeleteClick}
             >
@@ -37,6 +37,6 @@ const ModelActionMenu: React.FC<Props> = ({ onDeleteClick }) => (
       </Menu.Items>
     </Transition>
   </Menu>
-);
+)
 
-export default ModelActionMenu;
+export default ModelActionMenu

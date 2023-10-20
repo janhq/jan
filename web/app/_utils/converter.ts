@@ -1,20 +1,20 @@
 export const toGigabytes = (input: number) => {
   if (input > 1024 ** 3) {
-    return (input / 1000 ** 3).toFixed(2) + "GB";
+    return (input / 1000 ** 3).toFixed(2) + 'GB'
   } else if (input > 1024 ** 2) {
-    return (input / 1000 ** 2).toFixed(2) + "MB";
+    return (input / 1000 ** 2).toFixed(2) + 'MB'
   } else if (input > 1024) {
-    return (input / 1000).toFixed(2) + "KB";
+    return (input / 1000).toFixed(2) + 'KB'
   } else {
-    return input + "B";
+    return input + 'B'
   }
-};
+}
 
 export const formatDownloadPercentage = (input: number) => {
-  return (input * 100).toFixed(2) + "%";
-};
+  return (input * 100).toFixed(2) + '%'
+}
 
 export const formatDownloadSpeed = (input: number | undefined) => {
-  if (!input) return "0B/s";
-  return toGigabytes(input) + "/s";
-};
+  if (!input) return '0B/s'
+  return toGigabytes(input) + '/s'
+}

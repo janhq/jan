@@ -1,14 +1,14 @@
-"use client";
+'use client'
 
-import { useSetAtom } from "jotai";
-import { InformationCircleIcon } from "@heroicons/react/24/outline";
-import SendButton from "../SendButton";
-import { showingAdvancedPromptAtom } from "@/_helpers/atoms/Modal.atom";
+import { useSetAtom } from 'jotai'
+import { InformationCircleIcon } from '@heroicons/react/24/outline'
+import SendButton from '../SendButton'
+import { showingAdvancedPromptAtom } from '@/_helpers/atoms/Modal.atom'
 
 const BasicPromptAccessories: React.FC = () => {
-  const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom);
+  const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom)
 
-  const shouldShowAdvancedPrompt = false;
+  const shouldShowAdvancedPrompt = false
 
   return (
     <div className="absolute inset-x-0 bottom-0 flex justify-between py-2 pl-3 pr-2">
@@ -27,7 +27,7 @@ const BasicPromptAccessories: React.FC = () => {
         <SendButton />
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default BasicPromptAccessories;
+export default BasicPromptAccessories

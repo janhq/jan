@@ -1,13 +1,13 @@
-"use client";
+'use client'
 
-import React from "react";
-import { Popover } from "@headlessui/react";
-import { MenuHeader } from "../MenuHeader";
+import React from 'react'
+import { Popover } from '@headlessui/react'
+import { MenuHeader } from '../MenuHeader'
 // import useGetCurrentUser from "@/_hooks/useGetCurrentUser";
 
 const UserProfileDropDown: React.FC = () => {
   // const { loading, user } = useGetCurrentUser();
-  return <div></div>;
+  return <div></div>
   // if (loading || !user) {
   //   return <div></div>;
   // }
@@ -31,6 +31,6 @@ const UserProfileDropDown: React.FC = () => {
   //     </Popover>
   //   </Popover.Group>
   // );
-};
+}
 
-export default UserProfileDropDown;
+export default UserProfileDropDown

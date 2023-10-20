@@ -1,20 +1,20 @@
 /* eslint-disable react/display-name */
-import React, { forwardRef } from "react";
-import renderChatMessage from "../ChatBody/renderChatMessage";
-import { ChatMessage } from "@/_models/ChatMessage";
+import React, { forwardRef } from 'react'
+import renderChatMessage from '../ChatBody/renderChatMessage'
+import { ChatMessage } from '@/_models/ChatMessage'
 
 type Props = {
-  message: ChatMessage;
-};
+  message: ChatMessage
+}
 
-type Ref = HTMLDivElement;
+type Ref = HTMLDivElement
 
 const ChatItem = forwardRef<Ref, Props>(({ message }, ref) => {
-  const item = renderChatMessage(message);
+  const item = renderChatMessage(message)
 
-  const content = ref ? <div ref={ref}>{item}</div> : item;
+  const content = ref ? <div ref={ref}>{item}</div> : item
 
-  return content;
-});
+  return content
+})
 
-export default ChatItem;
+export default ChatItem

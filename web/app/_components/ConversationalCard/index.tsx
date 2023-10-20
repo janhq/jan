@@ -1,43 +1,43 @@
-import React from "react";
-import Image from "next/image";
-import useCreateConversation from "@/_hooks/useCreateConversation";
-import { AssistantModel } from "@/_models/AssistantModel";
+import React from 'react'
+import Image from 'next/image'
+import useCreateConversation from '@/_hooks/useCreateConversation'
+import { AssistantModel } from '@/_models/AssistantModel'
 
 type Props = {
-  model: AssistantModel;
-};
+  model: AssistantModel
+}
 
 const ConversationalCard: React.FC<Props> = ({ model }) => {
-  const { requestCreateConvo } = useCreateConversation();
+  const { requestCreateConvo } = useCreateConversation()
 
-  const { name, avatarUrl, shortDescription } = model;
+  const { name, avatarUrl, shortDescription } = model
 
   return (
     <button
       onClick={() => requestCreateConvo(model)}
-      className="flex flex-col justify-between flex-shrink-0 gap-3 bg-white p-4 w-52 rounded-lg text-left dark:bg-gray-700 hover:opacity-20"
+      className="flex w-52 flex-shrink-0 flex-col justify-between gap-3 rounded-lg bg-white p-4 text-left hover:opacity-20 dark:bg-gray-700"
     >
-      <div className="flex flex-col gap-2 box-border">
+      <div className="box-border flex flex-col gap-2">
         <Image
           width={32}
           height={32}
-          src={avatarUrl ?? ""}
+          src={avatarUrl ?? ''}
           className="rounded-full"
           alt=""
         />
-        <h2 className="text-gray-900 font-semibold dark:text-white line-clamp-1 mt-2">
+        <h2 className="mt-2 line-clamp-1 font-semibold text-gray-900 dark:text-white">
           {name}
         </h2>
-        <span className="text-gray-600 mt-1 font-normal line-clamp-2">
+        <span className="mt-1 line-clamp-2 font-normal text-gray-600">
           {shortDescription}
         </span>
       </div>
-      <span className="flex text-xs leading-5 text-gray-500 items-center gap-0.5">
-        <Image src={"icons/play.svg"} width={16} height={16} alt="" />
+      <span className="flex items-center gap-0.5 text-xs leading-5 text-gray-500">
+        <Image src={'icons/play.svg'} width={16} height={16} alt="" />
         32.2k runs
       </span>
     </button>
-  );
-};
+  )
+}
 
-export default React.memo(ConversationalCard);
+export default React.memo(ConversationalCard)

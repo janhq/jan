@@ -1,39 +1,39 @@
-import HistoryItem from "../HistoryItem";
-import { useEffect, useState } from "react";
-import ExpandableHeader from "../ExpandableHeader";
-import { useAtomValue } from "jotai";
-import { searchAtom } from "@/_helpers/JotaiWrapper";
-import useGetUserConversations from "@/_hooks/useGetUserConversations";
-import SidebarEmptyHistory from "../SidebarEmptyHistory";
-import { userConversationsAtom } from "@/_helpers/atoms/Conversation.atom";
+import HistoryItem from '../HistoryItem'
+import { useEffect, useState } from 'react'
+import ExpandableHeader from '../ExpandableHeader'
+import { useAtomValue } from 'jotai'
+import { searchAtom } from '@/_helpers/JotaiWrapper'
+import useGetUserConversations from '@/_hooks/useGetUserConversations'
+import SidebarEmptyHistory from '../SidebarEmptyHistory'
+import { userConversationsAtom } from '@/_helpers/atoms/Conversation.atom'
 
 const HistoryList: React.FC = () => {
-  const conversations = useAtomValue(userConversationsAtom);
-  const searchText = useAtomValue(searchAtom);
-  const [expand, setExpand] = useState<boolean>(true);
-  const { getUserConversations } = useGetUserConversations();
+  const conversations = useAtomValue(userConversationsAtom)
+  const searchText = useAtomValue(searchAtom)
+  const [expand, setExpand] = useState<boolean>(true)
+  const { getUserConversations } = useGetUserConversations()
 
   useEffect(() => {
-    getUserConversations();
-  }, []);
+    getUserConversations()
+  }, [])
 
   return (
-    <div className="flex flex-col flex-grow pt-3 gap-2 overflow-hidden">
+    <div className="flex flex-grow flex-col gap-2 overflow-hidden pt-3">
       <ExpandableHeader
         title="CHAT HISTORY"
         expanded={expand}
         onClick={() => setExpand(!expand)}
       />
       <ul
-        className={`flex flex-col gap-1 mt-1 overflow-y-auto scroll ${
-          !expand ? "hidden " : "block"
+        className={`scroll mt-1 flex flex-col gap-1 overflow-y-auto ${
+          !expand ? 'hidden ' : 'block'
         }`}
       >
         {conversations.length > 0 ? (
           conversations
             .filter(
               (e) =>
-                searchText.trim() === "" ||
+                searchText.trim() === '' ||
                 e.name?.toLowerCase().includes(searchText.toLowerCase().trim())
             )
             .map((convo) => (
@@ -42,8 +42,8 @@ const HistoryList: React.FC = () => {
                 conversation={convo}
                 summary={convo.summary}
                 avatarUrl={convo.image}
-                name={convo.name || "Jan"}
-                updatedAt={convo.updatedAt ?? ""}
+                name={convo.name || 'Jan'}
+                updatedAt={convo.updatedAt ?? ''}
               />
             ))
         ) : (
@@ -51,7 +51,7 @@ const HistoryList: React.FC = () => {
         )}
       </ul>
     </div>
-  );
-};
+  )
+}
 
-export default HistoryList;
+export default HistoryList

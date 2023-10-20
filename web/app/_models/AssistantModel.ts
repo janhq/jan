@@ -1,4 +1,4 @@
-import { ProductType } from "./Product";
+import { ProductType } from './Product'
 
 /**
  * Represent a model
@@ -8,58 +8,58 @@ export type AssistantModel = {
    * Combination of owner and model name.
    * Being used as file name. MUST be unique.
    */
-  _id: string;
+  _id: string
 
-  name: string;
+  name: string
 
-  quantMethod: string;
+  quantMethod: string
 
-  bits: number;
+  bits: number
 
-  size: number;
+  size: number
 
-  maxRamRequired: number;
+  maxRamRequired: number
 
-  usecase: string;
+  usecase: string
 
-  downloadLink: string;
+  downloadLink: string
 
   /**
    * For tracking download info
    */
-  startDownloadAt?: number;
+  startDownloadAt?: number
 
-  finishDownloadAt?: number;
+  finishDownloadAt?: number
 
-  productId: string;
+  productId: string
 
-  productName: string;
+  productName: string
 
-  shortDescription: string;
+  shortDescription: string
 
-  longDescription: string;
+  longDescription: string
 
-  avatarUrl: string;
+  avatarUrl: string
 
-  author: string;
+  author: string
 
-  version: string;
+  version: string
 
-  modelUrl: string;
+  modelUrl: string
 
-  nsfw: boolean;
+  nsfw: boolean
 
-  greeting: string;
+  greeting: string
 
-  type: ProductType;
+  type: ProductType
 
-  createdAt: number;
+  createdAt: number
 
-  updatedAt?: number;
+  updatedAt?: number
 
-  status: string;
+  status: string
 
-  releaseDate: number;
+  releaseDate: number
 
-  tags: string[];
-};
+  tags: string[]
+}

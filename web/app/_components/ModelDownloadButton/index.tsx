@@ -1,21 +1,21 @@
-import { ArrowDownTrayIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon } from '@heroicons/react/24/outline'
 
 type Props = {
-  callback: () => void;
-};
+  callback: () => void
+}
 
 const ModelDownloadButton: React.FC<Props> = ({ callback }) => {
   return (
     <button
-      className="bg-[#1A56DB] rounded-lg py-2 px-3 flex items-center gap-2"
+      className="flex items-center gap-2 rounded-lg bg-[#1A56DB] px-3 py-2"
       onClick={callback}
     >
       <ArrowDownTrayIcon width={16} height={16} color="#FFFFFF" />
-      <span className="text-xs leading-[18px] text-[#fff] font-medium">
+      <span className="text-xs font-medium leading-[18px] text-[#fff]">
         Download
       </span>
     </button>
-  );
-};
+  )
+}
 
-export default ModelDownloadButton;
+export default ModelDownloadButton

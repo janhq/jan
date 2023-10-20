@@ -1,45 +1,45 @@
-"use client";
+'use client'
 
-import React from "react";
-import SecondaryButton from "../SecondaryButton";
-import { useAtomValue, useSetAtom } from "jotai";
+import React from 'react'
+import SecondaryButton from '../SecondaryButton'
+import { useAtomValue, useSetAtom } from 'jotai'
 import {
   MainViewState,
   setMainViewStateAtom,
-} from "@/_helpers/atoms/MainView.atom";
-import useCreateConversation from "@/_hooks/useCreateConversation";
-import useInitModel from "@/_hooks/useInitModel";
-import { PlusIcon } from "@heroicons/react/24/outline";
-import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom";
-import { AssistantModel } from "@/_models/AssistantModel";
+} from '@/_helpers/atoms/MainView.atom'
+import useCreateConversation from '@/_hooks/useCreateConversation'
+import useInitModel from '@/_hooks/useInitModel'
+import { PlusIcon } from '@heroicons/react/24/outline'
+import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
+import { AssistantModel } from '@/_models/AssistantModel'
 
 const NewChatButton: React.FC = () => {
-  const activeModel = useAtomValue(activeAssistantModelAtom);
-  const setMainView = useSetAtom(setMainViewStateAtom);
-  const { requestCreateConvo } = useCreateConversation();
-  const { initModel } = useInitModel();
+  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const setMainView = useSetAtom(setMainViewStateAtom)
+  const { requestCreateConvo } = useCreateConversation()
+  const { initModel } = useInitModel()
 
   const onClick = () => {
     if (!activeModel) {
-      setMainView(MainViewState.ConversationEmptyModel);
+      setMainView(MainViewState.ConversationEmptyModel)
     } else {
-      createConversationAndInitModel(activeModel);
+      createConversationAndInitModel(activeModel)
     }
-  };
+  }
 
   const createConversationAndInitModel = async (model: AssistantModel) => {
-    await requestCreateConvo(model);
-    await initModel(model);
-  };
+    await requestCreateConvo(model)
+    await initModel(model)
+  }
 
   return (
     <SecondaryButton
-      title={"New Chat"}
+      title={'New Chat'}
       onClick={onClick}
-      className="my-5 mx-3"
+      className="mx-3 my-5"
       icon={<PlusIcon width={16} height={16} />}
     />
-  );
-};
+  )
+}
 
-export default React.memo(NewChatButton);
+export default React.memo(NewChatButton)
