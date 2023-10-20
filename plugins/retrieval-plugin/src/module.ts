@@ -1,8 +1,12 @@
 const path = require("path");
 const { app } = require("electron");
 const lancedb = require("vectordb");
+const { DirectoryLoader } = require("langchain/document_loaders/fs/directory");
+const { LanceDB } = require("langchain/vectorstores/lancedb");
+const { OpenAIEmbeddings } = require("langchain/embeddings/openai");
+const { PDFLoader } = require("langchain/document_loaders/fs/pdf");
 
-var db: any = {};
+var db: any | undefined = undefined;
 const textKey = "text";
 /**
  * Returns a Promise that resolves to a database object.
@@ -84,7 +88,7 @@ async function addVectors(vectors: number[][], documents: any[], table: any) {
  * @param documents The documents to be added.
  * @returns A Promise that resolves when the documents have been added.
  */
-function addDocuments(table: string, documents: any[], embeddings): Promise<void> {
+function addDocuments(table: string, documents: any[], embeddings?: any): Promise<void> {
   return getDb().then(async (db) => {
     const tbl = await db.openTable(table);
     const texts = documents.map(({ pageContent }) => pageContent);
@@ -125,8 +129,25 @@ function similaritySearchVectorWithScore(table: string, query: number[], k: numb
   });
 }
 
+// For testing only
+async function searchDocs(search: string, docDir: string, config: any): Promise<any> {
+  return getDb().then(async (db) => {
+    const table = await db.createTable("vectors", [{ vector: Array(1536), text: "Hello world", id: 1 }], {
+      writeMode: lancedb.WriteMode.Overwrite,
+    });
+    const loader = new DirectoryLoader(docDir, {
+      ".pdf": (path) => new PDFLoader(path),
+    });
+    const docs = await loader.load();
+    const vectorStore = await LanceDB.fromDocuments(docs, new OpenAIEmbeddings(config), { table });
+    const resultOne = await vectorStore.similaritySearch(search, 1);
+    return resultOne;
+  });
+}
+
 module.exports = {
   createVectorTable,
   fromDocuments,
   similaritySearchVectorWithScore,
+  searchDocs,
 };
