@@ -22,7 +22,11 @@ function requestInference(recentMessages: any[]): Observable<string> {
         messages: recentMessages,
         stream: true,
         model: "gpt-3.5-turbo",
-        max_tokens: 500,
+        max_tokens: 2048,
+        stop: ["hello"],
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        temperature: 0
       }),
     })
       .then(async (response) => {
