@@ -29,6 +29,9 @@ export default function useUpdateBot() {
 }
 
 export type UpdatableField = {
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+  maxTokens?: number;
   customTemperature?: number;
   systemPrompt?: number;
 };

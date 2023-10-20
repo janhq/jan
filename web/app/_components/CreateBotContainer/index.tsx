@@ -11,7 +11,6 @@ import useCreateBot from "@/_hooks/useCreateBot";
 import { Bot } from "@/_models/Bot";
 import { SubmitHandler, useForm } from "react-hook-form";
 import Avatar from "../Avatar";
-import SecondaryButton from "../SecondaryButton";
 import { v4 as uuidv4 } from "uuid";
 
 const CreateBotContainer: React.FC = () => {
@@ -32,6 +31,9 @@ const CreateBotContainer: React.FC = () => {
       renderMarkdownContent: true,
       customTemperature: 0.7,
       enableCustomTemperature: false,
+      maxTokens: 2048,
+      frequencyPenalty: 0,
+      presencePenalty: 0,
     },
     mode: "onChange",
   });
@@ -42,7 +44,15 @@ const CreateBotContainer: React.FC = () => {
       alert("Please select a model");
       return;
     }
-    createBot({ ...data, name: data._id });
+    const bot: Bot = {
+      ...data,
+      customTemperature: Number(data.customTemperature),
+      maxTokens: Number(data.maxTokens),
+      frequencyPenalty: Number(data.frequencyPenalty),
+      presencePenalty: Number(data.presencePenalty),
+      name: data._id,
+    };
+    createBot(bot);
   };
 
   const models = downloadedModels.map((model) => {
@@ -57,7 +67,6 @@ const CreateBotContainer: React.FC = () => {
       <div className="flex mx-6 items-center justify-between gap-3 mt-3">
         <span className="text-gray-900 font-bold text-3xl">Create Bot</span>
         <div className="flex gap-3">
-          <SecondaryButton title="Discard" />
           <PrimaryButton isSubmit title="Create" />
         </div>
       </div>
@@ -95,13 +104,13 @@ const CreateBotContainer: React.FC = () => {
               required
             />
 
-            <TextInputWithTitle
+            {/* <TextInputWithTitle
               description="The bot will send this message at the beginning of every conversation."
               title="Intro message"
-              id="description"
+              id="welcomeMessage"
               placeholder="Optional"
               control={control}
-            />
+            /> */}
 
             <div className="flex flex-col gap-0.5">
               <label className="block text-base text-gray-900 font-bold">

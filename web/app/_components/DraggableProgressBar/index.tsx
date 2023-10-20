@@ -5,9 +5,12 @@ import { Controller, useController } from "react-hook-form";
 type Props = {
   id: string;
   control: any;
+  min: number;
+  max: number;
+  step: number;
 };
 
-const DraggableProgressBar: React.FC<Props> = ({ id, control }) => {
+const DraggableProgressBar: React.FC<Props> = ({ id, control, min, max, step }) => {
   const { field } = useController({
     name: id,
     control: control,
@@ -19,11 +22,9 @@ const DraggableProgressBar: React.FC<Props> = ({ id, control }) => {
         {...field}
         className="flex-1"
         type="range"
-        id="volume"
-        name="volume"
-        min="0"
-        max="1"
-        step="0.01"
+        min={min}
+        max={max}
+        step={step}
       />
       <Controller
         name={id}

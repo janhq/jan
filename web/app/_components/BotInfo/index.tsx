@@ -7,6 +7,8 @@ import useCreateConversation from "@/_hooks/useCreateConversation";
 import useDeleteBot from "@/_hooks/useDeleteBot";
 import { useAtomValue, useSetAtom } from "jotai";
 import React from "react";
+import PrimaryButton from "../PrimaryButton";
+import ExpandableHeader from "../ExpandableHeader";
 
 const BotInfo: React.FC = () => {
   const { deleteBot } = useDeleteBot();
@@ -33,20 +35,20 @@ const BotInfo: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col">
-      {/* Header */}
-      <div>Bot Info</div>
+    <div className="flex flex-col gap-2 mx-1 my-1">
+      <ExpandableHeader title="BOT INFO" expanded={true} onClick={() => {}} />
 
-      {/* Body */}
       <div className="flex flex-col">
         <label>{botInfo.name}</label>
-        <button onClick={onNewChatClicked}>New chat</button>
+        <PrimaryButton onClick={onNewChatClicked} title="New chat" />
         <span>{botInfo.description}</span>
       </div>
 
-      <div role="button" onClick={onDeleteBotClick}>
-        <span>Delete bot</span>
-      </div>
+      <PrimaryButton
+        title="Delete bot"
+        onClick={onDeleteBotClick}
+        className="bg-red-500 hover:bg-red-400"
+      />
     </div>
   );
 };

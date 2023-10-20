@@ -28,7 +28,7 @@ const RightContainer = () => {
       initial={false}
       animate={isVisible ? "show" : "hide"}
       variants={variants}
-      className="flex flex-col w-80 flex-shrink-0 py-3 border-l border-gray-200"
+      className="flex flex-col w-80 flex-shrink-0 py-3 border-l border-gray-200 overflow-y-auto scroll"
     >
       {isVisible && (
         <Fragment>
