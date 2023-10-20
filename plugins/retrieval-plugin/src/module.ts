@@ -1,153 +1,60 @@
 const path = require("path");
 const { app } = require("electron");
-const lancedb = require("vectordb");
 const { DirectoryLoader } = require("langchain/document_loaders/fs/directory");
-const { LanceDB } = require("langchain/vectorstores/lancedb");
 const { OpenAIEmbeddings } = require("langchain/embeddings/openai");
 const { PDFLoader } = require("langchain/document_loaders/fs/pdf");
+const { CharacterTextSplitter } = require("langchain/text_splitter");
+const { FaissStore } = require("langchain/vectorstores/faiss");
+const { ChatOpenAI } = require("langchain/chat_models/openai");
+const { RetrievalQAChain } = require("langchain/chains");
 
 var db: any | undefined = undefined;
-const textKey = "text";
-/**
- * Returns a Promise that resolves to a database object.
- * If the database object has not been initialized yet, the function initializes it
- * by connecting to a database using the `lancedb.connect` function.
- * @returns A Promise that resolves to a database object.
- */
-async function getDb() {
-  if (!db) {
-    const dbPath = path.join(app.getPath("userData"), "databases");
-    db = await lancedb.connect(path.join(dbPath, "vectordb"));
-  }
-  return db;
-}
 
 /**
- * Create a table on data store
- *
- * @param     table    name of the table to create
- * @param     schema   schema of the table to create, include fields and their types
- * @returns   Promise<void>
- *
+ * Ingests documents from the specified directory using the `DirectoryLoader` class and splits them into questions and answers
+ * using the `CharacterTextSplitter` class.
+ * If an `embedding` object is provided, it uses it to generate embeddings for the documents using the `FaissStore` class.
+ * Otherwise, it creates a new `OpenAIEmbeddings` object with the specified `config` and uses it to generate embeddings.
+ * The resulting embeddings are stored in the database using the `FaissStore` class.
+ * @param docDir - The directory containing the documents to ingest.
+ * @param embedding - An optional object used to generate embeddings for the documents.
+ * @param config - An optional configuration object used to create a new `OpenAIEmbeddings` object.
  */
-function createVectorTable(table: string, schema?: { [key: string]: any }): Promise<void> {
-  return new Promise<void>(async (resolve) => {
-    await getDb().then((db) => db.createTable(table, [schema]));
-    resolve();
+async function ingest(docDir: string, embedding?: any, config?: any) {
+  const loader = new DirectoryLoader(docDir, {
+    ".pdf": (path) => new PDFLoader(path),
   });
+  const docs = await loader.load();
+  const textSplitter = new CharacterTextSplitter();
+  const docsQA = await textSplitter.splitDocuments(docs);
+  const embeddings = embedding ?? new OpenAIEmbeddings({ ...config });
+  db = await FaissStore.fromDocuments(await docsQA, embeddings);
+  console.log("Documents are ingested");
 }
 
 /**
- * Import db from documents
- *
- * @param     table              name of the table
- * @param     value              document to insert { document, embeddedDocs }
- * @returns   Promise<any>
- *
+ * Generates an answer to a given question using the specified `llm` object or a new `ChatOpenAI` object with the specified `config`.
+ * The function uses the `RetrievalQAChain` class to retrieve the most relevant document from the database and generate an answer.
+ * @param question - The question to generate an answer for.
+ * @param llm - An optional object used to generate the answer.
+ * @param config - An optional configuration object used to create a new `ChatOpenAI` object.
+ * @returns A Promise that resolves with the generated answer.
  */
-function fromDocuments(table: string, value: any): Promise<any> {
-  return new Promise<any>(async (resolve) => {
-    getDb().then(async (db) => {
-      const tbl = await db.openTable(table);
-      const vectorStore = await addDocuments(value.docs, value.embeddedDocs, { tbl });
-      resolve(vectorStore);
+async function chatWithDocs(question: string, llm?: any, config?: any): Promise<any> {
+  const llm_question_answer =
+    llm ??
+    new ChatOpenAI({
+      temperature: 0.2,
+      ...config,
     });
+  const qa = RetrievalQAChain.fromLLM(llm_question_answer, db.asRetriever(), {
+    verbose: true,
   });
-}
-
-/**
- * Adds vectors and their corresponding documents to the database.
- * @param vectors The vectors to be added.
- * @param documents The corresponding documents to be added.
- * @returns A Promise that resolves when the vectors and documents have been added.
- */
-async function addVectors(vectors: number[][], documents: any[], table: any) {
-  if (vectors.length === 0) {
-    return;
-  }
-  if (vectors.length !== documents.length) {
-    throw new Error(`Vectors and documents must have the same length`);
-  }
-
-  const data: Array<Record<string, unknown>> = [];
-  for (let i = 0; i < documents.length; i += 1) {
-    const record = {
-      vector: vectors[i],
-      [this.textKey]: documents[i].pageContent,
-    };
-    Object.keys(documents[i].metadata).forEach((metaKey) => {
-      record[metaKey] = documents[i].metadata[metaKey];
-    });
-    data.push(record);
-  }
-  await table.add(data);
-}
-
-/**
- * Adds documents to the database.
- * @param documents The documents to be added.
- * @returns A Promise that resolves when the documents have been added.
- */
-function addDocuments(table: string, documents: any[], embeddings?: any): Promise<void> {
-  return getDb().then(async (db) => {
-    const tbl = await db.openTable(table);
-    const texts = documents.map(({ pageContent }) => pageContent);
-    addVectors(await embeddings.embedDocuments(texts), documents, tbl);
-  });
-}
-
-/**
- * Performs a similarity search on the vectors in the database and returns
- * the documents and their scores.
- * @param query The query vector.
- * @param k The number of results to return.
- * @returns A Promise that resolves with an array of tuples, each containing a Document and its score.
- */
-function similaritySearchVectorWithScore(table: string, query: number[], k: number): Promise<[any, number][]> {
-  return getDb().then(async (db) => {
-    const tbl = await db.openTable(table);
-    const results = await tbl.search(query).limit(k).execute();
-
-    const docsAndScore: [any, number][] = [];
-    results.forEach((item) => {
-      const metadata: Record<string, unknown> = {};
-      Object.keys(item).forEach((key) => {
-        if (key !== "vector" && key !== "score" && key !== textKey) {
-          metadata[key] = item[key];
-        }
-      });
-
-      docsAndScore.push([
-        {
-          pageContent: item[textKey] as string,
-          metadata,
-        },
-        item.score as number,
-      ]);
-    });
-    return docsAndScore;
-  });
-}
-
-// For testing only
-async function searchDocs(search: string, docDir: string, config: any): Promise<any> {
-  return getDb().then(async (db) => {
-    const table = await db.createTable("vectors", [{ vector: Array(1536), text: "Hello world", id: 1 }], {
-      writeMode: lancedb.WriteMode.Overwrite,
-    });
-    const loader = new DirectoryLoader(docDir, {
-      ".pdf": (path) => new PDFLoader(path),
-    });
-    const docs = await loader.load();
-    const vectorStore = await LanceDB.fromDocuments(docs, new OpenAIEmbeddings(config), { table });
-    const resultOne = await vectorStore.similaritySearch(search, 1);
-    return resultOne;
-  });
+  const answer = await qa.run(question);
+  return answer;
 }
 
 module.exports = {
-  createVectorTable,
-  fromDocuments,
-  similaritySearchVectorWithScore,
-  searchDocs,
+  ingest,
+  chatWithDocs,
 };

@@ -11,7 +11,7 @@
     "init"
   ],
   "scripts": {
-    "bundle": "tsc -b . && webpack --config webpack.config.js && npm pack"
+    "bundle": "tsc -b . && webpack --config webpack.config.js && npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "devDependencies": {
     "webpack": "^5.88.2",
@@ -19,12 +19,12 @@
   },
   "dependencies": {
     "@janhq/core": "^0.1.1",
+    "faiss-node": "^0.5.1",
     "install": "^0.13.0",
     "langchain": "^0.0.169",
     "npm": "^10.2.0",
     "pdf-parse": "^1.1.1",
-    "ts-loader": "^9.5.0",
-    "vectordb": "^0.1.19"
+    "ts-loader": "^9.5.0"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -36,7 +36,7 @@
   ],
   "bundleDependencies": [
     "pdf-parse",
-    "vectordb",
-    "langchain"
+    "langchain",
+    "faiss-node"
   ]
 }
