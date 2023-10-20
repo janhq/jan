@@ -33,25 +33,16 @@ const initModel = (fileName) => {
       .then(() => {
         let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
 
-        // Read the existing config
-        const configFilePath = path.join(binaryFolder, "config", "config.json");
-        let config: any = {};
-        if (fs.existsSync(configFilePath)) {
-          const rawData = fs.readFileSync(configFilePath, "utf-8");
-          config = JSON.parse(rawData);
-        }
-
-        // Update the llama_model_path
-        if (!config.custom_config) {
-          config.custom_config = {};
+        const config = {
+          llama_model_path: "",
+          ctx_len: 2048,
+          ngl: 100,
+          embedding: true // Always enable embedding mode on
         }
 
         const modelPath = path.join(app.getPath("userData"), fileName);
 
-        config.custom_config.llama_model_path = modelPath;
-
-        // Write the updated config back to the file
-        fs.writeFileSync(configFilePath, JSON.stringify(config, null, 4));
+        config.llama_model_path = modelPath;
 
         let binaryName;
 
@@ -70,7 +61,7 @@ const initModel = (fileName) => {
 
         // Execute the binary
 
-        subprocess = spawn(binaryPath, [configFilePath], { cwd: binaryFolder });
+        subprocess = spawn(binaryPath, { cwd: binaryFolder });
 
         // Handle subprocess output
         subprocess.stdout.on("data", (data) => {
@@ -87,8 +78,20 @@ const initModel = (fileName) => {
         });
       })
       .then(() => tcpPortUsed.waitUntilUsed(PORT, 300, 30000))
-      .then(() => {
-        return {};
+      .then((config) => {
+        const initModel = fetch(`http://127.0.0.1:${PORT}/inferences/llamacpp/loadmodel`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            },
+            body: JSON.stringify(config),
+          })
+          .then((res) => {
+            if (res.ok) {
+              return {};
+            }
+            throw new Error("Nitro: Model failed to load.");
+          })
       })
       .catch((err) => {
         return { error: err };
