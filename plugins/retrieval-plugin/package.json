@@ -1,7 +1,7 @@
 {
-  "name": "vectordb-plugin",
+  "name": "retrieval-plugin",
   "version": "1.0.0",
-  "description": "VectorDB plugin for Jan app",
+  "description": "Retrieval plugin for Jan app",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/circle-stack.svg",
   "main": "dist/index.js",
   "module": "dist/module.js",
@@ -13,10 +13,6 @@
   "scripts": {
     "bundle": "tsc -b . && webpack --config webpack.config.js && npm pack"
   },
-  "exports": {
-    ".": "./dist/index.js",
-    "./main": "./dist/module.js"
-  },
   "devDependencies": {
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
@@ -24,13 +20,12 @@
   "dependencies": {
     "@janhq/core": "^0.1.1",
     "install": "^0.13.0",
+    "langchain": "^0.0.169",
     "npm": "^10.2.0",
+    "pdf-parse": "^1.1.1",
     "ts-loader": "^9.5.0",
-    "vectordb": "^0.3.2"
+    "vectordb": "^0.1.19"
   },
-  "bundledDependencies": [
-    "vectordb"
-  ],
   "engines": {
     "node": ">=18.0.0"
   },
@@ -38,5 +33,10 @@
     "dist/*",
     "package.json",
     "README.md"
+  ],
+  "bundleDependencies": [
+    "pdf-parse",
+    "vectordb",
+    "langchain"
   ]
 }
