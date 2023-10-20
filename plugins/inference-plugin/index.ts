@@ -1,17 +1,23 @@
-import { EventName, InferenceService, NewMessageRequest, PluginService, core, events, store } from "@janhq/core";
+import {
+  EventName,
+  InferenceService,
+  NewMessageRequest,
+  PluginService,
+  events,
+  store,
+  invokePluginFunc,
+} from "@janhq/core";
 import { Observable } from "rxjs";
 
-const inferenceUrl = "http://localhost:3928/llama/chat_completion";
-
-const initModel = async (product) => core.invokePluginFunc(MODULE_PATH, "initModel", product);
+const initModel = async (product) => invokePluginFunc(MODULE_PATH, "initModel", product);
 
 const stopModel = () => {
-  core.invokePluginFunc(MODULE_PATH, "killSubprocess");
+  invokePluginFunc(MODULE_PATH, "killSubprocess");
 };
 
 function requestInference(recentMessages: any[]): Observable<string> {
   return new Observable((subscriber) => {
-    fetch(inferenceUrl, {
+    fetch(INFERENCE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

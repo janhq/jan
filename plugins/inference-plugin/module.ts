@@ -5,8 +5,8 @@ const fs = require("fs");
 const tcpPortUsed = require("tcp-port-used");
 const { killPortProcess } = require("kill-port-process");
 
-let subprocess = null;
 const PORT = 3928;
+let subprocess = null;
 
 const initModel = (fileName) => {
   return (
@@ -15,9 +15,7 @@ const initModel = (fileName) => {
         reject("Model not found, please download again.");
       }
       if (subprocess) {
-        console.error(
-          "A subprocess is already running. Attempt to kill then reinit."
-        );
+        console.error("A subprocess is already running. Attempt to kill then reinit.");
         killSubprocess();
       }
       resolve(fileName);
@@ -32,35 +30,13 @@ const initModel = (fileName) => {
       // Spawn Nitro subprocess to load model
       .then(() => {
         let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
-
-        // Read the existing config
-        const configFilePath = path.join(binaryFolder, "config", "config.json");
-        let config: any = {};
-        if (fs.existsSync(configFilePath)) {
-          const rawData = fs.readFileSync(configFilePath, "utf-8");
-          config = JSON.parse(rawData);
-        }
-
-        // Update the llama_model_path
-        if (!config.custom_config) {
-          config.custom_config = {};
-        }
-
-        const modelPath = path.join(app.getPath("userData"), fileName);
-
-        config.custom_config.llama_model_path = modelPath;
-
-        // Write the updated config back to the file
-        fs.writeFileSync(configFilePath, JSON.stringify(config, null, 4));
-
         let binaryName;
 
         if (process.platform === "win32") {
-          binaryName = "nitro_windows_amd64.exe";
+          binaryName = "nitro_windows_amd64_cuda.exe";
         } else if (process.platform === "darwin") {
           // Mac OS platform
-          binaryName =
-            process.arch === "arm64" ? "nitro_mac_arm64" : "nitro_mac_amd64";
+          binaryName = process.arch === "arm64" ? "nitro_mac_arm64" : "nitro_mac_intel";
         } else {
           // Linux
           binaryName = "nitro_linux_amd64_cuda"; // For other platforms
@@ -69,8 +45,7 @@ const initModel = (fileName) => {
         const binaryPath = path.join(binaryFolder, binaryName);
 
         // Execute the binary
-
-        subprocess = spawn(binaryPath, [configFilePath], { cwd: binaryFolder });
+        subprocess = spawn(binaryPath, { cwd: binaryFolder });
 
         // Handle subprocess output
         subprocess.stdout.on("data", (data) => {
@@ -88,7 +63,29 @@ const initModel = (fileName) => {
       })
       .then(() => tcpPortUsed.waitUntilUsed(PORT, 300, 30000))
       .then(() => {
-        return {};
+        const llama_model_path = path.join(app.getPath("userData"), fileName);
+
+        const config = {
+          llama_model_path,
+          ctx_len: 2048,
+          ngl: 100,
+          embedding: true, // Always enable embedding mode on
+        };
+
+        // Load model config
+        return fetch(`http://127.0.0.1:${PORT}/inferences/llamacpp/loadmodel`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(config),
+        });
+      })
+      .then((res) => {
+        if (res.ok) {
+          return {};
+        }
+        throw new Error("Nitro: Model failed to load.");
       })
       .catch((err) => {
         return { error: err };

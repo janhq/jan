@@ -19,6 +19,7 @@ module.exports = {
     new webpack.DefinePlugin({
       PLUGIN_NAME: JSON.stringify(packageJson.name),
       MODULE_PATH: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
+      INFERENCE_URL: JSON.stringify("http://127.0.0.1:3928/inferences/llamacpp/chat_completion"),
     }),
   ],
   output: {
