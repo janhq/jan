@@ -11,11 +11,9 @@ const { RetrievalQAChain } = require("langchain/chains");
 var db: any | undefined = undefined;
 
 /**
- * Ingests documents from the specified directory using the `DirectoryLoader` class and splits them into questions and answers
- * using the `CharacterTextSplitter` class.
- * If an `embedding` object is provided, it uses it to generate embeddings for the documents using the `FaissStore` class.
- * Otherwise, it creates a new `OpenAIEmbeddings` object with the specified `config` and uses it to generate embeddings.
- * The resulting embeddings are stored in the database using the `FaissStore` class.
+ * Ingests documents from the specified directory
+ * If an `embedding` object is not provided, uses OpenAIEmbeddings.
+ * The resulting embeddings are stored in the database using Faiss.
  * @param docDir - The directory containing the documents to ingest.
  * @param embedding - An optional object used to generate embeddings for the documents.
  * @param config - An optional configuration object used to create a new `OpenAIEmbeddings` object.
@@ -33,11 +31,11 @@ async function ingest(docDir: string, embedding?: any, config?: any) {
 }
 
 /**
- * Generates an answer to a given question using the specified `llm` object or a new `ChatOpenAI` object with the specified `config`.
+ * Generates an answer to a given question using the specified `llm` or a new `ChatOpenAI`.
  * The function uses the `RetrievalQAChain` class to retrieve the most relevant document from the database and generate an answer.
  * @param question - The question to generate an answer for.
  * @param llm - An optional object used to generate the answer.
- * @param config - An optional configuration object used to create a new `ChatOpenAI` object.
+ * @param config - An optional configuration object used to create a new `ChatOpenAI` object, can be ignored if llm is specified.
  * @returns A Promise that resolves with the generated answer.
  */
 async function chatWithDocs(question: string, llm?: any, config?: any): Promise<any> {
