@@ -41,10 +41,14 @@
   ],
   "dependencies": {
 <<<<<<< HEAD
+<<<<<<< HEAD
     "@janhq/core": "^0.1.6",
 =======
     "@janhq/core": "file:../../core", // revert back this line to the original one
 >>>>>>> f809f66 (feat: adding create bot functionality)
+=======
+    "@janhq/core": "file:../../core",
+>>>>>>> a689ee5 (update the temperature progress bar)
     "pouchdb-find": "^8.0.1",
     "pouchdb-node": "^8.0.1"
   },

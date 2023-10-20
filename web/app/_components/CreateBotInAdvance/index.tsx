@@ -2,6 +2,7 @@ import React, { Fragment, useState } from "react";
 import ToggleSwitch from "../ToggleSwitch";
 import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 import CutomBotTemperature from "../CustomBotTemperature";
+import DraggableProgressBar from "../DraggableProgressBar";
 
 type Props = {
   control?: any;
@@ -30,7 +31,17 @@ const CreateBotInAdvance: React.FC<Props> = ({ control }) => {
           )}
         </button>
       </div>
-      {showAdvanced && (
+
+      <p>Max tokens</p>
+      <DraggableProgressBar id="maxTokens" control={control} min={0} max={4096} step={1} />
+      <p>Custom temperature</p>
+      <DraggableProgressBar id="customTemperature" control={control} min={0} max={1} step={0.01} />
+      <p>Frequency penalty</p>
+      <DraggableProgressBar id="frequencyPenalty" control={control} min={0} max={1} step={0.01} />
+      <p>Presence penalty</p>
+      <DraggableProgressBar id="presencePenalty" control={control} min={0} max={1} step={0.01} />
+
+      {/* {showAdvanced && (
         <Fragment>
           <ToggleSwitch
             id="suggestReplies"
@@ -44,7 +55,7 @@ const CreateBotInAdvance: React.FC<Props> = ({ control }) => {
           />
           <CutomBotTemperature control={control} />
         </Fragment>
-      )}
+      )} */}
     </div>
   );
 };

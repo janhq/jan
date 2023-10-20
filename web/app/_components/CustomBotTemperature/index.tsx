@@ -24,7 +24,15 @@ const CutomBotTemperature: React.FC<Props> = ({ control }) => (
       control={control}
       render={({ field: { value } }) => {
         if (!value) return <div />
-        return <DraggableProgressBar id="customTemperature" control={control} />
+        return (
+          <DraggableProgressBar
+            id="customTemperature"
+            control={control}
+            min={0}
+            max={1}
+            step={0.01}
+          />
+        )
       }}
     />
   </div>

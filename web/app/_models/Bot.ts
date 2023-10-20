@@ -20,6 +20,12 @@ export type Bot = {
    */
   customTemperature: number
 
+  maxTokens: number
+
+  frequencyPenalty: number
+
+  presencePenalty: number
+
   modelId: string
   createdAt?: number
   updatedAt?: number

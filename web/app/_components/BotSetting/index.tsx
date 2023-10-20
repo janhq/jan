@@ -1,6 +1,6 @@
 import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
 import { useAtomValue } from 'jotai'
-import React from 'react'
+import React, { useState } from 'react'
 import ExpandableHeader from '../ExpandableHeader'
 import { useDebouncedCallback } from 'use-debounce'
 import useUpdateBot from '@/_hooks/useUpdateBot'
@@ -10,12 +10,42 @@ const delayBeforeUpdateInMs = 1000
 
 const BotSetting: React.FC = () => {
   const activeBot = useAtomValue(activeBotAtom)
+  const [temperature, setTemperature] = useState(
+    activeBot?.customTemperature ?? 0
+  )
+
+  const [maxTokens, setMaxTokens] = useState(activeBot?.maxTokens ?? 0)
+  const [frequencyPenalty, setFrequencyPenalty] = useState(
+    activeBot?.frequencyPenalty ?? 0
+  )
+  const [presencePenalty, setPresencePenalty] = useState(
+    activeBot?.presencePenalty ?? 0
+  )
+
   const { updateBot } = useUpdateBot()
 
   const debouncedTemperature = useDebouncedCallback((value) => {
     if (!activeBot) return
     if (activeBot.customTemperature === value) return
     updateBot(activeBot, { customTemperature: value })
+  }, delayBeforeUpdateInMs)
+
+  const debouncedMaxToken = useDebouncedCallback((value) => {
+    if (!activeBot) return
+    if (activeBot.maxTokens === value) return
+    updateBot(activeBot, { maxTokens: value })
+  }, delayBeforeUpdateInMs)
+
+  const debouncedFreqPenalty = useDebouncedCallback((value) => {
+    if (!activeBot) return
+    if (activeBot.frequencyPenalty === value) return
+    updateBot(activeBot, { frequencyPenalty: value })
+  }, delayBeforeUpdateInMs)
+
+  const debouncedPresencePenalty = useDebouncedCallback((value) => {
+    if (!activeBot) return
+    if (activeBot.presencePenalty === value) return
+    updateBot(activeBot, { presencePenalty: value })
   }, delayBeforeUpdateInMs)
 
   const debouncedSystemPrompt = useDebouncedCallback((value) => {
@@ -55,21 +85,89 @@ const BotSetting: React.FC = () => {
           </div>
         </div>
 
+        {/* TODO: clean up this code */}
+        {/* Max temp */}
+        <p>Max tokens</p>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            className="flex-1"
+            type="range"
+            defaultValue={activeBot.maxTokens ?? 0}
+            min={0}
+            max={4096}
+            step={1}
+            onChange={(e) => {
+              const value = Number(e.target.value)
+              setMaxTokens(value)
+              debouncedMaxToken(value)
+            }}
+          />
+          <span className="rounded-md border border-[#737d7d] px-2 py-1 text-gray-900">
+            {formatTwoDigits(maxTokens)}
+          </span>
+        </div>
+
+        <p>Frequency penalty</p>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            className="flex-1"
+            type="range"
+            defaultValue={activeBot.frequencyPenalty ?? 0}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(e) => {
+              const value = Number(e.target.value)
+              setFrequencyPenalty(value)
+              debouncedFreqPenalty(value)
+            }}
+          />
+          <span className="rounded-md border border-[#737d7d] px-2 py-1 text-gray-900">
+            {formatTwoDigits(frequencyPenalty)}
+          </span>
+        </div>
+
+        <p>Presence penalty</p>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            className="flex-1"
+            type="range"
+            defaultValue={activeBot.maxTokens ?? 0}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(e) => {
+              const value = Number(e.target.value)
+              setPresencePenalty(value)
+              debouncedPresencePenalty(value)
+            }}
+          />
+          <span className="rounded-md border border-[#737d7d] px-2 py-1 text-gray-900">
+            {formatTwoDigits(presencePenalty)}
+          </span>
+        </div>
+
         {/* Custom temp */}
+        <p>Temperature</p>
         <div className="mt-2 flex items-center gap-2">
           <input
             className="flex-1"
             type="range"
             id="volume"
             name="volume"
+            defaultValue={activeBot.customTemperature ?? 0}
             min="0"
             max="1"
             step="0.01"
-            onChange={(e) => debouncedTemperature(e.target.value)}
+            onChange={(e) => {
+              const newTemp = Number(e.target.value)
+              setTemperature(newTemp)
+              debouncedTemperature(Number(e.target.value))
+            }}
           />
-          {/* <span className="border border-[#737d7d] rounded-md py-1 px-2 text-gray-900">
-            {formatTwoDigits(value)}
-          </span> */}
+          <span className="rounded-md border border-[#737d7d] px-2 py-1 text-gray-900">
+            {formatTwoDigits(temperature)}
+          </span>
         </div>
       </div>
     </div>
