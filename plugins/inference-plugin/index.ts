@@ -1,17 +1,23 @@
-import { EventName, InferenceService, NewMessageRequest, PluginService, core, events, store } from "@janhq/core";
+import {
+  EventName,
+  InferenceService,
+  NewMessageRequest,
+  PluginService,
+  events,
+  store,
+  invokePluginFunc,
+} from "@janhq/core";
 import { Observable } from "rxjs";
 
-const inferenceUrl = "http://127.0.0.1:3928/llama/chat_completion";
-
-const initModel = async (product) => core.invokePluginFunc(MODULE_PATH, "initModel", product);
+const initModel = async (product) => invokePluginFunc(MODULE_PATH, "initModel", product);
 
 const stopModel = () => {
-  core.invokePluginFunc(MODULE_PATH, "killSubprocess");
+  invokePluginFunc(MODULE_PATH, "killSubprocess");
 };
 
 function requestInference(recentMessages: any[]): Observable<string> {
   return new Observable((subscriber) => {
-    fetch(inferenceUrl, {
+    fetch(INFERENCE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -22,11 +28,7 @@ function requestInference(recentMessages: any[]): Observable<string> {
         messages: recentMessages,
         stream: true,
         model: "gpt-3.5-turbo",
-        max_tokens: 2048,
-        stop: ["hello"],
-        frequency_penalty: 0,
-        presence_penalty: 0,
-        temperature: 0
+        max_tokens: 500,
       }),
     })
       .then(async (response) => {
