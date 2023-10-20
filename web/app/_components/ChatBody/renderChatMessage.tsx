@@ -1,7 +1,7 @@
-import SimpleControlNetMessage from "../SimpleControlNetMessage";
-import SimpleImageMessage from "../SimpleImageMessage";
-import SimpleTextMessage from "../SimpleTextMessage";
-import { ChatMessage, MessageType } from "@/_models/ChatMessage";
+import SimpleControlNetMessage from '../SimpleControlNetMessage'
+import SimpleImageMessage from '../SimpleImageMessage'
+import SimpleTextMessage from '../SimpleTextMessage'
+import { ChatMessage, MessageType } from '@/_models/ChatMessage'
 
 export default function renderChatMessage({
   id,
@@ -22,9 +22,9 @@ export default function renderChatMessage({
           senderName={senderName}
           createdAt={createdAt}
           imageUrls={imageUrls ?? []}
-          text={text ?? ""}
+          text={text ?? ''}
         />
-      );
+      )
     case MessageType.Image:
       return (
         <SimpleImageMessage
@@ -35,7 +35,7 @@ export default function renderChatMessage({
           imageUrls={imageUrls ?? []}
           text={text}
         />
-      );
+      )
     case MessageType.Text:
       return (
         <SimpleTextMessage
@@ -46,8 +46,8 @@ export default function renderChatMessage({
           senderType={messageSenderType}
           text={text}
         />
-      );
+      )
     default:
-      return null;
+      return null
   }
 }

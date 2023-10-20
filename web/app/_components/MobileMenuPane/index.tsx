@@ -1,13 +1,13 @@
-import React, { useRef } from "react";
-import { Dialog } from "@headlessui/react";
-import { XMarkIcon } from "@heroicons/react/24/outline";
-import Image from "next/image";
-import { useAtom } from "jotai";
-import { showingMobilePaneAtom } from "@/_helpers/atoms/Modal.atom";
+import React, { useRef } from 'react'
+import { Dialog } from '@headlessui/react'
+import { XMarkIcon } from '@heroicons/react/24/outline'
+import Image from 'next/image'
+import { useAtom } from 'jotai'
+import { showingMobilePaneAtom } from '@/_helpers/atoms/Modal.atom'
 
 const MobileMenuPane: React.FC = () => {
-  const [show, setShow] = useAtom(showingMobilePaneAtom);
-  let loginRef = useRef(null);
+  const [show, setShow] = useAtom(showingMobilePaneAtom)
+  let loginRef = useRef(null)
 
   return (
     <Dialog
@@ -54,7 +54,7 @@ const MobileMenuPane: React.FC = () => {
         </div>
       </Dialog.Panel>
     </Dialog>
-  );
-};
+  )
+}
 
-export default MobileMenuPane;
+export default MobileMenuPane

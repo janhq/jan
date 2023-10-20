@@ -1,51 +1,51 @@
 export enum ModelPerformance {
-  PerformancePositive = "PerformancePositive",
+  PerformancePositive = 'PerformancePositive',
 
-  PerformanceNeutral = "PerformanceNeutral",
+  PerformanceNeutral = 'PerformanceNeutral',
 
-  PerformanceNegative = "PerformanceNegative",
+  PerformanceNegative = 'PerformanceNegative',
 }
 
 export enum HardwareCompatibility {
-  HardwareCompatible = "HardwareCompatible",
+  HardwareCompatible = 'HardwareCompatible',
 
-  HardwareIncompatible = "HardwareIncompatible",
+  HardwareIncompatible = 'HardwareIncompatible',
 }
 
 export enum ExpectedPerformance {
-  ExpectPerformanceMedium = "ExpectPerformanceMedium",
+  ExpectPerformanceMedium = 'ExpectPerformanceMedium',
 }
 
 export enum ModelFormat {
-  GGUF = "GGUF",
+  GGUF = 'GGUF',
 }
 
 export enum FreestyleTag {
-  FreeStyle = "FreeStyle",
+  FreeStyle = 'FreeStyle',
 }
 
 export enum VersionTag {
-  Version = "Version",
+  Version = 'Version',
 }
 
 export enum QuantMethodTag {
-  Default = "Default",
+  Default = 'Default',
 }
 
 export enum NumOfBit {
-  Default = "Default",
+  Default = 'Default',
 }
 
 export enum RamRequired {
-  RamDefault = "RamDefault",
+  RamDefault = 'RamDefault',
 }
 
 export enum UsecaseTag {
-  UsecaseDefault = "UsecaseDefault",
+  UsecaseDefault = 'UsecaseDefault',
 }
 
 export enum MiscellanousTag {
-  MiscellanousDefault = "MiscellanousDefault",
+  MiscellanousDefault = 'MiscellanousDefault',
 }
 
 export type TagType =
@@ -59,4 +59,4 @@ export type TagType =
   | NumOfBit
   | RamRequired
   | UsecaseTag
-  | MiscellanousTag;
+  | MiscellanousTag

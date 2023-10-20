@@ -1,35 +1,35 @@
 // @ts-nocheck
-import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
-import useSignOut from "./useSignOut";
-import { DefaultUser, User } from "@/_models/User";
+import { useSession } from 'next-auth/react'
+import { useEffect, useState } from 'react'
+import useSignOut from './useSignOut'
+import { DefaultUser, User } from '@/_models/User'
 
 export default function useGetCurrentUser() {
-  const { data: session, status } = useSession();
-  const { signOut } = useSignOut();
-  const [loading, setLoading] = useState(status === "loading");
-  const [user, setUser] = useState<User>();
+  const { data: session, status } = useSession()
+  const { signOut } = useSignOut()
+  const [loading, setLoading] = useState(status === 'loading')
+  const [user, setUser] = useState<User>()
 
   useEffect(() => {
     if (
-      status !== "loading" &&
+      status !== 'loading' &&
       session &&
-      session?.error === "RefreshAccessTokenError"
+      session?.error === 'RefreshAccessTokenError'
     ) {
-      signOut();
+      signOut()
     }
-  }, [session, status]);
+  }, [session, status])
 
   useEffect(() => {
-    if (status === "loading") {
-      setUser(undefined);
-      setLoading(true);
-      return;
+    if (status === 'loading') {
+      setUser(undefined)
+      setLoading(true)
+      return
     }
-    if (status === "unauthenticated") {
-      setUser(undefined);
-      setLoading(false);
-      return;
+    if (status === 'unauthenticated') {
+      setUser(undefined)
+      setLoading(false)
+      return
     }
 
     const tmp = {
@@ -37,11 +37,11 @@ export default function useGetCurrentUser() {
       displayName: session?.user?.name ?? DefaultUser.displayName,
       avatarUrl: session?.user?.image ?? DefaultUser.avatarUrl,
       email: session?.user?.email ?? DefaultUser.email,
-    };
+    }
 
-    setUser(tmp);
-    setLoading(false);
-  }, [status]);
+    setUser(tmp)
+    setLoading(false)
+  }, [status])
 
-  return { user, loading };
+  return { user, loading }
 }

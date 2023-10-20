@@ -1,27 +1,27 @@
-import { Fragment, useState } from "react";
-import { Menu, Transition } from "@headlessui/react";
-import Image from "next/image";
+import { Fragment, useState } from 'react'
+import { Menu, Transition } from '@headlessui/react'
+import Image from 'next/image'
 
 function classNames(...classes: any) {
-  return classes.filter(Boolean).join(" ");
+  return classes.filter(Boolean).join(' ')
 }
 
 type Props = {
-  title: string;
-  data: string[];
-};
+  title: string
+  data: string[]
+}
 
 export const DropdownsList: React.FC<Props> = ({ data, title }) => {
-  const [checked, setChecked] = useState(data[0]);
+  const [checked, setChecked] = useState(data[0])
 
   return (
     <Menu as="div" className="relative w-full text-left">
-      <div className="pt-2 gap-2 flex flex-col">
-        <h2 className="text-[#111928] text-sm">{title}</h2>
+      <div className="flex flex-col gap-2 pt-2">
+        <h2 className="text-sm text-[#111928]">{title}</h2>
         <Menu.Button className="inline-flex w-full items-center justify-between gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
           {checked}
           <Image
-            src={"icons/unicorn_angle-down.svg"}
+            src={'icons/unicorn_angle-down.svg'}
             width={12}
             height={12}
             alt=""
@@ -47,8 +47,8 @@ export const DropdownsList: React.FC<Props> = ({ data, title }) => {
                     onClick={() => setChecked(item)}
                     href="#"
                     className={classNames(
-                      active ? "bg-gray-100 text-gray-900" : "text-gray-700",
-                      "block px-4 py-2 text-sm"
+                      active ? 'bg-gray-100 text-gray-900' : 'text-gray-700',
+                      'block px-4 py-2 text-sm'
                     )}
                   >
                     {item}
@@ -60,5 +60,5 @@ export const DropdownsList: React.FC<Props> = ({ data, title }) => {
         </Menu.Items>
       </Transition>
     </Menu>
-  );
-};
+  )
+}

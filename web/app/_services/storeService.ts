@@ -1,5 +1,5 @@
-import { StoreService } from "@janhq/core";
-import { executeSerial } from "./pluginService";
+import { StoreService } from '@janhq/core'
+import { executeSerial } from './pluginService'
 
 /**
  * Create a collection on data store
@@ -9,8 +9,11 @@ import { executeSerial } from "./pluginService";
  * @returns   {Promise<void>}
  *
  */
-function createCollection(name: string, schema?: { [key: string]: any }): Promise<void> {
-  return executeSerial(StoreService.CreateCollection, { name, schema });
+function createCollection(
+  name: string,
+  schema?: { [key: string]: any }
+): Promise<void> {
+  return executeSerial(StoreService.CreateCollection, { name, schema })
 }
 
 /**
@@ -21,7 +24,7 @@ function createCollection(name: string, schema?: { [key: string]: any }): Promis
  *
  */
 function deleteCollection(name: string): Promise<void> {
-  return executeSerial(StoreService.DeleteCollection, name);
+  return executeSerial(StoreService.DeleteCollection, name)
 }
 
 /**
@@ -36,7 +39,7 @@ function insertOne(collectionName: string, value: any): Promise<any> {
   return executeSerial(StoreService.InsertOne, {
     collectionName,
     value,
-  });
+  })
 }
 
 /**
@@ -46,7 +49,7 @@ function insertOne(collectionName: string, value: any): Promise<any> {
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
 function findOne(collectionName: string, key: string): Promise<any> {
-  return executeSerial(StoreService.FindOne, { collectionName, key });
+  return executeSerial(StoreService.FindOne, { collectionName, key })
 }
 
 /**
@@ -65,7 +68,7 @@ function findMany(
     collectionName,
     selector,
     sort,
-  });
+  })
 }
 
 /**
@@ -77,12 +80,16 @@ function findMany(
  * @returns   Promise<void>
  *
  */
-function updateOne(collectionName: string, key: string, value: any): Promise<void> {
+function updateOne(
+  collectionName: string,
+  key: string,
+  value: any
+): Promise<void> {
   return executeSerial(StoreService.UpdateOne, {
     collectionName,
     key,
     value,
-  });
+  })
 }
 
 /**
@@ -92,12 +99,16 @@ function updateOne(collectionName: string, key: string, value: any): Promise<voi
  * @param value - The new value for the records.
  * @returns {Promise<void>} A promise that resolves when the records are updated.
  */
-function updateMany(collectionName: string, value: any, selector?: { [key: string]: any }): Promise<void> {
+function updateMany(
+  collectionName: string,
+  value: any,
+  selector?: { [key: string]: any }
+): Promise<void> {
   return executeSerial(StoreService.UpdateMany, {
     collectionName,
     value,
     selector,
-  });
+  })
 }
 
 /**
@@ -109,7 +120,7 @@ function updateMany(collectionName: string, value: any, selector?: { [key: strin
  *
  */
 function deleteOne(collectionName: string, key: string): Promise<void> {
-  return executeSerial(StoreService.DeleteOne, { collectionName, key });
+  return executeSerial(StoreService.DeleteOne, { collectionName, key })
 }
 
 /**
@@ -118,11 +129,14 @@ function deleteOne(collectionName: string, key: string): Promise<void> {
  * @param {{ [key: string]: any }} selector - The selector to use to get the records to delete.
  * @returns {Promise<void>} A promise that resolves when the records are deleted.
  */
-function deleteMany(collectionName: string, selector?: { [key: string]: any }): Promise<void> {
+function deleteMany(
+  collectionName: string,
+  selector?: { [key: string]: any }
+): Promise<void> {
   return executeSerial(StoreService.DeleteMany, {
     collectionName,
     selector,
-  });
+  })
 }
 
 export const store = {
@@ -135,4 +149,4 @@ export const store = {
   deleteMany,
   findOne,
   findMany,
-};
+}

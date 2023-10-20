@@ -1,15 +1,15 @@
-import Link from "next/link";
-import { Popover, Transition } from "@headlessui/react";
-import { Fragment } from "react";
+import Link from 'next/link'
+import { Popover, Transition } from '@headlessui/react'
+import { Fragment } from 'react'
 // import useGetCurrentUser from "@/_hooks/useGetCurrentUser";
-import { useSetAtom } from "jotai";
-import { showConfirmSignOutModalAtom } from "@/_helpers/atoms/Modal.atom";
+import { useSetAtom } from 'jotai'
+import { showConfirmSignOutModalAtom } from '@/_helpers/atoms/Modal.atom'
 
 export const MenuHeader: React.FC = () => {
-  const setShowConfirmSignOutModal = useSetAtom(showConfirmSignOutModalAtom);
+  const setShowConfirmSignOutModal = useSetAtom(showConfirmSignOutModalAtom)
   // const { user } = useGetCurrentUser();
 
-  return <div></div>;
+  return <div></div>
 
   // return (
   //   <Transition
@@ -50,4 +50,4 @@ export const MenuHeader: React.FC = () => {
   //     </Popover.Panel>
   //   </Transition>
   // );
-};
+}

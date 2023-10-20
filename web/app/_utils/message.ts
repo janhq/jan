@@ -1,4 +1,4 @@
-import { ChatMessage } from "../_models/ChatMessage";
+import { ChatMessage } from '../_models/ChatMessage'
 
 /**
  * Util function to merge two array of messages and remove duplicates.
@@ -12,16 +12,16 @@ export function mergeAndRemoveDuplicates(
   arr1: ChatMessage[],
   arr2: ChatMessage[]
 ): ChatMessage[] {
-  const mergedArray = arr1.concat(arr2);
-  const uniqueIdMap = new Map<string, boolean>();
-  const result: ChatMessage[] = [];
+  const mergedArray = arr1.concat(arr2)
+  const uniqueIdMap = new Map<string, boolean>()
+  const result: ChatMessage[] = []
 
   for (const message of mergedArray) {
     if (!uniqueIdMap.has(message.id)) {
-      uniqueIdMap.set(message.id, true);
-      result.push(message);
+      uniqueIdMap.set(message.id, true)
+      result.push(message)
     }
   }
 
-  return result.reverse();
+  return result.reverse()
 }

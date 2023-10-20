@@ -1,31 +1,31 @@
-import { Fragment, useEffect } from "react";
-import { Listbox, Transition } from "@headlessui/react";
-import { CheckIcon, ChevronUpDownIcon } from "@heroicons/react/20/solid";
-import { useAtom, useAtomValue } from "jotai";
-import { selectedModelAtom } from "@/_helpers/atoms/Model.atom";
-import { downloadedModelAtom } from "@/_helpers/atoms/DownloadedModel.atom";
-import { AssistantModel } from "@/_models/AssistantModel";
+import { Fragment, useEffect } from 'react'
+import { Listbox, Transition } from '@headlessui/react'
+import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid'
+import { useAtom, useAtomValue } from 'jotai'
+import { selectedModelAtom } from '@/_helpers/atoms/Model.atom'
+import { downloadedModelAtom } from '@/_helpers/atoms/DownloadedModel.atom'
+import { AssistantModel } from '@/_models/AssistantModel'
 
 function classNames(...classes: any) {
-  return classes.filter(Boolean).join(" ");
+  return classes.filter(Boolean).join(' ')
 }
 
 const SelectModels: React.FC = () => {
-  const downloadedModels = useAtomValue(downloadedModelAtom);
-  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom);
+  const downloadedModels = useAtomValue(downloadedModelAtom)
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
 
   useEffect(() => {
     if (downloadedModels && downloadedModels.length > 0) {
-      onModelSelected(downloadedModels[0]);
+      onModelSelected(downloadedModels[0])
     }
-  }, [downloadedModels]);
+  }, [downloadedModels])
 
   const onModelSelected = (model: AssistantModel) => {
-    setSelectedModel(model);
-  };
+    setSelectedModel(model)
+  }
 
   if (!selectedModel) {
-    return <div>You have not downloaded any model!</div>;
+    return <div>You have not downloaded any model!</div>
   }
 
   return (
@@ -68,8 +68,8 @@ const SelectModels: React.FC = () => {
                     key={model._id}
                     className={({ active }) =>
                       classNames(
-                        active ? "bg-blue-600 text-white" : "text-gray-900",
-                        "relative cursor-default select-none py-2 pl-3 pr-9",
+                        active ? 'bg-blue-600 text-white' : 'text-gray-900',
+                        'relative cursor-default select-none py-2 pl-3 pr-9'
                       )
                     }
                     value={model}
@@ -84,8 +84,8 @@ const SelectModels: React.FC = () => {
                           />
                           <span
                             className={classNames(
-                              selected ? "font-semibold" : "font-normal",
-                              "ml-3 block truncate",
+                              selected ? 'font-semibold' : 'font-normal',
+                              'ml-3 block truncate'
                             )}
                           >
                             {model.name}
@@ -95,8 +95,8 @@ const SelectModels: React.FC = () => {
                         {selected ? (
                           <span
                             className={classNames(
-                              active ? "text-white" : "text-blue-600",
-                              "absolute inset-y-0 right-0 flex items-center pr-4",
+                              active ? 'text-white' : 'text-blue-600',
+                              'absolute inset-y-0 right-0 flex items-center pr-4'
                             )}
                           >
                             <CheckIcon className="h-5 w-5" aria-hidden="true" />
@@ -112,7 +112,7 @@ const SelectModels: React.FC = () => {
         </div>
       )}
     </Listbox>
-  );
-};
+  )
+}
 
-export default SelectModels;
+export default SelectModels

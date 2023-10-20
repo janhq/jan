@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 const LoginButton: React.FC = () => {
   // const { signInWithKeyCloak } = useSignIn();
@@ -18,7 +18,7 @@ const LoginButton: React.FC = () => {
   //     </button>
   //   </div>
   // );
-  return <div />;
-};
+  return <div />
+}
 
-export default LoginButton;
+export default LoginButton

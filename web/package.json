@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx}\"",
     "compile": "tsc --noEmit -p . --pretty"
   },
   "dependencies": {
@@ -44,6 +45,8 @@
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.4",
     "@types/node": "20.6.5",
-    "encoding": "^0.1.13"
+    "encoding": "^0.1.13",
+    "prettier": "^3.0.3",
+    "prettier-plugin-tailwindcss": "^0.5.6"
   }
 }

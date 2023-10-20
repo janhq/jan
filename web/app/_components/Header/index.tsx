@@ -1,7 +1,7 @@
-import React from "react";
-import UserProfileDropDown from "../UserProfileDropDown";
-import LoginButton from "../LoginButton";
-import HamburgerButton from "../HamburgerButton";
+import React from 'react'
+import UserProfileDropDown from '../UserProfileDropDown'
+import LoginButton from '../LoginButton'
+import HamburgerButton from '../HamburgerButton'
 
 const Header: React.FC = () => {
   return (
@@ -13,7 +13,7 @@ const Header: React.FC = () => {
       <LoginButton />
       <UserProfileDropDown />
     </header>
-  );
-};
+  )
+}
 
-export default Header;
+export default Header

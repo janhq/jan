@@ -1,23 +1,23 @@
-import { toGigabytes } from "@/_utils/converter";
+import { toGigabytes } from '@/_utils/converter'
 
 type Props = {
-  total: number;
-  value: number;
-};
+  total: number
+  value: number
+}
 
 const ModelDownloadingButton: React.FC<Props> = ({ total, value }) => {
   return (
     <div className="flex flex-col gap-1">
-      <button className="py-2 px-3 flex gap-2 border text-xs leading-[18px] border-gray-200 rounded-lg">
+      <button className="flex gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs leading-[18px]">
         Downloading...
       </button>
-      <div className="py-0.5 px-2.5 bg-gray-200 rounded">
+      <div className="rounded bg-gray-200 px-2.5 py-0.5">
         <span className="text-xs font-medium text-gray-800">
           {toGigabytes(value)} / {toGigabytes(total)}
         </span>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default ModelDownloadingButton;
+export default ModelDownloadingButton

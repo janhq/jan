@@ -1,11 +1,11 @@
 /* eslint-disable react/display-name */
 
-"use client";
+'use client'
 
-import ExploreModelItemHeader from "../ExploreModelItemHeader";
-import ModelVersionList from "../ModelVersionList";
-import { Fragment, forwardRef, useEffect, useState } from "react";
-import SimpleTag from "../SimpleTag";
+import ExploreModelItemHeader from '../ExploreModelItemHeader'
+import ModelVersionList from '../ModelVersionList'
+import { Fragment, forwardRef, useEffect, useState } from 'react'
+import SimpleTag from '../SimpleTag'
 import {
   MiscellanousTag,
   NumOfBit,
@@ -13,37 +13,37 @@ import {
   RamRequired,
   UsecaseTag,
   VersionTag,
-} from "@/_components/SimpleTag/TagType";
-import { displayDate } from "@/_utils/datetime";
-import { Product } from "@/_models/Product";
-import useGetMostSuitableModelVersion from "@/_hooks/useGetMostSuitableModelVersion";
-import { toGigabytes } from "@/_utils/converter";
+} from '@/_components/SimpleTag/TagType'
+import { displayDate } from '@/_utils/datetime'
+import { Product } from '@/_models/Product'
+import useGetMostSuitableModelVersion from '@/_hooks/useGetMostSuitableModelVersion'
+import { toGigabytes } from '@/_utils/converter'
 
 type Props = {
-  model: Product;
-};
+  model: Product
+}
 
 const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
-  const [show, setShow] = useState(false);
+  const [show, setShow] = useState(false)
 
-  const { availableVersions } = model;
+  const { availableVersions } = model
   const { suitableModel, getMostSuitableModelVersion } =
-    useGetMostSuitableModelVersion();
+    useGetMostSuitableModelVersion()
 
   useEffect(() => {
-    getMostSuitableModelVersion(availableVersions);
-  }, [availableVersions]);
+    getMostSuitableModelVersion(availableVersions)
+  }, [availableVersions])
 
   if (!suitableModel) {
-    return null;
+    return null
   }
 
-  const { quantMethod, bits, maxRamRequired, usecase } = suitableModel;
+  const { quantMethod, bits, maxRamRequired, usecase } = suitableModel
 
   return (
     <div
       ref={ref}
-      className="flex flex-col border border-gray-200 rounded-md mb-4"
+      className="mb-4 flex flex-col rounded-md border border-gray-200"
     >
       <ExploreModelItemHeader
         suitableModel={suitableModel}
@@ -51,7 +51,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
       />
       <div className="flex flex-col px-[26px] py-[22px]">
         <div className="flex justify-between">
-          <div className="flex-1 flex flex-col gap-8">
+          <div className="flex flex-1 flex-col gap-8">
             <div className="flex flex-col gap-1">
               <div className="text-sm font-medium text-gray-500">
                 Release Date
@@ -81,7 +81,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
               </div>
             </div>
           </div>
-          <div className="flex-1 flex flex-col gap-8">
+          <div className="flex flex-1 flex-col gap-8">
             <div>
               <div className="text-sm font-medium text-gray-500">Author</div>
               <div className="text-sm font-normal text-gray-900">
@@ -107,13 +107,13 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
             </div>
           </div>
         </div>
-        <div className="flex flex-col gap-1 mt-[26px]">
+        <div className="mt-[26px] flex flex-col gap-1">
           <span className="text-sm font-medium text-gray-500">About</span>
           <span className="text-sm font-normal text-gray-500">
             {model.longDescription}
           </span>
         </div>
-        <div className="flex flex-col mt-5 gap-2">
+        <div className="mt-5 flex flex-col gap-2">
           <span className="text-sm font-medium text-gray-500">Tags</span>
           <div className="flex flex-wrap gap-2">
             {model.tags.map((tag) => (
@@ -133,19 +133,19 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
             <ModelVersionList
               model={model}
               versions={model.availableVersions}
-              recommendedVersion={suitableModel?._id ?? ""}
+              recommendedVersion={suitableModel?._id ?? ''}
             />
           )}
           <button
             onClick={() => setShow(!show)}
-            className="bg-[#FBFBFB] text-gray-500 text-sm text-left py-2 px-4 border-t border-gray-200"
+            className="border-t border-gray-200 bg-[#FBFBFB] px-4 py-2 text-left text-sm text-gray-500"
           >
-            {!show ? "+ Show Available Versions" : "- Collapse"}
+            {!show ? '+ Show Available Versions' : '- Collapse'}
           </button>
         </Fragment>
       )}
     </div>
-  );
-});
+  )
+})
 
-export default ExploreModelItem;
+export default ExploreModelItem

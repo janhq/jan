@@ -1,16 +1,16 @@
-import DownloadModelContent from "../DownloadModelContent";
-import ModelDownloadButton from "../ModelDownloadButton";
-import ModelDownloadingButton from "../ModelDownloadingButton";
-import { useAtomValue } from "jotai";
-import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
-import { AssistantModel } from "@/_models/AssistantModel";
+import DownloadModelContent from '../DownloadModelContent'
+import ModelDownloadButton from '../ModelDownloadButton'
+import ModelDownloadingButton from '../ModelDownloadingButton'
+import { useAtomValue } from 'jotai'
+import { modelDownloadStateAtom } from '@/_helpers/atoms/DownloadState.atom'
+import { AssistantModel } from '@/_models/AssistantModel'
 
 type Props = {
-  model: AssistantModel;
-  isRecommend: boolean;
-  required?: string;
-  onDownloadClick?: (model: AssistantModel) => void;
-};
+  model: AssistantModel
+  isRecommend: boolean
+  required?: string
+  onDownloadClick?: (model: AssistantModel) => void
+}
 
 const AvailableModelCard: React.FC<Props> = ({
   model,
@@ -18,36 +18,36 @@ const AvailableModelCard: React.FC<Props> = ({
   required,
   onDownloadClick,
 }) => {
-  const downloadState = useAtomValue(modelDownloadStateAtom);
+  const downloadState = useAtomValue(modelDownloadStateAtom)
 
-  let isDownloading = false;
-  let total = 0;
-  let transferred = 0;
+  let isDownloading = false
+  let total = 0
+  let transferred = 0
 
   if (model._id && downloadState[model._id]) {
     isDownloading =
       downloadState[model._id].error == null &&
-      downloadState[model._id].percent < 1;
+      downloadState[model._id].percent < 1
 
     if (isDownloading) {
-      total = downloadState[model._id].size.total;
-      transferred = downloadState[model._id].size.transferred;
+      total = downloadState[model._id].size.total
+      transferred = downloadState[model._id].size.transferred
     }
   }
 
   const downloadButton = isDownloading ? (
-    <div className="w-1/5 flex items-start justify-end">
+    <div className="flex w-1/5 items-start justify-end">
       <ModelDownloadingButton total={total} value={transferred} />
     </div>
   ) : (
-    <div className="w-1/5 flex items-center justify-end">
+    <div className="flex w-1/5 items-center justify-end">
       <ModelDownloadButton callback={() => onDownloadClick?.(model)} />
     </div>
-  );
+  )
 
   return (
-    <div className="border rounded-lg border-gray-200">
-      <div className="flex justify-between py-4 px-3 gap-2.5">
+    <div className="rounded-lg border border-gray-200">
+      <div className="flex justify-between gap-2.5 px-3 py-4">
         <DownloadModelContent
           required={required}
           author={model.author}
@@ -60,7 +60,7 @@ const AvailableModelCard: React.FC<Props> = ({
       </div>
       {/* <ViewModelDetailButton callback={handleViewDetails} /> */}
     </div>
-  );
-};
+  )
+}
 
-export default AvailableModelCard;
+export default AvailableModelCard

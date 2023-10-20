@@ -1,6 +1,6 @@
 type Props = {
-  name: string;
-};
+  name: string
+}
 
 const SimpleCheckbox: React.FC<Props> = ({ name }) => (
   <div className="relative flex items-center gap-[11px]">
@@ -17,6 +17,6 @@ const SimpleCheckbox: React.FC<Props> = ({ name }) => (
       <label htmlFor="offers">{name}</label>
     </div>
   </div>
-);
+)
 
-export default SimpleCheckbox;
+export default SimpleCheckbox

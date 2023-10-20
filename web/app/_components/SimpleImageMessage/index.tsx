@@ -1,18 +1,18 @@
-import Image from "next/image";
-import JanImage from "../JanImage";
-import { displayDate } from "@/_utils/datetime";
-import Link from "next/link";
+import Image from 'next/image'
+import JanImage from '../JanImage'
+import { displayDate } from '@/_utils/datetime'
+import Link from 'next/link'
 
 type Props = {
-  avatarUrl?: string;
-  senderName: string;
-  text?: string;
-  createdAt: number;
-  imageUrls: string[];
-};
+  avatarUrl?: string
+  senderName: string
+  text?: string
+  createdAt: number
+  imageUrls: string[]
+}
 
 const SimpleImageMessage: React.FC<Props> = ({
-  avatarUrl = "",
+  avatarUrl = '',
   senderName,
   imageUrls,
   text,
@@ -29,36 +29,36 @@ const SimpleImageMessage: React.FC<Props> = ({
         alt=""
       />
       <div className="flex flex-col gap-1">
-        <div className="flex gap-1 justify-start items-baseline">
-          <div className="text-[#1B1B1B] text-sm font-extrabold leading-[15.2px]">
+        <div className="flex items-baseline justify-start gap-1">
+          <div className="text-sm font-extrabold leading-[15.2px] text-[#1B1B1B]">
             {senderName}
           </div>
-          <div className="text-xs leading-[13.2px] font-medium text-gray-400 ml-2">
+          <div className="ml-2 text-xs font-medium leading-[13.2px] text-gray-400">
             {displayDate(createdAt)}
           </div>
         </div>
-        <div className="flex items-center gap-3 flex-col">
+        <div className="flex flex-col items-center gap-3">
           <JanImage
             imageUrl={imageUrls[0]}
-            className="w-72 aspect-square rounded-lg"
+            className="aspect-square w-72 rounded-lg"
           />
-          <div className="flex flex-row justify-start items-start w-full gap-2">
+          <div className="flex w-full flex-row items-start justify-start gap-2">
             <Link
-              href={imageUrls[0] || "#"}
+              href={imageUrls[0] || '#'}
               target="_blank_"
-              className="flex gap-1 items-center px-2 py-1 bg-[#F3F4F6] rounded-xl"
+              className="flex items-center gap-1 rounded-xl bg-[#F3F4F6] px-2 py-1"
             >
               <Image src="icons/download.svg" width={16} height={16} alt="" />
-              <span className="leading-[20px] text-sm text-[#111928]">
+              <span className="text-sm leading-[20px] text-[#111928]">
                 Download
               </span>
             </Link>
             <button
-              className="flex gap-1 items-center px-2 py-1 bg-[#F3F4F6] rounded-xl"
+              className="flex items-center gap-1 rounded-xl bg-[#F3F4F6] px-2 py-1"
               // onClick={() => sendChatMessage()}
             >
               <Image src="icons/refresh.svg" width={16} height={16} alt="" />
-              <span className="leading-[20px] text-sm text-[#111928]">
+              <span className="text-sm leading-[20px] text-[#111928]">
                 Re-generate
               </span>
             </button>
@@ -66,7 +66,7 @@ const SimpleImageMessage: React.FC<Props> = ({
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default SimpleImageMessage;
+export default SimpleImageMessage

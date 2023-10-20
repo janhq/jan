@@ -1,27 +1,27 @@
-import React from "react";
-import SidebarMenuItem from "../SidebarMenuItem";
-import { MainViewState } from "@/_helpers/atoms/MainView.atom";
+import React from 'react'
+import SidebarMenuItem from '../SidebarMenuItem'
+import { MainViewState } from '@/_helpers/atoms/MainView.atom'
 
 const menu = [
   {
-    name: "Explore Models",
-    icon: "Search_gray",
+    name: 'Explore Models',
+    icon: 'Search_gray',
     state: MainViewState.ExploreModel,
   },
   {
-    name: "My Models",
-    icon: "ViewGrid",
+    name: 'My Models',
+    icon: 'ViewGrid',
     state: MainViewState.MyModel,
   },
   {
-    name: "Settings",
-    icon: "Cog",
+    name: 'Settings',
+    icon: 'Cog',
     state: MainViewState.Setting,
   },
-];
+]
 
 const SidebarMenu: React.FC = () => (
-  <ul role="list" className="mx-1 mt-2 space-y-1 mb-2">
+  <ul role="list" className="mx-1 mb-2 mt-2 space-y-1">
     {menu.map((item) => (
       <SidebarMenuItem
         title={item.name}
@@ -31,6 +31,6 @@ const SidebarMenu: React.FC = () => (
       />
     ))}
   </ul>
-);
+)
 
-export default React.memo(SidebarMenu);
+export default React.memo(SidebarMenu)

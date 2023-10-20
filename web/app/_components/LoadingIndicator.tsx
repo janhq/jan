@@ -1,5 +1,4 @@
 const LoadingIndicator = () => {
-
   return (
     <div className="typingIndicatorContainer">
       <div className="typingIndicatorBubble">
@@ -8,7 +7,7 @@ const LoadingIndicator = () => {
         <div className="typingIndicatorBubbleDot"></div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default LoadingIndicator;
+export default LoadingIndicator

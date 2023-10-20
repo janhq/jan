@@ -1,13 +1,13 @@
-import { AssistantModel } from "@/_models/AssistantModel";
-import DownloadModelContent from "../DownloadModelContent";
+import { AssistantModel } from '@/_models/AssistantModel'
+import DownloadModelContent from '../DownloadModelContent'
 
 type Props = {
-  model: AssistantModel;
-  isRecommend: boolean;
-  required?: string;
-  transferred?: number;
-  onDeleteClick?: (model: AssistantModel) => void;
-};
+  model: AssistantModel
+  isRecommend: boolean
+  required?: string
+  transferred?: number
+  onDeleteClick?: (model: AssistantModel) => void
+}
 
 const DownloadedModelCard: React.FC<Props> = ({
   model,
@@ -15,8 +15,8 @@ const DownloadedModelCard: React.FC<Props> = ({
   required,
   onDeleteClick,
 }) => (
-  <div className="border rounded-lg border-gray-200">
-    <div className="flex justify-between py-4 px-3 gap-2.5">
+  <div className="rounded-lg border border-gray-200">
+    <div className="flex justify-between gap-2.5 px-3 py-4">
       <DownloadModelContent
         required={required}
         author={model.author}
@@ -30,6 +30,6 @@ const DownloadedModelCard: React.FC<Props> = ({
       </div>
     </div>
   </div>
-);
+)
 
-export default DownloadedModelCard;
+export default DownloadedModelCard

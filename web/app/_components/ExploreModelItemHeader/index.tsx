@@ -1,72 +1,72 @@
-import SimpleTag from "../SimpleTag";
-import PrimaryButton from "../PrimaryButton";
-import { formatDownloadPercentage, toGigabytes } from "@/_utils/converter";
-import SecondaryButton from "../SecondaryButton";
-import { Product } from "@/_models/Product";
-import { useCallback, useEffect, useMemo } from "react";
-import { ModelVersion } from "@/_models/ModelVersion";
-import useGetPerformanceTag from "@/_hooks/useGetPerformanceTag";
-import useDownloadModel from "@/_hooks/useDownloadModel";
-import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels";
-import { modelDownloadStateAtom } from "@/_helpers/atoms/DownloadState.atom";
-import { atom, useAtomValue, useSetAtom } from "jotai";
+import SimpleTag from '../SimpleTag'
+import PrimaryButton from '../PrimaryButton'
+import { formatDownloadPercentage, toGigabytes } from '@/_utils/converter'
+import SecondaryButton from '../SecondaryButton'
+import { Product } from '@/_models/Product'
+import { useCallback, useEffect, useMemo } from 'react'
+import { ModelVersion } from '@/_models/ModelVersion'
+import useGetPerformanceTag from '@/_hooks/useGetPerformanceTag'
+import useDownloadModel from '@/_hooks/useDownloadModel'
+import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
+import { modelDownloadStateAtom } from '@/_helpers/atoms/DownloadState.atom'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 import {
   MainViewState,
   setMainViewStateAtom,
-} from "@/_helpers/atoms/MainView.atom";
+} from '@/_helpers/atoms/MainView.atom'
 
 type Props = {
-  suitableModel: ModelVersion;
-  exploreModel: Product;
-};
+  suitableModel: ModelVersion
+  exploreModel: Product
+}
 
 const ExploreModelItemHeader: React.FC<Props> = ({
   suitableModel,
   exploreModel,
 }) => {
-  const { downloadModel } = useDownloadModel();
-  const { downloadedModels } = useGetDownloadedModels();
+  const { downloadModel } = useDownloadModel()
+  const { downloadedModels } = useGetDownloadedModels()
   const { performanceTag, title, getPerformanceForModel } =
-    useGetPerformanceTag();
+    useGetPerformanceTag()
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[suitableModel._id]),
     [suitableModel._id]
-  );
-  const downloadState = useAtomValue(downloadAtom);
-  const setMainViewState = useSetAtom(setMainViewStateAtom);
+  )
+  const downloadState = useAtomValue(downloadAtom)
+  const setMainViewState = useSetAtom(setMainViewStateAtom)
 
   useEffect(() => {
-    getPerformanceForModel(suitableModel);
-  }, [suitableModel]);
+    getPerformanceForModel(suitableModel)
+  }, [suitableModel])
 
   const onDownloadClick = useCallback(() => {
-    downloadModel(exploreModel, suitableModel);
-  }, [exploreModel, suitableModel]);
+    downloadModel(exploreModel, suitableModel)
+  }, [exploreModel, suitableModel])
 
   const isDownloaded =
-    downloadedModels.find((model) => model._id === suitableModel._id) != null;
+    downloadedModels.find((model) => model._id === suitableModel._id) != null
 
   let downloadButton = (
     <PrimaryButton
       title={
         suitableModel.size
           ? `Download (${toGigabytes(suitableModel.size)})`
-          : "Download"
+          : 'Download'
       }
       onClick={() => onDownloadClick()}
     />
-  );
+  )
 
   if (isDownloaded) {
     downloadButton = (
       <PrimaryButton
         title="View Downloaded Model"
         onClick={() => {
-          setMainViewState(MainViewState.MyModel);
+          setMainViewState(MainViewState.MyModel)
         }}
         className="bg-green-500 hover:bg-green-400"
       />
-    );
+    )
   }
 
   if (downloadState != null) {
@@ -78,11 +78,11 @@ const ExploreModelItemHeader: React.FC<Props> = ({
           downloadState.percent
         )})`}
       />
-    );
+    )
   }
 
   return (
-    <div className="flex items-center justify-between p-4 border-b border-gray-200">
+    <div className="flex items-center justify-between border-b border-gray-200 p-4">
       <div className="flex items-center gap-2">
         <span>{exploreModel.name}</span>
         {performanceTag && (
@@ -91,7 +91,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
       </div>
       {downloadButton}
     </div>
-  );
-};
+  )
+}
 
-export default ExploreModelItemHeader;
+export default ExploreModelItemHeader

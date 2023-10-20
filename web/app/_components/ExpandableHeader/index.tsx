@@ -1,14 +1,14 @@
-import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
+import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline'
 
 type Props = {
-  title: string;
-  expanded: boolean;
-  onClick: () => void;
-};
+  title: string
+  expanded: boolean
+  onClick: () => void
+}
 
 const ExpandableHeader: React.FC<Props> = ({ title, expanded, onClick }) => (
   <button onClick={onClick} className="flex items-center justify-between px-2">
-    <h2 className="text-gray-400 font-bold text-xs leading-[12px] pl-1">
+    <h2 className="pl-1 text-xs font-bold leading-[12px] text-gray-400">
       {title}
     </h2>
     <div className="mr-2">
@@ -19,6 +19,6 @@ const ExpandableHeader: React.FC<Props> = ({ title, expanded, onClick }) => (
       )}
     </div>
   </button>
-);
+)
 
-export default ExpandableHeader;
+export default ExpandableHeader

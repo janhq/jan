@@ -1,18 +1,18 @@
-import { showConfirmDeleteConversationModalAtom } from "@/_helpers/atoms/Modal.atom";
-import useDeleteConversation from "@/_hooks/useDeleteConversation";
-import { Dialog, Transition } from "@headlessui/react";
-import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import { useAtom } from "jotai";
-import React, { Fragment, useRef } from "react";
+import { showConfirmDeleteConversationModalAtom } from '@/_helpers/atoms/Modal.atom'
+import useDeleteConversation from '@/_hooks/useDeleteConversation'
+import { Dialog, Transition } from '@headlessui/react'
+import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
+import { useAtom } from 'jotai'
+import React, { Fragment, useRef } from 'react'
 
 const ConfirmDeleteConversationModal: React.FC = () => {
-  const [show, setShow] = useAtom(showConfirmDeleteConversationModalAtom);
-  const cancelButtonRef = useRef(null);
-  const { deleteConvo } = useDeleteConversation();
+  const [show, setShow] = useAtom(showConfirmDeleteConversationModalAtom)
+  const cancelButtonRef = useRef(null)
+  const { deleteConvo } = useDeleteConversation()
 
   const onConfirmDelete = () => {
-    deleteConvo().then(() => setShow(false));
-  };
+    deleteConvo().then(() => setShow(false))
+  }
 
   return (
     <Transition.Root show={show} as={Fragment}>
@@ -92,7 +92,7 @@ const ConfirmDeleteConversationModal: React.FC = () => {
         </div>
       </Dialog>
     </Transition.Root>
-  );
-};
+  )
+}
 
-export default ConfirmDeleteConversationModal;
+export default ConfirmDeleteConversationModal

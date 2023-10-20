@@ -1,25 +1,25 @@
-import { Metadata } from "next";
-import Image from "next/image";
-import Link from "next/link";
-import React from "react";
+import { Metadata } from 'next'
+import Image from 'next/image'
+import Link from 'next/link'
+import React from 'react'
 
 export const metadata: Metadata = {
-  title: "Privacy - Jan.ai",
-  description: "Privacy",
-};
+  title: 'Privacy - Jan.ai',
+  description: 'Privacy',
+}
 
 const Page: React.FC = () => {
   return (
-    <div className="relative flex flex-col text-black items-center h-screen overflow-y-scroll scroll pt-2">
-      <div className="absolute top-3 left-5">
+    <div className="scroll relative flex h-screen flex-col items-center overflow-y-scroll pt-2 text-black">
+      <div className="absolute left-5 top-3">
         <Link href="/" className="flex flex-row gap-2">
-          <div className="flex gap-0.5 items-center">
-            <Image src={"icons/app_icon.svg"} width={28} height={28} alt="" />
-            <Image src={"icons/Jan.svg"} width={27} height={12} alt="" />
+          <div className="flex items-center gap-0.5">
+            <Image src={'icons/app_icon.svg'} width={28} height={28} alt="" />
+            <Image src={'icons/Jan.svg'} width={27} height={12} alt="" />
           </div>
         </Link>
       </div>
-      <article className="prose lg:prose-xl w-full my-20">
+      <article className="prose my-20 w-full lg:prose-xl">
         <h1>Privacy Policy </h1>
         <p>
           Jan is committed to protecting your privacy and ensuring that your
@@ -69,6 +69,6 @@ const Page: React.FC = () => {
         </p>
       </article>
     </div>
-  );
-};
-export default Page;
+  )
+}
+export default Page

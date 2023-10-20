@@ -1,5 +1,5 @@
-import React from "react";
-import { ArrowLeftIcon } from "@heroicons/react/24/outline";
+import React from 'react'
+import { ArrowLeftIcon } from '@heroicons/react/24/outline'
 
 const HeaderBackButton: React.FC = () => {
   return (
@@ -7,7 +7,7 @@ const HeaderBackButton: React.FC = () => {
       <ArrowLeftIcon width={24} height={24} />
       <span className="text-sm">Back</span>
     </button>
-  );
-};
+  )
+}
 
-export default React.memo(HeaderBackButton);
+export default React.memo(HeaderBackButton)
