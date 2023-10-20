@@ -17,6 +17,8 @@ jobs:
   build:
     runs-on: mac-silicon
     environment: production
+    outputs:
+      branch_name: ${{ steps.commit_and_tag.outputs.branch_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,7 +27,7 @@ jobs:
 
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
-
+    
       - name: Check Path Change
         run: |
           git config --global user.email "service@jan.ai"
@@ -84,8 +86,11 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: "Commit new version to main and create tag"
+        id: commit_and_tag
         if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
         run: |
+          rm -rf /tmp/plugin-catalog
+          git clone https://github.com/janhq/plugin-catalog.git /tmp/plugin-catalog
           for dir in $(cat /tmp/change_dir.txt)
           do
             echo "$dir"
@@ -97,4 +102,26 @@ jobs:
             git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:main
             git tag -a $dir-$version -m "${GITHUB_REPOSITORY}: Update tag build $version for $dir"
             git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin $dir-$version
+            plugin_name=$(jq -r '.name | sub("@janhq/"; "")' plugins/$dir/package.json)
+            cp plugins/$dir/package.json /tmp/plugin-catalog/${plugin_name}.json
           done
+          cd /tmp/plugin-catalog
+          BRANCH_NAME="update-package-$(date +'%Y%m%d%H%M%S')"
+          git checkout -b $BRANCH_NAME
+          git add .
+          git commit -m "Update plugin catalog"
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin $BRANCH_NAME
+          cd /tmp && rm -rf /tmp/plugin-catalog
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          echo "::set-output name=branch_name::$BRANCH_NAME"
+
+  pull_request:
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
+    needs: build
+    steps:
+      - run: |
+          gh pr create --title "Update plugin catalog" --body "Update plugin catalog" --base main --head ${{ needs.build.outputs.branch_name }} --repo janhq/plugin-catalog --reviewer louis-jan,hiento09
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_SERVICE_ACCOUNT }}
