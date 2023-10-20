@@ -15,7 +15,7 @@ on:
       - "!plugins/*/package.json"
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: mac-silicon
     environment: production
     steps:
       - uses: actions/checkout@v4

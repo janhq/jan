@@ -7,9 +7,7 @@
   "module": "dist/cjs/module.js",
   "author": "Jan <service@jan.ai>",
   "license": "MIT",
-  "activationPoints": [
-    "init"
-  ],
+  "activationPoints": ["init"],
   "scripts": {
     "build": "tsc -b ./config/tsconfig.esm.json && tsc -b ./config/tsconfig.cjs.json && webpack --config webpack.config.js",
     "postinstall": "rimraf ./data-plugin*.tgz && npm run build",
