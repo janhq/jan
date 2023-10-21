@@ -19,10 +19,80 @@ import { execute } from '../../../electron/core/plugin-manager/execution/extensi
 import { twMerge } from 'tailwind-merge'
 // import LoadingIndicator from './LoadingIndicator'
 
+import { formatPluginsName } from '@utils/converter'
+
+import {
+  plugins,
+  extensionPoints,
+} from '@/../../electron/core/plugin-manager/execution/index'
+
 const staticMenu = ['Appearance', 'Core Plugins']
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')
+
+  const [search, setSearch] = useState<string>('')
+
+  const [preferenceItems, setPreferenceItems] = useState<any[]>([])
+  const [preferenceValues, setPreferenceValues] = useState<any[]>([])
+  const [isTestAvailable, setIsTestAvailable] = useState(false)
+  const [fileName, setFileName] = useState('')
+  const [pluginCatalog, setPluginCatalog] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const experimentRef = useRef(null)
+  const preferenceRef = useRef(null)
+
+  /**
+   * Fetches the active plugins and their preferences from the `plugins` and `preferences` modules.
+   * If the `experimentComponent` extension point is available, it executes the extension point and
+   * appends the returned components to the `experimentRef` element.
+   * If the `PluginPreferences` extension point is available, it executes the extension point and
+   * fetches the preferences for each plugin using the `preferences.get` function.
+   */
+  useEffect(() => {
+    const getActivePluginPreferences = async () => {
+      if (extensionPoints.get('PluginPreferences')) {
+        const data = await Promise.all(
+          extensionPoints.execute('PluginPreferences')
+        )
+        setPreferenceItems(Array.isArray(data) ? data : [])
+        Promise.all(
+          (Array.isArray(data) ? data : []).map((e) =>
+            preferences
+              .get(e.pluginName, e.preferenceKey)
+              .then((k) => ({ key: e.preferenceKey, value: k }))
+          )
+        ).then((data) => {
+          setPreferenceValues(data)
+        })
+      }
+    }
+    getActivePluginPreferences()
+  }, [])
+
+  const preferencePlugins = preferenceItems
+    .map((x) => x.pluginName)
+    .filter((x, i) => {
+      return preferenceItems.map((x) => x.pluginName).indexOf(x) === i
+    })
+
+  // console.log(preferenceValues, 'preferencesValues')
+
+  /**
+   * Notifies plugins of a preference update by executing the `PluginService.OnPreferencesUpdate` event.
+   * If a timeout is already set, it is cleared before setting a new timeout to execute the event.
+   */
+  let timeout: any | undefined = undefined
+  function notifyPreferenceUpdate() {
+    if (timeout) {
+      clearTimeout(timeout)
+    }
+    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100)
+  }
+
+  const [activePreferencePlugin, setActivePreferencePlugin] = useState(
+    preferencePlugins[0]
+  )
 
   const handleShowOptions = (menu: string) => {
     switch (menu) {
@@ -50,7 +120,10 @@ const SettingsScreen = () => {
                 return (
                   <div key={i} className="relative block py-2">
                     <button
-                      onClick={() => setActiveStaticMenu(menu)}
+                      onClick={() => {
+                        setActiveStaticMenu(menu)
+                        setActivePreferencePlugin('')
+                      }}
                       className="block w-full text-left"
                     >
                       <p className={twMerge(isActive && 'relative z-10')}>
@@ -69,10 +142,41 @@ const SettingsScreen = () => {
             </div>
           </div>
 
-          <div className="mt-4 flex-shrink-0">
+          <div className="mt-5 flex-shrink-0">
             <label className="font-bold uppercase text-gray-500">
               Core plugins
             </label>
+            <div className="mt-1 font-semibold">
+              {preferencePlugins.map((menu, i) => {
+                const isActive = activePreferencePlugin === menu
+                return (
+                  <div key={i} className="relative block py-2">
+                    <button
+                      onClick={() => {
+                        setActivePreferencePlugin(menu)
+                        setActiveStaticMenu('')
+                      }}
+                      className="block w-full text-left"
+                    >
+                      <p
+                        className={twMerge(
+                          'capitalize',
+                          isActive && 'relative z-10'
+                        )}
+                      >
+                        {formatPluginsName(String(menu))}
+                      </p>
+                    </button>
+                    {isActive ? (
+                      <m.div
+                        className="absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md bg-blue-300/50 p-2 dark:bg-gray-800/30"
+                        layoutId="active-static-menu"
+                      />
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>

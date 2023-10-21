@@ -25,3 +25,7 @@ export const formatTwoDigits = (input: number) => {
 
   return input.toFixed(2)
 }
+
+export const formatPluginsName = (input: string) => {
+  return input.replace('@janhq/', '').replaceAll('-', ' ')
+}

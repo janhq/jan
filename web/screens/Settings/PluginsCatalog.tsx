@@ -6,6 +6,8 @@ import { PluginService, preferences } from '@janhq/core'
 import { execute } from '../../../electron/core/plugin-manager/execution/extension-manager'
 import { Switch } from '@uikit'
 
+import { formatPluginsName } from '@utils/converter'
+
 import {
   plugins,
   extensionPoints,
@@ -160,9 +162,10 @@ const PluginCatalog = () => {
     }
   }
 
-  console.log(pluginCatalog, 'all')
-  console.log(activePlugins, 'active')
-  console.log(preferenceItems, 'preferences')
+  // console.log(pluginCatalog, 'all')
+  // console.log(activePlugins, 'active')
+  // console.log(preferenceItems, 'preferences')
+  // console.log(preferenceValues, 'preferences')
 
   return (
     <div className="block w-full">
@@ -175,7 +178,9 @@ const PluginCatalog = () => {
           >
             <div className="w-4/5 flex-shrink-0 space-y-1.5">
               {/* <img src={item.icon} alt="" /> */}
-              <h6 className="text-sm font-semibold">{item.name}</h6>
+              <h6 className="text-sm font-semibold capitalize">
+                {formatPluginsName(item.name)}
+              </h6>
               <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
                 {item.description}
               </p>
