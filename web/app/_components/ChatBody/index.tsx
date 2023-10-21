@@ -2,12 +2,12 @@
 
 import React, { useCallback, useRef, useState, useEffect } from 'react'
 import ChatItem from '../ChatItem'
-import { ChatMessage } from '@/_models/ChatMessage'
-import useChatMessages from '@/_hooks/useChatMessages'
+import { ChatMessage } from '@models/ChatMessage'
+import useChatMessages from '@hooks/useChatMessages'
 import { useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
-import { getActiveConvoIdAtom } from '@/_helpers/atoms/Conversation.atom'
-import { chatMessages } from '@/_helpers/atoms/ChatMessage.atom'
+import { getActiveConvoIdAtom } from '@helpers/atoms/Conversation.atom'
+import { chatMessages } from '@helpers/atoms/ChatMessage.atom'
 
 const ChatBody: React.FC = () => {
   const activeConversationId = useAtomValue(getActiveConvoIdAtom) ?? ''

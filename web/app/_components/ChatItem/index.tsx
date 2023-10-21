@@ -1,7 +1,7 @@
 /* eslint-disable react/display-name */
 import React, { forwardRef } from 'react'
 import renderChatMessage from '../ChatBody/renderChatMessage'
-import { ChatMessage } from '@/_models/ChatMessage'
+import { ChatMessage } from '@models/ChatMessage'
 
 type Props = {
   message: ChatMessage

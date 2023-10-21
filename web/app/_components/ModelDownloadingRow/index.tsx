@@ -1,10 +1,10 @@
 import React from 'react'
-import { DownloadState } from '@/_models/DownloadState'
+import { DownloadState } from '@models/DownloadState'
 import {
   formatDownloadPercentage,
   formatDownloadSpeed,
   toGigabytes,
-} from '@/_utils/converter'
+} from '@utils/converter'
 
 type Props = {
   downloadState: DownloadState

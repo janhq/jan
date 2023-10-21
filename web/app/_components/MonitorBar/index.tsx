@@ -1,13 +1,13 @@
 import ProgressBar from '../ProgressBar'
 import SystemItem from '../SystemItem'
 import { useAtomValue } from 'jotai'
-import { appDownloadProgress } from '@/_helpers/JotaiWrapper'
-import useGetAppVersion from '@/_hooks/useGetAppVersion'
-import useGetSystemResources from '@/_hooks/useGetSystemResources'
-import { modelDownloadStateAtom } from '@/_helpers/atoms/DownloadState.atom'
-import { DownloadState } from '@/_models/DownloadState'
-import { formatDownloadPercentage } from '@/_utils/converter'
-import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
+import { appDownloadProgress } from '@helpers/JotaiWrapper'
+import useGetAppVersion from '@hooks/useGetAppVersion'
+import useGetSystemResources from '@hooks/useGetSystemResources'
+import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
+import { DownloadState } from '@models/DownloadState'
+import { formatDownloadPercentage } from '@utils/converter'
+import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 
 const MonitorBar: React.FC = () => {
   const progress = useAtomValue(appDownloadProgress)
@@ -22,7 +22,7 @@ const MonitorBar: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-row items-center justify-between border-t border-gray-200">
+    <div className="flex flex-row items-center justify-between">
       {progress && progress >= 0 ? (
         <ProgressBar total={100} used={progress} />
       ) : null}
@@ -40,7 +40,7 @@ const MonitorBar: React.FC = () => {
         {activeModel && (
           <SystemItem name={`Active model: ${activeModel.name}`} value={''} />
         )}
-        <span className="text-sm text-gray-900">v{version}</span>
+        <span className="text-xs">v{version}</span>
       </div>
     </div>
   )

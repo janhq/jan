@@ -3,7 +3,7 @@ import { Dialog } from '@headlessui/react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import Image from 'next/image'
 import { useAtom } from 'jotai'
-import { showingMobilePaneAtom } from '@/_helpers/atoms/Modal.atom'
+import { showingMobilePaneAtom } from '@helpers/atoms/Modal.atom'
 
 const MobileMenuPane: React.FC = () => {
   const [show, setShow] = useAtom(showingMobilePaneAtom)

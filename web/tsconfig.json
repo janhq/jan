@@ -21,7 +21,15 @@
       }
     ],
     "paths": {
-      "@/*": ["./app/*"]
+      "@/*": ["./app/*"],
+      "@uikit": ["./uikit"],
+      "@services/*": ["./services/*"],
+      "@helpers/*": ["./helpers/*"],
+      "@utils/*": ["./utils/*"],
+      "@models/*": ["./models/*"],
+      "@hooks/*": ["./hooks/*"],
+      "@containers/*": ["./containers/*"],
+      "@screens/*": ["./screens/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

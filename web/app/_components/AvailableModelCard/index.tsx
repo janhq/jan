@@ -2,8 +2,8 @@ import DownloadModelContent from '../DownloadModelContent'
 import ModelDownloadButton from '../ModelDownloadButton'
 import ModelDownloadingButton from '../ModelDownloadingButton'
 import { useAtomValue } from 'jotai'
-import { modelDownloadStateAtom } from '@/_helpers/atoms/DownloadState.atom'
-import { AssistantModel } from '@/_models/AssistantModel'
+import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
+import { AssistantModel } from '@models/AssistantModel'
 
 type Props = {
   model: AssistantModel

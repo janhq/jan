@@ -2,10 +2,10 @@ import HistoryItem from '../HistoryItem'
 import { useEffect, useState } from 'react'
 import ExpandableHeader from '../ExpandableHeader'
 import { useAtomValue } from 'jotai'
-import { searchAtom } from '@/_helpers/JotaiWrapper'
-import useGetUserConversations from '@/_hooks/useGetUserConversations'
+import { searchAtom } from '@helpers/JotaiWrapper'
+import useGetUserConversations from '@hooks/useGetUserConversations'
 import SidebarEmptyHistory from '../SidebarEmptyHistory'
-import { userConversationsAtom } from '@/_helpers/atoms/Conversation.atom'
+import { userConversationsAtom } from '@helpers/atoms/Conversation.atom'
 
 const HistoryList: React.FC = () => {
   const conversations = useAtomValue(userConversationsAtom)

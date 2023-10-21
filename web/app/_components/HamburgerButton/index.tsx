@@ -1,6 +1,6 @@
 'use client'
 
-import { showingMobilePaneAtom } from '@/_helpers/atoms/Modal.atom'
+import { showingMobilePaneAtom } from '@helpers/atoms/Modal.atom'
 import { Bars3Icon } from '@heroicons/react/24/outline'
 import { useSetAtom } from 'jotai'
 import React from 'react'

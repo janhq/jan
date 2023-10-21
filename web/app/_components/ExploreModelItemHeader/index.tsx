@@ -1,19 +1,19 @@
 import SimpleTag from '../SimpleTag'
 import PrimaryButton from '../PrimaryButton'
-import { formatDownloadPercentage, toGigabytes } from '@/_utils/converter'
+import { formatDownloadPercentage, toGigabytes } from '@utils/converter'
 import SecondaryButton from '../SecondaryButton'
-import { Product } from '@/_models/Product'
+import { Product } from '@models/Product'
 import { useCallback, useEffect, useMemo } from 'react'
-import { ModelVersion } from '@/_models/ModelVersion'
-import useGetPerformanceTag from '@/_hooks/useGetPerformanceTag'
-import useDownloadModel from '@/_hooks/useDownloadModel'
-import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
-import { modelDownloadStateAtom } from '@/_helpers/atoms/DownloadState.atom'
+import { ModelVersion } from '@models/ModelVersion'
+import useGetPerformanceTag from '@hooks/useGetPerformanceTag'
+import useDownloadModel from '@hooks/useDownloadModel'
+import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
+import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 import {
   MainViewState,
   setMainViewStateAtom,
-} from '@/_helpers/atoms/MainView.atom'
+} from '@helpers/atoms/MainView.atom'
 
 type Props = {
   suitableModel: ModelVersion

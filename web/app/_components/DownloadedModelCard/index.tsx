@@ -1,4 +1,4 @@
-import { AssistantModel } from '@/_models/AssistantModel'
+import { AssistantModel } from '@models/AssistantModel'
 import DownloadModelContent from '../DownloadModelContent'
 
 type Props = {

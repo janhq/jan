@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react'
 import ExploreModelItem from '../ExploreModelItem'
-import { getConfiguredModels } from '@/_hooks/useGetDownloadedModels'
-import useGetConfiguredModels from '@/_hooks/useGetConfiguredModels'
+import { getConfiguredModels } from '@hooks/useGetDownloadedModels'
+import useGetConfiguredModels from '@hooks/useGetConfiguredModels'
 import { Waveform } from '@uiball/loaders'
 
 const ExploreModelList: React.FC = () => {

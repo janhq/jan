@@ -1,4 +1,4 @@
-import { modelSearchAtom } from '@/_helpers/JotaiWrapper'
+import { modelSearchAtom } from '@helpers/JotaiWrapper'
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { useSetAtom } from 'jotai'
 import { useDebouncedCallback } from 'use-debounce'

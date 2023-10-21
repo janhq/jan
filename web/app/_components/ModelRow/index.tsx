@@ -3,11 +3,11 @@ import { ModelStatus, ModelStatusComponent } from '../ModelStatusComponent'
 import ModelActionMenu from '../ModelActionMenu'
 import { useAtomValue } from 'jotai'
 import ModelActionButton, { ModelActionType } from '../ModelActionButton'
-import useStartStopModel from '@/_hooks/useStartStopModel'
-import useDeleteModel from '@/_hooks/useDeleteModel'
-import { AssistantModel } from '@/_models/AssistantModel'
-import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
-import { toGigabytes } from '@/_utils/converter'
+import useStartStopModel from '@hooks/useStartStopModel'
+import useDeleteModel from '@hooks/useDeleteModel'
+import { AssistantModel } from '@models/AssistantModel'
+import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { toGigabytes } from '@utils/converter'
 
 type Props = {
   model: AssistantModel

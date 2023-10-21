@@ -3,7 +3,7 @@
 import { useSetAtom } from 'jotai'
 import { InformationCircleIcon } from '@heroicons/react/24/outline'
 import SendButton from '../SendButton'
-import { showingAdvancedPromptAtom } from '@/_helpers/atoms/Modal.atom'
+import { showingAdvancedPromptAtom } from '@helpers/atoms/Modal.atom'
 
 const BasicPromptAccessories: React.FC = () => {
   const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom)

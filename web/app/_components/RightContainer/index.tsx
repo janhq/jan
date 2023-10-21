@@ -1,4 +1,4 @@
-import { rightSideBarExpandStateAtom } from '@/_helpers/atoms/LeftSideBarExpand.atom'
+import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
 import { Variants, motion } from 'framer-motion'
 import { useAtomValue } from 'jotai'
 import { Fragment } from 'react'

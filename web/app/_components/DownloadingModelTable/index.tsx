@@ -1,8 +1,8 @@
 import React, { Fragment } from 'react'
-import { modelDownloadStateAtom } from '@/_helpers/atoms/DownloadState.atom'
+import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { useAtomValue } from 'jotai'
 import ModelDownloadingTable from '../ModelDownloadingTable'
-import { DownloadState } from '@/_models/DownloadState'
+import { DownloadState } from '@models/DownloadState'
 
 const DownloadingModelTable: React.FC = () => {
   const modelDownloadState = useAtomValue(modelDownloadStateAtom)

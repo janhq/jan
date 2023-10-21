@@ -2,7 +2,7 @@ import React, { Fragment } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import { QuestionMarkCircleIcon } from '@heroicons/react/24/outline'
 import { useAtom } from 'jotai'
-import { showConfirmDeleteModalAtom } from '@/_helpers/atoms/Modal.atom'
+import { showConfirmDeleteModalAtom } from '@helpers/atoms/Modal.atom'
 
 const ConfirmDeleteModelModal: React.FC = () => {
   const [show, setShow] = useAtom(showConfirmDeleteModalAtom)

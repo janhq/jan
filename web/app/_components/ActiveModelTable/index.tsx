@@ -1,7 +1,7 @@
 import { useAtomValue } from 'jotai'
 import React from 'react'
 import ModelTable from '../ModelTable'
-import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
+import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 
 const ActiveModelTable: React.FC = () => {
   const activeModel = useAtomValue(activeAssistantModelAtom)

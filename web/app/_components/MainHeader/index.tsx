@@ -1,9 +1,9 @@
-import { currentConversationAtom } from '@/_helpers/atoms/Conversation.atom'
+import { currentConversationAtom } from '@helpers/atoms/Conversation.atom'
 import {
   leftSideBarExpandStateAtom,
   rightSideBarExpandStateAtom,
-} from '@/_helpers/atoms/LeftSideBarExpand.atom'
-import { showConfirmDeleteConversationModalAtom } from '@/_helpers/atoms/Modal.atom'
+} from '@helpers/atoms/SideBarExpand.atom'
+import { showConfirmDeleteConversationModalAtom } from '@helpers/atoms/Modal.atom'
 import { ChartPieIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { useAtomValue, useSetAtom } from 'jotai'
 import React from 'react'

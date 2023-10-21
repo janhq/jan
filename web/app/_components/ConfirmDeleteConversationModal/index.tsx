@@ -1,5 +1,5 @@
-import { showConfirmDeleteConversationModalAtom } from '@/_helpers/atoms/Modal.atom'
-import useDeleteConversation from '@/_hooks/useDeleteConversation'
+import { showConfirmDeleteConversationModalAtom } from '@helpers/atoms/Modal.atom'
+import useDeleteConversation from '@hooks/useDeleteConversation'
 import { Dialog, Transition } from '@headlessui/react'
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import { useAtom } from 'jotai'

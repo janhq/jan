@@ -4,6 +4,7 @@ const webpack = require('webpack')
 const nextConfig = {
   output: 'export',
   assetPrefix: '.',
+  transpilePackages: ['lucide-react'],
   experimental: {
     serverActions: false,
   },

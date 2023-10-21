@@ -1,11 +1,11 @@
 'use client'
 
-import { currentPromptAtom } from '@/_helpers/JotaiWrapper'
-import { getActiveConvoIdAtom } from '@/_helpers/atoms/Conversation.atom'
-import { selectedModelAtom } from '@/_helpers/atoms/Model.atom'
-import useCreateConversation from '@/_hooks/useCreateConversation'
-import useInitModel from '@/_hooks/useInitModel'
-import useSendChatMessage from '@/_hooks/useSendChatMessage'
+import { currentPromptAtom } from '@helpers/JotaiWrapper'
+import { getActiveConvoIdAtom } from '@helpers/atoms/Conversation.atom'
+import { selectedModelAtom } from '@helpers/atoms/Model.atom'
+import useCreateConversation from '@hooks/useCreateConversation'
+import useInitModel from '@hooks/useInitModel'
+import useSendChatMessage from '@hooks/useSendChatMessage'
 import { useAtom, useAtomValue } from 'jotai'
 import { ChangeEvent, useEffect, useRef } from 'react'
 

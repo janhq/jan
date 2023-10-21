@@ -1,6 +1,6 @@
 import Image from 'next/image'
-import JanImage from '../JanImage'
-import { displayDate } from '@/_utils/datetime'
+import JanImage from '../../../containers/JanImage'
+import { displayDate } from '@utils/datetime'
 import Link from 'next/link'
 
 type Props = {

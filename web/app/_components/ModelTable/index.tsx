@@ -1,7 +1,7 @@
 import React from 'react'
 import ModelRow from '../ModelRow'
 import ModelTableHeader from '../ModelTableHeader'
-import { AssistantModel } from '@/_models/AssistantModel'
+import { AssistantModel } from '@models/AssistantModel'
 
 type Props = {
   models: AssistantModel[]

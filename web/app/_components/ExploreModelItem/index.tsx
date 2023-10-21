@@ -14,10 +14,10 @@ import {
   UsecaseTag,
   VersionTag,
 } from '@/_components/SimpleTag/TagType'
-import { displayDate } from '@/_utils/datetime'
-import { Product } from '@/_models/Product'
-import useGetMostSuitableModelVersion from '@/_hooks/useGetMostSuitableModelVersion'
-import { toGigabytes } from '@/_utils/converter'
+import { displayDate } from '@utils/datetime'
+import { Product } from '@models/Product'
+import useGetMostSuitableModelVersion from '@hooks/useGetMostSuitableModelVersion'
+import { toGigabytes } from '@utils/converter'
 
 type Props = {
   model: Product

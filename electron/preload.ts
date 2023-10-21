@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   invokePluginFunc: (plugin: any, method: any, ...args: any[]) =>
     ipcRenderer.invoke("invokePluginFunc", plugin, method, ...args),
 
+  setNativeThemeLight: () => ipcRenderer.invoke("setNativeThemeLight"),
+
+  setNativeThemeDark: () => ipcRenderer.invoke("setNativeThemeDark"),
+
+  setNativeThemeSystem: () => ipcRenderer.invoke("setNativeThemeSystem"),
+
   basePlugins: () => ipcRenderer.invoke("basePlugins"),
 
   pluginPath: () => ipcRenderer.invoke("pluginPath"),
@@ -23,19 +29,27 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
 
-  installRemotePlugin: (pluginName: string) => ipcRenderer.invoke("installRemotePlugin", pluginName),
+  installRemotePlugin: (pluginName: string) =>
+    ipcRenderer.invoke("installRemotePlugin", pluginName),
 
-  downloadFile: (url: string, path: string) => ipcRenderer.invoke("downloadFile", url, path),
+  downloadFile: (url: string, path: string) =>
+    ipcRenderer.invoke("downloadFile", url, path),
 
-  onFileDownloadUpdate: (callback: any) => ipcRenderer.on("FILE_DOWNLOAD_UPDATE", callback),
+  onFileDownloadUpdate: (callback: any) =>
+    ipcRenderer.on("FILE_DOWNLOAD_UPDATE", callback),
 
-  onFileDownloadError: (callback: any) => ipcRenderer.on("FILE_DOWNLOAD_ERROR", callback),
+  onFileDownloadError: (callback: any) =>
+    ipcRenderer.on("FILE_DOWNLOAD_ERROR", callback),
 
-  onFileDownloadSuccess: (callback: any) => ipcRenderer.on("FILE_DOWNLOAD_COMPLETE", callback),
+  onFileDownloadSuccess: (callback: any) =>
+    ipcRenderer.on("FILE_DOWNLOAD_COMPLETE", callback),
 
-  onAppUpdateDownloadUpdate: (callback: any) => ipcRenderer.on("APP_UPDATE_PROGRESS", callback),
+  onAppUpdateDownloadUpdate: (callback: any) =>
+    ipcRenderer.on("APP_UPDATE_PROGRESS", callback),
 
-  onAppUpdateDownloadError: (callback: any) => ipcRenderer.on("APP_UPDATE_ERROR", callback),
+  onAppUpdateDownloadError: (callback: any) =>
+    ipcRenderer.on("APP_UPDATE_ERROR", callback),
 
-  onAppUpdateDownloadSuccess: (callback: any) => ipcRenderer.on("APP_UPDATE_COMPLETE", callback),
+  onAppUpdateDownloadSuccess: (callback: any) =>
+    ipcRenderer.on("APP_UPDATE_COMPLETE", callback),
 });

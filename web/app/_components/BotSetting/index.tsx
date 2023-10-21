@@ -1,10 +1,10 @@
-import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
+import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import { useAtomValue } from 'jotai'
 import React, { useState } from 'react'
 import ExpandableHeader from '../ExpandableHeader'
 import { useDebouncedCallback } from 'use-debounce'
-import useUpdateBot from '@/_hooks/useUpdateBot'
-import { formatTwoDigits } from '@/_utils/converter'
+import useUpdateBot from '@hooks/useUpdateBot'
+import { formatTwoDigits } from '@utils/converter'
 
 const delayBeforeUpdateInMs = 1000
 

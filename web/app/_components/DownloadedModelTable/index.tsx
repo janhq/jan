@@ -1,7 +1,7 @@
 import React from 'react'
 import SearchBar from '../SearchBar'
 import ModelTable from '../ModelTable'
-import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
+import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 
 const DownloadedModelTable: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels()

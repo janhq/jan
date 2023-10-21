@@ -1,7 +1,7 @@
 import React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import Image from 'next/image'
-import { Conversation } from '@/_models/Conversation'
+import { Conversation } from '@models/Conversation'
 import { ModelManagementService } from '@janhq/core'
 import { executeSerial } from '../../../../electron/core/plugin-manager/execution/extension-manager'
 import {
@@ -9,13 +9,13 @@ import {
   setActiveConvoIdAtom,
   updateConversationErrorAtom,
   updateConversationWaitingForResponseAtom,
-} from '@/_helpers/atoms/Conversation.atom'
+} from '@helpers/atoms/Conversation.atom'
 import {
   setMainViewStateAtom,
   MainViewState,
-} from '@/_helpers/atoms/MainView.atom'
-import useInitModel from '@/_hooks/useInitModel'
-import { displayDate } from '@/_utils/datetime'
+} from '@helpers/atoms/MainView.atom'
+import useInitModel from '@hooks/useInitModel'
+import { displayDate } from '@utils/datetime'
 
 type Props = {
   conversation: Conversation
@@ -35,9 +35,7 @@ const HistoryItem: React.FC<Props> = ({
   const setMainViewState = useSetAtom(setMainViewStateAtom)
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
-  const updateConvWaiting = useSetAtom(
-    updateConversationWaitingForResponseAtom
-  )
+  const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
   const updateConvError = useSetAtom(updateConversationErrorAtom)
   const isSelected = activeConvoId === conversation._id
 
@@ -62,13 +60,13 @@ const HistoryItem: React.FC<Props> = ({
       setMainViewState(MainViewState.Conversation)
       setActiveConvoId(conversation._id)
     }
-  };
+  }
 
   const backgroundColor = isSelected
-    ? "bg-gray-100 dark:bg-gray-700"
-    : "bg-white dark:bg-gray-500"
+    ? 'bg-gray-100 dark:bg-gray-700'
+    : 'bg-white dark:bg-gray-500'
 
-  const description = conversation?.lastMessage ?? "No new message"
+  const description = conversation?.lastMessage ?? 'No new message'
 
   return (
     <li

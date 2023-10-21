@@ -3,19 +3,19 @@
 import BasicPromptInput from '../BasicPromptInput'
 import BasicPromptAccessories from '../BasicPromptAccessories'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { showingAdvancedPromptAtom } from '@/_helpers/atoms/Modal.atom'
+import { showingAdvancedPromptAtom } from '@helpers/atoms/Modal.atom'
 import SecondaryButton from '../SecondaryButton'
 import { Fragment, useEffect, useState } from 'react'
 import { PlusIcon } from '@heroicons/react/24/outline'
-import useCreateConversation from '@/_hooks/useCreateConversation'
-import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
+import useCreateConversation from '@hooks/useCreateConversation'
+import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 import {
   currentConversationAtom,
   currentConvoStateAtom,
-} from '@/_helpers/atoms/Conversation.atom'
-import useGetBots from '@/_hooks/useGetBots'
-import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
-import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
+} from '@helpers/atoms/Conversation.atom'
+import useGetBots from '@hooks/useGetBots'
+import { activeBotAtom } from '@helpers/atoms/Bot.atom'
+import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 
 const InputToolbar: React.FC = () => {
   const showingAdvancedPrompt = useAtomValue(showingAdvancedPromptAtom)

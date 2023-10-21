@@ -1,4 +1,4 @@
-import { toGigabytes } from '@/_utils/converter'
+import { toGigabytes } from '@utils/converter'
 
 type Props = {
   total: number

@@ -1,10 +1,10 @@
-import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
+import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import {
   MainViewState,
   setMainViewStateAtom,
-} from '@/_helpers/atoms/MainView.atom'
-import useCreateConversation from '@/_hooks/useCreateConversation'
-import useDeleteBot from '@/_hooks/useDeleteBot'
+} from '@helpers/atoms/MainView.atom'
+import useCreateConversation from '@hooks/useCreateConversation'
+import useDeleteBot from '@hooks/useDeleteBot'
 import { useAtomValue, useSetAtom } from 'jotai'
 import React from 'react'
 import PrimaryButton from '../PrimaryButton'

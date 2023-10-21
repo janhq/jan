@@ -1,11 +1,11 @@
-import { Preferences } from '@/_components/Preferences'
+// import { Preferences } from '@/_components/Preferences'
 
-const Settings = () => {
-  return (
-    <div className="flex">
-      <Preferences />
-    </div>
-  )
-}
+// const Settings = () => {
+//   return (
+//     <div className="flex">
+//       <Preferences />
+//     </div>
+//   )
+// }
 
-export default Settings
+// export default Settings

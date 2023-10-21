@@ -1,16 +1,16 @@
-import useCreateConversation from '@/_hooks/useCreateConversation'
+import useCreateConversation from '@hooks/useCreateConversation'
 import PrimaryButton from '../PrimaryButton'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useEffect, useState } from 'react'
 import {
   MainViewState,
   setMainViewStateAtom,
-} from '@/_helpers/atoms/MainView.atom'
-import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
-import useInitModel from '@/_hooks/useInitModel'
-import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
-import { AssistantModel } from '@/_models/AssistantModel'
-import { ChatBubbleOvalLeftEllipsisIcon } from "@heroicons/react/24/outline"
+} from '@helpers/atoms/MainView.atom'
+import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import useInitModel from '@hooks/useInitModel'
+import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
+import { AssistantModel } from '@models/AssistantModel'
+import { ChatBubbleOvalLeftEllipsisIcon } from '@heroicons/react/24/outline'
 
 enum ActionButton {
   DownloadModel = 'Download a Model',
