@@ -68,39 +68,69 @@ export enum StoreService {
  */
 export enum DataService {
   /**
-   * Gets a list of conversations from the server.
+   * Gets a list of conversations.
    */
   GetConversations = "getConversations",
 
   /**
-   * Creates a new conversation on the server.
+   * Creates a new conversation.
    */
   CreateConversation = "createConversation",
 
   /**
-   * Updates an existing conversation on the server.
+   * Updates an existing conversation.
    */
   UpdateConversation = "updateConversation",
 
   /**
-   * Deletes an existing conversation from the server.
+   * Deletes an existing conversation.
    */
   DeleteConversation = "deleteConversation",
 
   /**
-   * Creates a new message in an existing conversation on the server.
+   * Creates a new message in an existing conversation.
    */
   CreateMessage = "createMessage",
 
   /**
-   * Updates an existing message in an existing conversation on the server.
+   * Updates an existing message in an existing conversation.
    */
   UpdateMessage = "updateMessage",
 
   /**
-   * Gets a list of messages for an existing conversation from the server.
+   * Gets a list of messages for an existing conversation.
    */
   GetConversationMessages = "getConversationMessages",
+
+  /**
+   * Gets a conversation matching an ID.
+   */
+  GetConversationById = "getConversationById",
+
+  /**
+   * Creates a new conversation using the prompt instruction.
+   */
+  CreateBot = "createBot",
+
+  /**
+   * Gets all created bots.
+   */
+  GetBots = "getBots",
+
+  /**
+   * Gets a bot matching an ID.
+   */
+  GetBotById = "getBotById",
+
+  /**
+   * Deletes a bot matching an ID.
+   */
+  DeleteBot = "deleteBot",
+
+  /**
+   * Updates a bot matching an ID.
+   */
+  UpdateBot = "updateBot",
 }
 
 /**
@@ -179,6 +209,11 @@ export enum PreferenceService {
    * The experiment component for which preferences are being managed.
    */
   ExperimentComponent = "experimentComponent",
+
+  /**
+   * Gets the plugin preferences.
+   */
+  PluginPreferences = "pluginPreferences",
 }
 
 /**
@@ -239,13 +274,23 @@ export { core } from "./core";
  * Core module exports.
  * @module
  */
-export { RegisterExtensionPoint, deleteFile, downloadFile, invokePluginFunc } from "./core";
+export {
+  RegisterExtensionPoint,
+  deleteFile,
+  downloadFile,
+  invokePluginFunc,
+} from "./core";
 
 /**
  * Events module exports.
  * @module
  */
-export { events, EventName, NewMessageRequest, NewMessageResponse } from "./events";
+export {
+  events,
+  EventName,
+  NewMessageRequest,
+  NewMessageResponse,
+} from "./events";
 
 /**
  * Preferences module exports.
