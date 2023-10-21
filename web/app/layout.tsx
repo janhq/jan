@@ -1,5 +1,5 @@
 import { Metadata } from 'next'
-import './styles/main.scss'
+import '../styles/main.scss'
 import { PropsWithChildren } from 'react'
 
 import Providers from '@containers/Providers'

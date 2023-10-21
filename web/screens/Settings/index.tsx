@@ -11,7 +11,9 @@ import {
 import { motion as m } from 'framer-motion'
 
 import AppearanceOptions from './Appearance'
-import PluginCatalog from './PluginsCatalog'
+import PluginCatalog from './CorePlugins/PluginsCatalog'
+import PreferencePlugins from './CorePlugins/PreferencePlugins'
+
 import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
 import classNames from 'classnames'
 import { PluginService, preferences } from '@janhq/core'
@@ -99,8 +101,11 @@ const SettingsScreen = () => {
       case 'Core Plugins':
         return <PluginCatalog />
 
-      default:
+      case 'Appearance':
         return <AppearanceOptions />
+
+      default:
+        return <PreferencePlugins pluginName={menu} />
     }
   }
 
@@ -182,7 +187,7 @@ const SettingsScreen = () => {
       </div>
 
       <div className="w-full overflow-y-scroll p-6">
-        {handleShowOptions(activeStaticMenu)}
+        {handleShowOptions(activeStaticMenu || activePreferencePlugin)}
       </div>
     </div>
   )

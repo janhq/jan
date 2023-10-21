@@ -3,8 +3,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 
 import { PluginService, preferences } from '@janhq/core'
-import { execute } from '../../../electron/core/plugin-manager/execution/extension-manager'
+import { execute } from '../../../../electron/core/plugin-manager/execution/extension-manager'
 import { Switch } from '@uikit'
+
+import Loader from '@containers/Loader'
 
 import { formatPluginsName } from '@utils/converter'
 
@@ -201,6 +203,14 @@ const PluginCatalog = () => {
           </div>
         )
       })}
+      {isLoading && (
+        <div className="fixed inset-0 z-50 flex h-full items-center justify-center gap-y-4 rounded-lg bg-gray-950/90 text-gray-400 dark:backdrop-blur-sm">
+          <div className="space-y-16">
+            <Loader />
+            <p>Installing...</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
