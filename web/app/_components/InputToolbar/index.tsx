@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 'use client'
 
 import BasicPromptInput from '../BasicPromptInput'
@@ -70,6 +71,7 @@ const InputToolbar: React.FC = () => {
       }
     }
     getReplyState()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentConvo])
 
   const onNewConversationClick = () => {

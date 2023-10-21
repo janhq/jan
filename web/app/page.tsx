@@ -7,6 +7,7 @@ import ChatScreen from '@screens/Chat'
 import ExploreModelsScreen from '@screens/ExploreModels'
 import MyModelsScreen from '@screens/MyModels'
 import SettingsScreen from '@screens/Settings'
+import EmptyChatScreen from '@screens/Chat/EmptyChatScreen'
 
 import {
   MainViewState,
@@ -22,8 +23,12 @@ const Page: React.FC = () => {
 
   let children = null
   switch (viewState) {
+    case MainViewState.ConversationEmptyModel:
+      children = <EmptyChatScreen />
+      break
+
     case MainViewState.Welcome:
-      children = <SettingsScreen />
+      children = <WelcomeScreen />
       break
 
     case MainViewState.Conversation:
@@ -38,6 +43,7 @@ const Page: React.FC = () => {
       children = <ExploreModelsScreen />
       break
 
+    case MainViewState.ResourceMonitor:
     case MainViewState.MyModel:
       children = <MyModelsScreen />
       break
@@ -47,7 +53,7 @@ const Page: React.FC = () => {
       break
 
     default:
-      children = <WelcomeScreen />
+      children = <ChatScreen />
       break
   }
 

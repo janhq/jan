@@ -22,7 +22,6 @@ import useGetBots from '@hooks/useGetBots'
 export const SidebarLeft = () => {
   const isLeftSidebarVisible = useAtomValue(leftSideBarExpandStateAtom)
   const getCurrentYear = new Date().getFullYear()
-
   const currentState = useAtomValue(getMainViewStateAtom)
   const setMainViewState = useSetAtom(setMainViewStateAtom)
   const setBotListModal = useSetAtom(showingBotListModalAtom)
@@ -155,16 +154,14 @@ export const SidebarLeft = () => {
           animate={isLeftSidebarVisible ? 'show' : 'hide'}
           className="flex flex-col space-y-2 px-4"
         >
-          <div className="space-y-2 rounded-md bg-gray-50/50 px-3 py-2 dark:bg-gray-950/50">
+          <div className="space-y-2 rounded-md bg-gray-50/50 p-3 dark:bg-gray-950/50">
             <p className="text-xs dark:text-gray-400">Twitter</p>
             <p className="text-xs dark:text-gray-400">Github</p>
             <p className="text-xs dark:text-gray-400">Discord</p>
           </div>
-          <div className="rounded-md bg-gray-50/50 p-2 dark:bg-gray-950/50">
-            <p className="text-xs dark:text-gray-400">
-              &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd.
-            </p>
-          </div>
+          <p className="text-xs dark:text-gray-500">
+            &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd.
+          </p>
         </m.div>
       </div>
     </m.div>

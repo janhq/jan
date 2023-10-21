@@ -11,9 +11,9 @@ const DownloadedModelTable: React.FC = () => {
   return (
     <div className="pl-[63px] pr-[89px]">
       <h3 className="mt-[50px] text-xl leading-[25px]">Downloaded Models</h3>
-      <div className="w-[568px] py-5">
+      {/* <div className="w-[568px] py-5">
         <SearchBar />
-      </div>
+      </div> */}
       <ModelTable models={downloadedModels} />
     </div>
   )

@@ -46,7 +46,6 @@ const useChatMessages = (offset = 0) => {
     getMessages()
   }, [
     offset,
-    currentConvo._id,
     convoStates,
     addOldChatMessages,
     updateConvoHasMore,
