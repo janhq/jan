@@ -33,12 +33,14 @@ const initModel = (fileName) => {
         let binaryName;
 
         if (process.platform === "win32") {
+          // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
           binaryName = "nitro_windows_amd64_cuda.exe";
         } else if (process.platform === "darwin") {
           // Mac OS platform
           binaryName = process.arch === "arm64" ? "nitro_mac_arm64" : "nitro_mac_intel";
         } else {
           // Linux
+          // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
           binaryName = "nitro_linux_amd64_cuda"; // For other platforms
         }
 
