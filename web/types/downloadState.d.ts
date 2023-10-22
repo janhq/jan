@@ -1,7 +1,4 @@
-/**
- * Represent the state of a download
- */
-export type DownloadState = {
+type DownloadState = {
   modelId: string
   time: DownloadTime
   speed: number
@@ -11,12 +8,12 @@ export type DownloadState = {
   error?: string
 }
 
-export type DownloadTime = {
+type DownloadTime = {
   elapsed: number
   remaining: number
 }
 
-export type DownloadSize = {
+type DownloadSize = {
   total: number
   transferred: number
 }

@@ -1,4 +1,4 @@
-import { AssistantModel } from '@models/AssistantModel'
+import { AssistantModel } from '../../models/AssistantModel'
 import { atom } from 'jotai'
 
 /**

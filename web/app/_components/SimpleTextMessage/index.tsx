@@ -1,7 +1,7 @@
 import React from 'react'
 import { displayDate } from '@utils/datetime'
 import Image from 'next/image'
-import { MessageSenderType } from '@models/ChatMessage'
+
 import LoadingIndicator from '../LoadingIndicator'
 import { Marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'

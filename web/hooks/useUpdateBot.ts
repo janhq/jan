@@ -1,4 +1,3 @@
-import { Bot } from '@models/Bot'
 import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
 
 export default function useUpdateBot() {

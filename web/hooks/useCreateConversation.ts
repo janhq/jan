@@ -1,5 +1,5 @@
 import { useAtom, useSetAtom } from 'jotai'
-import { Conversation } from '@models/Conversation'
+
 import { executeSerial } from '@services/pluginService'
 import { DataService, ModelManagementService } from '@janhq/core'
 import {
@@ -10,8 +10,6 @@ import {
   updateConversationErrorAtom,
 } from '@helpers/atoms/Conversation.atom'
 import useInitModel from './useInitModel'
-import { AssistantModel } from '@models/AssistantModel'
-import { Bot } from '@models/Bot'
 
 const useCreateConversation = () => {
   const { initModel } = useInitModel()

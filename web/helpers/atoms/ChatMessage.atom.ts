@@ -1,4 +1,3 @@
-import { ChatMessage, MessageStatus } from '@models/ChatMessage'
 import { atom } from 'jotai'
 import { getActiveConvoIdAtom } from './Conversation.atom'
 

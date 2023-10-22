@@ -1,7 +1,6 @@
 import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import { showingBotListModalAtom } from '@helpers/atoms/Modal.atom'
 import useGetBots from '@hooks/useGetBots'
-import { Bot } from '@models/Bot'
 import { Dialog, Transition } from '@headlessui/react'
 import { useAtom } from 'jotai'
 import React, { Fragment, useEffect, useState } from 'react'

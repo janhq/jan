@@ -3,7 +3,6 @@
 import { useSetAtom } from 'jotai'
 import { ReactNode, useEffect } from 'react'
 import { appDownloadProgress } from './JotaiWrapper'
-import { DownloadState } from '@models/DownloadState'
 import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
 import { ModelManagementService } from '@janhq/core'
 import {

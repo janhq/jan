@@ -1,4 +1,3 @@
-import { Product } from '@models/Product'
 import { useEffect, useState } from 'react'
 import { getConfiguredModels } from './useGetDownloadedModels'
 

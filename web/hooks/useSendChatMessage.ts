@@ -7,7 +7,7 @@ import {
   events,
   store,
 } from '@janhq/core'
-import { RawMessage, toChatMessage } from '@models/ChatMessage'
+import { toChatMessage } from '@models/ChatMessage'
 import { executeSerial } from '@services/pluginService'
 import { addNewMessageAtom } from '@helpers/atoms/ChatMessage.atom'
 import {

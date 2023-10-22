@@ -1,4 +1,3 @@
-import { DownloadState } from '@models/DownloadState'
 import { atom } from 'jotai'
 
 // download states

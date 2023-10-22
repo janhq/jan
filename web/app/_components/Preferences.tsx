@@ -149,8 +149,11 @@ export const Preferences = () => {
     if (timeout) {
       clearTimeout(timeout)
     }
-    if(extensionPoints.get(PluginService.OnPreferencesUpdate))
-    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100)
+    if (extensionPoints.get(PluginService.OnPreferencesUpdate))
+      timeout = setTimeout(
+        () => execute(PluginService.OnPreferencesUpdate),
+        100
+      )
   }
 
   /**

@@ -1,15 +1,4 @@
-export type SearchModelParamHf = {
-  search?: {
-    owner?: string
-    task?: Task
-  }
-  credentials?: {
-    accessToken: string
-  }
-  limit: number
-}
-
-export type Task =
+type Task =
   | 'text-classification'
   | 'token-classification'
   | 'table-question-answering'
@@ -51,3 +40,14 @@ export type Task =
   | 'zero-shot-image-classification'
   | 'graph-ml'
   | 'other'
+
+type SearchModelParamHf = {
+  search?: {
+    owner?: string
+    task?: Task
+  }
+  credentials?: {
+    accessToken: string
+  }
+  limit: number
+}

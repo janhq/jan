@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ModelVersion } from '@models/ModelVersion'
+
 import { ModelPerformance, TagType } from '@/_components/SimpleTag/TagType'
 import { useAtomValue } from 'jotai'
 import { totalRamAtom } from '@helpers/atoms/SystemBar.atom'

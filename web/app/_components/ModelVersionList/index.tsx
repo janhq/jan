@@ -1,7 +1,5 @@
 import React from 'react'
 import ModelVersionItem from '../ModelVersionItem'
-import { Product } from '@models/Product'
-import { ModelVersion } from '@models/ModelVersion'
 
 type Props = {
   model: Product

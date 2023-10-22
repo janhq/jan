@@ -1,5 +1,5 @@
 import React from 'react'
-import { DownloadState } from '@models/DownloadState'
+
 import {
   formatDownloadPercentage,
   formatDownloadSpeed,

@@ -1,4 +1,4 @@
-export type Bot = {
+type Bot = {
   _id: string
   name: string
   description: string

@@ -1,4 +1,4 @@
-import { ChatMessage, RawMessage, toChatMessage } from '@models/ChatMessage'
+import { toChatMessage } from '@models/ChatMessage'
 import { executeSerial } from '@services/pluginService'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useEffect, useState } from 'react'

@@ -1,4 +1,3 @@
-import { ModelVersion } from '@models/ModelVersion'
 import { useState } from 'react'
 import { useAtomValue } from 'jotai'
 import { totalRamAtom } from '@helpers/atoms/SystemBar.atom'

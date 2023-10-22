@@ -2,7 +2,6 @@
 
 import React, { useCallback, useRef, useState, useEffect } from 'react'
 import ChatItem from '../ChatItem'
-import { ChatMessage } from '@models/ChatMessage'
 import useChatMessages from '@hooks/useChatMessages'
 import { useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'

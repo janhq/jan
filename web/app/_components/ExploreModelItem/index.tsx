@@ -15,7 +15,6 @@ import {
   VersionTag,
 } from '@/_components/SimpleTag/TagType'
 import { displayDate } from '@utils/datetime'
-import { Product } from '@models/Product'
 import useGetMostSuitableModelVersion from '@hooks/useGetMostSuitableModelVersion'
 import { toGigabytes } from '@utils/converter'
 

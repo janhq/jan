@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { SearchModelParamHf } from '@models/hf/SearchModelParam.hf'
-import { Product } from '@models/Product'
 import { useSetAtom } from 'jotai'
 import { modelLoadMoreAtom } from '@helpers/atoms/ExploreModelLoading.atom'
 

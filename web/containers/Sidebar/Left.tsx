@@ -132,7 +132,7 @@ export const SidebarLeft = () => {
                     initial={false}
                     variants={variant}
                     animate={isLeftSidebarVisible ? 'show' : 'hide'}
-                    className="text-xs font-semibold dark:text-gray-400"
+                    className="text-xs font-semibold text-gray-600 dark:text-gray-400"
                   >
                     {menu.name}
                   </m.span>
@@ -155,9 +155,8 @@ export const SidebarLeft = () => {
           className="flex flex-col space-y-2 px-4"
         >
           <div className="space-y-2 rounded-md bg-gray-50/50 p-3 dark:bg-gray-950/50">
-            <p className="text-xs dark:text-gray-400">Twitter</p>
-            <p className="text-xs dark:text-gray-400">Github</p>
-            <p className="text-xs dark:text-gray-400">Discord</p>
+            <button onClick={() => window.electronAPI?.openExternalUrl('https://discord.gg/AsJ8krTT3N')} className="text-xs dark:text-gray-400 block">Discord</button>
+            <button onClick={() => window.electronAPI?.openExternalUrl('https://twitter.com/janhq_')} className="text-xs dark:text-gray-400 block">Twitter</button>
           </div>
           <p className="text-xs dark:text-gray-500">
             &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd.

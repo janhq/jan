@@ -2,7 +2,7 @@ import React from 'react'
 
 type Props = {
   title: string
-  onClick: () => void
+  onClick?: () => void
   isSubmit?: boolean
   fullWidth?: boolean
   className?: string

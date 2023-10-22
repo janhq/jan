@@ -1,7 +1,6 @@
 import React from 'react'
 import Image from 'next/image'
 import useCreateConversation from '@hooks/useCreateConversation'
-import { AssistantModel } from '@models/AssistantModel'
 import { PlayIcon } from '@heroicons/react/24/outline'
 
 type Props = {

@@ -5,7 +5,6 @@ import { useAtomValue } from 'jotai'
 import ModelActionButton, { ModelActionType } from '../ModelActionButton'
 import useStartStopModel from '@hooks/useStartStopModel'
 import useDeleteModel from '@hooks/useDeleteModel'
-import { AssistantModel } from '@models/AssistantModel'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 import { toGigabytes } from '@utils/converter'
 

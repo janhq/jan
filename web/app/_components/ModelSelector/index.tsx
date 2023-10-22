@@ -4,7 +4,6 @@ import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid'
 import { useAtom, useAtomValue } from 'jotai'
 import { selectedModelAtom } from '@helpers/atoms/Model.atom'
 import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
-import { AssistantModel } from '@models/AssistantModel'
 
 function classNames(...classes: any) {
   return classes.filter(Boolean).join(' ')

@@ -1,4 +1,3 @@
-import { AssistantModel } from '@models/AssistantModel'
 import ConversationalCard from '../ConversationalCard'
 import { ChatBubbleBottomCenterTextIcon } from '@heroicons/react/24/outline'
 

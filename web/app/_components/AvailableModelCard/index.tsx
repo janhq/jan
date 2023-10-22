@@ -3,7 +3,6 @@ import ModelDownloadButton from '../ModelDownloadButton'
 import ModelDownloadingButton from '../ModelDownloadingButton'
 import { useAtomValue } from 'jotai'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
-import { AssistantModel } from '@models/AssistantModel'
 
 type Props = {
   model: AssistantModel

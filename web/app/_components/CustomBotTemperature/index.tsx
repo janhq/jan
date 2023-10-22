@@ -14,9 +14,9 @@ const CutomBotTemperature: React.FC<Props> = ({ control }) => (
       control={control}
     />
     <div className="mt-1 text-[0.8em] text-gray-500">
-      Controls the creativity of the bot's responses. Higher values produce more
+      {`Controls the creativity of the bot's responses. Higher values produce more
       varied but unpredictable replies, lower values generate more consistent
-      responses.
+      responses.`}
     </div>
     <span className="text-gray-900">default: 0.7</span>
     <Controller

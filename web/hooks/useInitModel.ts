@@ -2,7 +2,6 @@ import { executeSerial } from '@services/pluginService'
 import { InferenceService } from '@janhq/core'
 import { useAtom } from 'jotai'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
-import { AssistantModel } from '@models/AssistantModel'
 
 export default function useInitModel() {
   const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom)

@@ -1,6 +1,5 @@
 import { atom } from 'jotai'
 import { MainViewState, setMainViewStateAtom } from './MainView.atom'
-import { Conversation, ConversationState } from '@models/Conversation'
 import { activeBotAtom } from './Bot.atom'
 
 /**

@@ -5,7 +5,6 @@ import { appDownloadProgress } from '@helpers/JotaiWrapper'
 import useGetAppVersion from '@hooks/useGetAppVersion'
 import useGetSystemResources from '@hooks/useGetSystemResources'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
-import { DownloadState } from '@models/DownloadState'
 import { formatDownloadPercentage } from '@utils/converter'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 

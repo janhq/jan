@@ -1,8 +1,5 @@
 import { executeSerial } from '@services/pluginService'
 import { DataService, ModelManagementService } from '@janhq/core'
-import { ModelVersion } from '@models/ModelVersion'
-import { Product } from '@models/Product'
-import { AssistantModel } from '@models/AssistantModel'
 
 export default function useDownloadModel() {
   const assistanModel = (

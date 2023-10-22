@@ -9,7 +9,6 @@ import {
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 import useInitModel from '@hooks/useInitModel'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
-import { AssistantModel } from '@models/AssistantModel'
 import { ChatBubbleOvalLeftEllipsisIcon } from '@heroicons/react/24/outline'
 
 enum ActionButton {

@@ -1,4 +1,3 @@
-import { AssistantModel } from '@models/AssistantModel'
 import { atom } from 'jotai'
 
 export const selectedModelAtom = atom<AssistantModel | undefined>(undefined)

@@ -1,7 +1,6 @@
 import React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import Image from 'next/image'
-import { Conversation } from '@models/Conversation'
 import { ModelManagementService } from '@janhq/core'
 import { executeSerial } from '../../../../electron/core/plugin-manager/execution/extension-manager'
 import {

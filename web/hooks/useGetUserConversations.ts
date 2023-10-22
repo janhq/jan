@@ -1,4 +1,3 @@
-import { Conversation, ConversationState } from '@models/Conversation'
 import { useSetAtom } from 'jotai'
 import { executeSerial } from '@services/pluginService'
 import { DataService } from '@janhq/core'
