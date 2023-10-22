@@ -9,6 +9,7 @@ import {
 } from '@helpers/atoms/SideBarExpand.atom'
 
 import Topbar from '@containers/Topbar'
+import BottomBar from '@containers/BottomBar'
 
 import { motion as m } from 'framer-motion'
 
@@ -27,7 +28,7 @@ const BaseLayout = (props: PropsWithChildren) => {
       <SidebarLeft />
       <div
         className={twMerge(
-          'relative top-8 flex h-[calc(100vh-48px)] w-full',
+          'relative top-8 flex h-[calc(100vh-72px)] w-full',
           isRightSidebarVisible ? 'mr-0' : 'mr-4'
         )}
       >
@@ -41,12 +42,13 @@ const BaseLayout = (props: PropsWithChildren) => {
               opacity: 1,
               y: 0,
               transition: {
-                duration: 0.5,
+                duration: 0.3,
               },
             }}
           >
             {children}
           </m.div>
+          <BottomBar />
         </div>
       </div>
       {/* {isRightSidebarVisible && <SidebarRight />} */}

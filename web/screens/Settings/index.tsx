@@ -32,17 +32,8 @@ const staticMenu = ['Appearance', 'Core Plugins']
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')
-
-  const [search, setSearch] = useState<string>('')
-
   const [preferenceItems, setPreferenceItems] = useState<any[]>([])
   const [preferenceValues, setPreferenceValues] = useState<any[]>([])
-  const [isTestAvailable, setIsTestAvailable] = useState(false)
-  const [fileName, setFileName] = useState('')
-  const [pluginCatalog, setPluginCatalog] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState<boolean>(false)
-  const experimentRef = useRef(null)
-  const preferenceRef = useRef(null)
 
   /**
    * Fetches the active plugins and their preferences from the `plugins` and `preferences` modules.
@@ -77,8 +68,6 @@ const SettingsScreen = () => {
     .filter((x, i) => {
       return preferenceItems.map((x) => x.pluginName).indexOf(x) === i
     })
-
-  // console.log(preferenceValues, 'preferencesValues')
 
   /**
    * Notifies plugins of a preference update by executing the `PluginService.OnPreferencesUpdate` event.

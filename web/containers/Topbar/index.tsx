@@ -7,6 +7,7 @@ import {
 } from '@helpers/atoms/SideBarExpand.atom'
 
 import { PanelLeftClose, PanelLeftOpen, PanelRightOpen } from 'lucide-react'
+import { twMerge } from 'tailwind-merge'
 
 const Topbar = () => {
   const isLeftSidebarVisible = useAtomValue(leftSideBarExpandStateAtom)
@@ -16,7 +17,12 @@ const Topbar = () => {
 
   return (
     <div className="fixed left-0 top-0 z-50 flex h-8 w-full justify-between">
-      <div className="unset-drag fixed left-20 top-2 block">
+      <div
+        className={twMerge(
+          'unset-drag fixed top-2 block',
+          isLeftSidebarVisible ? 'left-[180px]' : 'left-20'
+        )}
+      >
         {isLeftSidebarVisible ? (
           <PanelLeftClose
             size={18}

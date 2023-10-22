@@ -1,4 +1,4 @@
-import ProgressBar from '@/_components/ProgressBar'
+import React from 'react'
 import SystemItem from '@containers/SystemItem'
 import { useAtomValue } from 'jotai'
 import { appDownloadProgress } from '@helpers/JotaiWrapper'
@@ -8,7 +8,7 @@ import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { formatDownloadPercentage } from '@utils/converter'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 
-const MonitorBar: React.FC = () => {
+const BottomBar = () => {
   const progress = useAtomValue(appDownloadProgress)
   const activeModel = useAtomValue(activeAssistantModelAtom)
   const { version } = useGetAppVersion()
@@ -21,28 +21,26 @@ const MonitorBar: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-row items-center justify-between">
-      {progress && progress >= 0 ? (
-        <ProgressBar total={100} used={progress} />
-      ) : null}
-      <div className="flex flex-1 items-center justify-end gap-8 px-2">
+    <div className="fixed bottom-0 left-0 z-50 flex h-8 w-full items-center justify-between px-4 dark:bg-gray-950/50">
+      <div className="flex gap-x-2">
+        <SystemItem name="Active model:" value={activeModel?.name || '-'} />
         {downloadStates.length > 0 && (
           <SystemItem
-            name="Downloading"
-            value={`${downloadStates[0].fileName}: ${formatDownloadPercentage(
+            name="Downloading:"
+            value={`${downloadStates[0].fileName} - ${formatDownloadPercentage(
               downloadStates[0].percent
             )}`}
           />
         )}
-        <SystemItem name="CPU" value={`${cpu}%`} />
-        <SystemItem name="Mem" value={`${ram}%`} />
-        {activeModel && (
-          <SystemItem name={`Active model: ${activeModel.name}`} value={''} />
-        )}
-        <span className="text-xs">v{version}</span>
+      </div>
+
+      <div className="flex gap-x-2">
+        <SystemItem name="CPU:" value={`${cpu}%`} />
+        <SystemItem name="Mem:" value={`${ram}%`} />
+        <p className="font-semibold">v{version}</p>
       </div>
     </div>
   )
 }
 
-export default MonitorBar
+export default BottomBar

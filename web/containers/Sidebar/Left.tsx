@@ -71,11 +71,6 @@ export const SidebarLeft = () => {
       state: MainViewState.Conversation,
     },
     {
-      name: 'Bot',
-      icon: <Bot size={20} className="flex-shrink-0" />,
-      state: MainViewState.CreateBot,
-    },
-    {
       name: 'Explore Models',
       icon: <CpuIcon size={20} className="flex-shrink-0" />,
       state: MainViewState.ExploreModel,
@@ -84,6 +79,11 @@ export const SidebarLeft = () => {
       name: 'My Models',
       icon: <LayoutGrid size={20} className="flex-shrink-0" />,
       state: MainViewState.MyModel,
+    },
+    {
+      name: 'Bot',
+      icon: <Bot size={20} className="flex-shrink-0" />,
+      state: MainViewState.CreateBot,
     },
     {
       name: 'Settings',
@@ -109,7 +109,7 @@ export const SidebarLeft = () => {
       <div className="flex-shrink-0 px-4">
         <CompactLogo width={32} height={32} />
       </div>
-      <div className="mt-4 flex h-full w-full flex-col justify-between gap-y-1">
+      <div className="mt-2 flex h-full w-full flex-col justify-between pb-4">
         <div
           className={twMerge(
             'flex w-full flex-col',
@@ -155,8 +155,26 @@ export const SidebarLeft = () => {
           className="flex flex-col space-y-2 px-4"
         >
           <div className="space-y-2 rounded-md bg-gray-50/50 p-3 dark:bg-gray-950/50">
-            <button onClick={() => window.electronAPI?.openExternalUrl('https://discord.gg/AsJ8krTT3N')} className="text-xs dark:text-gray-400 block">Discord</button>
-            <button onClick={() => window.electronAPI?.openExternalUrl('https://twitter.com/janhq_')} className="text-xs dark:text-gray-400 block">Twitter</button>
+            <button
+              onClick={() =>
+                window.electronAPI?.openExternalUrl(
+                  'https://discord.gg/AsJ8krTT3N'
+                )
+              }
+              className="block text-xs dark:text-gray-400"
+            >
+              Discord
+            </button>
+            <button
+              onClick={() =>
+                window.electronAPI?.openExternalUrl(
+                  'https://twitter.com/janhq_'
+                )
+              }
+              className="block text-xs dark:text-gray-400"
+            >
+              Twitter
+            </button>
           </div>
           <p className="text-xs dark:text-gray-500">
             &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd.

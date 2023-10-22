@@ -82,7 +82,7 @@ const Providers = (props: PropsWithChildren) => {
                   opacity: 1,
                   y: 0,
                   transition: {
-                    duration: 0.5,
+                    duration: 0.3,
                     type: 'spring',
                     stiffness: 200,
                   },

@@ -25,7 +25,6 @@ const PluginCatalog = () => {
   const [pluginCatalog, setPluginCatalog] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const experimentRef = useRef(null)
-  const preferenceRef = useRef(null)
 
   /**
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
@@ -138,17 +137,6 @@ const PluginCatalog = () => {
     setIsLoading(false)
     if (installed) window.coreAPI.relaunch()
   }
-  /**
-   * Notifies plugins of a preference update by executing the `PluginService.OnPreferencesUpdate` event.
-   * If a timeout is already set, it is cleared before setting a new timeout to execute the event.
-   */
-  let timeout: any | undefined = undefined
-  function notifyPreferenceUpdate() {
-    if (timeout) {
-      clearTimeout(timeout)
-    }
-    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100)
-  }
 
   /**
    * Handles the change event of the plugin file input element by setting the file name state.
@@ -164,31 +152,42 @@ const PluginCatalog = () => {
     }
   }
 
-  // console.log(pluginCatalog, 'all')
-  // console.log(activePlugins, 'active')
-  // console.log(preferenceItems, 'preferences')
-  // console.log(preferenceValues, 'preferences')
-
   return (
     <div className="block w-full">
       {pluginCatalog.map((item, i) => {
         const isActivePlugin = activePlugins.some((x) => x.name === item.name)
+        const updateVersionPlugins = Number(
+          activePlugins
+            .filter((p) => p.name === item.name)[0]
+            ?.version.replaceAll('.', '')
+        )
+        console.log(updateVersionPlugins)
         return (
           <div
             key={i}
-            className="flex w-full items-center justify-between border-b border-gray-200 py-4 first:pt-0 last:border-none dark:border-gray-800"
+            className="flex w-full items-start justify-between border-b border-gray-200 py-4 first:pt-0 last:border-none dark:border-gray-800"
           >
             <div className="w-4/5 flex-shrink-0 space-y-1.5">
-              {/* <img src={item.icon} alt="" /> */}
-              <h6 className="text-sm font-semibold capitalize">
-                {formatPluginsName(item.name)}
-              </h6>
+              <div className="flex gap-x-2">
+                <h6 className="text-sm font-semibold capitalize">
+                  {formatPluginsName(item.name)}
+                </h6>
+                <p className="whitespace-pre-wrap font-semibold leading-relaxed text-gray-600 dark:text-gray-400">
+                  v{item.version}
+                </p>
+              </div>
               <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
                 {item.description}
               </p>
-              <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
-                v{item.version}
-              </p>
+              {isActivePlugin &&
+                item.version.replaceAll('.', '') < updateVersionPlugins && (
+                  <button
+                    className=""
+                    onClick={() => downloadTarball(item.name)}
+                  >
+                    Update
+                  </button>
+                )}
             </div>
             <Switch
               defaultChecked={isActivePlugin}
