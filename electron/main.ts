@@ -103,7 +103,18 @@ function handleAppUpdates() {
   autoUpdater.checkForUpdates();
 }
 
+/**
+ * Handles various IPC messages from the renderer process.
+ */
 function handleIPCs() {
+  /**
+   * Invokes a function from a plugin module in main node process.
+   * @param _event - The IPC event object.
+   * @param modulePath - The path to the plugin module.
+   * @param method - The name of the function to invoke.
+   * @param args - The arguments to pass to the function.
+   * @returns The result of the invoked function.
+   */
   ipcMain.handle(
     "invokePluginFunc",
     async (_event, modulePath, method, ...args) => {
@@ -123,6 +134,11 @@ function handleIPCs() {
     }
   );
 
+  /**
+   * Returns the paths of the base plugins.
+   * @param _event - The IPC event object.
+   * @returns An array of paths to the base plugins.
+   */
   ipcMain.handle("basePlugins", async (_event) => {
     const basePluginPath = join(
       __dirname,
@@ -136,21 +152,62 @@ function handleIPCs() {
       .map((file) => join(basePluginPath, file));
   });
 
+  /**
+   * Returns the path to the user's plugin directory.
+   * @param _event - The IPC event object.
+   * @returns The path to the user's plugin directory.
+   */
   ipcMain.handle("pluginPath", async (_event) => {
     return join(app.getPath("userData"), "plugins");
   });
+
+  /**
+   * Returns the version of the app.
+   * @param _event - The IPC event object.
+   * @returns The version of the app.
+   */
   ipcMain.handle("appVersion", async (_event) => {
     return app.getVersion();
   });
+
+  /**
+   * Opens a URL in the user's default browser.
+   * @param _event - The IPC event object.
+   * @param url - The URL to open.
+   */
   ipcMain.handle("openExternalUrl", async (_event, url) => {
     shell.openExternal(url);
   });
+
+  /**
+   * Relaunches the app in production - reload window in development.
+   * @param _event - The IPC event object.
+   * @param url - The URL to reload.
+   */
   ipcMain.handle("relaunch", async (_event, url) => {
     dispose(requiredModules);
-    app.relaunch();
-    app.exit();
+
+    if (app.isPackaged) {
+      app.relaunch();
+      app.exit();
+    } else {
+      for (const modulePath in requiredModules) {
+        delete require.cache[
+          require.resolve(join(app.getPath("userData"), "plugins", modulePath))
+        ];
+      }
+      setupPlugins();
+      mainWindow?.reload();
+    }
   });
 
+  /**
+   * Deletes the `plugins` directory in the user data path and disposes of required modules.
+   * If the app is packaged, the function relaunches the app and exits.
+   * Otherwise, the function deletes the cached modules and sets up the plugins and reloads the main window.
+   * @param _event - The IPC event object.
+   * @param url - The URL to reload.
+   */
   ipcMain.handle("reloadPlugins", async (_event, url) => {
     const userDataPath = app.getPath("userData");
     const fullPath = join(userDataPath, "plugins");
@@ -178,7 +235,10 @@ function handleIPCs() {
   });
 
   /**
-   * Used to delete a file from the user data folder
+   * Deletes a file from the user data folder.
+   * @param _event - The IPC event object.
+   * @param filePath - The path to the file to delete.
+   * @returns A string indicating the result of the operation.
    */
   ipcMain.handle("deleteFile", async (_event, filePath) => {
     const userDataPath = app.getPath("userData");
@@ -200,7 +260,10 @@ function handleIPCs() {
   });
 
   /**
-   * Used to download a file from a given url
+   * Downloads a file from a given URL.
+   * @param _event - The IPC event object.
+   * @param url - The URL to download the file from.
+   * @param fileName - The name to give the downloaded file.
    */
   ipcMain.handle("downloadFile", async (_event, url, fileName) => {
     const userDataPath = app.getPath("userData");
@@ -234,7 +297,10 @@ function handleIPCs() {
    * @returns A Promise that resolves to the path of the installed plugin file.
    */
   ipcMain.handle("installRemotePlugin", async (_event, pluginName) => {
-    const destination = join(app.getPath("userData"), pluginName.replace(/^@.*\//, "") + ".tgz");
+    const destination = join(
+      app.getPath("userData"),
+      pluginName.replace(/^@.*\//, "") + ".tgz"
+    );
     return pacote
       .manifest(pluginName)
       .then(async (manifest: any) => {
@@ -246,6 +312,12 @@ function handleIPCs() {
   });
 }
 
+/**
+ * Migrates the plugins by deleting the `plugins` directory in the user data path.
+ * If the `migrated_version` key in the `Store` object does not match the current app version,
+ * the function deletes the `plugins` directory and sets the `migrated_version` key to the current app version.
+ * @returns A Promise that resolves when the migration is complete.
+ */
 function migratePlugins() {
   return new Promise((resolve) => {
     const store = new Store();
@@ -266,6 +338,11 @@ function migratePlugins() {
   });
 }
 
+/**
+ * Sets up the plugins by initializing the `plugins` module with the `confirmInstall` and `pluginsPath` options.
+ * The `confirmInstall` function always returns `true` to allow plugin installation.
+ * The `pluginsPath` option specifies the path to install plugins to.
+ */
 function setupPlugins() {
   init({
     // Function to check from the main process that user wants to install a plugin
