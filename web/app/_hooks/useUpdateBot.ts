@@ -1,5 +1,6 @@
 import { Bot } from "@/_models/Bot";
 import { executeSerial } from "../../../electron/core/plugin-manager/execution/extension-manager";
+import { DataService } from "@janhq/core";
 
 export default function useUpdateBot() {
   const updateBot = async (
@@ -16,7 +17,7 @@ export default function useUpdateBot() {
         }
       }
 
-      await executeSerial("updateBot", bot);
+      await executeSerial(DataService.UpdateBot, bot);
       console.debug("Bot updated", JSON.stringify(bot, null, 2));
     } catch (err) {
       alert(`Update bot error: ${err}`);

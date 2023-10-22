@@ -1,7 +1,6 @@
 import { atom } from "jotai"
 import { MainViewState, setMainViewStateAtom } from "./MainView.atom"
 import { Conversation, ConversationState } from "@/_models/Conversation"
-import { activeBotAtom } from "./Bot.atom"
 
 /**
  * Stores the current active conversation id.
@@ -17,7 +16,6 @@ export const setActiveConvoIdAtom = atom(
       console.debug(`Set active conversation id: ${convoId}`)
       set(setMainViewStateAtom, MainViewState.Conversation)
     }
-    set(activeBotAtom, undefined)
     set(activeConversationIdAtom, convoId)
   }
 )

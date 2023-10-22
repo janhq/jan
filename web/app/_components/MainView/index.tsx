@@ -8,10 +8,11 @@ import ExploreModelContainer from '../ExploreModelContainer'
 import {
   MainViewState,
   getMainViewStateAtom,
-} from "@/_helpers/atoms/MainView.atom"
-import EmptyChatContainer from "../EmptyChatContainer"
-import MainChat from "../MainChat"
-import CreateBotContainer from "../CreateBotContainer"
+} from '@/_helpers/atoms/MainView.atom'
+import EmptyChatContainer from '../EmptyChatContainer'
+import MainChat from '../MainChat'
+import CreateBotContainer from '../CreateBotContainer'
+import BotInfoContainer from '../BotInfoContainer'
 
 const MainView: React.FC = () => {
   const viewState = useAtomValue(getMainViewStateAtom)
@@ -36,6 +37,9 @@ const MainView: React.FC = () => {
       break
     case MainViewState.Welcome:
       children = <Welcome />
+      break
+    case MainViewState.BotInfo:
+      children = <BotInfoContainer />
       break
     default:
       children = <MainChat />

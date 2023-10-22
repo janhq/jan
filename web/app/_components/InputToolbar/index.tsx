@@ -1,21 +1,21 @@
 'use client'
 
-import BasicPromptInput from "../BasicPromptInput"
-import BasicPromptAccessories from "../BasicPromptAccessories"
-import { useAtomValue, useSetAtom } from "jotai"
-import { showingAdvancedPromptAtom } from "@/_helpers/atoms/Modal.atom"
-import SecondaryButton from "../SecondaryButton"
-import { Fragment, useEffect, useState } from "react"
-import { PlusIcon } from "@heroicons/react/24/outline"
-import useCreateConversation from "@/_hooks/useCreateConversation"
-import { activeAssistantModelAtom } from "@/_helpers/atoms/Model.atom"
+import BasicPromptInput from '../BasicPromptInput'
+import BasicPromptAccessories from '../BasicPromptAccessories'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { showingAdvancedPromptAtom } from '@/_helpers/atoms/Modal.atom'
+import SecondaryButton from '../SecondaryButton'
+import { Fragment, useEffect, useState } from 'react'
+import { PlusIcon } from '@heroicons/react/24/outline'
+import useCreateConversation from '@/_hooks/useCreateConversation'
+import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
 import {
   currentConversationAtom,
   currentConvoStateAtom,
-} from "@/_helpers/atoms/Conversation.atom"
-import useGetBots from "@/_hooks/useGetBots"
-import { activeBotAtom } from "@/_helpers/atoms/Bot.atom"
-import { useGetDownloadedModels } from "@/_hooks/useGetDownloadedModels"
+} from '@/_helpers/atoms/Conversation.atom'
+import useGetBots from '@/_hooks/useGetBots'
+import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
+import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
 
 const InputToolbar: React.FC = () => {
   const showingAdvancedPrompt = useAtomValue(showingAdvancedPromptAtom)
@@ -27,26 +27,22 @@ const InputToolbar: React.FC = () => {
   const setActiveBot = useSetAtom(activeBotAtom)
   const { getBotById } = useGetBots()
   const [inputState, setInputState] = useState<
-    "available" | "disabled" | "loading"
+    'available' | 'disabled' | 'loading'
   >()
   const [error, setError] = useState<string | undefined>()
   const { downloadedModels } = useGetDownloadedModels()
 
-  if (showingAdvancedPrompt) {
-    return <div />
-  }
-
   useEffect(() => {
     const getReplyState = async () => {
-      setInputState("loading")
+      setInputState('loading')
       if (currentConvo && currentConvo.botId && currentConvo.botId.length > 0) {
         // if botId is set, check if bot is available
         const bot = await getBotById(currentConvo.botId)
-        console.debug("Found bot", JSON.stringify(bot, null, 2))
+        console.debug('Found bot', JSON.stringify(bot, null, 2))
         if (bot) {
           setActiveBot(bot)
         }
-        setInputState(bot ? "available" : "disabled")
+        setInputState(bot ? 'available' : 'disabled')
         setError(
           bot
             ? undefined
@@ -57,7 +53,7 @@ const InputToolbar: React.FC = () => {
           (model) => model._id === activeModel?._id
         )
 
-        setInputState(model ? "available" : "disabled")
+        setInputState(model ? 'available' : 'disabled')
         setError(
           model
             ? undefined
@@ -74,15 +70,19 @@ const InputToolbar: React.FC = () => {
     }
   }
 
-  if (inputState === "loading") {
+  if (showingAdvancedPrompt) {
+    return <div />
+  }
+
+  if (inputState === 'loading') {
     return <div>Loading..</div>
   }
 
-  if (inputState === "disabled") {
+  if (inputState === 'disabled') {
     // text italic
 
     return (
-      <p className="mx-auto my-5 text-center text-ellipsis line-clamp-2 italic text-gray-600 text-sm">
+      <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center text-sm italic text-gray-600">
         {error}
       </p>
     )

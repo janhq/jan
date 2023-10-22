@@ -27,7 +27,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@janhq/core": "^0.1.3",
+    "@janhq/core": "^0.1.6",
     "ts-loader": "^9.5.0"
   }
 }
