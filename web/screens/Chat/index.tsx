@@ -9,7 +9,7 @@ import LeftHeaderAction from '@/_components/LeftHeaderAction'
 const ChatScreen = () => {
   return (
     <div className="flex h-full">
-      <div className="border-border flex h-full w-80 flex-shrink-0 flex-col overflow-y-scroll border-r ">
+      <div className="border-border flex h-full w-64 flex-shrink-0 flex-col overflow-y-scroll border-r ">
         <div className="px-4 py-6 pt-4">
           <LeftHeaderAction />
           <HistoryList />

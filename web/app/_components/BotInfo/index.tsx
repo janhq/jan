@@ -40,15 +40,17 @@ const BotInfo: React.FC = () => {
 
       <div className="flex flex-col">
         <label className="mb-2">{botInfo.name}</label>
-        <PrimaryButton onClick={onNewChatClicked} title="New chat" />
         <span className="text-muted-foreground">{botInfo.description}</span>
       </div>
 
-      <PrimaryButton
-        title="Delete bot"
-        onClick={onDeleteBotClick}
-        className="bg-red-500 hover:bg-red-400"
-      />
+      <div className="flex w-full flex-col space-y-2">
+        <PrimaryButton onClick={onNewChatClicked} title="New chat" />
+        <PrimaryButton
+          title="Delete bot"
+          onClick={onDeleteBotClick}
+          className="bg-red-500 hover:bg-red-400"
+        />
+      </div>
     </div>
   )
 }
