@@ -72,10 +72,12 @@ const LeftRibbonNav: React.FC = () => {
 
   return (
     <nav className="flex h-screen w-20 flex-col bg-gray-900">
+      <div className='mx-auto mt-4'>
       <CompactLogo />
+      </div>
 
       <div className="flex w-full flex-1 flex-col items-center justify-between px-3 py-6">
-        <div>
+        <div className="flex flex-1 flex-col gap-2">
           <button
             onClick={onConversationClick}
             className={`rounded-lg p-4 ${bgColor} hover:bg-gray-400`}
