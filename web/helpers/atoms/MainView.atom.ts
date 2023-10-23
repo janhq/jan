@@ -1,10 +1,6 @@
 import { atom } from 'jotai'
 import { setActiveConvoIdAtom } from './Conversation.atom'
 import { systemBarVisibilityAtom } from './SystemBar.atom'
-import {
-  rightSideBarExpandStateAtom,
-  showRightSideBarToggleAtom,
-} from './LeftSideBarExpand.atom'
 
 export enum MainViewState {
   Welcome,
@@ -45,13 +41,6 @@ export const setMainViewStateAtom = atom(
     if (state !== MainViewState.Conversation) {
       // clear active conversation id if main view state is not Conversation
       set(setActiveConvoIdAtom, undefined)
-    }
-
-    if (state in [MainViewState.Welcome, MainViewState.CreateBot]) {
-      set(showRightSideBarToggleAtom, false)
-      set(rightSideBarExpandStateAtom, false)
-    } else {
-      set(showRightSideBarToggleAtom, true)
     }
 
     const showSystemBar =
