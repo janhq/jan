@@ -76,7 +76,7 @@ const InputToolbar: React.FC = () => {
 
   if (inputState === 'disabled')
     return (
-      <div className="sticky bottom-0 flex items-center justify-center bg-background">
+      <div className="bg-background/90 sticky bottom-0 flex items-center justify-center">
         <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center italic text-gray-600">
           {error}
         </p>
@@ -84,7 +84,7 @@ const InputToolbar: React.FC = () => {
     )
 
   return (
-    <div className="sticky bottom-0 w-full bg-background px-5 py-0">
+    <div className="bg-background/90 sticky bottom-0 w-full px-5 py-0">
       {currentConvoState?.error && (
         <div className="flex flex-row justify-center">
           <span className="mx-5 my-2 text-sm text-red-500">

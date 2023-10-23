@@ -1,12 +1,6 @@
 'use client'
-import React, { Fragment } from 'react'
-import { useEffect, useRef, useState } from 'react'
-
-import {
-  ChartPieIcon,
-  CommandLineIcon,
-  PlayIcon,
-} from '@heroicons/react/24/outline'
+import React from 'react'
+import { useEffect, useState } from 'react'
 
 import { motion as m } from 'framer-motion'
 
@@ -14,12 +8,8 @@ import AppearanceOptions from './Appearance'
 import PluginCatalog from './CorePlugins/PluginsCatalog'
 import PreferencePlugins from './CorePlugins/PreferencePlugins'
 
-import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
-import classNames from 'classnames'
-import { PluginService, preferences } from '@janhq/core'
-import { execute } from '../../../electron/core/plugin-manager/execution/extension-manager'
+import { preferences } from '@janhq/core'
 import { twMerge } from 'tailwind-merge'
-// import LoadingIndicator from './LoadingIndicator'
 
 import { formatPluginsName } from '@utils/converter'
 
@@ -69,18 +59,6 @@ const SettingsScreen = () => {
       return preferenceItems.map((x) => x.pluginName).indexOf(x) === i
     })
 
-  /**
-   * Notifies plugins of a preference update by executing the `PluginService.OnPreferencesUpdate` event.
-   * If a timeout is already set, it is cleared before setting a new timeout to execute the event.
-   */
-  let timeout: any | undefined = undefined
-  function notifyPreferenceUpdate() {
-    if (timeout) {
-      clearTimeout(timeout)
-    }
-    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100)
-  }
-
   const [activePreferencePlugin, setActivePreferencePlugin] = useState(
     preferencePlugins[0]
   )
@@ -97,6 +75,7 @@ const SettingsScreen = () => {
         return (
           <PreferencePlugins
             pluginName={menu}
+            preferenceItems={preferenceItems}
             preferenceValues={preferenceValues}
           />
         )
