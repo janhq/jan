@@ -90,7 +90,7 @@ jobs:
         if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
         run: |
           rm -rf /tmp/plugin-catalog
-          git clone https://github.com/janhq/plugin-catalog.git /tmp/plugin-catalog
+          git clone https://${{ secrets.SERVICE_ACCOUNT_USERNAME }}@github.com/janhq/plugin-catalog.git /tmp/plugin-catalog
           for dir in $(cat /tmp/change_dir.txt)
           do
             echo "$dir"
