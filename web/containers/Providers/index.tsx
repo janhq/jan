@@ -75,15 +75,13 @@ const Providers = (props: PropsWithChildren) => {
       {setupCore && (
         <EventListenerWrapper>
           <ThemeWrapper>
-            <ModalWrapper>
-              {activated ? (
-                children
-              ) : (
-                <div className="flex h-screen w-screen items-center justify-center bg-background">
-                  <CompactLogo width={56} height={56} />
-                </div>
-              )}
-            </ModalWrapper>
+            {activated ? (
+              <ModalWrapper>{children}</ModalWrapper>
+            ) : (
+              <div className="bg-background flex h-screen w-screen items-center justify-center">
+                <CompactLogo width={56} height={56} />
+              </div>
+            )}
           </ThemeWrapper>
         </EventListenerWrapper>
       )}

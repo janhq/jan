@@ -1,14 +1,13 @@
-import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
-import { showingBotListModalAtom } from '@/_helpers/atoms/Modal.atom'
-import useGetBots from '@/_hooks/useGetBots'
-import { Bot } from '@/_models/Bot'
+import { activeBotAtom } from '@helpers/atoms/Bot.atom'
+import { showingBotListModalAtom } from '@helpers/atoms/Modal.atom'
+import useGetBots from '@hooks/useGetBots'
 import { useAtom, useSetAtom } from 'jotai'
 import React, { useEffect, useState } from 'react'
 import Avatar from '../Avatar'
 import {
   MainViewState,
   setMainViewStateAtom,
-} from '@/_helpers/atoms/MainView.atom'
+} from '@helpers/atoms/MainView.atom'
 
 const BotListContainer: React.FC = () => {
   const [open, setOpen] = useAtom(showingBotListModalAtom)
@@ -23,6 +22,7 @@ const BotListContainer: React.FC = () => {
         setBots(res)
       })
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const onBotSelected = (bot: Bot) => {
@@ -34,20 +34,21 @@ const BotListContainer: React.FC = () => {
   }
 
   return (
-    <div className="overflow-hidden bg-white shadow sm:rounded-md">
+    <div className="bg-background/50 border-border overflow-hidden border shadow sm:rounded-md">
       <ul role="list" className="divide-y divide-gray-200">
-        {bots.map((bot) => (
+        {bots.map((bot, i) => (
           <li
             role="button"
-            key={bot._id}
-            className="flex gap-4 p-4 hover:bg-hover-light sm:px-6"
+            key={i}
+            className="flex items-center gap-4 p-4 hover:bg-hover-light sm:px-6"
             onClick={() => onBotSelected(bot)}
           >
             <Avatar />
-
             <div className="flex flex-1 flex-col">
               <p className="line-clamp-1">{bot.name}</p>
-              <p className="line-clamp-1 text-ellipsis">{bot._id}</p>
+              <p className="text-muted-foreground mt-1 line-clamp-1 text-ellipsis">
+                {bot._id}
+              </p>
             </div>
           </li>
         ))}

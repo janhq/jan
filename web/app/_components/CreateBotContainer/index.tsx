@@ -4,23 +4,43 @@ import TextAreaWithTitle from '../TextAreaWithTitle'
 import DropdownBox from '../DropdownBox'
 import PrimaryButton from '../PrimaryButton'
 import ToggleSwitch from '../ToggleSwitch'
-import CreateBotInAdvance from '../CreateBotInAdvance'
 import CreateBotPromptInput from '../CreateBotPromptInput'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
-import useCreateBot from '@hooks/useCreateBot'
+import { Bot } from '@/_models/Bot'
 import { SubmitHandler, useForm } from 'react-hook-form'
 import Avatar from '../Avatar'
 import { v4 as uuidv4 } from 'uuid'
+import DraggableProgressBar from '../DraggableProgressBar'
+import { useSetAtom } from 'jotai'
+import { activeBotAtom } from '@helpers/atoms/Bot.atom'
+import {
+  MainViewState,
+  setMainViewStateAtom,
+} from '@helpers/atoms/MainView.atom'
+import { executeSerial } from '../../../../electron/core/plugin-manager/execution/extension-manager'
+import { DataService } from '@janhq/core'
 
 const CreateBotContainer: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels()
-  const { createBot } = useCreateBot()
+  const setActiveBot = useSetAtom(activeBotAtom)
+  const setMainViewState = useSetAtom(setMainViewStateAtom)
 
-  const handleId = uuidv4()
+  const createBot = async (bot: Bot) => {
+    try {
+      await executeSerial(DataService.CreateBot, bot).then(async () => {
+        setActiveBot(bot)
+        setMainViewState(MainViewState.BotInfo)
+      })
+    } catch (err) {
+      alert(err)
+      console.error(err)
+    }
+  }
+
   const { handleSubmit, control } = useForm<Bot>({
     defaultValues: {
-      _id: handleId,
-      name: handleId,
+      _id: uuidv4(),
+      name: '',
       description: '',
       visibleFromBotProfile: true,
       systemPrompt: '',
@@ -49,21 +69,22 @@ const CreateBotContainer: React.FC = () => {
       maxTokens: Number(data.maxTokens),
       frequencyPenalty: Number(data.frequencyPenalty),
       presencePenalty: Number(data.presencePenalty),
-      name: data._id,
     }
     createBot(bot)
   }
 
-  const models = downloadedModels.map((model) => {
-    return { title: model._id, value: model }
+  let models = downloadedModels.map((model: { _id: any }) => {
+    return model._id
   })
+
+  models = ['Select a model', ...models]
 
   return (
     <form
       className="flex h-full w-full flex-col"
       onSubmit={handleSubmit(onSubmit)}
     >
-      <div className="mt-3 flex items-center justify-between gap-3">
+      <div className="mx-6 mt-3 flex items-center justify-between gap-3">
         <span className="text-lg font-bold">Create Bot</span>
         <div className="flex gap-3">
           <PrimaryButton isSubmit title="Create" />
@@ -71,14 +92,16 @@ const CreateBotContainer: React.FC = () => {
       </div>
       <div className="scroll flex flex-1 flex-col overflow-y-auto pt-4">
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          <Avatar />
+          <Avatar allowEdit />
+
           <TextInputWithTitle
-            description="Handle should be unique, 4-20 characters long, and may include alphanumeric characters, dashes or underscores."
-            title="Handle"
-            id="_id"
+            description="Bot name should be unique, 4-20 characters long, and may include alphanumeric characters, dashes or underscores."
+            title="Bot name"
+            id="name"
             control={control}
             required={true}
           />
+
           <TextAreaWithTitle
             id="description"
             title="Bot description"
@@ -101,17 +124,9 @@ const CreateBotContainer: React.FC = () => {
               required
             />
 
-            {/* <TextInputWithTitle
-              description="The bot will send this message at the beginning of every conversation."
-              title="Intro message"
-              id="welcomeMessage"
-              placeholder="Optional"
-              control={control}
-            /> */}
-
             <div className="flex flex-col gap-0.5">
-              <label className="block font-bold">Bot access</label>
-              <span className="mt-1 text-muted-foreground">
+              <label className="block">Bot access</label>
+              <span className="text-muted-foreground mt-1">
                 If this setting is enabled, the bot will be added to your
                 profile and will be publicly accessible. Turning this off will
                 make the bot private.
@@ -123,7 +138,38 @@ const CreateBotContainer: React.FC = () => {
               />
             </div>
 
-            <CreateBotInAdvance control={control} />
+            <p>Max tokens</p>
+            <DraggableProgressBar
+              id="maxTokens"
+              control={control}
+              min={0}
+              max={4096}
+              step={1}
+            />
+            <p>Custom temperature</p>
+            <DraggableProgressBar
+              id="customTemperature"
+              control={control}
+              min={0}
+              max={1}
+              step={0.01}
+            />
+            <p>Frequency penalty</p>
+            <DraggableProgressBar
+              id="frequencyPenalty"
+              control={control}
+              min={0}
+              max={1}
+              step={0.01}
+            />
+            <p>Presence penalty</p>
+            <DraggableProgressBar
+              id="presencePenalty"
+              control={control}
+              min={0}
+              max={1}
+              step={0.01}
+            />
           </div>
         </div>
       </div>
