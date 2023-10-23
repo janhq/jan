@@ -21,7 +21,7 @@ type Props = PropsWithChildren
 export default function RootLayout({ children }: Props) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="bg-gray-50/20 text-xs antialiased dark:bg-gray-950/20">
+      <body className="bg-background/40 text-xs antialiased">
         <div className="title-bar" />
         <Providers>{children}</Providers>
       </body>

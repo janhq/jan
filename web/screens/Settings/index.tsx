@@ -100,9 +100,9 @@ const SettingsScreen = () => {
 
   return (
     <div className="flex h-full">
-      <div className="border-gray-20 flex h-full w-80 flex-shrink-0 flex-col overflow-y-scroll border-r bg-white/20 dark:border-gray-900 dark:bg-black/20">
+      <div className="border-border flex h-full w-80 flex-shrink-0 flex-col overflow-y-scroll border-r">
         <div className="p-6">
-          <h1 className="text-xl font-semibold">Settings</h1>
+          <h1 className="text-lg font-bold">Settings</h1>
           <p className="mt-2 text-gray-600 dark:text-gray-400">
             Manage your account settings
           </p>
@@ -126,7 +126,7 @@ const SettingsScreen = () => {
                     </button>
                     {isActive ? (
                       <m.div
-                        className="absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md bg-blue-300/50 p-2 dark:bg-gray-800/30"
+                        className="bg-accent/20 absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md p-2"
                         layoutId="active-static-menu"
                       />
                     ) : null}
@@ -163,7 +163,7 @@ const SettingsScreen = () => {
                     </button>
                     {isActive ? (
                       <m.div
-                        className="absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md bg-blue-300/50 p-2 dark:bg-gray-800/30"
+                        className="bg-accent/20 absolute inset-0 -left-4 h-full w-[calc(100%+32px)]  rounded-md p-2"
                         layoutId="active-static-menu"
                       />
                     ) : null}
@@ -175,7 +175,7 @@ const SettingsScreen = () => {
         </div>
       </div>
 
-      <div className="w-full overflow-y-scroll p-6">
+      <div className="bg-background/50 w-full overflow-y-scroll p-6">
         {handleShowOptions(activeStaticMenu || activePreferencePlugin)}
       </div>
     </div>

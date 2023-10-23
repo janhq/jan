@@ -28,11 +28,11 @@ const BaseLayout = (props: PropsWithChildren) => {
       <SidebarLeft />
       <div
         className={twMerge(
-          'relative top-8 flex h-[calc(100vh-72px)] w-full',
+          'border-border bg-background/50 relative top-8 flex h-[calc(100vh-72px)] w-full overflow-hidden rounded-lg border',
           isRightSidebarVisible ? 'mr-0' : 'mr-4'
         )}
       >
-        <div className="w-full rounded-lg border border-gray-200 bg-gray-50/50 dark:border-gray-700/20 dark:bg-gray-950/50">
+        <div className="w-full">
           <Topbar />
           <m.div
             key={viewState}
@@ -42,7 +42,7 @@ const BaseLayout = (props: PropsWithChildren) => {
               opacity: 1,
               y: 0,
               transition: {
-                duration: 0.3,
+                duration: 0.5,
               },
             }}
           >

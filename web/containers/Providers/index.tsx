@@ -1,11 +1,10 @@
 'use client'
 
 import { PropsWithChildren } from 'react'
-import { Variants, motion as m } from 'framer-motion'
 import { PluginService } from '@janhq/core'
 import { ThemeWrapper } from '@helpers/ThemeWrapper'
 import JotaiWrapper from '@helpers/JotaiWrapper'
-import { ModalWrapper } from '@helpers/ModalWrapper'
+// import { ModalWrapper } from '@helpers/ModalWrapper'
 import { useEffect, useState } from 'react'
 import CompactLogo from '@containers/Logo/CompactLogo'
 import {
@@ -25,6 +24,7 @@ import { executeSerial } from '../../../electron/core/plugin-manager/execution/e
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
   const [activated, setActivated] = useState(false)
+
   const { children } = props
 
   async function setupPE() {
@@ -76,20 +76,7 @@ const Providers = (props: PropsWithChildren) => {
         <EventListenerWrapper>
           <ThemeWrapper>
             {activated ? (
-              <m.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  transition: {
-                    duration: 0.3,
-                    type: 'spring',
-                    stiffness: 200,
-                  },
-                }}
-              >
-                {children}
-              </m.div>
+              children
             ) : (
               <div className="flex h-screen w-screen items-center justify-center">
                 <CompactLogo width={56} height={56} />

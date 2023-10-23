@@ -11,7 +11,14 @@ import {
 
 import CompactLogo from '@containers/Logo/CompactLogo'
 
-import { MessageCircle, Settings, Bot, LayoutGrid, CpuIcon } from 'lucide-react'
+import {
+  MessageCircle,
+  Settings,
+  Bot,
+  LayoutGrid,
+  CpuIcon,
+  BookOpen,
+} from 'lucide-react'
 import { motion as m, Variants, AnimatePresence } from 'framer-motion'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 
@@ -21,7 +28,6 @@ import useGetBots from '@hooks/useGetBots'
 
 export const SidebarLeft = () => {
   const isLeftSidebarVisible = useAtomValue(leftSideBarExpandStateAtom)
-  const getCurrentYear = new Date().getFullYear()
   const currentState = useAtomValue(getMainViewStateAtom)
   const setMainViewState = useSetAtom(setMainViewStateAtom)
   const setBotListModal = useSetAtom(showingBotListModalAtom)
@@ -65,6 +71,11 @@ export const SidebarLeft = () => {
   }
 
   const menus = [
+    {
+      name: 'Getting Started',
+      icon: <BookOpen size={20} className="flex-shrink-0" />,
+      state: MainViewState.Welcome,
+    },
     {
       name: 'Chat',
       icon: <MessageCircle size={20} className="flex-shrink-0" />,
@@ -139,7 +150,7 @@ export const SidebarLeft = () => {
                 </button>
                 {isActive ? (
                   <m.div
-                    className="absolute inset-0 left-2 -z-10 h-full w-[calc(100%-16px)] rounded-md bg-blue-300/50 p-2 backdrop-blur-lg dark:bg-gray-950/50"
+                    className="bg-accent/20 absolute inset-0 left-2 -z-10 h-full w-[calc(100%-16px)] rounded-md p-2 backdrop-blur-lg"
                     layoutId="active-state"
                   />
                 ) : null}
@@ -176,9 +187,6 @@ export const SidebarLeft = () => {
               Twitter
             </button>
           </div>
-          <p className="text-xs dark:text-gray-500">
-            &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd.
-          </p>
         </m.div>
       </div>
     </m.div>

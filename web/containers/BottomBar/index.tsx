@@ -9,11 +9,11 @@ import { formatDownloadPercentage } from '@utils/converter'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 
 const BottomBar = () => {
-  const progress = useAtomValue(appDownloadProgress)
   const activeModel = useAtomValue(activeAssistantModelAtom)
   const { version } = useGetAppVersion()
   const { ram, cpu } = useGetSystemResources()
   const modelDownloadStates = useAtomValue(modelDownloadStateAtom)
+  const getCurrentYear = new Date().getFullYear()
 
   const downloadStates: DownloadState[] = []
   for (const [, value] of Object.entries(modelDownloadStates)) {
@@ -37,7 +37,9 @@ const BottomBar = () => {
       <div className="flex gap-x-2">
         <SystemItem name="CPU:" value={`${cpu}%`} />
         <SystemItem name="Mem:" value={`${ram}%`} />
-        <p className="font-semibold">v{version}</p>
+        <p className="text-xs dark:text-gray-500">
+          &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd. v{version}
+        </p>
       </div>
     </div>
   )

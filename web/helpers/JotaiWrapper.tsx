@@ -2,6 +2,7 @@
 
 import { Provider, atom } from 'jotai'
 import { ReactNode } from 'react'
+import { atomWithStorage } from 'jotai/utils'
 
 type Props = {
   children: ReactNode
@@ -12,10 +13,12 @@ export default function JotaiWrapper({ children }: Props) {
 }
 
 export const currentPromptAtom = atom<string>('')
-
 export const appDownloadProgress = atom<number>(-1)
 export const searchingModelText = atom<string>('')
-
 export const searchAtom = atom<string>('')
-
 export const modelSearchAtom = atom<string>('')
+export const userConfigs = atomWithStorage<UserConfig>('config', {
+  gettingStartedShow: false,
+  sidebarLeftExpand: false,
+  accent: 'accent-blue',
+})

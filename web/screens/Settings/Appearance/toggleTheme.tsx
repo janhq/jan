@@ -1,7 +1,6 @@
 'use client'
 
 import * as React from 'react'
-import { Moon, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { twMerge } from 'tailwind-merge'
 
@@ -53,7 +52,7 @@ const ToggleTheme = () => {
             </button>
             {isActive ? (
               <m.div
-                className="absolute inset-0 h-full w-full rounded-md border-2 border-blue-400"
+                className="border-accent/50 bg-accent/20 absolute inset-0 h-full w-full rounded-md border"
                 layoutId="active-theme-menu"
               />
             ) : null}
