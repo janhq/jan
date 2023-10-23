@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react'
-import ExploreModelItem from '../ExploreModelItem'
+import ExploreModelItem from '@/_components/ExploreModelItem'
 import { getConfiguredModels } from '@hooks/useGetDownloadedModels'
 import useGetConfiguredModels from '@hooks/useGetConfiguredModels'
-import { Waveform } from '@uiball/loaders'
 
 const ExploreModelList: React.FC = () => {
   const { loading, models } = useGetConfiguredModels()
@@ -12,12 +11,7 @@ const ExploreModelList: React.FC = () => {
   }, [])
 
   return (
-    <div className="scroll flex flex-1 flex-col overflow-y-auto">
-      {loading && (
-        <div className="mx-auto">
-          <Waveform size={24} color="#CBD5E0" />
-        </div>
-      )}
+    <div className="relative h-full w-full flex-shrink-0">
       {models.map((item) => (
         <ExploreModelItem key={item._id} model={item} />
       ))}

@@ -106,7 +106,7 @@ const SettingsScreen = () => {
   return (
     <div className="flex h-full">
       <div className="border-border flex h-full w-80 flex-shrink-0 flex-col overflow-y-scroll border-r">
-        <div className="px-5 py-4">
+        <div className="p-5">
           <h1 className="text-lg font-bold">Settings</h1>
           <p className="text-muted-foreground mt-2 text-gray-600">
             Manage your account settings
@@ -182,7 +182,7 @@ const SettingsScreen = () => {
         </div>
       </div>
 
-      <div className="bg-background/50 w-full overflow-y-scroll px-5 py-4">
+      <div className="bg-background/50 w-full overflow-y-scroll p-5">
         {handleShowOptions(activeStaticMenu || activePreferencePlugin)}
       </div>
     </div>

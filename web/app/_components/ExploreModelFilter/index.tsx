@@ -16,7 +16,7 @@ const tags = [
 const checkboxs = ['GGUF', 'TensorRT', 'Meow', 'JigglyPuff']
 
 const ExploreModelFilter: React.FC = () => {
-  const enabled = false
+  const enabled = true
   if (!enabled) return null
 
   return (

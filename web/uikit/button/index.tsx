@@ -5,16 +5,17 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { twMerge } from 'tailwind-merge'
 
 const buttonVariants = cva(
-  'cursor-pointer inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  'cursor-pointer inline-flex items-center justify-center whitespace-nowrap rounded-md font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       themes: {
-        default: 'hover:bg-accent/90 bg-accent text-white',
+        default: 'hover:bg-background-reverse/90 bg-background-reverse',
+        accent: 'hover:bg-accent/90 bg-accent text-white',
         outline: 'border border-border bg-background/50  hover:bg-accent/20',
       },
       size: {
-        sm: 'h-6 px-2 text-xs',
-        default: 'h-9 px-3',
+        sm: 'h-6 px-2 text-xs rounded-md',
+        default: 'h-8 px-3',
       },
     },
     defaultVariants: {

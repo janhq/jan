@@ -1,18 +1,29 @@
-import React from 'react'
-
-import HeaderTitle from '@/_components/HeaderTitle'
-import ExploreModelList from '@/_components/ExploreModelList'
-import ExploreModelFilter from '@/_components/ExploreModelFilter'
+import React, { Fragment, useEffect } from 'react'
+import ExploreModelList from '@screens/ExploreModels/ExploreModelList'
+import useGetConfiguredModels from '@hooks/useGetConfiguredModels'
+import { getConfiguredModels } from '@hooks/useGetDownloadedModels'
+import Loader from '@containers/Loader'
 
 const ExploreModelsScreen = () => {
+  const { loading, models } = useGetConfiguredModels()
+
+  useEffect(() => {
+    getConfiguredModels()
+  }, [])
+
   return (
-    <div className="flex h-full overflow-y-scroll">
-      <div className="p-6">
-        <h1 className="text-xl font-semibold">Explore Models</h1>
-        <div className="mt-9 flex flex-1 gap-x-10 overflow-hidden">
-          <ExploreModelFilter />
-          <ExploreModelList />
-        </div>
+    <div className="flex h-full w-full overflow-y-scroll">
+      <div className="h-full w-full p-5">
+        {loading ? (
+          <Loader />
+        ) : (
+          <Fragment>
+            <h1 className="text-lg font-semibold">Explore Models</h1>
+            <div className="mt-5 h-full">
+              <ExploreModelList />
+            </div>
+          </Fragment>
+        )}
       </div>
     </div>
   )

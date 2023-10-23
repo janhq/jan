@@ -13,7 +13,6 @@ import {
   setMainViewStateAtom,
   MainViewState,
 } from '@helpers/atoms/MainView.atom'
-import Loader from '@containers/Loader'
 import ModelItem from './ModelItems'
 
 const MyModelsScreen = () => {
@@ -36,12 +35,11 @@ const MyModelsScreen = () => {
           <div className="mt-4">
             {isDownloadingFirstModel ? (
               <div className="relative">
-                <Loader />
-                <div className="mt-8">
+                <div className="mt-4">
                   <h1 className="text-2xl font-bold leading-snug">
                     Donwloading your first model
                   </h1>
-                  <p className="text-muted-foreground ">
+                  <p className="text-muted-foreground mt-1">
                     {downloadStates[0].fileName} -{' '}
                     {formatDownloadPercentage(downloadStates[0].percent)}
                   </p>
@@ -53,6 +51,7 @@ const MyModelsScreen = () => {
                 <p className="text-muted-foreground mt-1 text-base">{`let’s download your first model`}</p>
                 <Button
                   className="mt-4"
+                  themes="accent"
                   onClick={() => setMainViewState(MainViewState.ExploreModel)}
                 >
                   Explore Models
@@ -66,29 +65,11 @@ const MyModelsScreen = () => {
 
   return (
     <div className="flex h-full overflow-y-scroll">
-      <div className="p-6">
-        <h1 className="text-xl font-semibold">My Models</h1>
+      <div className="p-5">
+        <h1 className="text-lg font-semibold">My Models</h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
           You have <span>{downloadedModels.length}</span> models downloaded
         </p>
-
-        <div className="mt-6">
-          <ModelItem downloadedModels={downloadedModels} />
-          {/* {Array.from(Array(100).keys()).map((i) => {
-            return (
-              <div key={i}>
-                <p>
-                  Lorem ipsum dolor sit amet consectetur adipisicing elit.
-                  Obcaecati voluptates dicta fugiat adipisci! Quaerat dolores
-                  repudiandae culpa maxime iste aliquam ducimus, hic consequatur
-                  ex error repellat, autem officia eos veniam.
-                </p>
-              </div>
-            )
-          })} */}
-        </div>
-
-        {/* <p>This is old one</p> */}
         <div>
           <ActiveModelTable />
           <DownloadingModelTable />

@@ -18,7 +18,10 @@ const WelcomeScreen = () => {
         <h1 className="text-2xl font-bold leading-snug">Welcome to Jan</h1>
         <p className="text-base tracking-wide text-gray-600 dark:text-gray-400">{`let’s download your first model`}</p>
         <div className="mt-4">
-          <Button onClick={() => setMainViewState(MainViewState.ExploreModel)}>
+          <Button
+            themes="accent"
+            onClick={() => setMainViewState(MainViewState.ExploreModel)}
+          >
             Explore Models
           </Button>
         </div>

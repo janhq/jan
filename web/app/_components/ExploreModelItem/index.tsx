@@ -3,6 +3,7 @@
 'use client'
 
 import ExploreModelItemHeader from '../ExploreModelItemHeader'
+import { Button } from '@uikit'
 import ModelVersionList from '../ModelVersionList'
 import { Fragment, forwardRef, useEffect, useState } from 'react'
 import SimpleTag from '../SimpleTag'
@@ -31,6 +32,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
 
   useEffect(() => {
     getMostSuitableModelVersion(availableVersions)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableVersions])
 
   if (!suitableModel) {
@@ -42,25 +44,30 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
   return (
     <div
       ref={ref}
-      className="mb-4 flex flex-col rounded-md border border-gray-200"
+      className="border-border bg-background/60 mb-4 flex flex-col rounded-md border"
     >
       <ExploreModelItemHeader
         suitableModel={suitableModel}
         exploreModel={model}
       />
-      <div className="flex flex-col px-[26px] py-[22px]">
+      <div className="flex flex-col p-4">
+        <div className="mb-4 flex flex-col gap-1">
+          <span className="font-semibold">About</span>
+          <span className="text-muted-foreground leading-relaxed">
+            {model.longDescription}
+          </span>
+        </div>
+
         <div className="flex justify-between">
-          <div className="flex flex-1 flex-col gap-8">
+          <div className="flex flex-1 flex-col gap-y-4">
             <div className="flex flex-col gap-1">
-              <div className="text-sm font-medium text-gray-500">
-                Release Date
-              </div>
-              <div className="text-sm font-normal text-gray-900">
+              <div className="font-semibold">Release Date</div>
+              <p className="text-muted-foreground mt-1">
                 {displayDate(model.releaseDate)}
-              </div>
+              </p>
             </div>
             <div className="flex flex-col gap-2">
-              <div className="text-sm font-medium text-gray-500">Version</div>
+              <div className="font-semibold">Version</div>
               <div className="flex gap-2">
                 <SimpleTag
                   title={model.version}
@@ -80,17 +87,14 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
               </div>
             </div>
           </div>
-          <div className="flex flex-1 flex-col gap-8">
+
+          <div className="flex flex-1 flex-col gap-y-4">
             <div>
-              <div className="text-sm font-medium text-gray-500">Author</div>
-              <div className="text-sm font-normal text-gray-900">
-                {model.author}
-              </div>
+              <div className="font-semibold">Author</div>
+              <p className="text-muted-foreground mt-1">{model.author}</p>
             </div>
             <div className="flex flex-col gap-2">
-              <div className="text-sm font-medium text-gray-500">
-                Compatibility
-              </div>
+              <div className="font-semibold">Compatibility</div>
               <div className="flex gap-2">
                 <SimpleTag
                   title={usecase}
@@ -105,44 +109,42 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
               </div>
             </div>
           </div>
-        </div>
-        <div className="mt-[26px] flex flex-col gap-1">
-          <span className="text-sm font-medium text-gray-500">About</span>
-          <span className="text-sm font-normal text-gray-500">
-            {model.longDescription}
-          </span>
-        </div>
-        <div className="mt-5 flex flex-col gap-2">
-          <span className="text-sm font-medium text-gray-500">Tags</span>
-          <div className="flex flex-wrap gap-2">
-            {model.tags.map((tag) => (
-              <SimpleTag
-                key={tag}
-                title={tag}
-                type={MiscellanousTag.MiscellanousDefault}
-                clickable={false}
-              />
-            ))}
+
+          <div className="flex flex-1 flex-col gap-y-4">
+            <div>
+              <div className="font-medium">Tags</div>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {model.tags.map((tag) => (
+                  <SimpleTag
+                    key={tag}
+                    title={tag}
+                    type={MiscellanousTag.MiscellanousDefault}
+                    clickable={false}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         </div>
+
+        {model.availableVersions?.length > 0 && (
+          <div className="border-border bg-background mt-5 w-full rounded-md border p-2">
+            <button onClick={() => setShow(!show)} className="w-full">
+              {!show
+                ? '+ Show Available Versions'
+                : '- Collapse Available Versions'}
+            </button>
+
+            {show && (
+              <ModelVersionList
+                model={model}
+                versions={model.availableVersions}
+                recommendedVersion={suitableModel?._id ?? ''}
+              />
+            )}
+          </div>
+        )}
       </div>
-      {model.availableVersions?.length > 0 && (
-        <Fragment>
-          {show && (
-            <ModelVersionList
-              model={model}
-              versions={model.availableVersions}
-              recommendedVersion={suitableModel?._id ?? ''}
-            />
-          )}
-          <button
-            onClick={() => setShow(!show)}
-            className="border-t border-gray-200 bg-[#FBFBFB] px-4 py-2 text-left text-sm text-gray-500"
-          >
-            {!show ? '+ Show Available Versions' : '- Collapse'}
-          </button>
-        </Fragment>
-      )}
     </div>
   )
 })

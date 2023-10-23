@@ -8,6 +8,7 @@ import useDownloadModel from '@hooks/useDownloadModel'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { Button } from '@uikit'
 import {
   MainViewState,
   setMainViewStateAtom,
@@ -35,35 +36,36 @@ const ExploreModelItemHeader: React.FC<Props> = ({
 
   useEffect(() => {
     getPerformanceForModel(suitableModel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suitableModel])
 
   const onDownloadClick = useCallback(() => {
     downloadModel(exploreModel, suitableModel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exploreModel, suitableModel])
 
   const isDownloaded =
     downloadedModels.find((model) => model._id === suitableModel._id) != null
 
   let downloadButton = (
-    <PrimaryButton
-      title={
-        suitableModel.size
-          ? `Download (${toGigabytes(suitableModel.size)})`
-          : 'Download'
-      }
-      onClick={() => onDownloadClick()}
-    />
+    <Button themes="accent" onClick={() => onDownloadClick()}>
+      {suitableModel.size
+        ? `Download (${toGigabytes(suitableModel.size)})`
+        : 'Download'}
+    </Button>
   )
 
   if (isDownloaded) {
     downloadButton = (
-      <PrimaryButton
-        title="View Downloaded Model"
+      <Button
+        size="sm"
+        themes="accent"
         onClick={() => {
           setMainViewState(MainViewState.MyModel)
         }}
-        className="bg-green-500 hover:bg-green-400"
-      />
+      >
+        View Downloaded Model
+      </Button>
     )
   }
 
@@ -80,7 +82,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   }
 
   return (
-    <div className="flex items-center justify-between border-b border-gray-200 p-4">
+    <div className="border-border bg-background/50 flex items-center justify-between rounded-t-md border-b px-4 py-2">
       <div className="flex items-center gap-2">
         <span>{exploreModel.name}</span>
         {performanceTag && (

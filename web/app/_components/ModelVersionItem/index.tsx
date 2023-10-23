@@ -54,10 +54,9 @@ const ModelVersionItem: React.FC<Props> = ({
   const { maxRamRequired, usecase } = modelVersion
 
   return (
-    <div className="flex items-center justify-between gap-4 border-t border-gray-200 pb-3 pl-3 pr-4 pt-3 first:border-t-0">
+    <div className="border-border flex items-center justify-between gap-4 border-t pb-3 pl-3 pr-4 pt-3 first:border-t-0">
       <div className="flex items-center gap-2">
-        <Image src={'/icons/app_icon.svg'} width={14} height={20} alt="" />
-        <span className="font-sm flex-1 text-gray-900">
+        <span className="font-sm text-muted-foreground mb-4 line-clamp-1 flex-1">
           {modelVersion.name}
         </span>
       </div>
@@ -73,9 +72,9 @@ const ModelVersionItem: React.FC<Props> = ({
             type={RamRequired.RamDefault}
             clickable={false}
           />
-        </div>
-        <div className="rounded bg-gray-200 px-2.5 py-0.5 text-xs font-medium">
-          {toGigabytes(modelVersion.size)}
+          <div className="bg-background border-border rounded-full border px-2.5 py-0.5 font-medium">
+            {toGigabytes(modelVersion.size)}
+          </div>
         </div>
         {downloadButton}
       </div>
