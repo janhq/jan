@@ -27,13 +27,13 @@ const Topbar = () => {
         {config.sidebarLeftExpand ? (
           <PanelLeftClose
             size={18}
-            onClick={() => setConfig({ sidebarLeftExpand: false })}
+            onClick={() => setConfig({ ...config, sidebarLeftExpand: false })}
             className="dark:text-gray-400"
           />
         ) : (
           <PanelLeftOpen
             size={18}
-            onClick={() => setConfig({ sidebarLeftExpand: true })}
+            onClick={() => setConfig({ ...config, sidebarLeftExpand: true })}
             className="dark:text-gray-400"
           />
         )}

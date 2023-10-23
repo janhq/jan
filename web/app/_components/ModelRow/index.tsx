@@ -1,6 +1,5 @@
 import React, { useCallback } from 'react'
 import { ModelStatus, ModelStatusComponent } from '../ModelStatusComponent'
-import ModelActionMenu from '../ModelActionMenu'
 import { useAtomValue } from 'jotai'
 import ModelActionButton, { ModelActionType } from '../ModelActionButton'
 import useStartStopModel from '@hooks/useStartStopModel'
@@ -37,32 +36,31 @@ const ModelRow: React.FC<Props> = ({ model }) => {
 
   const onDeleteClick = useCallback(() => {
     deleteModel(model)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model])
 
   return (
-    <tr className="border-b border-gray-200 last:rounded-lg last:border-b-0">
-      <td className="flex flex-col whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
+    <tr className="bg-background/50 border-border border-b last:rounded-lg last:border-b-0">
+      <td className="text-muted-foreground whitespace-nowrap px-3 font-semibold">
         {model.name}
-        <span className="font-normal text-gray-500">{model.version}</span>
+        <span className="ml-2 font-semibold">v{model.version}</span>
       </td>
-      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+      <td className="text-muted-foreground whitespace-nowrap px-3">
         <div className="flex flex-col justify-start">
           <span>GGUF</span>
         </div>
       </td>
-      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+      <td className="text-muted-foreground whitespace-nowrap px-3">
         {toGigabytes(model.size)}
       </td>
-      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+      <td className="text-muted-foreground whitespace-nowrap px-3">
         <ModelStatusComponent status={status} />
       </td>
       <ModelActionButton
         type={actionButtonType}
         onActionClick={onModelActionClick}
+        onDeleteClick={onDeleteClick}
       />
-      <td className="relative w-fit whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
-        <ModelActionMenu onDeleteClick={onDeleteClick} />
-      </td>
     </tr>
   )
 }

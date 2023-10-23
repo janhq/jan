@@ -9,8 +9,8 @@ const DownloadedModelTable: React.FC = () => {
   if (!downloadedModels || downloadedModels.length === 0) return null
 
   return (
-    <div className="pl-[63px] pr-[89px]">
-      <h3 className="mt-[50px] text-xl leading-[25px]">Downloaded Models</h3>
+    <div className="mt-5">
+      {/* <h3 className="mt-[50px] text-xl leading-[25px]">Downloaded Models</h3> */}
       {/* <div className="w-[568px] py-5">
         <SearchBar />
       </div> */}

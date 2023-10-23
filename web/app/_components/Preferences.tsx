@@ -35,7 +35,6 @@ export const Preferences = () => {
   useEffect(() => {
     // @ts-ignore
     import(/* webpackIgnore: true */ PLUGIN_CATALOGS).then((module) => {
-      console.log(module)
       setPluginCatalog(module.default)
     })
   }, [])
