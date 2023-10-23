@@ -90,7 +90,7 @@ jobs:
         if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
         run: |
           rm -rf /tmp/plugin-catalog
-          git clone https://${{ secrets.SERVICE_ACCOUNT_USERNAME }}@github.com/janhq/plugin-catalog.git /tmp/plugin-catalog
+          git clone https://${{ secrets.SERVICE_ACCOUNT_USERNAME }}:${{ secrets.PAT_SERVICE_ACCOUNT }}@github.com/janhq/plugin-catalog.git /tmp/plugin-catalog
           for dir in $(cat /tmp/change_dir.txt)
           do
             echo "$dir"
@@ -110,7 +110,7 @@ jobs:
           git checkout -b $BRANCH_NAME
           git add .
           git commit -m "Update plugin catalog"
-          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin $BRANCH_NAME
+          git push origin $BRANCH_NAME
           cd /tmp && rm -rf /tmp/plugin-catalog
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
           echo "::set-output name=branch_name::$BRANCH_NAME"
