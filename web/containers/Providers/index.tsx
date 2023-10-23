@@ -78,7 +78,7 @@ const Providers = (props: PropsWithChildren) => {
             {activated ? (
               children
             ) : (
-              <div className="flex h-screen w-screen items-center justify-center">
+              <div className="bg-background flex h-screen w-screen items-center justify-center">
                 <CompactLogo width={56} height={56} />
               </div>
             )}

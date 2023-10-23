@@ -1,10 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-
-import { PluginService, preferences } from '@janhq/core'
-import { execute } from '../../../../electron/core/plugin-manager/execution/extension-manager'
-import { Switch } from '@uikit'
+import { Button, Switch } from '@uikit'
 
 import Loader from '@containers/Loader'
 
@@ -16,12 +13,9 @@ import {
 } from '@/../../electron/core/plugin-manager/execution/index'
 
 const PluginCatalog = () => {
-  const [search, setSearch] = useState<string>('')
+  // const [search, setSearch] = useState<string>('')
+  // const [fileName, setFileName] = useState('')
   const [activePlugins, setActivePlugins] = useState<any[]>([])
-  const [preferenceItems, setPreferenceItems] = useState<any[]>([])
-  const [preferenceValues, setPreferenceValues] = useState<any[]>([])
-  const [isTestAvailable, setIsTestAvailable] = useState(false)
-  const [fileName, setFileName] = useState('')
   const [pluginCatalog, setPluginCatalog] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const experimentRef = useRef(null)
@@ -53,30 +47,11 @@ const PluginCatalog = () => {
         const components = await Promise.all(
           extensionPoints.execute('experimentComponent')
         )
-        if (components.length > 0) {
-          setIsTestAvailable(true)
-        }
         components.forEach((e) => {
           if (experimentRef.current) {
             // @ts-ignore
             experimentRef.current.appendChild(e)
           }
-        })
-      }
-
-      if (extensionPoints.get('PluginPreferences')) {
-        const data = await Promise.all(
-          extensionPoints.execute('PluginPreferences')
-        )
-        setPreferenceItems(Array.isArray(data) ? data : [])
-        Promise.all(
-          (Array.isArray(data) ? data : []).map((e) =>
-            preferences
-              .get(e.pluginName, e.preferenceKey)
-              .then((k) => ({ key: e.preferenceKey, value: k }))
-          )
-        ).then((data) => {
-          setPreferenceValues(data)
         })
       }
     }
@@ -143,14 +118,14 @@ const PluginCatalog = () => {
    * Its to be used to display the plugin file name of the selected file.
    * @param event - The change event object.
    */
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      setFileName(file.name)
-    } else {
-      setFileName('')
-    }
-  }
+  // const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  //   const file = event.target.files?.[0]
+  //   if (file) {
+  //     setFileName(file.name)
+  //   } else {
+  //     setFileName('')
+  //   }
+  // }
 
   return (
     <div className="block w-full">
@@ -161,7 +136,6 @@ const PluginCatalog = () => {
             .filter((p) => p.name === item.name)[0]
             ?.version.replaceAll('.', '')
         )
-        console.log(updateVersionPlugins)
         return (
           <div
             key={i}
@@ -181,12 +155,13 @@ const PluginCatalog = () => {
               </p>
               {isActivePlugin &&
                 item.version.replaceAll('.', '') < updateVersionPlugins && (
-                  <button
-                    className=""
+                  <Button
+                    size="sm"
+                    themes="outline"
                     onClick={() => downloadTarball(item.name)}
                   >
                     Update
-                  </button>
+                  </Button>
                 )}
             </div>
             <Switch

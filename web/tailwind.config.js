@@ -19,7 +19,10 @@ module.exports = {
         'accent': {
           DEFAULT: 'hsl(var(--accent))',
         },
-
+        'muted': {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
         // input: 'hsl(var(--input))',
         // ring: 'hsl(var(--ring))',
         // primary: {
@@ -33,10 +36,6 @@ module.exports = {
         // destructive: {
         //   DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
         //   foreground: 'hsl(var(--destructive-foreground) / <alpha-value>)',
-        // },
-        // muted: {
-        //   DEFAULT: 'hsl(var(--muted))',
-        //   foreground: 'hsl(var(--muted-foreground))',
         // },
         // popover: {
         //   DEFAULT: 'hsl(var(--popover))',

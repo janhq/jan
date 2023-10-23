@@ -94,20 +94,27 @@ const SettingsScreen = () => {
         return <AppearanceOptions />
 
       default:
-        return <PreferencePlugins pluginName={menu} />
+        return (
+          <PreferencePlugins
+            pluginName={menu}
+            preferenceValues={preferenceValues}
+          />
+        )
     }
   }
 
   return (
     <div className="flex h-full">
       <div className="border-border flex h-full w-80 flex-shrink-0 flex-col overflow-y-scroll border-r">
-        <div className="p-6">
+        <div className="px-5 py-4">
           <h1 className="text-lg font-bold">Settings</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
+          <p className="text-muted-foreground mt-2 text-gray-600">
             Manage your account settings
           </p>
           <div className="mt-5 flex-shrink-0">
-            <label className="font-bold uppercase text-gray-500">Options</label>
+            <label className="text-muted-foreground font-bold uppercase">
+              Options
+            </label>
             <div className="mt-1 font-semibold">
               {staticMenu.map((menu, i) => {
                 const isActive = activeStaticMenu === menu
@@ -175,7 +182,7 @@ const SettingsScreen = () => {
         </div>
       </div>
 
-      <div className="bg-background/50 w-full overflow-y-scroll p-6">
+      <div className="bg-background/50 w-full overflow-y-scroll px-5 py-4">
         {handleShowOptions(activeStaticMenu || activePreferencePlugin)}
       </div>
     </div>

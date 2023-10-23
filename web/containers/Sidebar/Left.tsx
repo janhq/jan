@@ -1,16 +1,12 @@
 import React from 'react'
-
 import { leftSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
 import { useAtomValue, useSetAtom } from 'jotai'
-
 import {
   MainViewState,
   getMainViewStateAtom,
   setMainViewStateAtom,
 } from '@helpers/atoms/MainView.atom'
-
 import CompactLogo from '@containers/Logo/CompactLogo'
-
 import {
   MessageCircle,
   Settings,
@@ -19,9 +15,8 @@ import {
   CpuIcon,
   BookOpen,
 } from 'lucide-react'
-import { motion as m, Variants, AnimatePresence } from 'framer-motion'
+import { motion as m, Variants } from 'framer-motion'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
-
 import { twMerge } from 'tailwind-merge'
 import { showingBotListModalAtom } from '@helpers/atoms/Modal.atom'
 import useGetBots from '@hooks/useGetBots'
@@ -143,7 +138,7 @@ export const SidebarLeft = () => {
                     initial={false}
                     variants={variant}
                     animate={isLeftSidebarVisible ? 'show' : 'hide'}
-                    className="text-xs font-semibold text-gray-600 dark:text-gray-400"
+                    className="text-muted-foreground text-xs font-semibold"
                   >
                     {menu.name}
                   </m.span>
@@ -158,21 +153,20 @@ export const SidebarLeft = () => {
             )
           })}
         </div>
-
         <m.div
           initial={false}
           variants={variant}
           animate={isLeftSidebarVisible ? 'show' : 'hide'}
-          className="flex flex-col space-y-2 px-4"
+          className="flex flex-col space-y-2 px-3"
         >
-          <div className="space-y-2 rounded-md bg-gray-50/50 p-3 dark:bg-gray-950/50">
+          <div className="bg-background/50 border-border space-y-2 rounded-lg border p-3">
             <button
               onClick={() =>
                 window.electronAPI?.openExternalUrl(
                   'https://discord.gg/AsJ8krTT3N'
                 )
               }
-              className="block text-xs dark:text-gray-400"
+              className="text-muted-foreground block text-xs font-semibold"
             >
               Discord
             </button>
@@ -182,7 +176,7 @@ export const SidebarLeft = () => {
                   'https://twitter.com/janhq_'
                 )
               }
-              className="block text-xs dark:text-gray-400"
+              className="text-muted-foreground block text-xs font-semibold"
             >
               Twitter
             </button>

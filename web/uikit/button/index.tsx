@@ -10,14 +10,10 @@ const buttonVariants = cva(
     variants: {
       themes: {
         default: 'hover:bg-accent/90 bg-accent text-white',
-        destructive:
-          'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-        outline:
-          'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
-        secondary:
-          'bg-secondary text-secondary-foreground hover:bg-secondary/80',
+        outline: 'border border-border bg-background/50  hover:bg-accent/20',
       },
       size: {
+        sm: 'h-6 px-2 text-xs',
         default: 'h-9 px-3',
       },
     },

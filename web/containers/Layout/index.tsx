@@ -1,6 +1,6 @@
-import React, { PropsWithChildren } from 'react'
+import React, { PropsWithChildren, useEffect } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-
+import { useTheme } from 'next-themes'
 import { SidebarLeft, SidebarRight } from '@containers/Sidebar'
 import { twMerge } from 'tailwind-merge'
 import {
@@ -22,6 +22,23 @@ const BaseLayout = (props: PropsWithChildren) => {
   const setLeftSideBarVisibility = useSetAtom(leftSideBarExpandStateAtom)
   const setRightSideBarVisibility = useSetAtom(rightSideBarExpandStateAtom)
   const viewState = useAtomValue(getMainViewStateAtom)
+
+  const { theme } = useTheme()
+
+  // Force set theme native
+  useEffect(() => {
+    async function setTheme() {
+      switch (theme) {
+        case 'light':
+          return await window?.electronAPI.setNativeThemeLight()
+        case 'dark':
+          return await window?.electronAPI.setNativeThemeDark()
+        default:
+          return await window?.electronAPI.setNativeThemeSystem()
+      }
+    }
+    setTheme()
+  }, [theme])
 
   return (
     <div className="flex h-screen w-screen flex-1 overflow-hidden">
