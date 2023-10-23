@@ -44,31 +44,26 @@ test("renders left navigation panel", async () => {
   expect(chatSection).toBe(false);
 
   // Home actions
-  const newChatBtn = await page
-    .getByRole("button", { name: "New Chat" })
+  const createBotBtn = await page
+    .getByRole("button", { name: "Create bot" })
     .first()
     .isEnabled();
   const exploreBtn = await page
     .getByRole("button", { name: "Explore Models" })
     .first()
     .isEnabled();
-  const discordBtn = await page
-    .getByRole("button", { name: "Discord" })
-    .first()
-    .isEnabled();
   const myModelsBtn = await page
-    .getByRole("button", { name: "My Models" })
+    .getByTestId("My Models")
     .first()
     .isEnabled();
   const settingsBtn = await page
-    .getByRole("button", { name: "Settings" })
+    .getByTestId("Settings")
     .first()
     .isEnabled();
   expect(
     [
-      newChatBtn,
+      createBotBtn,
       exploreBtn,
-      discordBtn,
       myModelsBtn,
       settingsBtn,
     ].filter((e) => !e).length

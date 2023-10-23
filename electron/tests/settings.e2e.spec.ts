@@ -35,7 +35,7 @@ test.afterAll(async () => {
 });
 
 test("shows settings", async () => {
-  await page.getByRole("button", { name: "Settings" }).first().click();
+  await page.getByTestId("Settings").first().click();
 
   const pluginList = await page.getByTestId("plugin-item").count();
   expect(pluginList).toBe(4);
