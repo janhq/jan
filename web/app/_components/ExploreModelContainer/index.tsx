@@ -3,7 +3,7 @@ import ExploreModelList from '../ExploreModelList'
 import ExploreModelFilter from '../ExploreModelFilter'
 
 const ExploreModelContainer: React.FC = () => (
-  <div className="flex flex-1 flex-col overflow-hidden px-16 pt-14">
+  <div className="flex h-full w-full flex-1 flex-col px-16 pt-14">
     <HeaderTitle title="Explore Models" />
     {/* <SearchBar
       type={SearchType.Model}
