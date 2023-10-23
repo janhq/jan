@@ -12,7 +12,7 @@ const ExploreModelsScreen = () => {
   }, [])
 
   return (
-    <div className="flex h-full w-full overflow-y-scroll">
+    <div className="flex h-full w-full overflow-y-auto">
       <div className="h-full w-full p-5">
         {loading ? (
           <Loader />

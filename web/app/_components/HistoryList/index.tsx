@@ -20,7 +20,7 @@ const HistoryList: React.FC = () => {
   return (
     <div className="flex flex-grow flex-col gap-2">
       <ExpandableHeader title="CHAT HISTORY" />
-      <ul className={twMerge('mt-1 flex flex-col gap-y-3 overflow-y-scroll')}>
+      <ul className={twMerge('mt-1 flex flex-col gap-y-3 overflow-y-auto')}>
         {conversations.length > 0 ? (
           conversations
             .filter(

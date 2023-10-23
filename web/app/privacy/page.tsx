@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 const Page: React.FC = () => {
   return (
-    <div className="scroll relative flex h-screen flex-col items-center overflow-y-scroll pt-2 text-black">
+    <div className="scroll relative flex h-screen flex-col items-center overflow-y-auto pt-2 text-black">
       <div className="absolute left-5 top-3">
         <Link href="/" className="flex flex-row gap-2">
           <div className="flex items-center gap-0.5">
