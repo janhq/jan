@@ -2,6 +2,7 @@ import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import { showingBotListModalAtom } from '@helpers/atoms/Modal.atom'
 import useGetBots from '@hooks/useGetBots'
 import { useAtom, useSetAtom } from 'jotai'
+import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
 import React, { useEffect, useState } from 'react'
 import Avatar from '../Avatar'
 import {
@@ -15,6 +16,7 @@ const BotListContainer: React.FC = () => {
   const [activeBot, setActiveBot] = useAtom(activeBotAtom)
   const [bots, setBots] = useState<Bot[]>([])
   const { getAllBots } = useGetBots()
+  const setRightSideBarVisibility = useSetAtom(rightSideBarExpandStateAtom)
 
   useEffect(() => {
     if (open) {
@@ -29,12 +31,13 @@ const BotListContainer: React.FC = () => {
     if (bot._id !== activeBot?._id) {
       setMainView(MainViewState.BotInfo)
       setActiveBot(bot)
+      setRightSideBarVisibility(true)
     }
     setOpen(false)
   }
 
   return (
-    <div className="bg-background/50 border-border overflow-hidden border shadow sm:rounded-md">
+    <div className="bg-background/50 border-border overflow-hidden border sm:rounded-md">
       <ul role="list" className="divide-y divide-gray-200">
         {bots.map((bot, i) => (
           <li

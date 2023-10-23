@@ -14,6 +14,10 @@ import DraggableProgressBar from '../DraggableProgressBar'
 import { useSetAtom } from 'jotai'
 import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import {
+  leftSideBarExpandStateAtom,
+  rightSideBarExpandStateAtom,
+} from '@helpers/atoms/SideBarExpand.atom'
+import {
   MainViewState,
   setMainViewStateAtom,
 } from '@helpers/atoms/MainView.atom'
@@ -24,16 +28,18 @@ const CreateBotContainer: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels()
   const setActiveBot = useSetAtom(activeBotAtom)
   const setMainViewState = useSetAtom(setMainViewStateAtom)
+  const setRightSideBarVisibility = useSetAtom(rightSideBarExpandStateAtom)
 
   const createBot = async (bot: Bot) => {
     try {
-      await executeSerial(DataService.CreateBot, bot).then(async () => {
-        setActiveBot(bot)
-        setMainViewState(MainViewState.BotInfo)
-      })
+      await executeSerial(DataService.CreateBot, bot)
     } catch (err) {
       alert(err)
       console.error(err)
+    } finally {
+      setMainViewState(MainViewState.BotInfo)
+      setActiveBot(bot)
+      setRightSideBarVisibility(true)
     }
   }
 
@@ -109,7 +115,7 @@ const CreateBotContainer: React.FC = () => {
             control={control}
           />
 
-          <div className="flex flex-col gap-4 pb-2">
+          <div className="flex flex-col pb-2">
             <DropdownBox
               id="modelId"
               title="Model"
@@ -117,28 +123,23 @@ const CreateBotContainer: React.FC = () => {
               control={control}
               required={true}
             />
+          </div>
 
-            <CreateBotPromptInput
-              id="systemPrompt"
+          <CreateBotPromptInput id="systemPrompt" control={control} required />
+
+          <div className="flex flex-col gap-0.5">
+            <label className="block">Bot access</label>
+            <span className="text-muted-foreground mb-4 mt-1">
+              If this setting is enabled, the bot will be added to your profile
+              and will be publicly accessible. Turning this off will make the
+              bot private.
+            </span>
+
+            <ToggleSwitch
+              id="publiclyAccessible"
+              title="Bot publicly accessible"
               control={control}
-              required
             />
-
-            <div className="flex flex-col gap-0.5">
-              <label className="block">Bot access</label>
-              <span className="text-muted-foreground mt-1">
-                If this setting is enabled, the bot will be added to your
-                profile and will be publicly accessible. Turning this off will
-                make the bot private.
-              </span>
-              <ToggleSwitch
-                id="publiclyAccessible"
-                title="Bot publicly accessible"
-                control={control}
-              />
-            </div>
-
-            <p>Max tokens</p>
             <DraggableProgressBar
               id="maxTokens"
               control={control}

@@ -10,7 +10,7 @@ const buttonVariants = cva(
     variants: {
       themes: {
         default:
-          'hover:bg-background-reverse/90 bg-background-reverse text-gray-600',
+          'hover:bg-background-reverse/90 bg-background-reverse text-background',
         accent: 'hover:bg-accent/90 bg-accent text-white',
         outline: 'border border-border bg-background/50  hover:bg-accent/20',
       },
