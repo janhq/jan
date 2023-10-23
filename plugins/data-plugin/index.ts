@@ -1,9 +1,5 @@
 import {
-<<<<<<< HEAD
   invokePluginFunc,
-=======
-  core,
->>>>>>> a689ee5 (update the temperature progress bar)
   store,
   RegisterExtensionPoint,
   StoreService,
@@ -26,11 +22,7 @@ function createCollection({
   name: string;
   schema?: { [key: string]: any };
 }): Promise<void> {
-<<<<<<< HEAD
   return invokePluginFunc(MODULE_PATH, "createCollection", name, schema);
-=======
-  return core.invokePluginFunc(MODULE_PATH, "createCollection", name, schema);
->>>>>>> a689ee5 (update the temperature progress bar)
 }
 
 /**
@@ -59,11 +51,7 @@ function insertOne({
   collectionName: string;
   value: any;
 }): Promise<any> {
-<<<<<<< HEAD
   return invokePluginFunc(MODULE_PATH, "insertOne", collectionName, value);
-=======
-  return core.invokePluginFunc(MODULE_PATH, "insertOne", collectionName, value);
->>>>>>> a689ee5 (update the temperature progress bar)
 }
 
 /**
@@ -84,17 +72,7 @@ function updateOne({
   key: string;
   value: any;
 }): Promise<void> {
-<<<<<<< HEAD
   return invokePluginFunc(MODULE_PATH, "updateOne", collectionName, key, value);
-=======
-  return core.invokePluginFunc(
-    MODULE_PATH,
-    "updateOne",
-    collectionName,
-    key,
-    value
-  );
->>>>>>> a689ee5 (update the temperature progress bar)
 }
 
 /**
@@ -113,11 +91,7 @@ function updateMany({
   value: any;
   selector?: { [key: string]: any };
 }): Promise<void> {
-<<<<<<< HEAD
   return invokePluginFunc(
-=======
-  return core.invokePluginFunc(
->>>>>>> a689ee5 (update the temperature progress bar)
     MODULE_PATH,
     "updateMany",
     collectionName,
@@ -141,11 +115,7 @@ function deleteOne({
   collectionName: string;
   key: string;
 }): Promise<void> {
-<<<<<<< HEAD
   return invokePluginFunc(MODULE_PATH, "deleteOne", collectionName, key);
-=======
-  return core.invokePluginFunc(MODULE_PATH, "deleteOne", collectionName, key);
->>>>>>> a689ee5 (update the temperature progress bar)
 }
 
 /**
@@ -163,16 +133,7 @@ function deleteMany({
   collectionName: string;
   selector?: { [key: string]: any };
 }): Promise<void> {
-<<<<<<< HEAD
   return invokePluginFunc(MODULE_PATH, "deleteMany", collectionName, selector);
-=======
-  return core.invokePluginFunc(
-    MODULE_PATH,
-    "deleteMany",
-    collectionName,
-    selector
-  );
->>>>>>> a689ee5 (update the temperature progress bar)
 }
 
 /**
@@ -188,11 +149,7 @@ function findOne({
   collectionName: string;
   key: string;
 }): Promise<any> {
-<<<<<<< HEAD
   return invokePluginFunc(MODULE_PATH, "findOne", collectionName, key);
-=======
-  return core.invokePluginFunc(MODULE_PATH, "findOne", collectionName, key);
->>>>>>> a689ee5 (update the temperature progress bar)
 }
 
 /**
@@ -211,11 +168,7 @@ function findMany({
   selector: { [key: string]: any };
   sort?: [{ [key: string]: any }];
 }): Promise<any> {
-<<<<<<< HEAD
   return invokePluginFunc(
-=======
-  return core.invokePluginFunc(
->>>>>>> a689ee5 (update the temperature progress bar)
     MODULE_PATH,
     "findMany",
     collectionName,
@@ -234,22 +187,9 @@ function onStart() {
 // prettier-ignore
 export function init({ register }: { register: RegisterExtensionPoint }) {
   register(PluginService.OnStart, PLUGIN_NAME, onStart);
-<<<<<<< HEAD
   register(StoreService.CreateCollection, createCollection.name, createCollection);
   register(StoreService.DeleteCollection, deleteCollection.name, deleteCollection);
   
-=======
-  register(
-    StoreService.CreateCollection,
-    createCollection.name,
-    createCollection
-  );
-  register(
-    StoreService.DeleteCollection,
-    deleteCollection.name,
-    deleteCollection
-  );
->>>>>>> a689ee5 (update the temperature progress bar)
   register(StoreService.InsertOne, insertOne.name, insertOne);
   register(StoreService.UpdateOne, updateOne.name, updateOne);
   register(StoreService.UpdateMany, updateMany.name, updateMany);
@@ -258,7 +198,6 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(StoreService.FindOne, findOne.name, findOne);
   register(StoreService.FindMany, findMany.name, findMany);
 
-<<<<<<< HEAD
   // for conversations management
   register(DataService.GetConversations, getConversations.name, getConversations);
   register(DataService.GetConversationById,getConversationById.name,getConversationById);
@@ -268,59 +207,15 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
 
   // for messages management
   register(DataService.UpdateMessage, updateMessage.name, updateMessage);
-=======
-  register(
-    DataService.GetConversations,
-    getConversations.name,
-    getConversations
-  );
-  register(
-    DataService.CreateConversation,
-    createConversation.name,
-    createConversation
-  );
-  register(
-    DataService.UpdateConversation,
-    updateConversation.name,
-    updateConversation
-  );
-  register(DataService.UpdateMessage, updateMessage.name, updateMessage);
-  register(
-    DataService.DeleteConversation,
-    deleteConversation.name,
-    deleteConversation
-  );
->>>>>>> a689ee5 (update the temperature progress bar)
   register(DataService.CreateMessage, createMessage.name, createMessage);
-  register(
-    DataService.GetConversationMessages,
-    getConversationMessages.name,
-    getConversationMessages
-  );
+  register(DataService.GetConversationMessages, getConversationMessages.name, getConversationMessages);
 
-<<<<<<< HEAD
-<<<<<<< HEAD
   // for bots management
   register(DataService.CreateBot, createBot.name, createBot);
   register(DataService.GetBots, getBots.name, getBots);
   register(DataService.GetBotById, getBotById.name, getBotById);
   register(DataService.DeleteBot, deleteBot.name, deleteBot);
   register(DataService.UpdateBot, updateBot.name, updateBot);
-=======
-  register("getConversationById", getConversationById.name, getConversationById);
-=======
-  register(
-    "getConversationById",
-    getConversationById.name,
-    getConversationById
-  );
->>>>>>> a689ee5 (update the temperature progress bar)
-  register("createBot", createBot.name, createBot);
-  register("getBots", getBots.name, getBots);
-  register("getBotById", getBotById.name, getBotById);
-  register("deleteBot", deleteBot.name, deleteBot);
-  register("updateBot", updateBot.name, updateBot);
->>>>>>> f809f66 (feat: adding create bot functionality)
 }
 
 function getConversations(): Promise<any> {
@@ -357,7 +252,6 @@ function getConversationMessages(conversationId: any) {
   return store.findMany("messages", { conversationId }, [
     { createdAt: "desc" },
   ]);
-<<<<<<< HEAD
 }
 
 function createBot(bot: any): Promise<void> {
@@ -378,78 +272,6 @@ function getBots(): Promise<any> {
   console.debug("Getting bots");
   return store
     .findMany("bots", { name: { $gt: null } })
-    .then((bots) => {
-      console.debug("Bots retrieved", JSON.stringify(bots, null, 2));
-      return Promise.resolve(bots);
-    })
-    .catch((err) => {
-      console.error("Error getting bots", err);
-      return Promise.reject(err);
-    });
-}
-
-function deleteBot(id: string): Promise<any> {
-  console.debug("Deleting bot", id);
-  return store
-    .deleteOne("bots", id)
-    .then(() => {
-      console.debug("Bot deleted", id);
-      return Promise.resolve();
-    })
-    .catch((err) => {
-      console.error("Error deleting bot", err);
-      return Promise.reject(err);
-    });
-}
-
-function updateBot(bot: any): Promise<void> {
-  console.debug("Updating bot", JSON.stringify(bot, null, 2));
-  return store
-    .updateOne("bots", bot._id, bot)
-    .then(() => {
-      console.debug("Bot updated");
-      return Promise.resolve();
-    })
-    .catch((err) => {
-      console.error("Error updating bot", err);
-      return Promise.reject(err);
-    });
-}
-
-function getBotById(botId: string): Promise<any> {
-  console.debug("Getting bot", botId);
-  return store
-    .findOne("bots", botId)
-    .then((bot) => {
-      console.debug("Bot retrieved", JSON.stringify(bot, null, 2));
-      return Promise.resolve(bot);
-    })
-    .catch((err) => {
-      console.error("Error getting bot", err);
-      return Promise.reject(err);
-    });
-=======
->>>>>>> a689ee5 (update the temperature progress bar)
-}
-
-function createBot(bot: any): Promise<void> {
-  console.debug("Creating bot", JSON.stringify(bot, null, 2));
-  return store
-    .insertOne("bots", bot)
-    .then(() => {
-      console.debug("Bot created", JSON.stringify(bot, null, 2));
-      return Promise.resolve();
-    })
-    .catch((err) => {
-      console.error("Error creating bot", err);
-      return Promise.reject(err);
-    });
-}
-
-function getBots(): Promise<any> {
-  console.debug("Getting bots");
-  return store
-    .findMany("bots", {name: { $gt: null }})
     .then((bots) => {
       console.debug("Bots retrieved", JSON.stringify(bots, null, 2));
       return Promise.resolve(bots);
