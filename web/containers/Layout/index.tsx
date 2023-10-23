@@ -8,6 +8,7 @@ import Topbar from '@containers/Topbar'
 import BottomBar from '@containers/BottomBar'
 import { motion as m } from 'framer-motion'
 import { getMainViewStateAtom } from '@helpers/atoms/MainView.atom'
+import { MainViewState } from '@helpers/atoms/MainView.atom'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
@@ -38,7 +39,9 @@ const BaseLayout = (props: PropsWithChildren) => {
       <div
         className={twMerge(
           'border-border bg-background/50 relative top-8 flex h-[calc(100vh-72px)] w-full overflow-hidden rounded-lg border',
-          isRightSidebarVisible ? 'mr-0' : 'mr-4'
+          viewState === MainViewState.BotInfo && isRightSidebarVisible
+            ? 'mr-0'
+            : 'mr-4'
         )}
       >
         <div className="w-full">
@@ -60,7 +63,9 @@ const BaseLayout = (props: PropsWithChildren) => {
           <BottomBar />
         </div>
       </div>
-      {/* {isRightSidebarVisible && <SidebarRight />} */}
+      {viewState === MainViewState.BotInfo && isRightSidebarVisible && (
+        <SidebarRight />
+      )}
     </div>
   )
 }

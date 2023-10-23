@@ -39,9 +39,9 @@ const BotInfo: React.FC = () => {
       <ExpandableHeader title="BOT INFO" />
 
       <div className="flex flex-col">
-        <label>{botInfo.name}</label>
+        <label className="mb-2">{botInfo.name}</label>
         <PrimaryButton onClick={onNewChatClicked} title="New chat" />
-        <span>{botInfo.description}</span>
+        <span className="text-muted-foreground">{botInfo.description}</span>
       </div>
 
       <PrimaryButton

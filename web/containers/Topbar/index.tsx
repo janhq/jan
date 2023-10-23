@@ -1,6 +1,8 @@
 import React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useUserConfigs } from '@hooks/useUserConfigs'
+import { getMainViewStateAtom } from '@helpers/atoms/MainView.atom'
+import { MainViewState } from '@helpers/atoms/MainView.atom'
 import {
   leftSideBarExpandStateAtom,
   rightSideBarExpandStateAtom,
@@ -11,9 +13,7 @@ import { twMerge } from 'tailwind-merge'
 
 const Topbar = () => {
   const [config, setConfig] = useUserConfigs()
-  const isLeftSidebarVisible = useAtomValue(leftSideBarExpandStateAtom)
-  const isRightSidebarVisible = useAtomValue(rightSideBarExpandStateAtom)
-  const setLeftSideBarVisibility = useSetAtom(leftSideBarExpandStateAtom)
+  const viewState = useAtomValue(getMainViewStateAtom)
   const setRightSideBarVisibility = useSetAtom(rightSideBarExpandStateAtom)
 
   return (
@@ -38,13 +38,15 @@ const Topbar = () => {
           />
         )}
       </div>
-      {/* <div className="unset-drag fixed right-4 top-2 block">
-        <PanelRightOpen
-          size={18}
-          onClick={() => setRightSideBarVisibility((prev) => !prev)}
-          className="dark:text-gray-400"
-        />
-      </div> */}
+      {viewState === MainViewState.BotInfo && (
+        <div className="unset-drag fixed right-4 top-2 block">
+          <PanelRightOpen
+            size={18}
+            onClick={() => setRightSideBarVisibility((prev) => !prev)}
+            className="dark:text-gray-400"
+          />
+        </div>
+      )}
     </div>
   )
 }
