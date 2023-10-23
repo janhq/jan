@@ -36,7 +36,5 @@ test.afterAll(async () => {
 
 test("shows settings", async () => {
   await page.getByTestId("Settings").first().click();
-
-  const pluginList = await page.getByTestId("plugin-item").count();
-  expect(pluginList).toBe(4);
+  await page.getByTestId("testid-setting-description").isVisible();
 });

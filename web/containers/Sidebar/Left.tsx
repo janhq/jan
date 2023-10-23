@@ -130,6 +130,7 @@ export const SidebarLeft = () => {
             return (
               <div className="relative w-full px-4 py-2" key={i}>
                 <button
+                  data-testid={menu.name}
                   className={twMerge(
                     'flex w-full flex-shrink-0 items-center gap-x-2',
                     config.sidebarLeftExpand
