@@ -15,8 +15,18 @@ const stopModel = () => {
   invokePluginFunc(MODULE_PATH, "killSubprocess");
 };
 
-function requestInference(recentMessages: any[]): Observable<string> {
+function requestInference(recentMessages: any[], bot?: any): Observable<string> {
   return new Observable((subscriber) => {
+    const requestBody = JSON.stringify({
+      messages: recentMessages,
+      stream: true,
+      model: "gpt-3.5-turbo",
+      max_tokens: bot?.maxTokens ?? 2048,
+      frequency_penalty: bot?.frequencyPenalty ?? 0,
+      presence_penalty: bot?.presencePenalty ?? 0,
+      temperature: bot?.customTemperature ?? 0,
+    });
+    console.debug(`Request body: ${requestBody}`);
     fetch(INFERENCE_URL, {
       method: "POST",
       headers: {
@@ -24,12 +34,7 @@ function requestInference(recentMessages: any[]): Observable<string> {
         Accept: "text/event-stream",
         "Access-Control-Allow-Origin": "*",
       },
-      body: JSON.stringify({
-        messages: recentMessages,
-        stream: true,
-        model: "gpt-3.5-turbo",
-        max_tokens: 500,
-      }),
+      body: requestBody,
     })
       .then(async (response) => {
         const stream = response.body;
@@ -62,22 +67,39 @@ function requestInference(recentMessages: any[]): Observable<string> {
   });
 }
 
-async function retrieveLastTenMessages(conversationId: string) {
+async function retrieveLastTenMessages(conversationId: string, bot?: any) {
   // TODO: Common collections should be able to access via core functions instead of store
   const messageHistory = (await store.findMany("messages", { conversationId }, [{ createdAt: "asc" }])) ?? [];
-  return messageHistory
+
+  let recentMessages = messageHistory
     .filter((e) => e.message !== "" && (e.user === "user" || e.user === "assistant"))
-    .slice(-10)
-    .map((message) => {
-      return {
-        content: message.message.trim(),
-        role: message.user === "user" ? "user" : "assistant",
-      };
-    });
+    .slice(-9)
+    .map((message) => ({
+      content: message.message.trim(),
+      role: message.user === "user" ? "user" : "assistant",
+    }));
+
+  if (bot && bot.systemPrompt) {
+    // append bot's system prompt
+    recentMessages = [{
+      content: `[INST] ${bot.systemPrompt}`,
+      role: 'system'
+    },...recentMessages];
+  }
+
+  console.debug(`Last 10 messages: ${JSON.stringify(recentMessages, null, 2)}`);
+
+  return recentMessages;
 }
 
 async function handleMessageRequest(data: NewMessageRequest) {
-  const recentMessages = await retrieveLastTenMessages(data.conversationId);
+  const conversation = await store.findOne("conversations", data.conversationId);
+  let bot = undefined;
+  if (conversation.botId != null) {
+    bot = await store.findOne("bots", conversation.botId);
+  }
+  
+  const recentMessages = await retrieveLastTenMessages(data.conversationId, bot);
   const message = {
     ...data,
     message: "",
@@ -91,7 +113,7 @@ async function handleMessageRequest(data: NewMessageRequest) {
   message._id = id;
   events.emit(EventName.OnNewMessageResponse, message);
 
-  requestInference(recentMessages).subscribe({
+  requestInference(recentMessages, bot).subscribe({
     next: (content) => {
       message.message = content;
       events.emit(EventName.OnMessageResponseUpdate, message);

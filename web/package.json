@@ -14,7 +14,7 @@
   "dependencies": {
     "@headlessui/react": "^1.7.15",
     "@heroicons/react": "^2.0.18",
-    "@janhq/core": "^0.1.2",
+    "@janhq/core": "^0.1.6",
     "@tailwindcss/typography": "^0.5.9",
     "@types/react": "18.2.15",
     "@types/react-dom": "18.2.7",
@@ -40,13 +40,15 @@
     "react-dom": "18.2.0",
     "react-hook-form": "^7.45.4",
     "tailwindcss": "3.3.3",
-    "typescript": "5.1.6"
+    "typescript": "5.1.6",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.4",
     "@types/node": "20.6.5",
     "encoding": "^0.1.13",
     "prettier": "^3.0.3",
-    "prettier-plugin-tailwindcss": "^0.5.6"
+    "prettier-plugin-tailwindcss": "^0.5.6",
+    "@types/uuid": "^9.0.6"
   }
 }

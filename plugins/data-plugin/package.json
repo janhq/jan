@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc -b ./config/tsconfig.esm.json && tsc -b ./config/tsconfig.cjs.json && webpack --config webpack.config.js",
-    "postinstall": "rimraf ./data-plugin*.tgz && npm run build",
+    "postinstall": "rimraf *.tgz --glob && npm run build",
     "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {
@@ -40,8 +40,12 @@
     "node_modules"
   ],
   "dependencies": {
-    "@janhq/core": "^0.1.3",
+    "@janhq/core": "^0.1.6",
     "pouchdb-find": "^8.0.1",
     "pouchdb-node": "^8.0.1"
-  }
+  },
+  "bundleDependencies": [
+    "pouchdb-node",
+    "pouchdb-find"
+  ]
 }

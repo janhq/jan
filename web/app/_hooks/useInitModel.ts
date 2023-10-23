@@ -18,7 +18,7 @@ export default function useInitModel() {
 
     const res = await executeSerial(InferenceService.InitModel, model._id)
     if (res?.error) {
-      console.log('error occured: ', res)
+      console.error('Failed to init model: ', res.error)
       return res
     } else {
       console.debug(

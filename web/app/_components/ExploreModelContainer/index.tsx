@@ -1,5 +1,4 @@
 import HeaderTitle from '../HeaderTitle'
-import SearchBar, { SearchType } from '../SearchBar'
 import ExploreModelList from '../ExploreModelList'
 import ExploreModelFilter from '../ExploreModelFilter'
 

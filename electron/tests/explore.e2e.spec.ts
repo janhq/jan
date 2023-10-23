@@ -35,7 +35,7 @@ test.afterAll(async () => {
 });
 
 test("explores models", async () => {
-  await page.getByRole("button", { name: "Explore Models" }).first().click();
+  await page.getByTestId("Explore Models").first().click();
   const header = await page
     .getByRole("heading")
     .filter({ hasText: "Explore Models" })

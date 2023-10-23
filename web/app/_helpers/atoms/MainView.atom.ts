@@ -1,9 +1,14 @@
 import { atom } from 'jotai'
 import { setActiveConvoIdAtom } from './Conversation.atom'
 import { systemBarVisibilityAtom } from './SystemBar.atom'
+import {
+  rightSideBarExpandStateAtom,
+  showRightSideBarToggleAtom,
+} from './LeftSideBarExpand.atom'
 
 export enum MainViewState {
   Welcome,
+  CreateBot,
   ExploreModel,
   MyModel,
   ResourceMonitor,
@@ -14,6 +19,8 @@ export enum MainViewState {
    * When user wants to create new conversation but haven't selected a model yet.
    */
   ConversationEmptyModel,
+
+  BotInfo,
 }
 
 /**
@@ -38,6 +45,13 @@ export const setMainViewStateAtom = atom(
     if (state !== MainViewState.Conversation) {
       // clear active conversation id if main view state is not Conversation
       set(setActiveConvoIdAtom, undefined)
+    }
+
+    if (state in [MainViewState.Welcome, MainViewState.CreateBot]) {
+      set(showRightSideBarToggleAtom, false)
+      set(rightSideBarExpandStateAtom, false)
+    } else {
+      set(showRightSideBarToggleAtom, true)
     }
 
     const showSystemBar =

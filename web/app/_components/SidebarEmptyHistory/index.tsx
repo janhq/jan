@@ -1,4 +1,3 @@
-import Image from 'next/image'
 import useCreateConversation from '@/_hooks/useCreateConversation'
 import PrimaryButton from '../PrimaryButton'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -11,6 +10,7 @@ import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
 import useInitModel from '@/_hooks/useInitModel'
 import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
 import { AssistantModel } from '@/_models/AssistantModel'
+import { ChatBubbleOvalLeftEllipsisIcon } from "@heroicons/react/24/outline"
 
 enum ActionButton {
   DownloadModel = 'Download a Model',
@@ -53,12 +53,7 @@ const SidebarEmptyHistory: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center gap-3 py-10">
-      <Image
-        src={'icons/chat-bubble-oval-left.svg'}
-        width={32}
-        height={32}
-        alt=""
-      />
+      <ChatBubbleOvalLeftEllipsisIcon width={32} height={32} />
       <div className="flex flex-col items-center gap-6">
         <div className="text-center text-sm text-gray-900">No Chat History</div>
         <div className="text-center text-sm text-gray-500">

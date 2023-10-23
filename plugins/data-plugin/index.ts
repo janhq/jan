@@ -1,4 +1,11 @@
-import { core, store, RegisterExtensionPoint, StoreService, DataService, PluginService } from "@janhq/core";
+import {
+  invokePluginFunc,
+  store,
+  RegisterExtensionPoint,
+  StoreService,
+  DataService,
+  PluginService,
+} from "@janhq/core";
 
 /**
  * Create a collection on data store
@@ -8,8 +15,14 @@ import { core, store, RegisterExtensionPoint, StoreService, DataService, PluginS
  * @returns   Promise<void>
  *
  */
-function createCollection({ name, schema }: { name: string; schema?: { [key: string]: any } }): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, "createCollection", name, schema);
+function createCollection({
+  name,
+  schema,
+}: {
+  name: string;
+  schema?: { [key: string]: any };
+}): Promise<void> {
+  return invokePluginFunc(MODULE_PATH, "createCollection", name, schema);
 }
 
 /**
@@ -20,7 +33,7 @@ function createCollection({ name, schema }: { name: string; schema?: { [key: str
  *
  */
 function deleteCollection(name: string): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, "deleteCollection", name);
+  return invokePluginFunc(MODULE_PATH, "deleteCollection", name);
 }
 
 /**
@@ -31,8 +44,14 @@ function deleteCollection(name: string): Promise<void> {
  * @returns   Promise<any>
  *
  */
-function insertOne({ collectionName, value }: { collectionName: string; value: any }): Promise<any> {
-  return core.invokePluginFunc(MODULE_PATH, "insertOne", collectionName, value);
+function insertOne({
+  collectionName,
+  value,
+}: {
+  collectionName: string;
+  value: any;
+}): Promise<any> {
+  return invokePluginFunc(MODULE_PATH, "insertOne", collectionName, value);
 }
 
 /**
@@ -44,8 +63,16 @@ function insertOne({ collectionName, value }: { collectionName: string; value: a
  * @returns   Promise<void>
  *
  */
-function updateOne({ collectionName, key, value }: { collectionName: string; key: string; value: any }): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, "updateOne", collectionName, key, value);
+function updateOne({
+  collectionName,
+  key,
+  value,
+}: {
+  collectionName: string;
+  key: string;
+  value: any;
+}): Promise<void> {
+  return invokePluginFunc(MODULE_PATH, "updateOne", collectionName, key, value);
 }
 
 /**
@@ -64,7 +91,13 @@ function updateMany({
   value: any;
   selector?: { [key: string]: any };
 }): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, "updateMany", collectionName, value, selector);
+  return invokePluginFunc(
+    MODULE_PATH,
+    "updateMany",
+    collectionName,
+    value,
+    selector
+  );
 }
 
 /**
@@ -75,8 +108,14 @@ function updateMany({
  * @returns   Promise<void>
  *
  */
-function deleteOne({ collectionName, key }: { collectionName: string; key: string }): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, "deleteOne", collectionName, key);
+function deleteOne({
+  collectionName,
+  key,
+}: {
+  collectionName: string;
+  key: string;
+}): Promise<void> {
+  return invokePluginFunc(MODULE_PATH, "deleteOne", collectionName, key);
 }
 
 /**
@@ -94,7 +133,7 @@ function deleteMany({
   collectionName: string;
   selector?: { [key: string]: any };
 }): Promise<void> {
-  return core.invokePluginFunc(MODULE_PATH, "deleteMany", collectionName, selector);
+  return invokePluginFunc(MODULE_PATH, "deleteMany", collectionName, selector);
 }
 
 /**
@@ -103,8 +142,14 @@ function deleteMany({
  * @param {string} key - The key of the record to retrieve.
  * @returns {Promise<any>} A promise that resolves when the record is retrieved.
  */
-function findOne({ collectionName, key }: { collectionName: string; key: string }): Promise<any> {
-  return core.invokePluginFunc(MODULE_PATH, "findOne", collectionName, key);
+function findOne({
+  collectionName,
+  key,
+}: {
+  collectionName: string;
+  key: string;
+}): Promise<any> {
+  return invokePluginFunc(MODULE_PATH, "findOne", collectionName, key);
 }
 
 /**
@@ -123,19 +168,28 @@ function findMany({
   selector: { [key: string]: any };
   sort?: [{ [key: string]: any }];
 }): Promise<any> {
-  return core.invokePluginFunc(MODULE_PATH, "findMany", collectionName, selector, sort);
+  return invokePluginFunc(
+    MODULE_PATH,
+    "findMany",
+    collectionName,
+    selector,
+    sort
+  );
 }
 
 function onStart() {
   createCollection({ name: "conversations", schema: {} });
   createCollection({ name: "messages", schema: {} });
+  createCollection({ name: "bots", schema: {} });
 }
 
 // Register all the above functions and objects with the relevant extension points
+// prettier-ignore
 export function init({ register }: { register: RegisterExtensionPoint }) {
   register(PluginService.OnStart, PLUGIN_NAME, onStart);
   register(StoreService.CreateCollection, createCollection.name, createCollection);
   register(StoreService.DeleteCollection, deleteCollection.name, deleteCollection);
+  
   register(StoreService.InsertOne, insertOne.name, insertOne);
   register(StoreService.UpdateOne, updateOne.name, updateOne);
   register(StoreService.UpdateMany, updateMany.name, updateMany);
@@ -144,17 +198,32 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(StoreService.FindOne, findOne.name, findOne);
   register(StoreService.FindMany, findMany.name, findMany);
 
+  // for conversations management
   register(DataService.GetConversations, getConversations.name, getConversations);
+  register(DataService.GetConversationById,getConversationById.name,getConversationById);
   register(DataService.CreateConversation, createConversation.name, createConversation);
   register(DataService.UpdateConversation, updateConversation.name, updateConversation);
-  register(DataService.UpdateMessage, updateMessage.name, updateMessage);
   register(DataService.DeleteConversation, deleteConversation.name, deleteConversation);
+
+  // for messages management
+  register(DataService.UpdateMessage, updateMessage.name, updateMessage);
   register(DataService.CreateMessage, createMessage.name, createMessage);
   register(DataService.GetConversationMessages, getConversationMessages.name, getConversationMessages);
+
+  // for bots management
+  register(DataService.CreateBot, createBot.name, createBot);
+  register(DataService.GetBots, getBots.name, getBots);
+  register(DataService.GetBotById, getBotById.name, getBotById);
+  register(DataService.DeleteBot, deleteBot.name, deleteBot);
+  register(DataService.UpdateBot, updateBot.name, updateBot);
 }
 
 function getConversations(): Promise<any> {
   return store.findMany("conversations", {}, [{ updatedAt: "desc" }]);
+}
+
+function getConversationById(id: string): Promise<any> {
+  return store.findOne("conversations", id);
 }
 
 function createConversation(conversation: any): Promise<number | undefined> {
@@ -174,9 +243,83 @@ function updateMessage(message: any): Promise<void> {
 }
 
 function deleteConversation(id: any) {
-  return store.deleteOne("conversations", id).then(() => store.deleteMany("messages", { conversationId: id }));
+  return store
+    .deleteOne("conversations", id)
+    .then(() => store.deleteMany("messages", { conversationId: id }));
 }
 
 function getConversationMessages(conversationId: any) {
-  return store.findMany("messages", { conversationId }, [{ createdAt: "desc" }]);
+  return store.findMany("messages", { conversationId }, [
+    { createdAt: "desc" },
+  ]);
+}
+
+function createBot(bot: any): Promise<void> {
+  console.debug("Creating bot", JSON.stringify(bot, null, 2));
+  return store
+    .insertOne("bots", bot)
+    .then(() => {
+      console.debug("Bot created", JSON.stringify(bot, null, 2));
+      return Promise.resolve();
+    })
+    .catch((err) => {
+      console.error("Error creating bot", err);
+      return Promise.reject(err);
+    });
+}
+
+function getBots(): Promise<any> {
+  console.debug("Getting bots");
+  return store
+    .findMany("bots", { name: { $gt: null } })
+    .then((bots) => {
+      console.debug("Bots retrieved", JSON.stringify(bots, null, 2));
+      return Promise.resolve(bots);
+    })
+    .catch((err) => {
+      console.error("Error getting bots", err);
+      return Promise.reject(err);
+    });
+}
+
+function deleteBot(id: string): Promise<any> {
+  console.debug("Deleting bot", id);
+  return store
+    .deleteOne("bots", id)
+    .then(() => {
+      console.debug("Bot deleted", id);
+      return Promise.resolve();
+    })
+    .catch((err) => {
+      console.error("Error deleting bot", err);
+      return Promise.reject(err);
+    });
+}
+
+function updateBot(bot: any): Promise<void> {
+  console.debug("Updating bot", JSON.stringify(bot, null, 2));
+  return store
+    .updateOne("bots", bot._id, bot)
+    .then(() => {
+      console.debug("Bot updated");
+      return Promise.resolve();
+    })
+    .catch((err) => {
+      console.error("Error updating bot", err);
+      return Promise.reject(err);
+    });
+}
+
+function getBotById(botId: string): Promise<any> {
+  console.debug("Getting bot", botId);
+  return store
+    .findOne("bots", botId)
+    .then((bot) => {
+      console.debug("Bot retrieved", JSON.stringify(bot, null, 2));
+      return Promise.resolve(bot);
+    })
+    .catch((err) => {
+      console.error("Error getting bot", err);
+      return Promise.reject(err);
+    });
 }

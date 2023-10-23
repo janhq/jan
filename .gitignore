@@ -15,3 +15,4 @@ package-lock.json
 
 *.log
 plugin-core/lib
+core/lib/**
