@@ -28,10 +28,6 @@ const Page: React.FC = () => {
       break
 
     case MainViewState.Welcome:
-      children = <WelcomeScreen />
-      break
-
-    case MainViewState.Conversation:
       children = <ChatScreen />
       break
 

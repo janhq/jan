@@ -1,4 +1,44 @@
 import { NewMessageResponse } from '@janhq/core'
+export enum MessageType {
+  Text = 'Text',
+  Image = 'Image',
+  ImageWithText = 'ImageWithText',
+  Error = 'Error',
+}
+
+export enum MessageSenderType {
+  Ai = 'assistant',
+  User = 'user',
+}
+
+export enum MessageStatus {
+  Ready = 'ready',
+  Pending = 'pending',
+}
+
+export interface ChatMessage {
+  id: string
+  conversationId: string
+  messageType: MessageType
+  messageSenderType: MessageSenderType
+  senderUid: string
+  senderName: string
+  senderAvatarUrl: string
+  text: string | undefined
+  imageUrls?: string[] | undefined
+  createdAt: number
+  status: MessageStatus
+}
+
+export interface RawMessage {
+  _id?: string
+  conversationId?: string
+  user?: string
+  avatar?: string
+  message?: string
+  createdAt?: string
+  updatedAt?: string
+}
 
 export const toChatMessage = (
   m: RawMessage | NewMessageResponse

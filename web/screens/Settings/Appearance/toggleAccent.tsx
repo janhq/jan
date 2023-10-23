@@ -30,8 +30,6 @@ const accentOptions: AccentOption[] = [
 const ToggleAccent = () => {
   const [config, setUserConfig] = useUserConfigs()
 
-  console.log(config)
-
   const handleChangeAccent = (accent: Accent) => {
     setUserConfig({ ...config, accent })
   }

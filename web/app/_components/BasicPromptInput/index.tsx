@@ -68,7 +68,7 @@ const BasicPromptInput: React.FC = () => {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg shadow-sm ring-1 ring-inset ring-gray-300 focus-within:ring-2 focus-within:ring-indigo-600">
+    <div className=" border-border rounded-lg border shadow-sm">
       <textarea
         ref={textareaRef}
         onKeyDown={handleKeyDown}
@@ -76,7 +76,7 @@ const BasicPromptInput: React.FC = () => {
         onChange={handleMessageChange}
         name="comment"
         id="comment"
-        className="block w-full resize-none border-0 bg-transparent py-1.5 text-gray-900 placeholder:text-gray-400 focus:ring-0 sm:text-sm sm:leading-6"
+        className="text-background-reverse block w-full resize-none border-0 bg-transparent py-1.5 placeholder:text-gray-400 focus:ring-0 sm:text-sm sm:leading-6"
         placeholder="Message ..."
         rows={1}
         style={{ overflow: 'auto' }}

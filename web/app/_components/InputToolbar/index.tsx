@@ -72,23 +72,20 @@ const InputToolbar: React.FC = () => {
     }
   }
 
-  if (inputState === 'loading') {
-    return <div>Loading..</div>
-  }
+  if (inputState === 'loading') return <div>Loading..</div>
 
-  if (inputState === 'disabled') {
-    // text italic
-
-    return (
-      <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center text-sm italic text-gray-600">
-        {error}
-      </p>
-    )
-  }
+  // if (inputState === 'disabled')
+  //   return (
+  //     <div className="flex items-center justify-center">
+  //       <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center text-sm italic text-gray-600">
+  //         {error}
+  //       </p>
+  //     </div>
+  //   )
 
   return (
-    <Fragment>
-      {currentConvoState?.error && (
+    <div className="absolute bottom-0 left-0 w-full p-5 pb-0">
+      {!currentConvoState?.error && (
         <div className="flex flex-row justify-center">
           <span className="mx-5 my-2 text-sm text-red-500">
             {currentConvoState?.error?.toString()}
@@ -103,13 +100,13 @@ const InputToolbar: React.FC = () => {
         />
       </div>
       {/* My text input */}
-      <div className="mx-12 mb-5 flex items-start space-x-4 md:mx-32 2xl:mx-64">
+      <div className="mb-5 flex items-start space-x-4">
         <div className="relative min-w-0 flex-1">
           <BasicPromptInput />
           <BasicPromptAccessories />
         </div>
       </div>
-    </Fragment>
+    </div>
   )
 }
 
