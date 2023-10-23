@@ -13,7 +13,7 @@ export function useGetDownloadedModels() {
     })
   }, [setDownloadedModels])
 
-  return { downloadedModels, downloadedModels }
+  return { downloadedModels }
 }
 
 export async function getDownloadedModels(): Promise<AssistantModel[]> {

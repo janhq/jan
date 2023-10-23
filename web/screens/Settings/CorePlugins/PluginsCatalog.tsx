@@ -2,9 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { Button, Switch } from '@uikit'
-
 import Loader from '@containers/Loader'
-
 import { formatPluginsName } from '@utils/converter'
 
 import {
