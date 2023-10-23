@@ -1,6 +1,6 @@
 import React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-
+import { useUserConfigs } from '@hooks/useUserConfigs'
 import {
   leftSideBarExpandStateAtom,
   rightSideBarExpandStateAtom,
@@ -10,6 +10,7 @@ import { PanelLeftClose, PanelLeftOpen, PanelRightOpen } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 const Topbar = () => {
+  const [config, setConfig] = useUserConfigs()
   const isLeftSidebarVisible = useAtomValue(leftSideBarExpandStateAtom)
   const isRightSidebarVisible = useAtomValue(rightSideBarExpandStateAtom)
   const setLeftSideBarVisibility = useSetAtom(leftSideBarExpandStateAtom)
@@ -20,19 +21,19 @@ const Topbar = () => {
       <div
         className={twMerge(
           'unset-drag fixed top-2 block',
-          isLeftSidebarVisible ? 'left-[180px]' : 'left-20'
+          config.sidebarLeftExpand ? 'left-[180px]' : 'left-20'
         )}
       >
-        {isLeftSidebarVisible ? (
+        {config.sidebarLeftExpand ? (
           <PanelLeftClose
             size={18}
-            onClick={() => setLeftSideBarVisibility((prev) => !prev)}
+            onClick={() => setConfig({ sidebarLeftExpand: false })}
             className="dark:text-gray-400"
           />
         ) : (
           <PanelLeftOpen
             size={18}
-            onClick={() => setLeftSideBarVisibility((prev) => !prev)}
+            onClick={() => setConfig({ sidebarLeftExpand: true })}
             className="dark:text-gray-400"
           />
         )}

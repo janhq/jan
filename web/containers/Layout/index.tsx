@@ -3,24 +3,16 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { useTheme } from 'next-themes'
 import { SidebarLeft, SidebarRight } from '@containers/Sidebar'
 import { twMerge } from 'tailwind-merge'
-import {
-  leftSideBarExpandStateAtom,
-  rightSideBarExpandStateAtom,
-} from '@helpers/atoms/SideBarExpand.atom'
-
+import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
 import Topbar from '@containers/Topbar'
 import BottomBar from '@containers/BottomBar'
-
 import { motion as m } from 'framer-motion'
-
 import { getMainViewStateAtom } from '@helpers/atoms/MainView.atom'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
-  const isLeftSidebarVisible = useAtomValue(leftSideBarExpandStateAtom)
+
   const isRightSidebarVisible = useAtomValue(rightSideBarExpandStateAtom)
-  const setLeftSideBarVisibility = useSetAtom(leftSideBarExpandStateAtom)
-  const setRightSideBarVisibility = useSetAtom(rightSideBarExpandStateAtom)
   const viewState = useAtomValue(getMainViewStateAtom)
 
   const { theme } = useTheme()

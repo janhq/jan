@@ -1,5 +1,4 @@
 import React from 'react'
-import { leftSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
   MainViewState,
@@ -20,9 +19,10 @@ import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 import { twMerge } from 'tailwind-merge'
 import { showingBotListModalAtom } from '@helpers/atoms/Modal.atom'
 import useGetBots from '@hooks/useGetBots'
+import { useUserConfigs } from '@hooks/useUserConfigs'
 
 export const SidebarLeft = () => {
-  const isLeftSidebarVisible = useAtomValue(leftSideBarExpandStateAtom)
+  const [config] = useUserConfigs()
   const currentState = useAtomValue(getMainViewStateAtom)
   const setMainViewState = useSetAtom(setMainViewStateAtom)
   const setBotListModal = useSetAtom(showingBotListModalAtom)
@@ -102,7 +102,7 @@ export const SidebarLeft = () => {
     <m.div
       initial={false}
       animate={{
-        width: isLeftSidebarVisible ? 180 : 60,
+        width: config.sidebarLeftExpand ? 180 : 60,
         transition: {
           duration: 0.5,
           type: 'spring',
@@ -119,7 +119,7 @@ export const SidebarLeft = () => {
         <div
           className={twMerge(
             'flex w-full flex-col',
-            isLeftSidebarVisible ? 'items-start' : 'items-center'
+            config.sidebarLeftExpand ? 'items-start' : 'items-center'
           )}
         >
           {menus.map((menu, i) => {
@@ -129,7 +129,9 @@ export const SidebarLeft = () => {
                 <button
                   className={twMerge(
                     'flex w-full flex-shrink-0 items-center gap-x-2',
-                    isLeftSidebarVisible ? 'justify-start' : 'justify-center'
+                    config.sidebarLeftExpand
+                      ? 'justify-start'
+                      : 'justify-center'
                   )}
                   onClick={() => onMenuClick(menu.state)}
                 >
@@ -137,7 +139,7 @@ export const SidebarLeft = () => {
                   <m.span
                     initial={false}
                     variants={variant}
-                    animate={isLeftSidebarVisible ? 'show' : 'hide'}
+                    animate={config.sidebarLeftExpand ? 'show' : 'hide'}
                     className="text-muted-foreground text-xs font-semibold"
                   >
                     {menu.name}
@@ -156,7 +158,7 @@ export const SidebarLeft = () => {
         <m.div
           initial={false}
           variants={variant}
-          animate={isLeftSidebarVisible ? 'show' : 'hide'}
+          animate={config.sidebarLeftExpand ? 'show' : 'hide'}
           className="flex flex-col space-y-2 px-3"
         >
           <div className="bg-background/50 border-border space-y-2 rounded-lg border p-3">
