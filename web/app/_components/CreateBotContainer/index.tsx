@@ -6,7 +6,6 @@ import PrimaryButton from '../PrimaryButton'
 import ToggleSwitch from '../ToggleSwitch'
 import CreateBotPromptInput from '../CreateBotPromptInput'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
-import { Bot } from '@/_models/Bot'
 import { SubmitHandler, useForm } from 'react-hook-form'
 import Avatar from '../Avatar'
 import { v4 as uuidv4 } from 'uuid'
@@ -129,7 +128,7 @@ const CreateBotContainer: React.FC = () => {
 
           <div className="flex flex-col gap-0.5">
             <label className="block">Bot access</label>
-            <span className="text-muted-foreground mb-4 mt-1">
+            <span className="mb-4 mt-1 text-muted-foreground">
               If this setting is enabled, the bot will be added to your profile
               and will be publicly accessible. Turning this off will make the
               bot private.
