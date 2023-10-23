@@ -28,7 +28,7 @@ const Page: React.FC = () => {
       break
 
     case MainViewState.Welcome:
-      children = <ChatScreen />
+      children = <WelcomeScreen />
       break
 
     case MainViewState.CreateBot:

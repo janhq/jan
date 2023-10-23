@@ -74,18 +74,18 @@ const InputToolbar: React.FC = () => {
 
   if (inputState === 'loading') return <div>Loading..</div>
 
-  // if (inputState === 'disabled')
-  //   return (
-  //     <div className="flex items-center justify-center">
-  //       <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center text-sm italic text-gray-600">
-  //         {error}
-  //       </p>
-  //     </div>
-  //   )
+  if (inputState === 'disabled')
+    return (
+      <div className="sticky bottom-0 flex items-center justify-center bg-background">
+        <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center italic text-gray-600">
+          {error}
+        </p>
+      </div>
+    )
 
   return (
-    <div className="absolute bottom-0 left-0 w-full p-5 pb-0">
-      {!currentConvoState?.error && (
+    <div className="sticky bottom-0 w-full bg-background px-5 py-0">
+      {currentConvoState?.error && (
         <div className="flex flex-row justify-center">
           <span className="mx-5 my-2 text-sm text-red-500">
             {currentConvoState?.error?.toString()}

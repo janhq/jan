@@ -9,7 +9,9 @@ import {
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 import useInitModel from '@hooks/useInitModel'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
-import { ChatBubbleOvalLeftEllipsisIcon } from '@heroicons/react/24/outline'
+import { Button } from '@uikit'
+
+import {MessageCircle} from "lucide-react"
 
 enum ActionButton {
   DownloadModel = 'Download a Model',
@@ -52,13 +54,15 @@ const SidebarEmptyHistory: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center gap-3 py-10">
-      <ChatBubbleOvalLeftEllipsisIcon width={32} height={32} />
-      <div className="flex flex-col items-center gap-6">
-        <div className="text-center text-sm text-gray-900">No Chat History</div>
-        <div className="text-center text-sm text-gray-500">
+      <MessageCircle size={32} />
+      <div className="flex flex-col items-center gap-y-2">
+        <h6 className="text-center text-base">No Chat History</h6>
+        <p className="text-center text-muted-foreground mb-6">
           Get started by creating a new chat.
-        </div>
-        <PrimaryButton title={action} onClick={onClick} />
+        </p>
+        <Button onClick={onClick} themes="accent" >
+          {action}
+        </Button>
       </div>
     </div>
   )

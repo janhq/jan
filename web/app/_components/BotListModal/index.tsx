@@ -15,6 +15,7 @@ const BotListModal: React.FC = () => {
     getAllBots().then((res) => {
       setBots(res)
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const onBotSelected = (bot: Bot) => {

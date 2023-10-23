@@ -53,7 +53,7 @@ const ChatBody: React.FC = () => {
   }, [messageList, lastPostRef])
 
   return (
-    <div className="flex h-full flex-1 flex-col-reverse overflow-y-scroll py-4">
+    <div className="flex h-full flex-1 flex-col-reverse overflow-y-scroll [&>*:nth-child(odd)]:bg-background">
       {content}
     </div>
   )

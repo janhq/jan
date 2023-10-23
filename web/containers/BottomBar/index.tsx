@@ -20,7 +20,7 @@ const BottomBar = () => {
   }
 
   return (
-    <div className="bg-background/50 border-border fixed bottom-0 left-0 z-50 flex h-8 w-full items-center justify-between border-t px-4">
+    <div className="fixed bottom-0 left-0 z-20 flex h-8 w-full items-center justify-between border-t border-border bg-background/50 px-4">
       <div className="flex gap-x-2">
         <SystemItem name="Active model:" value={activeModel?.name || '-'} />
         {downloadStates.length > 0 && (
@@ -35,7 +35,7 @@ const BottomBar = () => {
       <div className="flex gap-x-2">
         <SystemItem name="CPU:" value={`${cpu}%`} />
         <SystemItem name="Mem:" value={`${ram}%`} />
-        <p className="text-muted-foreground text-xs">
+        <p className="text-xs text-muted-foreground">
           &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd. v{version}
         </p>
       </div>

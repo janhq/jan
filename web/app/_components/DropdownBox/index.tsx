@@ -30,6 +30,7 @@ const DropdownBox: React.FC<Props> = ({
   })
 
   const onSelectedChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    console.log(e)
     const selectedOption = data.find(
       (option) => option.title === e.target.value
     )
@@ -40,10 +41,10 @@ const DropdownBox: React.FC<Props> = ({
 
   return (
     <div>
-      <label className="block text-base font-bold text-gray-900">{title}</label>
+      <label className="block font-bold">{title}</label>
       <select
         onSelect={onSelectedChange}
-        className="mt-2 block w-full rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 sm:text-sm sm:leading-6"
+        className="mt-2 block w-full rounded-md border-0 bg-background/80 py-1.5 pl-3 pr-10 text-xs ring-1 ring-inset ring-border focus:ring-2 focus:ring-accent/50 sm:leading-6"
         defaultValue={selected.title}
         {...field}
       >

@@ -1,26 +1,25 @@
-import React, { Fragment, useState } from "react";
-import ToggleSwitch from "../ToggleSwitch";
-import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
-import CutomBotTemperature from "../CustomBotTemperature";
-import DraggableProgressBar from "../DraggableProgressBar";
+import React, { Fragment, useState } from 'react'
+import ToggleSwitch from '../ToggleSwitch'
+import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline'
+import CutomBotTemperature from '../CustomBotTemperature'
+import DraggableProgressBar from '../DraggableProgressBar'
 
 type Props = {
-  control?: any;
-};
+  control?: any
+}
 
 const CreateBotInAdvance: React.FC<Props> = ({ control }) => {
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(true)
 
   const handleShowAdvanced = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    setShowAdvanced(!showAdvanced);
-  };
+    setShowAdvanced(!showAdvanced)
+  }
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-start">
         <button
-          className="flex items-center justify-center text-gray-900 font-bold"
+          className="mb-2 flex items-center justify-center font-bold"
           onClick={handleShowAdvanced}
         >
           Advanced
@@ -32,14 +31,50 @@ const CreateBotInAdvance: React.FC<Props> = ({ control }) => {
         </button>
       </div>
 
-      <p>Max tokens</p>
-      <DraggableProgressBar id="maxTokens" control={control} min={0} max={4096} step={1} />
-      <p>Custom temperature</p>
-      <DraggableProgressBar id="customTemperature" control={control} min={0} max={1} step={0.01} />
-      <p>Frequency penalty</p>
-      <DraggableProgressBar id="frequencyPenalty" control={control} min={0} max={1} step={0.01} />
-      <p>Presence penalty</p>
-      <DraggableProgressBar id="presencePenalty" control={control} min={0} max={1} step={0.01} />
+      {showAdvanced && (
+        <>
+          <div>
+            <p className="text-bold">Max tokens</p>
+            <DraggableProgressBar
+              id="maxTokens"
+              control={control}
+              min={0}
+              max={4096}
+              step={1}
+            />
+          </div>
+          <div>
+            <p className="text-bold">Custom temperature</p>
+            <DraggableProgressBar
+              id="customTemperature"
+              control={control}
+              min={0}
+              max={1}
+              step={0.01}
+            />
+          </div>
+          <div>
+            <p className="text-bold">Frequency penalty</p>
+            <DraggableProgressBar
+              id="frequencyPenalty"
+              control={control}
+              min={0}
+              max={1}
+              step={0.01}
+            />
+          </div>
+          <div>
+            <p className="text-bold">Presence penalty</p>
+            <DraggableProgressBar
+              id="presencePenalty"
+              control={control}
+              min={0}
+              max={1}
+              step={0.01}
+            />
+          </div>
+        </>
+      )}
 
       {/* {showAdvanced && (
         <Fragment>
@@ -57,7 +92,7 @@ const CreateBotInAdvance: React.FC<Props> = ({ control }) => {
         </Fragment>
       )} */}
     </div>
-  );
-};
+  )
+}
 
-export default CreateBotInAdvance;
+export default CreateBotInAdvance

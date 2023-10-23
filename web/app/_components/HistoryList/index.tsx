@@ -6,11 +6,11 @@ import { searchAtom } from '@helpers/JotaiWrapper'
 import useGetUserConversations from '@hooks/useGetUserConversations'
 import SidebarEmptyHistory from '../SidebarEmptyHistory'
 import { userConversationsAtom } from '@helpers/atoms/Conversation.atom'
+import { twMerge } from 'tailwind-merge'
 
 const HistoryList: React.FC = () => {
   const conversations = useAtomValue(userConversationsAtom)
   const searchText = useAtomValue(searchAtom)
-  const [expand, setExpand] = useState<boolean>(true)
   const { getUserConversations } = useGetUserConversations()
 
   useEffect(() => {
@@ -18,17 +18,9 @@ const HistoryList: React.FC = () => {
   }, [])
 
   return (
-    <div className="flex flex-grow flex-col gap-2 overflow-hidden pt-3">
-      <ExpandableHeader
-        title="CHAT HISTORY"
-        expanded={expand}
-        onClick={() => setExpand(!expand)}
-      />
-      <ul
-        className={`scroll mt-1 flex flex-col gap-1 overflow-y-auto ${
-          !expand ? 'hidden ' : 'block'
-        }`}
-      >
+    <div className="flex flex-grow flex-col gap-2">
+      <ExpandableHeader title="CHAT HISTORY" />
+      <ul className={twMerge('mt-1 flex flex-col gap-y-3 overflow-y-scroll')}>
         {conversations.length > 0 ? (
           conversations
             .filter(

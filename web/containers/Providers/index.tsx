@@ -4,7 +4,7 @@ import { PropsWithChildren } from 'react'
 import { PluginService } from '@janhq/core'
 import { ThemeWrapper } from '@helpers/ThemeWrapper'
 import JotaiWrapper from '@helpers/JotaiWrapper'
-// import { ModalWrapper } from '@helpers/ModalWrapper'
+import { ModalWrapper } from '@helpers/ModalWrapper'
 import { useEffect, useState } from 'react'
 import CompactLogo from '@containers/Logo/CompactLogo'
 import {
@@ -75,13 +75,15 @@ const Providers = (props: PropsWithChildren) => {
       {setupCore && (
         <EventListenerWrapper>
           <ThemeWrapper>
-            {activated ? (
-              children
-            ) : (
-              <div className="bg-background flex h-screen w-screen items-center justify-center">
-                <CompactLogo width={56} height={56} />
-              </div>
-            )}
+            <ModalWrapper>
+              {activated ? (
+                children
+              ) : (
+                <div className="flex h-screen w-screen items-center justify-center bg-background">
+                  <CompactLogo width={56} height={56} />
+                </div>
+              )}
+            </ModalWrapper>
           </ThemeWrapper>
         </EventListenerWrapper>
       )}

@@ -27,7 +27,7 @@ const LeftHeaderAction: React.FC = () => {
   }
 
   return (
-    <div className="mx-3 my-3 flex flex-row gap-2">
+    <div className="sticky top-0 mb-4 flex flex-row gap-2">
       <SecondaryButton
         title={'Explore'}
         onClick={onExploreClick}

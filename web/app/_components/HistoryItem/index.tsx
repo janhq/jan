@@ -15,6 +15,7 @@ import {
 } from '@helpers/atoms/MainView.atom'
 import useInitModel from '@hooks/useInitModel'
 import { displayDate } from '@utils/datetime'
+import { twMerge } from 'tailwind-merge'
 
 type Props = {
   conversation: Conversation
@@ -61,41 +62,31 @@ const HistoryItem: React.FC<Props> = ({
     }
   }
 
-  const backgroundColor = isSelected
-    ? 'bg-gray-100 dark:bg-gray-700'
-    : 'bg-white dark:bg-gray-500'
-
+  const backgroundColor = isSelected ? 'bg-background/80' : 'bg-background/20'
   const description = conversation?.lastMessage ?? 'No new message'
 
   return (
     <li
       role="button"
-      className={`ml-3 mr-2 flex flex-row rounded p-3 ${backgroundColor} hover:bg-hover-light`}
+      className={twMerge(
+        'flex flex-row rounded-md border border-border p-3',
+        backgroundColor
+      )}
       onClick={onClick}
     >
-      <div className="h-8 w-8">
-        <Image
-          width={32}
-          height={32}
-          src={avatarUrl ?? 'icons/app_icon.svg'}
-          className="aspect-square rounded-full"
-          alt=""
-        />
-      </div>
-
-      <div className="ml-2 flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col">
         {/* title */}
-        <div className="flex">
-          <span className="line-clamp-1 flex-1 text-gray-900">
-            {summary ?? name}
-          </span>
-          <span className="line-clamp-1 text-xs leading-5 text-gray-500">
-            {updatedAt && displayDate(new Date(updatedAt).getTime())}
-          </span>
-        </div>
+
+        <span className="mb-1 line-clamp-1 leading-5 text-muted-foreground">
+          {updatedAt && displayDate(new Date(updatedAt).getTime())}
+        </span>
+
+        <span className="line-clamp-1">{summary ?? name}</span>
 
         {/* description */}
-        <span className="mt-1 line-clamp-2 text-gray-400">{description}</span>
+        <span className="mt-1 line-clamp-2 text-muted-foreground">
+          {description}
+        </span>
       </div>
     </li>
   )

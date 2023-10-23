@@ -20,7 +20,7 @@ const ToggleSwitch: React.FC<Props> = ({
   required = false,
 }) => (
   <div className="flex items-center justify-between">
-    <div className="text-base text-gray-900">{title}</div>
+    <div className="text-bold">{title}</div>
     <Controller
       name={id}
       control={control}
@@ -30,7 +30,7 @@ const ToggleSwitch: React.FC<Props> = ({
           checked={value}
           onChange={onChange}
           className={classNames(
-            value ? 'bg-indigo-600' : 'bg-gray-200',
+            value ? 'bg-accent' : 'bg-gray-200',
             'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2'
           )}
         >

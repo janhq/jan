@@ -23,7 +23,7 @@ const DraggableProgressBar: React.FC<Props> = ({
   })
 
   return (
-    <div className="mt-2 flex items-center gap-2">
+    <div className="flex items-center gap-2">
       <input
         {...field}
         className="flex-1"
@@ -36,7 +36,7 @@ const DraggableProgressBar: React.FC<Props> = ({
         name={id}
         control={control}
         render={({ field: { value } }) => (
-          <span className="rounded-md border border-[#737d7d] px-2 py-1 text-gray-900">
+          <span className="rounded-md border border-border px-2 py-1 text-accent">
             {formatTwoDigits(value)}
           </span>
         )}

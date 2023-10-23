@@ -18,13 +18,10 @@ const CreateBotPromptInput: React.FC<Props> = ({ id, control, required }) => {
   return (
     <Fragment>
       <div className="flex flex-col gap-2">
-        <label
-          htmlFor="comment"
-          className="block text-base font-bold text-gray-900"
-        >
+        <label htmlFor="comment" className="block font-bold ">
           Prompt
         </label>
-        <p className="text-sm font-normal text-gray-400">
+        <p className="mt-1 font-normal text-gray-400">
           All conversations with this bot will start with your prompt but it
           will not be visible to the user in the chat. If you would like the
           prompt message to be visible to the user, consider using an intro
@@ -37,7 +34,7 @@ const CreateBotPromptInput: React.FC<Props> = ({ id, control, required }) => {
         />
         <textarea
           rows={4}
-          className="block w-full resize-none rounded-md border-0 bg-transparent py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+          className="block w-full resize-none rounded-md border-0 bg-background/80 py-1.5 text-xs leading-relaxed text-background-reverse shadow-sm ring-1 ring-inset ring-border placeholder:text-muted-foreground focus:ring-2 focus:ring-inset focus:ring-accent/50"
           placeholder="Talk to me like a pirate"
           {...field}
         />

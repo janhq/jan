@@ -7,6 +7,7 @@ import { showConfirmDeleteConversationModalAtom } from '@helpers/atoms/Modal.ato
 import { ChartPieIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { useAtomValue, useSetAtom } from 'jotai'
 import React from 'react'
+import { Trash2 } from 'lucide-react'
 
 const MainHeader: React.FC = () => {
   const setLeftSideBarVisibility = useSetAtom(leftSideBarExpandStateAtom)
@@ -19,38 +20,18 @@ const MainHeader: React.FC = () => {
   const currentConvo = useAtomValue(currentConversationAtom)
   let title = currentConvo?.name ?? ''
 
-  return (
-    <div className="flex justify-between bg-gray-200 px-2 py-3">
-      <ChartPieIcon
-        color="#9CA3AF"
-        width={22}
-        height={22}
-        role="button"
-        onClick={() => setLeftSideBarVisibility((prev) => !prev)}
-      />
+  if (!activeConversation) return null
 
-      <span className="flex gap-0.5 text-base font-semibold leading-6">
-        {title}
-      </span>
+  return (
+    <div className="sticky top-0 border-b border-border bg-background/90 px-4 py-2">
+      <span className="font-semibold text-muted-foreground">{title}</span>
 
       {/* right most */}
-      <div className="flex gap-4">
-        {activeConversation != null && (
-          <TrashIcon
-            role="button"
-            width={24}
-            height={24}
-            color="#9CA3AF"
-            onClick={() => setShowConfirmDeleteConversationModal(true)}
-          />
-        )}
-
-        <ChartPieIcon
+      <div className="absolute right-4 top-2">
+        <Trash2
           role="button"
-          width={24}
-          height={24}
-          color="#9CA3AF"
-          onClick={() => setRightSideBarVisibility((prev) => !prev)}
+          size={16}
+          onClick={() => setShowConfirmDeleteConversationModal(true)}
         />
       </div>
     </div>

@@ -63,8 +63,8 @@ const CreateBotContainer: React.FC = () => {
       className="flex h-full w-full flex-col"
       onSubmit={handleSubmit(onSubmit)}
     >
-      <div className="mx-6 mt-3 flex items-center justify-between gap-3">
-        <span className="text-3xl font-bold text-gray-900">Create Bot</span>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <span className="text-lg font-bold">Create Bot</span>
         <div className="flex gap-3">
           <PrimaryButton isSubmit title="Create" />
         </div>
@@ -72,7 +72,6 @@ const CreateBotContainer: React.FC = () => {
       <div className="scroll flex flex-1 flex-col overflow-y-auto pt-4">
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
           <Avatar />
-
           <TextInputWithTitle
             description="Handle should be unique, 4-20 characters long, and may include alphanumeric characters, dashes or underscores."
             title="Handle"
@@ -80,7 +79,6 @@ const CreateBotContainer: React.FC = () => {
             control={control}
             required={true}
           />
-
           <TextAreaWithTitle
             id="description"
             title="Bot description"
@@ -112,10 +110,8 @@ const CreateBotContainer: React.FC = () => {
             /> */}
 
             <div className="flex flex-col gap-0.5">
-              <label className="block text-base font-bold text-gray-900">
-                Bot access
-              </label>
-              <span className="pb-2 text-sm text-[#737d7d]">
+              <label className="block font-bold">Bot access</label>
+              <span className="mt-1 text-muted-foreground">
                 If this setting is enabled, the bot will be added to your
                 profile and will be publicly accessible. Turning this off will
                 make the bot private.

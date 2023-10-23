@@ -11,7 +11,7 @@ const BasicPromptAccessories: React.FC = () => {
   const shouldShowAdvancedPrompt = false
 
   return (
-    <div className="absolute inset-x-0 bottom-0 flex justify-between py-2 pl-3 pr-2">
+    <div className="absolute inset-x-0 bottom-0 flex justify-between p-3">
       {/* Add future accessories here, e.g upload a file */}
       <div className="flex items-center space-x-5">
         <div className="flex items-center">

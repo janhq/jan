@@ -40,10 +40,12 @@ export const SidebarLeft = () => {
       alert('You have no bot')
       return
     }
+
     if (downloadedModels.length === 0) {
       alert('You have no model downloaded')
       return
     }
+
     setBotListModal(true)
   }
 
@@ -124,6 +126,7 @@ export const SidebarLeft = () => {
         >
           {menus.map((menu, i) => {
             const isActive = currentState === menu.state
+            const isBotMenu = menu.name === 'Bot'
             return (
               <div className="relative w-full px-4 py-2" key={i}>
                 <button
@@ -133,21 +136,23 @@ export const SidebarLeft = () => {
                       ? 'justify-start'
                       : 'justify-center'
                   )}
-                  onClick={() => onMenuClick(menu.state)}
+                  onClick={() =>
+                    isBotMenu ? onBotListClick() : onMenuClick(menu.state)
+                  }
                 >
                   {menu.icon}
                   <m.span
                     initial={false}
                     variants={variant}
                     animate={config.sidebarLeftExpand ? 'show' : 'hide'}
-                    className="text-muted-foreground text-xs font-semibold"
+                    className="text-xs font-semibold text-muted-foreground"
                   >
                     {menu.name}
                   </m.span>
                 </button>
                 {isActive ? (
                   <m.div
-                    className="bg-accent/20 absolute inset-0 left-2 -z-10 h-full w-[calc(100%-16px)] rounded-md p-2 backdrop-blur-lg"
+                    className="absolute inset-0 left-2 -z-10 h-full w-[calc(100%-16px)] rounded-md bg-accent/20 p-2 backdrop-blur-lg"
                     layoutId="active-state"
                   />
                 ) : null}
@@ -161,14 +166,14 @@ export const SidebarLeft = () => {
           animate={config.sidebarLeftExpand ? 'show' : 'hide'}
           className="flex flex-col space-y-2 px-3"
         >
-          <div className="bg-background/50 border-border space-y-2 rounded-lg border p-3">
+          <div className="space-y-2 rounded-lg border border-border bg-background/50 p-3">
             <button
               onClick={() =>
                 window.electronAPI?.openExternalUrl(
                   'https://discord.gg/AsJ8krTT3N'
                 )
               }
-              className="text-muted-foreground block text-xs font-semibold"
+              className="block text-xs font-semibold text-muted-foreground"
             >
               Discord
             </button>
@@ -178,7 +183,7 @@ export const SidebarLeft = () => {
                   'https://twitter.com/janhq_'
                 )
               }
-              className="text-muted-foreground block text-xs font-semibold"
+              className="block text-xs font-semibold text-muted-foreground"
             >
               Twitter
             </button>
