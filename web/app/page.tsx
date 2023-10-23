@@ -28,7 +28,7 @@ const Page: React.FC = () => {
       break
 
     case MainViewState.Welcome:
-      children = <SettingsScreen />
+      children = <WelcomeScreen />
       break
 
     case MainViewState.Conversation:
