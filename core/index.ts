@@ -131,6 +131,11 @@ export enum DataService {
    * Updates a bot matching an ID.
    */
   UpdateBot = "updateBot",
+
+  /**
+   * Gets the plugin manifest.
+   */
+  GetPluginManifest = "getPluginManifest",
 }
 
 /**
