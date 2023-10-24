@@ -54,7 +54,7 @@ jobs:
           yarn install
           yarn build:plugins-darwin
         env:
-          APP_PATH: electron
+          APP_PATH: "."
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
 
       - name: Build and publish app
