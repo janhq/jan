@@ -19,6 +19,9 @@ module.exports = {
     new webpack.DefinePlugin({
       PLUGIN_NAME: JSON.stringify(packageJson.name),
       MODULE_PATH: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
+      PLUGIN_CATALOG: JSON.stringify(
+        "https://cdn.jsdelivr.net/npm/@janhq/plugin-catalog@latest/dist/index.js"
+      ),
     }),
   ],
   output: {

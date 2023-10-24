@@ -9,6 +9,8 @@ import {
   plugins,
   extensionPoints,
 } from '@/../../electron/core/plugin-manager/execution/index'
+import { executeSerial } from '@services/pluginService'
+import { DataService } from '@janhq/core'
 
 const PluginCatalog = () => {
   // const [search, setSearch] = useState<string>('')
@@ -20,12 +22,10 @@ const PluginCatalog = () => {
 
   /**
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
-   * The `webpackIgnore` comment is used to prevent Webpack from bundling the module.
    */
   useEffect(() => {
-    // @ts-ignore
-    import(/* webpackIgnore: true */ PLUGIN_CATALOGS).then((module) => {
-      setPluginCatalog(module.default)
+    executeSerial(DataService.GetPluginManifest).then((data) => {
+      setPluginCatalog(data)
     })
   }, [])
 
@@ -127,7 +127,7 @@ const PluginCatalog = () => {
 
   return (
     <div className="block w-full">
-      {pluginCatalog.map((item, i) => {
+      {pluginCatalog?.map((item, i) => {
         const isActivePlugin = activePlugins.some((x) => x.name === item.name)
         const updateVersionPlugins = Number(
           activePlugins
@@ -163,7 +163,7 @@ const PluginCatalog = () => {
                 )}
             </div>
             <Switch
-              defaultChecked={isActivePlugin}
+              checked={isActivePlugin}
               onCheckedChange={(e) => {
                 if (e === true) {
                   downloadTarball(item.name)

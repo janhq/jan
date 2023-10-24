@@ -216,6 +216,9 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(DataService.GetBotById, getBotById.name, getBotById);
   register(DataService.DeleteBot, deleteBot.name, deleteBot);
   register(DataService.UpdateBot, updateBot.name, updateBot);
+
+  // for plugin manifest
+  register(DataService.GetPluginManifest, getPluginManifest.name, getPluginManifest)
 }
 
 function getConversations(): Promise<any> {
@@ -322,4 +325,21 @@ function getBotById(botId: string): Promise<any> {
       console.error("Error getting bot", err);
       return Promise.reject(err);
     });
+}
+
+/**
+ * Retrieves the plugin manifest by importing the remote model catalog and clearing the cache to get the latest version.
+ * A timestamp is added to the URL to prevent caching.
+ * @returns A Promise that resolves with the plugin manifest.
+ */
+function getPluginManifest(): Promise<any> {
+  // Clear cache to get the latest model catalog
+  delete require.cache[
+    require.resolve(/* webpackIgnore: true */ PLUGIN_CATALOG)
+  ];
+  // Import the remote model catalog
+  // Add a timestamp to the URL to prevent caching
+  return import(
+    /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
+  ).then((module) => module.default);
 }
