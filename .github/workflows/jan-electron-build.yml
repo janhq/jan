@@ -6,7 +6,7 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-silicon
     environment: production
     permissions:
       contents: write
@@ -52,6 +52,9 @@ jobs:
         run: |
           yarn install
           yarn build:plugins-darwin
+        env:
+          APP_PATH: electron
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
 
       - name: Build and publish app
         run: |
