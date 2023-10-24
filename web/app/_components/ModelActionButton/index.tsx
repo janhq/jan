@@ -1,6 +1,9 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Button } from '@uikit'
 import ModelActionMenu from '../ModelActionMenu'
+import { useAtomValue } from 'jotai'
+
+import { stateModel } from '@helpers/atoms/Model.atom'
 
 export enum ModelActionType {
   Start = 'Start',
@@ -32,9 +35,13 @@ const ModelActionButton: React.FC<Props> = ({
   onDeleteClick,
 }) => {
   const styles = modelActionMapper[type]
+  // const { startingModel } = useStartStopModel()
+
   const onClick = () => {
     onActionClick(type)
   }
+
+  const state = useAtomValue(stateModel)
 
   return (
     <td className="whitespace-nowrap px-3 py-2 text-right">
@@ -43,7 +50,8 @@ const ModelActionButton: React.FC<Props> = ({
         <Button
           size="sm"
           themes={styles.title === 'Start' ? 'accent' : 'default'}
-          onClick={onClick}
+          onClick={() => onClick()}
+          loading={state.loading}
         >
           {styles.title} Model
         </Button>

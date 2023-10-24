@@ -21,12 +21,12 @@ export const ModelStatusMapper: Record<ModelStatus, ModelStatusType> = {
   [ModelStatus.Active]: {
     title: 'Active',
     textColor: 'text-green-800',
-    backgroundColor: 'bg-green-100 dark:bg-green-300',
+    backgroundColor: 'bg-green-100 dark:bg-green-300 text-green-700',
   },
   [ModelStatus.RunningInNitro]: {
     title: 'Running in Nitro',
     textColor: 'text-green-800',
-    backgroundColor: 'bg-green-100 dark:bg-green-300',
+    backgroundColor: 'bg-green-100 dark:bg-green-300 text-green-700',
   },
 }
 

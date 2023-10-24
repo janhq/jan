@@ -4,10 +4,11 @@ import useGetSystemResources from '@hooks/useGetSystemResources'
 import { useAtomValue } from 'jotai'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { formatDownloadPercentage } from '@utils/converter'
-import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
 
 const BottomBar = () => {
   const activeModel = useAtomValue(activeAssistantModelAtom)
+  const stateModelStartStop = useAtomValue(stateModel)
   const { ram, cpu } = useGetSystemResources()
   const modelDownloadStates = useAtomValue(modelDownloadStateAtom)
 
@@ -16,10 +17,28 @@ const BottomBar = () => {
     downloadStates.push(value)
   }
 
+  console.log(stateModelStartStop)
+
   return (
     <div className="fixed bottom-0 left-0 z-20 flex h-8 w-full items-center justify-between border-t border-border bg-background/50 px-4">
       <div className="flex gap-x-2">
-        <SystemItem name="Active model:" value={activeModel?.name || '-'} />
+        {stateModelStartStop.state === 'start' &&
+          stateModelStartStop.loading && (
+            <SystemItem
+              name="Starting:"
+              value={stateModelStartStop.model || '-'}
+            />
+          )}
+        {stateModelStartStop.state === 'stop' &&
+          stateModelStartStop.loading && (
+            <SystemItem
+              name="Stopping:"
+              value={stateModelStartStop.model || '-'}
+            />
+          )}
+        {!stateModelStartStop.loading && (
+          <SystemItem name="Active model:" value={activeModel?.name || '-'} />
+        )}
         {downloadStates.length > 0 && (
           <SystemItem
             name="Downloading:"
