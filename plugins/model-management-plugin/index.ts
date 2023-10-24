@@ -8,19 +8,24 @@ import {
 } from "@janhq/core";
 import { parseToModel } from "./helper";
 
-const downloadModel = (product) => downloadFile(product.downloadUrl, product.fileName);
+const downloadModel = (product) =>
+  downloadFile(product.downloadUrl, product.fileName);
 
 const deleteModel = (path) => deleteFile(path);
 
-async function getConfiguredModels() {
-  // Clear cache to get the latest model catalog
-  delete require.cache[MODEL_CATALOG_URL];
-
-  // Import the remote model catalog
-  const module = require(MODEL_CATALOG_URL);
-  return module.default.map((e) => {
-    return parseToModel(e);
-  });
+/**
+ * Retrieves a list of configured models from the model catalog URL.
+ * @returns A Promise that resolves to an array of configured models.
+ */
+async function getConfiguredModels(): Promise<any> {
+  // Add a timestamp to the URL to prevent caching
+  return import(
+    /* webpackIgnore: true */ MODEL_CATALOG_URL + `?t=${Date.now()}`
+  ).then((module) =>
+    module.default.map((e) => {
+      return parseToModel(e);
+    })
+  );
 }
 
 /**
@@ -44,7 +49,11 @@ function storeModel(model: any) {
  * @param model Product
  */
 function updateFinishedDownloadAt(_id: string): Promise<any> {
-  return store.updateMany("models", { _id }, { time: Date.now(), finishDownloadAt: 1 });
+  return store.updateMany(
+    "models",
+    { _id },
+    { time: Date.now(), finishDownloadAt: 1 }
+  );
 }
 
 /**
@@ -84,14 +93,38 @@ function onStart() {
 export function init({ register }: { register: RegisterExtensionPoint }) {
   register(PluginService.OnStart, PLUGIN_NAME, onStart);
 
-  register(ModelManagementService.DownloadModel, downloadModel.name, downloadModel);
+  register(
+    ModelManagementService.DownloadModel,
+    downloadModel.name,
+    downloadModel
+  );
   register(ModelManagementService.DeleteModel, deleteModel.name, deleteModel);
-  register(ModelManagementService.GetConfiguredModels, getConfiguredModels.name, getConfiguredModels);
+  register(
+    ModelManagementService.GetConfiguredModels,
+    getConfiguredModels.name,
+    getConfiguredModels
+  );
 
   register(ModelManagementService.StoreModel, storeModel.name, storeModel);
-  register(ModelManagementService.UpdateFinishedDownloadAt, updateFinishedDownloadAt.name, updateFinishedDownloadAt);
+  register(
+    ModelManagementService.UpdateFinishedDownloadAt,
+    updateFinishedDownloadAt.name,
+    updateFinishedDownloadAt
+  );
 
-  register(ModelManagementService.DeleteDownloadModel, deleteDownloadModel.name, deleteDownloadModel);
-  register(ModelManagementService.GetModelById, getModelById.name, getModelById);
-  register(ModelManagementService.GetFinishedDownloadModels, getFinishedDownloadModels.name, getFinishedDownloadModels);
+  register(
+    ModelManagementService.DeleteDownloadModel,
+    deleteDownloadModel.name,
+    deleteDownloadModel
+  );
+  register(
+    ModelManagementService.GetModelById,
+    getModelById.name,
+    getModelById
+  );
+  register(
+    ModelManagementService.GetFinishedDownloadModels,
+    getFinishedDownloadModels.name,
+    getFinishedDownloadModels
+  );
 }

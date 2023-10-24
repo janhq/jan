@@ -327,11 +327,19 @@ function getBotById(botId: string): Promise<any> {
     });
 }
 
+/**
+ * Retrieves the plugin manifest by importing the remote model catalog and clearing the cache to get the latest version.
+ * A timestamp is added to the URL to prevent caching.
+ * @returns A Promise that resolves with the plugin manifest.
+ */
 function getPluginManifest(): Promise<any> {
   // Clear cache to get the latest model catalog
-  delete require.cache[PLUGIN_CATALOG];
-
+  delete require.cache[
+    require.resolve(/* webpackIgnore: true */ PLUGIN_CATALOG)
+  ];
   // Import the remote model catalog
-  const module = require(PLUGIN_CATALOG);
-  return module.default;
+  // Add a timestamp to the URL to prevent caching
+  return import(
+    /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
+  ).then((module) => module.default);
 }
