@@ -1,6 +1,6 @@
 {
   "name": "@janhq/data-plugin",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "The Data Connector provides easy access to a data API using the PouchDB engine. It offers accessible data management capabilities.",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/circle-stack.svg",
   "main": "dist/esm/index.js",
