@@ -5,7 +5,7 @@ import {
   MainViewState,
   getMainViewStateAtom,
   setMainViewStateAtom,
-} from '@/_helpers/atoms/MainView.atom'
+} from '@helpers/atoms/MainView.atom'
 
 type Props = {
   title: string

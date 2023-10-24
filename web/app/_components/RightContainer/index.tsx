@@ -1,9 +1,9 @@
-import { rightSideBarExpandStateAtom } from "@/_helpers/atoms/LeftSideBarExpand.atom"
-import { Variants, motion } from "framer-motion"
-import { useAtomValue } from "jotai"
-import { Fragment } from "react"
-import BotSetting from "../BotSetting"
-import BotInfo from "../BotInfo"
+import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
+import { Variants, motion } from 'framer-motion'
+import { useAtomValue } from 'jotai'
+import { Fragment } from 'react'
+import BotSetting from '../BotSetting'
+import BotInfo from '../BotInfo'
 
 const variants: Variants = {
   show: {
@@ -13,7 +13,7 @@ const variants: Variants = {
     transition: { duration: 0.3 },
   },
   hide: {
-    x: "100%",
+    x: '100%',
     width: 0,
     opacity: 0,
     transition: { duration: 0.3 },
@@ -26,9 +26,9 @@ const RightContainer = () => {
   return (
     <motion.div
       initial={false}
-      animate={isVisible ? "show" : "hide"}
+      animate={isVisible ? 'show' : 'hide'}
       variants={variants}
-      className="flex flex-col w-80 flex-shrink-0 py-3 border-l border-gray-200 overflow-y-auto scroll"
+      className="scroll flex w-80 flex-shrink-0 flex-col overflow-y-auto border-l border-gray-200 py-3"
     >
       {isVisible && (
         <Fragment>

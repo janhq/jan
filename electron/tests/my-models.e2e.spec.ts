@@ -40,7 +40,7 @@ test("shows my models", async () => {
     .getByRole("heading")
     .filter({ hasText: "My Models" })
     .first()
-    .isDisabled();
+    .isVisible();
   expect(header).toBe(false);
   //   More test cases here...
 });

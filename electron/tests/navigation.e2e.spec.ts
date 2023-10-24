@@ -35,37 +35,13 @@ test.afterAll(async () => {
 });
 
 test("renders left navigation panel", async () => {
-  // Chat History section is available
-  const chatSection = await page
-    .getByRole("heading")
-    .filter({ hasText: "CHAT HISTORY" })
-    .first()
-    .isDisabled();
+  // Chat section should be there
+  const chatSection = await page.getByTestId("Chat").first().isVisible();
   expect(chatSection).toBe(false);
 
   // Home actions
-  const createBotBtn = await page
-    .getByRole("button", { name: "Create bot" })
-    .first()
-    .isEnabled();
-  const exploreBtn = await page
-    .getByRole("button", { name: "Explore Models" })
-    .first()
-    .isEnabled();
-  const myModelsBtn = await page
-    .getByTestId("My Models")
-    .first()
-    .isEnabled();
-  const settingsBtn = await page
-    .getByTestId("Settings")
-    .first()
-    .isEnabled();
-  expect(
-    [
-      createBotBtn,
-      exploreBtn,
-      myModelsBtn,
-      settingsBtn,
-    ].filter((e) => !e).length
-  ).toBe(0);
+  const botBtn = await page.getByTestId("Bot").first().isEnabled();
+  const myModelsBtn = await page.getByTestId("My Models").first().isEnabled();
+  const settingsBtn = await page.getByTestId("Settings").first().isEnabled();
+  expect([botBtn, myModelsBtn, settingsBtn].filter((e) => !e).length).toBe(0);
 });

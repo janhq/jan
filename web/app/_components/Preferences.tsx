@@ -35,7 +35,6 @@ export const Preferences = () => {
   useEffect(() => {
     // @ts-ignore
     import(/* webpackIgnore: true */ PLUGIN_CATALOGS).then((module) => {
-      console.log(module)
       setPluginCatalog(module.default)
     })
   }, [])
@@ -149,8 +148,11 @@ export const Preferences = () => {
     if (timeout) {
       clearTimeout(timeout)
     }
-    if(extensionPoints.get(PluginService.OnPreferencesUpdate))
-    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100)
+    if (extensionPoints.get(PluginService.OnPreferencesUpdate))
+      timeout = setTimeout(
+        () => execute(PluginService.OnPreferencesUpdate),
+        100
+      )
   }
 
   /**

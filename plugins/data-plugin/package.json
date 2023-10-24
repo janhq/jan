@@ -43,9 +43,5 @@
     "@janhq/core": "^0.1.6",
     "pouchdb-find": "^8.0.1",
     "pouchdb-node": "^8.0.1"
-  },
-  "bundleDependencies": [
-    "pouchdb-node",
-    "pouchdb-find"
-  ]
+  }
 }

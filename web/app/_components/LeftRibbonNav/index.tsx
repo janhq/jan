@@ -2,9 +2,9 @@ import {
   MainViewState,
   getMainViewStateAtom,
   setMainViewStateAtom,
-} from '@/_helpers/atoms/MainView.atom'
-import Image from 'next/image'
-import CompactLogo from '../CompactLogo'
+} from '@helpers/atoms/MainView.atom'
+
+import CompactLogo from '../../../containers/Logo/CompactLogo'
 import {
   ChatBubbleOvalLeftEllipsisIcon,
   Cog8ToothIcon,
@@ -13,24 +13,26 @@ import {
   Squares2X2Icon,
 } from '@heroicons/react/24/outline'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { showingBotListModalAtom } from '@/_helpers/atoms/Modal.atom'
-import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
-import useGetBots from '@/_hooks/useGetBots'
+import { showingBotListModalAtom } from '@helpers/atoms/Modal.atom'
+import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
+import useGetBots from '@hooks/useGetBots'
+
+import { Icons, Toggle } from '@uikit'
 
 const menu = [
-  {
-    name: 'Explore Models',
-    iconComponent: <CpuChipIcon width={24} height={24} color="#C7D2FE" />,
-    state: MainViewState.ExploreModel,
-  },
+  // {
+  //   name: 'Explore Models',
+  //   icon: <CpuChipIcon />,
+  //   state: MainViewState.ExploreModel,
+  // },
   {
     name: 'My Models',
-    iconComponent: <Squares2X2Icon width={24} height={24} color="#C7D2FE" />,
+    icon: <Icons name="layout-grid" />,
     state: MainViewState.MyModel,
   },
   {
     name: 'Settings',
-    iconComponent: <Cog8ToothIcon width={24} height={24} color="#C7D2FE" />,
+    icon: <Icons name="settings" />,
     state: MainViewState.Setting,
   },
 ]
@@ -51,7 +53,7 @@ const LeftRibbonNav: React.FC = () => {
   const bgColor = isConversationView ? 'bg-gray-500' : ''
 
   const onConversationClick = () => {
-    if (currentState === MainViewState.Conversation) return
+    // if (currentState === MainViewState.Conversation) return
     setMainViewState(MainViewState.Conversation)
   }
 
@@ -71,52 +73,42 @@ const LeftRibbonNav: React.FC = () => {
   }
 
   return (
-    <nav className="flex h-screen w-20 flex-col bg-gray-900">
-      <div className='mx-auto mt-4'>
+    <nav className="flex h-screen flex-shrink-0 flex-col items-center pt-10">
       <CompactLogo />
-      </div>
-
-      <div className="flex w-full flex-1 flex-col items-center justify-between px-3 py-6">
-        <div className="flex flex-1 flex-col gap-2">
-          <button
-            onClick={onConversationClick}
-            className={`rounded-lg p-4 ${bgColor} hover:bg-gray-400`}
-          >
+      <div className="flex w-full flex-1 flex-col items-center justify-between">
+        <div className="flex flex-col pt-4">
+          <button onClick={onConversationClick}>
             <ChatBubbleOvalLeftEllipsisIcon
               width={24}
               height={24}
-              color="#C7D2FE"
+              color="text-white"
             />
           </button>
-          <button
-            onClick={onBotListClick}
-            className={`rounded-lg p-4 hover:bg-gray-400`}
-          >
-            <CubeTransparentIcon width={24} height={24} color="#C7D2FE" />
+          <button onClick={onBotListClick}>
+            <CubeTransparentIcon />
           </button>
         </div>
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-3 py-8">
           {menu.map((item) => {
             const bgColor = currentState === item.state ? 'bg-gray-500' : ''
             return (
               <li
                 role="button"
-                data-testid={item.name}
                 key={item.name}
-                className={`rounded-lg p-4 ${bgColor} hover:bg-gray-400`}
+                className="item-center flex gap-x-2"
                 onClick={() => onMenuClick(item.state)}
               >
-                {item.iconComponent}
+                {item.icon}
+                <span className="text-xs">{item.name}</span>
               </li>
             )
           })}
         </ul>
       </div>
-
       {/* User avatar */}
-      <div className="flex items-center justify-center pb-5">
-        <Image src={'/icons/avatar.svg'} width={40} height={40} alt="" />
-      </div>
+      {/* <div className="pb-5 flex items-center justify-center">
+        <Image src={"/icons/avatar.svg"} width={40} height={40} alt="" />
+      </div> */}
     </nav>
   )
 }

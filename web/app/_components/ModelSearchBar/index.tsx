@@ -1,6 +1,6 @@
 'use client'
 
-import { searchingModelText } from '@/_helpers/JotaiWrapper'
+import { searchingModelText } from '@helpers/JotaiWrapper'
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { useSetAtom } from 'jotai'
 import { useEffect, useState } from 'react'

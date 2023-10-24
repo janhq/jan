@@ -1,4 +1,11 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  nativeTheme,
+} from "electron";
 import { readdirSync, writeFileSync } from "fs";
 import { resolve, join, extname } from "path";
 import { rmdir, unlink, createWriteStream } from "fs";
@@ -36,12 +43,30 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
+ipcMain.handle("setNativeThemeLight", () => {
+  nativeTheme.themeSource = "light";
+});
+
+ipcMain.handle("setNativeThemeDark", () => {
+  nativeTheme.themeSource = "dark";
+});
+
+ipcMain.handle("setNativeThemeSystem", () => {
+  nativeTheme.themeSource = "system";
+});
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    frame: false,
     show: false,
-    backgroundColor: "white",
+    trafficLightPosition: {
+      x: 16,
+      y: 10,
+    },
+    titleBarStyle: "hidden",
+    vibrancy: "sidebar",
     webPreferences: {
       nodeIntegration: true,
       preload: join(__dirname, "preload.js"),
@@ -118,11 +143,13 @@ function handleIPCs() {
   ipcMain.handle(
     "invokePluginFunc",
     async (_event, modulePath, method, ...args) => {
-      const module = require(/* webpackIgnore: true */ join(
-        app.getPath("userData"),
-        "plugins",
-        modulePath
-      ));
+      const module = require(
+        /* webpackIgnore: true */ join(
+          app.getPath("userData"),
+          "plugins",
+          modulePath
+        )
+      );
       requiredModules[modulePath] = module;
 
       if (typeof module[method] === "function") {

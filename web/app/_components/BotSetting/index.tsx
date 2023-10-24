@@ -1,28 +1,26 @@
-import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
+import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import { useAtomValue } from 'jotai'
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import ExpandableHeader from '../ExpandableHeader'
 import { useDebouncedCallback } from 'use-debounce'
-import useUpdateBot from '@/_hooks/useUpdateBot'
-import ProgressSetting from '../ProgressSetting'
-import { set } from 'react-hook-form'
+import useUpdateBot from '@hooks/useUpdateBot'
+import { formatTwoDigits } from '@utils/converter'
 
 const delayBeforeUpdateInMs = 1000
 
 const BotSetting: React.FC = () => {
   const activeBot = useAtomValue(activeBotAtom)
-  const [temperature, setTemperature] = useState(0)
-  const [maxTokens, setMaxTokens] = useState(0)
-  const [frequencyPenalty, setFrequencyPenalty] = useState(0)
-  const [presencePenalty, setPresencePenalty] = useState(0)
+  const [temperature, setTemperature] = useState(
+    activeBot?.customTemperature ?? 0
+  )
 
-  useEffect(() => {
-    if (!activeBot) return
-    setMaxTokens(activeBot.maxTokens ?? 0)
-    setTemperature(activeBot.customTemperature ?? 0)
-    setFrequencyPenalty(activeBot.frequencyPenalty ?? 0)
-    setPresencePenalty(activeBot.presencePenalty ?? 0)
-  }, [activeBot?._id])
+  const [maxTokens, setMaxTokens] = useState(activeBot?.maxTokens ?? 0)
+  const [frequencyPenalty, setFrequencyPenalty] = useState(
+    activeBot?.frequencyPenalty ?? 0
+  )
+  const [presencePenalty, setPresencePenalty] = useState(
+    activeBot?.presencePenalty ?? 0
+  )
 
   const { updateBot } = useUpdateBot()
 
@@ -60,71 +58,109 @@ const BotSetting: React.FC = () => {
 
   return (
     <div className="my-3 flex flex-col">
-      <ExpandableHeader
-        title="BOT SETTINGS"
-        expanded={true}
-        onClick={() => {}}
-      />
-
+      <ExpandableHeader title="BOT SETTINGS" />
       <div className="mx-2 mt-3 flex flex-shrink-0 flex-col gap-4">
         {/* System prompt */}
         <div>
-          <label
-            htmlFor="comment"
-            className="block text-sm font-medium leading-6 text-gray-900"
-          >
+          <label htmlFor="comment" className="block">
             System prompt
           </label>
-          <div className="mt-2">
+          <div className="mt-1">
             <textarea
               rows={4}
               name="comment"
               id="comment"
-              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+              className="bg-background/80 text-background-reverse ring-border placeholder:text-muted-foreground focus:ring-accent/50 block w-full resize-none rounded-md border-0 py-1.5 text-xs leading-relaxed shadow-sm ring-1 ring-inset focus:ring-2 focus:ring-inset"
               defaultValue={activeBot.systemPrompt}
               onChange={(e) => debouncedSystemPrompt(e.target.value)}
             />
           </div>
         </div>
 
-        <ProgressSetting
-          title="Max tokens"
-          min={0}
-          max={4096}
-          step={1}
-          value={maxTokens}
-          onValueChanged={(value) => debouncedMaxToken(value)}
-        />
+        {/* TODO: clean up this code */}
+        {/* Max temp */}
+        <p>Max tokens</p>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            className="flex-1"
+            type="range"
+            defaultValue={activeBot.maxTokens ?? 0}
+            min={0}
+            max={4096}
+            step={1}
+            onChange={(e) => {
+              const value = Number(e.target.value)
+              setMaxTokens(value)
+              debouncedMaxToken(value)
+            }}
+          />
+          <span className="border-accent rounded-md border px-2 py-1">
+            {formatTwoDigits(maxTokens)}
+          </span>
+        </div>
 
-        <ProgressSetting
-          min={0}
-          max={1}
-          step={0.01}
-          title="Temperature"
-          value={temperature}
-          onValueChanged={(value) => debouncedTemperature(value)}
-        />
+        <p>Frequency penalty</p>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            className="flex-1"
+            type="range"
+            defaultValue={activeBot.frequencyPenalty ?? 0}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(e) => {
+              const value = Number(e.target.value)
+              setFrequencyPenalty(value)
+              debouncedFreqPenalty(value)
+            }}
+          />
+          <span className="border-accent rounded-md border px-2 py-1">
+            {formatTwoDigits(frequencyPenalty)}
+          </span>
+        </div>
 
-        <ProgressSetting
-          title="Frequency penalty"
-          value={frequencyPenalty}
-          min={0}
-          max={1}
-          step={0.01}
-          onValueChanged={(value) => debouncedFreqPenalty(value)}
-        />
+        <p>Presence penalty</p>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            className="flex-1"
+            type="range"
+            defaultValue={activeBot.maxTokens ?? 0}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(e) => {
+              const value = Number(e.target.value)
+              setPresencePenalty(value)
+              debouncedPresencePenalty(value)
+            }}
+          />
+          <span className="border-accent rounded-md border px-2 py-1">
+            {formatTwoDigits(presencePenalty)}
+          </span>
+        </div>
 
-        <ProgressSetting
-          min={0}
-          max={1}
-          step={0.01}
-          title="Presence penalty"
-          value={presencePenalty}
-          onValueChanged={(value) => {
-            setPresencePenalty(value)
-            debouncedPresencePenalty(value)
-          }}
-        />
+        {/* Custom temp */}
+        <p>Temperature</p>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            className="flex-1"
+            type="range"
+            id="volume"
+            name="volume"
+            defaultValue={activeBot.customTemperature ?? 0}
+            min="0"
+            max="1"
+            step="0.01"
+            onChange={(e) => {
+              const newTemp = Number(e.target.value)
+              setTemperature(newTemp)
+              debouncedTemperature(Number(e.target.value))
+            }}
+          />
+          <span className="border-accent rounded-md border px-2 py-1">
+            {formatTwoDigits(temperature)}
+          </span>
+        </div>
       </div>
     </div>
   )

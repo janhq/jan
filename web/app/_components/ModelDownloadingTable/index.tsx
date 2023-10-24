@@ -1,6 +1,5 @@
 import React from 'react'
 import ModelTableHeader from '../ModelTableHeader'
-import { DownloadState } from '@/_models/DownloadState'
 import ModelDownloadingRow from '../ModelDownloadingRow'
 
 type Props = {

@@ -1,96 +1,59 @@
-"use client"
-import { PluginService } from "@janhq/core"
-import { ThemeWrapper } from "./_helpers/ThemeWrapper"
-import JotaiWrapper from "./_helpers/JotaiWrapper"
-import { ModalWrapper } from "./_helpers/ModalWrapper"
-import { useEffect, useState } from "react"
-import Image from "next/image"
+'use client'
+
+import { useAtomValue } from 'jotai'
+import WelcomeScreen from '@screens/Welcome'
+import BotScreen from '@screens/Bot'
+import ChatScreen from '@screens/Chat'
+import ExploreModelsScreen from '@screens/ExploreModels'
+import MyModelsScreen from '@screens/MyModels'
+import SettingsScreen from '@screens/Settings'
+import EmptyChatScreen from '@screens/Chat/EmptyChatScreen'
+
 import {
-  setup,
-  plugins,
-  activationPoints,
-  extensionPoints,
-} from '../../electron/core/plugin-manager/execution/index'
-import {
-  isCorePluginInstalled,
-  setupBasePlugins,
-} from './_services/pluginService'
-import EventListenerWrapper from './_helpers/EventListenerWrapper'
-import { setupCoreServices } from './_services/coreService'
-import MainContainer from './_components/MainContainer'
-import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
+  MainViewState,
+  getMainViewStateAtom,
+} from '@helpers/atoms/MainView.atom'
+
+import React from 'react'
+
+import BaseLayout from '@containers/Layout'
 
 const Page: React.FC = () => {
-  const [setupCore, setSetupCore] = useState(false)
-  const [activated, setActivated] = useState(false)
+  const viewState = useAtomValue(getMainViewStateAtom)
 
-  async function setupPE() {
-    // Enable activation point management
-    setup({
-      importer: (plugin: string) =>
-        import(/* webpackIgnore: true */ plugin).catch((err) => {
-          console.log(err)
-        }),
-    })
+  let children = null
+  switch (viewState) {
+    case MainViewState.ConversationEmptyModel:
+      children = <EmptyChatScreen />
+      break
 
-    // Register all active plugins with their activation points
-    await plugins.registerActive()
-    setTimeout(async () => {
-      // Trigger activation points
-      await activationPoints.trigger('init')
-      if (!isCorePluginInstalled()) {
-        setupBasePlugins()
-        return
-      }
-      if (extensionPoints.get(PluginService.OnStart)) {
-        await executeSerial(PluginService.OnStart)
-      }
-      setActivated(true)
-    }, 500)
+    case MainViewState.Welcome:
+      children = <WelcomeScreen />
+      break
+
+    case MainViewState.CreateBot:
+      children = <BotScreen />
+      break
+
+    case MainViewState.ExploreModel:
+      children = <ExploreModelsScreen />
+      break
+
+    case MainViewState.ResourceMonitor:
+    case MainViewState.MyModel:
+      children = <MyModelsScreen />
+      break
+
+    case MainViewState.Setting:
+      children = <SettingsScreen />
+      break
+
+    default:
+      children = <ChatScreen />
+      break
   }
 
-  // Services Setup
-  useEffect(() => {
-    setupCoreServices()
-    setSetupCore(true)
-  }, [])
-
-  useEffect(() => {
-    if (setupCore) {
-      // Electron
-      if (window && window.electronAPI) {
-        setupPE()
-      } else {
-        // Host
-        setActivated(true)
-      }
-    }
-  }, [setupCore])
-
-  return (
-    <JotaiWrapper>
-      {setupCore && (
-        <EventListenerWrapper>
-          <ThemeWrapper>
-            {activated ? (
-              <ModalWrapper>
-                <MainContainer />
-              </ModalWrapper>
-            ) : (
-              <div className="flex h-screen w-screen items-center justify-center bg-white">
-                <Image
-                  width={50}
-                  height={50}
-                  src="icons/app_icon.svg"
-                  alt=""
-                />
-              </div>
-            )}
-          </ThemeWrapper>
-        </EventListenerWrapper>
-      )}
-    </JotaiWrapper>
-  )
+  return <BaseLayout>{children}</BaseLayout>
 }
 
 export default Page

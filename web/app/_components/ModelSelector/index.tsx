@@ -2,9 +2,8 @@ import { Fragment, useEffect } from 'react'
 import { Listbox, Transition } from '@headlessui/react'
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid'
 import { useAtom, useAtomValue } from 'jotai'
-import { selectedModelAtom } from '@/_helpers/atoms/Model.atom'
-import { downloadedModelAtom } from '@/_helpers/atoms/DownloadedModel.atom'
-import { AssistantModel } from '@/_models/AssistantModel'
+import { selectedModelAtom } from '@helpers/atoms/Model.atom'
+import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
 
 function classNames(...classes: any) {
   return classes.filter(Boolean).join(' ')

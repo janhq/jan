@@ -1,4 +1,4 @@
-import { showingBotListModalAtom } from '@/_helpers/atoms/Modal.atom'
+import { showingBotListModalAtom } from '@helpers/atoms/Modal.atom'
 import { Dialog, Transition } from '@headlessui/react'
 import { useAtom } from 'jotai'
 import React, { Fragment } from 'react'
@@ -19,10 +19,10 @@ const BotListModal: React.FC = () => {
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+          <div className="fixed inset-0 z-40 h-full bg-gray-950/90 transition-opacity dark:backdrop-blur-sm" />
         </Transition.Child>
 
-        <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div className="fixed inset-0 z-50 w-screen overflow-y-auto">
           <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
             <Transition.Child
               as={Fragment}
@@ -33,8 +33,8 @@ const BotListModal: React.FC = () => {
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-sm sm:p-6">
-                <h1 className="mb-4 text-lg text-black font-bold">Your bots</h1>
+              <Dialog.Panel className="border-border bg-background/90 relative transform overflow-hidden rounded-lg border px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+                <h1 className="mb-4 font-bold">Your bots</h1>
                 <BotListContainer />
               </Dialog.Panel>
             </Transition.Child>

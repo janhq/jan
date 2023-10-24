@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "es5",
     "lib": ["dom", "dom.iterable", "esnext"],
-    "typeRoots": ["node_modules/@types"],
+    "typeRoots": ["node_modules/@types", "./src/types"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -21,7 +21,15 @@
       }
     ],
     "paths": {
-      "@/*": ["./app/*"]
+      "@/*": ["./app/*"],
+      "@uikit": ["./uikit"],
+      "@services/*": ["./services/*"],
+      "@helpers/*": ["./helpers/*"],
+      "@utils/*": ["./utils/*"],
+      "@models/*": ["./models/*"],
+      "@hooks/*": ["./hooks/*"],
+      "@containers/*": ["./containers/*"],
+      "@screens/*": ["./screens/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

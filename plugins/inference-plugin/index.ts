@@ -9,13 +9,17 @@ import {
 } from "@janhq/core";
 import { Observable } from "rxjs";
 
-const initModel = async (product) => invokePluginFunc(MODULE_PATH, "initModel", product);
+const initModel = async (product) =>
+  invokePluginFunc(MODULE_PATH, "initModel", product);
 
 const stopModel = () => {
   invokePluginFunc(MODULE_PATH, "killSubprocess");
 };
 
-function requestInference(recentMessages: any[], bot?: any): Observable<string> {
+function requestInference(
+  recentMessages: any[],
+  bot?: any
+): Observable<string> {
   return new Observable((subscriber) => {
     const requestBody = JSON.stringify({
       messages: recentMessages,
@@ -69,10 +73,15 @@ function requestInference(recentMessages: any[], bot?: any): Observable<string> 
 
 async function retrieveLastTenMessages(conversationId: string, bot?: any) {
   // TODO: Common collections should be able to access via core functions instead of store
-  const messageHistory = (await store.findMany("messages", { conversationId }, [{ createdAt: "asc" }])) ?? [];
+  const messageHistory =
+    (await store.findMany("messages", { conversationId }, [
+      { createdAt: "asc" },
+    ])) ?? [];
 
   let recentMessages = messageHistory
-    .filter((e) => e.message !== "" && (e.user === "user" || e.user === "assistant"))
+    .filter(
+      (e) => e.message !== "" && (e.user === "user" || e.user === "assistant")
+    )
     .slice(-9)
     .map((message) => ({
       content: message.message.trim(),
@@ -81,10 +90,13 @@ async function retrieveLastTenMessages(conversationId: string, bot?: any) {
 
   if (bot && bot.systemPrompt) {
     // append bot's system prompt
-    recentMessages = [{
-      content: `[INST] ${bot.systemPrompt}`,
-      role: 'system'
-    },...recentMessages];
+    recentMessages = [
+      {
+        content: `[INST] ${bot.systemPrompt}`,
+        role: "system",
+      },
+      ...recentMessages,
+    ];
   }
 
   console.debug(`Last 10 messages: ${JSON.stringify(recentMessages, null, 2)}`);
@@ -93,13 +105,19 @@ async function retrieveLastTenMessages(conversationId: string, bot?: any) {
 }
 
 async function handleMessageRequest(data: NewMessageRequest) {
-  const conversation = await store.findOne("conversations", data.conversationId);
+  const conversation = await store.findOne(
+    "conversations",
+    data.conversationId
+  );
   let bot = undefined;
   if (conversation.botId != null) {
     bot = await store.findOne("bots", conversation.botId);
   }
-  
-  const recentMessages = await retrieveLastTenMessages(data.conversationId, bot);
+
+  const recentMessages = await retrieveLastTenMessages(
+    data.conversationId,
+    bot
+  );
   const message = {
     ...data,
     message: "",
@@ -124,7 +142,8 @@ async function handleMessageRequest(data: NewMessageRequest) {
       await store.updateOne("messages", message._id, message);
     },
     error: async (err) => {
-      message.message = message.message.trim() + "\n" + "Error occurred: " + err;
+      message.message =
+        message.message.trim() + "\n" + "Error occurred: " + err;
       // TODO: Common collections should be able to access via core functions instead of store
       await store.updateOne("messages", message._id, message);
     },
@@ -140,7 +159,10 @@ async function inferenceRequest(data: NewMessageRequest): Promise<any> {
   };
   return new Promise(async (resolve, reject) => {
     const recentMessages = await retrieveLastTenMessages(data.conversationId);
-    requestInference([...recentMessages, { role: "user", content: data.message }]).subscribe({
+    requestInference([
+      ...recentMessages,
+      { role: "user", content: data.message },
+    ]).subscribe({
       next: (content) => {
         message.message = content;
       },
@@ -166,5 +188,9 @@ export function init({ register }) {
   register(PluginService.OnStart, PLUGIN_NAME, onStart);
   register(InferenceService.InitModel, initModel.name, initModel);
   register(InferenceService.StopModel, stopModel.name, stopModel);
-  register(InferenceService.InferenceRequest, inferenceRequest.name, inferenceRequest);
+  register(
+    InferenceService.InferenceRequest,
+    inferenceRequest.name,
+    inferenceRequest
+  );
 }

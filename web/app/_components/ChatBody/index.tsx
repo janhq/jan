@@ -2,12 +2,11 @@
 
 import React, { useCallback, useRef, useState, useEffect } from 'react'
 import ChatItem from '../ChatItem'
-import { ChatMessage } from '@/_models/ChatMessage'
-import useChatMessages from '@/_hooks/useChatMessages'
+import useChatMessages from '@hooks/useChatMessages'
 import { useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
-import { getActiveConvoIdAtom } from '@/_helpers/atoms/Conversation.atom'
-import { chatMessages } from '@/_helpers/atoms/ChatMessage.atom'
+import { getActiveConvoIdAtom } from '@helpers/atoms/Conversation.atom'
+import { chatMessages } from '@helpers/atoms/ChatMessage.atom'
 
 const ChatBody: React.FC = () => {
   const activeConversationId = useAtomValue(getActiveConvoIdAtom) ?? ''
@@ -54,7 +53,7 @@ const ChatBody: React.FC = () => {
   }, [messageList, lastPostRef])
 
   return (
-    <div className="scroll flex flex-1 flex-col-reverse overflow-y-auto py-4">
+    <div className="[&>*:nth-child(odd)]:bg-background flex h-full flex-1 flex-col-reverse overflow-y-auto">
       {content}
     </div>
   )
