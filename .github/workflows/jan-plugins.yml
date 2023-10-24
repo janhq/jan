@@ -15,7 +15,7 @@ on:
       - "!plugins/*/package.json"
 jobs:
   build:
-    runs-on: mac-silicon
+    runs-on: macos-silicon
     environment: production
     outputs:
       branch_name: ${{ steps.commit_and_tag.outputs.branch_name }}
