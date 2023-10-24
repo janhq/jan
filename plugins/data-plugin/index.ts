@@ -216,6 +216,9 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(DataService.GetBotById, getBotById.name, getBotById);
   register(DataService.DeleteBot, deleteBot.name, deleteBot);
   register(DataService.UpdateBot, updateBot.name, updateBot);
+
+  // for plugin manifest
+  register(DataService.GetPluginManifest, getPluginManifest.name, getPluginManifest)
 }
 
 function getConversations(): Promise<any> {
@@ -322,4 +325,13 @@ function getBotById(botId: string): Promise<any> {
       console.error("Error getting bot", err);
       return Promise.reject(err);
     });
+}
+
+function getPluginManifest(): Promise<any> {
+  // Clear cache to get the latest model catalog
+  delete require.cache[PLUGIN_CATALOG];
+
+  // Import the remote model catalog
+  const module = require(PLUGIN_CATALOG);
+  return module.default;
 }

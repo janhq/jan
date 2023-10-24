@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
+import { extensionPoints } from '../../electron/core/plugin-manager/execution'
 import { SystemMonitoringService } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 import { totalRamAtom } from '@helpers/atoms/SystemBar.atom'
@@ -9,6 +10,9 @@ export default function useGetSystemResources() {
   const setTotalRam = useSetAtom(totalRamAtom)
 
   const getSystemResources = async () => {
+    if (!extensionPoints.get(SystemMonitoringService.GetResourcesInfo)) {
+      return
+    }
     const resourceInfor = await executeSerial(
       SystemMonitoringService.GetResourcesInfo
     )

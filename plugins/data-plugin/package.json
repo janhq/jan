@@ -40,8 +40,12 @@
     "node_modules"
   ],
   "dependencies": {
-    "@janhq/core": "^0.1.6",
+    "@janhq/core": "^0.1.7",
     "pouchdb-find": "^8.0.1",
     "pouchdb-node": "^8.0.1"
-  }
+  },
+  "bundleDependencies": [
+    "pouchdb-node",
+    "pouchdb-find"
+  ]
 }
