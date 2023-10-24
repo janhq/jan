@@ -1,18 +1,15 @@
 import React from 'react'
 import SystemItem from '@containers/SystemItem'
-import { useAtomValue } from 'jotai'
-import useGetAppVersion from '@hooks/useGetAppVersion'
 import useGetSystemResources from '@hooks/useGetSystemResources'
+import { useAtomValue } from 'jotai'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { formatDownloadPercentage } from '@utils/converter'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 
 const BottomBar = () => {
   const activeModel = useAtomValue(activeAssistantModelAtom)
-  const { version } = useGetAppVersion()
   const { ram, cpu } = useGetSystemResources()
   const modelDownloadStates = useAtomValue(modelDownloadStateAtom)
-  const getCurrentYear = new Date().getFullYear()
 
   const downloadStates: DownloadState[] = []
   for (const [, value] of Object.entries(modelDownloadStates)) {
@@ -35,9 +32,7 @@ const BottomBar = () => {
       <div className="flex gap-x-2">
         <SystemItem name="CPU:" value={`${cpu}%`} />
         <SystemItem name="Mem:" value={`${ram}%`} />
-        <p className="text-xs text-muted-foreground">
-          &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd. v{version}
-        </p>
+        <p className="text-xs font-semibold">Jan v0.2.0</p>
       </div>
     </div>
   )
