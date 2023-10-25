@@ -6,7 +6,7 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-silicon
+    runs-on: macos-latest
     environment: production
     permissions:
       contents: write
@@ -43,11 +43,11 @@ jobs:
         env:
           CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
 
-      # - uses: apple-actions/import-codesign-certs@v2
-      #   continue-on-error: true
-      #   with:
-      #     p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-      #     p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+      - uses: apple-actions/import-codesign-certs@v2
+        continue-on-error: true
+        with:
+          p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
       - name: Install yarn dependencies
         run: |
@@ -62,9 +62,9 @@ jobs:
           yarn build:publish-darwin
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # CSC_LINK: "/tmp/codesign.p12"
-          # CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          # CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          CSC_LINK: "/tmp/codesign.p12"
+          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 

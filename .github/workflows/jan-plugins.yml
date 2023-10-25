@@ -15,7 +15,7 @@ on:
       - "!plugins/*/package.json"
 jobs:
   build:
-    runs-on: macos-silicon
+    runs-on: macos-latest
     environment: production
     outputs:
       branch_name: ${{ steps.commit_and_tag.outputs.branch_name }}
@@ -27,7 +27,19 @@ jobs:
 
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
-    
+
+      - name: Get Cer for code signing
+        run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
+        shell: bash
+        env:
+          CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+
+      - uses: apple-actions/import-codesign-certs@v2
+        continue-on-error: true
+        with:
+          p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+
       - name: Check Path Change
         run: |
           git config --global user.email "service@jan.ai"
