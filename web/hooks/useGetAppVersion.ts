@@ -8,7 +8,7 @@ export default function useGetAppVersion() {
   }, [])
 
   const getAppVersion = () => {
-    window.electronAPI.appVersion().then((version: string | undefined) => {
+    window.coreAPI?.appVersion().then((version: string | undefined) => {
       setVersion(version ?? '')
     })
   }
