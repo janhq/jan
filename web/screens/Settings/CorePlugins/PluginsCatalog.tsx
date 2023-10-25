@@ -19,6 +19,7 @@ const PluginCatalog = () => {
   const [pluginCatalog, setPluginCatalog] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const experimentRef = useRef(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   /**
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
@@ -63,8 +64,7 @@ const PluginCatalog = () => {
    */
   const install = async (e: any) => {
     e.preventDefault()
-    //@ts-ignore
-    const pluginFile = new FormData(e.target).get('plugin-file').path
+    const pluginFile = e.target.files?.[0].path
 
     // Send the filename of the to be installed plugin
     // to the main process for installation
@@ -116,65 +116,97 @@ const PluginCatalog = () => {
    * Its to be used to display the plugin file name of the selected file.
    * @param event - The change event object.
    */
-  // const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-  //   const file = event.target.files?.[0]
-  //   if (file) {
-  //     setFileName(file.name)
-  //   } else {
-  //     setFileName('')
-  //   }
-  // }
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      install(event)
+    }
+  }
 
   return (
     <div className="block w-full">
-      {pluginCatalog?.map((item, i) => {
-        const isActivePlugin = activePlugins.some((x) => x.name === item.name)
-        const updateVersionPlugins = Number(
-          activePlugins
-            .filter((p) => p.name === item.name)[0]
-            ?.version.replaceAll('.', '')
+      {(pluginCatalog ?? [])
+        .concat(
+          activePlugins?.filter(
+            (e) => !(pluginCatalog ?? []).some((p) => p.name === e.name)
+          ) ?? []
         )
-        return (
-          <div
-            key={i}
-            className="flex w-full items-start justify-between border-b border-gray-200 py-4 first:pt-0 last:border-none dark:border-gray-800"
-          >
-            <div className="w-4/5 flex-shrink-0 space-y-1.5">
-              <div className="flex gap-x-2">
-                <h6 className="text-sm font-semibold capitalize">
-                  {formatPluginsName(item.name)}
-                </h6>
-                <p className="whitespace-pre-wrap font-semibold leading-relaxed text-gray-600 dark:text-gray-400">
-                  v{item.version}
+        .map((item, i) => {
+          const isActivePlugin = activePlugins.some((x) => x.name === item.name)
+          const updateVersionPlugins = Number(
+            activePlugins
+              .filter((p) => p.name === item.name)[0]
+              ?.version.replaceAll('.', '')
+          )
+          return (
+            <div
+              key={i}
+              className="flex w-full items-start justify-between border-b border-gray-200 py-4 first:pt-0 last:border-none dark:border-gray-800"
+            >
+              <div className="w-4/5 flex-shrink-0 space-y-1.5">
+                <div className="flex gap-x-2">
+                  <h6 className="text-sm font-semibold capitalize">
+                    {formatPluginsName(item.name)}
+                  </h6>
+                  <p className="whitespace-pre-wrap font-semibold leading-relaxed text-gray-600 dark:text-gray-400">
+                    v{item.version}
+                  </p>
+                </div>
+                <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
+                  {item.description}
                 </p>
+                {isActivePlugin &&
+                  item.version.replaceAll('.', '') < updateVersionPlugins && (
+                    <Button
+                      size="sm"
+                      themes="outline"
+                      onClick={() => downloadTarball(item.name)}
+                    >
+                      Update
+                    </Button>
+                  )}
               </div>
-              <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
-                {item.description}
-              </p>
-              {isActivePlugin &&
-                item.version.replaceAll('.', '') < updateVersionPlugins && (
-                  <Button
-                    size="sm"
-                    themes="outline"
-                    onClick={() => downloadTarball(item.name)}
-                  >
-                    Update
-                  </Button>
-                )}
+              <Switch
+                checked={isActivePlugin}
+                onCheckedChange={(e) => {
+                  if (e === true) {
+                    downloadTarball(item.name)
+                  } else {
+                    uninstall(item.name)
+                  }
+                }}
+              />
             </div>
-            <Switch
-              checked={isActivePlugin}
-              onCheckedChange={(e) => {
-                if (e === true) {
-                  downloadTarball(item.name)
-                } else {
-                  uninstall(item.name)
-                }
-              }}
-            />
+          )
+        })}
+      {/* Manual Installation */}
+      <div className="flex w-full items-start justify-between border-b border-gray-200 py-4 first:pt-0 last:border-none dark:border-gray-800">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">
+              Manual Installation
+            </h6>
           </div>
-        )
-      })}
+          <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
+            Select a plugin file to install (.tgz)
+          </p>
+        </div>
+        <div>
+          <input
+            type="file"
+            style={{ display: 'none' }}
+            ref={fileInputRef}
+            onChange={handleFileChange}
+          />
+          <Button
+            size="sm"
+            themes="outline"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Select
+          </Button>
+        </div>
+      </div>
       {isLoading && (
         <div className="fixed inset-0 z-50 flex h-full items-center justify-center gap-y-4 rounded-lg bg-gray-950/90 text-gray-400 dark:backdrop-blur-sm">
           <div className="space-y-16">
