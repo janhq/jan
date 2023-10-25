@@ -4,7 +4,7 @@ import { useAtomValue } from 'jotai'
 import ModelActionButton, { ModelActionType } from '../ModelActionButton'
 import useStartStopModel from '@hooks/useStartStopModel'
 import useDeleteModel from '@hooks/useDeleteModel'
-import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
 import { toGigabytes } from '@utils/converter'
 
 type Props = {
@@ -15,6 +15,7 @@ const ModelRow: React.FC<Props> = ({ model }) => {
   const { startModel, stopModel } = useStartStopModel()
   const activeModel = useAtomValue(activeAssistantModelAtom)
   const { deleteModel } = useDeleteModel()
+  const { loading, model: currentModelState } = useAtomValue(stateModel)
 
   let status = ModelStatus.Installed
   if (activeModel && activeModel._id === model._id) {
@@ -57,6 +58,8 @@ const ModelRow: React.FC<Props> = ({ model }) => {
         <ModelStatusComponent status={status} />
       </td>
       <ModelActionButton
+        disabled={loading}
+        loading={currentModelState === model._id ? loading : false}
         type={actionButtonType}
         onActionClick={onModelActionClick}
         onDeleteClick={onDeleteClick}
