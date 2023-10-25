@@ -12,7 +12,7 @@ type Props = {
 }
 
 const ModelRow: React.FC<Props> = ({ model }) => {
-  const { loading, startModel, stopModel } = useStartStopModel()
+  const { startModel, stopModel } = useStartStopModel()
   const activeModel = useAtomValue(activeAssistantModelAtom)
   const { deleteModel } = useDeleteModel()
 
@@ -57,7 +57,6 @@ const ModelRow: React.FC<Props> = ({ model }) => {
         <ModelStatusComponent status={status} />
       </td>
       <ModelActionButton
-        disabled={loading}
         type={actionButtonType}
         onActionClick={onModelActionClick}
         onDeleteClick={onDeleteClick}

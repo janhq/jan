@@ -6,7 +6,6 @@ import { useState } from 'react'
 
 export default function useStartStopModel() {
   const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom)
-  const [loading, setLoading] = useState<boolean>(false)
   const setStateModel = useSetAtom(stateModel)
 
   const startModel = async (modelId: string) => {
@@ -24,12 +23,11 @@ export default function useStartStopModel() {
     if (!model) {
       alert(`Model ${modelId} not found! Please re-download the model first.`)
       setStateModel((prev) => ({ ...prev, loading: false }))
-    }    
+    }
     const currentTime = Date.now()
     console.debug('Init model: ', model._id)
 
     const res = await executeSerial(InferenceService.InitModel, model._id)
-
     if (res?.error) {
       const errorMessage = `Failed to init model: ${res.error}`
       console.error(errorMessage)
@@ -40,7 +38,7 @@ export default function useStartStopModel() {
       )
       setActiveModel(model)
     }
-    setLoading(false)
+    setStateModel((prev) => ({ ...prev, loading: false }))
   }
 
   const stopModel = async (modelId: string) => {
@@ -52,5 +50,5 @@ export default function useStartStopModel() {
     }, 500)
   }
 
-  return { loading, startModel, stopModel }
+  return { startModel, stopModel }
 }
