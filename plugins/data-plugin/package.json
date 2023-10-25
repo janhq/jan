@@ -41,6 +41,7 @@
   ],
   "dependencies": {
     "@janhq/core": "^0.1.7",
+    "leveldown": "^6.1.1",
     "pouchdb-find": "^8.0.1",
     "pouchdb-node": "^8.0.1"
   },
