@@ -19,8 +19,6 @@ const BottomBar = () => {
     downloadStates.push(value)
   }
 
-  console.log(stateModelStartStop)
-
   return (
     <div className="fixed bottom-0 left-0 z-20 flex h-8 w-full items-center justify-between border-t border-border bg-background/50 px-4">
       <div className="flex gap-x-2">
