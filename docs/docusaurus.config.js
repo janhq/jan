@@ -139,16 +139,16 @@ const config = {
           // Navbar right
           // {
           //   type: "docSidebar",
-          //   sidebarId: "docsSidebar",
+          //   sidebarId: "guidesSidebar",
           //   position: "right",
-          //   label: "Docs",
+          //   label: "Guides",
           // },
-          // {
-          //   type: "docSidebar",
-          //   sidebarId: "hardwareSidebar",
-          //   position: "right",
-          //   label: "Hardware",
-          // },
+          {
+            type: "docSidebar",
+            sidebarId: "docsSidebar",
+            position: "right",
+            label: "Developer",
+          },
           // {
           //   position: "right",
           //   label: "API",
