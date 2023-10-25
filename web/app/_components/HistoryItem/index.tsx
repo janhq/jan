@@ -1,19 +1,16 @@
 import React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import Image from 'next/image'
 import { ModelManagementService } from '@janhq/core'
 import { executeSerial } from '../../../../electron/core/plugin-manager/execution/extension-manager'
 import {
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
-  updateConversationErrorAtom,
   updateConversationWaitingForResponseAtom,
 } from '@helpers/atoms/Conversation.atom'
 import {
   setMainViewStateAtom,
   MainViewState,
 } from '@helpers/atoms/MainView.atom'
-import useInitModel from '@hooks/useInitModel'
 import { displayDate } from '@utils/datetime'
 import { twMerge } from 'tailwind-merge'
 
@@ -36,10 +33,7 @@ const HistoryItem: React.FC<Props> = ({
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
-  const updateConvError = useSetAtom(updateConversationErrorAtom)
   const isSelected = activeConvoId === conversation._id
-
-  const { initModel } = useInitModel()
 
   const onClick = async () => {
     const model = await executeSerial(
@@ -48,13 +42,6 @@ const HistoryItem: React.FC<Props> = ({
     )
 
     if (conversation._id) updateConvWaiting(conversation._id, true)
-    initModel(model).then((res: any) => {
-      if (conversation._id) updateConvWaiting(conversation._id, false)
-
-      if (res?.error && conversation._id) {
-        updateConvError(conversation._id, res.error)
-      }
-    })
 
     if (activeConvoId !== conversation._id) {
       setMainViewState(MainViewState.Conversation)

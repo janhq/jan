@@ -24,12 +24,14 @@ const modelActionMapper: Record<ModelActionType, ModelActionStyle> = {
 }
 
 type Props = {
+  disabled?: boolean
   type: ModelActionType
   onActionClick: (type: ModelActionType) => void
   onDeleteClick: () => void
 }
 
 const ModelActionButton: React.FC<Props> = ({
+  disabled = false,
   type,
   onActionClick,
   onDeleteClick,
@@ -48,6 +50,7 @@ const ModelActionButton: React.FC<Props> = ({
       <div className="flex items-center justify-end gap-x-4">
         <ModelActionMenu onDeleteClick={onDeleteClick} />
         <Button
+          disabled={disabled}
           size="sm"
           themes={styles.title === 'Start' ? 'accent' : 'default'}
           onClick={() => onClick()}

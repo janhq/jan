@@ -4,14 +4,34 @@ import { getActiveConvoIdAtom } from './Conversation.atom'
 /**
  * Stores all chat messages for all conversations
  */
-export const chatMessages = atom<Record<string, ChatMessage[]>>({})
+const chatMessages = atom<Record<string, ChatMessage[]>>({})
 
-export const currentChatMessagesAtom = atom<ChatMessage[]>((get) => {
+/**
+ * Return the chat messages for the current active conversation
+ */
+export const getCurrentChatMessagesAtom = atom<ChatMessage[]>((get) => {
   const activeConversationId = get(getActiveConvoIdAtom)
   if (!activeConversationId) return []
   return get(chatMessages)[activeConversationId] ?? []
 })
 
+export const setCurrentChatMessagesAtom = atom(
+  null,
+  (get, set, messages: ChatMessage[]) => {
+    const currentConvoId = get(getActiveConvoIdAtom)
+    if (!currentConvoId) return
+
+    const newData: Record<string, ChatMessage[]> = {
+      ...get(chatMessages),
+    }
+    newData[currentConvoId] = messages
+    set(chatMessages, newData)
+  }
+)
+
+/**
+ * Used for pagination. Add old messages to the current conversation
+ */
 export const addOldMessagesAtom = atom(
   null,
   (get, set, newMessages: ChatMessage[]) => {

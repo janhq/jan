@@ -4,9 +4,8 @@
 import BasicPromptInput from '../BasicPromptInput'
 import BasicPromptAccessories from '../BasicPromptAccessories'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { showingAdvancedPromptAtom } from '@helpers/atoms/Modal.atom'
 import SecondaryButton from '../SecondaryButton'
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PlusIcon } from '@heroicons/react/24/outline'
 import useCreateConversation from '@hooks/useCreateConversation'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
@@ -19,7 +18,6 @@ import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 
 const InputToolbar: React.FC = () => {
-  const showingAdvancedPrompt = useAtomValue(showingAdvancedPromptAtom)
   const activeModel = useAtomValue(activeAssistantModelAtom)
   const { requestCreateConvo } = useCreateConversation()
   const currentConvoState = useAtomValue(currentConvoStateAtom)
@@ -76,7 +74,7 @@ const InputToolbar: React.FC = () => {
 
   if (inputState === 'disabled')
     return (
-      <div className="bg-background/90 sticky bottom-0 flex items-center justify-center">
+      <div className="sticky bottom-0 flex items-center justify-center bg-background/90">
         <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center italic text-gray-600">
           {error}
         </p>
@@ -84,7 +82,7 @@ const InputToolbar: React.FC = () => {
     )
 
   return (
-    <div className="bg-background/90 sticky bottom-0 w-full px-5 py-0">
+    <div className="sticky bottom-0 w-full bg-background/90 px-5 py-0">
       {currentConvoState?.error && (
         <div className="flex flex-row justify-center">
           <span className="mx-5 my-2 text-sm text-red-500">

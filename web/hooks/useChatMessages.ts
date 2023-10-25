@@ -1,62 +1,50 @@
 import { toChatMessage } from '@models/ChatMessage'
 import { executeSerial } from '@services/pluginService'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { DataService } from '@janhq/core'
-import { addOldMessagesAtom } from '@helpers/atoms/ChatMessage.atom'
+import { getActiveConvoIdAtom } from '@helpers/atoms/Conversation.atom'
 import {
-  currentConversationAtom,
-  conversationStatesAtom,
-  updateConversationHasMoreAtom,
-} from '@helpers/atoms/Conversation.atom'
+  getCurrentChatMessagesAtom,
+  setCurrentChatMessagesAtom,
+} from '@helpers/atoms/ChatMessage.atom'
 
 /**
  * Custom hooks to get chat messages for current(active) conversation
- *
- * @param offset for pagination purpose
- * @returns
  */
-const useChatMessages = (offset = 0) => {
-  const [loading, setLoading] = useState(true)
-  const addOldChatMessages = useSetAtom(addOldMessagesAtom)
-  const currentConvo = useAtomValue(currentConversationAtom)
-  const convoStates = useAtomValue(conversationStatesAtom)
-  const updateConvoHasMore = useSetAtom(updateConversationHasMoreAtom)
+const useChatMessages = () => {
+  const setMessages = useSetAtom(setCurrentChatMessagesAtom)
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
+  const activeConvoId = useAtomValue(getActiveConvoIdAtom)
+
+  const getMessages = async (convoId: string) => {
+    const data: any = await executeSerial(
+      DataService.GetConversationMessages,
+      convoId
+    )
+    if (!data) {
+      return []
+    }
+
+    return parseMessages(data)
+  }
 
   useEffect(() => {
-    if (!currentConvo) {
+    if (!activeConvoId) {
+      console.error('active convo is undefined')
       return
     }
-    const hasMore = convoStates[currentConvo._id ?? '']?.hasMore ?? true
-    if (!hasMore) return
 
-    const getMessages = async () => {
-      executeSerial(DataService.GetConversationMessages, currentConvo._id).then(
-        (data: any) => {
-          if (!data) {
-            return
-          }
-          const newMessages = parseMessages(data ?? [])
-          addOldChatMessages(newMessages)
-          updateConvoHasMore(currentConvo._id ?? '', false)
-          setLoading(false)
-        }
-      )
-    }
-    getMessages()
-  }, [
-    offset,
-    convoStates,
-    addOldChatMessages,
-    updateConvoHasMore,
-    currentConvo,
-  ])
+    getMessages(activeConvoId)
+      .then((messages) => {
+        setMessages(messages)
+      })
+      .catch((err) => {
+        console.error(err)
+      })
+  }, [activeConvoId])
 
-  return {
-    loading: loading,
-    error: undefined,
-    hasMore: convoStates[currentConvo?._id ?? '']?.hasMore ?? true,
-  }
+  return { messages }
 }
 
 function parseMessages(messages: RawMessage[]): ChatMessage[] {
