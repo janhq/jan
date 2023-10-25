@@ -6,3 +6,4 @@
 - module.ts: Defines the plugin module which would be executed by the main node process.
 - package.json: Defines the plugin metadata.
 - tsconfig.json: Defines the typescript configuration.
+
