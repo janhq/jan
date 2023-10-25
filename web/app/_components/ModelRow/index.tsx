@@ -40,20 +40,20 @@ const ModelRow: React.FC<Props> = ({ model }) => {
   }, [model])
 
   return (
-    <tr className="bg-background/50 border-border border-b last:rounded-lg last:border-b-0">
-      <td className="text-muted-foreground whitespace-nowrap px-3 font-semibold">
+    <tr className="border-b border-border bg-background/50 last:rounded-lg last:border-b-0">
+      <td className="whitespace-nowrap px-3 font-semibold text-muted-foreground">
         {model.name}
         <span className="ml-2 font-semibold">v{model.version}</span>
       </td>
-      <td className="text-muted-foreground whitespace-nowrap px-3">
+      <td className="whitespace-nowrap px-3 text-muted-foreground">
         <div className="flex flex-col justify-start">
           <span>GGUF</span>
         </div>
       </td>
-      <td className="text-muted-foreground whitespace-nowrap px-3">
+      <td className="whitespace-nowrap px-3 text-muted-foreground">
         {toGigabytes(model.size)}
       </td>
-      <td className="text-muted-foreground whitespace-nowrap px-3">
+      <td className="whitespace-nowrap px-3 text-muted-foreground">
         <ModelStatusComponent status={status} />
       </td>
       <ModelActionButton
