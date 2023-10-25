@@ -1,16 +1,22 @@
 import { executeSerial } from '@services/pluginService'
 import { ModelManagementService, InferenceService } from '@janhq/core'
-import useInitModel from './useInitModel'
-import { useSetAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
+import { useState } from 'react'
 
 export default function useStartStopModel() {
-  const { initModel } = useInitModel()
-  const setActiveModel = useSetAtom(activeAssistantModelAtom)
+  const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom)
+  const [loading, setLoading] = useState<boolean>(false)
   const setStateModel = useSetAtom(stateModel)
 
   const startModel = async (modelId: string) => {
+    if (activeModel && activeModel._id === modelId) {
+      console.debug(`Model ${modelId} is already init. Ignore..`)
+      return
+    }
+
     setStateModel({ state: 'start', loading: true, model: modelId })
+
     const model = await executeSerial(
       ModelManagementService.GetModelById,
       modelId
@@ -18,10 +24,23 @@ export default function useStartStopModel() {
     if (!model) {
       alert(`Model ${modelId} not found! Please re-download the model first.`)
       setStateModel((prev) => ({ ...prev, loading: false }))
+    }    
+    const currentTime = Date.now()
+    console.debug('Init model: ', model._id)
+
+    const res = await executeSerial(InferenceService.InitModel, model._id)
+
+    if (res?.error) {
+      const errorMessage = `Failed to init model: ${res.error}`
+      console.error(errorMessage)
+      alert(errorMessage)
     } else {
-      await initModel(model)
-      setStateModel((prev) => ({ ...prev, loading: false }))
+      console.debug(
+        `Init model successfully!, take ${Date.now() - currentTime}ms`
+      )
+      setActiveModel(model)
     }
+    setLoading(false)
   }
 
   const stopModel = async (modelId: string) => {
@@ -33,5 +52,5 @@ export default function useStartStopModel() {
     }, 500)
   }
 
-  return { startModel, stopModel }
+  return { loading, startModel, stopModel }
 }

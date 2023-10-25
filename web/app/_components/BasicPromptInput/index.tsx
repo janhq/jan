@@ -4,7 +4,6 @@ import { currentPromptAtom } from '@helpers/JotaiWrapper'
 import { getActiveConvoIdAtom } from '@helpers/atoms/Conversation.atom'
 import { selectedModelAtom } from '@helpers/atoms/Model.atom'
 import useCreateConversation from '@hooks/useCreateConversation'
-import useInitModel from '@hooks/useInitModel'
 import useSendChatMessage from '@hooks/useSendChatMessage'
 import { useAtom, useAtomValue } from 'jotai'
 import { ChangeEvent, useEffect, useRef } from 'react'
@@ -15,8 +14,6 @@ const BasicPromptInput: React.FC = () => {
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const { sendChatMessage } = useSendChatMessage()
   const { requestCreateConvo } = useCreateConversation()
-
-  const { initModel } = useInitModel()
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -35,7 +32,6 @@ const BasicPromptInput: React.FC = () => {
           }
 
           await requestCreateConvo(selectedModel)
-          await initModel(selectedModel)
           sendChatMessage()
         }
       }
