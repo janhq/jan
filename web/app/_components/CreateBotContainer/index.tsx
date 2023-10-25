@@ -13,15 +13,14 @@ import DraggableProgressBar from '../DraggableProgressBar'
 import { useSetAtom } from 'jotai'
 import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import {
-  leftSideBarExpandStateAtom,
   rightSideBarExpandStateAtom,
 } from '@helpers/atoms/SideBarExpand.atom'
 import {
   MainViewState,
   setMainViewStateAtom,
 } from '@helpers/atoms/MainView.atom'
-import { executeSerial } from '../../../../electron/core/plugin-manager/execution/extension-manager'
 import { DataService } from '@janhq/core'
+import { executeSerial } from '@services/pluginService'
 
 const CreateBotContainer: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels()

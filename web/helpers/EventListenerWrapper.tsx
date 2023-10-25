@@ -3,7 +3,6 @@
 import { useSetAtom } from 'jotai'
 import { ReactNode, useEffect } from 'react'
 import { appDownloadProgress } from './JotaiWrapper'
-import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
 import { ModelManagementService } from '@janhq/core'
 import {
   setDownloadStateAtom,
@@ -12,6 +11,7 @@ import {
 import { getDownloadedModels } from '../hooks/useGetDownloadedModels'
 import { downloadedModelAtom } from './atoms/DownloadedModel.atom'
 import EventHandler from './EventHandler'
+import { executeSerial } from '@services/pluginService'
 
 type Props = {
   children: ReactNode

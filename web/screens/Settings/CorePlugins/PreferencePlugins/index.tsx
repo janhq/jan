@@ -1,4 +1,4 @@
-import React, { Children } from 'react'
+import React from 'react'
 import { execute } from '../../../../../electron/core/plugin-manager/execution/extension-manager'
 
 type Props = {

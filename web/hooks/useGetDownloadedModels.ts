@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
-import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
 import { ModelManagementService } from '@janhq/core'
 import { useAtom } from 'jotai'
 import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
+import { extensionPoints } from '../../electron/core/plugin-manager/execution'
+import { executeSerial } from '@services/pluginService'
 
 export function useGetDownloadedModels() {
   const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelAtom)
@@ -17,6 +18,9 @@ export function useGetDownloadedModels() {
 }
 
 export async function getDownloadedModels(): Promise<AssistantModel[]> {
+  if (!extensionPoints.get(ModelManagementService.GetFinishedDownloadModels)) {
+    return []
+  }
   const downloadedModels: AssistantModel[] = await executeSerial(
     ModelManagementService.GetFinishedDownloadModels
   )

@@ -8,10 +8,11 @@ import {
   DataService,
   InferenceService,
   ModelManagementService,
+  StoreService,
 } from '@janhq/core'
 
 export const isCorePluginInstalled = () => {
-  if (!extensionPoints.get(DataService.GetConversations)) {
+  if (!extensionPoints.get(StoreService.CreateCollection)) {
     return false
   }
   if (!extensionPoints.get(InferenceService.InitModel)) {
@@ -32,7 +33,7 @@ export const setupBasePlugins = async () => {
   const basePlugins = await window.electronAPI.basePlugins()
 
   if (
-    !extensionPoints.get(DataService.GetConversations) ||
+    !extensionPoints.get(StoreService.CreateCollection) ||
     !extensionPoints.get(InferenceService.InitModel) ||
     !extensionPoints.get(ModelManagementService.DownloadModel)
   ) {
@@ -45,7 +46,7 @@ export const setupBasePlugins = async () => {
 
 export const execute = (name: CoreService, args?: any) => {
   if (!extensionPoints.get(name)) {
-    alert('Missing extension for function: ' + name)
+    // alert('Missing extension for function: ' + name)
     return undefined
   }
   return extensionPoints.execute(name, args)
@@ -53,7 +54,7 @@ export const execute = (name: CoreService, args?: any) => {
 
 export const executeSerial = (name: CoreService, args?: any) => {
   if (!extensionPoints.get(name)) {
-    alert('Missing extension for function: ' + name)
+    // alert('Missing extension for function: ' + name)
     return Promise.resolve(undefined)
   }
   return extensionPoints.executeSerial(name, args)

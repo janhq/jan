@@ -1,9 +1,10 @@
-import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
+import { DataService } from '@janhq/core'
+import { executeSerial } from '@services/pluginService'
 
 export default function useGetBots() {
   const getAllBots = async (): Promise<Bot[]> => {
     try {
-      const bots = await executeSerial('getBots')
+      const bots = await executeSerial(DataService.GetBots)
       return bots
     } catch (err) {
       alert(`Failed to get bots: ${err}`)
@@ -14,7 +15,7 @@ export default function useGetBots() {
 
   const getBotById = async (botId: string): Promise<Bot | undefined> => {
     try {
-      const bot: Bot = await executeSerial('getBotById', botId)
+      const bot: Bot = await executeSerial(DataService.GetBotById, botId)
       return bot
     } catch (err) {
       alert(`Failed to get bot ${botId}: ${err}`)

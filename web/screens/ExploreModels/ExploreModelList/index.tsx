@@ -12,7 +12,7 @@ const ExploreModelList: React.FC = () => {
 
   return (
     <div className="relative h-full w-full flex-shrink-0">
-      {models.map((item) => (
+      {models?.map((item) => (
         <ExploreModelItem key={item._id} model={item} />
       ))}
     </div>

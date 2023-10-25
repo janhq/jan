@@ -21,7 +21,14 @@ const nextConfig = {
     // do some stuff here
     config.optimization.minimize = false
     config.optimization.minimizer = []
-    config.plugins = [...config.plugins, new webpack.DefinePlugin({})]
+    config.plugins = [
+      ...config.plugins,
+      new webpack.DefinePlugin({
+        PLUGIN_CATALOG: JSON.stringify(
+          'https://cdn.jsdelivr.net/npm/@janhq/plugin-catalog@latest/dist/index.js'
+        ),
+      }),
+    ]
     return config
   },
 }

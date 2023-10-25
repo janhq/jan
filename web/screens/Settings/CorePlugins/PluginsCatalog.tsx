@@ -25,9 +25,17 @@ const PluginCatalog = () => {
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
    */
   useEffect(() => {
-    executeSerial(DataService.GetPluginManifest).then((data) => {
-      setPluginCatalog(data)
-    })
+    // Load plugin manifest from plugin if any
+    if (extensionPoints.get(DataService.GetPluginManifest)) {
+      executeSerial(DataService.GetPluginManifest).then((data) => {
+        setPluginCatalog(data)
+      })
+    } else {
+      // Fallback to app default manifest
+      import(
+        /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
+      ).then((data) => setPluginCatalog(data.default))
+    }
   }, [])
 
   /**

@@ -1,7 +1,8 @@
 import { useSetAtom } from 'jotai'
-import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
 import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
+import { executeSerial } from '@services/pluginService'
+import { DataService } from '@janhq/core'
 
 export default function useDeleteBot() {
   const setActiveBot = useSetAtom(activeBotAtom)
@@ -9,7 +10,7 @@ export default function useDeleteBot() {
 
   const deleteBot = async (botId: string): Promise<'success' | 'failed'> => {
     try {
-      await executeSerial('deleteBot', botId)
+      await executeSerial(DataService.DeleteBot, botId)
       setRightPanelVisibility(false)
       setActiveBot(undefined)
       return 'success'
