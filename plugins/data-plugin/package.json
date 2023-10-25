@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc -b ./config/tsconfig.esm.json && tsc -b ./config/tsconfig.cjs.json && webpack --config webpack.config.js",
-    "postinstall": "npm install leveldown@5.6.0 --build-from-source --arch=arm64 && rimraf *.tgz --glob && npm run build",
+    "postinstall": "electron-rebuild -f -w leveldown@5.6.0 --arch=arm64 && rimraf *.tgz --glob && npm run build",
     "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {
@@ -41,6 +41,7 @@
   ],
   "dependencies": {
     "@janhq/core": "^0.1.7",
+    "electron-rebuild": "^3.2.9",
     "pouchdb-find": "^8.0.1",
     "pouchdb-node": "^8.0.1"
   },
