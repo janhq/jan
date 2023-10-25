@@ -80,11 +80,8 @@
   @apply border-gray-200 dark:border-gray-800;
 }
 
-[class*="docMainContainer_"],
-[class*="docSidebarContainer_"] {
-  table {
-    a {
-      @apply text-blue-600 dark:text-blue-400;
-    }
+.theme-doc-markdown {
+  a {
+    @apply text-blue-600 dark:text-blue-400;
   }
 }
