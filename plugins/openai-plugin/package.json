@@ -6,6 +6,7 @@
   "main": "dist/index.js",
   "module": "dist/module.js",
   "author": "Jan <service@jan.ai>",
+  "requiredVersion": "^0.3.1",
   "license": "MIT",
   "activationPoints": [
     "init"
