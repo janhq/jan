@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
 import { extensionPoints } from '../../electron/core/plugin-manager/execution'
 import { SystemMonitoringService } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 import { totalRamAtom } from '@helpers/atoms/SystemBar.atom'
+import { executeSerial } from '@services/pluginService'
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
   const [cpu, setCPU] = useState<number>(0)

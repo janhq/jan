@@ -5,12 +5,14 @@ import { useAtomValue } from 'jotai'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { formatDownloadPercentage } from '@utils/converter'
 import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
+import useGetAppVersion from '@hooks/useGetAppVersion'
 
 const BottomBar = () => {
   const activeModel = useAtomValue(activeAssistantModelAtom)
   const stateModelStartStop = useAtomValue(stateModel)
   const { ram, cpu } = useGetSystemResources()
   const modelDownloadStates = useAtomValue(modelDownloadStateAtom)
+  const appVersion = useGetAppVersion()
 
   const downloadStates: DownloadState[] = []
   for (const [, value] of Object.entries(modelDownloadStates)) {
@@ -51,7 +53,7 @@ const BottomBar = () => {
       <div className="flex gap-x-2">
         <SystemItem name="CPU:" value={`${cpu}%`} />
         <SystemItem name="Mem:" value={`${ram}%`} />
-        <p className="text-xs font-semibold">Jan v0.2.0</p>
+        <p className="text-xs font-semibold">Jan {appVersion?.version ?? ''}</p>
       </div>
     </div>
   )

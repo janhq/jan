@@ -67,7 +67,7 @@ function requestInference(
         }
         subscriber.complete();
       })
-      .catch(subscriber.error);
+      .catch((err) => subscriber.error(err));
   });
 }
 
@@ -143,7 +143,8 @@ async function handleMessageRequest(data: NewMessageRequest) {
     },
     error: async (err) => {
       message.message =
-        message.message.trim() + "\n" + "Error occurred: " + err;
+        message.message.trim() + "\n" + "Error occurred: " + err.message;
+      events.emit(EventName.OnMessageResponseUpdate, message);
       // TODO: Common collections should be able to access via core functions instead of store
       await store.updateOne("messages", message._id, message);
     },

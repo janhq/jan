@@ -1,7 +1,6 @@
 import React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ModelManagementService } from '@janhq/core'
-import { executeSerial } from '../../../../electron/core/plugin-manager/execution/extension-manager'
 import {
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
@@ -13,6 +12,7 @@ import {
 } from '@helpers/atoms/MainView.atom'
 import { displayDate } from '@utils/datetime'
 import { twMerge } from 'tailwind-merge'
+import { executeSerial } from '@services/pluginService'
 
 type Props = {
   conversation: Conversation
