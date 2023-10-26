@@ -14,53 +14,49 @@ const initModel = (fileName) => {
       if (!fileName) {
         reject("Model not found, please download again.");
       }
-      if (subprocess) {
-        console.error("A subprocess is already running. Attempt to kill then reinit.");
-        killSubprocess();
-      }
       resolve(fileName);
     })
-      // Kill port process if it is already in use
-      .then((fileName) =>
-        tcpPortUsed
-          .waitUntilFree(PORT, 200, 3000)
-          .catch(() => killPortProcess(PORT))
-          .then(() => fileName)
-      )
       // Spawn Nitro subprocess to load model
       .then(() => {
-        let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
-        let binaryName;
+        return tcpPortUsed.check(PORT, "127.0.0.1").then((inUse) => {
+          if (!inUse) {
+            let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
+            let binaryName;
 
-        if (process.platform === "win32") {
-          // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-          binaryName = "nitro_windows_amd64_cuda.exe";
-        } else if (process.platform === "darwin") {
-          // Mac OS platform
-          binaryName = process.arch === "arm64" ? "nitro_mac_arm64" : "nitro_mac_intel";
-        } else {
-          // Linux
-          // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-          binaryName = "nitro_linux_amd64_cuda"; // For other platforms
-        }
+            if (process.platform === "win32") {
+              // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+              binaryName = "nitro_start_windows.bat";
+            } else if (process.platform === "darwin") {
+              // Mac OS platform
+              binaryName =
+                process.arch === "arm64"
+                  ? "nitro_mac_arm64"
+                  : "nitro_mac_intel";
+            } else {
+              // Linux
+              // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+              binaryName = "nitro_start_linux.sh"; // For other platforms
+            }
 
-        const binaryPath = path.join(binaryFolder, binaryName);
+            const binaryPath = path.join(binaryFolder, binaryName);
 
-        // Execute the binary
-        subprocess = spawn(binaryPath, { cwd: binaryFolder });
+            // Execute the binary
+            subprocess = spawn(binaryPath, { cwd: binaryFolder });
 
-        // Handle subprocess output
-        subprocess.stdout.on("data", (data) => {
-          console.log(`stdout: ${data}`);
-        });
+            // Handle subprocess output
+            subprocess.stdout.on("data", (data) => {
+              console.log(`stdout: ${data}`);
+            });
 
-        subprocess.stderr.on("data", (data) => {
-          console.error(`stderr: ${data}`);
-        });
+            subprocess.stderr.on("data", (data) => {
+              console.error(`stderr: ${data}`);
+            });
 
-        subprocess.on("close", (code) => {
-          console.log(`child process exited with code ${code}`);
-          subprocess = null;
+            subprocess.on("close", (code) => {
+              console.log(`child process exited with code ${code}`);
+              subprocess = null;
+            });
+          }
         });
       })
       .then(() => tcpPortUsed.waitUntilUsed(PORT, 300, 30000))

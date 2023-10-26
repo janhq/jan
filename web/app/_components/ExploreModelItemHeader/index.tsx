@@ -1,19 +1,18 @@
 import SimpleTag from '../SimpleTag'
 import PrimaryButton from '../PrimaryButton'
-import { formatDownloadPercentage, toGigabytes } from '@/_utils/converter'
+import { formatDownloadPercentage, toGigabytes } from '@utils/converter'
 import SecondaryButton from '../SecondaryButton'
-import { Product } from '@/_models/Product'
 import { useCallback, useEffect, useMemo } from 'react'
-import { ModelVersion } from '@/_models/ModelVersion'
-import useGetPerformanceTag from '@/_hooks/useGetPerformanceTag'
-import useDownloadModel from '@/_hooks/useDownloadModel'
-import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
-import { modelDownloadStateAtom } from '@/_helpers/atoms/DownloadState.atom'
+import useGetPerformanceTag from '@hooks/useGetPerformanceTag'
+import useDownloadModel from '@hooks/useDownloadModel'
+import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
+import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { Button } from '@uikit'
 import {
   MainViewState,
   setMainViewStateAtom,
-} from '@/_helpers/atoms/MainView.atom'
+} from '@helpers/atoms/MainView.atom'
 
 type Props = {
   suitableModel: ModelVersion
@@ -37,35 +36,36 @@ const ExploreModelItemHeader: React.FC<Props> = ({
 
   useEffect(() => {
     getPerformanceForModel(suitableModel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suitableModel])
 
   const onDownloadClick = useCallback(() => {
     downloadModel(exploreModel, suitableModel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exploreModel, suitableModel])
 
   const isDownloaded =
     downloadedModels.find((model) => model._id === suitableModel._id) != null
 
   let downloadButton = (
-    <PrimaryButton
-      title={
-        suitableModel.size
-          ? `Download (${toGigabytes(suitableModel.size)})`
-          : 'Download'
-      }
-      onClick={() => onDownloadClick()}
-    />
+    <Button themes="accent" onClick={() => onDownloadClick()}>
+      {suitableModel.size
+        ? `Download (${toGigabytes(suitableModel.size)})`
+        : 'Download'}
+    </Button>
   )
 
   if (isDownloaded) {
     downloadButton = (
-      <PrimaryButton
-        title="View Downloaded Model"
+      <Button
+        size="sm"
+        themes="accent"
         onClick={() => {
           setMainViewState(MainViewState.MyModel)
         }}
-        className="bg-green-500 hover:bg-green-400"
-      />
+      >
+        View Downloaded Model
+      </Button>
     )
   }
 
@@ -82,7 +82,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   }
 
   return (
-    <div className="flex items-center justify-between border-b border-gray-200 p-4">
+    <div className="border-border bg-background/50 flex items-center justify-between rounded-t-md border-b px-4 py-2">
       <div className="flex items-center gap-2">
         <span>{exploreModel.name}</span>
         {performanceTag && (

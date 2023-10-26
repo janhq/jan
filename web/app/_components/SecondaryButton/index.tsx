@@ -1,4 +1,5 @@
 import React from 'react'
+import { Button } from '@uikit'
 
 type Props = {
   title: string
@@ -15,15 +16,10 @@ const SecondaryButton: React.FC<Props> = ({
   className,
   icon,
 }) => (
-  <button
-    disabled={disabled}
-    type="button"
-    onClick={onClick}
-    className={`flex items-center justify-center gap-1 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 ${className} line-clamp-1 flex-shrink-0`}
-  >
-    {icon}
+  <Button size="sm" disabled={disabled} type="button" onClick={onClick}>
+    {icon}&nbsp;
     {title}
-  </button>
+  </Button>
 )
 
 export default React.memo(SecondaryButton)

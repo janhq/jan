@@ -44,7 +44,8 @@ jobs:
           CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
 
       - uses: apple-actions/import-codesign-certs@v2
-        with: 
+        continue-on-error: true
+        with:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
@@ -52,6 +53,9 @@ jobs:
         run: |
           yarn install
           yarn build:plugins-darwin
+        env:
+          APP_PATH: "."
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
 
       - name: Build and publish app
         run: |

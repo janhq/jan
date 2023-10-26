@@ -1,5 +1,5 @@
 import HeaderTitle from '../HeaderTitle'
-import ExploreModelList from '../ExploreModelList'
+import ExploreModelList from '../../../screens/ExploreModels/ExploreModelList'
 import ExploreModelFilter from '../ExploreModelFilter'
 
 const ExploreModelContainer: React.FC = () => (

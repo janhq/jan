@@ -1,11 +1,12 @@
 import React from 'react'
-import { displayDate } from '@/_utils/datetime'
+import { displayDate } from '@utils/datetime'
 import Image from 'next/image'
-import { MessageSenderType } from '@/_models/ChatMessage'
+
 import LoadingIndicator from '../LoadingIndicator'
 import { Marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import hljs from 'highlight.js'
+import { MessageSenderType } from '@models/ChatMessage'
 
 type Props = {
   avatarUrl: string
@@ -50,7 +51,7 @@ const SimpleTextMessage: React.FC<Props> = ({
 
   return (
     <div
-      className={`flex items-start gap-2 px-12 md:px-32 2xl:px-64 ${backgroundColor} py-5`}
+      className={`border-border/50 flex items-start gap-x-4 gap-y-2 border-b px-4 py-5 last:border-none`}
     >
       <Image
         className="rounded-full"
@@ -61,10 +62,10 @@ const SimpleTextMessage: React.FC<Props> = ({
       />
       <div className="flex w-full flex-col gap-1">
         <div className="flex items-baseline justify-start gap-1">
-          <div className="text-sm font-extrabold leading-[15.2px] text-[#1B1B1B] dark:text-[#d1d5db]">
+          <div className="text-sm font-extrabold leading-[15.2px] ">
             {senderName}
           </div>
-          <div className="text-xs font-medium leading-[13.2px] text-gray-400">
+          <div className="text-xs font-medium leading-[13.2px]">
             {displayDate(createdAt)}
           </div>
         </div>
@@ -72,7 +73,7 @@ const SimpleTextMessage: React.FC<Props> = ({
           <LoadingIndicator />
         ) : (
           <span
-            className="text-sm font-normal leading-loose"
+            className="text-muted-foreground text-xs font-normal leading-loose"
             dangerouslySetInnerHTML={{ __html: parsedText }}
           />
         )}

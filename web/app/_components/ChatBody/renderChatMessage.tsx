@@ -1,7 +1,8 @@
 import SimpleControlNetMessage from '../SimpleControlNetMessage'
 import SimpleImageMessage from '../SimpleImageMessage'
 import SimpleTextMessage from '../SimpleTextMessage'
-import { ChatMessage, MessageType } from '@/_models/ChatMessage'
+import { ChatMessage, MessageType } from '@models/ChatMessage'
+
 
 export default function renderChatMessage({
   id,

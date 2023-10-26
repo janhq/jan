@@ -1,5 +1,8 @@
-import './globals.css'
 import { Metadata } from 'next'
+import '../styles/main.scss'
+import { PropsWithChildren } from 'react'
+
+import Providers from '@containers/Providers'
 
 export const metadata: Metadata = {
   title: 'Jan',
@@ -13,14 +16,15 @@ export const metadata: Metadata = {
   },
 }
 
-type Props = {
-  children: React.ReactNode
-}
+type Props = PropsWithChildren
 
 export default function RootLayout({ children }: Props) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>{children}</body>
+      <body className="bg-background/40 text-xs antialiased">
+        <div className="title-bar" />
+        <Providers>{children}</Providers>
+      </body>
     </html>
   )
 }

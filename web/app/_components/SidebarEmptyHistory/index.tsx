@@ -1,16 +1,14 @@
-import useCreateConversation from '@/_hooks/useCreateConversation'
-import PrimaryButton from '../PrimaryButton'
+import useCreateConversation from '@hooks/useCreateConversation'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useEffect, useState } from 'react'
 import {
   MainViewState,
   setMainViewStateAtom,
-} from '@/_helpers/atoms/MainView.atom'
-import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
-import useInitModel from '@/_hooks/useInitModel'
-import { useGetDownloadedModels } from '@/_hooks/useGetDownloadedModels'
-import { AssistantModel } from '@/_models/AssistantModel'
-import { ChatBubbleOvalLeftEllipsisIcon } from "@heroicons/react/24/outline"
+} from '@helpers/atoms/MainView.atom'
+import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
+import { Button } from '@uikit'
+import { MessageCircle } from 'lucide-react'
 
 enum ActionButton {
   DownloadModel = 'Download a Model',
@@ -24,8 +22,6 @@ const SidebarEmptyHistory: React.FC = () => {
   const { requestCreateConvo } = useCreateConversation()
   const [action, setAction] = useState(ActionButton.DownloadModel)
 
-  const { initModel } = useInitModel()
-
   useEffect(() => {
     if (downloadedModels.length > 0) {
       setAction(ActionButton.StartChat)
@@ -34,32 +30,29 @@ const SidebarEmptyHistory: React.FC = () => {
     }
   }, [downloadedModels])
 
-  const onClick = () => {
+  const onClick = async () => {
     if (action === ActionButton.DownloadModel) {
       setMainView(MainViewState.ExploreModel)
     } else {
       if (!activeModel) {
         setMainView(MainViewState.ConversationEmptyModel)
       } else {
-        createConversationAndInitModel(activeModel)
+        await requestCreateConvo(activeModel)
       }
     }
   }
 
-  const createConversationAndInitModel = async (model: AssistantModel) => {
-    await requestCreateConvo(model)
-    await initModel(model)
-  }
-
   return (
     <div className="flex flex-col items-center gap-3 py-10">
-      <ChatBubbleOvalLeftEllipsisIcon width={32} height={32} />
-      <div className="flex flex-col items-center gap-6">
-        <div className="text-center text-sm text-gray-900">No Chat History</div>
-        <div className="text-center text-sm text-gray-500">
+      <MessageCircle size={32} />
+      <div className="flex flex-col items-center gap-y-2">
+        <h6 className="text-center text-base">No Chat History</h6>
+        <p className="mb-6 text-center text-muted-foreground">
           Get started by creating a new chat.
-        </div>
-        <PrimaryButton title={action} onClick={onClick} />
+        </p>
+        <Button onClick={onClick} themes="accent">
+          {action}
+        </Button>
       </div>
     </div>
   )

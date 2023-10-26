@@ -3,8 +3,10 @@ import { useSetAtom } from 'jotai'
 import {
   setMainViewStateAtom,
   MainViewState,
-} from '@/_helpers/atoms/MainView.atom'
+} from '@helpers/atoms/MainView.atom'
 import SecondaryButton from '../SecondaryButton'
+
+import { Button, Icons } from '@uikit'
 
 const Welcome: React.FC = () => {
   const setMainViewState = useSetAtom(setMainViewStateAtom)
@@ -18,6 +20,8 @@ const Welcome: React.FC = () => {
           <br />
           let’s download your first model
         </span>
+        <Button>Button component</Button>
+        <Icons name="panel-left" />
         <SecondaryButton
           title={'Explore models'}
           onClick={() => setMainViewState(MainViewState.ExploreModel)}

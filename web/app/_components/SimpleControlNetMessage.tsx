@@ -1,9 +1,9 @@
-import { displayDate } from '@/_utils/datetime'
+import { displayDate } from '../../utils/datetime'
 import Link from 'next/link'
 import React from 'react'
-import JanImage from './JanImage'
+import JanImage from '../../containers/JanImage'
 import Image from 'next/image'
-import { ArrowDownTrayIcon } from "@heroicons/react/24/outline"
+import { ArrowDownTrayIcon } from '@heroicons/react/24/outline'
 
 type Props = {
   avatarUrl?: string

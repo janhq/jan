@@ -4,6 +4,7 @@ const webpack = require('webpack')
 const nextConfig = {
   output: 'export',
   assetPrefix: '.',
+  transpilePackages: ['lucide-react'],
   experimental: {
     serverActions: false,
   },
@@ -23,7 +24,7 @@ const nextConfig = {
     config.plugins = [
       ...config.plugins,
       new webpack.DefinePlugin({
-        PLUGIN_CATALOGS: JSON.stringify(
+        PLUGIN_CATALOG: JSON.stringify(
           'https://cdn.jsdelivr.net/npm/@janhq/plugin-catalog@latest/dist/index.js'
         ),
       }),

@@ -1,19 +1,17 @@
-import { currentConversationAtom } from '@/_helpers/atoms/Conversation.atom'
+import { currentConversationAtom } from '@helpers/atoms/Conversation.atom'
 import {
   leftSideBarExpandStateAtom,
   rightSideBarExpandStateAtom,
-  showRightSideBarToggleAtom,
-} from '@/_helpers/atoms/LeftSideBarExpand.atom'
-import { TrashIcon } from '@heroicons/react/24/outline'
-import { showConfirmDeleteConversationModalAtom } from '@/_helpers/atoms/Modal.atom'
+} from '@helpers/atoms/SideBarExpand.atom'
+import { showConfirmDeleteConversationModalAtom } from '@helpers/atoms/Modal.atom'
+import { ChartPieIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { useAtomValue, useSetAtom } from 'jotai'
 import React from 'react'
-import Image from 'next/image'
+import { Trash2 } from 'lucide-react'
 
 const MainHeader: React.FC = () => {
   const setLeftSideBarVisibility = useSetAtom(leftSideBarExpandStateAtom)
   const setRightSideBarVisibility = useSetAtom(rightSideBarExpandStateAtom)
-  const showRightSideBarToggle = useAtomValue(showRightSideBarToggleAtom)
   const setShowConfirmDeleteConversationModal = useSetAtom(
     showConfirmDeleteConversationModalAtom
   )
@@ -22,43 +20,19 @@ const MainHeader: React.FC = () => {
   const currentConvo = useAtomValue(currentConversationAtom)
   let title = currentConvo?.name ?? ''
 
-  return (
-    <div className="flex justify-between bg-gray-200 px-2 py-3">
-      <Image
-        role="button"
-        alt=""
-        src="icons/ic_sidebar_off.svg"
-        width={24}
-        onClick={() => setLeftSideBarVisibility((prev) => !prev)}
-        height={24}
-      />
+  if (!activeConversation) return null
 
-      <span className="flex gap-0.5 text-base font-semibold leading-6">
-        {title}
-      </span>
+  return (
+    <div className="sticky top-0 border-b border-border bg-background/90 px-4 py-2">
+      <span className="font-semibold text-muted-foreground">{title}</span>
 
       {/* right most */}
-      <div className="flex gap-4">
-        {activeConversation != null && (
-          <TrashIcon
-            role="button"
-            width={24}
-            height={24}
-            color="#9CA3AF"
-            onClick={() => setShowConfirmDeleteConversationModal(true)}
-          />
-        )}
-
-        {showRightSideBarToggle && (
-          <Image
-            role="button"
-            alt=""
-            src="icons/ic_sidebar_off.svg"
-            width={24}
-            onClick={() => setRightSideBarVisibility((prev) => !prev)}
-            height={24}
-          />
-        )}
+      <div className="absolute right-4 top-2">
+        <Trash2
+          role="button"
+          size={16}
+          onClick={() => setShowConfirmDeleteConversationModal(true)}
+        />
       </div>
     </div>
   )

@@ -12,9 +12,10 @@ import {
 
 import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
 import classNames from 'classnames'
-import { PluginService, preferences } from '@janhq/core'
+import { DataService, PluginService, preferences } from '@janhq/core'
 import { execute } from '../../../electron/core/plugin-manager/execution/extension-manager'
 import LoadingIndicator from './LoadingIndicator'
+import { executeSerial } from '@services/pluginService'
 
 export const Preferences = () => {
   const [search, setSearch] = useState<string>('')
@@ -30,13 +31,10 @@ export const Preferences = () => {
 
   /**
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
-   * The `webpackIgnore` comment is used to prevent Webpack from bundling the module.
    */
   useEffect(() => {
-    // @ts-ignore
-    import(/* webpackIgnore: true */ PLUGIN_CATALOGS).then((module) => {
-      console.log(module)
-      setPluginCatalog(module.default)
+    executeSerial(DataService.GetPluginManifest).then((data) => {
+      setPluginCatalog(data)
     })
   }, [])
 
@@ -149,8 +147,11 @@ export const Preferences = () => {
     if (timeout) {
       clearTimeout(timeout)
     }
-    if(extensionPoints.get(PluginService.OnPreferencesUpdate))
-    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100)
+    if (extensionPoints.get(PluginService.OnPreferencesUpdate))
+      timeout = setTimeout(
+        () => execute(PluginService.OnPreferencesUpdate),
+        100
+      )
   }
 
   /**

@@ -1,4 +1,3 @@
-import { AssistantModel } from '@/_models/AssistantModel'
 import ConversationalCard from '../ConversationalCard'
 import { ChatBubbleBottomCenterTextIcon } from '@heroicons/react/24/outline'
 
@@ -15,7 +14,7 @@ const ConversationalList: React.FC<Props> = ({ models }) => (
       </span>
     </div>
     <div className="scroll mt-2 flex w-full gap-2 overflow-hidden overflow-x-scroll pl-6">
-      {models.map((item) => (
+      {models?.map((item) => (
         <ConversationalCard key={item._id} model={item} />
       ))}
     </div>

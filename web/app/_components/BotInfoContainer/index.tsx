@@ -1,14 +1,14 @@
-import { activeBotAtom } from '@/_helpers/atoms/Bot.atom'
+import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import { useAtomValue, useSetAtom } from 'jotai'
 import React from 'react'
 import Avatar from '../Avatar'
 import PrimaryButton from '../PrimaryButton'
-import useCreateConversation from '@/_hooks/useCreateConversation'
-import useDeleteBot from '@/_hooks/useDeleteBot'
+import useCreateConversation from '@hooks/useCreateConversation'
+import useDeleteBot from '@hooks/useDeleteBot'
 import {
   setMainViewStateAtom,
   MainViewState,
-} from '@/_helpers/atoms/MainView.atom'
+} from '@helpers/atoms/MainView.atom'
 
 const BotInfoContainer: React.FC = () => {
   const activeBot = useAtomValue(activeBotAtom)
@@ -44,9 +44,7 @@ const BotInfoContainer: React.FC = () => {
     <div className="flex h-full w-full pt-4">
       <div className="mx-auto flex w-[672px] min-w-max flex-col gap-4">
         <Avatar />
-        <h1 className="text-center text-2xl font-bold">
-          {activeBot?.name}
-        </h1>
+        <h1 className="text-center text-2xl font-bold">{activeBot?.name}</h1>
         <div className="flex gap-4">
           <PrimaryButton
             fullWidth
@@ -55,7 +53,7 @@ const BotInfoContainer: React.FC = () => {
           />
           <PrimaryButton
             fullWidth
-            className='bg-red-500 hover:bg-red-400'
+            className="bg-red-500 hover:bg-red-400"
             title="Delete bot"
             onClick={onDeleteBotClick}
           />

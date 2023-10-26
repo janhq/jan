@@ -1,13 +1,11 @@
 import React, { useCallback } from 'react'
 import { ModelStatus, ModelStatusComponent } from '../ModelStatusComponent'
-import ModelActionMenu from '../ModelActionMenu'
 import { useAtomValue } from 'jotai'
 import ModelActionButton, { ModelActionType } from '../ModelActionButton'
-import useStartStopModel from '@/_hooks/useStartStopModel'
-import useDeleteModel from '@/_hooks/useDeleteModel'
-import { AssistantModel } from '@/_models/AssistantModel'
-import { activeAssistantModelAtom } from '@/_helpers/atoms/Model.atom'
-import { toGigabytes } from '@/_utils/converter'
+import useStartStopModel from '@hooks/useStartStopModel'
+import useDeleteModel from '@hooks/useDeleteModel'
+import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
+import { toGigabytes } from '@utils/converter'
 
 type Props = {
   model: AssistantModel
@@ -17,6 +15,7 @@ const ModelRow: React.FC<Props> = ({ model }) => {
   const { startModel, stopModel } = useStartStopModel()
   const activeModel = useAtomValue(activeAssistantModelAtom)
   const { deleteModel } = useDeleteModel()
+  const { loading, model: currentModelState } = useAtomValue(stateModel)
 
   let status = ModelStatus.Installed
   if (activeModel && activeModel._id === model._id) {
@@ -38,32 +37,33 @@ const ModelRow: React.FC<Props> = ({ model }) => {
 
   const onDeleteClick = useCallback(() => {
     deleteModel(model)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model])
 
   return (
-    <tr className="border-b border-gray-200 last:rounded-lg last:border-b-0">
-      <td className="flex flex-col whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
+    <tr className="border-b border-border bg-background/50 last:rounded-lg last:border-b-0">
+      <td className="whitespace-nowrap px-3 font-semibold text-muted-foreground">
         {model.name}
-        <span className="font-normal text-gray-500">{model.version}</span>
+        <span className="ml-2 font-semibold">v{model.version}</span>
       </td>
-      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+      <td className="whitespace-nowrap px-3 text-muted-foreground">
         <div className="flex flex-col justify-start">
           <span>GGUF</span>
         </div>
       </td>
-      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+      <td className="whitespace-nowrap px-3 text-muted-foreground">
         {toGigabytes(model.size)}
       </td>
-      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+      <td className="whitespace-nowrap px-3 text-muted-foreground">
         <ModelStatusComponent status={status} />
       </td>
       <ModelActionButton
+        disabled={loading}
+        loading={currentModelState === model._id ? loading : false}
         type={actionButtonType}
         onActionClick={onModelActionClick}
+        onDeleteClick={onDeleteClick}
       />
-      <td className="relative w-fit whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
-        <ModelActionMenu onDeleteClick={onDeleteClick} />
-      </td>
     </tr>
   )
 }

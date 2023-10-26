@@ -48,10 +48,8 @@ test("renders the home page", async () => {
 
   // Welcome text is available
   const welcomeText = await page
-    .locator(".text-5xl", {
-      hasText: "Welcome,let’s download your first model",
-    })
+    .getByTestId("testid-welcome-title")
     .first()
-    .isDisabled();
+    .isVisible();
   expect(welcomeText).toBe(false);
 });

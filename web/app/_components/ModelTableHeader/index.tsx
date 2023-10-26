@@ -7,7 +7,7 @@ type Props = {
 const ModelTableHeader: React.FC<Props> = ({ title }) => (
   <th
     scope="col"
-    className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 first:rounded-tl-lg last:rounded-tr-lg"
+    className="text-muted-foreground border-border border-b p-3 text-left text-xs font-semibold uppercase first:rounded-tl-lg last:rounded-tr-lg last:text-right"
   >
     {title}
   </th>

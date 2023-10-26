@@ -1,5 +1,6 @@
 import React from 'react'
-import PrimaryButton from '../PrimaryButton'
+import { Button } from '@uikit'
+import ModelActionMenu from '../ModelActionMenu'
 
 export enum ModelActionType {
   Start = 'Start',
@@ -8,41 +9,51 @@ export enum ModelActionType {
 
 type ModelActionStyle = {
   title: string
-  backgroundColor: string
-  textColor: string
 }
 
 const modelActionMapper: Record<ModelActionType, ModelActionStyle> = {
   [ModelActionType.Start]: {
     title: 'Start',
-    backgroundColor: 'bg-blue-500 hover:bg-blue-600',
-    textColor: 'text-white',
   },
   [ModelActionType.Stop]: {
     title: 'Stop',
-    backgroundColor: 'bg-red-500 hover:bg-red-600',
-    textColor: 'text-white',
   },
 }
 
 type Props = {
+  disabled?: boolean
+  loading?: boolean
   type: ModelActionType
   onActionClick: (type: ModelActionType) => void
+  onDeleteClick: () => void
 }
 
-const ModelActionButton: React.FC<Props> = ({ type, onActionClick }) => {
+const ModelActionButton: React.FC<Props> = ({
+  disabled,
+  loading,
+  type,
+  onActionClick,
+  onDeleteClick,
+}) => {
   const styles = modelActionMapper[type]
+
   const onClick = () => {
     onActionClick(type)
   }
-
   return (
-    <td className="whitespace-nowrap px-6 py-4 text-sm">
-      <PrimaryButton
-        title={styles.title}
-        onClick={onClick}
-        className={styles.backgroundColor}
-      />
+    <td className="whitespace-nowrap px-3 py-2 text-right">
+      <div className="flex items-center justify-end gap-x-4">
+        <ModelActionMenu onDeleteClick={onDeleteClick} />
+        <Button
+          disabled={disabled}
+          size="sm"
+          themes={styles.title === 'Start' ? 'accent' : 'default'}
+          onClick={() => onClick()}
+          loading={loading}
+        >
+          {styles.title} Model
+        </Button>
+      </div>
     </td>
   )
 }

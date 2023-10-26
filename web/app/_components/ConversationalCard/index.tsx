@@ -1,8 +1,7 @@
 import React from 'react'
 import Image from 'next/image'
-import useCreateConversation from '@/_hooks/useCreateConversation'
-import { AssistantModel } from '@/_models/AssistantModel'
-import { PlayIcon } from "@heroicons/react/24/outline"
+import useCreateConversation from '@hooks/useCreateConversation'
+import { PlayIcon } from '@heroicons/react/24/outline'
 
 type Props = {
   model: AssistantModel

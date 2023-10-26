@@ -1,7 +1,8 @@
-import { currentPromptAtom } from '@/_helpers/JotaiWrapper'
-import { currentConvoStateAtom } from '@/_helpers/atoms/Conversation.atom'
-import useSendChatMessage from '@/_hooks/useSendChatMessage'
+import { currentPromptAtom } from '@helpers/JotaiWrapper'
+import { currentConvoStateAtom } from '@helpers/atoms/Conversation.atom'
+import useSendChatMessage from '@hooks/useSendChatMessage'
 import { useAtom, useAtomValue } from 'jotai'
+import { Button } from '@uikit'
 
 const SendButton: React.FC = () => {
   const [currentPrompt] = useAtom(currentPromptAtom)
@@ -11,19 +12,15 @@ const SendButton: React.FC = () => {
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
 
-  const disabledStyle = {
-    backgroundColor: '#F3F4F6',
-  }
-
   return (
-    <button
+    <Button
+      themes="accent"
       onClick={sendChatMessage}
-      style={disabled ? disabledStyle : {}}
+      disabled={disabled}
       type="submit"
-      className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
     >
       Send
-    </button>
+    </Button>
   )
 }
 

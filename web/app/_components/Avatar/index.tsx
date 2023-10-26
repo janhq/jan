@@ -7,7 +7,7 @@ type Props = {
 
 const Avatar: React.FC<Props> = ({ allowEdit = false }) => (
   <div className="mx-auto flex flex-col gap-5">
-    <span className="mx-auto inline-block h-14 w-14 overflow-hidden rounded-full bg-gray-100">
+    <span className="mx-auto inline-block h-10 w-10 overflow-hidden rounded-full bg-gray-100">
       <svg
         className="mx-auto h-full w-full text-gray-300"
         fill="currentColor"
