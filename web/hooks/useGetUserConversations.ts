@@ -29,7 +29,14 @@ const useGetUserConversations = () => {
     }
   }
 
+  const getConversationById = async (
+    id: string
+  ): Promise<Conversation | undefined> => {
+    return await executeSerial(DataService.GetConversationById, id)
+  }
+
   return {
+    getConversationById,
     getUserConversations,
   }
 }
