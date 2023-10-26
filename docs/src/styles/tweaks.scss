@@ -84,4 +84,17 @@
   a {
     @apply text-blue-600 dark:text-blue-400;
   }
+  ul {
+    list-style: revert;
+  }
+  ol {
+    list-style: decimal;
+  }
+  ul,
+  ol {
+    padding-left: 16px;
+    li {
+      @apply leading-loose;
+    }
+  }
 }

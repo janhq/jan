@@ -27,14 +27,14 @@ title: Anatomy of an app
 ##
 
 Platform has 3 events that are broadcast to installed Apps
-![Platform events](img/app-anatomy-4.drawio.png)
+![Platform events](img/app-anatomy-4.drawio.jpg)
 
 - onLaunch()
-  ![Platform onLaunch()](img/app-anatomy-1.drawio.png)
+  ![Platform onLaunch()](img/app-anatomy-1.drawio.jpg)
 - onStart()
-  ![Platform onStart()](img/app-anatomy-2.drawio.png)
+  ![Platform onStart()](img/app-anatomy-2.drawio.jpg)
 - onDispose()
-  ![Platform onDispose()](img/app-anatomy-3.drawio.png)
+  ![Platform onDispose()](img/app-anatomy-3.drawio.jpg)
 - At any given time, when there is new App installtion/ unintallation, the Platform restarts and trigger
 - When App is being used, here is how the information passes between Platform and Apps
   ![Communication](img/app-anatomy-5.drawio.png)
