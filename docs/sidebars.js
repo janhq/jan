@@ -84,6 +84,11 @@ const sidebars = {
           label: "Concepts",
           id: "docs/overview/concepts",
         },
+        {
+          type: "doc",
+          label: "App Anatomy",
+          id: "docs/overview/app_anatomy",
+        },
       ],
     },
     {
@@ -99,8 +104,13 @@ const sidebars = {
         },
         {
           type: "doc",
-          label: "@janhq/inference",
-          id: "docs/reference/coreservice",
+          label: "@janhq/models",
+          id: "docs/reference/model_catalog",
+        },
+        {
+          type: "doc",
+          label: "@janhq/plugins",
+          id: "docs/reference/plugin_catalog",
         },
       ],
     },
