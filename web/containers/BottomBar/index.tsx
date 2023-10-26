@@ -51,7 +51,7 @@ const BottomBar = () => {
       <div className="flex gap-x-2">
         <SystemItem name="CPU:" value={`${cpu}%`} />
         <SystemItem name="Mem:" value={`${ram}%`} />
-        <p className="text-xs font-semibold">Jan {appVersion?.version ?? ''}</p>
+        <p className="text-xs font-semibold">Jan v{appVersion?.version ?? ''}</p>
       </div>
     </div>
   )
