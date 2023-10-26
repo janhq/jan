@@ -11,6 +11,7 @@ import {
 } from '@/../../electron/core/plugin-manager/execution/index'
 import { executeSerial } from '@services/pluginService'
 import { DataService } from '@janhq/core'
+import useGetAppVersion from '@hooks/useGetAppVersion'
 
 const PluginCatalog = () => {
   // const [search, setSearch] = useState<string>('')
@@ -20,23 +21,41 @@ const PluginCatalog = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const experimentRef = useRef(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-
+  const { version } = useGetAppVersion()
   /**
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
    */
   useEffect(() => {
+    if (!version) return
+
     // Load plugin manifest from plugin if any
     if (extensionPoints.get(DataService.GetPluginManifest)) {
       executeSerial(DataService.GetPluginManifest).then((data) => {
-        setPluginCatalog(data)
+        setPluginCatalog(
+          data.filter(
+            (e: any) =>
+              !e.requiredVersion ||
+              e.requiredVersion.replace(/[.^]/g, '') <=
+                version.replaceAll('.', '')
+          )
+        )
       })
     } else {
       // Fallback to app default manifest
       import(
         /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
-      ).then((data) => setPluginCatalog(data.default))
+      ).then((data) =>
+        setPluginCatalog(
+          data.default.filter(
+            (e: any) =>
+              !e.requiredVersion ||
+              e.requiredVersion.replace(/[.^]/g, '') <=
+                version.replaceAll('.', '')
+          )
+        )
+      )
     }
-  }, [])
+  }, [version])
 
   /**
    * Fetches the active plugins and their preferences from the `plugins` and `preferences` modules.
