@@ -3,66 +3,27 @@
 
 import BasicPromptInput from '../BasicPromptInput'
 import BasicPromptAccessories from '../BasicPromptAccessories'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue } from 'jotai'
 import SecondaryButton from '../SecondaryButton'
-import { useEffect, useState } from 'react'
 import { PlusIcon } from '@heroicons/react/24/outline'
 import useCreateConversation from '@hooks/useCreateConversation'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 import {
-  currentConversationAtom,
   currentConvoStateAtom,
+  getActiveConvoIdAtom,
 } from '@helpers/atoms/Conversation.atom'
-import useGetBots from '@hooks/useGetBots'
-import { activeBotAtom } from '@helpers/atoms/Bot.atom'
-import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
+import useGetInputState from '@hooks/useGetInputState'
+import { Button } from '../../../uikit/button'
+import useStartStopModel from '@hooks/useStartStopModel'
 
 const InputToolbar: React.FC = () => {
   const activeModel = useAtomValue(activeAssistantModelAtom)
-  const { requestCreateConvo } = useCreateConversation()
   const currentConvoState = useAtomValue(currentConvoStateAtom)
-  const currentConvo = useAtomValue(currentConversationAtom)
+  const { inputState, currentConvo } = useGetInputState()
+  const { requestCreateConvo } = useCreateConversation()
+  const { startModel } = useStartStopModel()
 
-  const setActiveBot = useSetAtom(activeBotAtom)
-  const { getBotById } = useGetBots()
-  const [inputState, setInputState] = useState<
-    'available' | 'disabled' | 'loading'
-  >()
-  const [error, setError] = useState<string | undefined>()
-  const { downloadedModels } = useGetDownloadedModels()
-
-  useEffect(() => {
-    const getReplyState = async () => {
-      setInputState('loading')
-      if (currentConvo && currentConvo.botId && currentConvo.botId.length > 0) {
-        // if botId is set, check if bot is available
-        const bot = await getBotById(currentConvo.botId)
-        console.debug('Found bot', JSON.stringify(bot, null, 2))
-        if (bot) {
-          setActiveBot(bot)
-        }
-        setInputState(bot ? 'available' : 'disabled')
-        setError(
-          bot
-            ? undefined
-            : `Bot ${currentConvo.botId} has been deleted by its creator. Your chat history is saved but you won't be able to send new messages.`
-        )
-      } else {
-        const model = downloadedModels.find(
-          (model) => model._id === activeModel?._id
-        )
-
-        setInputState(model ? 'available' : 'disabled')
-        setError(
-          model
-            ? undefined
-            : `Model ${activeModel?._id} cannot be found. Your chat history is saved but you won't be able to send new messages.`
-        )
-      }
-    }
-    getReplyState()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentConvo])
+  const activeConvoId = useAtomValue(getActiveConvoIdAtom)
 
   const onNewConversationClick = () => {
     if (activeModel) {
@@ -70,16 +31,42 @@ const InputToolbar: React.FC = () => {
     }
   }
 
-  if (inputState === 'loading') return <div>Loading..</div>
+  const onStartModelClick = () => {
+    const modelId = currentConvo?.modelId
+    if (!modelId) return
+    startModel(modelId)
+  }
 
-  if (inputState === 'disabled')
+  if (!activeConvoId) {
+    return null
+  }
+
+  if (inputState === 'model-mismatch' || inputState === 'loading') {
+    const message = inputState === 'loading' ? 'Loading..' : 'Model mismatch!'
+    return (
+      <div className="sticky bottom-0 flex items-center justify-center bg-background/90">
+        <div className="mb-2">
+          <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center italic text-gray-600">
+            {message}
+          </p>
+          <Button onClick={onStartModelClick}>
+            Load {currentConvo?.modelId}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (inputState === 'model-not-found') {
     return (
       <div className="sticky bottom-0 flex items-center justify-center bg-background/90">
         <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center italic text-gray-600">
-          {error}
+          Model {currentConvo?.modelId} not found! Please re-download the model
+          first.
         </p>
       </div>
     )
+  }
 
   return (
     <div className="sticky bottom-0 w-full bg-background/90 px-5 py-0">

@@ -3,14 +3,29 @@ import { toChatMessage } from '@models/ChatMessage'
 import { events, EventName, NewMessageResponse } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 import { ReactNode, useEffect } from 'react'
+import useGetBots from '@hooks/useGetBots'
+import useGetUserConversations from '@hooks/useGetUserConversations'
 
 export default function EventHandler({ children }: { children: ReactNode }) {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
+  const { getBotById } = useGetBots()
+  const { getConversationById } = useGetUserConversations()
 
-  function handleNewMessageResponse(message: NewMessageResponse) {
-    const newResponse = toChatMessage(message)
-    addNewMessage(newResponse)
+  async function handleNewMessageResponse(message: NewMessageResponse) {
+    if (message.conversationId) {
+      const convo = await getConversationById(message.conversationId)
+      const botId = convo?.botId
+      console.debug('botId', botId)
+      if (botId) {
+        const bot = await getBotById(botId)
+        const newResponse = toChatMessage(message, bot)
+        addNewMessage(newResponse)
+      } else {
+        const newResponse = toChatMessage(message)
+        addNewMessage(newResponse)
+      }
+    }
   }
   async function handleMessageResponseUpdate(
     messageResponse: NewMessageResponse
@@ -40,5 +55,5 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       events.off(EventName.OnMessageResponseUpdate, handleMessageResponseUpdate)
     }
   }, [])
-  return <> {children}</>
+  return <>{children}</>
 }
