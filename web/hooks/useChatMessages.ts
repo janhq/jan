@@ -3,11 +3,15 @@ import { executeSerial } from '@services/pluginService'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useEffect } from 'react'
 import { DataService } from '@janhq/core'
-import { getActiveConvoIdAtom } from '@helpers/atoms/Conversation.atom'
+import {
+  getActiveConvoIdAtom,
+  userConversationsAtom,
+} from '@helpers/atoms/Conversation.atom'
 import {
   getCurrentChatMessagesAtom,
   setCurrentChatMessagesAtom,
 } from '@helpers/atoms/ChatMessage.atom'
+import useGetBots from './useGetBots'
 
 /**
  * Custom hooks to get chat messages for current(active) conversation
@@ -16,6 +20,8 @@ const useChatMessages = () => {
   const setMessages = useSetAtom(setCurrentChatMessagesAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
+  const userConversations = useAtomValue(userConversationsAtom)
+  const { getBotById } = useGetBots()
 
   const getMessages = async (convoId: string) => {
     const data: any = await executeSerial(
@@ -24,6 +30,12 @@ const useChatMessages = () => {
     )
     if (!data) {
       return []
+    }
+
+    const convo = userConversations.find((c) => c._id === convoId)
+    if (convo && convo.botId) {
+      const bot = await getBotById(convo.botId)
+      return parseMessages(data, bot)
     }
 
     return parseMessages(data)
@@ -47,10 +59,10 @@ const useChatMessages = () => {
   return { messages }
 }
 
-function parseMessages(messages: RawMessage[]): ChatMessage[] {
+function parseMessages(messages: RawMessage[], bot?: Bot): ChatMessage[] {
   const newMessages: ChatMessage[] = []
   for (const m of messages) {
-    const chatMessage = toChatMessage(m)
+    const chatMessage = toChatMessage(m, bot)
     newMessages.push(chatMessage)
   }
   return newMessages

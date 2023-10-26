@@ -1,5 +1,5 @@
 import HistoryItem from '../HistoryItem'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import ExpandableHeader from '../ExpandableHeader'
 import { useAtomValue } from 'jotai'
 import { searchAtom } from '@helpers/JotaiWrapper'
@@ -33,7 +33,6 @@ const HistoryList: React.FC = () => {
                 key={convo._id}
                 conversation={convo}
                 summary={convo.summary}
-                avatarUrl={convo.image}
                 name={convo.name || 'Jan'}
                 updatedAt={convo.updatedAt ?? ''}
               />

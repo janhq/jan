@@ -1,6 +1,5 @@
 import React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { ModelManagementService } from '@janhq/core'
 import {
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
@@ -12,11 +11,13 @@ import {
 } from '@helpers/atoms/MainView.atom'
 import { displayDate } from '@utils/datetime'
 import { twMerge } from 'tailwind-merge'
-import { executeSerial } from '@services/pluginService'
+import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { switchingModelConfirmationModalPropsAtom } from '@helpers/atoms/Modal.atom'
+import useStartStopModel from '@hooks/useStartStopModel'
+import useGetModelById from '@hooks/useGetModelById'
 
 type Props = {
   conversation: Conversation
-  avatarUrl?: string
   name: string
   summary?: string
   updatedAt?: string
@@ -24,22 +25,41 @@ type Props = {
 
 const HistoryItem: React.FC<Props> = ({
   conversation,
-  avatarUrl,
   name,
   summary,
   updatedAt,
 }) => {
-  const setMainViewState = useSetAtom(setMainViewStateAtom)
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
+  const isSelected = activeConvoId === conversation._id
+  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const { startModel } = useStartStopModel()
+  const { getModelById } = useGetModelById()
+
+  const setMainViewState = useSetAtom(setMainViewStateAtom)
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
-  const isSelected = activeConvoId === conversation._id
+  const setConfirmationModalProps = useSetAtom(
+    switchingModelConfirmationModalPropsAtom
+  )
 
   const onClick = async () => {
-    const model = await executeSerial(
-      ModelManagementService.GetModelById,
-      conversation.modelId
-    )
+    if (conversation.modelId == null) {
+      console.debug('modelId is undefined')
+      return
+    }
+
+    const model = await getModelById(conversation.modelId)
+    if (model != null) {
+      if (activeModel == null) {
+        // if there's no active model, we simply load conversation's model
+        startModel(model._id)
+      } else if (activeModel._id !== model._id) {
+        // display confirmation modal
+        setConfirmationModalProps({
+          replacingModel: model,
+        })
+      }
+    }
 
     if (conversation._id) updateConvWaiting(conversation._id, true)
 
