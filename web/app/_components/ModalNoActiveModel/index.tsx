@@ -39,7 +39,8 @@ const ModalNoActiveModel: React.FC = () => {
             >
               <Dialog.Panel className="relative transform overflow-hidden rounded-lg border border-border bg-background/90 px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
                 <h1 className="font-base mb-4 font-bold">
-                  There is no active model at the moment ...
+                  You don’t have any actively running models. Please start a
+                  downloaded model in My Models page to use this feature.
                 </h1>
                 <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
                   <button
