@@ -22,8 +22,6 @@ export const ModalWrapper: React.FC<Props> = ({ children }) => (
     <BotListModal />
     <SwitchingModelConfirmationModal />
     <ModalNoActiveModel />
-    <SwitchingModelConfirmationModal />
-    <ModalNoActiveModel />
     {children}
   </>
 )

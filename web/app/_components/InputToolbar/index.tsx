@@ -7,7 +7,7 @@ import { useAtomValue } from 'jotai'
 import SecondaryButton from '../SecondaryButton'
 import { PlusIcon } from '@heroicons/react/24/outline'
 import useCreateConversation from '@hooks/useCreateConversation'
-import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
 import {
   currentConvoStateAtom,
   getActiveConvoIdAtom,
@@ -23,6 +23,7 @@ const InputToolbar: React.FC = () => {
   const { inputState, currentConvo } = useGetInputState()
   const { requestCreateConvo } = useCreateConversation()
   const { startModel } = useStartStopModel()
+  const { loading } = useAtomValue(stateModel)
   const conversations = useAtomValue(userConversationsAtom)
 
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
@@ -44,7 +45,8 @@ const InputToolbar: React.FC = () => {
   }
 
   if (inputState === 'model-mismatch' || inputState === 'loading') {
-    const message = inputState === 'loading' ? 'Loading..' : 'Model mismatch!'
+    const message =
+      inputState === 'loading' || loading ? 'Loading..' : 'Model mismatch!'
     return (
       <div className="sticky bottom-0 flex items-center justify-center bg-background/90">
         <div className="mb-2">
