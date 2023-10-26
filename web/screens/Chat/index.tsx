@@ -9,13 +9,13 @@ import LeftHeaderAction from '@/_components/LeftHeaderAction'
 const ChatScreen = () => {
   return (
     <div className="flex h-full">
-      <div className="border-border flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r ">
+      <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border ">
         <div className="px-4 py-6 pt-4">
           <LeftHeaderAction />
           <HistoryList />
         </div>
       </div>
-      <div className="bg-background/50 relative flex h-full w-full flex-col">
+      <div className="relative flex h-full w-full flex-col bg-background/50">
         <MainHeader />
         <ChatBody />
         <InputToolbar />

@@ -3,7 +3,7 @@
 
 import BasicPromptInput from '../BasicPromptInput'
 import BasicPromptAccessories from '../BasicPromptAccessories'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import SecondaryButton from '../SecondaryButton'
 import { PlusIcon } from '@heroicons/react/24/outline'
 import useCreateConversation from '@hooks/useCreateConversation'
@@ -13,9 +13,9 @@ import {
   getActiveConvoIdAtom,
 } from '@helpers/atoms/Conversation.atom'
 import useGetInputState from '@hooks/useGetInputState'
-import { Button } from '../../../uikit/button'
 import useStartStopModel from '@hooks/useStartStopModel'
 import { userConversationsAtom } from '@helpers/atoms/Conversation.atom'
+import { showingModalNoActiveModel } from '@helpers/atoms/Modal.atom'
 
 const InputToolbar: React.FC = () => {
   const activeModel = useAtomValue(activeAssistantModelAtom)
@@ -25,12 +25,14 @@ const InputToolbar: React.FC = () => {
   const { startModel } = useStartStopModel()
   const { loading } = useAtomValue(stateModel)
   const conversations = useAtomValue(userConversationsAtom)
-
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
+  const setShowModalNoActiveModel = useSetAtom(showingModalNoActiveModel)
 
   const onNewConversationClick = () => {
     if (activeModel) {
       requestCreateConvo(activeModel)
+    } else {
+      setShowModalNoActiveModel(true)
     }
   }
 
@@ -43,19 +45,21 @@ const InputToolbar: React.FC = () => {
   if (!activeConvoId) {
     return null
   }
-
-  if (inputState === 'model-mismatch' || inputState === 'loading') {
-    const message =
-      inputState === 'loading' || loading ? 'Loading..' : 'Model mismatch!'
+  if (
+    (activeConvoId && inputState === 'model-mismatch') ||
+    inputState === 'loading'
+  ) {
+    // const message = inputState === 'loading' ? 'Loading..' : 'Model mismatch!'
     return (
       <div className="sticky bottom-0 flex items-center justify-center bg-background/90">
-        <div className="mb-2">
-          <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center italic text-gray-600">
+        <div className="my-2">
+          {/* <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center italic text-gray-600">
             {message}
-          </p>
-          <Button onClick={onStartModelClick}>
-            Load {currentConvo?.modelId}
-          </Button>
+          </p> */}
+          <SecondaryButton
+            onClick={onStartModelClick}
+            title={`Start model ${currentConvo?.modelId}`}
+          />
         </div>
       </div>
     )
