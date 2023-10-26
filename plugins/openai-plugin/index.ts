@@ -85,6 +85,7 @@ const registerListener = () => {
   events.on(EventName.OnNewMessageRequest, handleMessageRequest);
 };
 
+// Preference update - reconfigure OpenAI 
 const onPreferencesUpdate = () => {
   setup();
 };
