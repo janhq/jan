@@ -20,10 +20,10 @@ import { userConversationsAtom } from '@helpers/atoms/Conversation.atom'
 const InputToolbar: React.FC = () => {
   const activeModel = useAtomValue(activeAssistantModelAtom)
   const currentConvoState = useAtomValue(currentConvoStateAtom)
-  const conversations = useAtomValue(userConversationsAtom)
   const { inputState, currentConvo } = useGetInputState()
   const { requestCreateConvo } = useCreateConversation()
   const { startModel } = useStartStopModel()
+  const conversations = useAtomValue(userConversationsAtom)
 
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
 
