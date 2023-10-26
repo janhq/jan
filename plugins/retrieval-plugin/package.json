@@ -5,6 +5,7 @@
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/circle-stack.svg",
   "main": "dist/index.js",
   "module": "dist/module.js",
+  "requiredVersion": "^0.3.0",
   "author": "Jan <service@jan.ai>",
   "license": "MIT",
   "activationPoints": [
