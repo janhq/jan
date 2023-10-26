@@ -1,6 +1,6 @@
 ---
 sidebar_position: 1
-title: @janhq/core
+title: "@janhq/core"
 ---
 
 ## @janhq/core

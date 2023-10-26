@@ -105,12 +105,12 @@ const sidebars = {
         {
           type: "doc",
           label: "@janhq/models",
-          id: "docs/reference/model_catalog",
+          id: "docs/reference/models_catalog",
         },
         {
           type: "doc",
           label: "@janhq/plugins",
-          id: "docs/reference/plugin_catalog",
+          id: "docs/reference/plugins_catalog",
         },
       ],
     },

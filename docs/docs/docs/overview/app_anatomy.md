@@ -12,7 +12,5 @@ Platform has 3 events that are broadcast to installed Apps
 - onDispose()
 ![Platform onDispose()](img/app-anatomy-3.drawio.png)
 - At any given time, when there is new App installtion/ unintallation, the Platform restarts and trigger
-
-
-When App is being used, here is how the information passes between Platform <> Apps
+- When App is being used, here is how the information passes between Platform and Apps
 ![Communication](img/app-anatomy-5.drawio.png)

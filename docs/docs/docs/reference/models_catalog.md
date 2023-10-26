@@ -1,6 +1,6 @@
 ---
 sidebar_position: 1
-title: @janhq/models
+title: "@janhq/models"
 ---
 
 ### Install
