@@ -36,8 +36,8 @@ export const SidebarLeft = () => {
 
   const onBotListClick = async () => {
     const bots = await getAllBots()
-    if (bots.length === 0) {
-      alert('You have no bot')
+    if (!bots || bots?.length === 0) {
+      alert('You have not created any bot')
       return
     }
 

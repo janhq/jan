@@ -13,13 +13,9 @@ import {
   activationPoints,
   extensionPoints,
 } from '../../../electron/core/plugin-manager/execution/index'
-import {
-  isCorePluginInstalled,
-  setupBasePlugins,
-} from '@services/pluginService'
 import EventListenerWrapper from '@helpers/EventListenerWrapper'
 import { setupCoreServices } from '@services/coreService'
-import { executeSerial } from '../../../electron/core/plugin-manager/execution/extension-manager'
+import { executeSerial, isCorePluginInstalled, setupBasePlugins } from '@services/pluginService'
 
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)

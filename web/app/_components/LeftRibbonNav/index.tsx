@@ -59,7 +59,7 @@ const LeftRibbonNav: React.FC = () => {
 
   const onBotListClick = async () => {
     const bots = await getAllBots()
-    if (bots.length === 0) {
+    if (bots?.length === 0) {
       alert('You have no bot')
       return
     }
