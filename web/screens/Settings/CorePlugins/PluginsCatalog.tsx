@@ -141,11 +141,16 @@ const PluginCatalog = () => {
         )
         .map((item, i) => {
           const isActivePlugin = activePlugins.some((x) => x.name === item.name)
+          const installedPlugin = activePlugins.filter(
+            (p) => p.name === item.name
+          )[0]
           const updateVersionPlugins = Number(
-            activePlugins
-              .filter((p) => p.name === item.name)[0]
-              ?.version.replaceAll('.', '')
+            installedPlugin?.version.replaceAll('.', '')
           )
+
+          const hasUpdateVersionPlugins =
+            item.version.replaceAll('.', '') > updateVersionPlugins
+
           return (
             <div
               key={i}
@@ -163,16 +168,23 @@ const PluginCatalog = () => {
                 <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
                   {item.description}
                 </p>
-                {isActivePlugin &&
-                  item.version.replaceAll('.', '') < updateVersionPlugins && (
-                    <Button
-                      size="sm"
-                      themes="outline"
-                      onClick={() => downloadTarball(item.name)}
-                    >
-                      Update
-                    </Button>
-                  )}
+                {isActivePlugin && (
+                  <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
+                    Installed{' '}
+                    {hasUpdateVersionPlugins
+                      ? `v${installedPlugin.version}`
+                      : 'latest version'}
+                  </p>
+                )}
+                {isActivePlugin && hasUpdateVersionPlugins && (
+                  <Button
+                    size="sm"
+                    themes="outline"
+                    onClick={() => downloadTarball(item.name)}
+                  >
+                    Update
+                  </Button>
+                )}
               </div>
               <Switch
                 checked={isActivePlugin}
