@@ -88,7 +88,11 @@ jobs:
           do
             echo $dir
             cd $dir
-            npm install && npm run postinstall && ../../.github/scripts/auto-sign.sh
+            npm install
+            if [[ $dir == 'data-plugin' ]]; then
+              npm run build:deps
+            fi
+            npm run postinstall && ../../.github/scripts/auto-sign.sh
             if [[ $GITHUB_EVENT_NAME == 'push' && $GITHUB_EVENT_PULL_REQUEST_HEAD_REPO_FULL_NAME != $GITHUB_REPOSITORY ]]; then
               npm publish --access public
             fi
