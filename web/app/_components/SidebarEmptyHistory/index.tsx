@@ -9,6 +9,7 @@ import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 import { Button } from '@uikit'
 import { MessageCircle } from 'lucide-react'
+import { showingModalNoActiveModel } from '@helpers/atoms/Modal.atom'
 
 enum ActionButton {
   DownloadModel = 'Download a Model',
@@ -21,6 +22,7 @@ const SidebarEmptyHistory: React.FC = () => {
   const setMainView = useSetAtom(setMainViewStateAtom)
   const { requestCreateConvo } = useCreateConversation()
   const [action, setAction] = useState(ActionButton.DownloadModel)
+  const modalNoActiveModel = useSetAtom(showingModalNoActiveModel)
 
   useEffect(() => {
     if (downloadedModels.length > 0) {
@@ -35,7 +37,7 @@ const SidebarEmptyHistory: React.FC = () => {
       setMainView(MainViewState.ExploreModel)
     } else {
       if (!activeModel) {
-        setMainView(MainViewState.ConversationEmptyModel)
+        modalNoActiveModel(true)
       } else {
         await requestCreateConvo(activeModel)
       }
@@ -44,10 +46,10 @@ const SidebarEmptyHistory: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center gap-3 py-10">
-      <MessageCircle size={32} />
-      <div className="flex flex-col items-center gap-y-2">
+      <MessageCircle size={24} />
+      <div className="flex flex-col items-center">
         <h6 className="text-center text-base">No Chat History</h6>
-        <p className="mb-6 text-center text-muted-foreground">
+        <p className="mb-6 mt-1 text-center text-muted-foreground">
           Get started by creating a new chat.
         </p>
         <Button onClick={onClick} themes="accent">

@@ -12,3 +12,4 @@ export const showingBotListModalAtom = atom<boolean>(false)
 export const switchingModelConfirmationModalPropsAtom = atom<
   SwitchingModelConfirmationModalProps | undefined
 >(undefined)
+export const showingModalNoActiveModel = atom<boolean>(false)
