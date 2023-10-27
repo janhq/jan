@@ -6,19 +6,18 @@ import {
   setActiveConvoIdAtom,
   addNewConversationStateAtom,
 } from '@helpers/atoms/Conversation.atom'
+import useGetModelById from './useGetModelById'
 
 const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
     userConversationsAtom
   )
+  const { getModelById } = useGetModelById()
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const addNewConvoState = useSetAtom(addNewConversationStateAtom)
 
   const createConvoByBot = async (bot: Bot) => {
-    const model = await executeSerial(
-      ModelManagementService.GetModelById,
-      bot.modelId
-    )
+    const model = await getModelById(bot.modelId)
 
     if (!model) {
       alert(

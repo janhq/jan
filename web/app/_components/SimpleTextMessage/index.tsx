@@ -51,7 +51,7 @@ const SimpleTextMessage: React.FC<Props> = ({
 
   return (
     <div
-      className={`border-border/50 flex items-start gap-x-4 gap-y-2 border-b px-4 py-5 last:border-none`}
+      className={`flex items-start gap-x-4 gap-y-2 border-b border-border/50 px-4 py-5 last:border-none`}
     >
       <Image
         className="rounded-full"
@@ -73,7 +73,7 @@ const SimpleTextMessage: React.FC<Props> = ({
           <LoadingIndicator />
         ) : (
           <span
-            className="text-muted-foreground text-xs font-normal leading-loose"
+            className="message text-xs font-normal leading-loose text-muted-foreground"
             dangerouslySetInnerHTML={{ __html: parsedText }}
           />
         )}

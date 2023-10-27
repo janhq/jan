@@ -41,7 +41,8 @@ export interface RawMessage {
 }
 
 export const toChatMessage = (
-  m: RawMessage | NewMessageResponse
+  m: RawMessage | NewMessageResponse,
+  bot?: Bot
 ): ChatMessage => {
   const createdAt = new Date(m.createdAt ?? '').getTime()
   const imageUrls: string[] = []
@@ -56,18 +57,18 @@ export const toChatMessage = (
 
   const content = m.message ?? ''
 
+  let senderName = m.user === 'user' ? 'You' : 'Assistant'
+  if (senderName === 'Assistant' && bot) {
+    senderName = bot.name
+  }
+
   return {
     id: (m._id ?? 0).toString(),
     conversationId: (m.conversationId ?? 0).toString(),
     messageType: messageType,
     messageSenderType: messageSenderType,
     senderUid: m.user?.toString() || '0',
-    senderName:
-      m.user === 'user'
-        ? 'You'
-        : m.user && m.user !== 'ai' && m.user !== 'assistant'
-        ? m.user
-        : 'Assistant',
+    senderName: senderName,
     senderAvatarUrl: m.avatar
       ? m.avatar
       : m.user === 'user'
