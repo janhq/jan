@@ -55,9 +55,10 @@ const HistoryItem: React.FC<Props> = ({
         startModel(model._id)
       } else if (activeModel._id !== model._id) {
         // display confirmation modal
-        setConfirmationModalProps({
-          replacingModel: model,
-        })
+        // TODO: temporarily disabled
+        // setConfirmationModalProps({
+        //   replacingModel: model,
+        // })
       }
     }
 
