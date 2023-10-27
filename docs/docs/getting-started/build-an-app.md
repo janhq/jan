@@ -4,37 +4,44 @@ title: Build an app
 ---
 
 # Build and publish an app
-Apps let you extend Obsidian with your own features to create a custom note-taking experience.
-In this tutorial, you'll compile a sample plugin from source code and load it into Obsidian.
+
+You can build a custom AI application on top of Jan.
+In this tutorial, you'll build a sample app and load it into Jan Desktop.
 
 ## What you'll learn
+
 After you've completed this tutorial, you'll be able to:
+
 - Configure an environment for developing Jan apps.
 - Compile a app from source code.
 - Reload a app after making changes to it.
 
 ## Prerequisites
+
 To complete this tutorial, you'll need:
+
 - [Git](https://git-scm.com/) installed on your local machine.
 - A local development environment for [Node.js](https://node.js.org/en/about/).
 - A code editor, such as [Visual Studio Code](https://code.visualstudio.com/).
 
-## Before you start 
-When developing apps, one mistake can lead to unintended changes to your app. Please backup the data.
+## Before you start
+
+When developing apps, one mistake can lead to unintended changes to your app. Please backup your data.
 
 ## Development
-### Step 1: Download the sample plugin
+
+### Step 1: Download the sample app
+
 - Go to [Jan sample app](https://github.com/janhq/jan-sample-app)
 - Select `Use this template button` at the top of the repository
 - Select `Create a new repository`
 - Select an owner and name for your new repository
 - Click `Create repository`
-- Clone your new repository
-- Start developing locally
+- Git clone your new repository
 
 ### Step 2: Initial Setup
 
-After you've cloned the repository to your local machine or codespace, you'll need to perform some initial setup steps before you can develop your plugin.
+Next, you'll need to perform some initial setup steps.
 
 > [!NOTE]
 >
@@ -59,55 +66,40 @@ After you've cloned the repository to your local machine or codespace, you'll ne
 
 1. :white_check_mark: Check your artifact
 
-   There will be a tgz file in your plugin directory now
+   There will be a tgz file in your src directory now
 
-### Step 3: Update the Plugin Metadata
+### Step 3: Update the App Manifest
 
-The [`package.json`](package.json) file defines metadata about your plugin, such as
-plugin name, main entry, description and version.
-
-When you copy this repository, update `package.json` with the name, description for your plugin.
+The [`package.json`](package.json) file lets you define your apps metadata, e.g.
+app name, main entry, description and version.
 
 ### Step 4: Update the Plugin Code
 
-The [`src/`](./src/) directory is the heart of your plugin! This contains the source code that will be run when your plugin extension functions are invoked. You can replace the contents of this directory with your own code.
+The [`src/`](./src/) directory is the heart of your app!
 
-There are a few things to keep in mind when writing your plugin code:
+- `index.ts` is your UI to end customer with Web runtime. This one should be thin as lightweight. Any specific/ compute-intensive workload should be executed asynchronously in registered functions in `module.ts`.
+- `module.ts` is your Node runtime in which functions get executed.
+- `index.ts` and `module.ts` interact with each other via RPC (See [Information flow](./app-anatomy.md#information-flow))
 
-- Most Jan Plugin Extension functions are processed asynchronously.
-  In `index.ts`, you will see that the extension function will return a `Promise<any>`.
+You can replace the contents of this directory with your own code.
 
-  ```typescript
-  import { core } from "@janhq/core";
+#### index.ts
 
-  function onStart(): Promise<any> {
-    return core.invokePluginFunc(MODULE_PATH, "run", 0);
-  }
-  ```
+Think of this as your "app frontend". You register events, custom functions here.
 
-  For more information about the Jan Plugin Core module, see the
-  [documentation](https://github.com/janhq/jan/blob/main/core/README.md).
+Most Jan App functions are processed asynchronously.
+In `index.ts`, you will see that the extension function will return a `Promise<any>`.
 
-- You may be confused of `index.ts` and `module.ts`.
-  - `index.ts` is your UI to end customer with Web runtime. This one should be thin as lightweight. Any specific/ compute-intensive workload should be executed asynchronously in registered functions in `module.ts`.
-  - `module.ts` is your Node runtime in which functions get executed.
-  - `index.ts` and `module.ts` interact with each other via RPC (See [Information flow](./app-anatomy.md#information-flow))
+```typescript
+import { core } from "@janhq/core";
 
-- Define specific/ compute intensive function in `module.ts`
-```javascript
-const path = require("path");
-const { app } = require("electron");
-
-function run(param: number): [] {
-  console.log(`execute runner ${param} in main process`);
-  return [];
+function onStart(): Promise<any> {
+  return core.invokePluginFunc(MODULE_PATH, "run", 0);
 }
-
-module.exports = {
-  run,
-};
 ```
+
 - Define functions to register and use the registered function in `index.ts`
+
 ```javascript
 /**
  * The entrypoint for the plugin.
@@ -133,15 +125,40 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
 }
 ```
 
+For more information about the Core module, see the
+[documentation](https://github.com/janhq/jan/blob/main/core/README.md).
+
+#### module.ts
+
+Think of this as your "app backend". Your core logic implementation goes here.
+
+```javascript
+const path = require("path");
+const { app } = require("electron");
+
+function run(param: number): [] {
+  console.log(`execute runner ${param} in main process`);
+  return [];
+}
+
+module.exports = {
+  run,
+};
+```
+
 So, what are you waiting for? Go ahead and start customizing your plugin!
 
 ## App installation
+
 ![Manual installation](img/build-app-1.png)
+
 - `Select` the built `*.tar.gz` file
 - The App will reload after new app get installed
 
 ## App uninstallation
+
 To be updated
 
 ## App update
+
 To be updated

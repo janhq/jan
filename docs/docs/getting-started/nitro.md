@@ -1,4 +1,5 @@
 ---
+sidebar_position: 4
 title: Nitro (C++ Inference Engine)
 ---
 
@@ -69,5 +70,7 @@ curl -X POST 'http://localhost:3928/inferences/llamacpp/loadmodel' \
     "embedding": true
   }'
 ```
+
 ## Architecture diagram
+
 ![Nitro Architecture](img/architecture.png)
