@@ -24,9 +24,7 @@ To complete this tutorial, you'll need:
 - A local development environment for [Node.js](https://node.js.org/en/about/).
 - A code editor, such as [Visual Studio Code](https://code.visualstudio.com/).
 
-## Before you start
-
-When developing apps, one mistake can lead to unintended changes to your app. Please backup your data.
+> When developing apps, one mistake can lead to unintended changes to your app. Please backup your data.
 
 ## Development
 
@@ -39,9 +37,7 @@ When developing apps, one mistake can lead to unintended changes to your app. Pl
 - Click `Create repository`
 - Git clone your new repository
 
-### Step 2: Initial Setup
-
-Next, you'll need to perform some initial setup steps.
+### Step 2: Installation
 
 > [!NOTE]
 >
@@ -73,22 +69,25 @@ Next, you'll need to perform some initial setup steps.
 The [`package.json`](package.json) file lets you define your apps metadata, e.g.
 app name, main entry, description and version.
 
-### Step 4: Update the Plugin Code
+### Step 4: Implementation
 
-The [`src/`](./src/) directory is the heart of your app!
+The [`src/`](./src/) directory is the heart of your app! You can replace the contents of this directory with your own code.
 
-- `index.ts` is your UI to end customer with Web runtime. This one should be thin as lightweight. Any specific/ compute-intensive workload should be executed asynchronously in registered functions in `module.ts`.
-- `module.ts` is your Node runtime in which functions get executed.
-- `index.ts` and `module.ts` interact with each other via RPC (See [Information flow](./app-anatomy.md#information-flow))
+- `index.ts` is your app's mainentrypoint. You can access the Web runtime and define UI in this file.
+- `module.ts` is your Node runtime in which functions get executed. You should define core logic and compute-intensive workloads in this file.
+- `index.ts` and `module.ts` interact with each other via RPC (See [Information flow](./app-anatomy.md#information-flow)) via [`invokePluginFunc`](../reference/01_init.md#invokepluginfunc)
 
-You can replace the contents of this directory with your own code.
+Import the Jan SDK
+
+```typescript
+import { core } from "@janhq/core";
+```
 
 #### index.ts
 
 Think of this as your "app frontend". You register events, custom functions here.
 
-Most Jan App functions are processed asynchronously.
-In `index.ts`, you will see that the extension function will return a `Promise<any>`.
+Note: Most Jan app functions are processed asynchronously. In `index.ts`, you will see that the extension function will return a `Promise<any>`.
 
 ```typescript
 import { core } from "@janhq/core";
@@ -98,11 +97,11 @@ function onStart(): Promise<any> {
 }
 ```
 
-- Define functions to register and use the registered function in `index.ts`
+Define custom functions and register your implementation.
 
 ```javascript
 /**
- * The entrypoint for the plugin.
+ * The entrypoint for the app.
  */
 
 import { PluginService, RegisterExtensionPoint, core } from "@janhq/core";
@@ -125,9 +124,6 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
 }
 ```
 
-For more information about the Core module, see the
-[documentation](https://github.com/janhq/jan/blob/main/core/README.md).
-
 #### module.ts
 
 Think of this as your "app backend". Your core logic implementation goes here.
@@ -138,6 +134,7 @@ const { app } = require("electron");
 
 function run(param: number): [] {
   console.log(`execute runner ${param} in main process`);
+  // Your code here
   return [];
 }
 
@@ -146,14 +143,12 @@ module.exports = {
 };
 ```
 
-So, what are you waiting for? Go ahead and start customizing your plugin!
-
 ## App installation
 
 ![Manual installation](img/build-app-1.png)
 
 - `Select` the built `*.tar.gz` file
-- The App will reload after new app get installed
+- Jan will reload after new apps get installed
 
 ## App uninstallation
 
