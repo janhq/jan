@@ -11,6 +11,7 @@ import {
 } from '@/../../electron/core/plugin-manager/execution/index'
 import { executeSerial } from '@services/pluginService'
 import { DataService } from '@janhq/core'
+import useGetAppVersion from '@hooks/useGetAppVersion'
 
 const PluginCatalog = () => {
   // const [search, setSearch] = useState<string>('')
@@ -20,23 +21,41 @@ const PluginCatalog = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const experimentRef = useRef(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-
+  const { version } = useGetAppVersion()
   /**
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
    */
   useEffect(() => {
+    if (!version) return
+
     // Load plugin manifest from plugin if any
     if (extensionPoints.get(DataService.GetPluginManifest)) {
       executeSerial(DataService.GetPluginManifest).then((data) => {
-        setPluginCatalog(data)
+        setPluginCatalog(
+          data.filter(
+            (e: any) =>
+              !e.requiredVersion ||
+              e.requiredVersion.replace(/[.^]/g, '') <=
+                version.replaceAll('.', '')
+          )
+        )
       })
     } else {
       // Fallback to app default manifest
       import(
         /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
-      ).then((data) => setPluginCatalog(data.default))
+      ).then((data) =>
+        setPluginCatalog(
+          data.default.filter(
+            (e: any) =>
+              !e.requiredVersion ||
+              e.requiredVersion.replace(/[.^]/g, '') <=
+                version.replaceAll('.', '')
+          )
+        )
+      )
     }
-  }, [])
+  }, [version])
 
   /**
    * Fetches the active plugins and their preferences from the `plugins` and `preferences` modules.
@@ -141,11 +160,16 @@ const PluginCatalog = () => {
         )
         .map((item, i) => {
           const isActivePlugin = activePlugins.some((x) => x.name === item.name)
+          const installedPlugin = activePlugins.filter(
+            (p) => p.name === item.name
+          )[0]
           const updateVersionPlugins = Number(
-            activePlugins
-              .filter((p) => p.name === item.name)[0]
-              ?.version.replaceAll('.', '')
+            installedPlugin?.version.replaceAll('.', '')
           )
+
+          const hasUpdateVersionPlugins =
+            item.version.replaceAll('.', '') > updateVersionPlugins
+
           return (
             <div
               key={i}
@@ -163,16 +187,23 @@ const PluginCatalog = () => {
                 <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
                   {item.description}
                 </p>
-                {isActivePlugin &&
-                  item.version.replaceAll('.', '') < updateVersionPlugins && (
-                    <Button
-                      size="sm"
-                      themes="outline"
-                      onClick={() => downloadTarball(item.name)}
-                    >
-                      Update
-                    </Button>
-                  )}
+                {isActivePlugin && (
+                  <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
+                    Installed{' '}
+                    {hasUpdateVersionPlugins
+                      ? `v${installedPlugin.version}`
+                      : 'the latest version'}
+                  </p>
+                )}
+                {isActivePlugin && hasUpdateVersionPlugins && (
+                  <Button
+                    size="sm"
+                    themes="outline"
+                    onClick={() => downloadTarball(item.name)}
+                  >
+                    Update
+                  </Button>
+                )}
               </div>
               <Switch
                 checked={isActivePlugin}

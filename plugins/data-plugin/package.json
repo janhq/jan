@@ -1,6 +1,6 @@
 {
   "name": "@janhq/data-plugin",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "The Data Connector provides easy access to a data API using the PouchDB engine. It offers accessible data management capabilities.",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/circle-stack.svg",
   "main": "dist/esm/index.js",
@@ -12,7 +12,8 @@
   ],
   "scripts": {
     "build": "tsc -b ./config/tsconfig.esm.json && tsc -b ./config/tsconfig.cjs.json && webpack --config webpack.config.js",
-    "postinstall": "electron-rebuild -f -w leveldown@5.6.0 --arch=arm64 -v 26.2.1 && rimraf *.tgz --glob && npm run build",
+    "build:deps": "electron-rebuild -f -w leveldown@5.6.0 --arch=arm64 -v 26.2.1 && electron-rebuild -f -w leveldown@5.6.0 --arch=x64 -v 26.2.1",
+    "postinstall": "rimraf *.tgz --glob && npm run build",
     "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {
@@ -30,10 +31,6 @@
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
   },
-  "bundledDependencies": [
-    "pouchdb-node",
-    "pouchdb-find"
-  ],
   "files": [
     "dist/**",
     "package.json",

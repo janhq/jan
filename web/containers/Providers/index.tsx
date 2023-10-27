@@ -69,17 +69,17 @@ const Providers = (props: PropsWithChildren) => {
   return (
     <JotaiWrapper>
       {setupCore && (
-        <EventListenerWrapper>
-          <ThemeWrapper>
-            {activated ? (
+        <ThemeWrapper>
+          {activated ? (
+            <EventListenerWrapper>
               <ModalWrapper>{children}</ModalWrapper>
-            ) : (
-              <div className="bg-background flex h-screen w-screen items-center justify-center">
-                <CompactLogo width={56} height={56} />
-              </div>
-            )}
-          </ThemeWrapper>
-        </EventListenerWrapper>
+            </EventListenerWrapper>
+          ) : (
+            <div className="flex h-screen w-screen items-center justify-center bg-background">
+              <CompactLogo width={56} height={56} />
+            </div>
+          )}
+        </ThemeWrapper>
       )}
     </JotaiWrapper>
   )
