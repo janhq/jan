@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc -b ./config/tsconfig.esm.json && tsc -b ./config/tsconfig.cjs.json && webpack --config webpack.config.js",
-    "build:deps": "electron-rebuild -f -w leveldown@5.6.0 --arch=arm64 -v 26.2.1 && electron-rebuild -f -w leveldown@5.6.0 --arch=x64 -v 26.2.1",
+    "build:deps": "electron-rebuild -f -w leveldown@5.6.0 --arch=arm64 -v 26.2.1 && node-gyp -C ./node_modules/leveldown clean && mkdir -p ./node_modules/leveldown/prebuilds/darwin-arm64 && cp ./node_modules/leveldown/bin/darwin-arm64-116/leveldown.node ./node_modules/leveldown/prebuilds/darwin-arm64/node.napi.node",
     "postinstall": "rimraf *.tgz --glob && npm run build",
     "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
@@ -40,6 +40,7 @@
     "@janhq/core": "^0.1.7",
     "electron": "26.2.1",
     "electron-rebuild": "^3.2.9",
+    "node-gyp": "^9.4.1",
     "pouchdb-find": "^8.0.1",
     "pouchdb-node": "^8.0.1"
   },
