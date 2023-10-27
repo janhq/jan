@@ -3,12 +3,9 @@ sidebar_position: 5
 title: Cloud Native
 ---
 
-This is an experimental feature - expect breaking changes!
+Cloud Native is useful when you want to deploy Jan to a shared/remote/cloud server, rather than running it as a local Desktop app.
 
-## Use Case
-
-- User doesn't have a local GPU machine but wants to run Jan on a rented server
-- User wants a quick, fast way to experiment with Jan on a rented GPU
+> This is an experimental feature - expect breaking changes!
 
 ### Getting Started
 
@@ -40,7 +37,7 @@ Open your browser at [http://localhost:4000](http://localhost:4000)
 
 ![cloudnative](img/cloudnative.png)
 
-### To-dos
+### TODOs
 
 - [Authencation Plugins](https://github.com/janhq/jan/issues/334)
 - [Remote server](https://github.com/janhq/jan/issues/200)

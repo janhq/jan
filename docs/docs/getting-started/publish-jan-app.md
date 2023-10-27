@@ -1,9 +1,7 @@
 ---
 sidebar_position: 3
-title: Publishing a Jan app
+title: Publishing an app
 ---
-
-# Publish Jan app
 
 After you have completed with local app development and want to publish to `Jan marketplace` for other to reuse, please follow the following steps
 
