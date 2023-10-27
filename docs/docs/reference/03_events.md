@@ -12,6 +12,41 @@ You can then implement custom logic handlers for such events.
 import { events } from "@janhq/core";
 ```
 
+You can subscribe to NewMessageRequest events by defining a function to handle the event and registering it with the events object:
+
+```js
+import { events } from "@janhq/core";
+
+function handleMessageRequest(message: NewMessageRequest) {
+  // Your logic here. For example:
+  // const response = openai.createChatCompletion({...})
+}
+function registerListener() {
+  events.on(EventName.OnNewMessageRequest, handleMessageRequest);
+}
+// Register the listener function with the relevant extension points.
+export function init({ register }) {
+  registerListener();
+}
+```
+
+In this example, we're defining a function called handleMessageRequest that takes a NewMessageRequest object as its argument. We're also defining a function called registerListener that registers the handleMessageRequest function as a listener for NewMessageRequest events using the on method of the events object.
+
+```js
+import { events } from "@janhq/core";
+
+function handleMessageRequest(data: NewMessageRequest) {
+  // Your logic here. For example:
+   const response = openai.createChatCompletion({...})
+   const message: NewMessageResponse = {
+    ...data,
+    message: response.data.choices[0].message.content
+   }
+  // Now emit event so the app can display in the conversation
+   events.emit(EventName.OnNewMessageResponse, message)
+}
+```
+
 ## EventName
 
 The `EventName` enum bundles the following events:
