@@ -3,7 +3,7 @@ title: "CoreService"
 ---
 
 `CoreService` provides an interface for implementing custom methods in Jan.
-It lets you define shared behavior across your custom application, like your app handles state, models, or inferencing behavior.
+It lets you define shared behavior across your custom application, like how your app handles state, models, or inferencing behavior.
 
 ## Usage
 
