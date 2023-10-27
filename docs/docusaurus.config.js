@@ -117,18 +117,12 @@ const config = {
           src: "img/logo.svg",
         },
         items: [
-          // Navbar Top
+          // Navbar left
           // {
           //   type: "docSidebar",
           //   sidebarId: "featuresSidebar",
           //   position: "left",
           //   label: "Platform",
-          // },
-          // {
-          //   type: "docSidebar",
-          //   sidebarId: "solutionsSidebar",
-          //   position: "left",
-          //   label: "Solutions",
           // },
           {
             type: "docSidebar",
@@ -137,28 +131,18 @@ const config = {
             label: "Company",
           },
           // Navbar right
-          // {
-          //   type: "docSidebar",
-          //   sidebarId: "docsSidebar",
-          //   position: "right",
-          //   label: "Docs",
-          // },
-          // {
-          //   type: "docSidebar",
-          //   sidebarId: "hardwareSidebar",
-          //   position: "right",
-          //   label: "Hardware",
-          // },
-          // {
-          //   position: "right",
-          //   label: "API",
-          //   to: "/api",
-          // },
-          // {
-          //   href: "https://github.com/janhq/jan",
-          //   label: "GitHub",
-          //   position: "right",
-          // },
+          {
+            type: "docSidebar",
+            sidebarId: "guidesSidebar",
+            position: "right",
+            label: "User Guides",
+          },
+          {
+            type: "docSidebar",
+            sidebarId: "devSidebar",
+            position: "right",
+            label: "Developer",
+          },
         ],
       },
       prism: {

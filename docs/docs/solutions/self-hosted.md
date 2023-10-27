@@ -1,3 +1,0 @@
----
-title: Self-Hosted ChatGPT
----
