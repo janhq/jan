@@ -43,7 +43,15 @@ const InputToolbar: React.FC = () => {
   }
 
   if (!activeConvoId) {
-    return null
+    return (
+      <div className="my-3 flex justify-center gap-2">
+        <SecondaryButton
+          onClick={onNewConversationClick}
+          title="New Conversation"
+          icon={<PlusIcon width={16} height={16} />}
+        />
+      </div>
+    )
   }
   if (
     (activeConvoId && inputState === 'model-mismatch') ||
