@@ -1,3 +1,3 @@
 ---
-title: Installing Jan on Linux
+title: Installing Jan on Mac
 ---

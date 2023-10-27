@@ -4,9 +4,18 @@ title: Anatomy of an app
 ---
 
 ## Jan Architecture
+### High level architecture
+![High level architecture](img/architecture-0.drawio.png)
+Jan mission is to power the next gen App with the limitless extensibility by providing BUILDER:
+- Unified API/ Helpers so that they only need to care about what matters
+- Wide range of Optimized and State of the art models that can help your App with Thinking/ Hearing/ Seeing capabilities. This is powered by our [Nitro](https://github.com/janhq/nitro)
+- Strong support for App marketplace and Model market place that streamline value from end customers to builders at all layers
+- The most important: The user of Jan can use the Apps via UI and API for integration
 
-![Overall architecture](img/architecture-1.drawio.png)
+At Jan, we strongly believe in `portable AI` that is created once and run anywhere.
 
+### Low level architecture
+![Low level architecture](img/architecture-1.drawio.png)
 - Jan platform includes the following components:
 
   - Processes:
