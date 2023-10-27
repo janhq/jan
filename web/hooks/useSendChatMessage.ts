@@ -34,18 +34,20 @@ export default function useSendChatMessage() {
       if (
         !currentConvo?.summary ||
         currentConvo.summary === '' ||
-        currentConvo.summary.startsWith('User request:')
+        currentConvo.summary.startsWith('Prompt:')
       ) {
         // Request convo summary
         setTimeout(async () => {
-          newMessage.message = 'summary this conversation in 5 words'
+          newMessage.message =
+            'summary this conversation in 5 words, the response should just include the summary'
           const result = await executeSerial(
             InferenceService.InferenceRequest,
             newMessage
           )
+
           if (
             result?.message &&
-            result.message.split(' ').length <= 7 &&
+            result.message.split(' ').length <= 10 &&
             conv?._id
           ) {
             const updatedConv = {
