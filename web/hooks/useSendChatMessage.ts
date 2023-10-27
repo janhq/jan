@@ -77,10 +77,20 @@ export default function useSendChatMessage() {
     events.emit(EventName.OnNewMessageRequest, newMessage)
 
     if (!currentConvo?.summary && currentConvo) {
-      const updatedConv = {
+      const updatedConv: Conversation = {
         ...currentConvo,
+        lastMessage: prompt,
         summary: `Prompt: ${prompt}`,
       }
+
+      updateConversation(updatedConv)
+      await executeSerial(DataService.UpdateConversation, updatedConv)
+    } else {
+      const updatedConv: Conversation = {
+        ...currentConvo,
+        lastMessage: prompt,
+      }
+
       updateConversation(updatedConv)
       await executeSerial(DataService.UpdateConversation, updatedConv)
     }
