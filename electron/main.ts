@@ -43,6 +43,11 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
+app.on("quit", () => {
+  dispose(requiredModules);
+  app.quit();
+});
+
 ipcMain.handle("setNativeThemeLight", () => {
   nativeTheme.themeSource = "light";
 });

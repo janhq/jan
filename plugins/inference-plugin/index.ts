@@ -183,7 +183,14 @@ const registerListener = () => {
   events.on(EventName.OnNewMessageRequest, handleMessageRequest);
 };
 
+const killSubprocess = () => {
+  invokePluginFunc(MODULE_PATH, "killSubprocess");
+};
+
 const onStart = async () => {
+  // Try killing any existing subprocesses related to Nitro
+  killSubprocess();
+
   registerListener();
 };
 // Register all the above functions and objects with the relevant extension points
