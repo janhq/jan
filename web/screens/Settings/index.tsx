@@ -126,9 +126,11 @@ const SettingsScreen = () => {
           </div>
 
           <div className="mt-5 flex-shrink-0">
-            <label className="font-bold uppercase text-gray-500">
-              Core plugins
-            </label>
+            {preferencePlugins.length > 0 && (
+              <label className="font-bold uppercase text-gray-500">
+                Core plugins
+              </label>
+            )}
             <div className="mt-1 font-semibold">
               {preferencePlugins.map((menu, i) => {
                 const isActive = activePreferencePlugin === menu
