@@ -192,7 +192,7 @@ const PluginCatalog = () => {
                     Installed{' '}
                     {hasUpdateVersionPlugins
                       ? `v${installedPlugin.version}`
-                      : 'latest version'}
+                      : 'the latest version'}
                   </p>
                 )}
                 {isActivePlugin && hasUpdateVersionPlugins && (
