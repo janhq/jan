@@ -13,13 +13,14 @@ import { addNewMessageAtom } from '@helpers/atoms/ChatMessage.atom'
 import {
   currentConversationAtom,
   updateConversationAtom,
+  updateConversationWaitingForResponseAtom,
 } from '@helpers/atoms/Conversation.atom'
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateConversation = useSetAtom(updateConversationAtom)
-
+  const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
 
   let timeout: any | undefined = undefined
@@ -60,10 +61,15 @@ export default function useSendChatMessage() {
   }
 
   const sendChatMessage = async () => {
+    const convoId = currentConvo?._id
+
+    if (!convoId) return
     setCurrentPrompt('')
+    updateConvWaiting(convoId, true)
+
     const prompt = currentPrompt.trim()
     const newMessage: RawMessage = {
-      conversationId: currentConvo?._id,
+      conversationId: convoId,
       message: prompt,
       user: 'user',
       createdAt: new Date().toISOString(),
@@ -77,10 +83,20 @@ export default function useSendChatMessage() {
     events.emit(EventName.OnNewMessageRequest, newMessage)
 
     if (!currentConvo?.summary && currentConvo) {
-      const updatedConv = {
+      const updatedConv: Conversation = {
         ...currentConvo,
+        lastMessage: prompt,
         summary: `Prompt: ${prompt}`,
       }
+
+      updateConversation(updatedConv)
+      await executeSerial(DataService.UpdateConversation, updatedConv)
+    } else {
+      const updatedConv: Conversation = {
+        ...currentConvo,
+        lastMessage: prompt,
+      }
+
       updateConversation(updatedConv)
       await executeSerial(DataService.UpdateConversation, updatedConv)
     }

@@ -1,7 +1,11 @@
 import { executeSerial } from '@services/pluginService'
-import { DataService, ModelManagementService } from '@janhq/core'
+import { ModelManagementService } from '@janhq/core'
+import { useSetAtom } from 'jotai'
+import { setDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 
 export default function useDownloadModel() {
+  const setDownloadState = useSetAtom(setDownloadStateAtom)
+
   const assistanModel = (
     model: Product,
     modelVersion: ModelVersion
@@ -37,6 +41,22 @@ export default function useDownloadModel() {
   }
 
   const downloadModel = async (model: Product, modelVersion: ModelVersion) => {
+    // set an initial download state
+    setDownloadState({
+      modelId: modelVersion._id,
+      time: {
+        elapsed: 0,
+        remaining: 0,
+      },
+      speed: 0,
+      percent: 0,
+      size: {
+        total: 0,
+        transferred: 0,
+      },
+      fileName: modelVersion._id,
+    })
+
     modelVersion.startDownloadAt = Date.now()
     const assistantModel = assistanModel(model, modelVersion)
     await executeSerial(ModelManagementService.StoreModel, assistantModel)

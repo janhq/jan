@@ -1,7 +1,5 @@
 import SimpleTag from '../SimpleTag'
-import PrimaryButton from '../PrimaryButton'
 import { formatDownloadPercentage, toGigabytes } from '@utils/converter'
-import SecondaryButton from '../SecondaryButton'
 import { useCallback, useEffect, useMemo } from 'react'
 import useGetPerformanceTag from '@hooks/useGetPerformanceTag'
 import useDownloadModel from '@hooks/useDownloadModel'
@@ -58,7 +56,6 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   if (isDownloaded) {
     downloadButton = (
       <Button
-        size="sm"
         themes="accent"
         onClick={() => {
           setMainViewState(MainViewState.MyModel)
@@ -72,17 +69,20 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   if (downloadState != null) {
     // downloading
     downloadButton = (
-      <SecondaryButton
+      <Button
         disabled
-        title={`Downloading (${formatDownloadPercentage(
-          downloadState.percent
-        )})`}
-      />
+        themes="accent"
+        onClick={() => {
+          setMainViewState(MainViewState.MyModel)
+        }}
+      >
+        Downloading {formatDownloadPercentage(downloadState.percent)}
+      </Button>
     )
   }
 
   return (
-    <div className="border-border bg-background/50 flex items-center justify-between rounded-t-md border-b px-4 py-2">
+    <div className="flex items-center justify-between rounded-t-md border-b border-border bg-background/50 px-4 py-2">
       <div className="flex items-center gap-2">
         <span>{exploreModel.name}</span>
         {performanceTag && (

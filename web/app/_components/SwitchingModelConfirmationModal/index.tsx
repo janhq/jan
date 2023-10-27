@@ -82,11 +82,11 @@ const SwitchingModelConfirmationModal: React.FC = () => {
                       <p className="text-sm text-gray-500">
                         Selected conversation is using model{' '}
                         <span className="font-semibold text-black">
-                          {props?.replacingModel._id}
+                          {props?.replacingModel.name}
                         </span>
                         , but the active model is using{' '}
                         <span className="font-semibold text-black">
-                          {activeModel?._id}
+                          {activeModel?.name}
                         </span>
                         .
                       </p>
@@ -95,7 +95,7 @@ const SwitchingModelConfirmationModal: React.FC = () => {
                         Switch to
                         <span className="font-semibold text-black">
                           {' '}
-                          {props?.replacingModel._id}?
+                          {props?.replacingModel.name}?
                         </span>
                       </p>
                     </div>
