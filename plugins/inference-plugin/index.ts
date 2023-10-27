@@ -140,6 +140,8 @@ async function handleMessageRequest(data: NewMessageRequest) {
       message.message = message.message.trim();
       // TODO: Common collections should be able to access via core functions instead of store
       await store.updateOne("messages", message._id, message);
+      events.emit("OnMessageResponseFinished", message);
+      // events.emit(EventName.OnMessageResponseFinished, message);
     },
     error: async (err) => {
       message.message =

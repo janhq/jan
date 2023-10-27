@@ -5,7 +5,10 @@ import { useSetAtom } from 'jotai'
 import { ReactNode, useEffect } from 'react'
 import useGetBots from '@hooks/useGetBots'
 import useGetUserConversations from '@hooks/useGetUserConversations'
-import { updateConversationAtom } from './atoms/Conversation.atom'
+import {
+  updateConversationAtom,
+  updateConversationWaitingForResponseAtom,
+} from './atoms/Conversation.atom'
 import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
 import { debounce } from 'lodash'
 
@@ -24,6 +27,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const updateConversation = useSetAtom(updateConversationAtom)
   const { getBotById } = useGetBots()
   const { getConversationById } = useGetUserConversations()
+
+  const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
 
   async function handleNewMessageResponse(message: NewMessageResponse) {
     if (message.conversationId) {
@@ -75,10 +80,23 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     }
   }
 
+  async function handleMessageResponseFinished(
+    messageResponse: NewMessageResponse
+  ) {
+    if (!messageResponse.conversationId) return
+    console.debug('handleMessageResponseFinished', messageResponse)
+    updateConvWaiting(messageResponse.conversationId, false)
+  }
+
   useEffect(() => {
     if (window.corePlugin.events) {
       events.on(EventName.OnNewMessageResponse, handleNewMessageResponse)
       events.on(EventName.OnMessageResponseUpdate, handleMessageResponseUpdate)
+      events.on(
+        "OnMessageResponseFinished",
+        // EventName.OnMessageResponseFinished,
+        handleMessageResponseFinished
+      )
     }
   }, [])
 
@@ -86,6 +104,11 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     return () => {
       events.off(EventName.OnNewMessageResponse, handleNewMessageResponse)
       events.off(EventName.OnMessageResponseUpdate, handleMessageResponseUpdate)
+      events.off(
+        "OnMessageResponseFinished",
+        // EventName.OnMessageResponseFinished,
+        handleMessageResponseFinished
+      )
     }
   }, [])
   return <>{children}</>

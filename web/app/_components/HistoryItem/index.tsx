@@ -3,7 +3,6 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import {
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
-  updateConversationWaitingForResponseAtom,
 } from '@helpers/atoms/Conversation.atom'
 import {
   setMainViewStateAtom,
@@ -12,7 +11,6 @@ import {
 import { displayDate } from '@utils/datetime'
 import { twMerge } from 'tailwind-merge'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
-import { switchingModelConfirmationModalPropsAtom } from '@helpers/atoms/Modal.atom'
 import useStartStopModel from '@hooks/useStartStopModel'
 import useGetModelById from '@hooks/useGetModelById'
 
@@ -37,10 +35,6 @@ const HistoryItem: React.FC<Props> = ({
 
   const setMainViewState = useSetAtom(setMainViewStateAtom)
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
-  const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
-  const setConfirmationModalProps = useSetAtom(
-    switchingModelConfirmationModalPropsAtom
-  )
 
   const onClick = async () => {
     if (conversation.modelId == null) {
@@ -61,8 +55,6 @@ const HistoryItem: React.FC<Props> = ({
         // })
       }
     }
-
-    if (conversation._id) updateConvWaiting(conversation._id, true)
 
     if (activeConvoId !== conversation._id) {
       setMainViewState(MainViewState.Conversation)
