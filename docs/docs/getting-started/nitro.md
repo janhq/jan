@@ -10,7 +10,7 @@ Nitro, is the inference engine that powers Jan. Nitro is written in C++, optimiz
 
 - [llama.cpp](https://github.com/ggerganov/llama.cpp): Nitro wraps Llama.cpp, which runs Llama models in C++
 - [drogon](https://github.com/drogonframework/drogon): Nitro runs Drogon, which is a fast, C++17/20 HTTP application framework.
-- (Coming soon) tensorrt-llm support for CUDA acceleration
+- (Coming soon) tensorrt-llm support.
 
 ## Features
 
