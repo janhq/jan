@@ -3,7 +3,6 @@ sidebar_position: 2
 title: Anatomy of an app
 ---
 
-## Jan Architecture
 ### High level architecture
 ![High level architecture](img/architecture-0.drawio.png)
 Jan mission is to power the next gen App with the limitless extensibility by providing BUILDER:
@@ -33,17 +32,19 @@ At Jan, we strongly believe in `portable AI` that is created once and run anywhe
 
 - Vertically, there are `Platform Core` component and `App` component. Each of those includes UI and Node process that work in pair.
 
-##
-
-Platform has 3 events that are broadcast to installed Apps
+## Events
 ![Platform events](img/app-anatomy-4.drawio.jpg)
 
-- onLaunch()
+#### onLaunch()
   ![Platform onLaunch()](img/app-anatomy-1.drawio.jpg)
-- onStart()
+#### onStart()
   ![Platform onStart()](img/app-anatomy-2.drawio.jpg)
-- onDispose()
+#### onDispose()
   ![Platform onDispose()](img/app-anatomy-3.drawio.jpg)
-- At any given time, when there is new App installtion/ unintallation, the Platform restarts and trigger
+
+#### onAppInstallation() and onAppUninstallation()
+The Platform simply restarts and trigger onDispose() then onLaunch().
+
+### Information flow
 - When App is being used, here is how the information passes between Platform and Apps
   ![Communication](img/app-anatomy-5.drawio.png)

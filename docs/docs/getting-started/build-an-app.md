@@ -70,9 +70,7 @@ When you copy this repository, update `package.json` with the name, description 
 
 ### Step 4: Update the Plugin Code
 
-The [`src/`](./src/) directory is the heart of your plugin! This contains the
-source code that will be run when your plugin extension functions are invoked. You can replace the
-contents of this directory with your own code.
+The [`src/`](./src/) directory is the heart of your plugin! This contains the source code that will be run when your plugin extension functions are invoked. You can replace the contents of this directory with your own code.
 
 There are a few things to keep in mind when writing your plugin code:
 
@@ -89,6 +87,51 @@ There are a few things to keep in mind when writing your plugin code:
 
   For more information about the Jan Plugin Core module, see the
   [documentation](https://github.com/janhq/jan/blob/main/core/README.md).
+
+- You may be confused of `index.ts` and `module.ts`.
+  - `index.ts` is your UI to end customer with Web runtime. This one should be thin as lightweight. Any specific/ compute-intensive workload should be executed asynchronously in registered functions in `module.ts`.
+  - `module.ts` is your Node runtime in which functions get executed.
+  - `index.ts` and `module.ts` interact with each other via RPC (See [Information flow](./app-anatomy.md#information-flow))
+
+- Define specific/ compute intensive function in `module.ts`
+```javascript
+const path = require("path");
+const { app } = require("electron");
+
+function run(param: number): [] {
+  console.log(`execute runner ${param} in main process`);
+  return [];
+}
+
+module.exports = {
+  run,
+};
+```
+- Define functions to register and use the registered function in `index.ts`
+```javascript
+/**
+ * The entrypoint for the plugin.
+ */
+
+import { PluginService, RegisterExtensionPoint, core } from "@janhq/core";
+
+/**
+ * Invokes the `run` function from the `module.js` file using the `invokePluginFunc` method.
+ * "run" is the name of the function to invoke.
+ * @returns {Promise<any>} A promise that resolves with the result of the `run` function.
+ */
+function onStart(): Promise<any> {
+  return core.invokePluginFunc(MODULE_PATH, "run", 0);
+}
+
+/**
+ * Initializes the plugin by registering the extension functions with the given register function.
+ * @param {Function} options.register - The function to use for registering the extension functions
+ */
+export function init({ register }: { register: RegisterExtensionPoint }) {
+  register(PluginService.OnStart, PLUGIN_NAME, onStart);
+}
+```
 
 So, what are you waiting for? Go ahead and start customizing your plugin!
 
