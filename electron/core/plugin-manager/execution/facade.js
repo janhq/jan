@@ -67,6 +67,7 @@ export async function getActive() {
   // eslint-disable-next-line no-undef
   const plgList = await window.pluggableElectronIpc?.getActive() ??
     import(
+    // eslint-disable-next-line no-undef
     /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
     ).then((data) => data.default.filter((e) => e.supportCloudNative));
   return plgList.map(
