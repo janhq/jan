@@ -4,57 +4,56 @@ title: Installing Jan on Windows
 
 # Windows users
 ## Step 1: Download the Installer
-Download the Jan Installer from  [Jan.ai](https://jan.ai/)
+To begin using 👋Jan.ai on your Windows computer, follow these steps:
 
-Here, you should choose the `Download for  Windows`
-![Jan Installer](img/jan-download.PNG)
+1. Visit [Jan.ai](https://jan.ai/).
+2. Click on the "Download for Windows" button to download the Jan Installer.
+
+![Jan Installer](img/jan-download.png)
 
 ## Step 2: Proceed the Windows Defender
 
-You would come by the warning of Windows
+When you run the Jan Installer, Windows Defender may display a warning. Here's what to do:
 
-<!-- ![Accept Jan](img/window-defender.PNG) -->
+1. Click "Run away" to accept and install 👋Jan.ai.
 
-Choose `Run away` to accept `Jan.ai`.
+![Accept Jan](img/window-defender.png)
 
-Wait till the `Jan` finish installation
-<!-- ![Setting up](img/set-up.PNG) -->
+2. Wait for the 👋Jan.ai installation to complete.
 
+![Setting up](img/set-up.png)
 
 ## Step 3: Download your first model
-Click on `Jan` on your desktop to open.
+Now, let's get your first model:
 
-Welcome to `Jan` home page.
-Choose `Explore Models`
-<!-- ![Explore models](img/explore-model.PNG) -->
+1. After installation, you'll find the 👋Jan application icon on your desktop. Double-click to open it.
 
-You will be bring to the Model catalog.
+2. Welcome to the Jan homepage. Click on "Explore Models" to see the Model catalog.
 
-You can always choose other models and other model versions by click on `Show available Versions`
+![Explore models](img/explore-model.png)
 
+3. You can also see different quantized versions by clicking on "Show available Versions".
 
-<!-- ![Jan Installer](img/model-version.PNG) -->
+![Model versions](img/model-version.png)
 
-- Note: Please choose the model suit your memory and RAM.
+- Note: Choose a model that matches your computer's memory and RAM.
 
-Choose the model with your favor and hit `Download`.
+4. Select your preferred model and click "Download."
 
-<!-- ![Jan Installer](img/downloading.PNG) -->
+![Downloading](img/downloading.PNG)
 
 ## Step 4: Start the model
+Once your model is downloaded. Go to "My Models," and then click "Start Model".
+
+![Start model](img/start-model.PNG)
 
 ## Step 5: Start the conversations
+Now you're ready to start using 👋Jan.ai for conversations:
 
-That's it. Have fun with LLMs.
+Click "Chat" and begin your first conversation by selecting "New conversation".
 
-> #### Note:
-> As Jan is `development mode`, you might get stuck on a broken build.
->
-> ##### To reset your installation:
-> 1. Delete Jan Application from /Applications
->
-> 2. Clear cache: `rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron`
-> OR `rm -rf /Users/$(whoami)/Library/Application\ Support/jan`
-> 
-> 3. If the above fail please use:
-> `ps aux | grep nitro  // There is nitro and nitro_arm_64 or something kill -9 <PID> // kill it 1-by-1 and see if Jan still works`
+You can also check the CPU and Memory usage of the computer.
+
+![Chat](img/chat.PNG)
+
+That's it! Enjoy using Large Language Models (LLMs) with 👋Jan.ai.
