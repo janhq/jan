@@ -28,6 +28,13 @@ const downloadFile: (url: string, fileName: string) => Promise<any> = (url, file
 const deleteFile: (path: string) => Promise<any> = (path) =>
   window.coreAPI?.deleteFile(path) ?? window.electronAPI?.deleteFile(path);
 
+/**
+ * Retrieves the path to the app data directory using the `coreAPI` object.
+ * If the `coreAPI` object is not available, the function returns `undefined`.
+ * @returns A Promise that resolves with the path to the app data directory, or `undefined` if the `coreAPI` object is not available.
+ */
+const appDataPath: () => Promise<any> = () => window.coreAPI?.appDataPath();
+
 /** Register extension point function type definition
  *
  */
@@ -46,9 +53,10 @@ export const core = {
   invokePluginFunc,
   downloadFile,
   deleteFile,
+  appDataPath,
 };
 
 /**
  * Functions exports
  */
-export { invokePluginFunc, downloadFile, deleteFile };
+export { invokePluginFunc, downloadFile, deleteFile, appDataPath };
