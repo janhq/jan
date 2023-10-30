@@ -6,7 +6,7 @@ type Props = {
 }
 
 const ProgressBar: React.FC<Props> = ({ used, total }) => (
-  <div className="flex items-center gap-2.5 p-[10px]">
+  <div className="flex items-center gap-2.5">
     <div className="flex items-center gap-0.5 text-xs leading-[18px]">
       <Image src={'icons/app_icon.svg'} width={18} height={18} alt="" />
       Updating
