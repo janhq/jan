@@ -1,4 +1,4 @@
-# Jan inference plugin
+# Jan Model Management plugin
 
 Created using Jan app example
 
