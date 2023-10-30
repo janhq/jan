@@ -7,6 +7,8 @@
   "module": "dist/module.js",
   "author": "Jan <service@jan.ai>",
   "license": "MIT",
+  "supportCloudNative": true,
+  "url": "/plugins/model-management-plugin/index.js",
   "activationPoints": [
     "init"
   ],
