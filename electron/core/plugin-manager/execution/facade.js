@@ -65,7 +65,7 @@ export async function getActive() {
     return;
   }
   // eslint-disable-next-line no-undef
-  const plgList = await window.pluggableElectronIpc?.getActive();
+  const plgList = await window.pluggableElectronIpc.getActive();
   return plgList.map(
     (plugin) =>
       new Plugin(
