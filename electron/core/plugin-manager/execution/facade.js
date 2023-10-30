@@ -7,7 +7,6 @@
 
 import Plugin from "./Plugin";
 import { register } from "./activation-manager";
-import plugins from "../../../../web/public/plugins/plugin.json"
 
 /**
  * @typedef {Object.<string, any>} installOptions The {@link https://www.npmjs.com/package/pacote|pacote options}
@@ -66,7 +65,11 @@ export async function getActive() {
     return;
   }
   // eslint-disable-next-line no-undef
-  const plgList = await window.pluggableElectronIpc?.getActive() ?? plugins;
+  const plgList = await window.pluggableElectronIpc?.getActive() ??
+    await import(
+    // eslint-disable-next-line no-undef
+    /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
+    ).then((data) => data.default.filter((e) => e.supportCloudNative));
   return plgList.map(
     (plugin) =>
       new Plugin(
