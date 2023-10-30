@@ -1,4 +1,4 @@
-# Jan inference plugin
+# Jan Monitoring plugin
 
 Created using Jan app example
 
