@@ -6,7 +6,7 @@
   "main": "dist/esm/index.js",
   "module": "dist/cjs/module.js",
   "author": "Jan <service@jan.ai>",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "supportCloudNative": true,
   "url": "/plugins/data-plugin/index.js",
   "activationPoints": [
