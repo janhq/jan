@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   pluginPath: () => ipcRenderer.invoke("pluginPath"),
 
+  appDataPath: () => ipcRenderer.invoke("appDataPath"),
+
   reloadPlugins: () => ipcRenderer.invoke("reloadPlugins"),
 
   appVersion: () => ipcRenderer.invoke("appVersion"),
