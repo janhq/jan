@@ -15,32 +15,33 @@ const HistoryList: React.FC = () => {
 
   useEffect(() => {
     getUserConversations()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
-    <div className="flex flex-grow flex-col gap-2">
+    <div className="flex flex-grow flex-col gap-2 px-4 pb-4">
       <ExpandableHeader title="CHAT HISTORY" />
-      <ul className={twMerge('mt-1 flex flex-col gap-y-3 overflow-y-auto')}>
-        {conversations.length > 0 ? (
-          conversations
+      {conversations.length > 0 ? (
+        <ul className={twMerge('mt-1 flex flex-col gap-y-3 overflow-y-auto')}>
+          {conversations
             .filter(
               (e) =>
                 searchText.trim() === '' ||
                 e.name?.toLowerCase().includes(searchText.toLowerCase().trim())
             )
-            .map((convo) => (
+            .map((convo, i) => (
               <HistoryItem
-                key={convo._id}
+                key={i}
                 conversation={convo}
                 summary={convo.summary}
                 name={convo.name || 'Jan'}
                 updatedAt={convo.updatedAt ?? ''}
               />
-            ))
-        ) : (
-          <SidebarEmptyHistory />
-        )}
-      </ul>
+            ))}
+        </ul>
+      ) : (
+        <SidebarEmptyHistory />
+      )}
     </div>
   )
 }
