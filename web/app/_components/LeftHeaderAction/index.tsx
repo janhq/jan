@@ -34,12 +34,12 @@ const LeftHeaderAction: React.FC = () => {
         className="flex-1"
         icon={<MagnifyingGlassIcon width={16} height={16} />}
       />
-      {/* <SecondaryButton
+      <SecondaryButton
         title={'Create bot'}
         onClick={onCreateBotClicked}
         className="flex-1"
         icon={<PlusIcon width={16} height={16} />}
-      /> */}
+      />
     </div>
   )
 }

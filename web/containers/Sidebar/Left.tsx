@@ -88,11 +88,11 @@ export const SidebarLeft = () => {
       icon: <LayoutGrid size={20} className="flex-shrink-0" />,
       state: MainViewState.MyModel,
     },
-    // {
-    //   name: 'Bot',
-    //   icon: <Bot size={20} className="flex-shrink-0" />,
-    //   state: MainViewState.CreateBot,
-    // },
+    {
+      name: 'Bot',
+      icon: <Bot size={20} className="flex-shrink-0" />,
+      state: MainViewState.CreateBot,
+    },
     {
       name: 'Settings',
       icon: <Settings size={20} className="flex-shrink-0" />,
