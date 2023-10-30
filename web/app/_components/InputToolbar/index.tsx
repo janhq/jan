@@ -43,15 +43,7 @@ const InputToolbar: React.FC = () => {
   }
 
   if (!activeConvoId) {
-    return (
-      <div className="my-3 flex justify-center gap-2">
-        <SecondaryButton
-          onClick={onNewConversationClick}
-          title="New Conversation"
-          icon={<PlusIcon width={16} height={16} />}
-        />
-      </div>
-    )
+    return null
   }
   if (
     (activeConvoId && inputState === 'model-mismatch') ||
@@ -94,13 +86,13 @@ const InputToolbar: React.FC = () => {
             </span>
           </div>
         )}
-        <div className="my-3 flex justify-center gap-2">
+        {/* <div className="my-3 flex justify-center gap-2">
           <SecondaryButton
             onClick={onNewConversationClick}
             title="New Conversation"
             icon={<PlusIcon width={16} height={16} />}
           />
-        </div>
+        </div> */}
         {/* My text input */}
         <div className="mb-5 flex items-start space-x-4">
           <div className="relative min-w-0 flex-1">

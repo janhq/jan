@@ -16,7 +16,13 @@ const SecondaryButton: React.FC<Props> = ({
   className,
   icon,
 }) => (
-  <Button size="sm" disabled={disabled} type="button" onClick={onClick}>
+  <Button
+    size="sm"
+    disabled={disabled}
+    type="button"
+    onClick={onClick}
+    className={className}
+  >
     {icon}&nbsp;
     {title}
   </Button>
