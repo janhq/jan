@@ -64,7 +64,6 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    frame: false,
     show: false,
     trafficLightPosition: {
       x: 16,
