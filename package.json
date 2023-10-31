@@ -4,13 +4,16 @@
   "workspaces": {
     "packages": [
       "electron",
-      "web"
+      "web",
+      "server"
     ],
     "nohoist": [
       "electron",
       "electron/**",
       "web",
-      "web/**"
+      "web/**",
+      "server",
+      "server/**"
     ]
   },
   "scripts": {
@@ -32,7 +35,10 @@
     "build:publish": "yarn build:web && yarn workspace jan build:publish",
     "build:publish-darwin": "yarn build:web && yarn workspace jan build:publish-darwin",
     "build:publish-win32": "yarn build:web && yarn workspace jan build:publish-win32",
-    "build:publish-linux": "yarn build:web && yarn workspace jan build:publish-linux"
+    "build:publish-linux": "yarn build:web && yarn workspace jan build:publish-linux",
+    "build:web-plugins": "yarn build:web && yarn build:plugins && mkdir -p \"./web/out/plugins/data-plugin\" && cp \"./plugins/data-plugin/dist/esm/index.js\" \"./web/out/plugins/data-plugin\" && mkdir -p \"./web/out/plugins/inference-plugin\" &&  cp \"./plugins/inference-plugin/dist/index.js\" \"./web/out/plugins/inference-plugin\" && mkdir -p \"./web/out/plugins/model-management-plugin\" && cp \"./plugins/model-management-plugin/dist/index.js\" \"./web/out/plugins/model-management-plugin\" && mkdir -p \"./web/out/plugins/monitoring-plugin\" && cp \"./plugins/monitoring-plugin/dist/index.js\" \"./web/out/plugins/monitoring-plugin\"",
+    "server:prod": "yarn workspace server build && yarn build:web-plugins && cpx \"web/out/**\" \"server/build/renderer/\" && mkdir -p ./server/build/@janhq && cp -r ./plugins/* ./server/build/@janhq",
+    "start:server": "yarn server:prod && node server/build/main.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",

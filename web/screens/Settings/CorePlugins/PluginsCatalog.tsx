@@ -26,6 +26,9 @@ const PluginCatalog = () => {
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
    */
   useEffect(() => {
+    if (!window.electronAPI) {
+      return;
+    }
     if (!version) return
 
     // Load plugin manifest from plugin if any
@@ -36,7 +39,7 @@ const PluginCatalog = () => {
             (e: any) =>
               !e.requiredVersion ||
               e.requiredVersion.replace(/[.^]/g, '') <=
-                version.replaceAll('.', '')
+              version.replaceAll('.', '')
           )
         )
       })
@@ -50,7 +53,7 @@ const PluginCatalog = () => {
             (e: any) =>
               !e.requiredVersion ||
               e.requiredVersion.replace(/[.^]/g, '') <=
-                version.replaceAll('.', '')
+              version.replaceAll('.', '')
           )
         )
       )

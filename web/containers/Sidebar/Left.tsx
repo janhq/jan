@@ -170,7 +170,7 @@ export const SidebarLeft = () => {
           <div className="space-y-2 rounded-lg border border-border bg-background/50 p-3">
             <button
               onClick={() =>
-                window.electronAPI?.openExternalUrl(
+                window.coreAPI?.openExternalUrl(
                   'https://discord.gg/AsJ8krTT3N'
                 )
               }
@@ -180,7 +180,7 @@ export const SidebarLeft = () => {
             </button>
             <button
               onClick={() =>
-                window.electronAPI?.openExternalUrl(
+                window.coreAPI?.openExternalUrl(
                   'https://twitter.com/janhq_'
                 )
               }

@@ -65,7 +65,11 @@ export async function getActive() {
     return;
   }
   // eslint-disable-next-line no-undef
-  const plgList = await window.pluggableElectronIpc.getActive();
+  const plgList = await window.pluggableElectronIpc?.getActive() ??
+    await import(
+    // eslint-disable-next-line no-undef
+    /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
+    ).then((data) => data.default.filter((e) => e.supportCloudNative));
   return plgList.map(
     (plugin) =>
       new Plugin(
@@ -90,7 +94,7 @@ export async function registerActive() {
     return;
   }
   // eslint-disable-next-line no-undef
-  const plgList = await window.pluggableElectronIpc.getActive();
+  const plgList = await getActive()
   plgList.forEach((plugin) =>
     register(
       new Plugin(

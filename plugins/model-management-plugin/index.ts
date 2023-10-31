@@ -5,11 +5,56 @@ import {
   downloadFile,
   deleteFile,
   store,
+  EventName,
+  events
 } from "@janhq/core";
 import { parseToModel } from "./helper";
 
-const downloadModel = (product) =>
+const downloadModel = (product) => {
   downloadFile(product.downloadUrl, product.fileName);
+  checkDownloadProgress(product.fileName);
+}
+
+async function checkDownloadProgress(fileName: string) {
+  if (typeof window !== "undefined" && typeof (window as any).electronAPI === "undefined") {
+    const intervalId = setInterval(() => {
+      fetchDownloadProgress(fileName, intervalId);
+    }, 3000);
+  }
+}
+
+async function fetchDownloadProgress(fileName: string, intervalId: NodeJS.Timeout): Promise<string> {
+  const response = await fetch("/api/v1/downloadProgress", {
+    method: 'POST',
+    body: JSON.stringify({ fileName: fileName }),
+    headers: { 'Content-Type': 'application/json', 'Authorization': '' }
+  });
+
+  if (!response.ok) {
+    events.emit(EventName.OnDownloadError, null);
+    clearInterval(intervalId);
+    return;
+  }
+  const json = await response.json();
+  if (isEmptyObject(json)) {
+    if (!fileName && intervalId) {
+      clearInterval(intervalId);
+    }
+    return Promise.resolve("");
+  }
+  if (json.success === true) {
+    events.emit(EventName.OnDownloadSuccess, json);
+    clearInterval(intervalId);
+    return Promise.resolve("");
+  } else {
+    events.emit(EventName.OnDownloadUpdate, json);
+    return Promise.resolve(json.fileName);
+  }
+}
+
+function isEmptyObject(ojb: any): boolean {
+  return Object.keys(ojb).length === 0;
+}
 
 const deleteModel = (path) => deleteFile(path);
 
@@ -87,6 +132,7 @@ function getModelById(modelId: string): Promise<any> {
 
 function onStart() {
   store.createCollection("models", {});
+  fetchDownloadProgress(null, null).then((fileName: string) => fileName && checkDownloadProgress(fileName));
 }
 
 // Register all the above functions and objects with the relevant extension points
