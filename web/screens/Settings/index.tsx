@@ -13,7 +13,7 @@ import { twMerge } from 'tailwind-merge'
 
 import { formatPluginsName } from '@utils/converter'
 
-import { extensionPoints } from '@plugin/index'
+import { extensionPoints } from '@plugin'
 
 const staticMenu = ['Appearance', 'Core Plugins']
 

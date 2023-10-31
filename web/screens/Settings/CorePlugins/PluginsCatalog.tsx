@@ -5,7 +5,7 @@ import { Button, Switch } from '@uikit'
 import Loader from '@containers/Loader'
 import { formatPluginsName } from '@utils/converter'
 
-import { plugins, extensionPoints } from '@plugin/index'
+import { plugins, extensionPoints } from '@plugin'
 import { executeSerial } from '@services/pluginService'
 import { DataService } from '@janhq/core'
 import useGetAppVersion from '@hooks/useGetAppVersion'

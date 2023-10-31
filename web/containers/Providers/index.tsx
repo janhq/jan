@@ -7,7 +7,7 @@ import JotaiWrapper from '@helpers/JotaiWrapper'
 import { ModalWrapper } from '@helpers/ModalWrapper'
 import { useEffect, useState } from 'react'
 import CompactLogo from '@containers/Logo/CompactLogo'
-import { setup, plugins, activationPoints, extensionPoints } from '@plugin/index'
+import { setup, plugins, activationPoints, extensionPoints } from '@plugin'
 import EventListenerWrapper from '@helpers/EventListenerWrapper'
 import { setupCoreServices } from '@services/coreService'
 import {

@@ -121,7 +121,6 @@ function loadPlugin(plg: any) {
         enumerable: true,
         configurable: true,
       });
-      console.log(plugin);
     }
   }
 

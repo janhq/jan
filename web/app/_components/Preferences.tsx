@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { plugins, extensionPoints } from '@plugin/index'
+import { plugins, extensionPoints } from '@plugin'
 import {
   ChartPieIcon,
   CommandLineIcon,

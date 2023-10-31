@@ -2,10 +2,9 @@
 import {
   extensionPoints,
   plugins,
-} from '@plugin/index'
+} from '@plugin'
 import {
   CoreService,
-  DataService,
   InferenceService,
   ModelManagementService,
   StoreService,
