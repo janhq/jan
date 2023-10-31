@@ -30,5 +30,8 @@ module.exports = {
   resolve: {
     extensions: [".ts", ".js"],
   },
+  optimization: {
+    minimize: false,
+  },
   // Add loaders and other configuration as needed for your project
 };

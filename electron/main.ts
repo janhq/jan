@@ -19,7 +19,7 @@ const progress = require("request-progress");
 const { autoUpdater } = require("electron-updater");
 const Store = require("electron-store");
 
-const requiredModules: Record<string, any> = {};
+let requiredModules: Record<string, any> = {};
 let mainWindow: BrowserWindow | undefined = undefined;
 
 app
@@ -39,12 +39,12 @@ app
   });
 
 app.on("window-all-closed", () => {
-  dispose(requiredModules);
+  clearImportedModules();
   app.quit();
 });
 
 app.on("quit", () => {
-  dispose(requiredModules);
+  clearImportedModules();
   app.quit();
 });
 
@@ -226,7 +226,7 @@ function handleIPCs() {
    * @param url - The URL to reload.
    */
   ipcMain.handle("relaunch", async (_event, url) => {
-    dispose(requiredModules);
+    clearImportedModules();
 
     if (app.isPackaged) {
       app.relaunch();
@@ -255,7 +255,7 @@ function handleIPCs() {
 
     rmdir(fullPath, { recursive: true }, function (err) {
       if (err) console.log(err);
-      dispose(requiredModules);
+      clearImportedModules();
 
       // just relaunch if packaged, should launch manually in development mode
       if (app.isPackaged) {
@@ -393,4 +393,9 @@ function setupPlugins() {
     // Path to install plugin to
     pluginsPath: join(app.getPath("userData"), "plugins"),
   });
+}
+
+function clearImportedModules() {
+  dispose(requiredModules);
+  requiredModules = {};
 }

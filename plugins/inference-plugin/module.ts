@@ -3,7 +3,7 @@ const { app } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const tcpPortUsed = require("tcp-port-used");
-const { killPortProcess } = require("kill-port-process");
+const kill = require("kill-port");
 
 const PORT = 3928;
 let subprocess = null;
@@ -99,7 +99,7 @@ function killSubprocess() {
     subprocess = null;
     console.log("Subprocess terminated.");
   } else {
-    killPortProcess(PORT);
+    kill(PORT, "tcp").then(console.log).catch(console.log);
     console.error("No subprocess is currently running.");
   }
 }

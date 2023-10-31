@@ -29,15 +29,11 @@
   },
   "dependencies": {
     "@janhq/core": "^0.1.6",
-    "kill-port-process": "^3.2.0",
+    "kill-port": "^2.0.1",
     "rxjs": "^7.8.1",
     "tcp-port-used": "^1.0.2",
     "ts-loader": "^9.5.0"
   },
-  "bundledDependencies": [
-    "tcp-port-used",
-    "kill-port-process"
-  ],
   "engines": {
     "node": ">=18.0.0"
   },
@@ -45,5 +41,9 @@
     "dist/*",
     "package.json",
     "README.md"
+  ],
+  "bundleDependencies": [
+    "tcp-port-used",
+    "kill-port"
   ]
 }
