@@ -18,7 +18,11 @@ import {
   extensionPoints,
 } from '@/../../electron/core/plugin-manager/execution/index'
 
-const staticMenu = ['Appearance', 'Core Plugins']
+const staticMenu = ['Appearance']
+
+if (typeof window !== "undefined" && window.electronAPI) {
+  staticMenu.push('Core Plugins');
+}
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')

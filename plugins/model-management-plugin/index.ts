@@ -132,7 +132,9 @@ function getModelById(modelId: string): Promise<any> {
 
 function onStart() {
   store.createCollection("models", {});
-  fetchDownloadProgress(null, null).then((fileName: string) => fileName && checkDownloadProgress(fileName));
+  if (!(window as any)?.electronAPI) {
+    fetchDownloadProgress(null, null).then((fileName: string) => fileName && checkDownloadProgress(fileName));
+  }
 }
 
 // Register all the above functions and objects with the relevant extension points
