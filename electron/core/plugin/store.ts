@@ -8,9 +8,9 @@
  * @prop {removePlugin} removePlugin
  */
 
-import { writeFileSync } from "fs"
-import Plugin from "./Plugin"
-import { getPluginsFile } from './globals'
+import { writeFileSync } from "fs";
+import Plugin from "./plugin";
+import { getPluginsFile } from "./globals";
 
 /**
  * @module store
@@ -21,7 +21,7 @@ import { getPluginsFile } from './globals'
  * Register of installed plugins
  * @type {Object.<string, Plugin>} plugin - List of installed plugins
  */
-const plugins = {}
+const plugins: Record<string, Plugin> = {};
 
 /**
  * Get a plugin from the stored plugins.
@@ -29,12 +29,12 @@ const plugins = {}
  * @returns {Plugin} Retrieved plugin
  * @alias pluginManager.getPlugin
  */
-export function getPlugin(name) {
+export function getPlugin(name: string) {
   if (!Object.prototype.hasOwnProperty.call(plugins, name)) {
-    throw new Error(`Plugin ${name} does not exist`)
+    throw new Error(`Plugin ${name} does not exist`);
   }
 
-  return plugins[name]
+  return plugins[name];
 }
 
 /**
@@ -42,7 +42,9 @@ export function getPlugin(name) {
  * @returns {Array.<Plugin>} All plugin objects
  * @alias pluginManager.getAllPlugins
  */
-export function getAllPlugins() { return Object.values(plugins) }
+export function getAllPlugins() {
+  return Object.values(plugins);
+}
 
 /**
  * Get list of active plugin objects.
@@ -50,7 +52,7 @@ export function getAllPlugins() { return Object.values(plugins) }
  * @alias pluginManager.getActivePlugins
  */
 export function getActivePlugins() {
-  return Object.values(plugins).filter(plugin => plugin.active)
+  return Object.values(plugins).filter((plugin) => plugin.active);
 }
 
 /**
@@ -60,10 +62,10 @@ export function getActivePlugins() {
  * @returns {boolean} Whether the delete was successful
  * @alias pluginManager.removePlugin
  */
-export function removePlugin(name, persist = true) {
-  const del = delete plugins[name]
-  if (persist) persistPlugins()
-  return del
+export function removePlugin(name: string, persist = true) {
+  const del = delete plugins[name];
+  if (persist) persistPlugins();
+  return del;
 }
 
 /**
@@ -72,11 +74,11 @@ export function removePlugin(name, persist = true) {
  * @param {boolean} persist Whether to save the changes to plugins to file
  * @returns {void}
  */
-export function addPlugin(plugin, persist = true) {
-  plugins[plugin.name] = plugin
+export function addPlugin(plugin: Plugin, persist = true) {
+  if (plugin.name) plugins[plugin.name] = plugin;
   if (persist) {
-    persistPlugins()
-    plugin.subscribe('pe-persist', persistPlugins)
+    persistPlugins();
+    plugin.subscribe("pe-persist", persistPlugins);
   }
 }
 
@@ -85,11 +87,11 @@ export function addPlugin(plugin, persist = true) {
  * @returns {void}
  */
 export function persistPlugins() {
-  const persistData = {}
+  const persistData: Record<string, Plugin> = {};
   for (const name in plugins) {
-    persistData[name] = plugins[name]
+    persistData[name] = plugins[name];
   }
-  writeFileSync(getPluginsFile(), JSON.stringify(persistData), 'utf8')
+  writeFileSync(getPluginsFile(), JSON.stringify(persistData), "utf8");
 }
 
 /**
@@ -99,26 +101,26 @@ export function persistPlugins() {
  * @returns {Promise.<Array.<Plugin>>} New plugin
  * @alias pluginManager.installPlugins
  */
-export async function installPlugins(plugins, store = true) {
-  const installed = []
+export async function installPlugins(plugins: any, store = true) {
+  const installed: Plugin[] = [];
   for (const plg of plugins) {
     // Set install options and activation based on input type
-    const isObject = typeof plg === 'object'
-    const spec = isObject ? [plg.specifier, plg] : [plg]
-    const activate = isObject ? plg.activate !== false : true
+    const isObject = typeof plg === "object";
+    const spec = isObject ? [plg.specifier, plg] : [plg];
+    const activate = isObject ? plg.activate !== false : true;
 
     // Install and possibly activate plugin
-    const plugin = new Plugin(...spec)
-    await plugin._install()
-    if (activate) plugin.setActive(true)
+    const plugin = new Plugin(...spec);
+    await plugin._install();
+    if (activate) plugin.setActive(true);
 
     // Add plugin to store if needed
-    if (store) addPlugin(plugin)
-    installed.push(plugin)
+    if (store) addPlugin(plugin);
+    installed.push(plugin);
   }
 
   // Return list of all installed plugins
-  return installed
+  return installed;
 }
 
 /**

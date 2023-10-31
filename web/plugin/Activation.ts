@@ -1,4 +1,4 @@
-import { callExport } from "./import-manager.js"
+import { callExport } from "./import-manager"
 
 class Activation {
   /** @type {string} Name of the registered plugin. */
@@ -13,7 +13,7 @@ class Activation {
   /** @type {boolean} Whether the activation has been activated. */
   activated
 
-  constructor(plugin, activationPoint, url) {
+  constructor(plugin: string, activationPoint: string, url: string) {
     this.plugin = plugin
     this.activationPoint = activationPoint
     this.url = url

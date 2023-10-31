@@ -9,7 +9,7 @@ import {
 import { readdirSync, writeFileSync } from "fs";
 import { resolve, join, extname } from "path";
 import { rmdir, unlink, createWriteStream } from "fs";
-import { init } from "./core/plugin-manager/pluginMgr";
+import { init } from "./core/plugin/index";
 import { setupMenu } from "./utils/menu";
 import { dispose } from "./utils/disposable";
 

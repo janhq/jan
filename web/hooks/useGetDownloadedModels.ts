@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { ModelManagementService } from '@janhq/core'
 import { useAtom } from 'jotai'
 import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
-import { extensionPoints } from '../../electron/core/plugin-manager/execution'
+import { extensionPoints } from '@plugin/index'
 import { executeSerial } from '@services/pluginService'
 
 export function useGetDownloadedModels() {

@@ -5,8 +5,8 @@
  * @namespace plugins
  */
 
-import Plugin from "./Plugin";
-import { register } from "./activation-manager";
+import Plugin from './Plugin'
+import { register } from './activation-manager'
 
 /**
  * @typedef {Object.<string, any>} installOptions The {@link https://www.npmjs.com/package/pacote|pacote options}
@@ -21,23 +21,23 @@ import { register } from "./activation-manager";
  * @returns {Promise.<Array.<Plugin> | false>} plugin as defined by the main process. Has property cancelled set to true if installation was cancelled in the main process.
  * @alias plugins.install
  */
-export async function install(plugins) {
-  if (typeof window === "undefined") {
-    return;
+export async function install(plugins: any[]) {
+  if (typeof window === 'undefined') {
+    return
   }
   // eslint-disable-next-line no-undef
-  const plgList = await window.pluggableElectronIpc.install(plugins);
-  if (plgList.cancelled) return false;
-  return plgList.map((plg) => {
+  const plgList = await window.pluggableElectronIpc.install(plugins)
+  if (plgList.cancelled) return false
+  return plgList.map((plg: any) => {
     const plugin = new Plugin(
       plg.name,
       plg.url,
       plg.activationPoints,
       plg.active
-    );
-    register(plugin);
-    return plugin;
-  });
+    )
+    register(plugin)
+    return plugin
+  })
 }
 
 /**
@@ -47,12 +47,12 @@ export async function install(plugins) {
  * @returns {Promise.<boolean>} Whether uninstalling the plugins was successful.
  * @alias plugins.uninstall
  */
-export function uninstall(plugins, reload = true) {
-  if (typeof window === "undefined") {
-    return;
+export function uninstall(plugins: string[], reload = true) {
+  if (typeof window === 'undefined') {
+    return
   }
   // eslint-disable-next-line no-undef
-  return window.pluggableElectronIpc.uninstall(plugins, reload);
+  return window.pluggableElectronIpc.uninstall(plugins, reload)
 }
 
 /**
@@ -61,17 +61,18 @@ export function uninstall(plugins, reload = true) {
  * @alias plugins.getActive
  */
 export async function getActive() {
-  if (typeof window === "undefined") {
-    return;
+  if (typeof window === 'undefined') {
+    return []
   }
   // eslint-disable-next-line no-undef
-  const plgList = await window.pluggableElectronIpc?.getActive() ??
-    await import(
-    // eslint-disable-next-line no-undef
-    /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
-    ).then((data) => data.default.filter((e) => e.supportCloudNative));
+  const plgList =
+    (await window.pluggableElectronIpc?.getActive()) ??
+    (await import(
+      // eslint-disable-next-line no-undef
+      /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
+    ).then((data) => data.default.filter((e: any) => e.supportCloudNative)))
   return plgList.map(
-    (plugin) =>
+    (plugin: any) =>
       new Plugin(
         plugin.name,
         plugin.url,
@@ -81,7 +82,7 @@ export async function getActive() {
         plugin.version,
         plugin.icon
       )
-  );
+  )
 }
 
 /**
@@ -90,12 +91,12 @@ export async function getActive() {
  * @alias plugins.registerActive
  */
 export async function registerActive() {
-  if (typeof window === "undefined") {
-    return;
+  if (typeof window === 'undefined') {
+    return
   }
   // eslint-disable-next-line no-undef
   const plgList = await getActive()
-  plgList.forEach((plugin) =>
+  plgList.forEach((plugin: Plugin) =>
     register(
       new Plugin(
         plugin.name,
@@ -104,7 +105,7 @@ export async function registerActive() {
         plugin.active
       )
     )
-  );
+  )
 }
 
 /**
@@ -114,21 +115,21 @@ export async function registerActive() {
  * @returns {Promise.<Array.<Plugin>>} Updated plugin as defined by the main process.
  * @alias plugins.update
  */
-export async function update(plugins, reload = true) {
-  if (typeof window === "undefined") {
-    return;
+export async function update(plugins: Plugin[], reload = true) {
+  if (typeof window === 'undefined') {
+    return
   }
   // eslint-disable-next-line no-undef
-  const plgList = await window.pluggableElectronIpc.update(plugins, reload);
+  const plgList = await window.pluggableElectronIpc.update(plugins, reload)
   return plgList.map(
-    (plugin) =>
+    (plugin: any) =>
       new Plugin(
         plugin.name,
         plugin.url,
         plugin.activationPoints,
         plugin.active
       )
-  );
+  )
 }
 
 /**
@@ -137,12 +138,12 @@ export async function update(plugins, reload = true) {
  * @returns {Object.<string | false>} Object with plugins as keys and new version if update is available or false as values.
  * @alias plugins.updatesAvailable
  */
-export function updatesAvailable(plugin) {
-  if (typeof window === "undefined") {
-    return;
+export function updatesAvailable(plugin: Plugin) {
+  if (typeof window === 'undefined') {
+    return
   }
   // eslint-disable-next-line no-undef
-  return window.pluggableElectronIpc.updatesAvailable(plugin);
+  return window.pluggableElectronIpc.updatesAvailable(plugin)
 }
 
 /**
@@ -152,11 +153,11 @@ export function updatesAvailable(plugin) {
  * @returns {Promise.<Plugin>} Updated plugin as defined by the main process.
  * @alias plugins.toggleActive
  */
-export async function toggleActive(plugin, active) {
-  if (typeof window === "undefined") {
-    return;
+export async function toggleActive(plugin: Plugin, active: boolean) {
+  if (typeof window === 'undefined') {
+    return
   }
   // eslint-disable-next-line no-undef
-  const plg = await window.pluggableElectronIpc.toggleActive(plugin, active);
-  return new Plugin(plg.name, plg.url, plg.activationPoints, plg.active);
+  const plg = await window.pluggableElectronIpc.toggleActive(plugin, active)
+  return new Plugin(plg.name, plg.url, plg.activationPoints, plg.active)
 }

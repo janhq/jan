@@ -7,5 +7,6 @@ declare global {
     electronAPI?: any | undefined;
     corePlugin?: any | undefined;
     coreAPI?: any | undefined;
+    pluggableElectronIpc?: any | undefined;
   }
 }

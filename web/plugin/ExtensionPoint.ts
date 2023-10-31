@@ -18,29 +18,29 @@ class ExtensionPoint {
    * @type {Array.<Extension>} The list of all extensions registered with this extension point.
    * @private
    */
-  _extensions = []
+  _extensions: any[] = []
 
   /**
    * @type {Array.<Object>} A list of functions to be executed when the list of extensions changes.
    * @private
    */
-  #changeListeners = []
+  changeListeners: any[] = []
 
-  constructor(name) {
+  constructor(name: string) {
     this.name = name
   }
 
   /**
    * Register new extension with this extension point.
-   * The registered response will be executed (if callback) or returned (if object) 
+   * The registered response will be executed (if callback) or returned (if object)
    * when the extension point is executed (see below).
    * @param {string} name Unique name for the extension.
    * @param {Object|Callback} response Object to be returned or function to be called by the extension point.
    * @param {number} [priority] Order priority for execution used for executing in serial.
    * @returns {void}
    */
-  register(name, response, priority = 0) {
-    const index = this._extensions.findIndex(p => p.priority > priority)
+  register(name: string, response: any, priority: number = 0) {
+    const index = this._extensions.findIndex((p) => p.priority > priority)
     const newExt = { name, response, priority }
     if (index > -1) {
       this._extensions.splice(index, 0, newExt)
@@ -48,7 +48,7 @@ class ExtensionPoint {
       this._extensions.push(newExt)
     }
 
-    this.#emitChange()
+    this.emitChange()
   }
 
   /**
@@ -56,11 +56,11 @@ class ExtensionPoint {
    * @param {RegExp } name Matcher for the name of the extension to remove.
    * @returns {void}
    */
-  unregister(name) {
-    const index = this._extensions.findIndex(ext => ext.name.match(name))
+  unregister(name: string) {
+    const index = this._extensions.findIndex((ext) => ext.name.match(name))
     if (index > -1) this._extensions.splice(index, 1)
 
-    this.#emitChange()
+    this.emitChange()
   }
 
   /**
@@ -69,7 +69,7 @@ class ExtensionPoint {
    */
   clear() {
     this._extensions = []
-    this.#emitChange()
+    this.emitChange()
   }
 
   /**
@@ -77,8 +77,8 @@ class ExtensionPoint {
    * @param {string} name Name of the extension to return
    * @returns {Object|Callback|undefined} The response of the extension. If this is a function the function is returned, not its response.
    */
-  get(name) {
-    const ep = this._extensions.find(ext => ext.name === name)
+  get(name: string) {
+    const ep = this._extensions.find((ext) => ext.name === name)
     return ep && ep.response
   }
 
@@ -88,8 +88,8 @@ class ExtensionPoint {
    * @param {*} input Input to be provided as a parameter to each response if response is a callback.
    * @returns {Array} List of responses from the extensions.
    */
-  execute(input) {
-    return this._extensions.map(p => {
+  execute(input: any) {
+    return this._extensions.map((p) => {
       if (typeof p.response === 'function') {
         return p.response(input)
       } else {
@@ -105,7 +105,7 @@ class ExtensionPoint {
    * @param {*} input Input to be provided as a parameter to the 1st callback
    * @returns {Promise.<*>} Result of the last extension that was called
    */
-  async executeSerial(input) {
+  async executeSerial(input: any) {
     return await this._extensions.reduce(async (throughput, p) => {
       let tp = await throughput
       if (typeof p.response === 'function') {
@@ -122,21 +122,22 @@ class ExtensionPoint {
    * @param {string} name Name of the listener needed if it is to be removed.
    * @param {Function} callback The callback function to trigger on a change.
    */
-  onRegister(name, callback) {
-    if (typeof callback === 'function') this.#changeListeners.push({ name, callback })
+  onRegister(name: string, callback: any) {
+    if (typeof callback === 'function')
+      this.changeListeners.push({ name, callback })
   }
 
   /**
    * Unregister a callback from the extension list changes.
    * @param {string} name The name of the listener to remove.
    */
-  offRegister(name) {
-    const index = this.#changeListeners.findIndex(l => l.name === name)
-    if (index > -1) this.#changeListeners.splice(index, 1)
+  offRegister(name: string) {
+    const index = this.changeListeners.findIndex((l) => l.name === name)
+    if (index > -1) this.changeListeners.splice(index, 1)
   }
 
-  #emitChange() {
-    for (const l of this.#changeListeners) {
+  emitChange() {
+    for (const l of this.changeListeners) {
       l.callback(this)
     }
   }

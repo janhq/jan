@@ -1,5 +1,5 @@
 import React from 'react'
-import { execute } from '../../../../../electron/core/plugin-manager/execution/extension-manager'
+import { execute } from '@plugin/extension-manager'
 
 type Props = {
   pluginName: string
@@ -22,7 +22,10 @@ const PreferencePlugins = (props: Props) => {
     if (timeout) {
       clearTimeout(timeout)
     }
-    timeout = setTimeout(() => execute(PluginService.OnPreferencesUpdate), 100)
+    timeout = setTimeout(
+      () => execute(PluginService.OnPreferencesUpdate, {}),
+      100
+    )
   }
 
   return (

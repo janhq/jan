@@ -1,5 +1,5 @@
 import { ModelManagementService } from '@janhq/core'
-import { executeSerial } from '../../electron/core/plugin-manager/execution/extension-manager'
+import { executeSerial } from '@plugin/extension-manager'
 
 export default function useGetModelById() {
   const getModelById = async (
