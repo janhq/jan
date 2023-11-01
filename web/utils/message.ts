@@ -25,3 +25,7 @@ export function mergeAndRemoveDuplicates(
 
   return result.reverse()
 }
+
+export const generateMessageId = () => {
+  return `m-${Date.now()}`
+}
