@@ -40,8 +40,12 @@ test("renders left navigation panel", async () => {
   expect(chatSection).toBe(false);
 
   // Home actions
-  const botBtn = await page.getByTestId("Bot").first().isEnabled();
+  /* Disable unstable feature tests
+   ** const botBtn = await page.getByTestId("Bot").first().isEnabled();
+   ** Enable back when it is whitelisted
+   */
+
   const myModelsBtn = await page.getByTestId("My Models").first().isEnabled();
   const settingsBtn = await page.getByTestId("Settings").first().isEnabled();
-  expect([botBtn, myModelsBtn, settingsBtn].filter((e) => !e).length).toBe(0);
+  expect([myModelsBtn, settingsBtn].filter((e) => !e).length).toBe(0);
 });
