@@ -46,7 +46,7 @@ jobs:
           yarn config set network-timeout 300000
           yarn install
           yarn lint
-          yarn build:plugins
+          yarn build:pull-plugins
           yarn build:test
           yarn test
         env:
@@ -77,7 +77,7 @@ jobs:
           yarn config set network-timeout 300000
           yarn install
           yarn lint
-          yarn build:plugins
+          yarn build:pull-plugins
           yarn build:test-win32
           yarn test
 
@@ -106,6 +106,6 @@ jobs:
           yarn config set network-timeout 300000
           yarn install
           yarn lint
-          yarn build:plugins
+          yarn build:pull-plugins
           yarn build:test-linux
           yarn test
