@@ -37,7 +37,7 @@ Now, let's get your first model:
 
 ![Model versions](img/model-version.png)
 
-- Note: Choose a model that matches your computer's memory and RAM.
+> Note: Choose a model that matches your computer's memory and RAM.
 
 4. Select your preferred model and click "Download."
 

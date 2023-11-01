@@ -14,7 +14,7 @@ To begin using 👋Jan.ai on your Windows computer, follow these steps:
 ## Step 2: Download your first model
 Now, let's get your first model:
 
-1. After installation, you'll find the 👋Jan application icon on your desktop. Double-click to open it.
+1. After installation, you'll find the 👋Jan application icon on your desktop. Open it.
 
 2. Welcome to the Jan homepage. Click on "Explore Models" to see the Model catalog.
 
@@ -24,7 +24,7 @@ Now, let's get your first model:
 
 ![Model versions](img/model-version.png)
 
-- Note: Choose a model that matches your computer's memory and RAM.
+> Note: Choose a model that matches your computer's memory and RAM.
 
 4. Select your preferred model and click "Download."
 
