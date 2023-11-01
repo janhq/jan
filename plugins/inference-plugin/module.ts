@@ -25,14 +25,21 @@ const initModel = (fileName) => {
 
         if (process.platform === "win32") {
           // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-          binaryName = "nitro_start_windows.bat";
+          binaryFolder = path.join(binaryFolder, "win")
+          binaryName = "start.bat";
         } else if (process.platform === "darwin") {
           // Mac OS platform
-          binaryName = process.arch === "arm64" ? "nitro_mac_arm64" : "nitro_mac_intel";
+          if (process.arch === "arm64") {
+            binaryFolder = path.join(binaryFolder, "mac", "arm64")
+          } else {
+            binaryFolder = path.join(binaryFolder, "mac", "x64")
+          }
+          binaryName = "nitro"
         } else {
           // Linux
           // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-          binaryName = "nitro_start_linux.sh"; // For other platforms
+          binaryFolder = path.join(binaryFolder, "linux")
+          binaryName = "start.sh"; // For other platforms
         }
 
             const binaryPath = path.join(binaryFolder, binaryName);
