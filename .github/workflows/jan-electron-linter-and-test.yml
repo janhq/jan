@@ -36,6 +36,10 @@ jobs:
       - name: Getting the repo
         uses: actions/checkout@v3
 
+      - name: "Use GNU tar instead BSD tar"
+        shell: cmd
+        run: echo C:\Program Files\Git\usr\bin>>"%GITHUB_PATH%"
+
       - name: Cache node and yarn
         id: jan-cache-all
         uses: actions/cache@v3
