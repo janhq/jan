@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { extensionPoints } from '../../electron/core/plugin-manager/execution'
+import { extensionPoints } from '@plugin'
 import { SystemMonitoringService } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 import { totalRamAtom } from '@helpers/atoms/SystemBar.atom'

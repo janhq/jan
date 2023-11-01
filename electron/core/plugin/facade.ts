@@ -1,23 +1,23 @@
 const { ipcRenderer, contextBridge } = require("electron");
 
-function useFacade() {
+export function useFacade() {
   const interfaces = {
-    install(plugins) {
+    install(plugins: any[]) {
       return ipcRenderer.invoke("pluggable:install", plugins);
     },
-    uninstall(plugins, reload) {
+    uninstall(plugins: any[], reload: boolean) {
       return ipcRenderer.invoke("pluggable:uninstall", plugins, reload);
     },
     getActive() {
       return ipcRenderer.invoke("pluggable:getActivePlugins");
     },
-    update(plugins, reload) {
+    update(plugins: any[], reload: boolean) {
       return ipcRenderer.invoke("pluggable:update", plugins, reload);
     },
-    updatesAvailable(plugin) {
+    updatesAvailable(plugin: any) {
       return ipcRenderer.invoke("pluggable:updatesAvailable", plugin);
     },
-    toggleActive(plugin, active) {
+    toggleActive(plugin: any, active: boolean) {
       return ipcRenderer.invoke("pluggable:togglePluginActive", plugin, active);
     },
   };
@@ -28,5 +28,3 @@ function useFacade() {
 
   return interfaces;
 }
-
-module.exports = useFacade;

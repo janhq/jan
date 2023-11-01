@@ -13,10 +13,7 @@ import { twMerge } from 'tailwind-merge'
 
 import { formatPluginsName } from '@utils/converter'
 
-import {
-  plugins,
-  extensionPoints,
-} from '@/../../electron/core/plugin-manager/execution/index'
+import { extensionPoints } from '@plugin'
 
 const staticMenu = ['Appearance']
 
@@ -40,7 +37,7 @@ const SettingsScreen = () => {
     const getActivePluginPreferences = async () => {
       if (extensionPoints.get('PluginPreferences')) {
         const data = await Promise.all(
-          extensionPoints.execute('PluginPreferences')
+          extensionPoints.execute('PluginPreferences', {})
         )
         setPreferenceItems(Array.isArray(data) ? data : [])
         Promise.all(

@@ -1,11 +1,11 @@
-import { rmdir } from "fs/promises"
-import { resolve, join } from "path"
-import { manifest, extract } from "pacote"
-import Arborist from '@npmcli/arborist'
+import { rmdir } from "fs/promises";
+import { resolve, join } from "path";
+import { manifest, extract } from "pacote";
+import * as Arborist from "@npmcli/arborist";
 
-import { pluginsPath } from "./globals"
+import { pluginsPath } from "./globals";
 
-/** 
+/**
  * An NPM package that can be used as a Pluggable Electron plugin.
  * Used to hold all the information and functions necessary to handle the plugin lifecycle.
  */
@@ -21,30 +21,39 @@ class Plugin {
    * @property {string} description The description of plugin as defined in the manifest.
    * @property {string} icon The icon of plugin as defined in the manifest.
    */
+  origin?: string;
+  installOptions: any;
+  name?: string;
+  url?: string;
+  version?: string;
+  activationPoints?: Array<string>;
+  main?: string;
+  description?: string;
+  icon?: string;
 
   /** @private */
-  _active = false
+  _active = false;
 
   /**
    * @private
    * @property {Object.<string, Function>} #listeners A list of callbacks to be executed when the Plugin is updated.
    */
-  #listeners = {}
+  listeners: Record<string, (obj: any) => void> = {};
 
   /**
    * Set installOptions with defaults for options that have not been provided.
    * @param {string} [origin] Original specification provided to fetch the package.
    * @param {Object} [options] Options provided to pacote when fetching the manifest.
    */
-  constructor(origin, options = {}) {
+  constructor(origin?: string, options = {}) {
     const defaultOpts = {
       version: false,
       fullMetadata: false,
-      Arborist
-    }
+      Arborist,
+    };
 
-    this.origin = origin
-    this.installOptions = { ...defaultOpts, ...options }
+    this.origin = origin;
+    this.installOptions = { ...defaultOpts, ...options };
   }
 
   /**
@@ -52,7 +61,10 @@ class Plugin {
    * @type {string}
    */
   get specifier() {
-    return this.origin + (this.installOptions.version ? '@' + this.installOptions.version : '')
+    return (
+      this.origin +
+      (this.installOptions.version ? "@" + this.installOptions.version : "")
+    );
   }
 
   /**
@@ -60,31 +72,34 @@ class Plugin {
    * @type {boolean}
    */
   get active() {
-    return this._active
+    return this._active;
   }
 
   /**
    * Set Package details based on it's manifest
-   * @returns {Promise.<Boolean>} Resolves to true when the action completed 
+   * @returns {Promise.<Boolean>} Resolves to true when the action completed
    */
-  async #getManifest() {
+  async getManifest() {
     // Get the package's manifest (package.json object)
     try {
-      const mnf = await manifest(this.specifier, this.installOptions)
+      const mnf = await manifest(this.specifier, this.installOptions);
 
       // set the Package properties based on the it's manifest
-      this.name = mnf.name
-      this.version = mnf.version
-      this.activationPoints = mnf.activationPoints || null
-      this.main = mnf.main
-      this.description = mnf.description
-      this.icon = mnf.icon
-
+      this.name = mnf.name;
+      this.version = mnf.version;
+      this.activationPoints = mnf.activationPoints
+        ? (mnf.activationPoints as string[])
+        : undefined;
+      this.main = mnf.main;
+      this.description = mnf.description;
+      this.icon = mnf.icon as any;
     } catch (error) {
-      throw new Error(`Package ${this.origin} does not contain a valid manifest: ${error}`)
+      throw new Error(
+        `Package ${this.origin} does not contain a valid manifest: ${error}`
+      );
     }
 
-    return true
+    return true;
   }
 
   /**
@@ -95,26 +110,29 @@ class Plugin {
   async _install() {
     try {
       // import the manifest details
-      await this.#getManifest()
+      await this.getManifest();
 
       // Install the package in a child folder of the given folder
-      await extract(this.specifier, join(pluginsPath, this.name), this.installOptions)
+      await extract(
+        this.specifier,
+        join(pluginsPath ?? "", this.name ?? ""),
+        this.installOptions
+      );
 
       if (!Array.isArray(this.activationPoints))
-        throw new Error('The plugin does not contain any activation points')
+        throw new Error("The plugin does not contain any activation points");
 
       // Set the url using the custom plugins protocol
-      this.url = `plugin://${this.name}/${this.main}`
+      this.url = `plugin://${this.name}/${this.main}`;
 
-      this.#emitUpdate()
-
+      this.emitUpdate();
     } catch (err) {
       // Ensure the plugin is not stored and the folder is removed if the installation fails
-      this.setActive(false)
-      throw err
+      this.setActive(false);
+      throw err;
     }
 
-    return [this]
+    return [this];
   }
 
   /**
@@ -122,24 +140,24 @@ class Plugin {
    * @param {string} name name of the callback to register
    * @param {callback} cb The function to execute on update
    */
-  subscribe(name, cb) {
-    this.#listeners[name] = cb
+  subscribe(name: string, cb: () => void) {
+    this.listeners[name] = cb;
   }
 
   /**
    * Remove subscription
    * @param {string} name name of the callback to remove
    */
-  unsubscribe(name) {
-    delete this.#listeners[name]
+  unsubscribe(name: string) {
+    delete this.listeners[name];
   }
 
   /**
    * Execute listeners
    */
-  #emitUpdate() {
-    for (const cb in this.#listeners) {
-      this.#listeners[cb].call(null, this)
+  emitUpdate() {
+    for (const cb in this.listeners) {
+      this.listeners[cb].call(null, this);
     }
   }
 
@@ -149,13 +167,13 @@ class Plugin {
    * @returns {boolean} Whether an update was performed.
    */
   async update(version = false) {
-    if (this.isUpdateAvailable()) {
-      this.installOptions.version = version
-      await this._install(false)
-      return true
+    if (await this.isUpdateAvailable()) {
+      this.installOptions.version = version;
+      await this._install();
+      return true;
     }
 
-    return false
+    return false;
   }
 
   /**
@@ -163,19 +181,21 @@ class Plugin {
    * @returns the latest available version if a new version is available or false if not.
    */
   async isUpdateAvailable() {
-    const mnf = await manifest(this.origin)
-    return mnf.version !== this.version ? mnf.version : false
+    if (this.origin) {
+      const mnf = await manifest(this.origin);
+      return mnf.version !== this.version ? mnf.version : false;
+    }
   }
 
   /**
    * Remove plugin and refresh renderers.
-   * @returns {Promise} 
+   * @returns {Promise}
    */
   async uninstall() {
-    const plgPath = resolve(pluginsPath, this.name)
-    await rmdir(plgPath, { recursive: true })
+    const plgPath = resolve(pluginsPath ?? "", this.name ?? "");
+    await rmdir(plgPath, { recursive: true });
 
-    this.#emitUpdate()
+    this.emitUpdate();
   }
 
   /**
@@ -183,11 +203,11 @@ class Plugin {
    * @param {boolean} active State to set _active to
    * @returns {Plugin} This plugin
    */
-  setActive(active) {
-    this._active = active
-    this.#emitUpdate()
-    return this
+  setActive(active: boolean) {
+    this._active = active;
+    this.emitUpdate();
+    return this;
   }
 }
 
-export default Plugin
+export default Plugin;

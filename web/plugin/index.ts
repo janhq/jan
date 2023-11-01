@@ -1,9 +1,9 @@
-import { definePresetEps, setImporter } from "./import-manager.js";
+import { definePresetEps, setImporter } from "./import-manager";
 
-export * as extensionPoints from "./extension-manager.js";
-export * as activationPoints from "./activation-manager.js";
-export * as plugins from "./facade.js";
-export { default as ExtensionPoint } from "./ExtensionPoint.js";
+export * as extensionPoints from "./extension-manager";
+export * as activationPoints from "./activation-manager";
+export * as plugins from "./facade";
+export { default as ExtensionPoint } from "./ExtensionPoint";
 
 // eslint-disable-next-line no-undef
 if (typeof window !== "undefined" && !window.pluggableElectronIpc)
@@ -19,7 +19,7 @@ if (typeof window !== "undefined" && !window.pluggableElectronIpc)
  * can be created on the fly(false) or should not be provided through the input at all (null).
  * @returns {void}
  */
-export function setup(options) {
+export function setup(options: any) {
   setImporter(options.importer);
   definePresetEps(options.presetEPs);
 }

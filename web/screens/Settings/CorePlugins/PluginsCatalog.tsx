@@ -5,10 +5,7 @@ import { Button, Switch } from '@uikit'
 import Loader from '@containers/Loader'
 import { formatPluginsName } from '@utils/converter'
 
-import {
-  plugins,
-  extensionPoints,
-} from '@/../../electron/core/plugin-manager/execution/index'
+import { plugins, extensionPoints } from '@plugin'
 import { executeSerial } from '@services/pluginService'
 import { DataService } from '@janhq/core'
 import useGetAppVersion from '@hooks/useGetAppVersion'
@@ -27,19 +24,19 @@ const PluginCatalog = () => {
    */
   useEffect(() => {
     if (!window.electronAPI) {
-      return;
+      return
     }
     if (!version) return
 
     // Load plugin manifest from plugin if any
     if (extensionPoints.get(DataService.GetPluginManifest)) {
-      executeSerial(DataService.GetPluginManifest).then((data) => {
+      executeSerial(DataService.GetPluginManifest).then((data: any) => {
         setPluginCatalog(
           data.filter(
             (e: any) =>
               !e.requiredVersion ||
               e.requiredVersion.replace(/[.^]/g, '') <=
-              version.replaceAll('.', '')
+                version.replaceAll('.', '')
           )
         )
       })
@@ -53,7 +50,7 @@ const PluginCatalog = () => {
             (e: any) =>
               !e.requiredVersion ||
               e.requiredVersion.replace(/[.^]/g, '') <=
-              version.replaceAll('.', '')
+                version.replaceAll('.', '')
           )
         )
       )
@@ -74,7 +71,7 @@ const PluginCatalog = () => {
 
       if (extensionPoints.get('experimentComponent')) {
         const components = await Promise.all(
-          extensionPoints.execute('experimentComponent')
+          extensionPoints.execute('experimentComponent', {})
         )
         components.forEach((e) => {
           if (experimentRef.current) {

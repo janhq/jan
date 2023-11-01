@@ -1,4 +1,4 @@
-import { callExport } from "./import-manager"
+import { callExport } from './import-manager'
 
 /**
  * A slimmed down representation of a plugin for the renderer.
@@ -25,7 +25,15 @@ class Plugin {
   /** @type {string} Plugin's logo. */
   icon
 
-  constructor(name, url, activationPoints, active, description, version, icon) {
+  constructor(
+    name?: string,
+    url?: string,
+    activationPoints?: any[],
+    active?: boolean,
+    description?: string,
+    version?: string,
+    icon?: string
+  ) {
     this.name = name
     this.url = url
     this.activationPoints = activationPoints
@@ -39,8 +47,8 @@ class Plugin {
    * Trigger an exported callback on the plugin's main file.
    * @param {string} exp exported callback to trigger.
    */
-  triggerExport(exp) {
-    callExport(this.url, exp, this.name)
+  triggerExport(exp: string) {
+    if (this.url && this.name) callExport(this.url, exp, this.name)
   }
 }
 

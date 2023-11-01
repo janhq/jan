@@ -29,7 +29,9 @@
       "@models/*": ["./models/*"],
       "@hooks/*": ["./hooks/*"],
       "@containers/*": ["./containers/*"],
-      "@screens/*": ["./screens/*"]
+      "@screens/*": ["./screens/*"],
+      "@plugin/*": ["./plugin/*"],
+      "@plugin": ["./plugin"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

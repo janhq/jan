@@ -74,6 +74,8 @@
   "devDependencies": {
     "@electron/notarize": "^2.1.0",
     "@playwright/test": "^1.38.1",
+    "@types/npmcli__arborist": "^5.6.4",
+    "@types/pacote": "^11.1.7",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
     "electron": "26.2.1",

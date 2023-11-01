@@ -1,6 +1,5 @@
 // Make Pluggable Electron's facade available to the renderer on window.plugins
-//@ts-ignore
-const useFacade = require("../core/plugin-manager/facade");
+import { useFacade } from "./core/plugin/facade";
 useFacade();
 //@ts-ignore
 const { contextBridge, ipcRenderer } = require("electron");
