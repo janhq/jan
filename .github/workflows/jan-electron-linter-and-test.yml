@@ -78,6 +78,17 @@ jobs:
       - name: Getting the repo
         uses: actions/checkout@v3
 
+      - name: Cache node and yarn
+        id: jan-cache-all
+        uses: actions/cache@v3
+        with:
+          path: |
+            ./node_modules
+            ./electron/node_modules
+            ./web/node_modules
+            ./web/.next/cache
+          key: ${{ runner.os }}-jan-cache-all
+
       - name: Installing node
         uses: actions/setup-node@v1
         with:
@@ -103,6 +114,17 @@ jobs:
           rm -rf ~/.config/jan
       - name: Getting the repo
         uses: actions/checkout@v3
+
+      - name: Cache node and yarn
+        id: jan-cache-all
+        uses: actions/cache@v3
+        with:
+          path: |
+            ./node_modules
+            ./electron/node_modules
+            ./web/node_modules
+            ./web/.next/cache
+          key: ${{ runner.os }}-jan-cache-all
 
       - name: Installing node
         uses: actions/setup-node@v1
