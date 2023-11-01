@@ -36,6 +36,17 @@ jobs:
       - name: Getting the repo
         uses: actions/checkout@v3
 
+      - name: Cache node and yarn
+        id: jan-cache-all
+        uses: actions/cache@v3
+        with:
+          path: |
+            ./node_modules
+            ./electron/node_modules
+            ./web/node_modules
+            ./web/.next/cache
+          key: ${{ runner.os }}-jan-cache-all
+
       - name: Installing node
         uses: actions/setup-node@v1
         with:
@@ -76,7 +87,6 @@ jobs:
         run: |
           yarn config set network-timeout 300000
           yarn install
-          yarn lint
           yarn build:pull-plugins
           yarn build:test-win32
           yarn test
@@ -105,7 +115,6 @@ jobs:
           echo -e "Display ID: $DISPLAY"
           yarn config set network-timeout 300000
           yarn install
-          yarn lint
           yarn build:pull-plugins
           yarn build:test-linux
           yarn test
