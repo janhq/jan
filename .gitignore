@@ -21,3 +21,4 @@ core/lib/**
 plugins/inference-plugin/nitro/*/nitro
 plugins/inference-plugin/nitro/*/*.exe
 plugins/inference-plugin/nitro/*/*.dll
+plugins/inference-plugin/nitro/*/*.metal

@@ -8,15 +8,19 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "supportCloudNative": true,
-  "nitroVersion": "0.1.3",
   "url": "/plugins/inference-plugin/index.js",
   "activationPoints": [
     "init"
   ],
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "downloadnitro:linux-cuda": "cross-var download https://github.com/janhq/nitro/releases/download/v${npm_package_nitroVersion}/nitro-${npm_package_nitroVersion}-linux-amd64-cuda.zip -e --strip 1 -o ./nitro/linux-cuda",
-    "postinstall": "rimraf *.tgz --glob && npm run build && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
+    "downloadnitro:linux-cpu": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64.zip -e --strip 1 -o ./nitro/linux-cpu",
+    "downloadnitro:linux-cuda": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda.zip -e --strip 1 -o ./nitro/linux-cuda",
+    "downloadnitro:mac-arm64": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-arm64.zip -e --strip 1 -o ./nitro/mac-arm64",
+    "downloadnitro:mac-x64": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-amd64.zip -e --strip 1 -o ./nitro/mac-x64",
+    "downloadnitro:win-cpu": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-win-amd64.zip -e --strip 1 -o ./nitro/win-cpu",
+    "downloadnitro:win-cuda": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-win-amd64-cuda.zip -e --strip 1 -o ./nitro/win-cuda",
+    "postinstall": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:linux-cpu && npm run downloadnitro:linux-cuda && npm run downloadnitro:mac-arm64 && npm run downloadnitro:mac-x64 && npm run downloadnitro:win-cpu && npm run downloadnitro:win-cuda && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
     "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {
@@ -31,7 +35,7 @@
   },
   "dependencies": {
     "@janhq/core": "^0.1.6",
-    "cross-var": "^1.1.0",
+    "cross-env": "^7.0.3",
     "decompress-cli": "^2.0.0",
     "download-cli": "^1.1.1",
     "kill-port": "^2.0.1",
