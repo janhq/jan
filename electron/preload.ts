@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   relaunch: () => ipcRenderer.invoke("relaunch"),
 
+  openAppDirectory: () => ipcRenderer.invoke("openAppDirectory"),
+
   deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
 
   installRemotePlugin: (pluginName: string) =>
