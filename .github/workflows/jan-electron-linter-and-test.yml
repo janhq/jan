@@ -46,8 +46,8 @@ jobs:
           yarn config set network-timeout 300000
           yarn install
           yarn lint
-          yarn build:plugins
-          yarn build
+          yarn build:pull-plugins
+          yarn build:test
           yarn test
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -76,9 +76,8 @@ jobs:
         run: |
           yarn config set network-timeout 300000
           yarn install
-          yarn lint
-          yarn build:plugins
-          yarn build:win32
+          yarn build:pull-plugins
+          yarn build:test-win32
           yarn test
 
   test-on-ubuntu:
@@ -105,7 +104,6 @@ jobs:
           echo -e "Display ID: $DISPLAY"
           yarn config set network-timeout 300000
           yarn install
-          yarn lint
-          yarn build:plugins
-          yarn build:linux
+          yarn build:pull-plugins
+          yarn build:test-linux
           yarn test

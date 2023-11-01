@@ -129,7 +129,9 @@ function handleAppUpdates() {
   });
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.checkForUpdates();
+  if (process.env.CI !== "e2e") {
+    autoUpdater.checkForUpdates();
+  }
 }
 
 /**
