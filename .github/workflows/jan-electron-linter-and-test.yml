@@ -47,7 +47,7 @@ jobs:
           yarn install
           yarn lint
           yarn build:plugins
-          yarn build
+          yarn build:test
           yarn test
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -78,7 +78,7 @@ jobs:
           yarn install
           yarn lint
           yarn build:plugins
-          yarn build:win32
+          yarn build:test-win32
           yarn test
 
   test-on-ubuntu:
@@ -107,5 +107,5 @@ jobs:
           yarn install
           yarn lint
           yarn build:plugins
-          yarn build:linux
+          yarn build:test-linux
           yarn test
