@@ -1,24 +1,22 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useContext } from 'react'
 import { Button, Switch } from '@uikit'
 import Loader from '@containers/Loader'
 import { formatPluginsName } from '@utils/converter'
 
 import { plugins, extensionPoints } from '@plugin'
-import { executeSerial } from '@services/pluginService'
-import { DataService } from '@janhq/core'
 import useGetAppVersion from '@hooks/useGetAppVersion'
+import { FeatureToggleContext } from '@helpers/FeatureToggleWrapper'
 
 const PluginCatalog = () => {
-  // const [search, setSearch] = useState<string>('')
-  // const [fileName, setFileName] = useState('')
   const [activePlugins, setActivePlugins] = useState<any[]>([])
   const [pluginCatalog, setPluginCatalog] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const experimentRef = useRef(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const { version } = useGetAppVersion()
+  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
   /**
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
    */
@@ -28,33 +26,13 @@ const PluginCatalog = () => {
     }
     if (!version) return
 
-    // Load plugin manifest from plugin if any
-    if (extensionPoints.get(DataService.GetPluginManifest)) {
-      executeSerial(DataService.GetPluginManifest).then((data: any) => {
-        setPluginCatalog(
-          data.filter(
-            (e: any) =>
-              !e.requiredVersion ||
-              e.requiredVersion.replace(/[.^]/g, '') <=
-                version.replaceAll('.', '')
-          )
-        )
-      })
-    } else {
-      // Fallback to app default manifest
-      import(
-        /* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`
-      ).then((data) =>
-        setPluginCatalog(
-          data.default.filter(
-            (e: any) =>
-              !e.requiredVersion ||
-              e.requiredVersion.replace(/[.^]/g, '') <=
-                version.replaceAll('.', '')
-          )
-        )
-      )
-    }
+    // Get plugin manifest
+    import(/* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`).then(
+      (data) => {
+        if (Array.isArray(data.default) && experimentalFeatureEnabed)
+          setPluginCatalog(data.default)
+      }
+    )
   }, [version])
 
   /**
@@ -67,7 +45,7 @@ const PluginCatalog = () => {
   useEffect(() => {
     const getActivePlugins = async () => {
       const plgs = await plugins.getActive()
-      setActivePlugins(plgs)
+      if (Array.isArray(plgs)) setActivePlugins(plgs)
 
       if (extensionPoints.get('experimentComponent')) {
         const components = await Promise.all(
@@ -112,20 +90,6 @@ const PluginCatalog = () => {
   }
 
   /**
-   * Updates a plugin by calling the `window.pluggableElectronIpc.update` function with the plugin name.
-   * If the update is successful, the application is relaunched using the `window.coreAPI.relaunch` function.
-   * TODO: should update using window.coreAPI rather than pluggableElectronIpc (Plugin Manager Facades)
-   * @param plugin - The name of the plugin to update.
-   */
-  const update = async (plugin: string) => {
-    if (typeof window !== 'undefined') {
-      // @ts-ignore
-      await window.pluggableElectronIpc.update([plugin], true)
-      window.coreAPI?.relaunch()
-    }
-  }
-
-  /**
    * Downloads a remote plugin tarball and installs it using the `plugins.install` function.
    * If the installation is successful, the application is relaunched using the `coreAPI.relaunch` function.
    * @param pluginName - The name of the remote plugin to download and install.
@@ -152,9 +116,9 @@ const PluginCatalog = () => {
 
   return (
     <div className="block w-full">
-      {(pluginCatalog ?? [])
+      {pluginCatalog
         .concat(
-          activePlugins?.filter(
+          activePlugins.filter(
             (e) => !(pluginCatalog ?? []).some((p) => p.name === e.name)
           ) ?? []
         )

@@ -15,6 +15,7 @@ import {
   isCorePluginInstalled,
   setupBasePlugins,
 } from '@services/pluginService'
+import { FeatureToggleWrapper } from '@helpers/FeatureToggleWrapper'
 
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
@@ -70,9 +71,11 @@ const Providers = (props: PropsWithChildren) => {
       {setupCore && (
         <ThemeWrapper>
           {activated ? (
-            <EventListenerWrapper>
-              <ModalWrapper>{children}</ModalWrapper>
-            </EventListenerWrapper>
+            <FeatureToggleWrapper>
+              <EventListenerWrapper>
+                <ModalWrapper>{children}</ModalWrapper>
+              </EventListenerWrapper>
+            </FeatureToggleWrapper>
           ) : (
             <div className="flex h-screen w-screen items-center justify-center bg-background">
               <CompactLogo width={56} height={56} />

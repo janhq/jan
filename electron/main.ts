@@ -213,6 +213,15 @@ function handleIPCs() {
   });
 
   /**
+   * Handles the "openAppDirectory" IPC message by opening the app's user data directory.
+   * The `shell.openPath` method is used to open the directory in the user's default file explorer.
+   * @param _event - The IPC event object.
+   */
+  ipcMain.handle("openAppDirectory", async (_event) => {
+    shell.openPath(app.getPath("userData"));
+  });
+
+  /**
    * Opens a URL in the user's default browser.
    * @param _event - The IPC event object.
    * @param url - The URL to open.

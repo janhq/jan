@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useContext } from 'react'
 import SecondaryButton from '../SecondaryButton'
 import { useSetAtom, useAtomValue } from 'jotai'
 import {
@@ -13,6 +13,9 @@ import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 import { Button } from '@uikit'
 import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
 import { showingModalNoActiveModel } from '@helpers/atoms/Modal.atom'
+import {
+  FeatureToggleContext,
+} from '@helpers/FeatureToggleWrapper'
 
 const LeftHeaderAction: React.FC = () => {
   const setMainView = useSetAtom(setMainViewStateAtom)
@@ -20,6 +23,7 @@ const LeftHeaderAction: React.FC = () => {
   const activeModel = useAtomValue(activeAssistantModelAtom)
   const { requestCreateConvo } = useCreateConversation()
   const setShowModalNoActiveModel = useSetAtom(showingModalNoActiveModel)
+  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
   const onExploreClick = () => {
     setMainView(MainViewState.ExploreModel)
@@ -50,12 +54,14 @@ const LeftHeaderAction: React.FC = () => {
           className="w-full flex-1"
           icon={<MagnifyingGlassIcon width={16} height={16} />}
         />
-        <SecondaryButton
-          title={'Create bot'}
-          onClick={onCreateBotClicked}
-          className="w-full flex-1"
-          icon={<PlusIcon width={16} height={16} />}
-        />
+        {experimentalFeatureEnabed && (
+          <SecondaryButton
+            title={'Create bot'}
+            onClick={onCreateBotClicked}
+            className="w-full flex-1"
+            icon={<PlusIcon width={16} height={16} />}
+          />
+        )}
       </div>
       <Button
         onClick={onNewConversationClick}
