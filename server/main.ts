@@ -1,11 +1,14 @@
 import express, { Express, Request, Response, NextFunction } from 'express'
 import cors from "cors";
 import { resolve } from "path";
+import * as auth from "./auth"
+import { appPath, invokeFunction } from './utils';
+const cookieParser = require("cookie-parser");
 const fs = require("fs");
 const progress = require("request-progress");
 const path = require("path");
 const request = require("request");
-
+const COOKIE_NAME = "x-auth-token";
 // Create app dir
 const userDataPath = appPath();
 if (!fs.existsSync(userDataPath)) fs.mkdirSync(userDataPath);
@@ -26,15 +29,47 @@ interface ProgressState {
 }
 
 const options: cors.CorsOptions = { origin: "*" };
-const requiredModules: Record<string, any> = {};
 const port = process.env.PORT || 4000;
 const dataDir = __dirname;
 type DownloadProgress = Record<string, ProgressState>;
 const downloadProgress: DownloadProgress = {};
 const app: Express = express()
+app.use(cookieParser());
 app.use(express.static(dataDir + '/renderer'))
 app.use(cors(options))
 app.use(express.json());
+app.use((req: Request, res: Response, next: NextFunction): void => {
+  if (!req.path.startsWith("/api/v1")) {
+    next();
+    return;
+  }
+  const token = req.cookies[COOKIE_NAME];
+  auth.verifyToken(token).then((success: boolean) => {
+    if (!success) {
+      res.status(401);
+      next(Error("401 Unauthorized"));
+    }
+    next();
+  });
+});
+
+app.get('/login', (req: Request, res: Response, next: NextFunction): void => {
+  const apiKey = req.query.apiKey as string;
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress) as string;
+  auth.generateToken(apiKey, ip).then((token: string) => {
+    if (!token) {
+      res.redirect('/auth');
+      return;
+    }
+    res.cookie(COOKIE_NAME, token, { maxAge: 900000, httpOnly: true });
+    res.redirect('/');
+  });
+});
+
+app.get('/auth', (req: Request, res: Response, next: NextFunction): void => {
+  const html = `<!doctypehtml><body onload=auth()><script>function auth() { let text; let apiKey = prompt("Please enter your API Key:", ""); if (apiKey) { window.location = "/login?apiKey=" + apiKey; } }</script>`;
+  res.send(html);
+});
 
 /**
  * Execute a plugin module function via API call
@@ -89,22 +124,6 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction): void => {
 });
 
 app.listen(port, () => console.log(`Application is running on port ${port}`));
-
-
-async function invokeFunction(modulePath: string, method: string, args: any): Promise<any> {
-  console.log(modulePath, method, args);
-  const module = require(/* webpackIgnore: true */ path.join(
-    dataDir,
-    "",
-    modulePath
-  ));
-  requiredModules[modulePath] = module;
-  if (typeof module[method] === "function") {
-    return module[method](...args);
-  } else {
-    return Promise.resolve();
-  }
-}
 
 function downloadModel(downloadUrl: string, fileName: string): void {
   const userDataPath = appPath();
@@ -172,8 +191,4 @@ async function downloadFile(downloadUrl: string, fileName: string): Promise<void
     });
     resolve();
   });
-}
-
-function appPath(): string {
-  return process.env.APPDATA || (process.platform == 'darwin' ? process.env.HOME + '/Library/Preferences' : process.env.HOME + "/.local/share")
 }

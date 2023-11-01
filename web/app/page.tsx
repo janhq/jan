@@ -8,7 +8,7 @@ import ExploreModelsScreen from '@screens/ExploreModels'
 import MyModelsScreen from '@screens/MyModels'
 import SettingsScreen from '@screens/Settings'
 import EmptyChatScreen from '@screens/Chat/EmptyChatScreen'
-
+import RemoteServer from '@screens/RemoteServer'
 import {
   MainViewState,
   getMainViewStateAtom,
@@ -49,6 +49,10 @@ const Page: React.FC = () => {
 
     case MainViewState.Setting:
       children = <SettingsScreen />
+      break
+    
+      case MainViewState.RemoteServer:
+      children = <RemoteServer />
       break
 
     default:

@@ -19,7 +19,8 @@ export const setupCoreServices = () => {
       downloadFile: cn.downloadFile,
       deleteFile: cn.deleteFile,
       appVersion: cn.appVersion,
-      openExternalUrl: cn.openExternalUrl
+      openExternalUrl: cn.openExternalUrl,
+      openWindow: cn.openExternalUrl
     };
   }
 };

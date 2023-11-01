@@ -13,6 +13,7 @@ import {
   LayoutGrid,
   CpuIcon,
   BookOpen,
+  ExternalLink,
 } from 'lucide-react'
 import { motion as m, Variants } from 'framer-motion'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
@@ -105,6 +106,11 @@ export const SidebarLeft = () => {
       name: 'Settings',
       icon: <Settings size={20} className="flex-shrink-0" />,
       state: MainViewState.Setting,
+    },
+    {
+      name: 'Remote Server',
+      icon: <ExternalLink size={20} className="flex-shrink-0" />,
+      state: MainViewState.RemoteServer,
     },
   ]
   return (

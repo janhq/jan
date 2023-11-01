@@ -464,3 +464,22 @@ function clearImportedModules() {
   dispose(requiredModules);
   requiredModules = {};
 }
+
+ipcMain.handle("openWindow", async (_event, url) => {
+  const newWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    show: true,
+    trafficLightPosition: {
+      x: 16,
+      y: 10,
+    },
+    titleBarStyle: "hidden",
+    vibrancy: "sidebar",
+    webPreferences: {
+      nodeIntegration: false,
+      webSecurity: false,
+    },
+  });
+  newWindow.loadURL(url);
+});

@@ -64,4 +64,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   onAppUpdateDownloadSuccess: (callback: any) =>
     ipcRenderer.on("APP_UPDATE_COMPLETE", callback),
+
+  openWindow: (url: string) => ipcRenderer.invoke("openWindow", url),  
 });

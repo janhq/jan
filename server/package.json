@@ -4,6 +4,7 @@
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "electron": "^26.2.1",
     "express": "^4.18.2",
@@ -21,6 +22,6 @@
   "scripts": {
     "build": "tsc --project ./",
     "dev": "nodemon main.ts",
-    "prod": "node build/main.js"
+    "prod": "API_KEY=jan node build/main.js"
   }
 }

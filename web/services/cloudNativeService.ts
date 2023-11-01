@@ -29,6 +29,9 @@ export async function fetchApi(modulePath: string, pluginFunc: string, args: any
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      window.location.href = "/auth";
+    }
     const json = await response.json();
     if (json && json.error) {
       toast.error(json.error, {

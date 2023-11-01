@@ -17,6 +17,7 @@ export enum MainViewState {
   ConversationEmptyModel,
 
   BotInfo,
+  RemoteServer
 }
 
 /**
