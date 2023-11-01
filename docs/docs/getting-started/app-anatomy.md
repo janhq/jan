@@ -3,60 +3,65 @@ sidebar_position: 2
 title: Anatomy of an app
 ---
 
-### High level architecture
+This page explains all the architecture of [Jan.ai](https://jan.ai/).
 
-![High level architecture](img/architecture-0.drawio.png)
-Jan mission is to power the next gen App with the limitless extensibility by providing BUILDER:
+## Note: This one should be in the welcome page
+Jan mission is to power the next gen App with the limitless extensibility by providing users:
 
-- Unified API/ Helpers so that they only need to care about what matters
-- Wide range of Optimized and State of the art models that can help your App with Thinking/ Hearing/ Seeing capabilities. This is powered by our [Nitro](https://github.com/janhq/nitro)
-- Strong support for App marketplace and Model market place that streamline value from end customers to builders at all layers
-- The most important: The user of Jan can use the Apps via UI and API for integration
+- Unified API/ Helpers so that they only need to care about what matters.
+- Wide range of Optimized and State of the art models that can help your App with Thinking/ Hearing/ Seeing capabilities. This is powered by our [Nitro](https://github.com/janhq/nitro).
+- Strong support for App marketplace and Model market place that streamline value from end customers to builders at all layers.
+- The most important: The users of Jan can use the Apps via UI and API for integration.
 
-At Jan, we strongly believe in `portable AI` that is created once and run anywhere.
+At Jan, we strongly believe in `Portable AI` and `Personal AI` that is created once and run anywhere.
 
-### Low level architecture
+## Synchronous architecture
 
-![Low level architecture](img/architecture-1.drawio.png)
+![Synchronous architecture](img/arch-sync.png)
 
-- Jan platform includes the following components:
+### Overview
 
-  - Processes:
-    - UI process:
-      - This is Electron framework `renderer` component (Web technology equivalent)
-      - Jan provides core platform UI that:
-        - Allows App to `register()` function blueprint with name and arguments
-        - Run `execute()` registered App functions
-    - Node process (NodeJS technology equivalent)
-      - This is Electron framework `main process` component (NodeJS runtime)
-      - Jan provides core platform UI that:
-        - Allows App to `register()` function blueprint with name and arguments
-        - Run `execute()` registered App functions
-  - `@janhq/core` library that exposes Core API for App to reuse. Currently it only supports App `index.ts`
+The architecture of the Jan.ai application is designed to provide a seamless experience for the users, while also being modular and extensible.
 
-- Vertically, there are `Platform Core` component and `App` component. Each of those includes UI and Node process that work in pair.
+### BackEnd and FrontEnd
 
-## Events
+**BackEnd:**
 
-![Platform events](img/app-anatomy-4.drawio.jpg)
+- The BackEnd serves as the brain of the application. It processes the information, performs computations, and manages the main logic of the system.
 
-#### onLaunch()
+> **ELI5:** This is like an [OS (Operating System)](https://en.wikipedia.org/wiki/Operating_system) in the computer
 
-![Platform onLaunch()](img/app-anatomy-1.drawio.jpg)
+**FrontEnd:**
 
-#### onStart()
+- The FrontEnd is the interface that users interact with. It takes user inputs, displays results, and communicates with the BackEnd through Inter-process communication bi-directionally.
 
-![Platform onStart()](img/app-anatomy-2.drawio.jpg)
+> **ELI5:** This is like [VSCode](https://code.visualstudio.com/) application
 
-#### onDispose()
+**Inter-process communication:**
 
-![Platform onDispose()](img/app-anatomy-3.drawio.jpg)
+- A mechanism that allows the BackEnd and FrontEnd to communicate in real-time. It ensures that data flows smoothly between the two, facilitating rapid response and dynamic updates.
 
-#### onAppInstallation() and onAppUninstallation()
+### Plugins and Apps
+**Plugins:**
 
-The Platform simply restarts and trigger onDispose() then onLaunch().
+In Jan, Plugins are cotains of all the core features. They could be Core Plugins or [Nitro](https://github.com/janhq/nitro)
 
-### Information flow
+- **Load:** This denotes the initialization and activation of a plugin when the application starts or when a user activates it.
 
-- When App is being used, here is how the information passes between Platform and Apps
-  ![Communication](img/app-anatomy-5.drawio.png)
+- **Implement:** This is where the main functionality of the plugin resides. Developers code the desired features and functionalities here. This is a "call to action" feature.
+
+- **Dispose:** After the plugin's task is completed or when it's deactivated, this function ensures that the plugin releases any resources it used, ensuring optimal performance and preventing memory leaks.
+
+> ELI5: This is like [Extensions](https://marketplace.visualstudio.com/VSCode) in VSCode.
+
+**Apps:**
+ 
+Apps are basically Plugin-like. However, Apps can be built by users for their own purposes.
+
+> For example, users can build a `Personal Document RAG App` to chat with specific documents or articles.
+
+With Plugins and Apps, users can build a broader ecosystem surrounding Jan.ai.
+
+## Asynchronous architecture
+
+TODOS:
