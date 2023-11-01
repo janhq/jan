@@ -38,7 +38,7 @@ jobs:
 
       - name: Cache node and yarn
         id: jan-cache-all
-        uses: MasterworksIO/action-local-cache@2
+        uses: actions/cache@v3
         with:
           path: |
             ./node_modules
@@ -80,7 +80,7 @@ jobs:
 
       - name: Cache node and yarn
         id: jan-cache-all
-        uses: MasterworksIO/action-local-cache@2
+        uses: actions/cache@v3
         with:
           path: |
             ./node_modules
@@ -117,7 +117,7 @@ jobs:
 
       - name: Cache node and yarn
         id: jan-cache-all
-        uses: MasterworksIO/action-local-cache@2
+        uses: actions/cache@v3
         with:
           path: |
             ./node_modules
