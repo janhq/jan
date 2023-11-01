@@ -23,6 +23,16 @@ When you run the Jan Installer, Windows Defender may display a warning. Here's w
 
 ![Setting up](img/set-up.png)
 
+> Note: For faster results, you should enable your NVIDIA GPU. Make sure to have the CUDA toolkit installed. You can download it from here: [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) or [CUDA Installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#verify-you-have-a-cuda-capable-gpu).
+
+> Check the installation by
+
+```bash
+nvidia-smi
+```
+
+> For AMD GPU, you should use [WSLv2](https://learn.microsoft.com/en-us/windows/wsl/install). You can download it from here: [ROCm Quick Start (Linux)](https://rocm.docs.amd.com/en/latest/deploy/linux/quick_start.html).
+
 ## Step 3: Download your first model
 Now, let's get your first model:
 
