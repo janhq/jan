@@ -78,7 +78,7 @@ const InputToolbar: React.FC = () => {
 
   if (conversations.length > 0)
     return (
-      <div className="sticky bottom-0 w-full bg-background/90 px-5 py-0">
+      <div className="sticky bottom-0 w-full bg-background/90 px-5 pb-0 pt-2">
         {currentConvoState?.error && (
           <div className="flex flex-row justify-center">
             <span className="mx-5 my-2 text-sm text-red-500">
