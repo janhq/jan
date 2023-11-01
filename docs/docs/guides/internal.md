@@ -1,115 +1,122 @@
-Connect to rigs
-Download Pritunl
-https://client.pritunl.com/#install
+---
+title: Internal Guidelines
+---
 
-Import the .ovpn file
+# Internal Guidelines
 
-Use Vscode to connect
-Hint: You need to install "Remote-SSH" extension.
+## Connecting to Rigs
 
+### Pritunl Setup
 
+1. **Install Pritunl**: [Download here](https://client.pritunl.com/#install)
+2. **Import .ovpn file**
+3. **VSCode**: Install the "Remote-SSH" extension for connection
 
-Llama.cpp
+### Llama.cpp Setup
 
-Get llama.cpp
-`
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
-`
-
-Build with cmake for faster result
-`
-mkdir build
-cd build
-# You can play with the params to find the best out of it
+1. **Clone Repo**: `git clone https://github.com/ggerganov/llama.cpp && cd llama.cpp`
+2. **Build**: 
+```bash
+mkdir build && cd build
 cmake .. -DLLAMA_CUBLAS=ON -DLLAMA_CUDA_F16=ON -DLLAMA_CUDA_MMV_Y=8
 cmake --build . --config Release
-`
-
-Download model
-`
-# Back to llama.cpp
-cd ..
-cd models
-# This will get the llama-7b-Q8 GGUF
-wget https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q8_0.gguf
-`
-
-`
-# Back to llama.cpp
-`
-cd llama.cpp/build/bin/
+```
+3. **Download Model:**
+```bash
+cd ../models && wget https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q8_0.gguf
+```
+4. **Run:**
+```bash
+cd ../build/bin/
 ./main -m ./models/llama-2-7b.Q8_0.gguf -p "Writing a thesis proposal can be done in 10 simple steps:\nStep 1:" -n 2048 -e -ngl 100 -t 48
-`
+```
+
+For the llama.cpp CLI arguments you could see here:
+
+| Short Option | Long Option           | Param Value | Description |
+|--------------|-----------------------|-------------|-------------|
+| `-h`         | `--help`              |             | Show this help message and exit |
+| `-i`         | `--interactive`       |             | Run in interactive mode |
+|              | `--interactive-first` |             | Run in interactive mode and wait for input right away |
+|              | `-ins`, `--instruct`  |             | Run in instruction mode (use with Alpaca models) |
+| `-r`         | `--reverse-prompt`    | `PROMPT`    | Run in interactive mode and poll user input upon seeing `PROMPT` |
+|              | `--color`             |             | Colorise output to distinguish prompt and user input from |
+|**Generations**|
+| `-s`         | `--seed`              | `SEED`      | Seed for random number generator |
+| `-t`         | `--threads`           | `N`         | Number of threads to use during computation |
+| `-p`         | `--prompt`            | `PROMPT`    | Prompt to start generation with |
+|              | `--random-prompt`     |             | Start with a randomized prompt |
+|              | `--in-prefix`         | `STRING`    | String to prefix user inputs with |
+| `-f`         | `--file`              | `FNAME`     | Prompt file to start generation |
+| `-n`         | `--n_predict`         | `N`         | Number of tokens to predict |
+|              | `--top_k`             | `N`         | Top-k sampling |
+|              | `--top_p`             | `N`         | Top-p sampling |
+|              | `--repeat_last_n`     | `N`         | Last n tokens to consider for penalize |
+|              | `--repeat_penalty`    | `N`         | Penalize repeat sequence of tokens |
+| `-c`         | `--ctx_size`          | `N`         | Size of the prompt context |
+|              | `--ignore-eos`        |             | Ignore end of stream token and continue generating |
+|              | `--memory_f32`        |             | Use `f32` instead of `f16` for memory key+value |
+|              | `--temp`              | `N`         | Temperature |
+|              | `--n_parts`           | `N`         | Number of model parts |
+| `-b`         | `--batch_size`        | `N`         | Batch size for prompt processing |
+|              | `--perplexity`        |             | Compute perplexity over the prompt |
+|              | `--keep`              |             | Number of tokens to keep from the initial prompt |
+|              | `--mlock`             |             | Force system to keep model in RAM |
+|              | `--mtest`             |             | Determine the maximum memory usage |
+|              | `--verbose-prompt`    |             | Print prompt before generation |
+| `-m`         | `--model`             | `FNAME`     | Model path |
 
 
+### TensorRT-LLM Setup
+#### **Docker and TensorRT-LLM build**
 
-Tensorrt-LLM
+> Note: You should run with admin permission to make sure everything works fine
 
-The following command creates a Docker image for development:
-
-`
+1. **Docker Image:**
+```bash
 sudo make -C docker build
-`
-
-Check docker images command:
-`
-docker images
-`
-
-The image will be tagged locally with tensorrt_llm/devel:latest. To run the container, use the following command:
-`
+```
+2. **Run Container:** 
+```bash
 sudo make -C docker run
-`
+```
 
-Build TensorRT-LLM
 Once in the container, TensorRT-LLM can be built from source using:
-`
+
+3. **Build:**
+```bash
 # To build the TensorRT-LLM code.
 python3 ./scripts/build_wheel.py --trt_root /usr/local/tensorrt
-
 # Deploy TensorRT-LLM in your environment.
 pip install ./build/tensorrt_llm*.whl
-`
+```
 
-It is possible to restrict the compilation of TensorRT-LLM to specific CUDA architectures. For that purpose, the build_wheel.py script accepts a semicolon separated list of CUDA architecture as shown in the following example:
+> Note: You can specify the GPU achitecture (e.g. for 4090 is ADA) for compilation time reduction
+> The list of supported architectures can be found in the `CMakeLists.txt` file.
 
-# Build TensorRT-LLM for Ada (4090)
-`
+```bash
 python3 ./scripts/build_wheel.py --cuda_architectures "89-real;90-real"
-`
+```
 
-The list of supported architectures can be found in the CMakeLists.txt file.
+#### Running TensorRT-LLM
+1. **Requirements:**
+```bash
+pip install -r examples/bloom/requirements.txt && git lfs install
+```
 
-Run Tensorrt-LLM
-`
-pip install -r examples/bloom/requirements.txt
-git lfs install
-`
+2. **Download Weights:**
+```bash
+cd examples/llama && rm -rf ./llama/7B && mkdir -p ./llama/7B && git clone https://huggingface.co/NousResearch/Llama-2-7b-hf ./llama/7B
+```
 
-Download llama weight
-`
-cd examples/llama
-rm -rf ./llama/7B
-mkdir -p ./llama/7B && git clone https://huggingface.co/NousResearch/Llama-2-7b-hf ./llama/7B
-`
+3. **Build Engine:**
+```bash
+python build.py --model_dir ./llama/7B/ --dtype float16 --remove_input_padding --use_gpt_attention_plugin float16 --enable_context_fmha --use_gemm_plugin float16 --use_weight_only --output_dir ./llama/7B/trt_engines/weight_only/1-gpu/
+```
 
-Build the engine with Single GPU on Llama 7B
-`
-python build.py --model_dir ./llama/7B/ \
-                --dtype float16 \
-                --remove_input_padding \
-                --use_gpt_attention_plugin float16 \
-                --enable_context_fmha \
-                --use_gemm_plugin float16 \
-                --use_weight_only \
-                --output_dir ./llama/7B/trt_engines/weight_only/1-gpu/
-`
+4. Run Inference:
+```bash
+python3 run.py --max_output_len=2048 --tokenizer_dir ./llama/7B/ --engine_dir=./llama/7B/trt_engines/weight_only/1-gpu/ --input_text "Writing a thesis proposal can be done in 10 simple steps:\nStep 1:"
+```
 
-Run inference. Use custom `run.py` to check the tokens/seconds
-`
-python3 run.py --max_output_len=2048 \
-               --tokenizer_dir ./llama/7B/ \
-               --engine_dir=./llama/7B/trt_engines/weight_only/1-gpu/
-               --input_text Writing a thesis proposal can be done in 10 simple steps:\nStep 1:
-`
+For the tensorRT-LLM CLI arguments you could see in the `run.py`
