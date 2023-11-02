@@ -1,12 +1,11 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useContext } from 'react'
-import { Button, Switch } from '@uikit'
-import Loader from '@containers/Loader'
-import { formatPluginsName } from '@utils/converter'
 
-import useGetAppVersion from '@hooks/useGetAppVersion'
-import { FeatureToggleContext } from '@helpers/FeatureToggleWrapper'
+import Loader from '@/containers/Loader'
+import useGetAppVersion from '@/hooks/useGetAppVersion'
+import { formatPluginsName } from '@/utils/converter'
+import { FeatureToggleContext } from '@/helpers/FeatureToggleWrapper'
 import { pluginManager } from '@plugin/PluginManager'
 
 const PluginCatalog = () => {
@@ -148,25 +147,22 @@ const PluginCatalog = () => {
                   </p>
                 )}
                 {isActivePlugin && hasUpdateVersionPlugins && (
-                  <Button
-                    size="sm"
-                    themes="outline"
-                    onClick={() => downloadTarball(item.name)}
-                  >
+                  <button onClick={() => downloadTarball(item.name)}>
                     Update
-                  </Button>
+                  </button>
                 )}
               </div>
               {experimentalFeatureEnabed && (
-                <Switch
+                <input
+                  type="checkbox"
                   checked={isActivePlugin}
-                  onCheckedChange={(e) => {
-                    if (e === true) {
-                      downloadTarball(item.name)
-                    } else {
-                      uninstall(item.name)
-                    }
-                  }}
+                  // onCheckedChange={(e) => {
+                  //   if (e === true) {
+                  //     downloadTarball(item.name)
+                  //   } else {
+                  //     uninstall(item.name)
+                  //   }
+                  // }}
                 />
               )}
             </div>
@@ -191,13 +187,7 @@ const PluginCatalog = () => {
             ref={fileInputRef}
             onChange={handleFileChange}
           />
-          <Button
-            size="sm"
-            themes="outline"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            Select
-          </Button>
+          <button onClick={() => fileInputRef.current?.click()}>Select</button>
         </div>
       </div>
       {isLoading && (

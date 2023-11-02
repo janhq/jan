@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react'
-import ExploreModelItem from '@/_components/ExploreModelItem'
-import useGetConfiguredModels from '@hooks/useGetConfiguredModels'
+
+import useGetConfiguredModels from '@/hooks/useGetConfiguredModels'
+import { getConfiguredModels } from '@/hooks/useGetDownloadedModels'
+
+import ExploreModelItem from '@/components/ExploreModelItem'
 
 const ExploreModelList: React.FC = () => {
   const { models } = useGetConfiguredModels()

@@ -1,25 +1,23 @@
 'use client'
 
+import React from 'react'
+
 import { useAtomValue } from 'jotai'
-import WelcomeScreen from '@screens/Welcome'
-import BotScreen from '@screens/Bot'
-import ChatScreen from '@screens/Chat'
-import ExploreModelsScreen from '@screens/ExploreModels'
-import MyModelsScreen from '@screens/MyModels'
-import SettingsScreen from '@screens/Settings'
-import EmptyChatScreen from '@screens/Chat/EmptyChatScreen'
+
+import BaseLayout from '@/containers/Layout'
+
+import BotScreen from '@/screens/Bot'
+import ChatScreen from '@/screens/Chat'
+import EmptyChatScreen from '@/screens/Chat/EmptyChatScreen'
+import ExploreModelsScreen from '@/screens/ExploreModels'
+import MyModelsScreen from '@/screens/MyModels'
+import SettingsScreen from '@/screens/Settings'
+import WelcomeScreen from '@/screens/Welcome'
 
 import {
   MainViewState,
   getMainViewStateAtom,
-} from '@helpers/atoms/MainView.atom'
-
-import React from 'react'
-
-import BaseLayout from '@containers/Layout'
-
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+} from '@/helpers/atoms/MainView.atom'
 
 const Page: React.FC = () => {
   const viewState = useAtomValue(getMainViewStateAtom)
@@ -56,10 +54,7 @@ const Page: React.FC = () => {
       break
   }
 
-  return <BaseLayout>
-  {children}
-  <div><ToastContainer /></div>
-  </BaseLayout>
+  return <BaseLayout>{children}</BaseLayout>
 }
 
 export default Page

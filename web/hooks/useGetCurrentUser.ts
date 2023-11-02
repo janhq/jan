@@ -1,8 +1,11 @@
 // @ts-nocheck
-import { useSession } from 'next-auth/react'
 import { useEffect, useState } from 'react'
+
+import { useSession } from 'next-auth/react'
+
 import useSignOut from './useSignOut'
-import { DefaultUser, User } from '@models/User'
+
+import { DefaultUser, User } from '@/models/User'
 
 export default function useGetCurrentUser() {
   const { data: session, status } = useSession()

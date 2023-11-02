@@ -1,13 +1,14 @@
-import {
-  addNewMessageAtom,
-  chatMessages,
-  updateMessageAtom,
-} from './atoms/ChatMessage.atom'
-import { toChatMessage } from '@models/ChatMessage'
-import { events, EventName, NewMessageResponse, PluginType } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
-import { ReactNode, useEffect, useRef } from 'react'
-import useGetBots from '@hooks/useGetBots'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { ReactNode, useEffect } from 'react'
+
+import { events, EventName, NewMessageResponse, DataService } from '@janhq/core'
+
+import { useSetAtom } from 'jotai'
+import { debounce } from 'lodash'
+import useGetBots from '@/hooks/useGetBots'
+import useGetUserConversations from '@/hooks/useGetUserConversations'
+import { getDownloadedModels } from '../hooks/useGetDownloadedModels'
+import { addNewMessageAtom, updateMessageAtom } from './atoms/ChatMessage.atom'
 import {
   updateConversationAtom,
   updateConversationWaitingForResponseAtom,
@@ -18,11 +19,7 @@ import {
   setDownloadStateSuccessAtom,
 } from './atoms/DownloadState.atom'
 import { downloadedModelAtom } from './atoms/DownloadedModel.atom'
-import { getDownloadedModels } from '../hooks/useGetDownloadedModels'
-import { pluginManager } from '../plugin/PluginManager'
-import { Message } from '@janhq/core/lib/types'
-import { ConversationalPlugin, ModelPlugin } from '@janhq/core/lib/plugins'
-import { downloadingModelsAtom } from './atoms/Model.atom'
+import { toChatMessage } from '@/models/ChatMessage'
 
 let currentConversation: Conversation | undefined = undefined
 

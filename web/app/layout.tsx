@@ -1,8 +1,10 @@
-import { Metadata } from 'next'
-import '../styles/main.scss'
 import { PropsWithChildren } from 'react'
 
-import Providers from '@containers/Providers'
+import { Metadata } from 'next'
+
+import Providers from '@/containers/Providers'
+
+import '@/styles/main.scss'
 
 export const metadata: Metadata = {
   title: 'Jan',

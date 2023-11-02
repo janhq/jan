@@ -1,10 +1,11 @@
 'use client'
 
 import * as React from 'react'
+
 import { useTheme } from 'next-themes'
-import { twMerge } from 'tailwind-merge'
 
 import { motion as m } from 'framer-motion'
+import { twMerge } from 'tailwind-merge'
 
 const themeMenus = [
   {

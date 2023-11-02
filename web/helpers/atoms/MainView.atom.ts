@@ -1,4 +1,5 @@
 import { atom } from 'jotai'
+
 import { setActiveConvoIdAtom } from './Conversation.atom'
 import { systemBarVisibilityAtom } from './SystemBar.atom'
 

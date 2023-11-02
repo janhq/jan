@@ -1,7 +1,9 @@
+import React from 'react'
+
 import { Metadata } from 'next'
+
 import Image from 'next/image'
 import Link from 'next/link'
-import React from 'react'
 
 export const metadata: Metadata = {
   title: 'Support - Jan.ai',
@@ -19,7 +21,7 @@ const Page: React.FC = () => {
           </div>
         </Link>
       </div>
-      <article className="prose my-20  lg:prose-xl">
+      <article className="prose lg:prose-xl  my-20">
         <h1>Support </h1>
         <h3>Get fast support in our Discord channel</h3>
         <Link

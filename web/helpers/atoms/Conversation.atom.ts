@@ -1,6 +1,7 @@
 import { atom } from 'jotai'
-import { MainViewState, setMainViewStateAtom } from './MainView.atom'
+
 import { activeBotAtom } from './Bot.atom'
+import { MainViewState, setMainViewStateAtom } from './MainView.atom'
 
 /**
  * Stores the current active conversation id.

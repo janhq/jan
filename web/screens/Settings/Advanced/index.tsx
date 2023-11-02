@@ -1,13 +1,12 @@
 'use client'
 
 import React, { useContext, useRef } from 'react'
-import { Button, Switch } from '@uikit'
-import { FeatureToggleContext } from '@helpers/FeatureToggleWrapper'
+
+import { FeatureToggleContext } from '@/helpers/FeatureToggleWrapper'
 
 const Advanced = () => {
-  const { experimentalFeatureEnabed, setExperimentalFeatureEnabled } =
-    useContext(FeatureToggleContext)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
+
   return (
     <div className="block w-full">
       <div className="flex w-full items-start justify-between border-b border-gray-200 py-4 first:pt-0 last:border-none dark:border-gray-800">
@@ -22,15 +21,16 @@ const Advanced = () => {
             tested.
           </p>
         </div>
-        <Switch
+        <input
+          type="checkbox"
           checked={experimentalFeatureEnabed}
-          onCheckedChange={(e) => {
-            if (e === true) {
-              setExperimentalFeatureEnabled(true)
-            } else {
-              setExperimentalFeatureEnabled(false)
-            }
-          }}
+          // onCheckedChange={(e) => {
+          //   if (e === true) {
+          //     setExperimentalFeatureEnabled(true)
+          //   } else {
+          //     setExperimentalFeatureEnabled(false)
+          //   }
+          // }}
         />
       </div>
       {window.electronAPI && (
@@ -46,13 +46,9 @@ const Advanced = () => {
             </p>
           </div>
           <div>
-            <Button
-              size="sm"
-              themes="outline"
-              onClick={() => window.electronAPI.openAppDirectory()}
-            >
+            <button onClick={() => window.electronAPI.openAppDirectory()}>
               Open
-            </Button>
+            </button>
           </div>
         </div>
       )}

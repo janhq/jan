@@ -1,12 +1,15 @@
 import React from 'react'
+
+import { useUserConfigs } from '@/hooks/useUserConfigs'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { useUserConfigs } from '@hooks/useUserConfigs'
-import { getMainViewStateAtom } from '@helpers/atoms/MainView.atom'
-import { MainViewState } from '@helpers/atoms/MainView.atom'
-import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
 
 import { PanelLeftClose, PanelLeftOpen, PanelRightOpen } from 'lucide-react'
+
 import { twMerge } from 'tailwind-merge'
+
+import { getMainViewStateAtom } from '@/helpers/atoms/MainView.atom'
+import { MainViewState } from '@/helpers/atoms/MainView.atom'
+import { rightSideBarExpandStateAtom } from '@/helpers/atoms/SideBarExpand.atom'
 
 const Topbar = () => {
   const [config, setConfig] = useUserConfigs()

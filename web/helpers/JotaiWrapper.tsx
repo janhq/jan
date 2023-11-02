@@ -1,7 +1,8 @@
 'use client'
 
-import { Provider, atom } from 'jotai'
 import { ReactNode } from 'react'
+
+import { Provider, atom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 
 type Props = {

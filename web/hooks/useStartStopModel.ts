@@ -5,6 +5,11 @@ import { activeModelAtom, stateModel } from '@helpers/atoms/Model.atom'
 import { pluginManager } from '@plugin/PluginManager'
 import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
 
+import {
+  activeAssistantModelAtom,
+  stateModel,
+} from '@/helpers/atoms/Model.atom'
+
 export default function useStartStopModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModel)

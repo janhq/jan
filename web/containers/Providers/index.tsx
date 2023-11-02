@@ -1,19 +1,18 @@
 'use client'
 
 import { PropsWithChildren } from 'react'
-import { ThemeWrapper } from '@helpers/ThemeWrapper'
-import JotaiWrapper from '@helpers/JotaiWrapper'
-import { ModalWrapper } from '@helpers/ModalWrapper'
 import { useEffect, useState } from 'react'
-import CompactLogo from '@containers/Logo/CompactLogo'
-import EventListenerWrapper from '@helpers/EventListenerWrapper'
-import { setupCoreServices } from '@services/coreService'
+import CompactLogo from '@/containers/Logo/CompactLogo'
+import { setupCoreServices } from '@/services/coreService'
 import {
   isCorePluginInstalled,
   setupBasePlugins,
-} from '@services/pluginService'
-import { FeatureToggleWrapper } from '@helpers/FeatureToggleWrapper'
-import { pluginManager } from '../../plugin/PluginManager'
+} from '@/services/pluginService'
+import EventListenerWrapper from '@/helpers/EventListenerWrapper'
+import { FeatureToggleWrapper } from '@/helpers/FeatureToggleWrapper'
+import JotaiWrapper from '@/helpers/JotaiWrapper'
+import { ModalWrapper } from '@/helpers/ModalWrapper'
+import { ThemeWrapper } from '@/helpers/ThemeWrapper'
 
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)

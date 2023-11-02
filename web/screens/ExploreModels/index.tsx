@@ -1,7 +1,11 @@
 import React, { Fragment, useEffect } from 'react'
-import ExploreModelList from '@screens/ExploreModels/ExploreModelList'
-import useGetConfiguredModels from '@hooks/useGetConfiguredModels'
-import Loader from '@containers/Loader'
+
+import Loader from '@/containers/Loader'
+import useGetConfiguredModels from '@/hooks/useGetConfiguredModels'
+
+import ExploreModelList from '@/screens/ExploreModels/ExploreModelList'
+
+import { getConfiguredModels } from '@/hooks/useGetDownloadedModels'
 
 const ExploreModelsScreen = () => {
   const { loading } = useGetConfiguredModels()

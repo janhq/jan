@@ -2,17 +2,17 @@
 import React from 'react'
 import { useEffect, useState } from 'react'
 
+import { preferences } from '@janhq/core'
+import { extensionPoints } from '@/plugin'
+import { formatPluginsName } from '@/utils/converter'
 import { motion as m } from 'framer-motion'
-
-import AppearanceOptions from './Appearance'
-import PluginCatalog from './CorePlugins/PluginsCatalog'
-import PreferencePlugins from './CorePlugins/PreferencePlugins'
 
 import { twMerge } from 'tailwind-merge'
 
-import { formatPluginsName } from '@utils/converter'
-
 import Advanced from './Advanced'
+import AppearanceOptions from './Appearance'
+import PluginCatalog from './CorePlugins/PluginsCatalog'
+import PreferencePlugins from './CorePlugins/PreferencePlugins'
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')
@@ -88,17 +88,17 @@ const SettingsScreen = () => {
 
   return (
     <div className="flex h-full">
-      <div className="flex h-full w-80 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+      <div className="border-border flex h-full w-80 flex-shrink-0 flex-col overflow-y-auto border-r">
         <div className="p-5">
           <h1 className="text-lg font-bold">Settings</h1>
           <p
             data-testid="testid-setting-description"
-            className="mt-2 text-gray-600 text-muted-foreground"
+            className="text-muted-foreground mt-2 text-gray-600"
           >
             Manage your account settings
           </p>
           <div className="mt-5 flex-shrink-0">
-            <label className="font-bold uppercase text-muted-foreground">
+            <label className="text-muted-foreground font-bold uppercase">
               Options
             </label>
             <div className="mt-1 font-semibold">
@@ -119,7 +119,7 @@ const SettingsScreen = () => {
                     </button>
                     {isActive ? (
                       <m.div
-                        className="absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md bg-accent/20 p-2"
+                        className="bg-accent/20 absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md p-2"
                         layoutId="active-static-menu"
                       />
                     ) : null}
@@ -158,7 +158,7 @@ const SettingsScreen = () => {
                     </button>
                     {isActive ? (
                       <m.div
-                        className="absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md  bg-accent/20 p-2"
+                        className="bg-accent/20 absolute inset-0 -left-4 h-full w-[calc(100%+32px)]  rounded-md p-2"
                         layoutId="active-static-menu"
                       />
                     ) : null}

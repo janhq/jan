@@ -1,8 +1,11 @@
 'use client'
 
-import { useUserConfigs } from '@hooks/useUserConfigs'
-import { ThemeProvider } from 'next-themes'
 import { ReactNode } from 'react'
+
+import { ThemeProvider } from 'next-themes'
+
+import { useUserConfigs } from '@/hooks/useUserConfigs'
+
 import { motion as m } from 'framer-motion'
 
 type Props = {

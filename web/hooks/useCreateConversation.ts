@@ -1,9 +1,10 @@
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import useGetModelById from './useGetModelById'
 import {
   userConversationsAtom,
   setActiveConvoIdAtom,
   addNewConversationStateAtom,
-} from '@helpers/atoms/Conversation.atom'
+} from '@/helpers/atoms/Conversation.atom'
 import { Model } from '@janhq/core/lib/types'
 import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
 import { generateConversationId } from '@utils/conversation'

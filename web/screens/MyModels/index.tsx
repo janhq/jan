@@ -1,16 +1,20 @@
 import React, { Fragment } from 'react'
-import { useSetAtom } from 'jotai'
-import { Button } from '@uikit'
-import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
-import DownloadedModelTable from '@/_components/DownloadedModelTable'
+
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+import { formatDownloadPercentage } from '@/utils/converter'
 import { useAtomValue } from 'jotai'
-import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
-import { formatDownloadPercentage } from '@utils/converter'
+import { useSetAtom } from 'jotai'
 import { LayoutGrid } from 'lucide-react'
+
+import ActiveModelTable from '@/components/ActiveModelTable'
+import DownloadedModelTable from '@/components/DownloadedModelTable'
+import DownloadingModelTable from '@/components/DownloadingModelTable'
+import { modelDownloadStateAtom } from '@/helpers/atoms/DownloadState.atom'
+
 import {
   setMainViewStateAtom,
   MainViewState,
-} from '@helpers/atoms/MainView.atom'
+} from '@/helpers/atoms/MainView.atom'
 
 const MyModelsScreen = () => {
   const { downloadedModels } = useGetDownloadedModels()
@@ -28,7 +32,7 @@ const MyModelsScreen = () => {
     return (
       <div className="flex h-full items-center justify-center px-4">
         <div className="text-center">
-          <LayoutGrid size={32} className="mx-auto text-accent/50" />
+          <LayoutGrid size={32} className="text-accent/50 mx-auto" />
           <div className="mt-4">
             {isDownloadingFirstModel ? (
               <div className="relative">
@@ -36,7 +40,7 @@ const MyModelsScreen = () => {
                   <h1 className="text-2xl font-bold leading-snug">
                     Donwloading your first model
                   </h1>
-                  <p className="mt-1 text-muted-foreground">
+                  <p className="text-muted-foreground mt-1">
                     {downloadStates[0].fileName} -{' '}
                     {formatDownloadPercentage(downloadStates[0].percent)}
                   </p>
@@ -45,14 +49,13 @@ const MyModelsScreen = () => {
             ) : (
               <Fragment>
                 <h1 className="text-2xl font-bold leading-snug">{`Ups, You don't have a model.`}</h1>
-                <p className="mt-1 text-base text-muted-foreground">{`let’s download your first model`}</p>
-                <Button
+                <p className="text-muted-foreground mt-1 text-base">{`let’s download your first model`}</p>
+                <button
                   className="mt-4"
-                  themes="accent"
                   onClick={() => setMainViewState(MainViewState.ExploreModel)}
                 >
                   Explore Models
-                </Button>
+                </button>
               </Fragment>
             )}
           </div>

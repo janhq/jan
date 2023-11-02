@@ -1,20 +1,20 @@
-import { currentPromptAtom } from '@helpers/JotaiWrapper'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { currentPromptAtom } from '@/helpers/JotaiWrapper'
+import { deleteConversationMessage } from '@/helpers/atoms/ChatMessage.atom'
 import { PluginType } from '@janhq/core'
-import { deleteConversationMessage } from '@helpers/atoms/ChatMessage.atom'
 import {
   userConversationsAtom,
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
-} from '@helpers/atoms/Conversation.atom'
-import {
-  showingProductDetailAtom,
-  showingAdvancedPromptAtom,
-} from '@helpers/atoms/Modal.atom'
+} from '@/helpers/atoms/Conversation.atom'
 import {
   MainViewState,
   setMainViewStateAtom,
-} from '@helpers/atoms/MainView.atom'
+} from '@/helpers/atoms/MainView.atom'
+import {
+  showingProductDetailAtom,
+  showingAdvancedPromptAtom,
+} from '@/helpers/atoms/Modal.atom'
 import { pluginManager } from '../plugin/PluginManager'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 

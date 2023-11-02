@@ -1,0 +1,64 @@
+import { useEffect, useState } from 'react'
+
+import { useAtomValue, useSetAtom } from 'jotai'
+
+import { MessageCircle } from 'lucide-react'
+
+import useCreateConversation from '@/hooks/useCreateConversation'
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
+import {
+  MainViewState,
+  setMainViewStateAtom,
+} from '@/helpers/atoms/MainView.atom'
+import { showingModalNoActiveModel } from '@/helpers/atoms/Modal.atom'
+import { activeAssistantModelAtom } from '@/helpers/atoms/Model.atom'
+
+enum ActionButton {
+  DownloadModel = 'Download a Model',
+  StartChat = 'Start a Conversation',
+}
+
+const SidebarEmptyHistory: React.FC = () => {
+  const { downloadedModels } = useGetDownloadedModels()
+  const activeModel = useAtomValue(activeModelAtom)
+  const setMainView = useSetAtom(setMainViewStateAtom)
+  const { requestCreateConvo } = useCreateConversation()
+  const [action, setAction] = useState(ActionButton.DownloadModel)
+  const modalNoActiveModel = useSetAtom(showingModalNoActiveModel)
+
+  useEffect(() => {
+    if (downloadedModels.length > 0) {
+      setAction(ActionButton.StartChat)
+    } else {
+      setAction(ActionButton.DownloadModel)
+    }
+  }, [downloadedModels])
+
+  const onClick = async () => {
+    if (action === ActionButton.DownloadModel) {
+      setMainView(MainViewState.ExploreModel)
+    } else {
+      if (!activeModel) {
+        modalNoActiveModel(true)
+      } else {
+        await requestCreateConvo(activeModel)
+      }
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-3 py-10">
+      <MessageCircle size={24} />
+      <div className="flex flex-col items-center">
+        <h6 className="text-center text-base">No Chat History</h6>
+        <p className="text-muted-foreground mb-6 mt-1 text-center">
+          Get started by creating a new chat.
+        </p>
+        <button onClick={onClick}>{action}</button>
+      </div>
+    </div>
+  )
+}
+
+export default SidebarEmptyHistory

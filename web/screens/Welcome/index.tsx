@@ -1,12 +1,12 @@
 import React from 'react'
-import CompactLogo from '@containers/Logo/CompactLogo'
+
+import CompactLogo from '@/containers/Logo/CompactLogo'
 import { useSetAtom } from 'jotai'
+
 import {
   setMainViewStateAtom,
   MainViewState,
-} from '@helpers/atoms/MainView.atom'
-
-import { Button } from '@uikit'
+} from '@/helpers/atoms/MainView.atom'
 
 const WelcomeScreen = () => {
   const setMainViewState = useSetAtom(setMainViewStateAtom)
@@ -23,12 +23,9 @@ const WelcomeScreen = () => {
         </h1>
         <p className="text-base tracking-wide text-gray-600 dark:text-gray-400">{`let’s download your first model`}</p>
         <div className="mt-4">
-          <Button
-            themes="accent"
-            onClick={() => setMainViewState(MainViewState.ExploreModel)}
-          >
+          <button onClick={() => setMainViewState(MainViewState.ExploreModel)}>
             Explore Models
-          </Button>
+          </button>
         </div>
       </div>
     </div>

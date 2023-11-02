@@ -1,7 +1,10 @@
 import React from 'react'
-import JanImage from '@containers/JanImage'
+
 import { useSetAtom } from 'jotai'
-import { setActiveConvoIdAtom } from '@helpers/atoms/Conversation.atom'
+
+import JanImage from '@/containers/JanImage'
+
+import { setActiveConvoIdAtom } from '@/helpers/atoms/Conversation.atom'
 
 type Props = {
   width?: number

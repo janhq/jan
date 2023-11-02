@@ -1,6 +1,7 @@
 import React from 'react'
-import BotSetting from '@/_components/BotSetting'
-import BotInfo from '@/_components/BotInfo'
+
+import BotInfo from '@/components/BotInfo'
+import BotSetting from '@/components/BotSetting'
 
 export const SidebarRight = () => {
   return (

@@ -1,6 +1,8 @@
 import { useState } from 'react'
+
 import { useSetAtom } from 'jotai'
-import { modelLoadMoreAtom } from '@helpers/atoms/ExploreModelLoading.atom'
+
+import { modelLoadMoreAtom } from '@/helpers/atoms/ExploreModelLoading.atom'
 import { ModelCatalog } from '@janhq/core/lib/types'
 
 export default function useGetHuggingFaceModel() {

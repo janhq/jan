@@ -1,9 +1,12 @@
-import { currentConversationAtom } from '@helpers/atoms/Conversation.atom'
-import { activeModelAtom } from '@helpers/atoms/Model.atom'
-import { useAtomValue } from 'jotai'
 import { useEffect, useState } from 'react'
+
+import { useAtomValue } from 'jotai'
+
 import { useGetDownloadedModels } from './useGetDownloadedModels'
 import { Model } from '@janhq/core/lib/types'
+
+import { currentConversationAtom } from '@/helpers/atoms/Conversation.atom'
+import { activeAssistantModelAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useGetInputState() {
   const [inputState, setInputState] = useState<InputType>('loading')

@@ -1,5 +1,6 @@
-import { SwitchingModelConfirmationModalProps } from '@/_components/SwitchingModelConfirmationModal'
 import { atom } from 'jotai'
+
+import { SwitchingModelConfirmationModalProps } from '@/components/SwitchingModelConfirmationModal'
 
 export const showConfirmDeleteConversationModalAtom = atom(false)
 export const showConfirmSignOutModalAtom = atom(false)

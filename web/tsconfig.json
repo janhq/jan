@@ -21,17 +21,7 @@
       }
     ],
     "paths": {
-      "@/*": ["./app/*"],
-      "@uikit": ["./uikit"],
-      "@services/*": ["./services/*"],
-      "@helpers/*": ["./helpers/*"],
-      "@utils/*": ["./utils/*"],
-      "@models/*": ["./models/*"],
-      "@hooks/*": ["./hooks/*"],
-      "@containers/*": ["./containers/*"],
-      "@screens/*": ["./screens/*"],
-      "@plugin/*": ["./plugin/*"],
-      "@plugin": ["./plugin"]
+      "@/*": ["./*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

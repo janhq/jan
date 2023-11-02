@@ -2,13 +2,12 @@ import { useSetAtom } from 'jotai'
 import {
   conversationStatesAtom,
   userConversationsAtom,
-} from '@helpers/atoms/Conversation.atom'
+} from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '../plugin/PluginManager'
 import { PluginType } from '@janhq/core'
-import { setConvoMessagesAtom } from '@helpers/atoms/ChatMessage.atom'
-import { toChatMessage } from '@models/ChatMessage'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 import { Conversation } from "@janhq/core/lib/types"
+import { setConvoMessagesAtom } from '@helpers/atoms/ChatMessage.atom'
 
 const useGetUserConversations = () => {
   const setConversationStates = useSetAtom(conversationStatesAtom)

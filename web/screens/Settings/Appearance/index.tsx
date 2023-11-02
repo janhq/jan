@@ -2,8 +2,8 @@
 
 import React from 'react'
 
-import ToggleTheme from './toggleTheme'
 import ToggleAccent from './toggleAccent'
+import ToggleTheme from './toggleTheme'
 
 const AppearanceOptions = () => {
   return (

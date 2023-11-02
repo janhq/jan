@@ -1,16 +1,19 @@
 'use client'
 
-import { useAtomValue, useSetAtom } from 'jotai'
-import { ReactNode, useEffect, useRef } from 'react'
+import { ReactNode, useEffect } from 'react'
+
+import { useSetAtom } from 'jotai'
+
+import { getDownloadedModels } from '../hooks/useGetDownloadedModels'
+
+import EventHandler from './EventHandler'
 import { appDownloadProgress } from './JotaiWrapper'
-import { PluginType } from '@janhq/core'
 import {
   setDownloadStateAtom,
   setDownloadStateSuccessAtom,
 } from './atoms/DownloadState.atom'
-import { getDownloadedModels } from '../hooks/useGetDownloadedModels'
+
 import { downloadedModelAtom } from './atoms/DownloadedModel.atom'
-import EventHandler from './EventHandler'
 import { pluginManager } from '@plugin/PluginManager'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { downloadingModelsAtom } from './atoms/Model.atom'

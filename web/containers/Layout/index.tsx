@@ -1,14 +1,20 @@
 import React, { PropsWithChildren, useEffect } from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+
 import { useTheme } from 'next-themes'
-import { SidebarLeft, SidebarRight } from '@containers/Sidebar'
-import { twMerge } from 'tailwind-merge'
-import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
-import Topbar from '@containers/Topbar'
-import BottomBar from '@containers/BottomBar'
+
 import { motion as m } from 'framer-motion'
-import { getMainViewStateAtom } from '@helpers/atoms/MainView.atom'
-import { MainViewState } from '@helpers/atoms/MainView.atom'
+
+import { useAtomValue } from 'jotai'
+
+import { twMerge } from 'tailwind-merge'
+
+import BottomBar from '@/containers/BottomBar'
+import { SidebarLeft, SidebarRight } from '@/containers/Sidebar'
+import Topbar from '@/containers/Topbar'
+
+import { getMainViewStateAtom } from '@/helpers/atoms/MainView.atom'
+import { MainViewState } from '@/helpers/atoms/MainView.atom'
+import { rightSideBarExpandStateAtom } from '@/helpers/atoms/SideBarExpand.atom'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
@@ -38,7 +44,7 @@ const BaseLayout = (props: PropsWithChildren) => {
       <SidebarLeft />
       <div
         className={twMerge(
-          'border-border bg-background/50 relative top-8 flex h-[calc(100vh-72px)] w-full overflow-hidden rounded-lg border',
+          'border-border relative top-8 flex h-[calc(100vh-72px)] w-full overflow-hidden rounded-lg border bg-background/50',
           viewState === MainViewState.BotInfo && isRightSidebarVisible
             ? 'mr-0'
             : 'mr-4'

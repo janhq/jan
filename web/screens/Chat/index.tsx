@@ -1,15 +1,15 @@
 import React from 'react'
 
-import ChatBody from '@/_components/ChatBody'
-import InputToolbar from '@/_components/InputToolbar'
-import HistoryList from '@/_components/HistoryList'
-import MainHeader from '@/_components/MainHeader'
-import LeftHeaderAction from '@/_components/LeftHeaderAction'
+import ChatBody from '@/components/ChatBody'
+import HistoryList from '@/components/HistoryList'
+import InputToolbar from '@/components/InputToolbar'
+import LeftHeaderAction from '@/components/LeftHeaderAction'
+import MainHeader from '@/components/MainHeader'
 
 const ChatScreen = () => {
   return (
     <div className="flex h-full">
-      <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border ">
+      <div className="border-border flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r ">
         <LeftHeaderAction />
         <HistoryList />
       </div>

@@ -1,7 +1,8 @@
 import React from 'react'
-import SelectModels from '@/_components/ModelSelector'
-import InputToolbar from '@/_components/InputToolbar'
-import HistoryList from '@/_components/HistoryList'
+
+import HistoryList from '@/components/HistoryList'
+import InputToolbar from '@/components/InputToolbar'
+import SelectModels from '@/components/ModelSelector'
 
 const EmptyChatScreen: React.FC = () => (
   <div className="flex h-full">
@@ -10,7 +11,7 @@ const EmptyChatScreen: React.FC = () => (
         <HistoryList />
       </div>
     </div>
-    <div className="bg-background/50 relative w-full overflow-y-auto p-5">
+    <div className="relative w-full overflow-y-auto bg-background/50 p-5">
       <div className="flex flex-1 items-center justify-center">
         <SelectModels />
       </div>

@@ -1,5 +1,3 @@
-import { currentPromptAtom } from '@helpers/JotaiWrapper'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   EventName,
   MessageHistory,
@@ -7,7 +5,9 @@ import {
   PluginType,
   events,
 } from '@janhq/core'
-import { toChatMessage } from '@models/ChatMessage'
+import { toChatMessage } from '@/models/ChatMessage'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { currentPromptAtom } from '@/helpers/JotaiWrapper'
 import {
   addNewMessageAtom,
   getCurrentChatMessagesAtom,

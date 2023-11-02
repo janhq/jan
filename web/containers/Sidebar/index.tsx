@@ -1,2 +1,2 @@
-export * from './Left'
+export * from './Ribbon'
 export * from './Right'

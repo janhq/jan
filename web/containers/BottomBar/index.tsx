@@ -1,13 +1,22 @@
 import React from 'react'
-import SystemItem from '@containers/SystemItem'
-import useGetSystemResources from '@hooks/useGetSystemResources'
+
 import { useAtomValue } from 'jotai'
-import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
-import { formatDownloadPercentage } from '@utils/converter'
-import { activeModelAtom, stateModel } from '@helpers/atoms/Model.atom'
-import useGetAppVersion from '@hooks/useGetAppVersion'
-import ProgressBar from '@/_components/ProgressBar'
-import { appDownloadProgress } from '@helpers/JotaiWrapper'
+
+import ProgressBar from '@/components/ProgressBar'
+
+import SystemItem from '@/containers/SystemItem'
+
+import useGetAppVersion from '@/hooks/useGetAppVersion'
+import useGetSystemResources from '@/hooks/useGetSystemResources'
+
+import { formatDownloadPercentage } from '@/utils/converter'
+
+import { appDownloadProgress } from '@/helpers/JotaiWrapper'
+import { modelDownloadStateAtom } from '@/helpers/atoms/DownloadState.atom'
+import {
+  activeAssistantModelAtom,
+  stateModel,
+} from '@/helpers/atoms/Model.atom'
 
 const BottomBar = () => {
   const activeModel = useAtomValue(activeModelAtom)
@@ -23,7 +32,7 @@ const BottomBar = () => {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 z-20 flex h-8 w-full items-center justify-between border-t border-border bg-background/50 px-4">
+    <div className="border-border fixed bottom-0 left-0 z-20 flex h-8 w-full items-center justify-between border-t bg-background/50 px-4">
       <div className="flex items-center gap-x-2">
         <div className="flex items-center space-x-2">
           {progress && progress >= 0 ? (
