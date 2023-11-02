@@ -38,6 +38,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   downloadFile: (url: string, path: string) =>
     ipcRenderer.invoke("downloadFile", url, path),
 
+  pauseDownload: (fileName: string) =>
+    ipcRenderer.invoke("pauseDownload", fileName),
+
+  resumeDownload: (fileName: string) =>
+    ipcRenderer.invoke("resumeDownload", fileName),
+
+  abortDownload: (fileName: string) =>
+    ipcRenderer.invoke("abortDownload", fileName),
+
   onFileDownloadUpdate: (callback: any) =>
     ipcRenderer.on("FILE_DOWNLOAD_UPDATE", callback),
 

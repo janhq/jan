@@ -35,6 +35,7 @@ export default function EventListenerWrapper({ children }: Props) {
       window.electronAPI.onFileDownloadError(
         (_event: string, callback: any) => {
           console.log('Download error', callback)
+          setDownloadStateSuccess(callback.fileName)
         }
       )
 
