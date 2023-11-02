@@ -90,7 +90,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
       <ConfirmationModal
         atom={showingCancelDownloadModalAtom}
         title="Cancel Download"
-        description={`Are you sure you can to cancel the download of ${downloadState?.fileName}`}
+        description={`Are you sure you want to cancel the download of ${downloadState?.fileName}?`}
         onConfirm={() => {
           window.coreAPI?.abortDownload(downloadState?.fileName)
         }}
