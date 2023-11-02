@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": {
     "packages": [
+      "uikit",
       "electron",
       "web",
       "server"

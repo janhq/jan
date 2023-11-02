@@ -1,0 +1,42 @@
+{
+  "name": "@janhq/uikit",
+  "version": "0.1.0",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build:styles": "postcss src/main.scss -o dist/index.css",
+    "build:react": "tsup src/index.{ts,tsx} --format cjs,esm --dts --external react react-dom --minify terser --splitting --sourcemap",
+    "dev:react": "tsup src/index.{ts,tsx} --format cjs,esm --watch --dts",
+    "dev:styles": "postcss src/main.scss -o dist/index.css -w",
+    "build": "yarn build:styles && yarn build:react",
+    "dev": "concurrently --kill-others \"yarn dev:styles\" \"yarn dev:react\""
+  },
+  "dependencies": {
+    "@radix-ui/react-avatar": "^1.0.4",
+    "autoprefixer": "^10.4.16",
+    "class-variance-authority": "^0.7.0",
+    "postcss": "^8.4.31",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "scss": "^0.2.4",
+    "tailwindcss": "^3.3.5"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "postcss-cli": "^10.1.0",
+    "postcss-import": "^15.1.0",
+    "prejss-cli": "^0.3.3",
+    "prettier": "^3.0.3",
+    "prettier-plugin-tailwindcss": "^0.5.6",
+    "tailwind-merge": "^2.0.0",
+    "terser": "^5.24.0",
+    "tsup": "^7.2.0",
+    "typescript": "^5.2.2"
+  }
+}
