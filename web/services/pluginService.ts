@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 import { PluginType } from '@janhq/core'
 import { pluginManager } from '@plugin/PluginManager'

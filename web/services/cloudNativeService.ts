@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/naming-convention */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { toast } from 'react-toastify'
 const API_BASE_PATH: string = '/api/v1'
 
