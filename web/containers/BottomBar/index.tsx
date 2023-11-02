@@ -57,14 +57,6 @@ const BottomBar = () => {
         {!stateModelStartStop.loading && (
           <SystemItem name="Active model:" value={activeModel?.name || '-'} />
         )}
-        {downloadStates.length > 0 && (
-          <SystemItem
-            name="Downloading:"
-            value={`${downloadStates[0].fileName} - ${formatDownloadPercentage(
-              downloadStates[0].percent
-            )}`}
-          />
-        )}
       </div>
       <div className="flex gap-x-2">
         <SystemItem name="CPU:" value={`${cpu}%`} />

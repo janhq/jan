@@ -20,6 +20,7 @@ const { autoUpdater } = require("electron-updater");
 const Store = require("electron-store");
 
 let requiredModules: Record<string, any> = {};
+const networkRequests: Record<string, any> = {};
 let mainWindow: BrowserWindow | undefined = undefined;
 
 app
@@ -46,18 +47,6 @@ app.on("window-all-closed", () => {
 app.on("quit", () => {
   clearImportedModules();
   app.quit();
-});
-
-ipcMain.handle("setNativeThemeLight", () => {
-  nativeTheme.themeSource = "light";
-});
-
-ipcMain.handle("setNativeThemeDark", () => {
-  nativeTheme.themeSource = "dark";
-});
-
-ipcMain.handle("setNativeThemeSystem", () => {
-  nativeTheme.themeSource = "system";
 });
 
 function createMainWindow() {
@@ -138,6 +127,30 @@ function handleAppUpdates() {
  * Handles various IPC messages from the renderer process.
  */
 function handleIPCs() {
+  /**
+   * Handles the "setNativeThemeLight" IPC message by setting the native theme source to "light".
+   * This will change the appearance of the app to the light theme.
+   */
+  ipcMain.handle("setNativeThemeLight", () => {
+    nativeTheme.themeSource = "light";
+  });
+
+  /**
+   * Handles the "setNativeThemeDark" IPC message by setting the native theme source to "dark".
+   * This will change the appearance of the app to the dark theme.
+   */
+  ipcMain.handle("setNativeThemeDark", () => {
+    nativeTheme.themeSource = "dark";
+  });
+
+  /**
+   * Handles the "setNativeThemeSystem" IPC message by setting the native theme source to "system".
+   * This will change the appearance of the app to match the system's current theme.
+   */
+  ipcMain.handle("setNativeThemeSystem", () => {
+    nativeTheme.themeSource = "system";
+  });
+
   /**
    * Invokes a function from a plugin module in main node process.
    * @param _event - The IPC event object.
@@ -319,8 +332,9 @@ function handleIPCs() {
   ipcMain.handle("downloadFile", async (_event, url, fileName) => {
     const userDataPath = app.getPath("userData");
     const destination = resolve(userDataPath, fileName);
+    const rq = request(url);
 
-    progress(request(url), {})
+    progress(rq, {})
       .on("progress", function (state: any) {
         mainWindow?.webContents.send("FILE_DOWNLOAD_UPDATE", {
           ...state,
@@ -332,13 +346,54 @@ function handleIPCs() {
           fileName,
           err,
         });
+        networkRequests[fileName] = undefined;
       })
       .on("end", function () {
-        mainWindow?.webContents.send("FILE_DOWNLOAD_COMPLETE", {
-          fileName,
-        });
+        if (networkRequests[fileName]) {
+          mainWindow?.webContents.send("FILE_DOWNLOAD_COMPLETE", {
+            fileName,
+          });
+          networkRequests[fileName] = undefined;
+        } else {
+          mainWindow?.webContents.send("FILE_DOWNLOAD_ERROR", {
+            fileName,
+            err: "Download cancelled",
+          });
+        }
       })
       .pipe(createWriteStream(destination));
+
+    networkRequests[fileName] = rq;
+  });
+
+  /**
+   * Handles the "pauseDownload" IPC message by pausing the download associated with the provided fileName.
+   * @param _event - The IPC event object.
+   * @param fileName - The name of the file being downloaded.
+   */
+  ipcMain.handle("pauseDownload", async (_event, fileName) => {
+    networkRequests[fileName]?.pause();
+  });
+
+  /**
+   * Handles the "resumeDownload" IPC message by resuming the download associated with the provided fileName.
+   * @param _event - The IPC event object.
+   * @param fileName - The name of the file being downloaded.
+   */
+  ipcMain.handle("resumeDownload", async (_event, fileName) => {
+    networkRequests[fileName]?.resume();
+  });
+
+  /**
+   * Handles the "abortDownload" IPC message by aborting the download associated with the provided fileName.
+   * The network request associated with the fileName is then removed from the networkRequests object.
+   * @param _event - The IPC event object.
+   * @param fileName - The name of the file being downloaded.
+   */
+  ipcMain.handle("abortDownload", async (_event, fileName) => {
+    const rq = networkRequests[fileName];
+    networkRequests[fileName] = undefined;
+    rq?.abort();
   });
 
   /**
