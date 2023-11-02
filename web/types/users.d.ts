@@ -1,9 +1,9 @@
-enum Role {
+export enum Role {
   User = 'user',
   Assistant = 'assistant',
 }
 
-interface User {
+type User = {
   id: string
   displayName: string
   avatarUrl: string

@@ -20,7 +20,6 @@ export const formatDownloadSpeed = (input: number | undefined) => {
 }
 
 export const formatTwoDigits = (input: number) => {
-  // convert input from string to number
   input = Number(input)
 
   return input.toFixed(2)
