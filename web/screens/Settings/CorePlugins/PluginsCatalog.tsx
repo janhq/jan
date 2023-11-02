@@ -169,16 +169,18 @@ const PluginCatalog = () => {
                   </Button>
                 )}
               </div>
-              <Switch
-                checked={isActivePlugin}
-                onCheckedChange={(e) => {
-                  if (e === true) {
-                    downloadTarball(item.name)
-                  } else {
-                    uninstall(item.name)
-                  }
-                }}
-              />
+              {experimentalFeatureEnabed && (
+                <Switch
+                  checked={isActivePlugin}
+                  onCheckedChange={(e) => {
+                    if (e === true) {
+                      downloadTarball(item.name)
+                    } else {
+                      uninstall(item.name)
+                    }
+                  }}
+                />
+              )}
             </div>
           )
         })}
