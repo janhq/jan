@@ -1,5 +1,6 @@
 ---
 title: Installing Jan on Mac
+sidebar_position: 2
 ---
 
 # Mac users
@@ -20,7 +21,7 @@ Now, let's get your first model:
 
 ![Explore models](img/explore-model.png)
 
-3. You can also see different quantized versions by clicking on "Show available Versions".
+3. You can also see different quantized versions by clicking on "Show Available Versions."
 
 ![Model versions](img/model-version.png)
 
@@ -31,14 +32,14 @@ Now, let's get your first model:
 ![Downloading](img/downloading.PNG)
 
 ## Step 3: Start the model
-Once your model is downloaded. Go to "My Models," and then click "Start Model".
+Once your model is downloaded. Go to "My Models" and then click "Start Model."
 
 ![Start model](img/start-model.PNG)
 
 ## Step 4: Start the conversations
 Now you're ready to start using 👋Jan.ai for conversations:
 
-Click "Chat" and begin your first conversation by selecting "New conversation".
+Click "Chat" and begin your first conversation by selecting "New conversation."
 
 You can also check the CPU and Memory usage of the computer.
 

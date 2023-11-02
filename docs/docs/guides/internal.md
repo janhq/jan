@@ -1,5 +1,6 @@
 ---
 title: Internal Guidelines
+sidebar_position: 6
 ---
 
 # Internal Guidelines
@@ -31,7 +32,7 @@ cd ../build/bin/
 ./main -m ./models/llama-2-7b.Q8_0.gguf -p "Writing a thesis proposal can be done in 10 simple steps:\nStep 1:" -n 2048 -e -ngl 100 -t 48
 ```
 
-For the llama.cpp CLI arguments you could see here:
+For the llama.cpp CLI arguments you can see here:
 
 | Short Option | Long Option           | Param Value | Description |
 |--------------|-----------------------|-------------|-------------|
@@ -81,7 +82,7 @@ sudo make -C docker build
 sudo make -C docker run
 ```
 
-Once in the container, TensorRT-LLM can be built from source using:
+Once in the container, TensorRT-LLM can be built from the source using the following:
 
 3. **Build:**
 ```bash
@@ -91,7 +92,7 @@ python3 ./scripts/build_wheel.py --trt_root /usr/local/tensorrt
 pip install ./build/tensorrt_llm*.whl
 ```
 
-> Note: You can specify the GPU achitecture (e.g. for 4090 is ADA) for compilation time reduction
+> Note: You can specify the GPU architecture (e.g. for 4090 is ADA) for compilation time reduction
 > The list of supported architectures can be found in the `CMakeLists.txt` file.
 
 ```bash
@@ -119,4 +120,4 @@ python build.py --model_dir ./llama/7B/ --dtype float16 --remove_input_padding -
 python3 run.py --max_output_len=2048 --tokenizer_dir ./llama/7B/ --engine_dir=./llama/7B/trt_engines/weight_only/1-gpu/ --input_text "Writing a thesis proposal can be done in 10 simple steps:\nStep 1:"
 ```
 
-For the tensorRT-LLM CLI arguments you could see in the `run.py`
+For the tensorRT-LLM CLI arguments, you can see in the `run.py`.

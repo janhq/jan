@@ -1,5 +1,6 @@
 ---
 title: Troubleshooting
+sidebar_position: 5
 ---
 
 # Jan.ai Troubleshooting Guide

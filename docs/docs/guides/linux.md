@@ -1,5 +1,6 @@
 ---
 title: Installing Jan on Linux
+sidebar_position: 4
 ---
 
 # Linux users
@@ -11,18 +12,27 @@ To begin using 👋Jan.ai on your Windows computer, follow these steps:
 
 ![Jan Installer](img/jan-download.png)
 
-> Note: For faster results, you should enable your NVIDIA GPU. Make sure to have the CUDA toolkit installed. You can download it from your Linux distro's package manager or from here: [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads).
+:::tip
+
+For faster results, you should enable your NVIDIA GPU. Make sure to have the CUDA toolkit installed. You can download it from your Linux distro's package manager or from here: [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads).
+
+:::
+
 ```bash
 apt install nvidia-cuda-toolkit
 ```
 
-> Check the installation by
+Check the installation by
 
 ```bash
 nvidia-smi
 ```
 
-> For AMD GPU. You can download it from your Linux distro's package manager or from here: [ROCm Quick Start (Linux)](https://rocm.docs.amd.com/en/latest/deploy/linux/quick_start.html).
+:::tip
+
+For AMD GPU. You can download it from your Linux distro's package manager or from here: [ROCm Quick Start (Linux)](https://rocm.docs.amd.com/en/latest/deploy/linux/quick_start.html).
+
+:::
 
 ## Step 2: Download your first model
 Now, let's get your first model:
@@ -33,7 +43,7 @@ Now, let's get your first model:
 
 ![Explore models](img/explore-model.png)
 
-3. You can also see different quantized versions by clicking on "Show available Versions".
+3. You can also see different quantized versions by clicking on "Show Available Versions."
 
 ![Model versions](img/model-version.png)
 
@@ -44,14 +54,14 @@ Now, let's get your first model:
 ![Downloading](img/downloading.PNG)
 
 ## Step 3: Start the model
-Once your model is downloaded. Go to "My Models," and then click "Start Model".
+Once your model is downloaded. Go to "My Models" and then click "Start Model."
 
 ![Start model](img/start-model.PNG)
 
 ## Step 4: Start the conversations
 Now you're ready to start using 👋Jan.ai for conversations:
 
-Click "Chat" and begin your first conversation by selecting "New conversation".
+Click "Chat" and begin your first conversation by selecting "New conversation."
 
 You can also check the CPU and Memory usage of the computer.
 

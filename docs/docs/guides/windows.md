@@ -1,5 +1,6 @@
 ---
 title: Installing Jan on Windows
+sidebar_position: 3
 ---
 
 # Windows users
@@ -23,15 +24,22 @@ When you run the Jan Installer, Windows Defender may display a warning. Here's w
 
 ![Setting up](img/set-up.png)
 
-> Note: For faster results, you should enable your NVIDIA GPU. Make sure to have the CUDA toolkit installed. You can download it from here: [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) or [CUDA Installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#verify-you-have-a-cuda-capable-gpu).
+:::tip
 
-> Check the installation by
+For faster results, you should enable your NVIDIA GPU. Make sure to have the CUDA toolkit installed. You can download it from here: [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) or [CUDA Installation guide](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#verify-you-have-a-cuda-capable-gpu).
+
+:::
+
+Check the installation by
 
 ```bash
 nvidia-smi
 ```
+:::tip
 
-> For AMD GPU, you should use [WSLv2](https://learn.microsoft.com/en-us/windows/wsl/install). You can download it from here: [ROCm Quick Start (Linux)](https://rocm.docs.amd.com/en/latest/deploy/linux/quick_start.html).
+For AMD GPU, you should use [WSLv2](https://learn.microsoft.com/en-us/windows/wsl/install). You can download it from here: [ROCm Quick Start (Linux)](https://rocm.docs.amd.com/en/latest/deploy/linux/quick_start.html).
+
+:::
 
 ## Step 3: Download your first model
 Now, let's get your first model:
@@ -42,7 +50,7 @@ Now, let's get your first model:
 
 ![Explore models](img/explore-model.png)
 
-3. You can also see different quantized versions by clicking on "Show available Versions".
+3. You can also see different quantized versions by clicking on "Show Available Versions."
 
 ![Model versions](img/model-version.png)
 
@@ -53,14 +61,14 @@ Now, let's get your first model:
 ![Downloading](img/downloading.PNG)
 
 ## Step 4: Start the model
-Once your model is downloaded. Go to "My Models," and then click "Start Model".
+Once your model is downloaded. Go to "My Models" and then click "Start Model."
 
 ![Start model](img/start-model.PNG)
 
 ## Step 5: Start the conversations
 Now you're ready to start using 👋Jan.ai for conversations:
 
-Click "Chat" and begin your first conversation by selecting "New conversation".
+Click "Chat" and begin your first conversation by selecting "New conversation."
 
 You can also check the CPU and Memory usage of the computer.
 
