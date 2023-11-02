@@ -16,10 +16,9 @@ import {
   currentConversationAtom,
   updateConversationAtom,
   updateConversationWaitingForResponseAtom,
-} from '@helpers/atoms/Conversation.atom'
+} from '@/helpers/atoms/Conversation.atom'
+import { toChatMessage } from '@/models/ChatMessage'
 import { pluginManager } from '@plugin/PluginManager'
-import { InferencePlugin } from '@janhq/core/lib/plugins'
-import { generateMessageId } from '@utils/message'
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom)

@@ -5,7 +5,6 @@ import { ReactNode } from 'react'
 import BotListModal from '@/components/BotListModal'
 import ConfirmDeleteConversationModal from '@/components/ConfirmDeleteConversationModal'
 import ConfirmDeleteModelModal from '@/components/ConfirmDeleteModelModal'
-import ConfirmSignOutModal from '@/components/ConfirmSignOutModal'
 import MobileMenuPane from '@/components/MobileMenuPane'
 import ModalNoActiveModel from '@/components/ModalNoActiveModel'
 import SwitchingModelConfirmationModal from '@/components/SwitchingModelConfirmationModal'
@@ -18,7 +17,6 @@ export const ModalWrapper: React.FC<Props> = ({ children }) => (
   <>
     <MobileMenuPane />
     <ConfirmDeleteConversationModal />
-    <ConfirmSignOutModal />
     <ConfirmDeleteModelModal />
     <BotListModal />
     <SwitchingModelConfirmationModal />
