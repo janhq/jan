@@ -68,46 +68,6 @@ export enum StoreService {
  */
 export enum DataService {
   /**
-   * Gets a list of conversations.
-   */
-  GetConversations = "getConversations",
-
-  /**
-   * Creates a new conversation.
-   */
-  CreateConversation = "createConversation",
-
-  /**
-   * Updates an existing conversation.
-   */
-  UpdateConversation = "updateConversation",
-
-  /**
-   * Deletes an existing conversation.
-   */
-  DeleteConversation = "deleteConversation",
-
-  /**
-   * Creates a new message in an existing conversation.
-   */
-  CreateMessage = "createMessage",
-
-  /**
-   * Updates an existing message in an existing conversation.
-   */
-  UpdateMessage = "updateMessage",
-
-  /**
-   * Gets a list of messages for an existing conversation.
-   */
-  GetConversationMessages = "getConversationMessages",
-
-  /**
-   * Gets a conversation matching an ID.
-   */
-  GetConversationById = "getConversationById",
-
-  /**
    * Creates a new conversation using the prompt instruction.
    */
   CreateBot = "createBot",
@@ -131,11 +91,6 @@ export enum DataService {
    * Updates a bot matching an ID.
    */
   UpdateBot = "updateBot",
-
-  /**
-   * Gets the plugin manifest.
-   */
-  GetPluginManifest = "getPluginManifest",
 }
 
 /**
@@ -283,6 +238,7 @@ export {
   RegisterExtensionPoint,
   deleteFile,
   downloadFile,
+  executeOnMain,
   invokePluginFunc,
 } from "./core";
 
@@ -295,6 +251,7 @@ export {
   EventName,
   NewMessageRequest,
   NewMessageResponse,
+  MessageHistory,
 } from "./events";
 
 /**
@@ -302,3 +259,11 @@ export {
  * @module
  */
 export { preferences } from "./preferences";
+export { fs } from "./fs";
+
+export { JanPlugin, PluginType } from "./plugin";
+export {
+  ConversationalPlugin,
+  Conversation,
+  Message,
+} from "./plugins/conversational";

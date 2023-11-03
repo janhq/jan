@@ -1,4 +1,4 @@
-import { NewMessageResponse } from '@janhq/core'
+import { Message, NewMessageResponse } from '@janhq/core'
 export enum MessageType {
   Text = 'Text',
   Image = 'Image',
@@ -41,8 +41,9 @@ export interface RawMessage {
 }
 
 export const toChatMessage = (
-  m: RawMessage | NewMessageResponse,
-  bot?: Bot
+  m: RawMessage | Message | NewMessageResponse,
+  bot?: Bot,
+  conversationId?: string
 ): ChatMessage => {
   const createdAt = new Date(m.createdAt ?? '').getTime()
   const imageUrls: string[] = []
@@ -64,16 +65,17 @@ export const toChatMessage = (
 
   return {
     id: (m._id ?? 0).toString(),
-    conversationId: (m.conversationId ?? 0).toString(),
+    conversationId: (
+      (m as RawMessage | NewMessageResponse)?.conversationId ??
+      conversationId ??
+      0
+    ).toString(),
     messageType: messageType,
     messageSenderType: messageSenderType,
     senderUid: m.user?.toString() || '0',
     senderName: senderName,
-    senderAvatarUrl: m.avatar
-      ? m.avatar
-      : m.user === 'user'
-      ? 'icons/avatar.svg'
-      : 'icons/app_icon.svg',
+    senderAvatarUrl:
+      m.user === 'user' ? 'icons/avatar.svg' : 'icons/app_icon.svg',
     text: content,
     imageUrls: imageUrls,
     createdAt: createdAt,

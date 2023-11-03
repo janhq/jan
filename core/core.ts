@@ -7,7 +7,23 @@
  * @returns   Promise<any>
  *
  */
-const invokePluginFunc: (plugin: string, method: string, ...args: any[]) => Promise<any> = (plugin, method, ...args) =>
+const executeOnMain: (
+  plugin: string,
+  method: string,
+  ...args: any[]
+) => Promise<any> = (plugin, method, ...args) =>
+  window.coreAPI?.invokePluginFunc(plugin, method, ...args) ??
+  window.electronAPI?.invokePluginFunc(plugin, method, ...args);
+
+/**
+ * @deprecated This object is deprecated and should not be used.
+ * Use individual functions instead.
+ */
+const invokePluginFunc: (
+  plugin: string,
+  method: string,
+  ...args: any[]
+) => Promise<any> = (plugin, method, ...args) =>
   window.coreAPI?.invokePluginFunc(plugin, method, ...args) ??
   window.electronAPI?.invokePluginFunc(plugin, method, ...args);
 
@@ -17,8 +33,12 @@ const invokePluginFunc: (plugin: string, method: string, ...args: any[]) => Prom
  * @param {string} fileName - The name to use for the downloaded file.
  * @returns {Promise<any>} A promise that resolves when the file is downloaded.
  */
-const downloadFile: (url: string, fileName: string) => Promise<any> = (url, fileName) =>
-  window.coreAPI?.downloadFile(url, fileName) ?? window.electronAPI?.downloadFile(url, fileName);
+const downloadFile: (url: string, fileName: string) => Promise<any> = (
+  url,
+  fileName
+) =>
+  window.coreAPI?.downloadFile(url, fileName) ??
+  window.electronAPI?.downloadFile(url, fileName);
 
 /**
  * Deletes a file from the local file system.
@@ -51,6 +71,7 @@ export type RegisterExtensionPoint = (
  */
 export const core = {
   invokePluginFunc,
+  executeOnMain,
   downloadFile,
   deleteFile,
   appDataPath,
@@ -59,4 +80,10 @@ export const core = {
 /**
  * Functions exports
  */
-export { invokePluginFunc, downloadFile, deleteFile, appDataPath };
+export {
+  invokePluginFunc,
+  executeOnMain,
+  downloadFile,
+  deleteFile,
+  appDataPath,
+};

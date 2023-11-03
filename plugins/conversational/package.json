@@ -1,0 +1,39 @@
+{
+  "name": "@janhq/conversational",
+  "version": "1.0.7",
+  "description": "Conversational Plugin - Stores jan app conversations",
+  "main": "dist/index.js",
+  "author": "Jan <service@jan.ai>",
+  "requiredVersion": "^0.3.1",
+  "license": "MIT",
+  "activationPoints": [
+    "init"
+  ],
+  "scripts": {
+    "build": "tsc -b . && webpack --config webpack.config.js",
+    "bundle": "rimraf *.tgz --glob && npm pack"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/module.js"
+  },
+  "devDependencies": {
+    "cpx": "^1.5.0",
+    "rimraf": "^3.0.2",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@janhq/core": "file:../../core",
+    "ts-loader": "^9.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ],
+  "bundleDependencies": []
+}

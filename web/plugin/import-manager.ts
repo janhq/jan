@@ -3,7 +3,7 @@ import {
   register,
   execute,
   executeSerial,
-} from "./extension-manager";
+} from './extension-manager'
 /**
  * Used to import a plugin entry point.
  * Ensure your bundler does no try to resolve this import as the plugins are not known at build time.
@@ -16,7 +16,7 @@ import {
  * @private
  * @type {importer}
  */
-export let importer: any;
+export let importer: any
 
 /**
  * @private
@@ -24,22 +24,22 @@ export let importer: any;
  * @param {importer} callback Callback to import plugins.
  */
 export function setImporter(callback: any) {
-  importer = callback;
+  importer = callback
 }
 
 /**
  * @private
  * @type {Boolean|null}
  */
-export let presetEPs: boolean|null;
+export let presetEPs: boolean | null
 
 /**
  * @private
  * Define how extension points are accessed.
  * @param {Boolean|null} peps Whether extension points are predefined.
  */
-export function definePresetEps(peps: boolean|null) {
-  presetEPs = peps === null || peps === true ? peps : false;
+export function definePresetEps(peps: boolean | null) {
+  presetEPs = peps === null || peps === true ? peps : false
 }
 
 /**
@@ -50,28 +50,28 @@ export function definePresetEps(peps: boolean|null) {
  * @param {string} [plugin] @see Activation
  */
 export async function callExport(url: string, exp: string, plugin: string) {
-  if (!importer) throw new Error("Importer callback has not been set");
-
-  const main = await importer(url);
-  if (!main || typeof main[exp] !== "function") {
-    throw new Error(
+  if (!importer) throw new Error('Importer callback has not been set')
+  const main = await importer(url)
+  if (!main || typeof main[exp] !== 'function') {
+    console.error(
       `Activation point "${exp}" was triggered but does not exist on ${
-        plugin ? "plugin " + plugin : "unknown plugin"
+        plugin ? 'plugin ' + plugin : 'unknown plugin'
       }`
-    );
+    )
+    return
   }
-  const activate = main[exp];
+  const activate = main[exp]
   switch (presetEPs) {
     case true:
-      activate(getEPs());
-      break;
+      activate(getEPs())
+      break
 
     case null:
-      activate();
-      break;
+      activate()
+      break
 
     default:
-      activate({ register, execute, executeSerial });
-      break;
+      activate({ register, execute, executeSerial })
+      break
   }
 }

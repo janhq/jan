@@ -1,26 +1,35 @@
 import { useSetAtom } from 'jotai'
 import { executeSerial } from '@services/pluginService'
-import { DataService } from '@janhq/core'
+import { ConversationalPlugin, DataService } from '@janhq/core'
 import {
   conversationStatesAtom,
   userConversationsAtom,
 } from '@helpers/atoms/Conversation.atom'
+import { pluginManager } from '../plugin/PluginManager'
+import { Conversation, PluginType } from '@janhq/core'
+import { setConvoMessagesAtom } from '@helpers/atoms/ChatMessage.atom'
+import { toChatMessage } from '@models/ChatMessage'
 
 const useGetUserConversations = () => {
   const setConversationStates = useSetAtom(conversationStatesAtom)
   const setConversations = useSetAtom(userConversationsAtom)
+  const setConvoMessages = useSetAtom(setConvoMessagesAtom)
 
   const getUserConversations = async () => {
     try {
-      const convos: Conversation[] | undefined = await executeSerial(
-        DataService.GetConversations
-      )
+      const convos: Conversation[] | undefined = await pluginManager
+        .get<ConversationalPlugin>(PluginType.Conversational)
+        ?.getConversations()
       const convoStates: Record<string, ConversationState> = {}
       convos?.forEach((convo) => {
         convoStates[convo._id ?? ''] = {
           hasMore: true,
           waitingForResponse: false,
         }
+        setConvoMessages(
+          convo.messages.map<ChatMessage>((msg) => toChatMessage(msg)),
+          convo._id ?? ''
+        )
       })
       setConversationStates(convoStates)
       setConversations(convos ?? [])
@@ -29,14 +38,7 @@ const useGetUserConversations = () => {
     }
   }
 
-  const getConversationById = async (
-    id: string
-  ): Promise<Conversation | undefined> => {
-    return await executeSerial(DataService.GetConversationById, id)
-  }
-
   return {
-    getConversationById,
     getUserConversations,
   }
 }

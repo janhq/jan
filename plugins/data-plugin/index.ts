@@ -198,63 +198,12 @@ export function init({ register }: { register: RegisterExtensionPoint }) {
   register(StoreService.FindOne, findOne.name, findOne);
   register(StoreService.FindMany, findMany.name, findMany);
 
-  // for conversations management
-  register(DataService.GetConversations, getConversations.name, getConversations);
-  register(DataService.GetConversationById,getConversationById.name,getConversationById);
-  register(DataService.CreateConversation, createConversation.name, createConversation);
-  register(DataService.UpdateConversation, updateConversation.name, updateConversation);
-  register(DataService.DeleteConversation, deleteConversation.name, deleteConversation);
-
-  // for messages management
-  register(DataService.UpdateMessage, updateMessage.name, updateMessage);
-  register(DataService.CreateMessage, createMessage.name, createMessage);
-  register(DataService.GetConversationMessages, getConversationMessages.name, getConversationMessages);
-
   // for bots management
   register(DataService.CreateBot, createBot.name, createBot);
   register(DataService.GetBots, getBots.name, getBots);
   register(DataService.GetBotById, getBotById.name, getBotById);
   register(DataService.DeleteBot, deleteBot.name, deleteBot);
   register(DataService.UpdateBot, updateBot.name, updateBot);
-
-  // for plugin manifest
-  register(DataService.GetPluginManifest, getPluginManifest.name, getPluginManifest)
-}
-
-function getConversations(): Promise<any> {
-  return store.findMany("conversations", {}, [{ updatedAt: "desc" }]);
-}
-
-function getConversationById(id: string): Promise<any> {
-  return store.findOne("conversations", id);
-}
-
-function createConversation(conversation: any): Promise<number | undefined> {
-  return store.insertOne("conversations", conversation);
-}
-
-function updateConversation(conversation: any): Promise<void> {
-  return store.updateOne("conversations", conversation._id, conversation);
-}
-
-function createMessage(message: any): Promise<number | undefined> {
-  return store.insertOne("messages", message);
-}
-
-function updateMessage(message: any): Promise<void> {
-  return store.updateOne("messages", message._id, message);
-}
-
-function deleteConversation(id: any) {
-  return store
-    .deleteOne("conversations", id)
-    .then(() => store.deleteMany("messages", { conversationId: id }));
-}
-
-function getConversationMessages(conversationId: any) {
-  return store.findMany("messages", { conversationId }, [
-    { createdAt: "desc" },
-  ]);
 }
 
 function createBot(bot: any): Promise<void> {

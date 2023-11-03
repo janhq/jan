@@ -6,12 +6,16 @@ export enum EventName {
   OnNewMessageRequest = "onNewMessageRequest",
   OnNewMessageResponse = "onNewMessageResponse",
   OnMessageResponseUpdate = "onMessageResponseUpdate",
-  OnMessageResponseFinished = "OnMessageResponseFinished",
+  OnMessageResponseFinished = "onMessageResponseFinished",
   OnDownloadUpdate = "onDownloadUpdate",
   OnDownloadSuccess = "onDownloadSuccess",
   OnDownloadError = "onDownloadError",
 }
 
+export type MessageHistory = {
+  role: string;
+  content: string;
+};
 /**
  * The `NewMessageRequest` type defines the shape of a new message request object.
  */
@@ -23,6 +27,7 @@ export type NewMessageRequest = {
   message?: string;
   createdAt?: string;
   updatedAt?: string;
+  history?: MessageHistory[];
 };
 
 /**

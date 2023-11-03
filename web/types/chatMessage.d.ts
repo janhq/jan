@@ -40,7 +40,7 @@ interface RawMessage {
 }
 
 interface Conversation {
-  _id?: string
+  _id: string
   modelId?: string
   name?: string
   image?: string

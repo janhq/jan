@@ -16,6 +16,7 @@ import {
   setupBasePlugins,
 } from '@services/pluginService'
 import { FeatureToggleWrapper } from '@helpers/FeatureToggleWrapper'
+import { pluginManager } from '../../plugin/PluginManager'
 
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
@@ -25,6 +26,7 @@ const Providers = (props: PropsWithChildren) => {
 
   async function setupPE() {
     // Enable activation point management
+
     setup({
       importer: (plugin: string) =>
         import(/* webpackIgnore: true */ plugin).catch((err) => {
@@ -34,6 +36,8 @@ const Providers = (props: PropsWithChildren) => {
 
     // Register all active plugins with their activation points
     await plugins.registerActive()
+    pluginManager.registerActive()
+
     setTimeout(async () => {
       // Trigger activation points
       await activationPoints.trigger('init')
@@ -44,6 +48,8 @@ const Providers = (props: PropsWithChildren) => {
       if (extensionPoints.get(PluginService.OnStart)) {
         await executeSerial(PluginService.OnStart)
       }
+
+      pluginManager.load()
       setActivated(true)
     }, 500)
   }

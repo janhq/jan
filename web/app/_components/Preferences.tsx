@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { plugins, extensionPoints } from '@plugin'
 import {
   ChartPieIcon,
@@ -13,6 +13,7 @@ import { DataService, PluginService, preferences } from '@janhq/core'
 import { execute } from '@plugin/extension-manager'
 import LoadingIndicator from './LoadingIndicator'
 import { executeSerial } from '@services/pluginService'
+import { FeatureToggleContext } from '@helpers/FeatureToggleWrapper'
 
 export const Preferences = () => {
   const [search, setSearch] = useState<string>('')
@@ -25,14 +26,22 @@ export const Preferences = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const experimentRef = useRef(null)
   const preferenceRef = useRef(null)
-
+  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
   /**
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
    */
   useEffect(() => {
-    executeSerial(DataService.GetPluginManifest).then((data: any) => {
-      setPluginCatalog(data)
-    })
+    if (!window.electronAPI) {
+      return
+    }
+
+    // Get plugin manifest
+    import(/* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`).then(
+      (data) => {
+        if (Array.isArray(data.default) && experimentalFeatureEnabed)
+          setPluginCatalog(data.default)
+      }
+    )
   }, [])
 
   /**

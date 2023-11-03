@@ -35,7 +35,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@janhq/core": "^0.1.6",
+    "@janhq/core": "file:../../core",
     "download-cli": "^1.1.1",
     "kill-port": "^2.0.1",
     "rxjs": "^7.8.1",

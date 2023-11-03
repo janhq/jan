@@ -4,31 +4,29 @@ import {
   NewMessageRequest,
   PluginService,
   events,
-  store,
-  invokePluginFunc,
+  executeOnMain,
+  MessageHistory,
 } from "@janhq/core";
 import { Observable } from "rxjs";
 
 const initModel = async (product) =>
-  invokePluginFunc(MODULE_PATH, "initModel", product);
+  executeOnMain(MODULE_PATH, "initModel", product);
 
 const stopModel = () => {
-  invokePluginFunc(MODULE_PATH, "killSubprocess");
+  executeOnMain(MODULE_PATH, "killSubprocess");
 };
 
-function requestInference(
-  recentMessages: any[],
-  bot?: any
-): Observable<string> {
+function requestInference(recentMessages: any[]): Observable<string> {
   return new Observable((subscriber) => {
     const requestBody = JSON.stringify({
       messages: recentMessages,
       stream: true,
       model: "gpt-3.5-turbo",
-      max_tokens: bot?.maxTokens ?? 2048,
-      frequency_penalty: bot?.frequencyPenalty ?? 0,
-      presence_penalty: bot?.presencePenalty ?? 0,
-      temperature: bot?.customTemperature ?? 0,
+      max_tokens: 2048,
+      // TODO: Enable back when character is available
+      // frequency_penalty: 0,
+      // presence_penalty: 0,
+      // temperature: 0,
     });
     console.debug(`Request body: ${requestBody}`);
     fetch(INFERENCE_URL, {
@@ -71,67 +69,25 @@ function requestInference(
   });
 }
 
-async function retrieveLastTenMessages(conversationId: string, bot?: any) {
-  // TODO: Common collections should be able to access via core functions instead of store
-  const messageHistory =
-    (await store.findMany("messages", { conversationId }, [
-      { createdAt: "asc" },
-    ])) ?? [];
-
-  let recentMessages = messageHistory
-    .filter(
-      (e) => e.message !== "" && (e.user === "user" || e.user === "assistant")
-    )
-    .slice(-9)
-    .map((message) => ({
-      content: message.message.trim(),
-      role: message.user === "user" ? "user" : "assistant",
-    }));
-
-  if (bot && bot.systemPrompt) {
-    // append bot's system prompt
-    recentMessages = [
-      {
-        content: `[INST] ${bot.systemPrompt}`,
-        role: "system",
-      },
-      ...recentMessages,
-    ];
-  }
-
-  console.debug(`Last 10 messages: ${JSON.stringify(recentMessages, null, 2)}`);
-
-  return recentMessages;
-}
-
 async function handleMessageRequest(data: NewMessageRequest) {
-  const conversation = await store.findOne(
-    "conversations",
-    data.conversationId
-  );
-  let bot = undefined;
-  if (conversation.botId != null) {
-    bot = await store.findOne("bots", conversation.botId);
-  }
-
-  const recentMessages = await retrieveLastTenMessages(
-    data.conversationId,
-    bot
-  );
+  const prompts: [MessageHistory] = [
+    {
+      role: "user",
+      content: data.message,
+    },
+  ];
+  const recentMessages = await (data.history ?? prompts);
   const message = {
     ...data,
     message: "",
     user: "assistant",
     createdAt: new Date().toISOString(),
-    _id: undefined,
+    _id: `message-${Date.now()}`,
   };
   // TODO: Common collections should be able to access via core functions instead of store
-  const id = await store.insertOne("messages", message);
-
-  message._id = id;
   events.emit(EventName.OnNewMessageResponse, message);
 
-  requestInference(recentMessages, bot).subscribe({
+  requestInference(recentMessages).subscribe({
     next: (content) => {
       message.message = content;
       events.emit(EventName.OnMessageResponseUpdate, message);
@@ -139,16 +95,13 @@ async function handleMessageRequest(data: NewMessageRequest) {
     complete: async () => {
       message.message = message.message.trim();
       // TODO: Common collections should be able to access via core functions instead of store
-      await store.updateOne("messages", message._id, message);
-      events.emit("OnMessageResponseFinished", message);
-      // events.emit(EventName.OnMessageResponseFinished, message);
+      events.emit(EventName.OnMessageResponseFinished, message);
     },
     error: async (err) => {
       message.message =
         message.message.trim() + "\n" + "Error occurred: " + err.message;
       events.emit(EventName.OnMessageResponseUpdate, message);
       // TODO: Common collections should be able to access via core functions instead of store
-      await store.updateOne("messages", message._id, message);
     },
   });
 }
@@ -160,8 +113,15 @@ async function inferenceRequest(data: NewMessageRequest): Promise<any> {
     user: "assistant",
     createdAt: new Date().toISOString(),
   };
+  const prompts: [MessageHistory] = [
+    {
+      role: "user",
+      content: data.message,
+    },
+  ];
+  const recentMessages = await (data.history ?? prompts);
+
   return new Promise(async (resolve, reject) => {
-    const recentMessages = await retrieveLastTenMessages(data.conversationId);
     requestInference([
       ...recentMessages,
       { role: "user", content: data.message },
@@ -184,7 +144,7 @@ const registerListener = () => {
 };
 
 const killSubprocess = () => {
-  invokePluginFunc(MODULE_PATH, "killSubprocess");
+  executeOnMain(MODULE_PATH, "killSubprocess");
 };
 
 const onStart = async () => {
