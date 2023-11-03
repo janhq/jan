@@ -6,6 +6,8 @@ type Props = {
   preferenceItems: any
 }
 
+import { PluginService, preferences } from '@janhq/core'
+
 import { formatPluginsName } from '@/utils/converter'
 
 const PreferencePlugins = (props: Props) => {

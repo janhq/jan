@@ -1,11 +1,14 @@
 'use client'
 
-import React, { useContext, useRef } from 'react'
+import { useContext } from 'react'
+
+import { Switch } from '@janhq/uikit'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 const Advanced = () => {
-  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
+  const { experimentalFeatureEnabed, setExperimentalFeatureEnabled } =
+    useContext(FeatureToggleContext)
 
   return (
     <div className="block w-full">
@@ -21,16 +24,15 @@ const Advanced = () => {
             tested.
           </p>
         </div>
-        <input
-          type="checkbox"
+        <Switch
           checked={experimentalFeatureEnabed}
-          // onCheckedChange={(e) => {
-          //   if (e === true) {
-          //     setExperimentalFeatureEnabled(true)
-          //   } else {
-          //     setExperimentalFeatureEnabled(false)
-          //   }
-          // }}
+          onCheckedChange={(e) => {
+            if (e === true) {
+              setExperimentalFeatureEnabled(true)
+            } else {
+              setExperimentalFeatureEnabled(false)
+            }
+          }}
         />
       </div>
       {window.electronAPI && (

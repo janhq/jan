@@ -71,6 +71,15 @@ export default function RibbonNav() {
   ]
 
   const secondaryMenus = [
+    ...(experimentalFeatureEnabed
+      ? [
+          {
+            name: 'Bot',
+            icon: <Bot size={20} className="flex-shrink-0" />,
+            state: MainViewState.CreateBot,
+          },
+        ]
+      : []),
     {
       name: 'Explore Models',
       icon: <CpuIcon size={20} className="flex-shrink-0" />,
@@ -81,15 +90,6 @@ export default function RibbonNav() {
       icon: <LayoutGrid size={20} className="flex-shrink-0" />,
       state: MainViewState.MyModel,
     },
-    ...(experimentalFeatureEnabed
-      ? [
-          {
-            name: 'Bot',
-            icon: <Bot size={20} className="flex-shrink-0" />,
-            state: MainViewState.CreateBot,
-          },
-        ]
-      : []),
     {
       name: 'Settings',
       icon: <Settings size={20} className="flex-shrink-0" />,
@@ -122,7 +122,7 @@ export default function RibbonNav() {
                     </button>
                     {isActive && (
                       <m.div
-                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-600 p-2"
+                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-600"
                         layoutId="active-state-primary"
                       />
                     )}
@@ -150,7 +150,7 @@ export default function RibbonNav() {
                     </button>
                     {isActive && (
                       <m.div
-                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-600 p-2"
+                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-600"
                         layoutId="active-state-secondary"
                       />
                     )}
