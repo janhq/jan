@@ -124,7 +124,7 @@ export default function RibbonNav() {
                     </button>
                     {isActive && (
                       <m.div
-                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-300 p-2 backdrop-blur-lg"
+                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-600 p-2"
                         layoutId="active-state-primary"
                       />
                     )}
@@ -152,7 +152,7 @@ export default function RibbonNav() {
                     </button>
                     {isActive && (
                       <m.div
-                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-300 p-2 backdrop-blur-lg"
+                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-600 p-2"
                         layoutId="active-state-secondary"
                       />
                     )}

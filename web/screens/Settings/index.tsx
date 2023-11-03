@@ -1,18 +1,21 @@
-'use client'
-import React from 'react'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { useEffect, useState } from 'react'
 
 import { preferences } from '@janhq/core'
-import { extensionPoints } from '@/plugin'
-import { formatPluginsName } from '@/utils/converter'
+
 import { motion as m } from 'framer-motion'
 
 import { twMerge } from 'tailwind-merge'
 
-import Advanced from './Advanced'
-import AppearanceOptions from './Appearance'
-import PluginCatalog from './CorePlugins/PluginsCatalog'
-import PreferencePlugins from './CorePlugins/PreferencePlugins'
+import Advanced from '@/screens/Settings/Advanced'
+import AppearanceOptions from '@/screens/Settings/Appearance'
+import PluginCatalog from '@/screens/Settings/CorePlugins/PluginsCatalog'
+import PreferencePlugins from '@/screens/Settings/CorePlugins/PreferencePlugins'
+
+import { formatPluginsName } from '@/utils/converter'
+
+import { extensionPoints } from '@/plugin'
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')
@@ -88,16 +91,9 @@ const SettingsScreen = () => {
 
   return (
     <div className="flex h-full">
-      <div className="border-border flex h-full w-80 flex-shrink-0 flex-col overflow-y-auto border-r">
+      <div className="flex h-full w-48 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <div className="p-5">
-          <h1 className="text-lg font-bold">Settings</h1>
-          <p
-            data-testid="testid-setting-description"
-            className="text-muted-foreground mt-2 text-gray-600"
-          >
-            Manage your account settings
-          </p>
-          <div className="mt-5 flex-shrink-0">
+          <div className="flex-shrink-0">
             <label className="text-muted-foreground font-bold uppercase">
               Options
             </label>
@@ -117,12 +113,12 @@ const SettingsScreen = () => {
                         {menu}
                       </p>
                     </button>
-                    {isActive ? (
+                    {isActive && (
                       <m.div
-                        className="bg-accent/20 absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md p-2"
+                        className="absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md bg-blue-600 p-2"
                         layoutId="active-static-menu"
                       />
-                    ) : null}
+                    )}
                   </div>
                 )
               })}
@@ -158,7 +154,7 @@ const SettingsScreen = () => {
                     </button>
                     {isActive ? (
                       <m.div
-                        className="bg-accent/20 absolute inset-0 -left-4 h-full w-[calc(100%+32px)]  rounded-md p-2"
+                        className="absolute inset-0 -left-5 h-full w-[calc(100%+32px)] rounded-md bg-blue-600 p-2"
                         layoutId="active-static-menu"
                       />
                     ) : null}
