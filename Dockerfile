@@ -1,4 +1,4 @@
-FROM node:20-bullseye AS base
+FROM node:20-bookworm AS base
 
 # 1. Install dependencies only when needed
 FROM base AS deps
@@ -35,5 +35,7 @@ EXPOSE 4000 3928
 
 ENV PORT 4000
 ENV APPDATA /app/data
+
+RUN mkdir -p ${APPDATA}
 
 CMD ["node", "main.js"]
