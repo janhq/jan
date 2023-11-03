@@ -1,5 +1,3 @@
-import React from 'react'
-
 import InputToolbar from '../InputToolbar'
 import SelectModels from '../ModelSelector'
 

@@ -1,5 +1,3 @@
-import React from 'react'
-
 import CreateBotContainer from '@/components/CreateBotContainer'
 
 const BotScreen = () => {

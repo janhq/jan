@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/naming-convention */
-import React from 'react'
 
 import { SubmitHandler, useForm } from 'react-hook-form'
 
@@ -9,7 +8,11 @@ import { DataService } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 import { v4 as uuidv4 } from 'uuid'
 
+import { MainViewState } from '@/constants/screens'
+
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
+import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { executeSerial } from '@/services/pluginService'
 
@@ -23,16 +26,13 @@ import TextInputWithTitle from '../TextInputWithTitle'
 import ToggleSwitch from '../ToggleSwitch'
 
 import { activeBotAtom } from '@/helpers/atoms/Bot.atom'
-import {
-  MainViewState,
-  setMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
+
 import { rightSideBarExpandStateAtom } from '@/helpers/atoms/SideBarExpand.atom'
 
 const CreateBotContainer: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels()
   const setActiveBot = useSetAtom(activeBotAtom)
-  const setMainViewState = useSetAtom(setMainViewStateAtom)
+  const { setMainViewState } = useMainViewState()
   const setRightSideBarVisibility = useSetAtom(rightSideBarExpandStateAtom)
 
   const createBot = async (bot: Bot) => {

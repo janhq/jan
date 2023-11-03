@@ -4,13 +4,12 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { MessageCircle } from 'lucide-react'
 
+import { MainViewState } from '@/constants/screens'
+
 import useCreateConversation from '@/hooks/useCreateConversation'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+import { useMainViewState } from '@/hooks/useMainViewState'
 
-import {
-  MainViewState,
-  setMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
 import { showingModalNoActiveModel } from '@/helpers/atoms/Modal.atom'
 import { activeAssistantModelAtom } from '@/helpers/atoms/Model.atom'
 
@@ -21,8 +20,8 @@ enum ActionButton {
 
 const SidebarEmptyHistory: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels()
-  const activeModel = useAtomValue(activeModelAtom)
-  const setMainView = useSetAtom(setMainViewStateAtom)
+  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const { setMainViewState } = useMainViewState()
   const { requestCreateConvo } = useCreateConversation()
   const [action, setAction] = useState(ActionButton.DownloadModel)
   const modalNoActiveModel = useSetAtom(showingModalNoActiveModel)
@@ -37,7 +36,7 @@ const SidebarEmptyHistory: React.FC = () => {
 
   const onClick = async () => {
     if (action === ActionButton.DownloadModel) {
-      setMainView(MainViewState.ExploreModel)
+      setMainViewState(MainViewState.ExploreModel)
     } else {
       if (!activeModel) {
         modalNoActiveModel(true)

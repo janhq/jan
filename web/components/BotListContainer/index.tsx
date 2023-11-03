@@ -2,22 +2,22 @@ import React, { useEffect, useState } from 'react'
 
 import { useAtom, useSetAtom } from 'jotai'
 
+import { MainViewState } from '@/constants/screens'
+
 import useGetBots from '@/hooks/useGetBots'
+
+import { useMainViewState } from '@/hooks/useMainViewState'
 
 import Avatar from '../Avatar'
 
 import { activeBotAtom } from '@/helpers/atoms/Bot.atom'
-import {
-  MainViewState,
-  setMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
 import { showingBotListModalAtom } from '@/helpers/atoms/Modal.atom'
 
 import { rightSideBarExpandStateAtom } from '@/helpers/atoms/SideBarExpand.atom'
 
 const BotListContainer: React.FC = () => {
   const [open, setOpen] = useAtom(showingBotListModalAtom)
-  const setMainView = useSetAtom(setMainViewStateAtom)
+  const { setMainViewState } = useMainViewState()
   const [activeBot, setActiveBot] = useAtom(activeBotAtom)
   const [bots, setBots] = useState<Bot[]>([])
   const { getAllBots } = useGetBots()
@@ -34,7 +34,7 @@ const BotListContainer: React.FC = () => {
 
   const onBotSelected = (bot: Bot) => {
     if (bot._id !== activeBot?._id) {
-      setMainView(MainViewState.BotInfo)
+      setMainViewState(MainViewState.BotInfo)
       setActiveBot(bot)
       setRightSideBarVisibility(true)
     }
@@ -42,7 +42,7 @@ const BotListContainer: React.FC = () => {
   }
 
   return (
-    <div className="border-border overflow-hidden border bg-background/50 sm:rounded-md">
+    <div className="overflow-hidden border border-border bg-background/50 sm:rounded-md">
       <ul role="list" className="divide-y divide-gray-200">
         {bots.map((bot, i) => (
           <li

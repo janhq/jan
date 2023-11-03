@@ -1,5 +1,3 @@
-import React from 'react'
-
 import BotInfo from '@/components/BotInfo'
 import BotSetting from '@/components/BotSetting'
 

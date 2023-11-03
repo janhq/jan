@@ -1,25 +1,27 @@
 import React, { Fragment } from 'react'
 
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-import { formatDownloadPercentage } from '@/utils/converter'
 import { useAtomValue } from 'jotai'
-import { useSetAtom } from 'jotai'
+
 import { LayoutGrid } from 'lucide-react'
 
-import ActiveModelTable from '@/components/ActiveModelTable'
+// import ActiveModelTable from '@/components/ActiveModelTable'
 import DownloadedModelTable from '@/components/DownloadedModelTable'
-import DownloadingModelTable from '@/components/DownloadingModelTable'
-import { modelDownloadStateAtom } from '@/helpers/atoms/DownloadState.atom'
+// import DownloadingModelTable from '@/components/DownloadingModelTable'
 
-import {
-  setMainViewStateAtom,
-  MainViewState,
-} from '@/helpers/atoms/MainView.atom'
+import { MainViewState } from '@/constants/screens'
+
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
+import { useMainViewState } from '@/hooks/useMainViewState'
+
+import { formatDownloadPercentage } from '@/utils/converter'
+
+import { modelDownloadStateAtom } from '@/helpers/atoms/DownloadState.atom'
 
 const MyModelsScreen = () => {
   const { downloadedModels } = useGetDownloadedModels()
-  const setMainViewState = useSetAtom(setMainViewStateAtom)
   const modelDownloadStates = useAtomValue(modelDownloadStateAtom)
+  const { setMainViewState } = useMainViewState()
 
   const downloadStates: DownloadState[] = []
   for (const [, value] of Object.entries(modelDownloadStates)) {

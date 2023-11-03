@@ -1,8 +1,7 @@
-import React from 'react'
-
-import { useUserConfigs } from '@/hooks/useUserConfigs'
 import { motion as m } from 'framer-motion'
 import { twMerge } from 'tailwind-merge'
+
+import { useUserConfigs } from '@/hooks/useUserConfigs'
 
 type AccentOption = {
   value: Accent

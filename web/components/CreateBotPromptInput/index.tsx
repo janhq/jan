@@ -37,7 +37,7 @@ const CreateBotPromptInput: React.FC<Props> = ({ id, control, required }) => {
         />
         <textarea
           rows={4}
-          className="text-background-reverse ring-border placeholder:text-muted-foreground focus:ring-accent/50 block w-full resize-none rounded-md border-0 bg-background/80 py-1.5 text-xs leading-relaxed shadow-sm ring-1 ring-inset focus:ring-2 focus:ring-inset"
+          className="text-background-reverse placeholder:text-muted-foreground focus:ring-accent/50 block w-full resize-none rounded-md border-0 bg-background/80 py-1.5 text-xs leading-relaxed shadow-sm ring-1 ring-inset ring-border focus:ring-2 focus:ring-inset"
           placeholder="Talk to me like a pirate"
           {...field}
         />

@@ -1,5 +1,3 @@
-import React from 'react'
-
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import ModelTable from '../ModelTable'

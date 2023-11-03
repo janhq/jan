@@ -1,5 +1,3 @@
-import React from 'react'
-
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { Trash2 } from 'lucide-react'
@@ -19,7 +17,7 @@ const MainHeader: React.FC = () => {
   if (!activeConversation) return null
 
   return (
-    <div className="border-border sticky top-0 border-b bg-background/90 px-4 py-2">
+    <div className="sticky top-0 border-b border-border bg-background/90 px-4 py-2">
       <span className="text-muted-foreground font-semibold">{title}</span>
 
       {/* right most */}

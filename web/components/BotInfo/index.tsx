@@ -1,24 +1,22 @@
-import React from 'react'
+import { useAtomValue } from 'jotai'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { MainViewState } from '@/constants/screens'
 
 import useCreateConversation from '@/hooks/useCreateConversation'
 
 import useDeleteBot from '@/hooks/useDeleteBot'
 
+import { useMainViewState } from '@/hooks/useMainViewState'
+
 import ExpandableHeader from '../ExpandableHeader'
 import PrimaryButton from '../PrimaryButton'
 
 import { activeBotAtom } from '@/helpers/atoms/Bot.atom'
-import {
-  MainViewState,
-  setMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
 
 const BotInfo: React.FC = () => {
   const { deleteBot } = useDeleteBot()
   const { createConvoByBot } = useCreateConversation()
-  const setMainView = useSetAtom(setMainViewStateAtom)
+  const { setMainViewState } = useMainViewState()
   const botInfo = useAtomValue(activeBotAtom)
   if (!botInfo) return null
 
@@ -35,7 +33,7 @@ const BotInfo: React.FC = () => {
     // TODO: display confirmation diaglog
     const result = await deleteBot(botInfo._id)
     if (result === 'success') {
-      setMainView(MainViewState.Welcome)
+      setMainViewState(MainViewState.Welcome)
     }
   }
 

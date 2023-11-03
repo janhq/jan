@@ -1,5 +1,3 @@
-import React from 'react'
-
 import { useAtomValue } from 'jotai'
 
 import ModelTable from '../ModelTable'

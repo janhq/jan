@@ -1,5 +1,3 @@
-import React from 'react'
-
 import { formatTwoDigits } from '@/utils/converter'
 
 type Props = {

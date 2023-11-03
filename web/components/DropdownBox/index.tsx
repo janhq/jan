@@ -27,7 +27,7 @@ const DropdownBox: React.FC<Props> = ({
     <Fragment>
       <label className="block font-bold">{title}</label>
       <select
-        className="ring-border focus:ring-accent/50 mt-1 block w-full rounded-md border-0 bg-background/80 py-1.5 pl-3 pr-10 text-xs ring-1 ring-inset focus:ring-2 sm:leading-6"
+        className="focus:ring-accent/50 mt-1 block w-full rounded-md border-0 bg-background/80 py-1.5 pl-3 pr-10 text-xs ring-1 ring-inset ring-border focus:ring-2 sm:leading-6"
         {...field}
       >
         {data.map((option) => (

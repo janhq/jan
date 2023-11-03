@@ -30,7 +30,7 @@ const PreferencePlugins = (props: Props) => {
             </span>
             <div className="mt-2 flex flex-row items-center space-x-4">
               <input
-                className="ring-border placeholder:text-muted-foreground focus:ring-accent/50 block w-full rounded-md border-0 bg-background/80 py-1.5 text-xs shadow-sm ring-1 ring-inset focus:ring-2 focus:ring-inset sm:leading-6"
+                className="placeholder:text-muted-foreground focus:ring-accent/50 block w-full rounded-md border-0 bg-background/80 py-1.5 text-xs shadow-sm ring-1 ring-inset ring-border focus:ring-2 focus:ring-inset sm:leading-6"
                 defaultValue={
                   preferenceValues.filter(
                     (v: any) => v.key === e.preferenceKey

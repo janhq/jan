@@ -1,6 +1,4 @@
-import React from 'react'
-
-const Loader = () => {
+export default function Loader() {
   return (
     <div className="loader">
       <div className="loader-inner">
@@ -14,5 +12,3 @@ const Loader = () => {
     </div>
   )
 }
-
-export default Loader

@@ -56,7 +56,7 @@ const ModelVersionItem: React.FC<Props> = ({ model, modelVersion }) => {
   const { maxRamRequired, usecase } = modelVersion
 
   return (
-    <div className="border-border flex items-center justify-between gap-4 border-t pb-3 pl-3 pr-4 pt-3 first:border-t-0">
+    <div className="flex items-center justify-between gap-4 border-t border-border pb-3 pl-3 pr-4 pt-3 first:border-t-0">
       <div className="flex items-center gap-2">
         <span className="font-sm text-muted-foreground mb-4 line-clamp-1 flex-1">
           {modelVersion.name}
@@ -74,7 +74,7 @@ const ModelVersionItem: React.FC<Props> = ({ model, modelVersion }) => {
             type={RamRequired.RamDefault}
             clickable={false}
           />
-          <div className="border-border rounded-full border bg-background px-2.5 py-0.5 font-medium">
+          <div className="rounded-full border border-border bg-background px-2.5 py-0.5 font-medium">
             {toGigabytes(modelVersion.size)}
           </div>
         </div>

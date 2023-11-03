@@ -49,7 +49,7 @@ const ModelRow: React.FC<Props> = ({ model }) => {
   }, [model])
 
   return (
-    <tr className="border-border border-b bg-background/50 last:rounded-lg last:border-b-0">
+    <tr className="border-b border-border bg-background/50 last:rounded-lg last:border-b-0">
       <td className="text-muted-foreground whitespace-nowrap px-3 font-semibold">
         {model.name}
         <span className="ml-2 font-semibold">v{model.version}</span>

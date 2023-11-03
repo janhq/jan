@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React from 'react'
+
 import { Controller, useController } from 'react-hook-form'
 
 import { formatTwoDigits } from '@/utils/converter'
@@ -38,7 +38,7 @@ const DraggableProgressBar: React.FC<Props> = ({
         name={id}
         control={control}
         render={({ field: { value } }) => (
-          <span className="border-border text-accent rounded-md border px-2 py-1">
+          <span className="text-accent rounded-md border border-border px-2 py-1">
             {formatTwoDigits(value)}
           </span>
         )}

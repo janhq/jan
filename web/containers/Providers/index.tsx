@@ -62,23 +62,17 @@ const Providers = (props: PropsWithChildren) => {
   }, [setupCore])
 
   return (
-    <JotaiWrapper>
-      {setupCore && (
-        <ThemeWrapper>
-          {activated ? (
-            <FeatureToggleWrapper>
-              <EventListenerWrapper>
-                <ModalWrapper>{children}</ModalWrapper>
-              </EventListenerWrapper>
-            </FeatureToggleWrapper>
-          ) : (
-            <div className="flex h-screen w-screen items-center justify-center bg-background">
-              <p>Splash Screen</p>
-            </div>
-          )}
-        </ThemeWrapper>
-      )}
-    </JotaiWrapper>
+    <ThemeWrapper>
+      <JotaiWrapper>
+        {setupCore && activated && (
+          <FeatureToggleWrapper>
+            <EventListenerWrapper>
+              <ModalWrapper>{children}</ModalWrapper>
+            </EventListenerWrapper>
+          </FeatureToggleWrapper>
+        )}
+      </JotaiWrapper>
+    </ThemeWrapper>
   )
 }
 

@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo } from 'react'
 
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
+import { MainViewState } from '@/constants/screens'
+
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useGetPerformanceTag from '@/hooks/useGetPerformanceTag'
+import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 
@@ -12,10 +15,7 @@ import ConfirmationModal from '../ConfirmationModal'
 import SimpleTag from '../SimpleTag'
 
 import { modelDownloadStateAtom } from '@/helpers/atoms/DownloadState.atom'
-import {
-  MainViewState,
-  setMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
+
 import { showingCancelDownloadModalAtom } from '@/helpers/atoms/Modal.atom'
 
 type Props = {
@@ -36,7 +36,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
     [suitableModel._id]
   )
   const downloadState = useAtomValue(downloadAtom)
-  const setMainViewState = useSetAtom(setMainViewStateAtom)
+  const { setMainViewState } = useMainViewState()
   const setShowingCancelDownloadModal = useSetAtom(
     showingCancelDownloadModalAtom
   )
@@ -102,7 +102,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
     )
 
   return (
-    <div className="border-border flex items-center justify-between rounded-t-md border-b bg-background/50 px-4 py-2">
+    <div className="flex items-center justify-between rounded-t-md border-b border-border bg-background/50 px-4 py-2">
       <div className="flex items-center gap-2">
         <span>{exploreModel.name}</span>
         {performanceTag && (

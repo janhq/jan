@@ -2,6 +2,12 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
+import { MainViewState } from '@/constants/screens'
+
+import { useMainViewState } from '@/hooks/useMainViewState'
+
+import { executeSerial } from '@/services/pluginService'
+
 import { deleteConversationMessage } from '@/helpers/atoms/ChatMessage.atom'
 import { PluginType } from '@janhq/core'
 import {
@@ -9,10 +15,6 @@ import {
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import {
-  MainViewState,
-  setMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
 import {
   showingProductDetailAtom,
   showingAdvancedPromptAtom,
@@ -31,7 +33,7 @@ export default function useDeleteConversation() {
 
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const deleteMessages = useSetAtom(deleteConversationMessage)
-  const setMainViewState = useSetAtom(setMainViewStateAtom)
+  const { setMainViewState } = useMainViewState()
 
   const deleteConvo = async () => {
     if (activeConvoId) {

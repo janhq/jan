@@ -22,26 +22,26 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 // import { useUserConfigs } from '@/hooks/useUserConfigs'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
-import {
-  MainViewState,
-  getMainViewStateAtom,
-  setMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
+
+import { MainViewState } from '@/constants/screens'
+
+import { useMainViewState } from '@/hooks/useMainViewState'
+
 // import { showingBotListModalAtom } from '@/helpers/atoms/Modal.atom'
 
 export default function RibbonNav() {
   // const [config] = useUserConfigs()
-
-  const currentState = useAtomValue(getMainViewStateAtom)
-  const setMainViewState = useSetAtom(setMainViewStateAtom)
+  const { mainViewState, setMainViewState } = useMainViewState()
+  // const currentState = useAtomValue(getMainViewStateAtom)
+  // const setMainViewState = useSetAtom(setMainViewStateAtom)
   // const setBotListModal = useSetAtom(showingBotListModalAtom)
   // const { downloadedModels } = useGetDownloadedModels()
   // const { getAllBots } = useGetBots()
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
-  const onMenuClick = (mainViewState: MainViewState) => {
-    if (currentState === mainViewState) return
-    setMainViewState(mainViewState)
+  const onMenuClick = (state: MainViewState) => {
+    if (mainViewState === state) return
+    setMainViewState(state)
   }
 
   // const onBotListClick = async () => {
@@ -109,7 +109,7 @@ export default function RibbonNav() {
             {primaryMenus
               .filter((primary) => !!primary)
               .map((primary, i) => {
-                const isActive = currentState === primary.state
+                const isActive = mainViewState === primary.state
                 return (
                   <div className="relative p-2" key={i}>
                     <button
@@ -137,7 +137,7 @@ export default function RibbonNav() {
             {secondaryMenus
               .filter((secondary) => !!secondary)
               .map((secondary, i) => {
-                const isActive = currentState === secondary.state
+                const isActive = mainViewState === secondary.state
                 return (
                   <div className="relative p-2" key={i}>
                     <button

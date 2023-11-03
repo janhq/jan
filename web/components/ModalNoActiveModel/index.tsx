@@ -1,17 +1,17 @@
 import React, { Fragment } from 'react'
 
 import { Dialog, Transition } from '@headlessui/react'
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtom } from 'jotai'
 
-import {
-  MainViewState,
-  setMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
+import { MainViewState } from '@/constants/screens'
+
+import { useMainViewState } from '@/hooks/useMainViewState'
+
 import { showingModalNoActiveModel } from '@/helpers/atoms/Modal.atom'
 
 const ModalNoActiveModel: React.FC = () => {
   const [show, setShow] = useAtom(showingModalNoActiveModel)
-  const setMainView = useSetAtom(setMainViewStateAtom)
+  const { setMainViewState } = useMainViewState()
 
   return (
     <Transition.Root show={show} as={Fragment}>
@@ -39,7 +39,7 @@ const ModalNoActiveModel: React.FC = () => {
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="border-border relative transform overflow-hidden rounded-lg border bg-background/90 px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+              <Dialog.Panel className="relative transform overflow-hidden rounded-lg border border-border bg-background/90 px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
                 <h1 className="font-base mb-4 font-bold">
                   You don’t have any actively running models. Please start a
                   downloaded model in My Models page to use this feature.
@@ -49,7 +49,7 @@ const ModalNoActiveModel: React.FC = () => {
                     type="button"
                     className="bg-accent hover:bg-accent/80 inline-flex w-full justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm sm:ml-3 sm:w-auto"
                     onClick={() => {
-                      setMainView(MainViewState.MyModel)
+                      setMainViewState(MainViewState.MyModel)
                       setShow(false)
                     }}
                   >

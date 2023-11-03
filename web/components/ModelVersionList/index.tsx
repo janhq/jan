@@ -1,5 +1,3 @@
-import React from 'react'
-
 import ModelVersionItem from '../ModelVersionItem'
 import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 

@@ -1,10 +1,11 @@
-import React from 'react'
-
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
+import { MainViewState } from '@/constants/screens'
+
 import useGetModelById from '@/hooks/useGetModelById'
+import { useMainViewState } from '@/hooks/useMainViewState'
 import useStartStopModel from '@/hooks/useStartStopModel'
 
 import { displayDate } from '@/utils/datetime'
@@ -13,10 +14,6 @@ import {
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import {
-  setMainViewStateAtom,
-  MainViewState,
-} from '@/helpers/atoms/MainView.atom'
 
 import { activeAssistantModelAtom } from '@/helpers/atoms/Model.atom'
 
@@ -38,7 +35,7 @@ const HistoryItem: React.FC<Props> = ({
   const activeModel = useAtomValue(activeModelAtom)
   const { startModel } = useStartStopModel()
 
-  const setMainViewState = useSetAtom(setMainViewStateAtom)
+  const { setMainViewState } = useMainViewState()
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const models = useAtomValue(downloadedModelAtom)
 
@@ -75,7 +72,7 @@ const HistoryItem: React.FC<Props> = ({
     <li
       role="button"
       className={twMerge(
-        'border-border flex flex-row rounded-md border p-3',
+        'flex flex-row rounded-md border border-border p-3',
         backgroundColor
       )}
       onClick={onClick}

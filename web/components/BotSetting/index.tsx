@@ -75,7 +75,7 @@ const BotSetting: React.FC = () => {
               rows={4}
               name="comment"
               id="comment"
-              className="text-background-reverse ring-border placeholder:text-muted-foreground focus:ring-accent/50 block w-full resize-none rounded-md border-0 bg-background/80 py-1.5 text-xs leading-relaxed shadow-sm ring-1 ring-inset focus:ring-2 focus:ring-inset"
+              className="text-background-reverse placeholder:text-muted-foreground focus:ring-accent/50 block w-full resize-none rounded-md border-0 bg-background/80 py-1.5 text-xs leading-relaxed shadow-sm ring-1 ring-inset ring-border focus:ring-2 focus:ring-inset"
               defaultValue={activeBot.systemPrompt}
               onChange={(e) => debouncedSystemPrompt(e.target.value)}
             />

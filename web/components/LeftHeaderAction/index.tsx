@@ -1,26 +1,25 @@
-'use client'
-
 import React, { useContext } from 'react'
 
 import { MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/outline'
 
 import { useSetAtom, useAtomValue } from 'jotai'
 
+import { FeatureToggleContext } from '@/context/FeatureToggle'
+
+import { MainViewState } from '@/constants/screens'
+
 import useCreateConversation from '@/hooks/useCreateConversation'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
+import { useMainViewState } from '@/hooks/useMainViewState'
+
 import SecondaryButton from '../SecondaryButton'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-import {
-  MainViewState,
-  setMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
 import { showingModalNoActiveModel } from '@/helpers/atoms/Modal.atom'
 import { activeAssistantModelAtom } from '@/helpers/atoms/Model.atom'
 
 const LeftHeaderAction: React.FC = () => {
-  const setMainView = useSetAtom(setMainViewStateAtom)
+  const { setMainViewState } = useMainViewState()
   const { downloadedModels } = useGetDownloadedModels()
   const activeModel = useAtomValue(activeModelAtom)
   const { requestCreateConvo } = useCreateConversation()
@@ -28,7 +27,7 @@ const LeftHeaderAction: React.FC = () => {
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
   const onExploreClick = () => {
-    setMainView(MainViewState.ExploreModel)
+    setMainViewState(MainViewState.ExploreModel)
   }
 
   const onNewConversationClick = () => {
@@ -44,7 +43,7 @@ const LeftHeaderAction: React.FC = () => {
       alert('You need to download at least one model to create a bot.')
       return
     }
-    setMainView(MainViewState.CreateBot)
+    setMainViewState(MainViewState.CreateBot)
   }
 
   return (

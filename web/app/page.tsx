@@ -1,33 +1,23 @@
 'use client'
 
-import React from 'react'
-
-import { useAtomValue } from 'jotai'
-
 import BaseLayout from '@/containers/Layout'
+
+import { MainViewState } from '@/constants/screens'
+
+import { useMainViewState } from '@/hooks/useMainViewState'
 
 import BotScreen from '@/screens/Bot'
 import ChatScreen from '@/screens/Chat'
-import EmptyChatScreen from '@/screens/Chat/EmptyChatScreen'
 import ExploreModelsScreen from '@/screens/ExploreModels'
 import MyModelsScreen from '@/screens/MyModels'
 import SettingsScreen from '@/screens/Settings'
 import WelcomeScreen from '@/screens/Welcome'
 
-import {
-  MainViewState,
-  getMainViewStateAtom,
-} from '@/helpers/atoms/MainView.atom'
-
 export default function Page() {
-  const viewState = useAtomValue(getMainViewStateAtom)
+  const { mainViewState } = useMainViewState()
 
   let children = null
-  switch (viewState) {
-    case MainViewState.ConversationEmptyModel:
-      children = <EmptyChatScreen />
-      break
-
+  switch (mainViewState) {
     case MainViewState.Welcome:
       children = <WelcomeScreen />
       break
@@ -40,7 +30,6 @@ export default function Page() {
       children = <ExploreModelsScreen />
       break
 
-    case MainViewState.ResourceMonitor:
     case MainViewState.MyModel:
       children = <MyModelsScreen />
       break

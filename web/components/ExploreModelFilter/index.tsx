@@ -1,5 +1,3 @@
-import React from 'react'
-
 import SearchBar from '../SearchBar'
 import SimpleCheckbox from '../SimpleCheckbox'
 import SimpleTag from '../SimpleTag'

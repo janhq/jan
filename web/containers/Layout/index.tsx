@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes'
 
 import { motion as m } from 'framer-motion'
 
-import { useAtomValue } from 'jotai'
+// import { useAtomValue } from 'jotai'
 
 // import { twMerge } from 'tailwind-merge'
 
@@ -14,15 +14,15 @@ import RibbonNav from '@/containers/Layout/Ribbon'
 import TopBar from '@/containers/Layout/TopBar'
 // import { SidebarRight } from '@/containers/Sidebar'
 
-import { getMainViewStateAtom } from '@/helpers/atoms/MainView.atom'
-// import { MainViewState } from '@/helpers/atoms/MainView.atom'
+import { useMainViewState } from '@/hooks/useMainViewState'
+
 // import { rightSideBarExpandStateAtom } from '@/helpers/atoms/SideBarExpand.atom'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
+  const { mainViewState } = useMainViewState()
 
   // const isRightSidebarVisible = useAtomValue(rightSideBarExpandStateAtom)
-  const viewState = useAtomValue(getMainViewStateAtom)
 
   const { theme } = useTheme()
 
@@ -48,7 +48,7 @@ const BaseLayout = (props: PropsWithChildren) => {
         <div className="w-full">
           <TopBar />
           <m.div
-            key={viewState}
+            key={mainViewState}
             initial={{ opacity: 0, y: -8 }}
             className="h-full"
             animate={{

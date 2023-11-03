@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React from 'react'
+
 import { useController } from 'react-hook-form'
 
 type Props = {
@@ -35,7 +35,7 @@ const TextAreaWithTitle: React.FC<Props> = ({
       )}
       <textarea
         rows={4}
-        className="text-background-reverse ring-border placeholder:text-muted-foreground focus:ring-accent/50 block w-full resize-none rounded-md border-0 bg-background/80 py-1.5 text-xs leading-relaxed shadow-sm ring-1 ring-inset focus:ring-2 focus:ring-inset"
+        className="text-background-reverse placeholder:text-muted-foreground focus:ring-accent/50 block w-full resize-none rounded-md border-0 bg-background/80 py-1.5 text-xs leading-relaxed shadow-sm ring-1 ring-inset ring-border focus:ring-2 focus:ring-inset"
         placeholder={placeholder}
         {...field}
       />

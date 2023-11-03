@@ -1,5 +1,3 @@
-import React from 'react'
-
 import ModelActionMenu from '../ModelActionMenu'
 
 export enum ModelActionType {

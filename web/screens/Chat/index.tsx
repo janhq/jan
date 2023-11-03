@@ -1,5 +1,3 @@
-import React from 'react'
-
 import ChatBody from '@/components/ChatBody'
 import HistoryList from '@/components/HistoryList'
 import InputToolbar from '@/components/InputToolbar'
@@ -9,7 +7,7 @@ import MainHeader from '@/components/MainHeader'
 const ChatScreen = () => {
   return (
     <div className="flex h-full">
-      <div className="border-border flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r ">
+      <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border ">
         <LeftHeaderAction />
         <HistoryList />
       </div>

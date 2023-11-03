@@ -12,7 +12,7 @@ const tableHeaders = ['MODEL', 'FORMAT', 'SIZE', 'STATUS', 'ACTIONS']
 
 const ModelTable: React.FC<Props> = ({ models }) => (
   <>
-    <div className="border-border overflow-hidden rounded-lg border align-middle shadow-lg">
+    <div className="overflow-hidden rounded-lg border border-border align-middle shadow-lg">
       <table className="min-w-full">
         <thead className="bg-background">
           <tr className="rounded-t-lg">

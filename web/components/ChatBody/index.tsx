@@ -1,7 +1,5 @@
 'use client'
 
-import React from 'react'
-
 import useChatMessages from '@/hooks/useChatMessages'
 
 import ChatItem from '../ChatItem'

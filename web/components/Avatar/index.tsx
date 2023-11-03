@@ -1,5 +1,3 @@
-import React from 'react'
-
 import SecondaryButton from '../SecondaryButton'
 
 type Props = {
