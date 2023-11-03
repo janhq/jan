@@ -4,13 +4,13 @@ import useGetSystemResources from '@hooks/useGetSystemResources'
 import { useAtomValue } from 'jotai'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { formatDownloadPercentage } from '@utils/converter'
-import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
+import { activeModelAtom, stateModel } from '@helpers/atoms/Model.atom'
 import useGetAppVersion from '@hooks/useGetAppVersion'
 import ProgressBar from '@/_components/ProgressBar'
 import { appDownloadProgress } from '@helpers/JotaiWrapper'
 
 const BottomBar = () => {
-  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const activeModel = useAtomValue(activeModelAtom)
   const stateModelStartStop = useAtomValue(stateModel)
   const { ram, cpu } = useGetSystemResources()
   const modelDownloadStates = useAtomValue(modelDownloadStateAtom)

@@ -12,6 +12,7 @@ import { rmdir, unlink, createWriteStream } from "fs";
 import { init } from "./core/plugin/index";
 import { setupMenu } from "./utils/menu";
 import { dispose } from "./utils/disposable";
+import { handleFs } from "./handlers/fs";
 
 const pacote = require("pacote");
 const request = require("request");
@@ -127,6 +128,7 @@ function handleAppUpdates() {
  * Handles various IPC messages from the renderer process.
  */
 function handleIPCs() {
+  handleFs();
   /**
    * Handles the "setNativeThemeLight" IPC message by setting the native theme source to "light".
    * This will change the appearance of the app to the light theme.

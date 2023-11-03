@@ -11,7 +11,7 @@ import { MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/outline'
 import useCreateConversation from '@hooks/useCreateConversation'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 import { Button } from '@uikit'
-import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { activeModelAtom } from '@helpers/atoms/Model.atom'
 import { showingModalNoActiveModel } from '@helpers/atoms/Modal.atom'
 import {
   FeatureToggleContext,
@@ -20,7 +20,7 @@ import {
 const LeftHeaderAction: React.FC = () => {
   const setMainView = useSetAtom(setMainViewStateAtom)
   const { downloadedModels } = useGetDownloadedModels()
-  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const activeModel = useAtomValue(activeModelAtom)
   const { requestCreateConvo } = useCreateConversation()
   const setShowModalNoActiveModel = useSetAtom(showingModalNoActiveModel)
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)

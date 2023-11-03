@@ -5,7 +5,7 @@ import {
   MainViewState,
   setMainViewStateAtom,
 } from '@helpers/atoms/MainView.atom'
-import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { activeModelAtom } from '@helpers/atoms/Model.atom'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 import { Button } from '@uikit'
 import { MessageCircle } from 'lucide-react'
@@ -18,7 +18,7 @@ enum ActionButton {
 
 const SidebarEmptyHistory: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels()
-  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const activeModel = useAtomValue(activeModelAtom)
   const setMainView = useSetAtom(setMainViewStateAtom)
   const { requestCreateConvo } = useCreateConversation()
   const [action, setAction] = useState(ActionButton.DownloadModel)

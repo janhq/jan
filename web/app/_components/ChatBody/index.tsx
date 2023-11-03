@@ -2,10 +2,11 @@
 
 import React from 'react'
 import ChatItem from '../ChatItem'
-import useChatMessages from '@hooks/useChatMessages'
+import { useAtomValue } from 'jotai'
+import { getCurrentChatMessagesAtom } from '@helpers/atoms/ChatMessage.atom'
 
 const ChatBody: React.FC = () => {
-  const { messages } = useChatMessages()
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   return (
     <div className="flex h-full flex-1 flex-col-reverse overflow-y-auto [&>*:nth-child(odd)]:bg-background">

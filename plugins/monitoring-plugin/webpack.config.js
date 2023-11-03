@@ -4,7 +4,7 @@ const packageJson = require("./package.json");
 
 module.exports = {
   experiments: { outputModule: true },
-  entry: "./index.ts", // Adjust the entry point to match your project's main file
+  entry: "./src/index.ts", // Adjust the entry point to match your project's main file
   mode: "production",
   module: {
     rules: [
@@ -22,8 +22,7 @@ module.exports = {
   },
   plugins: [
     new webpack.DefinePlugin({
-      PLUGIN_NAME: JSON.stringify(packageJson.name),
-      MODULE_PATH: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
+      MODULE: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
     }),
   ],
   resolve: {

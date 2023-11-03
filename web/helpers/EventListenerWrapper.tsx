@@ -1,9 +1,9 @@
 'use client'
 
-import { useSetAtom } from 'jotai'
-import { ReactNode, useEffect } from 'react'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { ReactNode, useEffect, useRef } from 'react'
 import { appDownloadProgress } from './JotaiWrapper'
-import { ModelManagementService } from '@janhq/core'
+import { PluginType } from '@janhq/core'
 import {
   setDownloadStateAtom,
   setDownloadStateSuccessAtom,
@@ -11,7 +11,9 @@ import {
 import { getDownloadedModels } from '../hooks/useGetDownloadedModels'
 import { downloadedModelAtom } from './atoms/DownloadedModel.atom'
 import EventHandler from './EventHandler'
-import { executeSerial } from '@services/pluginService'
+import { pluginManager } from '@plugin/PluginManager'
+import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { downloadingModelsAtom } from './atoms/Model.atom'
 
 type Props = {
   children: ReactNode
@@ -22,6 +24,11 @@ export default function EventListenerWrapper({ children }: Props) {
   const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
   const setProgress = useSetAtom(appDownloadProgress)
   const setDownloadedModels = useSetAtom(downloadedModelAtom)
+  const models = useAtomValue(downloadingModelsAtom)
+  const modelsRef = useRef(models)
+  useEffect(() => {
+    modelsRef.current = models
+  }, [models])
 
   useEffect(() => {
     if (window && window.electronAPI) {
@@ -42,16 +49,19 @@ export default function EventListenerWrapper({ children }: Props) {
       window.electronAPI.onFileDownloadSuccess(
         (_event: string, callback: any) => {
           if (callback && callback.fileName) {
-            setDownloadStateSuccess(callback.fileName)
+            const fileName = callback.fileName.replace('models/', '')
+            setDownloadStateSuccess(fileName)
 
-            executeSerial(
-              ModelManagementService.UpdateFinishedDownloadAt,
-              callback.fileName
-            ).then(() => {
-              getDownloadedModels().then((models) => {
-                setDownloadedModels(models)
-              })
-            })
+            const model = modelsRef.current.find((e) => e._id === fileName)
+            if (model)
+              pluginManager
+                .get<ModelPlugin>(PluginType.Model)
+                ?.saveModel(model)
+                .then(() => {
+                  getDownloadedModels().then((models) => {
+                    setDownloadedModels(models)
+                  })
+                })
           }
         }
       )

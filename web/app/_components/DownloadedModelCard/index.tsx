@@ -1,11 +1,12 @@
+import { Model } from '@janhq/core/lib/types'
 import DownloadModelContent from '../DownloadModelContent'
 
 type Props = {
-  model: AssistantModel
+  model: Model
   isRecommend: boolean
   required?: string
   transferred?: number
-  onDeleteClick?: (model: AssistantModel) => void
+  onDeleteClick?: (model: Model) => void
 }
 
 const DownloadedModelCard: React.FC<Props> = ({
@@ -22,7 +23,7 @@ const DownloadedModelCard: React.FC<Props> = ({
         description={model.shortDescription}
         isRecommend={isRecommend}
         name={model.name}
-        type={model.type}
+        type={'LLM'}
       />
       <div className="flex flex-col justify-center">
         <button onClick={() => onDeleteClick?.(model)}>Delete</button>
