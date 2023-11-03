@@ -2,8 +2,6 @@ import React, { useContext } from 'react'
 
 import { motion as m } from 'framer-motion'
 
-import { useAtomValue, useSetAtom } from 'jotai'
-
 import {
   MessageCircle,
   Settings,
