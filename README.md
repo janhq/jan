@@ -1,6 +1,6 @@
 # Jan - Personal AI
 
-![github banner landscape](https://github.com/janhq/jan/assets/89722390/9d7b24dc-0b6f-4de2-a0a7-68d35ec1a672)
+![Project Cover](https://github.com/janhq/jan/assets/89722390/be4f07ef-13df-4621-8f25-b861f1d5b7b3)
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
@@ -35,10 +35,11 @@ Jan is free and open source, under the GPLv3 license.
 ## Demo
 
 <p align="center">
-  <img style='border:1px solid #000000' src="https://github.com/janhq/jan/assets/69952136/1db9c3d3-79b1-4988-afb5-afd4f4afd0d9" alt="Jan Web GIF">
+  <video src="https://github.com/janhq/jan/assets/89722390/47988dcc-13ed-4ca0-87f7-74d00f4d47d8"> 
+  </video>
 </p>
 
-_Screenshot: Jan v0.1.3 on Mac M1 Pro, 16GB Sonoma_
+_Video: Jan v0.3.0 on Mac Air M2, 16GB Ventura_
 
 ## Quicklinks
 
