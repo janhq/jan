@@ -1,33 +1,34 @@
 import React from 'react'
 
-import { useSetAtom } from 'jotai'
+// import { useSetAtom } from 'jotai'
 
-// import CompactLogo from '@/containers/Logo/CompactLogo'
+import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import {
-  setMainViewStateAtom,
-  MainViewState,
-} from '@/helpers/atoms/MainView.atom'
+// import {
+//   setMainViewStateAtom,
+//   MainViewState,
+// } from '@/helpers/atoms/MainView.atom'
 
 const WelcomeScreen = () => {
-  const setMainViewState = useSetAtom(setMainViewStateAtom)
+  // const setMainViewState = useSetAtom(setMainViewStateAtom)
 
   return (
     <div className="flex h-full items-center justify-center px-4">
       <div className="text-center">
-        {/* <CompactLogo width={40} height={40} /> */}
-        <h1
-          data-testid="testid-welcome-title"
-          className="text-2xl font-bold leading-snug"
-        >
+        <LogoMark
+          className="animate-wave mx-auto mb-4"
+          width={56}
+          height={56}
+        />
+        <h1 data-testid="testid-welcome-title" className="text-2xl font-bold">
           Welcome to Jan
         </h1>
-        <p className="text-base tracking-wide text-gray-600 dark:text-gray-400">{`let’s download your first model`}</p>
-        <div className="mt-4">
+        <p className="">{`let’s download your first model`}</p>
+        {/* <div className="mt-4">
           <button onClick={() => setMainViewState(MainViewState.ExploreModel)}>
             Explore Models
           </button>
-        </div>
+        </div> */}
       </div>
     </div>
   )

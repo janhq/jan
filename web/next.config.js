@@ -1,11 +1,12 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 /** @type {import('next').NextConfig} */
+
 const webpack = require('webpack')
 
 const packageJson = require('./package.json')
 
 const nextConfig = {
   output: 'export',
-  assetPrefix: '.',
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -15,7 +16,7 @@ const nextConfig = {
       },
     ],
   },
-  webpack: (config, env) => {
+  webpack: (config) => {
     // do some stuff here
     config.optimization.minimize = false
     config.optimization.minimizer = []

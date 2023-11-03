@@ -3,7 +3,7 @@ import Image from 'next/image'
 type Props = {
   width?: number
   height?: number
-  className: string
+  className?: string
 }
 
 export default function LogoMark(props: Props) {
