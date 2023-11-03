@@ -1,6 +1,6 @@
-# Jan - Run your own AI
+# Jan - Personal AI
 
-![](./docs/static/img/github-readme-banner.png)
+![github banner landscape](https://github.com/janhq/jan/assets/89722390/9d7b24dc-0b6f-4de2-a0a7-68d35ec1a672)
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
@@ -18,7 +18,7 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan runs Large Language Models and AIs on your own Windows, Mac or Linux computer. Jan can be run as a desktop app, or as a cloud-native deployment.
+Jan is a powerful Personal AI built to run locally on your machine, with a rich app and plugin ecosystem.
 
 Jan is free and open source, under the GPLv3 license.
 
