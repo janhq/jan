@@ -1,2 +1,2 @@
-export * from './Ribbon'
+export * from '../Layout/Ribbon'
 export * from './Right'

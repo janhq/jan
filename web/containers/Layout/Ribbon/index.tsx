@@ -1,0 +1,162 @@
+import React, { useContext } from 'react'
+
+import { motion as m } from 'framer-motion'
+
+import { useAtomValue, useSetAtom } from 'jotai'
+
+import {
+  MessageCircle,
+  Settings,
+  Bot,
+  LayoutGrid,
+  CpuIcon,
+  BookOpen,
+} from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
+
+// import useGetBots from '@/hooks/useGetBots'
+// import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+// import { useUserConfigs } from '@/hooks/useUserConfigs'
+
+import { FeatureToggleContext } from '@/helpers/FeatureToggleWrapper'
+import {
+  MainViewState,
+  getMainViewStateAtom,
+  setMainViewStateAtom,
+} from '@/helpers/atoms/MainView.atom'
+// import { showingBotListModalAtom } from '@/helpers/atoms/Modal.atom'
+
+export default function RibbonNav() {
+  // const [config] = useUserConfigs()
+
+  const currentState = useAtomValue(getMainViewStateAtom)
+  const setMainViewState = useSetAtom(setMainViewStateAtom)
+  // const setBotListModal = useSetAtom(showingBotListModalAtom)
+  // const { downloadedModels } = useGetDownloadedModels()
+  // const { getAllBots } = useGetBots()
+  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
+
+  const onMenuClick = (mainViewState: MainViewState) => {
+    if (currentState === mainViewState) return
+    setMainViewState(mainViewState)
+  }
+
+  // const onBotListClick = async () => {
+  //   const bots = await getAllBots()
+  //   if (!bots || bots?.length === 0) {
+  //     alert('You have not created any bot')
+  //     return
+  //   }
+
+  //   if (downloadedModels.length === 0) {
+  //     alert('You have no model downloaded')
+  //     return
+  //   }
+
+  //   setBotListModal(true)
+  // }
+
+  const primaryMenus = [
+    {
+      name: 'Getting Started',
+      icon: <BookOpen size={20} className="flex-shrink-0" />,
+      state: MainViewState.Welcome,
+    },
+    {
+      name: 'Chat',
+      icon: <MessageCircle size={20} className="flex-shrink-0" />,
+      state: MainViewState.Conversation,
+    },
+  ]
+
+  const secondaryMenus = [
+    {
+      name: 'Explore Models',
+      icon: <CpuIcon size={20} className="flex-shrink-0" />,
+      state: MainViewState.ExploreModel,
+    },
+    {
+      name: 'My Models',
+      icon: <LayoutGrid size={20} className="flex-shrink-0" />,
+      state: MainViewState.MyModel,
+    },
+    ...(experimentalFeatureEnabed
+      ? [
+          {
+            name: 'Bot',
+            icon: <Bot size={20} className="flex-shrink-0" />,
+            state: MainViewState.CreateBot,
+          },
+        ]
+      : []),
+    {
+      name: 'Settings',
+      icon: <Settings size={20} className="flex-shrink-0" />,
+      state: MainViewState.Setting,
+    },
+  ]
+  return (
+    <div className="border-border flex w-16 flex-shrink-0 flex-col border-r py-10">
+      <div className="mt-2 flex h-full w-full flex-col items-center justify-between">
+        <div className="flex h-full w-full flex-col items-center justify-between">
+          <div>
+            {primaryMenus
+              .filter((primary) => !!primary)
+              .map((primary, i) => {
+                const isActive = currentState === primary.state
+                return (
+                  <div className="relative p-2" key={i}>
+                    <button
+                      data-testid={primary.name}
+                      className={twMerge(
+                        'relative flex w-full flex-shrink-0 items-center justify-center',
+                        isActive && 'z-10'
+                      )}
+                      onClick={() => onMenuClick(primary.state)}
+                    >
+                      {primary.icon}
+                    </button>
+                    {isActive && (
+                      <m.div
+                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-300 p-2 backdrop-blur-lg"
+                        layoutId="active-state-primary"
+                      />
+                    )}
+                  </div>
+                )
+              })}
+          </div>
+
+          <div>
+            {secondaryMenus
+              .filter((secondary) => !!secondary)
+              .map((secondary, i) => {
+                const isActive = currentState === secondary.state
+                return (
+                  <div className="relative p-2" key={i}>
+                    <button
+                      data-testid={secondary.name}
+                      className={twMerge(
+                        'relative flex w-full flex-shrink-0 items-center justify-center',
+                        isActive && 'z-10'
+                      )}
+                      onClick={() => onMenuClick(secondary.state)}
+                    >
+                      {secondary.icon}
+                    </button>
+                    {isActive && (
+                      <m.div
+                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-blue-300 p-2 backdrop-blur-lg"
+                        layoutId="active-state-secondary"
+                      />
+                    )}
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,5 +1,3 @@
-const { reverse } = require('dns')
-
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: 'class',
@@ -12,6 +10,7 @@ module.exports = {
     extend: {
       colors: {
         background: 'hsl(var(--background))',
+        border: 'hsl(var(--border))',
       },
     },
   },

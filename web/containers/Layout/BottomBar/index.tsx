@@ -48,7 +48,6 @@ const BottomBar = () => {
             />
           )}
         </div>
-
         {stateModelStartStop.state === 'start' &&
           stateModelStartStop.loading && (
             <SystemItem
