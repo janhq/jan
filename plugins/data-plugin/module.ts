@@ -16,7 +16,7 @@ const dbs: Record<string, any> = {};
  */
 function createCollection(name: string, schema?: { [key: string]: any }): Promise<void> {
   return new Promise<void>((resolve) => {
-    const dbPath = path.join(app.getPath("userData"), "databases");
+    const dbPath = path.join(appPath(), "databases");
     if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath);
     const db = new PouchDB(`${path.join(dbPath, name)}`);
     dbs[name] = db;
@@ -224,6 +224,13 @@ function findMany(
       });
     })
     .then((data) => data.docs); // Return documents
+}
+
+function appPath() {
+  if (app) {
+    return app.getPath("userData");
+  }
+  return process.env.APPDATA || (process.platform == 'darwin' ? process.env.HOME + '/Library/Preferences' : process.env.HOME + "/.local/share");
 }
 
 module.exports = {

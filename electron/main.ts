@@ -9,7 +9,7 @@ import {
 import { readdirSync, writeFileSync } from "fs";
 import { resolve, join, extname } from "path";
 import { rmdir, unlink, createWriteStream } from "fs";
-import { init } from "./core/plugin-manager/pluginMgr";
+import { init } from "./core/plugin/index";
 import { setupMenu } from "./utils/menu";
 import { dispose } from "./utils/disposable";
 
@@ -19,7 +19,8 @@ const progress = require("request-progress");
 const { autoUpdater } = require("electron-updater");
 const Store = require("electron-store");
 
-const requiredModules: Record<string, any> = {};
+let requiredModules: Record<string, any> = {};
+const networkRequests: Record<string, any> = {};
 let mainWindow: BrowserWindow | undefined = undefined;
 
 app
@@ -39,32 +40,19 @@ app
   });
 
 app.on("window-all-closed", () => {
-  dispose(requiredModules);
+  clearImportedModules();
   app.quit();
 });
 
 app.on("quit", () => {
-  dispose(requiredModules);
+  clearImportedModules();
   app.quit();
-});
-
-ipcMain.handle("setNativeThemeLight", () => {
-  nativeTheme.themeSource = "light";
-});
-
-ipcMain.handle("setNativeThemeDark", () => {
-  nativeTheme.themeSource = "dark";
-});
-
-ipcMain.handle("setNativeThemeSystem", () => {
-  nativeTheme.themeSource = "system";
 });
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    frame: false,
     show: false,
     trafficLightPosition: {
       x: 16,
@@ -130,13 +118,39 @@ function handleAppUpdates() {
   });
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.checkForUpdates();
+  if (process.env.CI !== "e2e") {
+    autoUpdater.checkForUpdates();
+  }
 }
 
 /**
  * Handles various IPC messages from the renderer process.
  */
 function handleIPCs() {
+  /**
+   * Handles the "setNativeThemeLight" IPC message by setting the native theme source to "light".
+   * This will change the appearance of the app to the light theme.
+   */
+  ipcMain.handle("setNativeThemeLight", () => {
+    nativeTheme.themeSource = "light";
+  });
+
+  /**
+   * Handles the "setNativeThemeDark" IPC message by setting the native theme source to "dark".
+   * This will change the appearance of the app to the dark theme.
+   */
+  ipcMain.handle("setNativeThemeDark", () => {
+    nativeTheme.themeSource = "dark";
+  });
+
+  /**
+   * Handles the "setNativeThemeSystem" IPC message by setting the native theme source to "system".
+   * This will change the appearance of the app to match the system's current theme.
+   */
+  ipcMain.handle("setNativeThemeSystem", () => {
+    nativeTheme.themeSource = "system";
+  });
+
   /**
    * Invokes a function from a plugin module in main node process.
    * @param _event - The IPC event object.
@@ -194,12 +208,30 @@ function handleIPCs() {
   });
 
   /**
+   * Retrieves the path to the app data directory using the `coreAPI` object.
+   * If the `coreAPI` object is not available, the function returns `undefined`.
+   * @returns A Promise that resolves with the path to the app data directory, or `undefined` if the `coreAPI` object is not available.
+   */
+  ipcMain.handle("appDataPath", async (_event) => {
+    return app.getPath("userData");
+  });
+
+  /**
    * Returns the version of the app.
    * @param _event - The IPC event object.
    * @returns The version of the app.
    */
   ipcMain.handle("appVersion", async (_event) => {
     return app.getVersion();
+  });
+
+  /**
+   * Handles the "openAppDirectory" IPC message by opening the app's user data directory.
+   * The `shell.openPath` method is used to open the directory in the user's default file explorer.
+   * @param _event - The IPC event object.
+   */
+  ipcMain.handle("openAppDirectory", async (_event) => {
+    shell.openPath(app.getPath("userData"));
   });
 
   /**
@@ -217,7 +249,7 @@ function handleIPCs() {
    * @param url - The URL to reload.
    */
   ipcMain.handle("relaunch", async (_event, url) => {
-    dispose(requiredModules);
+    clearImportedModules();
 
     if (app.isPackaged) {
       app.relaunch();
@@ -246,7 +278,7 @@ function handleIPCs() {
 
     rmdir(fullPath, { recursive: true }, function (err) {
       if (err) console.log(err);
-      dispose(requiredModules);
+      clearImportedModules();
 
       // just relaunch if packaged, should launch manually in development mode
       if (app.isPackaged) {
@@ -300,8 +332,9 @@ function handleIPCs() {
   ipcMain.handle("downloadFile", async (_event, url, fileName) => {
     const userDataPath = app.getPath("userData");
     const destination = resolve(userDataPath, fileName);
+    const rq = request(url);
 
-    progress(request(url), {})
+    progress(rq, {})
       .on("progress", function (state: any) {
         mainWindow?.webContents.send("FILE_DOWNLOAD_UPDATE", {
           ...state,
@@ -313,13 +346,54 @@ function handleIPCs() {
           fileName,
           err,
         });
+        networkRequests[fileName] = undefined;
       })
       .on("end", function () {
-        mainWindow?.webContents.send("FILE_DOWNLOAD_COMPLETE", {
-          fileName,
-        });
+        if (networkRequests[fileName]) {
+          mainWindow?.webContents.send("FILE_DOWNLOAD_COMPLETE", {
+            fileName,
+          });
+          networkRequests[fileName] = undefined;
+        } else {
+          mainWindow?.webContents.send("FILE_DOWNLOAD_ERROR", {
+            fileName,
+            err: "Download cancelled",
+          });
+        }
       })
       .pipe(createWriteStream(destination));
+
+    networkRequests[fileName] = rq;
+  });
+
+  /**
+   * Handles the "pauseDownload" IPC message by pausing the download associated with the provided fileName.
+   * @param _event - The IPC event object.
+   * @param fileName - The name of the file being downloaded.
+   */
+  ipcMain.handle("pauseDownload", async (_event, fileName) => {
+    networkRequests[fileName]?.pause();
+  });
+
+  /**
+   * Handles the "resumeDownload" IPC message by resuming the download associated with the provided fileName.
+   * @param _event - The IPC event object.
+   * @param fileName - The name of the file being downloaded.
+   */
+  ipcMain.handle("resumeDownload", async (_event, fileName) => {
+    networkRequests[fileName]?.resume();
+  });
+
+  /**
+   * Handles the "abortDownload" IPC message by aborting the download associated with the provided fileName.
+   * The network request associated with the fileName is then removed from the networkRequests object.
+   * @param _event - The IPC event object.
+   * @param fileName - The name of the file being downloaded.
+   */
+  ipcMain.handle("abortDownload", async (_event, fileName) => {
+    const rq = networkRequests[fileName];
+    networkRequests[fileName] = undefined;
+    rq?.abort();
   });
 
   /**
@@ -384,4 +458,9 @@ function setupPlugins() {
     // Path to install plugin to
     pluginsPath: join(app.getPath("userData"), "plugins"),
   });
+}
+
+function clearImportedModules() {
+  dispose(requiredModules);
+  requiredModules = {};
 }

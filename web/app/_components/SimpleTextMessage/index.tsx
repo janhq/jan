@@ -51,7 +51,7 @@ const SimpleTextMessage: React.FC<Props> = ({
 
   return (
     <div
-      className={`flex items-start gap-x-4 gap-y-2 border-b border-border/50 px-4 py-5 last:border-none`}
+      className={`flex items-start gap-x-4 gap-y-2 border-b border-border/50 px-4 py-5`}
     >
       <Image
         className="rounded-full"

@@ -13,17 +13,24 @@ import { twMerge } from 'tailwind-merge'
 
 import { formatPluginsName } from '@utils/converter'
 
-import {
-  plugins,
-  extensionPoints,
-} from '@/../../electron/core/plugin-manager/execution/index'
-
-const staticMenu = ['Appearance', 'Core Plugins']
+import { extensionPoints } from '@plugin'
+import Advanced from './Advanced'
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')
   const [preferenceItems, setPreferenceItems] = useState<any[]>([])
   const [preferenceValues, setPreferenceValues] = useState<any[]>([])
+  const [menus, setMenus] = useState<any[]>([])
+
+  useEffect(() => {
+    const menu = ['Appearance']
+
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      menu.push('Core Plugins')
+    }
+    menu.push('Advanced')
+    setMenus(menu)
+  }, [])
 
   /**
    * Fetches the active plugins and their preferences from the `plugins` and `preferences` modules.
@@ -36,7 +43,7 @@ const SettingsScreen = () => {
     const getActivePluginPreferences = async () => {
       if (extensionPoints.get('PluginPreferences')) {
         const data = await Promise.all(
-          extensionPoints.execute('PluginPreferences')
+          extensionPoints.execute('PluginPreferences', {})
         )
         setPreferenceItems(Array.isArray(data) ? data : [])
         Promise.all(
@@ -71,6 +78,9 @@ const SettingsScreen = () => {
       case 'Appearance':
         return <AppearanceOptions />
 
+      case 'Advanced':
+        return <Advanced />
+
       default:
         return (
           <PreferencePlugins
@@ -98,7 +108,7 @@ const SettingsScreen = () => {
               Options
             </label>
             <div className="mt-1 font-semibold">
-              {staticMenu.map((menu, i) => {
+              {menus.map((menu, i) => {
                 const isActive = activeStaticMenu === menu
                 return (
                   <div key={i} className="relative block py-2">

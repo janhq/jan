@@ -3,7 +3,7 @@ const { app } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const tcpPortUsed = require("tcp-port-used");
-const { killPortProcess } = require("kill-port-process");
+const kill = require("kill-port");
 
 const PORT = 3928;
 let subprocess = null;
@@ -23,25 +23,27 @@ const initModel = (fileName) => {
             let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
             let binaryName;
 
-            if (process.platform === "win32") {
-              // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-              binaryName = "nitro_start_windows.bat";
-            } else if (process.platform === "darwin") {
-              // Mac OS platform
-              binaryName =
-                process.arch === "arm64"
-                  ? "nitro_mac_arm64"
-                  : "nitro_mac_intel";
-            } else {
-              // Linux
-              // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-              binaryName = "nitro_start_linux.sh"; // For other platforms
-            }
+        if (process.platform === "win32") {
+          // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+          binaryName = "win-start.bat";
+        } else if (process.platform === "darwin") {
+          // Mac OS platform
+          if (process.arch === "arm64") {
+            binaryFolder = path.join(binaryFolder, "mac-arm64")
+          } else {
+            binaryFolder = path.join(binaryFolder, "mac-x64")
+          }
+          binaryName = "nitro"
+        } else {
+          // Linux
+          // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+          binaryName = "linux-start.sh"; // For other platforms
+        }
 
             const binaryPath = path.join(binaryFolder, binaryName);
 
-            // Execute the binary
-            subprocess = spawn(binaryPath, { cwd: binaryFolder });
+        // Execute the binary
+        subprocess = spawn(binaryPath,["0.0.0.0", PORT], { cwd: binaryFolder });
 
             // Handle subprocess output
             subprocess.stdout.on("data", (data) => {
@@ -61,7 +63,7 @@ const initModel = (fileName) => {
       })
       .then(() => tcpPortUsed.waitUntilUsed(PORT, 300, 30000))
       .then(() => {
-        const llama_model_path = path.join(app.getPath("userData"), fileName);
+        const llama_model_path = path.join(appPath(), fileName);
 
         const config = {
           llama_model_path,
@@ -102,9 +104,16 @@ function killSubprocess() {
     subprocess = null;
     console.log("Subprocess terminated.");
   } else {
-    killPortProcess(PORT);
+    kill(PORT, "tcp").then(console.log).catch(console.log);
     console.error("No subprocess is currently running.");
   }
+}
+
+function appPath() {
+  if (app) {
+    return app.getPath("userData");
+  }
+  return process.env.APPDATA || (process.platform == 'darwin' ? process.env.HOME + '/Library/Preferences' : process.env.HOME + "/.local/share");
 }
 
 module.exports = {

@@ -1,9 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import {
-  plugins,
-  extensionPoints,
-} from '@/../../electron/core/plugin-manager/execution/index'
+import { plugins, extensionPoints } from '@plugin'
 import {
   ChartPieIcon,
   CommandLineIcon,
@@ -13,7 +10,7 @@ import {
 import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
 import classNames from 'classnames'
 import { DataService, PluginService, preferences } from '@janhq/core'
-import { execute } from '../../../electron/core/plugin-manager/execution/extension-manager'
+import { execute } from '@plugin/extension-manager'
 import LoadingIndicator from './LoadingIndicator'
 import { executeSerial } from '@services/pluginService'
 
@@ -33,7 +30,7 @@ export const Preferences = () => {
    * Loads the plugin catalog module from a CDN and sets it as the plugin catalog state.
    */
   useEffect(() => {
-    executeSerial(DataService.GetPluginManifest).then((data) => {
+    executeSerial(DataService.GetPluginManifest).then((data: any) => {
       setPluginCatalog(data)
     })
   }, [])
@@ -52,7 +49,7 @@ export const Preferences = () => {
 
       if (extensionPoints.get('experimentComponent')) {
         const components = await Promise.all(
-          extensionPoints.execute('experimentComponent')
+          extensionPoints.execute('experimentComponent', {})
         )
         if (components.length > 0) {
           setIsTestAvailable(true)
@@ -67,7 +64,7 @@ export const Preferences = () => {
 
       if (extensionPoints.get('PluginPreferences')) {
         const data = await Promise.all(
-          extensionPoints.execute('PluginPreferences')
+          extensionPoints.execute('PluginPreferences', {})
         )
         setPreferenceItems(Array.isArray(data) ? data : [])
         Promise.all(
@@ -149,7 +146,7 @@ export const Preferences = () => {
     }
     if (extensionPoints.get(PluginService.OnPreferencesUpdate))
       timeout = setTimeout(
-        () => execute(PluginService.OnPreferencesUpdate),
+        () => execute(PluginService.OnPreferencesUpdate, {}),
         100
       )
   }

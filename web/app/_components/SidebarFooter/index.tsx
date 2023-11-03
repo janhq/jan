@@ -6,14 +6,14 @@ const SidebarFooter: React.FC = () => (
     <SecondaryButton
       title={'Discord'}
       onClick={() =>
-        window.electronAPI?.openExternalUrl('https://discord.gg/AsJ8krTT3N')
+        window.coreAPI?.openExternalUrl('https://discord.gg/AsJ8krTT3N')
       }
       className="flex-1"
     />
     <SecondaryButton
       title={'Twitter'}
       onClick={() =>
-        window.electronAPI?.openExternalUrl('https://twitter.com/janhq_')
+        window.coreAPI?.openExternalUrl('https://twitter.com/janhq_')
       }
       className="flex-1"
     />

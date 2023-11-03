@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useContext } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
   MainViewState,
@@ -20,6 +20,9 @@ import { twMerge } from 'tailwind-merge'
 import { showingBotListModalAtom } from '@helpers/atoms/Modal.atom'
 import useGetBots from '@hooks/useGetBots'
 import { useUserConfigs } from '@hooks/useUserConfigs'
+import {
+  FeatureToggleContext,
+} from '@helpers/FeatureToggleWrapper'
 
 export const SidebarLeft = () => {
   const [config] = useUserConfigs()
@@ -28,6 +31,7 @@ export const SidebarLeft = () => {
   const setBotListModal = useSetAtom(showingBotListModalAtom)
   const { downloadedModels } = useGetDownloadedModels()
   const { getAllBots } = useGetBots()
+  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
   const onMenuClick = (mainViewState: MainViewState) => {
     if (currentState === mainViewState) return
@@ -88,18 +92,21 @@ export const SidebarLeft = () => {
       icon: <LayoutGrid size={20} className="flex-shrink-0" />,
       state: MainViewState.MyModel,
     },
-    // {
-    //   name: 'Bot',
-    //   icon: <Bot size={20} className="flex-shrink-0" />,
-    //   state: MainViewState.CreateBot,
-    // },
+    ...(experimentalFeatureEnabed
+      ? [
+          {
+            name: 'Bot',
+            icon: <Bot size={20} className="flex-shrink-0" />,
+            state: MainViewState.CreateBot,
+          },
+        ]
+      : []),
     {
       name: 'Settings',
       icon: <Settings size={20} className="flex-shrink-0" />,
       state: MainViewState.Setting,
     },
   ]
-
   return (
     <m.div
       initial={false}
@@ -124,42 +131,44 @@ export const SidebarLeft = () => {
             config.sidebarLeftExpand ? 'items-start' : 'items-center'
           )}
         >
-          {menus.map((menu, i) => {
-            const isActive = currentState === menu.state
-            const isBotMenu = menu.name === 'Bot'
-            return (
-              <div className="relative w-full px-4 py-2" key={i}>
-                <button
-                  data-testid={menu.name}
-                  className={twMerge(
-                    'flex w-full flex-shrink-0 items-center gap-x-2',
-                    config.sidebarLeftExpand
-                      ? 'justify-start'
-                      : 'justify-center'
-                  )}
-                  onClick={() =>
-                    isBotMenu ? onBotListClick() : onMenuClick(menu.state)
-                  }
-                >
-                  {menu.icon}
-                  <m.span
-                    initial={false}
-                    variants={variant}
-                    animate={config.sidebarLeftExpand ? 'show' : 'hide'}
-                    className="text-xs font-semibold text-muted-foreground"
+          {menus
+            .filter((menu) => !!menu)
+            .map((menu, i) => {
+              const isActive = currentState === menu.state
+              const isBotMenu = menu.name === 'Bot'
+              return (
+                <div className="relative w-full px-4 py-2" key={i}>
+                  <button
+                    data-testid={menu.name}
+                    className={twMerge(
+                      'flex w-full flex-shrink-0 items-center gap-x-2',
+                      config.sidebarLeftExpand
+                        ? 'justify-start'
+                        : 'justify-center'
+                    )}
+                    onClick={() =>
+                      isBotMenu ? onBotListClick() : onMenuClick(menu.state)
+                    }
                   >
-                    {menu.name}
-                  </m.span>
-                </button>
-                {isActive ? (
-                  <m.div
-                    className="absolute inset-0 left-2 -z-10 h-full w-[calc(100%-16px)] rounded-md bg-accent/20 p-2 backdrop-blur-lg"
-                    layoutId="active-state"
-                  />
-                ) : null}
-              </div>
-            )
-          })}
+                    {menu.icon}
+                    <m.span
+                      initial={false}
+                      variants={variant}
+                      animate={config.sidebarLeftExpand ? 'show' : 'hide'}
+                      className="text-xs font-semibold text-muted-foreground"
+                    >
+                      {menu.name}
+                    </m.span>
+                  </button>
+                  {isActive ? (
+                    <m.div
+                      className="absolute inset-0 left-2 -z-10 h-full w-[calc(100%-16px)] rounded-md bg-accent/20 p-2 backdrop-blur-lg"
+                      layoutId="active-state"
+                    />
+                  ) : null}
+                </div>
+              )
+            })}
         </div>
         <m.div
           initial={false}
@@ -170,9 +179,7 @@ export const SidebarLeft = () => {
           <div className="space-y-2 rounded-lg border border-border bg-background/50 p-3">
             <button
               onClick={() =>
-                window.electronAPI?.openExternalUrl(
-                  'https://discord.gg/AsJ8krTT3N'
-                )
+                window.coreAPI?.openExternalUrl('https://discord.gg/AsJ8krTT3N')
               }
               className="block text-xs font-semibold text-muted-foreground"
             >
@@ -180,9 +187,7 @@ export const SidebarLeft = () => {
             </button>
             <button
               onClick={() =>
-                window.electronAPI?.openExternalUrl(
-                  'https://twitter.com/janhq_'
-                )
+                window.coreAPI?.openExternalUrl('https://twitter.com/janhq_')
               }
               className="block text-xs font-semibold text-muted-foreground"
             >

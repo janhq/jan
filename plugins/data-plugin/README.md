@@ -1,8 +1,6 @@
-## Database handler plugin for Jan App
-
-**Notice**: please only install dependencies and run build using npm and not yarn.
+## Jan data handler plugin
 
 - index.ts: Main entry point for the plugin.
 - module.ts: Defines the plugin module which would be executed by the main node process.
-- package.json: Defines the plugin metadata.
-- tsconfig.json: Defines the typescript configuration.
+- package.json: Plugin & npm module manifest.
+

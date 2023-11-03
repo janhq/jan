@@ -11,6 +11,8 @@ import {
   MainViewState,
   setMainViewStateAtom,
 } from '@helpers/atoms/MainView.atom'
+import ConfirmationModal from '../ConfirmationModal'
+import { showingCancelDownloadModalAtom } from '@helpers/atoms/Modal.atom'
 
 type Props = {
   suitableModel: ModelVersion
@@ -31,6 +33,9 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   )
   const downloadState = useAtomValue(downloadAtom)
   const setMainViewState = useSetAtom(setMainViewStateAtom)
+  const setShowingCancelDownloadModal = useSetAtom(
+    showingCancelDownloadModalAtom
+  )
 
   useEffect(() => {
     getPerformanceForModel(suitableModel)
@@ -70,16 +75,29 @@ const ExploreModelItemHeader: React.FC<Props> = ({
     // downloading
     downloadButton = (
       <Button
-        disabled
-        themes="accent"
+        themes="outline"
         onClick={() => {
-          setMainViewState(MainViewState.MyModel)
+          setShowingCancelDownloadModal(true)
         }}
       >
-        Downloading {formatDownloadPercentage(downloadState.percent)}
+        Cancel ({formatDownloadPercentage(downloadState.percent)})
       </Button>
     )
   }
+
+  let cancelDownloadModal =
+    downloadState != null ? (
+      <ConfirmationModal
+        atom={showingCancelDownloadModalAtom}
+        title="Cancel Download"
+        description={`Are you sure you want to cancel the download of ${downloadState?.fileName}?`}
+        onConfirm={() => {
+          window.coreAPI?.abortDownload(downloadState?.fileName)
+        }}
+      />
+    ) : (
+      <></>
+    )
 
   return (
     <div className="flex items-center justify-between rounded-t-md border-b border-border bg-background/50 px-4 py-2">
@@ -90,6 +108,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
         )}
       </div>
       {downloadButton}
+      {cancelDownloadModal}
     </div>
   )
 }

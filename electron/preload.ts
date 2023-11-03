@@ -1,6 +1,5 @@
 // Make Pluggable Electron's facade available to the renderer on window.plugins
-//@ts-ignore
-const useFacade = require("../core/plugin-manager/facade");
+import { useFacade } from "./core/plugin/facade";
 useFacade();
 //@ts-ignore
 const { contextBridge, ipcRenderer } = require("electron");
@@ -19,6 +18,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   pluginPath: () => ipcRenderer.invoke("pluginPath"),
 
+  appDataPath: () => ipcRenderer.invoke("appDataPath"),
+
   reloadPlugins: () => ipcRenderer.invoke("reloadPlugins"),
 
   appVersion: () => ipcRenderer.invoke("appVersion"),
@@ -27,6 +28,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   relaunch: () => ipcRenderer.invoke("relaunch"),
 
+  openAppDirectory: () => ipcRenderer.invoke("openAppDirectory"),
+
   deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
 
   installRemotePlugin: (pluginName: string) =>
@@ -34,6 +37,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   downloadFile: (url: string, path: string) =>
     ipcRenderer.invoke("downloadFile", url, path),
+
+  pauseDownload: (fileName: string) =>
+    ipcRenderer.invoke("pauseDownload", fileName),
+
+  resumeDownload: (fileName: string) =>
+    ipcRenderer.invoke("resumeDownload", fileName),
+
+  abortDownload: (fileName: string) =>
+    ipcRenderer.invoke("abortDownload", fileName),
 
   onFileDownloadUpdate: (callback: any) =>
     ipcRenderer.on("FILE_DOWNLOAD_UPDATE", callback),

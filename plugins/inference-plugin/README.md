@@ -1,3 +1,7 @@
+# Jan inference plugin
+
+Created using Jan app example
+
 # Create a Jan Plugin using Typescript
 
 Use this template to bootstrap the creation of a TypeScript Jan plugin. 🚀
@@ -71,3 +75,4 @@ There are a few things to keep in mind when writing your plugin code:
   [documentation](https://github.com/janhq/jan/blob/main/core/README.md).
 
 So, what are you waiting for? Go ahead and start customizing your plugin!
+

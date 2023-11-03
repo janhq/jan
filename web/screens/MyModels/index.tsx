@@ -30,7 +30,7 @@ const MyModelsScreen = () => {
     return (
       <div className="flex h-full items-center justify-center px-4">
         <div className="text-center">
-          <LayoutGrid size={32} className="text-accent/50 mx-auto" />
+          <LayoutGrid size={32} className="mx-auto text-accent/50" />
           <div className="mt-4">
             {isDownloadingFirstModel ? (
               <div className="relative">
@@ -38,7 +38,7 @@ const MyModelsScreen = () => {
                   <h1 className="text-2xl font-bold leading-snug">
                     Donwloading your first model
                   </h1>
-                  <p className="text-muted-foreground mt-1">
+                  <p className="mt-1 text-muted-foreground">
                     {downloadStates[0].fileName} -{' '}
                     {formatDownloadPercentage(downloadStates[0].percent)}
                   </p>
@@ -47,7 +47,7 @@ const MyModelsScreen = () => {
             ) : (
               <Fragment>
                 <h1 className="text-2xl font-bold leading-snug">{`Ups, You don't have a model.`}</h1>
-                <p className="text-muted-foreground mt-1 text-base">{`let’s download your first model`}</p>
+                <p className="mt-1 text-base text-muted-foreground">{`let’s download your first model`}</p>
                 <Button
                   className="mt-4"
                   themes="accent"
@@ -65,7 +65,12 @@ const MyModelsScreen = () => {
   return (
     <div className="flex h-full w-full overflow-y-auto">
       <div className="w-full p-5">
-        <h1 data-testid="testid-mymodels-header" className="text-lg font-semibold">My Models</h1>
+        <h1
+          data-testid="testid-mymodels-header"
+          className="text-lg font-semibold"
+        >
+          My Models
+        </h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
           You have <span>{downloadedModels.length}</span> models downloaded
         </p>

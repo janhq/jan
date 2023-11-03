@@ -2,10 +2,9 @@
 import {
   extensionPoints,
   plugins,
-} from '../../electron/core/plugin-manager/execution/index'
+} from '@plugin'
 import {
   CoreService,
-  DataService,
   InferenceService,
   ModelManagementService,
   StoreService,
