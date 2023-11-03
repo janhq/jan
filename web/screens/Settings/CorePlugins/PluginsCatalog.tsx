@@ -1,12 +1,21 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 'use client'
 
 import React, { useState, useEffect, useRef, useContext } from 'react'
 
+import { Switch } from '@janhq/uikit'
+
 import Loader from '@/containers/Loader'
-import useGetAppVersion from '@/hooks/useGetAppVersion'
-import { formatPluginsName } from '@/utils/converter'
+
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 import { pluginManager } from '@plugin/PluginManager'
+
+import useGetAppVersion from '@/hooks/useGetAppVersion'
+
+import { formatPluginsName } from '@/utils/converter'
+
+import { plugins, extensionPoints } from '@/plugin'
 
 const PluginCatalog = () => {
   const [activePlugins, setActivePlugins] = useState<any[]>([])
@@ -32,7 +41,7 @@ const PluginCatalog = () => {
           setPluginCatalog(data.default)
       }
     )
-  }, [version])
+  }, [experimentalFeatureEnabed, version])
 
   /**
    * Fetches the active plugins and their preferences from the `plugins` and `preferences` modules.
@@ -69,6 +78,7 @@ const PluginCatalog = () => {
    * If the uninstallation is successful, the application is relaunched using the `coreAPI.relaunch` function.
    * @param name - The name of the plugin to uninstall.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const uninstall = async (name: string) => {
     // Send the filename of the to be uninstalled plugin
     // to the main process for removal
@@ -153,16 +163,15 @@ const PluginCatalog = () => {
                 )}
               </div>
               {experimentalFeatureEnabed && (
-                <input
-                  type="checkbox"
+                <Switch
                   checked={isActivePlugin}
-                  // onCheckedChange={(e) => {
-                  //   if (e === true) {
-                  //     downloadTarball(item.name)
-                  //   } else {
-                  //     uninstall(item.name)
-                  //   }
-                  // }}
+                  onCheckedChange={(e) => {
+                    if (e === true) {
+                      downloadTarball(item.name)
+                    } else {
+                      uninstall(item.name)
+                    }
+                  }}
                 />
               )}
             </div>
