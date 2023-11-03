@@ -91,6 +91,11 @@ module.exports = {
             position: 'before',
           },
           {
+            pattern: '@/context/**',
+            group: 'parent',
+            position: 'before',
+          },
+          {
             pattern: '@/constants/**',
             group: 'parent',
             position: 'before',

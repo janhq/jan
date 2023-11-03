@@ -1,18 +1,23 @@
 'use client'
 
-import { PropsWithChildren } from 'react'
-import { useEffect, useState } from 'react'
-import CompactLogo from '@/containers/Logo/CompactLogo'
+import { PropsWithChildren, useEffect, useState } from 'react'
+
+import { PluginService } from '@janhq/core'
+
+import EventListenerWrapper from '@/containers/Providers/EventListener'
+import JotaiWrapper from '@/containers/Providers/Jotai'
+import ThemeWrapper from '@/containers/Providers/Theme'
+
+import FeatureToggleWrapper from '@/context/FeatureToggle'
+
 import { setupCoreServices } from '@/services/coreService'
 import {
   isCorePluginInstalled,
   setupBasePlugins,
 } from '@/services/pluginService'
-import FeatureToggleWrapper from '@/context/FeatureToggle'
-import EventListenerWrapper from '@/helpers/EventListenerWrapper'
-import JotaiWrapper from '@/helpers/JotaiWrapper'
+
 import { ModalWrapper } from '@/helpers/ModalWrapper'
-import { ThemeWrapper } from '@/helpers/ThemeWrapper'
+import { setup, plugins, activationPoints, extensionPoints } from '@/plugin'
 
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
@@ -68,7 +73,7 @@ const Providers = (props: PropsWithChildren) => {
             </FeatureToggleWrapper>
           ) : (
             <div className="flex h-screen w-screen items-center justify-center bg-background">
-              {/* <CompactLogo width={56} height={56} /> */}
+              <p>Splash Screen</p>
             </div>
           )}
         </ThemeWrapper>

@@ -6,7 +6,7 @@ import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 
 import { useSetAtom } from 'jotai'
 
-import { searchingModelText } from '@/helpers/JotaiWrapper'
+import { searchingModelText } from '@/containers/Providers/Jotai'
 
 const ModelSearchBar: React.FC = () => {
   const setSearchtext = useSetAtom(searchingModelText)

@@ -6,12 +6,13 @@ import ProgressBar from '@/components/ProgressBar'
 
 import SystemItem from '@/containers/Layout/BottomBar/SystemItem'
 
+import { appDownloadProgress } from '@/containers/Providers/Jotai'
+
 import useGetAppVersion from '@/hooks/useGetAppVersion'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
-import { appDownloadProgress } from '@/helpers/JotaiWrapper'
 import { modelDownloadStateAtom } from '@/helpers/atoms/DownloadState.atom'
 import {
   activeAssistantModelAtom,

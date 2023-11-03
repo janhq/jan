@@ -1,15 +1,14 @@
-import { PluginType } from '@janhq/core'
-import { useSetAtom } from 'jotai'
-
-import { getDownloadedModels } from './useGetDownloadedModels'
+import {
+  getDownloadedModels,
+  useGetDownloadedModels,
+} from '@/hooks/useGetDownloadedModels'
 import { pluginManager } from '@plugin/PluginManager'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { Model } from '@janhq/core/lib/types'
-
-import { downloadedModelAtom } from '@/helpers/atoms/DownloadedModel.atom'
+import { PluginType } from '@janhq/core'
 
 export default function useDeleteModel() {
-  const setDownloadedModels = useSetAtom(downloadedModelAtom)
+  const { setDownloadedModels } = useGetDownloadedModels()
 
   const deleteModel = async (model: Model) => {
     await pluginManager

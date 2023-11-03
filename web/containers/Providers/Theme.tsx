@@ -1,18 +1,14 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { PropsWithChildren } from 'react'
 
 import { ThemeProvider } from 'next-themes'
 
-import { useUserConfigs } from '@/hooks/useUserConfigs'
-
 import { motion as m } from 'framer-motion'
 
-type Props = {
-  children: ReactNode
-}
+import { useUserConfigs } from '@/hooks/useUserConfigs'
 
-export const ThemeWrapper: React.FC<Props> = ({ children }) => {
+export default function ThemeWrapper({ children }: PropsWithChildren) {
   const [config] = useUserConfigs()
 
   return (

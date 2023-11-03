@@ -3,9 +3,10 @@ import { Fragment, useEffect } from 'react'
 
 import { Listbox, Transition } from '@headlessui/react'
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
 
-import { downloadedModelAtom } from '@/helpers/atoms/DownloadedModel.atom'
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 
 function classNames(...classes: any) {
@@ -13,7 +14,7 @@ function classNames(...classes: any) {
 }
 
 const SelectModels: React.FC = () => {
-  const downloadedModels = useAtomValue(downloadedModelAtom)
+  const { downloadedModels } = useGetDownloadedModels()
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
 
   useEffect(() => {

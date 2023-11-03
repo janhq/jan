@@ -19,7 +19,7 @@ import {
   getMainViewStateAtom,
 } from '@/helpers/atoms/MainView.atom'
 
-const Page: React.FC = () => {
+export default function Page() {
   const viewState = useAtomValue(getMainViewStateAtom)
 
   let children = null
@@ -56,5 +56,3 @@ const Page: React.FC = () => {
 
   return <BaseLayout>{children}</BaseLayout>
 }
-
-export default Page

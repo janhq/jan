@@ -2,7 +2,7 @@ import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import { useSetAtom } from 'jotai'
 import { useDebouncedCallback } from 'use-debounce'
 
-import { modelSearchAtom } from '@/helpers/JotaiWrapper'
+import { modelSearchAtom } from '@/containers/Providers/Jotai'
 
 export enum SearchType {
   Model = 'model',

@@ -1,19 +1,17 @@
-'use client'
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { ReactNode, useEffect } from 'react'
 
 import { useSetAtom } from 'jotai'
 
-import { getDownloadedModels } from '../hooks/useGetDownloadedModels'
-
+import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import EventHandler from './EventHandler'
-import { appDownloadProgress } from './JotaiWrapper'
+import { appDownloadProgress } from './Jotai'
 import {
   setDownloadStateAtom,
   setDownloadStateSuccessAtom,
-} from './atoms/DownloadState.atom'
-
-import { downloadedModelAtom } from './atoms/DownloadedModel.atom'
+} from '@/helpers/atoms/DownloadState.atom'
 import { pluginManager } from '@plugin/PluginManager'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { downloadingModelsAtom } from './atoms/Model.atom'
@@ -26,12 +24,12 @@ export default function EventListenerWrapper({ children }: Props) {
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
   const setProgress = useSetAtom(appDownloadProgress)
-  const setDownloadedModels = useSetAtom(downloadedModelAtom)
   const models = useAtomValue(downloadingModelsAtom)
   const modelsRef = useRef(models)
   useEffect(() => {
     modelsRef.current = models
   }, [models])
+  const { setDownloadedModels } = useGetDownloadedModels()
 
   useEffect(() => {
     if (window && window.electronAPI) {
@@ -83,13 +81,16 @@ export default function EventListenerWrapper({ children }: Props) {
         }
       )
 
-      window.electronAPI.onAppUpdateDownloadSuccess(
-        (_event: string, callback: any) => {
-          setProgress(-1)
-        }
-      )
+      window.electronAPI.onAppUpdateDownloadSuccess(() => {
+        setProgress(-1)
+      })
     }
-  }, [])
+  }, [
+    setDownloadState,
+    setDownloadStateSuccess,
+    setDownloadedModels,
+    setProgress,
+  ])
 
   return (
     <div id="eventlistener">

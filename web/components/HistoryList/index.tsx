@@ -4,14 +4,14 @@ import { useAtomValue } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
+import { searchAtom } from '@/containers/Providers/Jotai'
+
 import useGetUserConversations from '@/hooks/useGetUserConversations'
 
 import ExpandableHeader from '../ExpandableHeader'
 import HistoryItem from '../HistoryItem'
 
 import SidebarEmptyHistory from '../SidebarEmptyHistory'
-
-import { searchAtom } from '@/helpers/JotaiWrapper'
 
 import { userConversationsAtom } from '@/helpers/atoms/Conversation.atom'
 

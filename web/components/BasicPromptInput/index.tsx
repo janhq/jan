@@ -8,7 +8,7 @@ import useCreateConversation from '@/hooks/useCreateConversation'
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
-import { currentPromptAtom } from '@/helpers/JotaiWrapper'
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
 import { getActiveConvoIdAtom } from '@/helpers/atoms/Conversation.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 
@@ -68,7 +68,7 @@ const BasicPromptInput: React.FC = () => {
   }
 
   return (
-    <div className=" border-border rounded-lg border shadow-sm">
+    <div className=" rounded-lg border border-border shadow-sm">
       <textarea
         ref={textareaRef}
         onKeyDown={handleKeyDown}

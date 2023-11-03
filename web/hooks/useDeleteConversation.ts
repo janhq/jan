@@ -1,5 +1,7 @@
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { currentPromptAtom } from '@/helpers/JotaiWrapper'
+
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
+
 import { deleteConversationMessage } from '@/helpers/atoms/ChatMessage.atom'
 import { PluginType } from '@janhq/core'
 import {

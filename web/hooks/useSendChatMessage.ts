@@ -7,11 +7,10 @@ import {
 } from '@janhq/core'
 import { toChatMessage } from '@/models/ChatMessage'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { currentPromptAtom } from '@/helpers/JotaiWrapper'
-import {
-  addNewMessageAtom,
-  getCurrentChatMessagesAtom,
-} from '@helpers/atoms/ChatMessage.atom'
+
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
+
+import { addNewMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   currentConversationAtom,
   updateConversationAtom,
