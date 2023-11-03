@@ -1,7 +1,8 @@
 import React from 'react'
 
-import CompactLogo from '@/containers/Logo/CompactLogo'
 import { useSetAtom } from 'jotai'
+
+// import CompactLogo from '@/containers/Logo/CompactLogo'
 
 import {
   setMainViewStateAtom,
@@ -14,7 +15,7 @@ const WelcomeScreen = () => {
   return (
     <div className="flex h-full items-center justify-center px-4">
       <div className="text-center">
-        <CompactLogo width={40} height={40} />
+        {/* <CompactLogo width={40} height={40} /> */}
         <h1
           data-testid="testid-welcome-title"
           className="text-2xl font-bold leading-snug"

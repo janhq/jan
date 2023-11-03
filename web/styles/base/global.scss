@@ -15,11 +15,13 @@
     height: 32px;
     -webkit-user-select: none;
     -webkit-app-region: drag;
-    // @apply bg-white;
-    // @apply dark:bg-gray-950/50;
   }
 
   .unset-drag {
     -webkit-app-region: no-drag;
+  }
+
+  .unselect {
+    user-select: none;
   }
 }

@@ -15,6 +15,8 @@ import {
 
 import { twMerge } from 'tailwind-merge'
 
+import LogoMark from '@/containers/Brand/Logo/Mark'
+
 // import useGetBots from '@/hooks/useGetBots'
 // import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 // import { useUserConfigs } from '@/hooks/useUserConfigs'
@@ -97,10 +99,13 @@ export default function RibbonNav() {
     },
   ]
   return (
-    <div className="border-border flex w-16 flex-shrink-0 flex-col border-r py-10">
+    <div className="flex w-16 flex-shrink-0 flex-col border-r border-border pb-4 pt-10">
       <div className="mt-2 flex h-full w-full flex-col items-center justify-between">
         <div className="flex h-full w-full flex-col items-center justify-between">
           <div>
+            <div className="unselect mb-4">
+              <LogoMark width={28} height={28} className="mx-auto" />
+            </div>
             {primaryMenus
               .filter((primary) => !!primary)
               .map((primary, i) => {

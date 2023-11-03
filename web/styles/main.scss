@@ -3,8 +3,9 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
+@import './base/global.scss';
+
 @import './variables.scss';
-@import './global.scss';
 @import './code-block.scss';
 @import './loader.scss';
 @import './message.scss';

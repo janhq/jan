@@ -68,7 +68,7 @@ const Providers = (props: PropsWithChildren) => {
             </FeatureToggleWrapper>
           ) : (
             <div className="flex h-screen w-screen items-center justify-center bg-background">
-              <CompactLogo width={56} height={56} />
+              {/* <CompactLogo width={56} height={56} /> */}
             </div>
           )}
         </ThemeWrapper>
