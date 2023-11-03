@@ -1,6 +1,6 @@
 {
   "name": "@janhq/inference-plugin",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "Inference Plugin, powered by @janhq/nitro, bring a high-performance Llama model inference in pure C++.",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/command-line.svg",
   "main": "dist/index.js",
@@ -14,8 +14,8 @@
   ],
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "downloadnitro:linux-cpu": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64.zip -e --strip 1 -o ./nitro/linux-cpu && chmod +x ./nitro/linux-cpu/nitro",
-    "downloadnitro:linux-cuda": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda.zip -e --strip 1 -o ./nitro/linux-cuda && chmod +x ./nitro/linux-cuda/nitro",
+    "downloadnitro:linux-cpu": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64.zip -e --strip 1 -o ./nitro/linux-cpu && chmod +x ./nitro/linux-cpu/nitro && chmod +x ./nitro/linux-start.sh ",
+    "downloadnitro:linux-cuda": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda.zip -e --strip 1 -o ./nitro/linux-cuda && chmod +x ./nitro/linux-cuda/nitro && chmod +x ./nitro/linux-start.sh",
     "downloadnitro:mac-arm64": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-arm64.zip -e --strip 1 -o ./nitro/mac-arm64 && chmod +x ./nitro/mac-arm64/nitro",
     "downloadnitro:mac-x64": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-amd64.zip -e --strip 1 -o ./nitro/mac-x64 && chmod +x ./nitro/mac-x64/nitro",
     "downloadnitro:win-cpu": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-win-amd64.zip -e --strip 1 -o ./nitro/win-cpu",
