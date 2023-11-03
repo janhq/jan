@@ -1,17 +1,10 @@
 /* eslint-disable react/display-name */
 
-'use client'
-
 import { forwardRef, useEffect, useState } from 'react'
 
-import useGetMostSuitableModelVersion from '@/hooks/useGetMostSuitableModelVersion'
-
-import { toGigabytes } from '@/utils/converter'
-import { displayDate } from '@/utils/datetime'
-
-import ExploreModelItemHeader from '../ExploreModelItemHeader'
-import ModelVersionList from '../ModelVersionList'
-import SimpleTag from '../SimpleTag'
+import ExploreModelItemHeader from '@/components/ExploreModelItemHeader'
+import ModelVersionList from '@/components/ModelVersionList'
+import SimpleTag from '@/components/SimpleTag'
 
 import {
   MiscellanousTag,
@@ -20,7 +13,12 @@ import {
   RamRequired,
   UsecaseTag,
   VersionTag,
-} from '../SimpleTag/TagType'
+} from '@/components/SimpleTag/TagType'
+
+import useGetMostSuitableModelVersion from '@/hooks/useGetMostSuitableModelVersion'
+
+import { toGigabytes } from '@/utils/converter'
+import { displayDate } from '@/utils/datetime'
 
 type Props = {
   model: ModelCatalog
@@ -47,7 +45,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
   return (
     <div
       ref={ref}
-      className="border-border mb-4 flex flex-col rounded-md border bg-background/60"
+      className="mb-4 flex flex-col rounded-md border border-border bg-background/60"
     >
       <ExploreModelItemHeader
         suitableModel={suitableModel}
@@ -131,7 +129,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
         </div>
 
         {model.availableVersions?.length > 0 && (
-          <div className="border-border mt-5 w-full rounded-md border bg-background p-2">
+          <div className="mt-5 w-full rounded-md border border-border bg-background p-2">
             <button onClick={() => setShow(!show)} className="w-full">
               {!show
                 ? '+ Show Available Versions'

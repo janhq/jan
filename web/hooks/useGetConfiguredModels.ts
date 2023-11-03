@@ -5,7 +5,13 @@ import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { PluginType } from '@janhq/core'
 import { dummyModel } from '@utils/dummy'
 
-export default function useGetConfiguredModels() {
+import { executeSerial } from '@/services/pluginService'
+
+export async function getConfiguredModels(): Promise<Product[]> {
+  return executeSerial(ModelManagementService.GetConfiguredModels)
+}
+
+export function useGetConfiguredModels() {
   const [loading, setLoading] = useState<boolean>(false)
   const [models, setModels] = useState<ModelCatalog[]>([])
 
