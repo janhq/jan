@@ -1,20 +1,24 @@
 import { currentPromptAtom } from '@helpers/JotaiWrapper'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
-  DataService,
   EventName,
-  InferenceService,
+  MessageHistory,
+  NewMessageRequest,
+  PluginType,
   events,
-  store,
 } from '@janhq/core'
 import { toChatMessage } from '@models/ChatMessage'
-import { executeSerial } from '@services/pluginService'
-import { addNewMessageAtom } from '@helpers/atoms/ChatMessage.atom'
+import {
+  addNewMessageAtom,
+  getCurrentChatMessagesAtom,
+} from '@helpers/atoms/ChatMessage.atom'
 import {
   currentConversationAtom,
   updateConversationAtom,
   updateConversationWaitingForResponseAtom,
 } from '@helpers/atoms/Conversation.atom'
+import { pluginManager } from '@plugin/PluginManager'
+import { InferencePlugin } from '@janhq/core/lib/plugins'
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom)
@@ -22,6 +26,7 @@ export default function useSendChatMessage() {
   const updateConversation = useSetAtom(updateConversationAtom)
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
+  const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
 
   let timeout: any | undefined = undefined
 
@@ -40,10 +45,9 @@ export default function useSendChatMessage() {
         setTimeout(async () => {
           newMessage.message =
             'summary this conversation in 5 words, the response should just include the summary'
-          const result = await executeSerial(
-            InferenceService.InferenceRequest,
-            newMessage
-          )
+          const result = await pluginManager
+            .get<InferencePlugin>(PluginType.Inference)
+            ?.inferenceRequest(newMessage)
 
           if (
             result?.message &&
@@ -55,7 +59,6 @@ export default function useSendChatMessage() {
               summary: result.message,
             }
             updateConversation(updatedConv)
-            await executeSerial(DataService.UpdateConversation, updatedConv)
           }
         }, 1000)
       }
@@ -70,14 +73,28 @@ export default function useSendChatMessage() {
     updateConvWaiting(convoId, true)
 
     const prompt = currentPrompt.trim()
-    const newMessage: RawMessage = {
+    const messageHistory: MessageHistory[] = currentMessages
+      .map((msg) => {
+        return {
+          role: msg.senderUid === 'user' ? 'user' : 'assistant',
+          content: msg.text ?? '',
+        }
+      })
+      .reverse()
+      .concat([
+        {
+          role: 'user',
+          content: prompt,
+        } as MessageHistory,
+      ])
+    const newMessage: NewMessageRequest = {
+      _id: `message-${Date.now()}`,
       conversationId: convoId,
       message: prompt,
       user: 'user',
       createdAt: new Date().toISOString(),
+      history: messageHistory,
     }
-    const id = await executeSerial(DataService.CreateMessage, newMessage)
-    newMessage._id = id
 
     const newChatMessage = toChatMessage(newMessage)
     addNewMessage(newChatMessage)
@@ -92,7 +109,6 @@ export default function useSendChatMessage() {
       }
 
       updateConversation(updatedConv)
-      await executeSerial(DataService.UpdateConversation, updatedConv)
     } else {
       const updatedConv: Conversation = {
         ...currentConvo,
@@ -100,7 +116,6 @@ export default function useSendChatMessage() {
       }
 
       updateConversation(updatedConv)
-      await executeSerial(DataService.UpdateConversation, updatedConv)
     }
 
     updateConvSummary(newMessage)

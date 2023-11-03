@@ -4,6 +4,7 @@ import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid'
 import { useAtom, useAtomValue } from 'jotai'
 import { selectedModelAtom } from '@helpers/atoms/Model.atom'
 import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
+import { Model } from '@janhq/core/lib/types'
 
 function classNames(...classes: any) {
   return classes.filter(Boolean).join(' ')
@@ -19,7 +20,7 @@ const SelectModels: React.FC = () => {
     }
   }, [downloadedModels])
 
-  const onModelSelected = (model: AssistantModel) => {
+  const onModelSelected = (model: Model) => {
     setSelectedModel(model)
   }
 

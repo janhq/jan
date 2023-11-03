@@ -52,7 +52,7 @@ jobs:
       - name: Install yarn dependencies
         run: |
           yarn install
-          yarn build:pull-plugins
+          yarn build:plugins
         env:
           APP_PATH: "."
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
@@ -104,7 +104,7 @@ jobs:
         run: |
           yarn config set network-timeout 300000
           yarn install
-          yarn build:pull-plugins
+          yarn build:plugins
 
       - name: Build and publish app
         run: |
@@ -153,7 +153,7 @@ jobs:
         run: |
           yarn config set network-timeout 300000
           yarn install
-          yarn build:pull-plugins
+          yarn build:plugins
 
       - name: Build and publish app
         run: |

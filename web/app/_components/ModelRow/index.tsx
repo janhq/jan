@@ -4,16 +4,17 @@ import { useAtomValue } from 'jotai'
 import ModelActionButton, { ModelActionType } from '../ModelActionButton'
 import useStartStopModel from '@hooks/useStartStopModel'
 import useDeleteModel from '@hooks/useDeleteModel'
-import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
+import { activeModelAtom, stateModel } from '@helpers/atoms/Model.atom'
 import { toGigabytes } from '@utils/converter'
+import { Model } from '@janhq/core/lib/types'
 
 type Props = {
-  model: AssistantModel
+  model: Model
 }
 
 const ModelRow: React.FC<Props> = ({ model }) => {
   const { startModel, stopModel } = useStartStopModel()
-  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const activeModel = useAtomValue(activeModelAtom)
   const { deleteModel } = useDeleteModel()
   const { loading, model: currentModelState } = useAtomValue(stateModel)
 

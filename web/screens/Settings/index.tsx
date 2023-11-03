@@ -8,12 +8,10 @@ import AppearanceOptions from './Appearance'
 import PluginCatalog from './CorePlugins/PluginsCatalog'
 import PreferencePlugins from './CorePlugins/PreferencePlugins'
 
-import { preferences } from '@janhq/core'
 import { twMerge } from 'tailwind-merge'
 
 import { formatPluginsName } from '@utils/converter'
 
-import { extensionPoints } from '@plugin'
 import Advanced from './Advanced'
 
 const SettingsScreen = () => {
@@ -41,21 +39,17 @@ const SettingsScreen = () => {
    */
   useEffect(() => {
     const getActivePluginPreferences = async () => {
-      if (extensionPoints.get('PluginPreferences')) {
-        const data = await Promise.all(
-          extensionPoints.execute('PluginPreferences', {})
-        )
-        setPreferenceItems(Array.isArray(data) ? data : [])
-        Promise.all(
-          (Array.isArray(data) ? data : []).map((e) =>
-            preferences
-              .get(e.pluginName, e.preferenceKey)
-              .then((k) => ({ key: e.preferenceKey, value: k }))
-          )
-        ).then((data) => {
-          setPreferenceValues(data)
-        })
-      }
+      // setPreferenceItems(Array.isArray(data) ? data : [])
+      // TODO: Add back with new preferences mechanism
+      // Promise.all(
+      //   (Array.isArray(data) ? data : []).map((e) =>
+      //     preferences
+      //       .get(e.pluginName, e.preferenceKey)
+      //       .then((k) => ({ key: e.preferenceKey, value: k }))
+      //   )
+      // ).then((data) => {
+      //   setPreferenceValues(data)
+      // })
     }
     getActivePluginPreferences()
   }, [])

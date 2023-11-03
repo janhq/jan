@@ -1,15 +1,19 @@
-import { executeSerial } from '@services/pluginService'
-import { ModelManagementService } from '@janhq/core'
-import { useSetAtom } from 'jotai'
+import { PluginType } from '@janhq/core'
+import { useAtom, useSetAtom } from 'jotai'
 import { setDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
+import { Model, ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
+import { pluginManager } from '@plugin/PluginManager'
+import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { downloadingModelsAtom } from '@helpers/atoms/Model.atom'
 
 export default function useDownloadModel() {
   const setDownloadState = useSetAtom(setDownloadStateAtom)
+  const [models, setModelsAtom] = useAtom(downloadingModelsAtom)
 
   const assistanModel = (
-    model: Product,
+    model: ModelCatalog,
     modelVersion: ModelVersion
-  ): AssistantModel => {
+  ): Model => {
     return {
       _id: modelVersion._id,
       name: modelVersion.name,
@@ -29,9 +33,6 @@ export default function useDownloadModel() {
       author: model.author,
       version: model.version,
       modelUrl: model.modelUrl,
-      nsfw: model.nsfw === true ? false : true,
-      greeting: model.greeting,
-      type: model.type,
       createdAt: new Date(model.createdAt).getTime(),
       updatedAt: new Date(model.updatedAt ?? '').getTime(),
       status: '',
@@ -40,7 +41,10 @@ export default function useDownloadModel() {
     }
   }
 
-  const downloadModel = async (model: Product, modelVersion: ModelVersion) => {
+  const downloadModel = async (
+    model: ModelCatalog,
+    modelVersion: ModelVersion
+  ) => {
     // set an initial download state
     setDownloadState({
       modelId: modelVersion._id,
@@ -59,11 +63,10 @@ export default function useDownloadModel() {
 
     modelVersion.startDownloadAt = Date.now()
     const assistantModel = assistanModel(model, modelVersion)
-    await executeSerial(ModelManagementService.StoreModel, assistantModel)
-    await executeSerial(ModelManagementService.DownloadModel, {
-      downloadUrl: modelVersion.downloadLink,
-      fileName: modelVersion._id,
-    })
+    setModelsAtom([...models, assistantModel])
+    await pluginManager
+      .get<ModelPlugin>(PluginType.Model)
+      ?.downloadModel(assistantModel)
   }
 
   return {

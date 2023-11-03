@@ -1,15 +1,10 @@
 import React, { Fragment, useEffect } from 'react'
 import ExploreModelList from '@screens/ExploreModels/ExploreModelList'
 import useGetConfiguredModels from '@hooks/useGetConfiguredModels'
-import { getConfiguredModels } from '@hooks/useGetDownloadedModels'
 import Loader from '@containers/Loader'
 
 const ExploreModelsScreen = () => {
-  const { loading, models } = useGetConfiguredModels()
-
-  useEffect(() => {
-    getConfiguredModels()
-  }, [])
+  const { loading } = useGetConfiguredModels()
 
   return (
     <div className="flex h-full w-full overflow-y-auto">

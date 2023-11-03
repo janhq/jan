@@ -10,9 +10,9 @@ import {
 } from '@helpers/atoms/MainView.atom'
 import { displayDate } from '@utils/datetime'
 import { twMerge } from 'tailwind-merge'
-import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { activeModelAtom } from '@helpers/atoms/Model.atom'
 import useStartStopModel from '@hooks/useStartStopModel'
-import useGetModelById from '@hooks/useGetModelById'
+import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
 
 type Props = {
   conversation: Conversation
@@ -29,12 +29,12 @@ const HistoryItem: React.FC<Props> = ({
 }) => {
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
   const isSelected = activeConvoId === conversation._id
-  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const activeModel = useAtomValue(activeModelAtom)
   const { startModel } = useStartStopModel()
-  const { getModelById } = useGetModelById()
 
   const setMainViewState = useSetAtom(setMainViewStateAtom)
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
+  const models = useAtomValue(downloadedModelAtom)
 
   const onClick = async () => {
     if (conversation.modelId == null) {
@@ -42,7 +42,7 @@ const HistoryItem: React.FC<Props> = ({
       return
     }
 
-    const model = await getModelById(conversation.modelId)
+    const model = models.find((e) => e._id === conversation.modelId)
     if (model != null) {
       if (activeModel == null) {
         // if there's no active model, we simply load conversation's model
