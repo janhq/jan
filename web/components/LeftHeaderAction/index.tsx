@@ -11,7 +11,7 @@ import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import SecondaryButton from '../SecondaryButton'
 
-import { FeatureToggleContext } from '@/helpers/FeatureToggleWrapper'
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 import {
   MainViewState,
   setMainViewStateAtom,

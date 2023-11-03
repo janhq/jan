@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useState } from 'react'
+import { createContext, ReactNode, useEffect, useState } from 'react'
 
 interface FeatureToggleContextType {
   experimentalFeatureEnabed: boolean
@@ -7,13 +7,17 @@ interface FeatureToggleContextType {
 
 const initialContext: FeatureToggleContextType = {
   experimentalFeatureEnabed: false,
-  setExperimentalFeatureEnabled: (boolean) => {},
+  setExperimentalFeatureEnabled: () => {},
 }
 
 export const FeatureToggleContext =
-  React.createContext<FeatureToggleContextType>(initialContext)
+  createContext<FeatureToggleContextType>(initialContext)
 
-export function FeatureToggleWrapper({ children }: { children: ReactNode }) {
+export default function FeatureToggleWrapper({
+  children,
+}: {
+  children: ReactNode
+}) {
   const EXPERIMENTAL_FEATURE_ENABLED = 'expermientalFeatureEnabled'
   const [experimentalEnabed, setExperimentalEnabled] = useState<boolean>(false)
 
@@ -21,6 +25,7 @@ export function FeatureToggleWrapper({ children }: { children: ReactNode }) {
     // Global experimental feature is disabled
     let globalFeatureEnabled = false
     if (localStorage.getItem(EXPERIMENTAL_FEATURE_ENABLED) !== 'true') {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       globalFeatureEnabled = true
     }
   }, [])

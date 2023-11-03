@@ -8,8 +8,8 @@ import {
   isCorePluginInstalled,
   setupBasePlugins,
 } from '@/services/pluginService'
+import FeatureToggleWrapper from '@/context/FeatureToggle'
 import EventListenerWrapper from '@/helpers/EventListenerWrapper'
-import { FeatureToggleWrapper } from '@/helpers/FeatureToggleWrapper'
 import JotaiWrapper from '@/helpers/JotaiWrapper'
 import { ModalWrapper } from '@/helpers/ModalWrapper'
 import { ThemeWrapper } from '@/helpers/ThemeWrapper'

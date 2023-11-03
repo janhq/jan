@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef, useContext } from 'react'
 import Loader from '@/containers/Loader'
 import useGetAppVersion from '@/hooks/useGetAppVersion'
 import { formatPluginsName } from '@/utils/converter'
-import { FeatureToggleContext } from '@/helpers/FeatureToggleWrapper'
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 import { pluginManager } from '@plugin/PluginManager'
 
 const PluginCatalog = () => {

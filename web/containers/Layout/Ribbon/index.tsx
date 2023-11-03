@@ -21,7 +21,7 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 // import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 // import { useUserConfigs } from '@/hooks/useUserConfigs'
 
-import { FeatureToggleContext } from '@/helpers/FeatureToggleWrapper'
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 import {
   MainViewState,
   getMainViewStateAtom,

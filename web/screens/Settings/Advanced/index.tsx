@@ -2,7 +2,7 @@
 
 import React, { useContext, useRef } from 'react'
 
-import { FeatureToggleContext } from '@/helpers/FeatureToggleWrapper'
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 const Advanced = () => {
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
