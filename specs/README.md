@@ -1,7 +1,8 @@
-# Architectural Decision Records (ADR)
+# Jan Improvement Proposals
 
-This is a repo of key architecture decisions for Jan. [Read more about ADRs](https://github.com/joelparkerhenderson/architecture-decision-record)
+This is a repo of key architecture decisions for Jan. 
 
+[Read more about ADRs](https://github.com/joelparkerhenderson/architecture-decision-record)
 
 ### Get started:
 
