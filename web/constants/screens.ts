@@ -1,9 +1,9 @@
 export enum MainViewState {
   Welcome,
   CreateBot,
-  ExploreModel,
-  MyModel,
+  ExploreModels,
+  MyModels,
   Setting,
-  Conversation,
+  Chat,
   BotInfo,
 }

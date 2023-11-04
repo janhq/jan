@@ -75,7 +75,7 @@ const BotSetting: React.FC = () => {
               rows={4}
               name="comment"
               id="comment"
-              className="text-background-reverse placeholder:text-muted-foreground focus:ring-accent/50 block w-full resize-none rounded-md border-0 bg-background/80 py-1.5 text-xs leading-relaxed shadow-sm ring-1 ring-inset ring-border focus:ring-2 focus:ring-inset"
+              className="text-background-reverse block w-full resize-none rounded-md border-0 bg-background/80 py-1.5 text-xs leading-relaxed shadow-sm ring-1 ring-inset ring-border placeholder:text-muted-foreground focus:ring-2 focus:ring-inset focus:ring-accent/50"
               defaultValue={activeBot.systemPrompt}
               onChange={(e) => debouncedSystemPrompt(e.target.value)}
             />
@@ -99,7 +99,7 @@ const BotSetting: React.FC = () => {
               debouncedMaxToken(value)
             }}
           />
-          <span className="border-accent rounded-md border px-2 py-1">
+          <span className="rounded-md border border-accent px-2 py-1">
             {formatTwoDigits(maxTokens)}
           </span>
         </div>
@@ -119,7 +119,7 @@ const BotSetting: React.FC = () => {
               debouncedFreqPenalty(value)
             }}
           />
-          <span className="border-accent rounded-md border px-2 py-1">
+          <span className="rounded-md border border-accent px-2 py-1">
             {formatTwoDigits(frequencyPenalty)}
           </span>
         </div>
@@ -139,7 +139,7 @@ const BotSetting: React.FC = () => {
               debouncedPresencePenalty(value)
             }}
           />
-          <span className="border-accent rounded-md border px-2 py-1">
+          <span className="rounded-md border border-accent px-2 py-1">
             {formatTwoDigits(presencePenalty)}
           </span>
         </div>
@@ -162,7 +162,7 @@ const BotSetting: React.FC = () => {
               debouncedTemperature(Number(e.target.value))
             }}
           />
-          <span className="border-accent rounded-md border px-2 py-1">
+          <span className="rounded-md border border-accent px-2 py-1">
             {formatTwoDigits(temperature)}
           </span>
         </div>

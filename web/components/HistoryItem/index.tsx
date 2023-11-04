@@ -60,7 +60,7 @@ const HistoryItem: React.FC<Props> = ({
     }
 
     if (activeConvoId !== conversation._id) {
-      setMainViewState(MainViewState.Conversation)
+      setMainViewState(MainViewState.Chat)
       setActiveConvoId(conversation._id)
     }
   }
@@ -80,14 +80,14 @@ const HistoryItem: React.FC<Props> = ({
       <div className="flex flex-1 flex-col">
         {/* title */}
 
-        <span className="text-muted-foreground mb-1 line-clamp-1 leading-5">
+        <span className="mb-1 line-clamp-1 leading-5 text-muted-foreground">
           {updatedAt && displayDate(new Date(updatedAt).getTime())}
         </span>
 
         <span className="line-clamp-1">{summary ?? name}</span>
 
         {/* description */}
-        <span className="text-muted-foreground mt-1 line-clamp-2">
+        <span className="mt-1 line-clamp-2 text-muted-foreground">
           {description}
         </span>
       </div>

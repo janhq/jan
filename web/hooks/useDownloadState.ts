@@ -1,5 +1,7 @@
 import { atom, useSetAtom, useAtomValue } from 'jotai'
 
+import { toaster } from '@/containers/Toast'
+
 // download states
 const modelDownloadStateAtom = atom<Record<string, DownloadState>>({})
 
@@ -21,6 +23,11 @@ const setDownloadStateSuccessAtom = atom(null, (get, set, fileName: string) => {
   }
   delete currentState[fileName]
   set(modelDownloadStateAtom, currentState)
+  toaster({
+    title: 'Download Completed',
+    description: `Download ${fileName} complete`,
+    type: 'success',
+  })
 })
 
 export function useDownloadState() {

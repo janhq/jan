@@ -67,7 +67,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
     downloadButton = (
       <button
         onClick={() => {
-          setMainViewState(MainViewState.MyModel)
+          setMainViewState(MainViewState.MyModels)
         }}
       >
         View Downloaded Model

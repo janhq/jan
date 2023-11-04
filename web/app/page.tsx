@@ -26,11 +26,11 @@ export default function Page() {
       children = <BotScreen />
       break
 
-    case MainViewState.ExploreModel:
+    case MainViewState.ExploreModels:
       children = <ExploreModelsScreen />
       break
 
-    case MainViewState.MyModel:
+    case MainViewState.MyModels:
       children = <MyModelsScreen />
       break
 

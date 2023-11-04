@@ -36,7 +36,7 @@ const SidebarEmptyHistory: React.FC = () => {
 
   const onClick = async () => {
     if (action === ActionButton.DownloadModel) {
-      setMainViewState(MainViewState.ExploreModel)
+      setMainViewState(MainViewState.ExploreModelss)
     } else {
       if (!activeModel) {
         modalNoActiveModel(true)
@@ -51,7 +51,7 @@ const SidebarEmptyHistory: React.FC = () => {
       <MessageCircle size={24} />
       <div className="flex flex-col items-center">
         <h6 className="text-center text-base">No Chat History</h6>
-        <p className="text-muted-foreground mb-6 mt-1 text-center">
+        <p className="mb-6 mt-1 text-center text-muted-foreground">
           Get started by creating a new chat.
         </p>
         <button onClick={onClick}>{action}</button>

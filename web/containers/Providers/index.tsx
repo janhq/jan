@@ -2,6 +2,8 @@
 
 import { PropsWithChildren, useEffect, useState } from 'react'
 
+import { Toaster } from 'react-hot-toast'
+
 import { PluginService } from '@janhq/core'
 
 import { TooltipProvider } from '@janhq/uikit'
@@ -73,6 +75,7 @@ const Providers = (props: PropsWithChildren) => {
                 <ModalWrapper>{children}</ModalWrapper>
               </TooltipProvider>
             </EventListenerWrapper>
+            <Toaster position="top-right" />
           </FeatureToggleWrapper>
         )}
       </ThemeWrapper>

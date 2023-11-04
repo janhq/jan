@@ -92,14 +92,14 @@ const SettingsScreen = () => {
 
   return (
     <div className="flex h-full">
-      <div className="flex h-full w-48 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+      <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <ScrollArea className="h-full w-full">
           <div className="p-4">
             <div className="flex-shrink-0">
               <label className="font-bold uppercase text-muted-foreground">
                 Options
               </label>
-              <div className="mt-2 font-semibold">
+              <div className="mt-2 font-medium">
                 {menus.map((menu, i) => {
                   const isActive = activeStaticMenu === menu
                   return (
@@ -117,7 +117,7 @@ const SettingsScreen = () => {
                       </div>
                       {isActive && (
                         <m.div
-                          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/20"
+                          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/50"
                           layoutId="active-static-menu"
                         />
                       )}
@@ -133,7 +133,7 @@ const SettingsScreen = () => {
                   Core plugins
                 </label>
               )}
-              <div className="mt-2 font-semibold">
+              <div className="mt-2 font-medium">
                 {preferencePlugins.map((menu, i) => {
                   const isActive = activePreferencePlugin === menu
                   return (
@@ -156,7 +156,7 @@ const SettingsScreen = () => {
                       </div>
                       {isActive ? (
                         <m.div
-                          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/20"
+                          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/50"
                           layoutId="active-static-menu"
                         />
                       ) : null}

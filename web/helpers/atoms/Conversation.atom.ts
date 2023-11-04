@@ -15,7 +15,7 @@ export const setActiveConvoIdAtom = atom(
   (_get, set, convoId: string | undefined) => {
     // if (convoId) {
     //   console.debug(`Set active conversation id: ${convoId}`)
-    //   set(setMainViewStateAtom, MainViewState.Conversation)
+    //   set(setMainViewStateAtom, MainViewState.Chat)
     // }
     set(activeBotAtom, undefined)
     set(activeConversationIdAtom, convoId)

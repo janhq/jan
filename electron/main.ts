@@ -57,8 +57,8 @@ function createMainWindow() {
     height: 800,
     show: false,
     trafficLightPosition: {
-      x: 8,
-      y: 8,
+      x: 10,
+      y: 15,
     },
     titleBarStyle: "hidden",
     vibrancy: "sidebar",

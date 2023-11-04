@@ -4,10 +4,6 @@ import { useTheme } from 'next-themes'
 
 import { motion as m } from 'framer-motion'
 
-// import { useAtomValue } from 'jotai'
-
-// import { twMerge } from 'tailwind-merge'
-
 import BottomBar from '@/containers/Layout/BottomBar'
 import RibbonNav from '@/containers/Layout/Ribbon'
 
@@ -44,7 +40,7 @@ const BaseLayout = (props: PropsWithChildren) => {
   return (
     <div className="flex h-screen w-screen flex-1 overflow-hidden">
       <RibbonNav />
-      <div className=" relative top-8 flex h-[calc(100vh-64px)] w-full overflow-hidden bg-background/50">
+      <div className=" relative top-12 flex h-[calc(100vh-96px)] w-full overflow-hidden bg-background/50">
         <div className="w-full">
           <TopBar />
           <m.div

@@ -70,7 +70,7 @@ export default function RibbonNav() {
     {
       name: 'Chat',
       icon: <MessageCircle size={22} className="flex-shrink-0" />,
-      state: MainViewState.Conversation,
+      state: MainViewState.Chat,
     },
   ]
 
@@ -87,12 +87,12 @@ export default function RibbonNav() {
     {
       name: 'Explore Models',
       icon: <CpuIcon size={22} className="flex-shrink-0" />,
-      state: MainViewState.ExploreModel,
+      state: MainViewState.ExploreModels,
     },
     {
       name: 'My Models',
       icon: <LayoutGrid size={22} className="flex-shrink-0" />,
-      state: MainViewState.MyModel,
+      state: MainViewState.MyModels,
     },
     {
       name: 'Settings',
@@ -101,7 +101,7 @@ export default function RibbonNav() {
     },
   ]
   return (
-    <div className="flex w-16 flex-shrink-0 flex-col border-r border-border pb-4 pt-10">
+    <div className="relative top-12 flex h-[calc(100%-48px)] w-16 flex-shrink-0 flex-col border-r border-border py-4">
       <div className="mt-2 flex h-full w-full flex-col items-center justify-between">
         <div className="flex h-full w-full flex-col items-center justify-between">
           <div>
@@ -116,25 +116,25 @@ export default function RibbonNav() {
                   <div className="relative flex p-2" key={i}>
                     <Tooltip>
                       <TooltipTrigger>
-                        <button
+                        <div
                           data-testid={primary.name}
                           className={twMerge(
-                            'relative flex w-full flex-shrink-0 items-center justify-center',
+                            'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center',
                             isActive && 'z-10'
                           )}
                           onClick={() => onMenuClick(primary.state)}
                         >
                           {primary.icon}
-                        </button>
+                        </div>
                         {isActive && (
                           <m.div
-                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-primary/20"
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-primary/50"
                             layoutId="active-state-primary"
                           />
                         )}
                       </TooltipTrigger>
                       <TooltipContent side="right" sideOffset={10}>
-                        <p>{primary.name}</p>
+                        <span>{primary.name}</span>
                         <TooltipArrow />
                       </TooltipContent>
                     </Tooltip>
@@ -152,25 +152,25 @@ export default function RibbonNav() {
                   <div className="relative flex p-2" key={i}>
                     <Tooltip>
                       <TooltipTrigger>
-                        <button
+                        <div
                           data-testid={secondary.name}
                           className={twMerge(
-                            'relative flex w-full flex-shrink-0 items-center justify-center',
+                            'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center',
                             isActive && 'z-10'
                           )}
                           onClick={() => onMenuClick(secondary.state)}
                         >
                           {secondary.icon}
-                        </button>
+                        </div>
                         {isActive && (
                           <m.div
-                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-primary/20"
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-primary/50"
                             layoutId="active-state-secondary"
                           />
                         )}
                       </TooltipTrigger>
                       <TooltipContent side="right" sideOffset={10}>
-                        <p>{secondary.name}</p>
+                        <span>{secondary.name}</span>
                         <TooltipArrow />
                       </TooltipContent>
                     </Tooltip>

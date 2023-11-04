@@ -10,7 +10,11 @@ export const toGigabytes = (input: number) => {
   }
 }
 
-export const formatDownloadPercentage = (input: number) => {
+export const formatDownloadPercentage = (
+  input: number,
+  options?: { hidePercentage?: boolean }
+) => {
+  if (options?.hidePercentage) return input * 100
   return (input * 100).toFixed(2) + '%'
 }
 

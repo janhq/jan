@@ -18,9 +18,6 @@ type Props = {
 }
 
 export default function EventListenerWrapper({ children }: Props) {
-  // const setDownloadState = useSetAtom(setDownloadStateAtom)
-  // const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
-
   const setProgress = useSetAtom(appDownloadProgress)
   const models = useAtomValue(downloadingModelsAtom)
   const modelsRef = useRef(models)

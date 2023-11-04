@@ -10,7 +10,7 @@ import Loader from '@/containers/Loader'
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 import { pluginManager } from '@plugin/PluginManager'
 
-import useGetAppVersion from '@/hooks/useGetAppVersion'
+import { useGetAppVersion } from '@/hooks/useGetAppVersion'
 
 import { formatPluginsName } from '@/utils/converter'
 
