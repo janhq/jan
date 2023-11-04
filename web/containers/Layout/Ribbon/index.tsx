@@ -1,4 +1,4 @@
-import React, { useContext } from 'react'
+import { useContext } from 'react'
 
 import { motion as m } from 'framer-motion'
 
@@ -17,7 +17,6 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 
 // import useGetBots from '@/hooks/useGetBots'
 // import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-// import { useUserConfigs } from '@/hooks/useUserConfigs'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
@@ -28,7 +27,6 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 // import { showingBotListModalAtom } from '@/helpers/atoms/Modal.atom'
 
 export default function RibbonNav() {
-  // const [config] = useUserConfigs()
   const { mainViewState, setMainViewState } = useMainViewState()
   // const currentState = useAtomValue(getMainViewStateAtom)
   // const setMainViewState = useSetAtom(setMainViewStateAtom)
@@ -60,12 +58,12 @@ export default function RibbonNav() {
   const primaryMenus = [
     {
       name: 'Getting Started',
-      icon: <BookOpen size={20} className="flex-shrink-0" />,
+      icon: <BookOpen size={22} className="flex-shrink-0" />,
       state: MainViewState.Welcome,
     },
     {
       name: 'Chat',
-      icon: <MessageCircle size={20} className="flex-shrink-0" />,
+      icon: <MessageCircle size={22} className="flex-shrink-0" />,
       state: MainViewState.Conversation,
     },
   ]
@@ -75,24 +73,24 @@ export default function RibbonNav() {
       ? [
           {
             name: 'Bot',
-            icon: <Bot size={20} className="flex-shrink-0" />,
+            icon: <Bot size={22} className="flex-shrink-0" />,
             state: MainViewState.CreateBot,
           },
         ]
       : []),
     {
       name: 'Explore Models',
-      icon: <CpuIcon size={20} className="flex-shrink-0" />,
+      icon: <CpuIcon size={22} className="flex-shrink-0" />,
       state: MainViewState.ExploreModel,
     },
     {
       name: 'My Models',
-      icon: <LayoutGrid size={20} className="flex-shrink-0" />,
+      icon: <LayoutGrid size={22} className="flex-shrink-0" />,
       state: MainViewState.MyModel,
     },
     {
       name: 'Settings',
-      icon: <Settings size={20} className="flex-shrink-0" />,
+      icon: <Settings size={22} className="flex-shrink-0" />,
       state: MainViewState.Setting,
     },
   ]
