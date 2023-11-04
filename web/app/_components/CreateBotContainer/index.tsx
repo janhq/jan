@@ -12,15 +12,11 @@ import { v4 as uuidv4 } from 'uuid'
 import DraggableProgressBar from '../DraggableProgressBar'
 import { useSetAtom } from 'jotai'
 import { activeBotAtom } from '@helpers/atoms/Bot.atom'
-import {
-  rightSideBarExpandStateAtom,
-} from '@helpers/atoms/SideBarExpand.atom'
+import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
 import {
   MainViewState,
   setMainViewStateAtom,
 } from '@helpers/atoms/MainView.atom'
-import { DataService } from '@janhq/core'
-import { executeSerial } from '@services/pluginService'
 
 const CreateBotContainer: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels()
@@ -30,7 +26,7 @@ const CreateBotContainer: React.FC = () => {
 
   const createBot = async (bot: Bot) => {
     try {
-      await executeSerial(DataService.CreateBot, bot)
+      // await executeSerial(DataService.CreateBot, bot)
     } catch (err) {
       alert(err)
       console.error(err)

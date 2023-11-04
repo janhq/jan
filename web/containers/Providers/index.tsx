@@ -1,17 +1,14 @@
 'use client'
 
 import { PropsWithChildren } from 'react'
-import { PluginService } from '@janhq/core'
 import { ThemeWrapper } from '@helpers/ThemeWrapper'
 import JotaiWrapper from '@helpers/JotaiWrapper'
 import { ModalWrapper } from '@helpers/ModalWrapper'
 import { useEffect, useState } from 'react'
 import CompactLogo from '@containers/Logo/CompactLogo'
-import { setup, plugins, activationPoints, extensionPoints } from '@plugin'
 import EventListenerWrapper from '@helpers/EventListenerWrapper'
 import { setupCoreServices } from '@services/coreService'
 import {
-  executeSerial,
   isCorePluginInstalled,
   setupBasePlugins,
 } from '@services/pluginService'
@@ -25,28 +22,13 @@ const Providers = (props: PropsWithChildren) => {
   const { children } = props
 
   async function setupPE() {
-    // Enable activation point management
-
-    setup({
-      importer: (plugin: string) =>
-        import(/* webpackIgnore: true */ plugin).catch((err) => {
-          console.log(err)
-        }),
-    })
-
     // Register all active plugins with their activation points
-    await plugins.registerActive()
-    pluginManager.registerActive()
+    await pluginManager.registerActive()
 
     setTimeout(async () => {
-      // Trigger activation points
-      await activationPoints.trigger('init')
       if (!isCorePluginInstalled()) {
         setupBasePlugins()
         return
-      }
-      if (extensionPoints.get(PluginService.OnStart)) {
-        await executeSerial(PluginService.OnStart)
       }
 
       pluginManager.load()

@@ -13,17 +13,16 @@ import {
   updateConversationWaitingForResponseAtom,
   userConversationsAtom,
 } from './atoms/Conversation.atom'
-import { executeSerial } from '@plugin/extension-manager'
 import {
   setDownloadStateAtom,
   setDownloadStateSuccessAtom,
 } from './atoms/DownloadState.atom'
 import { downloadedModelAtom } from './atoms/DownloadedModel.atom'
-import { ModelManagementService } from '@janhq/core'
 import { getDownloadedModels } from '../hooks/useGetDownloadedModels'
 import { pluginManager } from '../plugin/PluginManager'
 import { Message } from '@janhq/core/lib/types'
-import { ConversationalPlugin } from '@janhq/core/lib/plugins'
+import { ConversationalPlugin, ModelPlugin } from '@janhq/core/lib/plugins'
+import { downloadingModelsAtom } from './atoms/Model.atom'
 
 let currentConversation: Conversation | undefined = undefined
 
@@ -37,6 +36,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
   const setDownloadedModels = useSetAtom(downloadedModelAtom)
+  const models = useAtomValue(downloadingModelsAtom)
   const messages = useAtomValue(chatMessages)
   const conversations = useAtomValue(userConversationsAtom)
   const messagesRef = useRef(messages)
@@ -141,14 +141,16 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   function handleDownloadSuccess(state: any) {
     if (state && state.fileName && state.success === true) {
       setDownloadStateSuccess(state.fileName)
-      executeSerial(
-        ModelManagementService.UpdateFinishedDownloadAt,
-        state.fileName
-      ).then(() => {
-        getDownloadedModels().then((models) => {
-          setDownloadedModels(models)
-        })
-      })
+      const model = models.find((e) => e._id === state.fileName)
+      if (model)
+        pluginManager
+          .get<ModelPlugin>(PluginType.Model)
+          ?.saveModel(model)
+          .then(() => {
+            getDownloadedModels().then((models) => {
+              setDownloadedModels(models)
+            })
+          })
     }
   }
 

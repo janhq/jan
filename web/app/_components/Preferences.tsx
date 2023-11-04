@@ -9,10 +9,9 @@ import {
 
 import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
 import classNames from 'classnames'
-import { DataService, PluginService, preferences } from '@janhq/core'
+import { PluginService, preferences } from '@janhq/core'
 import { execute } from '@plugin/extension-manager'
 import LoadingIndicator from './LoadingIndicator'
-import { executeSerial } from '@services/pluginService'
 import { FeatureToggleContext } from '@helpers/FeatureToggleWrapper'
 
 export const Preferences = () => {

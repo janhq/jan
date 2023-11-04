@@ -7,7 +7,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import SecondaryButton from '../SecondaryButton'
 import { PlusIcon } from '@heroicons/react/24/outline'
 import useCreateConversation from '@hooks/useCreateConversation'
-import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
+import { activeModelAtom, stateModel } from '@helpers/atoms/Model.atom'
 import {
   currentConvoStateAtom,
   getActiveConvoIdAtom,
@@ -18,7 +18,7 @@ import { userConversationsAtom } from '@helpers/atoms/Conversation.atom'
 import { showingModalNoActiveModel } from '@helpers/atoms/Modal.atom'
 
 const InputToolbar: React.FC = () => {
-  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const activeModel = useAtomValue(activeModelAtom)
   const currentConvoState = useAtomValue(currentConvoStateAtom)
   const { inputState, currentConvo } = useGetInputState()
   const { requestCreateConvo } = useCreateConversation()

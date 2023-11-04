@@ -1,14 +1,14 @@
-import {  PluginType } from '@janhq/core'
+import { PluginType } from '@janhq/core'
 import { InferencePlugin } from '@janhq/core/lib/plugins'
-import { useAtom, useSetAtom } from 'jotai'
-import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
-import useGetModelById from './useGetModelById'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { activeModelAtom, stateModel } from '@helpers/atoms/Model.atom'
 import { pluginManager } from '@plugin/PluginManager'
+import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
 
 export default function useStartStopModel() {
-  const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom)
-  const { getModelById } = useGetModelById()
+  const [activeModel, setActiveModel] = useAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModel)
+  const models = useAtomValue(downloadedModelAtom)
 
   const startModel = async (modelId: string) => {
     if (activeModel && activeModel._id === modelId) {
@@ -18,7 +18,7 @@ export default function useStartStopModel() {
 
     setStateModel({ state: 'start', loading: true, model: modelId })
 
-    const model = await getModelById(modelId)
+    const model = await models.find((model) => model._id == modelId)
 
     if (!model) {
       alert(`Model ${modelId} not found! Please re-download the model first.`)
@@ -29,7 +29,7 @@ export default function useStartStopModel() {
     const currentTime = Date.now()
     console.debug('Init model: ', model._id)
 
-    const res = await initModel(model._id)
+    const res = await initModel(`models/${model._id}`)
     if (res?.error) {
       const errorMessage = `Failed to init model: ${res.error}`
       console.error(errorMessage)

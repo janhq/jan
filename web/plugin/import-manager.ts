@@ -53,7 +53,7 @@ export async function callExport(url: string, exp: string, plugin: string) {
   if (!importer) throw new Error('Importer callback has not been set')
   const main = await importer(url)
   if (!main || typeof main[exp] !== 'function') {
-    console.error(
+    console.debug(
       `Activation point "${exp}" was triggered but does not exist on ${
         plugin ? 'plugin ' + plugin : 'unknown plugin'
       }`

@@ -1,4 +1,5 @@
-import { Message, NewMessageResponse } from '@janhq/core'
+import { NewMessageResponse } from '@janhq/core'
+import { Message } from '@janhq/core/lib/types'
 export enum MessageType {
   Text = 'Text',
   Image = 'Image',

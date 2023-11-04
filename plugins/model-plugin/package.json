@@ -1,5 +1,5 @@
 {
-  "name": "@janhq/model-management-plugin",
+  "name": "@janhq/model-plugin",
   "version": "1.0.13",
   "description": "Model Management Plugin provides model exploration and seamless downloads",
   "icon": "https://raw.githubusercontent.com/tailwindlabs/heroicons/88e98b0c2b458553fbadccddc2d2f878edc0387b/src/20/solid/queue-list.svg",
@@ -8,7 +8,7 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "supportCloudNative": true,
-  "url": "/plugins/model-management-plugin/index.js",
+  "url": "/plugins/model-plugin/index.js",
   "activationPoints": [
     "init"
   ],
@@ -29,7 +29,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@janhq/core": "^0.1.6",
+    "@janhq/core": "file:../../core",
     "ts-loader": "^9.5.0"
   }
 }

@@ -1,5 +1,4 @@
 import { DataService } from '@janhq/core'
-import { executeSerial } from '@services/pluginService'
 
 export default function useUpdateBot() {
   const updateBot = async (
@@ -16,7 +15,7 @@ export default function useUpdateBot() {
         }
       }
 
-      await executeSerial(DataService.UpdateBot, bot)
+      // await executeSerial(DataService.UpdateBot, bot)
       console.debug('Bot updated', JSON.stringify(bot, null, 2))
     } catch (err) {
       alert(`Update bot error: ${err}`)

@@ -1,23 +1,22 @@
-import { useAtom, useSetAtom } from 'jotai'
-import { executeSerial } from '@services/pluginService'
-import { DataService, ModelManagementService } from '@janhq/core'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   userConversationsAtom,
   setActiveConvoIdAtom,
   addNewConversationStateAtom,
 } from '@helpers/atoms/Conversation.atom'
-import useGetModelById from './useGetModelById'
+import { Model } from '@janhq/core/lib/types'
+import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
 
 const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
     userConversationsAtom
   )
-  const { getModelById } = useGetModelById()
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const addNewConvoState = useSetAtom(addNewConversationStateAtom)
+  const models = useAtomValue(downloadedModelAtom)
 
   const createConvoByBot = async (bot: Bot) => {
-    const model = await getModelById(bot.modelId)
+    const model = models.find((e) => e._id === bot.modelId)
 
     if (!model) {
       alert(
@@ -29,7 +28,7 @@ const useCreateConversation = () => {
     return requestCreateConvo(model, bot)
   }
 
-  const requestCreateConvo = async (model: AssistantModel, bot?: Bot) => {
+  const requestCreateConvo = async (model: Model, bot?: Bot) => {
     const conversationName = model.name
     const mappedConvo: Conversation = {
       _id: `conversation-${Date.now()}`,

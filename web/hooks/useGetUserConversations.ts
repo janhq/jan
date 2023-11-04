@@ -1,14 +1,14 @@
 import { useSetAtom } from 'jotai'
-import { executeSerial } from '@services/pluginService'
-import { ConversationalPlugin, DataService } from '@janhq/core'
 import {
   conversationStatesAtom,
   userConversationsAtom,
 } from '@helpers/atoms/Conversation.atom'
 import { pluginManager } from '../plugin/PluginManager'
-import { Conversation, PluginType } from '@janhq/core'
+import { PluginType } from '@janhq/core'
 import { setConvoMessagesAtom } from '@helpers/atoms/ChatMessage.atom'
 import { toChatMessage } from '@models/ChatMessage'
+import { ConversationalPlugin } from '@janhq/core/lib/plugins'
+import { Conversation } from "@janhq/core/lib/types"
 
 const useGetUserConversations = () => {
   const setConversationStates = useSetAtom(conversationStatesAtom)
