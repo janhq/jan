@@ -262,8 +262,3 @@ export { preferences } from "./preferences";
 export { fs } from "./fs";
 
 export { JanPlugin, PluginType } from "./plugin";
-export {
-  ConversationalPlugin,
-  Conversation,
-  Message,
-} from "./plugins/conversational";

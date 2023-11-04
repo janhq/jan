@@ -1,10 +1,6 @@
-import {
-  ConversationalPlugin,
-  Conversation,
-  PluginType,
-  fs,
-} from "@janhq/core";
-import { Message } from "@janhq/core/lib/plugins/conversational";
+import { PluginType, fs } from "@janhq/core";
+import { ConversationalPlugin } from "@janhq/core/lib/plugins";
+import { Message, Conversation } from "@janhq/core/lib/types";
 
 export default class JanConversationalPlugin implements ConversationalPlugin {
   type(): PluginType {

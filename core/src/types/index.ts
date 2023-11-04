@@ -1,5 +1,3 @@
-import { JanPlugin, PluginType } from "../plugin";
-
 export interface Conversation {
   _id: string;
   modelId?: string;
@@ -17,10 +15,4 @@ export interface Message {
   _id: string;
   createdAt?: string;
   updatedAt?: string;
-}
-
-export abstract class ConversationalPlugin extends JanPlugin {
-  abstract getConversations(): Promise<any[]>;
-  abstract saveConversation(conversation: Conversation): Promise<void>;
-  abstract deleteConversation(conversationId: string): Promise<void>;
 }
