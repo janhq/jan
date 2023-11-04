@@ -2,16 +2,35 @@ import { PluginType, fs } from "@janhq/core";
 import { ConversationalPlugin } from "@janhq/core/lib/plugins";
 import { Message, Conversation } from "@janhq/core/lib/types";
 
+/**
+ * JanConversationalPlugin is a ConversationalPlugin implementation that provides
+ * functionality for managing conversations in a Jan bot.
+ */
 export default class JanConversationalPlugin implements ConversationalPlugin {
+  /**
+   * Returns the type of the plugin.
+   */
   type(): PluginType {
     return PluginType.Conversational;
   }
+
+  /**
+   * Called when the plugin is loaded.
+   */
   onLoad() {
     console.debug("JanConversationalPlugin loaded");
   }
+
+  /**
+   * Called when the plugin is unloaded.
+   */
   onUnload() {
     console.debug("JanConversationalPlugin unloaded");
   }
+
+  /**
+   * Returns a Promise that resolves to an array of Conversation objects.
+   */
   getConversations(): Promise<Conversation[]> {
     return this.getConversationDocs().then((conversationIds) =>
       Promise.all(
@@ -23,13 +42,28 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
       )
     );
   }
+
+  /**
+   * Saves a Conversation object to a Markdown file.
+   * @param conversation The Conversation object to save.
+   */
   saveConversation(conversation: Conversation): Promise<void> {
     return this.writeMarkdownToFile(conversation);
   }
+
+  /**
+   * Deletes a conversation with the specified ID.
+   * @param conversationId The ID of the conversation to delete.
+   */
   deleteConversation(conversationId: string): Promise<void> {
     return fs.deleteFile(`conversations/${conversationId}.md`);
   }
 
+  /**
+   * Returns a Promise that resolves to an array of conversation IDs.
+   * The conversation IDs are the names of the Markdown files in the "conversations" directory.
+   * @private
+   */
   private async getConversationDocs(): Promise<string[]> {
     return fs.listFiles("conversations").then((files: string[]) => {
       return Promise.all(
@@ -38,6 +72,11 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
     });
   }
 
+  /**
+   * Parses a Markdown string and returns a Conversation object.
+   * @param markdown The Markdown string to parse.
+   * @private
+   */
   private parseConversationMarkdown(markdown: string): Conversation {
     const conversation: Conversation = {
       _id: "",
@@ -102,6 +141,11 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
     return conversation;
   }
 
+  /**
+   * Loads a Conversation object from a Markdown file.
+   * @param filePath The path to the Markdown file.
+   * @private
+   */
   private async loadConversationFromMarkdownFile(
     filePath: string
   ): Promise<Conversation | undefined> {
@@ -113,6 +157,11 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
     }
   }
 
+  /**
+   * Generates a Markdown string from a Conversation object.
+   * @param conversation The Conversation object to generate Markdown from.
+   * @private
+   */
   private generateMarkdown(conversation: Conversation): string {
     // Generate the Markdown content based on the Conversation object
     const conversationMetadata = `
@@ -142,6 +191,11 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
   `;
   }
 
+  /**
+   * Writes a Conversation object to a Markdown file.
+   * @param conversation The Conversation object to write to a Markdown file.
+   * @private
+   */
   private async writeMarkdownToFile(conversation: Conversation) {
     await fs.mkdir("conversations");
     // Generate the Markdown content

@@ -3,6 +3,7 @@ export enum PluginType {
   Inference = "inference",
   Preference = "preference",
   SystemMonitoring = "systemMonitoring",
+  Model = "model",
 }
 
 export abstract class JanPlugin {

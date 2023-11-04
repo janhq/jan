@@ -4,13 +4,7 @@ import {
   updateMessageAtom,
 } from './atoms/ChatMessage.atom'
 import { toChatMessage } from '@models/ChatMessage'
-import {
-  events,
-  EventName,
-  NewMessageResponse,
-  ConversationalPlugin,
-  PluginType,
-} from '@janhq/core'
+import { events, EventName, NewMessageResponse, PluginType } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ReactNode, useEffect, useRef } from 'react'
 import useGetBots from '@hooks/useGetBots'
@@ -28,7 +22,8 @@ import { downloadedModelAtom } from './atoms/DownloadedModel.atom'
 import { ModelManagementService } from '@janhq/core'
 import { getDownloadedModels } from '../hooks/useGetDownloadedModels'
 import { pluginManager } from '../plugin/PluginManager'
-import { Message } from '@janhq/core'
+import { Message } from '@janhq/core/lib/types'
+import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 
 let currentConversation: Conversation | undefined = undefined
 
