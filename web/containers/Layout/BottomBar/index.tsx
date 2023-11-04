@@ -6,12 +6,12 @@ import SystemItem from '@/containers/Layout/BottomBar/SystemItem'
 
 import { appDownloadProgress } from '@/containers/Providers/Jotai'
 
+import { useDownloadState } from '@/hooks/useDownloadState'
 import useGetAppVersion from '@/hooks/useGetAppVersion'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
-import { modelDownloadStateAtom } from '@/helpers/atoms/DownloadState.atom'
 import {
   activeAssistantModelAtom,
   stateModel,
@@ -21,14 +21,9 @@ const BottomBar = () => {
   const activeModel = useAtomValue(activeModelAtom)
   const stateModelStartStop = useAtomValue(stateModel)
   const { ram, cpu } = useGetSystemResources()
-  const modelDownloadStates = useAtomValue(modelDownloadStateAtom)
   const appVersion = useGetAppVersion()
   const progress = useAtomValue(appDownloadProgress)
-
-  const downloadStates: DownloadState[] = []
-  for (const [, value] of Object.entries(modelDownloadStates)) {
-    downloadStates.push(value)
-  }
+  const { downloadStates } = useDownloadState()
 
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-8 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/50 px-3">
@@ -37,7 +32,8 @@ const BottomBar = () => {
           {progress && progress >= 0 ? (
             <ProgressBar total={100} used={progress} />
           ) : null}
-          {downloadStates.length > 0 && (
+
+          {downloadStates.length > 1 && (
             <SystemItem
               name="Downloading"
               value={`${downloadStates[0]
@@ -47,6 +43,7 @@ const BottomBar = () => {
             />
           )}
         </div>
+
         {stateModelStartStop.state === 'start' &&
           stateModelStartStop.loading && (
             <SystemItem

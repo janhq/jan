@@ -4,14 +4,11 @@ import { ReactNode, useEffect } from 'react'
 
 import { useSetAtom } from 'jotai'
 
+import { useDownloadState } from '@/hooks/useDownloadState'
 import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import EventHandler from './EventHandler'
 import { appDownloadProgress } from './Jotai'
-import {
-  setDownloadStateAtom,
-  setDownloadStateSuccessAtom,
-} from '@/helpers/atoms/DownloadState.atom'
 import { pluginManager } from '@plugin/PluginManager'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { downloadingModelsAtom } from './atoms/Model.atom'
@@ -21,8 +18,9 @@ type Props = {
 }
 
 export default function EventListenerWrapper({ children }: Props) {
-  const setDownloadState = useSetAtom(setDownloadStateAtom)
-  const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
+  // const setDownloadState = useSetAtom(setDownloadStateAtom)
+  // const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
+
   const setProgress = useSetAtom(appDownloadProgress)
   const models = useAtomValue(downloadingModelsAtom)
   const modelsRef = useRef(models)
@@ -30,6 +28,7 @@ export default function EventListenerWrapper({ children }: Props) {
     modelsRef.current = models
   }, [models])
   const { setDownloadedModels } = useGetDownloadedModels()
+  const { setDownloadState, setDownloadStateSuccess } = useDownloadState()
 
   useEffect(() => {
     if (window && window.electronAPI) {

@@ -4,6 +4,7 @@ import { atom, useAtomValue } from 'jotai'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
 
+import { useDownloadState } from '@/hooks/useDownloadState'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
@@ -11,8 +12,6 @@ import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 import SimpleTag from '../SimpleTag'
 import { RamRequired, UsecaseTag } from '../SimpleTag/TagType'
 import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
-
-import { modelDownloadStateAtom } from '@/helpers/atoms/DownloadState.atom'
 
 type Props = {
   model: ModelCatalog
@@ -25,6 +24,8 @@ const ModelVersionItem: React.FC<Props> = ({ model, modelVersion }) => {
   const { downloadedModels } = useGetDownloadedModels()
   const isDownloaded =
     downloadedModels.find((model) => model._id === modelVersion._id) != null
+
+  const { modelDownloadStateAtom } = useDownloadState()
 
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[modelVersion._id ?? '']),
@@ -58,7 +59,7 @@ const ModelVersionItem: React.FC<Props> = ({ model, modelVersion }) => {
   return (
     <div className="flex items-center justify-between gap-4 border-t border-border pb-3 pl-3 pr-4 pt-3 first:border-t-0">
       <div className="flex items-center gap-2">
-        <span className="font-sm text-muted-foreground mb-4 line-clamp-1 flex-1">
+        <span className="font-sm mb-4 line-clamp-1 flex-1 text-muted-foreground">
           {modelVersion.name}
         </span>
       </div>

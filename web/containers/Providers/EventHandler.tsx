@@ -5,6 +5,8 @@ import { events, EventName, NewMessageResponse, DataService } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 import { debounce } from 'lodash'
+
+import { useDownloadState } from '@/hooks/useDownloadState'
 import useGetBots from '@/hooks/useGetBots'
 import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
@@ -18,10 +20,6 @@ import {
   updateConversationAtom,
   updateConversationWaitingForResponseAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import {
-  setDownloadStateAtom,
-  setDownloadStateSuccessAtom,
-} from '@/helpers/atoms/DownloadState.atom'
 
 import { toChatMessage } from '@/models/ChatMessage'
 
@@ -33,11 +31,9 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const updateConversation = useSetAtom(updateConversationAtom)
   const { getBotById } = useGetBots()
   const { setDownloadedModels } = useGetDownloadedModels()
+  const { setDownloadState, setDownloadStateSuccess } = useDownloadState()
 
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
-  const setDownloadState = useSetAtom(setDownloadStateAtom)
-  const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
-  const setDownloadedModels = useSetAtom(downloadedModelAtom)
   const models = useAtomValue(downloadingModelsAtom)
   const messages = useAtomValue(chatMessages)
   const conversations = useAtomValue(userConversationsAtom)
@@ -167,6 +163,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       events.on(EventName.OnDownloadUpdate, handleDownloadUpdate)
       events.on(EventName.OnDownloadSuccess, handleDownloadSuccess)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

@@ -1,14 +1,10 @@
 import { PluginType } from '@janhq/core'
-import { useAtom, useSetAtom } from 'jotai'
-import { setDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { Model, ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 import { pluginManager } from '@plugin/PluginManager'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
-import { downloadingModelsAtom } from '@helpers/atoms/Model.atom'
-
+import { useDownloadState } from './useDownloadState'
 export default function useDownloadModel() {
-  const setDownloadState = useSetAtom(setDownloadStateAtom)
-  const [models, setModelsAtom] = useAtom(downloadingModelsAtom)
+  const { setDownloadState } = useDownloadState()
 
   const assistanModel = (
     model: ModelCatalog,

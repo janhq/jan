@@ -5,6 +5,7 @@ import { atom, useAtomValue, useSetAtom } from 'jotai'
 import { MainViewState } from '@/constants/screens'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
+import { useDownloadState } from '@/hooks/useDownloadState'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useGetPerformanceTag from '@/hooks/useGetPerformanceTag'
 import { useMainViewState } from '@/hooks/useMainViewState'
@@ -13,8 +14,6 @@ import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 
 import ConfirmationModal from '../ConfirmationModal'
 import SimpleTag from '../SimpleTag'
-
-import { modelDownloadStateAtom } from '@/helpers/atoms/DownloadState.atom'
 
 import { showingCancelDownloadModalAtom } from '@/helpers/atoms/Modal.atom'
 
@@ -29,6 +28,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
 }) => {
   const { downloadModel } = useDownloadModel()
   const { downloadedModels } = useGetDownloadedModels()
+  const { modelDownloadStateAtom } = useDownloadState()
   const { performanceTag, title, getPerformanceForModel } =
     useGetPerformanceTag()
   const downloadAtom = useMemo(
