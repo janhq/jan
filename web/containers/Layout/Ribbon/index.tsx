@@ -9,12 +9,12 @@ import {
 import { motion as m } from 'framer-motion'
 
 import {
-  MessageCircle,
-  Settings,
-  Bot,
-  LayoutGrid,
+  MessageCircleIcon,
+  SettingsIcon,
+  BotIcon,
+  LayoutGridIcon,
   CpuIcon,
-  BookOpen,
+  BookOpenIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -64,12 +64,12 @@ export default function RibbonNav() {
   const primaryMenus = [
     {
       name: 'Getting Started',
-      icon: <BookOpen size={22} className="flex-shrink-0" />,
+      icon: <BookOpenIcon size={22} className="flex-shrink-0" />,
       state: MainViewState.Welcome,
     },
     {
       name: 'Chat',
-      icon: <MessageCircle size={22} className="flex-shrink-0" />,
+      icon: <MessageCircleIcon size={22} className="flex-shrink-0" />,
       state: MainViewState.Chat,
     },
   ]
@@ -79,7 +79,7 @@ export default function RibbonNav() {
       ? [
           {
             name: 'Bot',
-            icon: <Bot size={22} className="flex-shrink-0" />,
+            icon: <BotIcon size={22} className="flex-shrink-0" />,
             state: MainViewState.CreateBot,
           },
         ]
@@ -91,12 +91,12 @@ export default function RibbonNav() {
     },
     {
       name: 'My Models',
-      icon: <LayoutGrid size={22} className="flex-shrink-0" />,
+      icon: <LayoutGridIcon size={22} className="flex-shrink-0" />,
       state: MainViewState.MyModels,
     },
     {
       name: 'Settings',
-      icon: <Settings size={22} className="flex-shrink-0" />,
+      icon: <SettingsIcon size={22} className="flex-shrink-0" />,
       state: MainViewState.Setting,
     },
   ]

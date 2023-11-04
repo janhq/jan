@@ -25,7 +25,7 @@ const setDownloadStateSuccessAtom = atom(null, (get, set, fileName: string) => {
   set(modelDownloadStateAtom, currentState)
   toaster({
     title: 'Download Completed',
-    description: `Download ${fileName} complete`,
+    description: `Download ${fileName} completed`,
     type: 'success',
   })
 })
