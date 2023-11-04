@@ -25,7 +25,7 @@ export default function DownloadingState() {
         <Fragment>
           <div className="flex w-[50px] items-center gap-x-2">
             <Progress
-              className="h-2"
+              className="h-2 border border-border"
               value={
                 formatDownloadPercentage(downloadStates[0]?.percent, {
                   hidePercentage: true,

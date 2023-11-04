@@ -6,7 +6,6 @@ module.exports = {
     './app/**/*.{js,ts,jsx,tsx,mdx}',
     './containers/**/*.{js,ts,jsx,tsx,mdx}',
     './screens/**/*.{js,ts,jsx,tsx,mdx}',
-    // './node_modules/@janhq/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     animation: {

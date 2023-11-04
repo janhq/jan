@@ -27,7 +27,7 @@ const LeftHeaderAction: React.FC = () => {
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
   const onExploreClick = () => {
-    setMainViewState(MainViewState.ExploreModelss)
+    setMainViewState(MainViewState.ExploreModels)
   }
 
   const onNewConversationClick = () => {

@@ -1,6 +1,6 @@
 .btn {
   @apply inline-flex items-center justify-center whitespace-nowrap rounded-md font-semibold transition-colors;
-  @apply focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-1;
+  @apply focus-visible:ring-ring cursor-pointer focus-visible:outline-none focus-visible:ring-1;
   @apply disabled:pointer-events-none disabled:opacity-50;
 
   &-primary {
@@ -33,6 +33,19 @@
 
   &-lg {
     @apply h-10 rounded-md px-8;
+  }
+
+  &-loading {
+    @apply pointer-events-none opacity-50;
+    &-circle {
+      @apply mr-2 h-4 animate-spin opacity-50;
+      > circle {
+        opacity: 0.25;
+      }
+      > path {
+        opacity: 0.75;
+      }
+    }
   }
 }
 
