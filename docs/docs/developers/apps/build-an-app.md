@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 title: Build an app
 ---
 
@@ -145,7 +144,7 @@ module.exports = {
 
 ## App installation
 
-![Manual installation](img/build-app-1.png)
+![Manual installation](../img/build-app-1.png)
 
 - `Select` the built `*.tar.gz` file
 - Jan will reload after new apps get installed

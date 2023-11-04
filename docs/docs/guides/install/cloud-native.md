@@ -36,7 +36,7 @@ Open your browser at [http://localhost:4000](http://localhost:4000)
 
 ### Architecture
 
-![cloudnative](../../getting-started/img/cloudnative.png)
+![cloudnative](../../developers/img/cloudnative.png)
 
 ### TODOs
 
