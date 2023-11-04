@@ -55,8 +55,7 @@ const MyModelsScreen = () => {
         <div className="p-4">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {downloadedModels.map((model, i) => {
-              const isActiveModel =
-                stateModel.model === model._id && stateModel.state === 'stop'
+              const isActiveModel = stateModel.model === model._id
               return (
                 <div
                   key={i}
@@ -125,7 +124,11 @@ const MyModelsScreen = () => {
                       </Modal>
                       <Button
                         block
-                        themes={isActiveModel ? 'danger' : 'primary'}
+                        themes={
+                          isActiveModel && stateModel.state === 'stop'
+                            ? 'danger'
+                            : 'primary'
+                        }
                         className="capitalize"
                         loading={isActiveModel ? stateModel.loading : false}
                         onClick={() => onModelActionClick(model._id)}

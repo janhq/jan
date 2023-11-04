@@ -46,7 +46,7 @@ export function useActiveModel() {
       setStateModel(() => ({
         state: 'start',
         loading: false,
-        model: '',
+        model: modelId,
       }))
     } else {
       console.debug(
