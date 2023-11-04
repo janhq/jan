@@ -33,7 +33,7 @@ const BottomBar = () => {
             <ProgressBar total={100} used={progress} />
           ) : null}
 
-          {downloadStates.length > 1 && (
+          {downloadStates.length === 1 && (
             <SystemItem
               name="Downloading"
               value={`${downloadStates[0]
@@ -42,6 +42,7 @@ const BottomBar = () => {
               )}`}
             />
           )}
+          {downloadStates.length > 1 && <p>{downloadStates.length}</p>}
         </div>
 
         {stateModelStartStop.state === 'start' &&

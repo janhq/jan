@@ -1,5 +1,11 @@
 import { useContext } from 'react'
 
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipArrow,
+} from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 
 import {
@@ -107,23 +113,31 @@ export default function RibbonNav() {
               .map((primary, i) => {
                 const isActive = mainViewState === primary.state
                 return (
-                  <div className="relative p-2" key={i}>
-                    <button
-                      data-testid={primary.name}
-                      className={twMerge(
-                        'relative flex w-full flex-shrink-0 items-center justify-center',
-                        isActive && 'z-10'
-                      )}
-                      onClick={() => onMenuClick(primary.state)}
-                    >
-                      {primary.icon}
-                    </button>
-                    {isActive && (
-                      <m.div
-                        className="bg-primary/20 absolute inset-0 left-0 h-full w-full rounded-md"
-                        layoutId="active-state-primary"
-                      />
-                    )}
+                  <div className="relative flex p-2" key={i}>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <button
+                          data-testid={primary.name}
+                          className={twMerge(
+                            'relative flex w-full flex-shrink-0 items-center justify-center',
+                            isActive && 'z-10'
+                          )}
+                          onClick={() => onMenuClick(primary.state)}
+                        >
+                          {primary.icon}
+                        </button>
+                        {isActive && (
+                          <m.div
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-primary/20"
+                            layoutId="active-state-primary"
+                          />
+                        )}
+                      </TooltipTrigger>
+                      <TooltipContent side="right" sideOffset={10}>
+                        <p>{primary.name}</p>
+                        <TooltipArrow />
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 )
               })}
@@ -135,23 +149,31 @@ export default function RibbonNav() {
               .map((secondary, i) => {
                 const isActive = mainViewState === secondary.state
                 return (
-                  <div className="relative p-2" key={i}>
-                    <button
-                      data-testid={secondary.name}
-                      className={twMerge(
-                        'relative flex w-full flex-shrink-0 items-center justify-center',
-                        isActive && 'z-10'
-                      )}
-                      onClick={() => onMenuClick(secondary.state)}
-                    >
-                      {secondary.icon}
-                    </button>
-                    {isActive && (
-                      <m.div
-                        className="bg-primary/20 absolute inset-0 left-0 h-full w-full rounded-md"
-                        layoutId="active-state-secondary"
-                      />
-                    )}
+                  <div className="relative flex p-2" key={i}>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <button
+                          data-testid={secondary.name}
+                          className={twMerge(
+                            'relative flex w-full flex-shrink-0 items-center justify-center',
+                            isActive && 'z-10'
+                          )}
+                          onClick={() => onMenuClick(secondary.state)}
+                        >
+                          {secondary.icon}
+                        </button>
+                        {isActive && (
+                          <m.div
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-primary/20"
+                            layoutId="active-state-secondary"
+                          />
+                        )}
+                      </TooltipTrigger>
+                      <TooltipContent side="right" sideOffset={10}>
+                        <p>{secondary.name}</p>
+                        <TooltipArrow />
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 )
               })}

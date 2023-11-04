@@ -4,6 +4,8 @@ import { PropsWithChildren, useEffect, useState } from 'react'
 
 import { PluginService } from '@janhq/core'
 
+import { TooltipProvider } from '@janhq/uikit'
+
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 import ThemeWrapper from '@/containers/Providers/Theme'
@@ -67,7 +69,9 @@ const Providers = (props: PropsWithChildren) => {
         {setupCore && activated && (
           <FeatureToggleWrapper>
             <EventListenerWrapper>
-              <ModalWrapper>{children}</ModalWrapper>
+              <TooltipProvider>
+                <ModalWrapper>{children}</ModalWrapper>
+              </TooltipProvider>
             </EventListenerWrapper>
           </FeatureToggleWrapper>
         )}

@@ -1,0 +1,6 @@
+.tooltip {
+  @apply bg-secondary text-foreground z-50 overflow-hidden rounded-md px-2 py-1.5 text-xs font-medium shadow-md;
+  &-arrow {
+    @apply fill-secondary;
+  }
+}
