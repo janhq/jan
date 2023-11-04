@@ -5,7 +5,6 @@
 export type CoreService =
   | StoreService
   | DataService
-  | InferenceService
   | ModelManagementService
   | SystemMonitoringService
   | PreferenceService
@@ -91,27 +90,6 @@ export enum DataService {
    * Updates a bot matching an ID.
    */
   UpdateBot = "updateBot",
-}
-
-/**
- * InferenceService exports.
- * @enum {string}
- */
-export enum InferenceService {
-  /**
-   * Initializes a model for inference.
-   */
-  InitModel = "initModel",
-
-  /**
-   * Stops a running inference model.
-   */
-  StopModel = "stopModel",
-
-  /**
-   * Single inference response.
-   */
-  InferenceRequest = "inferenceRequest",
 }
 
 /**

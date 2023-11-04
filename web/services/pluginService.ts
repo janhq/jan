@@ -1,22 +1,20 @@
 'use client'
-import {
-  extensionPoints,
-  plugins,
-} from '@plugin'
+import { extensionPoints, plugins } from '@plugin'
 import {
   CoreService,
   InferenceService,
   ModelManagementService,
+  PluginType,
   StoreService,
 } from '@janhq/core'
+import { pluginManager } from '@plugin/PluginManager'
+import { InferencePlugin } from '@janhq/core/lib/plugins'
 
 export const isCorePluginInstalled = () => {
   if (!extensionPoints.get(StoreService.CreateCollection)) {
     return false
   }
-  if (!extensionPoints.get(InferenceService.InitModel)) {
-    return false
-  }
+  if (!pluginManager.get<InferencePlugin>(PluginType.Inference)) return false
   if (!extensionPoints.get(ModelManagementService.DownloadModel)) {
     return false
   }
@@ -33,7 +31,7 @@ export const setupBasePlugins = async () => {
 
   if (
     !extensionPoints.get(StoreService.CreateCollection) ||
-    !extensionPoints.get(InferenceService.InitModel) ||
+    !pluginManager.get<InferencePlugin>(PluginType.Inference) ||
     !extensionPoints.get(ModelManagementService.DownloadModel)
   ) {
     const installed = await plugins.install(basePlugins)
