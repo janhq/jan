@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 title: Anatomy of 👋Jan
 ---
 
@@ -7,7 +6,7 @@ This page explains all the architecture of [Jan](https://Jan/).
 
 ## Synchronous architecture
 
-![Synchronous architecture](img/arch-sync.drawio.png)
+![Synchronous architecture](../img/arch-async.drawio.png)
 
 ### Overview
 
@@ -60,7 +59,7 @@ With **Plugins and Apps**, users can build a broader ecosystem surrounding Jan.
 
 ## Asynchronous architecture
 
-![Asynchronous architecture](img/arch-async.drawio.png)
+![Asynchronous architecture](../img/arch-async.drawio.png)
 
 ### Overview
 
@@ -97,7 +96,7 @@ These are modular components or extensions designed to enhance the application's
 
 ## Jan workflow
 
-![Workflow](img/arch-flow.drawio.png)
+![Workflow](../img/arch-flow.drawio.png)
 
 ### Overview
 
@@ -163,7 +162,7 @@ This represents applications or extensions that can be integrated with Jan.
 
 ## Jan Platform
 
-![Platform](img/arch-connection.drawio.png)
+![Platform](../img/arch-connection.drawio.png)
 
 ### Overview
 

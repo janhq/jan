@@ -1,6 +1,6 @@
 ---
-sidebar_position: 4
-title: Nitro (C++ Inference Engine)
+title: Nitro 
+slug: /nitro
 ---
 
 Nitro, is the inference engine that powers Jan. Nitro is written in C++, optimized for edge deployment.
@@ -73,4 +73,4 @@ curl -X POST 'http://localhost:3928/inferences/llamacpp/loadmodel' \
 
 ## Architecture diagram
 
-![Nitro Architecture](img/architecture.png)
+![Nitro Architecture](../developers/img/architecture.png)

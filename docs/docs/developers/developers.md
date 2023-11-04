@@ -1,5 +1,4 @@
 ---
-sidebar_position: 1
 title: Overview
 ---
 Jan's mission is to power the next-gen App with limitless extensibility by providing users with the following:

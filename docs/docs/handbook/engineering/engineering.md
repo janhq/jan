@@ -1,9 +1,6 @@
 ---
-title: Internal Guidelines
-sidebar_position: 6
+title: Engineering
 ---
-
-# Internal Guidelines
 
 ## Connecting to Rigs
 
