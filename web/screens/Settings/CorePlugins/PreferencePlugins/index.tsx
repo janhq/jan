@@ -26,6 +26,8 @@ import {
 
 import * as z from 'zod'
 
+import { toaster } from '@/containers/Toast'
+
 import { formatPluginsName } from '@/utils/converter'
 
 const PreferencePlugins = (props: Props) => {
@@ -49,10 +51,14 @@ const PreferencePlugins = (props: Props) => {
   const onSubmit = async (values: z.infer<typeof FormSchema>) => {
     for (const [key, value] of Object.entries(values)) {
     }
+    toaster({
+      title: formatPluginsName(pluginName),
+      description: 'Success update preferences',
+    })
   }
 
   return (
-    <div className="mx-auto mt-6 w-1/2">
+    <div className="mx-auto w-full lg:mt-10 lg:w-1/2">
       <h6 className="mb-6 text-lg font-semibold capitalize">
         {formatPluginsName(pluginName)}
       </h6>

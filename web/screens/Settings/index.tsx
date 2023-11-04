@@ -56,7 +56,7 @@ const SettingsScreen = () => {
       // })
     }
     getActivePluginPreferences()
-  }, [])
+  }, [preferenceValues])
 
   const preferencePlugins = preferenceItems
     .map((x) => x.pluginName)
@@ -129,7 +129,7 @@ const SettingsScreen = () => {
 
             <div className="mt-5 flex-shrink-0">
               {preferencePlugins.length > 0 && (
-                <label className="font-bold uppercase text-gray-500">
+                <label className="font-bold uppercase text-muted-foreground">
                   Core plugins
                 </label>
               )}

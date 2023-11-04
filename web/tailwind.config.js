@@ -10,10 +10,14 @@ module.exports = {
   ],
   theme: {
     animation: {
-      wave: 'wave 2.5s linear infinite',
+      'wave': 'wave 2.5s linear infinite',
+      'enter': 'enter 200ms ease-out',
+      'slide-in': 'slide-in 1.2s cubic-bezier(.41,.73,.51,1.02)',
+      'leave': 'leave 150ms ease-in forwards',
+      'bounce-right': 'bounce-right 3s infinite',
     },
     keyframes: {
-      wave: {
+      'wave': {
         '0%': { transform: 'rotate( 0.0deg)' },
         '10%': { transform: 'rotate(14.0deg)' },
         '20%': { transform: 'rotate(-8.0deg)' },
@@ -22,6 +26,23 @@ module.exports = {
         '50%': { transform: 'rotate(10.0deg)' },
         '60%': { transform: 'rotate( 0.0deg)' },
         '100%': { transform: 'rotate( 0.0deg)' },
+      },
+      'enter': {
+        '0%': { transform: 'scale(0.8)', opacity: '0' },
+        '100%': { transform: 'scale(1)', opacity: '1' },
+      },
+      'leave': {
+        '0%': { transform: 'scale(1)', opacity: '1' },
+        '100%': { transform: 'scale(0.8)', opacity: '0' },
+      },
+      'slide-in': {
+        '0%': { transform: 'translateY(-100%)' },
+        '100%': { transform: 'translateY(0)' },
+      },
+      'bounce-right': {
+        '0%,20%, 50%,80%,100%': { transform: 'translateX(0)' },
+        '40%': { transform: 'translateX(-8px)' },
+        '60%': { transform: 'translateX(-4px)' },
       },
     },
     extend: {

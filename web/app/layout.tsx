@@ -1,5 +1,7 @@
 import { PropsWithChildren } from 'react'
 
+import { Toaster } from 'react-hot-toast'
+
 import { Metadata } from 'next'
 
 import { Inter } from 'next/font/google'
@@ -26,6 +28,7 @@ export default function RootLayout({ children }: PropsWithChildren) {
       <body className="bg-background/50 font-sans text-sm antialiased">
         <div className="title-bar" />
         <Providers>{children}</Providers>
+        <Toaster position="top-right" />
       </body>
     </html>
   )

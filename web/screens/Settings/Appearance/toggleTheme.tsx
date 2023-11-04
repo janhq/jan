@@ -39,7 +39,7 @@ export default function ToggleTheme() {
             </button>
             {isActive ? (
               <m.div
-                className="border-primary/50 bg-primary/20 absolute inset-0 h-full w-full rounded-md border"
+                className="absolute inset-0 h-full w-full rounded-md border border-primary/50 bg-primary/20"
                 layoutId="active-theme-menu"
               />
             ) : null}

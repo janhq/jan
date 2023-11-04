@@ -53,6 +53,7 @@ app.on("quit", () => {
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
+    minWidth: 800,
     height: 800,
     show: false,
     trafficLightPosition: {

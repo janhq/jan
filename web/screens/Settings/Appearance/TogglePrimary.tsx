@@ -49,7 +49,7 @@ export default function TogglePrimary() {
             />
             {isActive ? (
               <m.div
-                className="border-primary/50 bg-primary/20 absolute inset-0 h-full w-full rounded-full border"
+                className="absolute inset-0 h-full w-full rounded-full border border-primary/50 bg-primary/20"
                 layoutId="active-primary-menu"
               />
             ) : null}
