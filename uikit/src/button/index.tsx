@@ -20,6 +20,9 @@ const buttonVariants = cva('btn', {
       md: 'btn-md',
       lg: 'btn-lg',
     },
+    block: {
+      true: 'w-full',
+    },
   },
   defaultVariants: {
     themes: 'primary',
@@ -34,11 +37,11 @@ export interface ButtonProps
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, themes, size, asChild = false, ...props }, ref) => {
+  ({ className, themes, size, block, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button'
     return (
       <Comp
-        className={twMerge(buttonVariants({ themes, size, className }))}
+        className={twMerge(buttonVariants({ themes, size, block, className }))}
         ref={ref}
         {...props}
       />

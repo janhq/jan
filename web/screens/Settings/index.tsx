@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { preferences } from '@janhq/core'
 
-import { ScrollArea, ScrollBar } from '@janhq/uikit'
+import { ScrollArea } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 
 import { twMerge } from 'tailwind-merge'
@@ -93,78 +93,80 @@ const SettingsScreen = () => {
   return (
     <div className="flex h-full">
       <div className="flex h-full w-48 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
-        <div className="p-5">
-          <div className="flex-shrink-0">
-            <label className="font-bold uppercase text-muted-foreground">
-              Options
-            </label>
-            <div className="mt-2 font-semibold">
-              {menus.map((menu, i) => {
-                const isActive = activeStaticMenu === menu
-                return (
-                  <div key={i} className="relative my-0.5 block py-1.5">
-                    <div
-                      onClick={() => {
-                        setActiveStaticMenu(menu)
-                        setActivePreferencePlugin('')
-                      }}
-                      className="block w-full cursor-pointer"
-                    >
-                      <span className={twMerge(isActive && 'relative z-10')}>
-                        {menu}
-                      </span>
-                    </div>
-                    {isActive && (
-                      <m.div
-                        className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/20"
-                        layoutId="active-static-menu"
-                      />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          <div className="mt-5 flex-shrink-0">
-            {preferencePlugins.length > 0 && (
-              <label className="font-bold uppercase text-gray-500">
-                Core plugins
+        <ScrollArea className="h-full w-full">
+          <div className="p-4">
+            <div className="flex-shrink-0">
+              <label className="font-bold uppercase text-muted-foreground">
+                Options
               </label>
-            )}
-            <div className="mt-2 font-semibold">
-              {preferencePlugins.map((menu, i) => {
-                const isActive = activePreferencePlugin === menu
-                return (
-                  <div key={i} className="relative my-0.5 block py-1.5">
-                    <div
-                      onClick={() => {
-                        setActivePreferencePlugin(menu)
-                        setActiveStaticMenu('')
-                      }}
-                      className="block w-full cursor-pointer"
-                    >
-                      <span
-                        className={twMerge(
-                          'capitalize',
-                          isActive && 'relative z-10'
-                        )}
+              <div className="mt-2 font-semibold">
+                {menus.map((menu, i) => {
+                  const isActive = activeStaticMenu === menu
+                  return (
+                    <div key={i} className="relative my-0.5 block py-1.5">
+                      <div
+                        onClick={() => {
+                          setActiveStaticMenu(menu)
+                          setActivePreferencePlugin('')
+                        }}
+                        className="block w-full cursor-pointer"
                       >
-                        {formatPluginsName(String(menu))}
-                      </span>
+                        <span className={twMerge(isActive && 'relative z-10')}>
+                          {menu}
+                        </span>
+                      </div>
+                      {isActive && (
+                        <m.div
+                          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/20"
+                          layoutId="active-static-menu"
+                        />
+                      )}
                     </div>
-                    {isActive ? (
-                      <m.div
-                        className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/20"
-                        layoutId="active-static-menu"
-                      />
-                    ) : null}
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="mt-5 flex-shrink-0">
+              {preferencePlugins.length > 0 && (
+                <label className="font-bold uppercase text-gray-500">
+                  Core plugins
+                </label>
+              )}
+              <div className="mt-2 font-semibold">
+                {preferencePlugins.map((menu, i) => {
+                  const isActive = activePreferencePlugin === menu
+                  return (
+                    <div key={i} className="relative my-0.5 block py-1.5">
+                      <div
+                        onClick={() => {
+                          setActivePreferencePlugin(menu)
+                          setActiveStaticMenu('')
+                        }}
+                        className="block w-full cursor-pointer"
+                      >
+                        <span
+                          className={twMerge(
+                            'capitalize',
+                            isActive && 'relative z-10'
+                          )}
+                        >
+                          {formatPluginsName(String(menu))}
+                        </span>
+                      </div>
+                      {isActive ? (
+                        <m.div
+                          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/20"
+                          layoutId="active-static-menu"
+                        />
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
-        </div>
+        </ScrollArea>
       </div>
 
       <div className="h-full w-full bg-background/50">

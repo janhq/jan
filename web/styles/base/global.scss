@@ -24,4 +24,11 @@
   .unselect {
     user-select: none;
   }
+
+  button,
+  [type='button'],
+  [type='reset'],
+  [type='submit'] {
+    background-color: inherit;
+  }
 }

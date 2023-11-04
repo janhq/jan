@@ -35,3 +35,17 @@
     @apply h-10 rounded-md px-8;
   }
 }
+
+[type='button'],
+[type='reset'],
+[type='submit'] {
+  &.btn-primary {
+    @apply bg-primary hover:bg-primary/90;
+  }
+  &.btn-secondary {
+    @apply bg-secondary hover:bg-secondary/80;
+  }
+  &.btn-danger {
+    @apply bg-danger hover:bg-danger/90;
+  }
+}

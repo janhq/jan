@@ -11,8 +11,6 @@ import { useUserConfigs } from '@/hooks/useUserConfigs'
 export default function ThemeWrapper({ children }: PropsWithChildren) {
   const [config] = useUserConfigs()
 
-  console.log(config)
-
   return (
     <ThemeProvider attribute="class" enableSystem>
       <m.div
