@@ -74,7 +74,7 @@ The [`src/`](./src/) directory is the heart of your app! You can replace the con
 
 - `index.ts` is your app's mainentrypoint. You can access the Web runtime and define UI in this file.
 - `module.ts` is your Node runtime in which functions get executed. You should define core logic and compute-intensive workloads in this file.
-- `index.ts` and `module.ts` interact with each other via RPC (See [Information flow](./app-anatomy.md#information-flow)) via [`invokePluginFunc`](../reference/01_init.md#invokepluginfunc)
+- `index.ts` and `module.ts` interact with each other via RPC (See [Information flow](./app-anatomy.md#information-flow)) via [`invokePluginFunc`](../../reference/01_init.md#invokepluginfunc)
 
 Import the Jan SDK
 
