@@ -1,8 +1,6 @@
 ---
-title: Cookbook
+title: Engineering
 ---
-
-# Internal Guidelines
 
 ## Connecting to Rigs
 

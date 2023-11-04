@@ -122,13 +122,13 @@ const config = {
             type: "docSidebar",
             sidebarId: "guidesSidebar",
             position: "left",
-            label: "User Guides",
+            label: "User Guide",
           },
           {
             type: "docSidebar",
             sidebarId: "devSidebar",
             position: "left",
-            label: "Developer",
+            label: "Developers",
           },
           // Navbar right
           {

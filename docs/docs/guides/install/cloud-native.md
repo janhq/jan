@@ -1,7 +1,8 @@
 ---
-sidebar_position: 5
 title: Cloud Native
 ---
+
+# Installing Jan Cloud Native
 
 Cloud Native is useful when you want to deploy Jan to a shared/remote/cloud server, rather than running it as a local Desktop app.
 
@@ -35,7 +36,7 @@ Open your browser at [http://localhost:4000](http://localhost:4000)
 
 ### Architecture
 
-![cloudnative](img/cloudnative.png)
+![cloudnative](../../getting-started/img/cloudnative.png)
 
 ### TODOs
 
