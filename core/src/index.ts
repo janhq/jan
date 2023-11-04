@@ -6,7 +6,6 @@ export type CoreService =
   | StoreService
   | DataService
   | ModelManagementService
-  | SystemMonitoringService
   | PreferenceService
   | PluginService;
 
@@ -152,22 +151,6 @@ export enum PreferenceService {
    * Gets the plugin preferences.
    */
   PluginPreferences = "pluginPreferences",
-}
-
-/**
- * SystemMonitoringService exports.
- * @enum {string}
- */
-export enum SystemMonitoringService {
-  /**
-   * Gets information about system resources.
-   */
-  GetResourcesInfo = "getResourcesInfo",
-
-  /**
-   * Gets the current system load.
-   */
-  GetCurrentLoad = "getCurrentLoad",
 }
 
 /**

@@ -16,3 +16,8 @@ export interface Message {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface Model {
+  url: string;
+  fileName: string;
+}

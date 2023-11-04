@@ -1,3 +1,3 @@
-export { ConversationalPlugin } from './conversational'
+export { ConversationalPlugin } from "./conversational";
 export { InferencePlugin } from './inference'
-export { ModelPlugin } from './model'
+export { MonitoringPlugin } from "./monitoring";
