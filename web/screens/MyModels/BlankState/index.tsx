@@ -23,18 +23,18 @@ export default function BlankStateMyModel() {
   return (
     <div className="flex h-full items-center justify-center px-4">
       <div className="text-center">
-        <LayoutGridIcon size={32} className="mx-auto text-primary" />
+        <LayoutGridIcon size={32} className="mx-auto text-primary/80" />
         <div className="mt-4">
-          <h1 className="text-2xl font-bold leading-snug">{`Ups, You don't have a model.`}</h1>
+          <h1 className="text-xl font-bold leading-snug">{`Ups, You don't have a model.`}</h1>
           <p className="mt-1 text-base">
             {downloadStates.length
               ? `Downloading model ... `
               : `let’s download your first model`}
           </p>
-          {downloadStates?.length ? (
+          {downloadStates?.length && (
             <Modal>
               <ModalTrigger asChild>
-                <Button themes="outline" className="mt-4">
+                <Button themes="outline" className="mr-2 mt-6">
                   <span>{downloadStates.length} Downloading model</span>
                 </Button>
               </ModalTrigger>
@@ -63,14 +63,13 @@ export default function BlankStateMyModel() {
                 })}
               </ModalContent>
             </Modal>
-          ) : (
-            <Button
-              className="mt-4"
-              onClick={() => setMainViewState(MainViewState.ExploreModels)}
-            >
-              Explore Models
-            </Button>
           )}
+          <Button
+            className="mt-6"
+            onClick={() => setMainViewState(MainViewState.ExploreModels)}
+          >
+            Explore Models
+          </Button>
         </div>
       </div>
     </div>

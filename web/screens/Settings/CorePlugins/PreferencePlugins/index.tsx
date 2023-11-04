@@ -63,7 +63,7 @@ const PreferencePlugins = (props: Props) => {
         {formatPluginsName(pluginName)}
       </h6>
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           {preferenceItems
             .filter((x: any) => x.pluginName === pluginName)
             ?.map((e: any) => (
@@ -88,9 +88,11 @@ const PreferencePlugins = (props: Props) => {
                 )}
               />
             ))}
-          <Button type="submit" block>
-            Submit
-          </Button>
+          <div className="pt-4">
+            <Button type="submit" block>
+              Submit
+            </Button>
+          </div>
         </form>
       </Form>
     </div>

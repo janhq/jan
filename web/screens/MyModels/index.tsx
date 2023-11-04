@@ -13,10 +13,6 @@ const MyModelsScreen = () => {
   const { downloadedModels } = useGetDownloadedModels()
   const { modelDownloadState, downloadStates } = useDownloadState()
 
-  // const isDownloadingFirstModel = downloadStates.length > 0
-
-  console.log(downloadedModels)
-
   if (downloadedModels.length === 0) return <BlankStateMyModel />
 
   return (
