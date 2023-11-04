@@ -8,16 +8,11 @@ import SystemItem from '@/containers/Layout/BottomBar/SystemItem'
 
 import { appDownloadProgress } from '@/containers/Providers/Jotai'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 
-import {
-  activeAssistantModelAtom,
-  stateModel,
-} from '@/helpers/atoms/Model.atom'
-
 const BottomBar = () => {
-  const activeModel = useAtomValue(activeModelAtom)
-  const stateModelStartStop = useAtomValue(stateModel)
+  const { activeModel, stateModel } = useActiveModel()
   const { ram, cpu } = useGetSystemResources()
   const progress = useAtomValue(appDownloadProgress)
 
@@ -32,21 +27,13 @@ const BottomBar = () => {
           <DownloadingState />
         </div>
 
-        {stateModelStartStop.state === 'start' &&
-          stateModelStartStop.loading && (
-            <SystemItem
-              name="Starting:"
-              value={stateModelStartStop.model || '-'}
-            />
-          )}
-        {stateModelStartStop.state === 'stop' &&
-          stateModelStartStop.loading && (
-            <SystemItem
-              name="Stopping:"
-              value={stateModelStartStop.model || '-'}
-            />
-          )}
-        {!stateModelStartStop.loading && (
+        {stateModel.state === 'start' && stateModel.loading && (
+          <SystemItem name="Starting:" value={stateModel.model || '-'} />
+        )}
+        {stateModel.state === 'stop' && stateModel.loading && (
+          <SystemItem name="Stopping:" value={stateModel.model || '-'} />
+        )}
+        {!stateModel.loading && (
           <SystemItem name="Active model:" value={activeModel?.name || '-'} />
         )}
       </div>

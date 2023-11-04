@@ -5,7 +5,7 @@ import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline'
 
 import { useAtom, useAtomValue } from 'jotai'
 
-import useStartStopModel from '@/hooks/useStartStopModel'
+import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { switchingModelConfirmationModalPropsAtom } from '@/helpers/atoms/Modal.atom'
 import { activeAssistantModelAtom } from '@/helpers/atoms/Model.atom'
@@ -16,8 +16,8 @@ export type SwitchingModelConfirmationModalProps = {
 
 const SwitchingModelConfirmationModal: React.FC = () => {
   const [props, setProps] = useAtom(switchingModelConfirmationModalPropsAtom)
-  const activeModel = useAtomValue(activeModelAtom)
-  const { startModel } = useStartStopModel()
+  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const { startModel } = useActiveModel()
 
   const onConfirmSwitchModelClick = () => {
     const modelId = props?.replacingModel._id

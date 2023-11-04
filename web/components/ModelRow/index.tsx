@@ -2,8 +2,8 @@ import React, { useCallback } from 'react'
 
 import { useAtomValue } from 'jotai'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import useDeleteModel from '@/hooks/useDeleteModel'
-import useStartStopModel from '@/hooks/useStartStopModel'
 
 import { toGigabytes } from '@/utils/converter'
 
@@ -20,8 +20,8 @@ type Props = {
 }
 
 const ModelRow: React.FC<Props> = ({ model }) => {
-  const { startModel, stopModel } = useStartStopModel()
-  const activeModel = useAtomValue(activeModelAtom)
+  const { startModel, stopModel } = useActiveModel()
+  const activeModel = useAtomValue(activeAssistantModelAtom)
   const { deleteModel } = useDeleteModel()
   const { loading, model: currentModelState } = useAtomValue(stateModel)
 

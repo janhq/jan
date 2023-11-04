@@ -27,11 +27,11 @@ export default function BlankStateMyModel() {
         <div className="mt-4">
           <h1 className="text-xl font-bold leading-snug">{`Ups, You don't have a model.`}</h1>
           <p className="mt-1 text-base">
-            {downloadStates.length
+            {downloadStates.length > 0
               ? `Downloading model ... `
               : `let’s download your first model`}
           </p>
-          {downloadStates?.length && (
+          {downloadStates?.length > 0 && (
             <Modal>
               <ModalTrigger asChild>
                 <Button themes="outline" className="mr-2 mt-6">

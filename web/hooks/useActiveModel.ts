@@ -4,15 +4,11 @@ import { atom, useAtom } from 'jotai'
 
 import { executeSerial } from '@/services/pluginService'
 
-import useGetModelById from './useGetModelById'
+import { useGetModelById } from './useGetModelById'
 
 const activeAssistantModelAtom = atom<AssistantModel | undefined>(undefined)
 
 const stateModelAtom = atom({ state: 'start', loading: false, model: '' })
-
-const initModel = async (modelId: string): Promise<any> => {
-  return executeSerial(InferenceService.InitModel, modelId)
-}
 
 export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom)
@@ -29,20 +25,29 @@ export function useActiveModel() {
 
     const model = await getModelById(modelId)
 
-    if (!model) {
+    if (!modelId) {
       alert(`Model ${modelId} not found! Please re-download the model first.`)
-      setStateModel((prev) => ({ ...prev, loading: false }))
+      setStateModel(() => ({
+        state: 'start',
+        loading: false,
+        model: '',
+      }))
       return
     }
 
     const currentTime = Date.now()
-    console.debug('Init model: ', model._id)
+    console.debug('Init model: ', modelId)
 
-    const res = await initModel(model._id)
+    const res = await initModel(modelId)
     if (res?.error) {
       const errorMessage = `Failed to init model: ${res.error}`
       console.error(errorMessage)
       alert(errorMessage)
+      setStateModel(() => ({
+        state: 'start',
+        loading: false,
+        model: '',
+      }))
     } else {
       console.debug(
         `Init model ${modelId} successfully!, take ${
@@ -50,8 +55,12 @@ export function useActiveModel() {
         }ms`
       )
       setActiveModel(model)
+      setStateModel(() => ({
+        state: 'stop',
+        loading: false,
+        model: modelId,
+      }))
     }
-    setStateModel((prev) => ({ ...prev, loading: false }))
   }
 
   const stopModel = async (modelId: string) => {
@@ -59,9 +68,13 @@ export function useActiveModel() {
     setTimeout(async () => {
       await executeSerial(InferenceService.StopModel, modelId)
       setActiveModel(undefined)
-      setStateModel({ state: 'stop', loading: false, model: modelId })
+      setStateModel({ state: 'start', loading: false, model: '' })
     }, 500)
   }
 
   return { activeModel, startModel, stopModel, stateModel }
+}
+
+const initModel = async (modelId: string): Promise<any> => {
+  return executeSerial(InferenceService.InitModel, modelId)
 }

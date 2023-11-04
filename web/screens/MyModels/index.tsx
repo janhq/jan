@@ -37,6 +37,8 @@ const MyModelsScreen = () => {
 
   const { activeModel, startModel, stopModel, stateModel } = useActiveModel()
 
+  console.log(stateModel, activeModel)
+
   if (downloadedModels.length === 0) return <BlankStateMyModel />
 
   const onModelActionClick = (modelId: string) => {
@@ -53,6 +55,8 @@ const MyModelsScreen = () => {
         <div className="p-4">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {downloadedModels.map((model, i) => {
+              const isActiveModel =
+                stateModel.model === model._id && stateModel.state === 'stop'
               return (
                 <div
                   key={i}
@@ -103,26 +107,31 @@ const MyModelsScreen = () => {
                               <ModalClose asChild>
                                 <Button themes="ghost">No</Button>
                               </ModalClose>
-                              <Button
-                                themes="danger"
-                                onClick={() => deleteModel(model)}
-                              >
-                                Yes
-                              </Button>
+                              <ModalClose asChild>
+                                <Button
+                                  themes="danger"
+                                  onClick={() =>
+                                    setTimeout(() => {
+                                      deleteModel(model)
+                                    }, 500)
+                                  }
+                                >
+                                  Yes
+                                </Button>
+                              </ModalClose>
                             </div>
                           </ModalFooter>
                         </ModalContent>
                       </Modal>
                       <Button
                         block
-                        loading={
-                          stateModel.model === model._id
-                            ? stateModel.loading
-                            : false
-                        }
+                        themes={isActiveModel ? 'danger' : 'primary'}
+                        className="capitalize"
+                        loading={isActiveModel ? stateModel.loading : false}
                         onClick={() => onModelActionClick(model._id)}
                       >
-                        Start Model
+                        {isActiveModel ? stateModel.state : 'Start'}
+                        &nbsp;Model
                       </Button>
                     </div>
                   </Fragment>

@@ -1,5 +1,5 @@
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import useGetModelById from './useGetModelById'
+import { useGetModelById } from './useGetModelById'
 import {
   userConversationsAtom,
   setActiveConvoIdAtom,

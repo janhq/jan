@@ -5,8 +5,8 @@ import { useAtomValue } from 'jotai'
 
 // import useCreateConversation from '@/hooks/useCreateConversation'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import useGetInputState from '@/hooks/useGetInputState'
-import useStartStopModel from '@/hooks/useStartStopModel'
 
 import BasicPromptAccessories from '../BasicPromptAccessories'
 import BasicPromptInput from '../BasicPromptInput'
@@ -29,7 +29,7 @@ const InputToolbar: React.FC = () => {
   const currentConvoState = useAtomValue(currentConvoStateAtom)
   const { inputState, currentConvo } = useGetInputState()
   // const { requestCreateConvo } = useCreateConversation()
-  const { startModel } = useStartStopModel()
+  const { startModel } = useActiveModel()
   // const { loading } = useAtomValue(stateModel)
   const conversations = useAtomValue(userConversationsAtom)
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)

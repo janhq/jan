@@ -4,9 +4,9 @@ import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
 
-import useGetModelById from '@/hooks/useGetModelById'
+import { useActiveModel } from '@/hooks/useActiveModel'
+import { useGetModelById } from '@/hooks/useGetModelById'
 import { useMainViewState } from '@/hooks/useMainViewState'
-import useStartStopModel from '@/hooks/useStartStopModel'
 
 import { displayDate } from '@/utils/datetime'
 
