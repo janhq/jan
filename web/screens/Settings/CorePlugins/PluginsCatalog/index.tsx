@@ -110,6 +110,8 @@ const PluginCatalog = () => {
     }
   }
 
+  if (isLoading) return <Loader description="Installing ..." />
+
   return (
     <div className="block w-full">
       {pluginCatalog
@@ -183,7 +185,7 @@ const PluginCatalog = () => {
           )
         })}
       {/* Manual Installation */}
-      <div className="flex w-full items-start justify-between border-b border-gray-200 py-4 first:pt-0 last:border-none dark:border-gray-800">
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="w-4/5 flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
             <h6 className="text-sm font-semibold capitalize">
@@ -210,14 +212,6 @@ const PluginCatalog = () => {
           </Button>
         </div>
       </div>
-      {isLoading && (
-        <div className="fixed inset-0 z-50 flex h-full items-center justify-center gap-y-4 rounded-lg bg-gray-950/90 text-gray-400 dark:backdrop-blur-sm">
-          <div className="space-y-16">
-            <Loader />
-            <p>Installing...</p>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
