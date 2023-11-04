@@ -3,7 +3,7 @@ import { atomWithStorage } from 'jotai/utils'
 
 export const userConfigs = atomWithStorage<UserConfig>('config', {
   gettingStartedShow: true,
-  accent: 'accent-blue',
+  primaryColor: 'primary-yellow',
 })
 
 export function useUserConfigs() {

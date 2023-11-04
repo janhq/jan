@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-'use client'
 
 import React, { useState, useEffect, useRef, useContext } from 'react'
 
-import { Switch } from '@janhq/uikit'
+import { Switch, Button } from '@janhq/uikit'
 
 import Loader from '@/containers/Loader'
 
@@ -134,32 +133,38 @@ const PluginCatalog = () => {
           return (
             <div
               key={i}
-              className="flex w-full items-start justify-between border-b border-gray-200 py-4 first:pt-0 last:border-none dark:border-gray-800"
+              className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none"
             >
               <div className="w-4/5 flex-shrink-0 space-y-1.5">
                 <div className="flex gap-x-2">
                   <h6 className="text-sm font-semibold capitalize">
                     {formatPluginsName(item.name)}
                   </h6>
-                  <p className="whitespace-pre-wrap font-semibold leading-relaxed text-gray-600 dark:text-gray-400">
+                  <p className="whitespace-pre-wrap font-semibold leading-relaxed ">
                     v{item.version}
                   </p>
                 </div>
-                <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
+                <p className="whitespace-pre-wrap leading-relaxed ">
                   {item.description}
                 </p>
                 {isActivePlugin && (
-                  <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
-                    Installed{' '}
-                    {hasUpdateVersionPlugins
-                      ? `v${installedPlugin.version}`
-                      : 'the latest version'}
-                  </p>
-                )}
-                {isActivePlugin && hasUpdateVersionPlugins && (
-                  <button onClick={() => downloadTarball(item.name)}>
-                    Update
-                  </button>
+                  <div className="flex items-center gap-x-2">
+                    <p className="whitespace-pre-wrap leading-relaxed ">
+                      Installed{' '}
+                      {hasUpdateVersionPlugins
+                        ? `v${installedPlugin.version}`
+                        : 'the latest version'}
+                    </p>
+                    {hasUpdateVersionPlugins && (
+                      <Button
+                        size="sm"
+                        themes="secondary"
+                        onClick={() => downloadTarball(item.name)}
+                      >
+                        Update
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
               {experimentalFeatureEnabed && (
@@ -185,7 +190,7 @@ const PluginCatalog = () => {
               Manual Installation
             </h6>
           </div>
-          <p className="whitespace-pre-wrap leading-relaxed text-gray-600 dark:text-gray-400">
+          <p className="whitespace-pre-wrap leading-relaxed ">
             Select a plugin file to install (.tgz)
           </p>
         </div>
@@ -196,7 +201,13 @@ const PluginCatalog = () => {
             ref={fileInputRef}
             onChange={handleFileChange}
           />
-          <button onClick={() => fileInputRef.current?.click()}>Select</button>
+          <Button
+            themes="secondary"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Select
+          </Button>
         </div>
       </div>
       {isLoading && (

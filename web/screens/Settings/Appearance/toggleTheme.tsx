@@ -1,25 +1,11 @@
-'use client'
-
-import * as React from 'react'
-
 import { useTheme } from 'next-themes'
 
 import { motion as m } from 'framer-motion'
 import { twMerge } from 'tailwind-merge'
 
-const themeMenus = [
-  {
-    name: 'light',
-  },
-  {
-    name: 'dark',
-  },
-  {
-    name: 'system',
-  },
-]
+const themeMenus = [{ name: 'light' }, { name: 'dark' }, { name: 'system' }]
 
-const ToggleTheme = () => {
+export default function ToggleTheme() {
   const { theme: currentTheme, setTheme } = useTheme()
 
   const handeleNativeTheme = async (val: string) => {
@@ -53,7 +39,7 @@ const ToggleTheme = () => {
             </button>
             {isActive ? (
               <m.div
-                className="border-accent/50 bg-accent/20 absolute inset-0 h-full w-full rounded-md border"
+                className="border-primary/50 bg-primary/20 absolute inset-0 h-full w-full rounded-md border"
                 layoutId="active-theme-menu"
               />
             ) : null}
@@ -63,5 +49,3 @@ const ToggleTheme = () => {
     </div>
   )
 }
-
-export default ToggleTheme

@@ -22,7 +22,7 @@ const AvatarImage = forwardRef<
 >(({ className, ...props }, ref) => (
   <AvatarPrimitive.Image
     ref={ref}
-    className={twMerge('aspect-square h-full w-full', className)}
+    className={twMerge('avatar-image', className)}
     {...props}
   />
 ))
@@ -34,10 +34,7 @@ const AvatarFallback = forwardRef<
 >(({ className, ...props }, ref) => (
   <AvatarPrimitive.Fallback
     ref={ref}
-    className={twMerge(
-      'bg-muted flex h-full w-full items-center justify-center rounded-full',
-      className
-    )}
+    className={twMerge('avatar-fallback', className)}
     {...props}
   />
 ))

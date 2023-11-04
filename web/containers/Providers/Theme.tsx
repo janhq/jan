@@ -11,10 +11,12 @@ import { useUserConfigs } from '@/hooks/useUserConfigs'
 export default function ThemeWrapper({ children }: PropsWithChildren) {
   const [config] = useUserConfigs()
 
+  console.log(config)
+
   return (
     <ThemeProvider attribute="class" enableSystem>
       <m.div
-        className={config.accent}
+        className={config.primaryColor}
         initial={{ opacity: 0, y: -10 }}
         animate={{
           opacity: 1,

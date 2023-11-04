@@ -3,41 +3,41 @@ import { twMerge } from 'tailwind-merge'
 
 import { useUserConfigs } from '@/hooks/useUserConfigs'
 
-type AccentOption = {
-  value: Accent
+type PrimaryColorOption = {
+  value: PrimaryColor
   class: string
 }
 
-const accentOptions: AccentOption[] = [
+const primaryColorOptions: PrimaryColorOption[] = [
   {
-    value: 'accent-blue',
+    value: 'primary-yellow',
+    class: 'bg-yellow-500',
+  },
+  {
+    value: 'primary-blue',
     class: 'bg-blue-500',
   },
   {
-    value: 'accent-red',
-    class: 'bg-red-500',
+    value: 'primary-purple',
+    class: 'bg-purple-500',
   },
   {
-    value: 'accent-green',
+    value: 'primary-green',
     class: 'bg-green-500',
-  },
-  {
-    value: 'accent-orange',
-    class: 'bg-orange-500',
   },
 ]
 
-const ToggleAccent = () => {
+export default function TogglePrimary() {
   const [config, setUserConfig] = useUserConfigs()
 
-  const handleChangeAccent = (accent: Accent) => {
-    setUserConfig({ ...config, accent })
+  const handleChangeAccent = (primaryColor: PrimaryColor) => {
+    setUserConfig({ ...config, primaryColor })
   }
 
   return (
     <div className="flex items-center">
-      {accentOptions.map((option, i) => {
-        const isActive = config.accent === option.value
+      {primaryColorOptions.map((option, i) => {
+        const isActive = config.primaryColor === option.value
         return (
           <div
             className="relative flex h-6 w-6 items-center justify-center"
@@ -49,8 +49,8 @@ const ToggleAccent = () => {
             />
             {isActive ? (
               <m.div
-                className="border-accent/50 bg-accent/20 absolute inset-0 h-full w-full rounded-full border"
-                layoutId="active-accent-menu"
+                className="border-primary/50 bg-primary/20 absolute inset-0 h-full w-full rounded-full border"
+                layoutId="active-primary-menu"
               />
             ) : null}
           </div>
@@ -59,5 +59,3 @@ const ToggleAccent = () => {
     </div>
   )
 }
-
-export default ToggleAccent

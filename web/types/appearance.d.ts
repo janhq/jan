@@ -1,7 +1,10 @@
-type Accent = 'accent-blue' | 'accent-green' | 'accent-red' | 'accent-orange'
+type PrimaryColor =
+  | 'primary-blue'
+  | 'primary-green'
+  | 'primary-purple'
+  | 'primary-yellow'
 
 type UserConfig = {
   gettingStartedShow?: boolean
-  accent?: Accent
-  sidebarLeftExpand?: boolean
+  primaryColor?: PrimaryColor
 }

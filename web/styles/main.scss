@@ -1,13 +1,13 @@
 // Tailwind
-@import '@janhq/uikit/dist/index.css';
 
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
+@import '@janhq/uikit/dist/index.css';
+
 @import './base/global.scss';
 
-@import './variables.scss';
-@import './code-block.scss';
-@import './loader.scss';
-@import './message.scss';
+// @import './code-block.scss';
+// @import './loader.scss';
+// @import './message.scss';

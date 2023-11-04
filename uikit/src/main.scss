@@ -3,13 +3,113 @@
 
 @import './avatar/styles.scss';
 @import './switch/styles.scss';
+@import './button/styles.scss';
 
 :root {
   --background: 0 0% 100%;
-  --border: 240 5.9% 90%;
+  --foreground: 20 14.3% 4.1%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 20 14.3% 4.1%;
+
+  --muted: 60 4.8% 95.9%;
+  --muted-foreground: 25 5.3% 44.7%;
+
+  --accent: 60 4.8% 95.9%;
+  --accent-foreground: 24 9.8% 10%;
+
+  --danger: 0 84.2% 60.2%;
+  --danger-foreground: 60 9.1% 97.8%;
+
+  --border: 20 5.9% 90%;
+  --input: 20 5.9% 90%;
+  --ring: 20 14.3% 4.1%;
+
+  .primary-yellow {
+    --primary: 47.9 95.8% 53.1%;
+    --primary-foreground: 26 83.3% 14.1%;
+
+    --secondary: 60 4.8% 95.9%;
+    --secondary-foreground: 24 9.8% 10%;
+  }
+
+  .primary-blue {
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+  }
+
+  .primary-green {
+    --primary: 142.1 76.2% 36.3%;
+    --primary-foreground: 355.7 100% 97.3%;
+
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+  }
+
+  .primary-purple {
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 210 20% 98%;
+
+    --secondary: 220 14.3% 95.9%;
+    --secondary-foreground: 220.9 39.3% 11%;
+  }
 }
 
 .dark {
-  --background: 240 10% 3.9%;
-  --border: 240 3.7% 15.9%;
+  --background: 20 14.3% 4.1%;
+  --foreground: 60 9.1% 97.8%;
+
+  --card: 20 14.3% 4.1%;
+  --card-foreground: 60 9.1% 97.8%;
+
+  --muted: 12 6.5% 15.1%;
+  --muted-foreground: 24 5.4% 63.9%;
+
+  --accent: 12 6.5% 15.1%;
+  --accent-foreground: 60 9.1% 97.8%;
+
+  --danger: 0 62.8% 30.6%;
+  --danger-foreground: 60 9.1% 97.8%;
+
+  --border: 12 6.5% 15.1%;
+  --input: 12 6.5% 15.1%;
+  --ring: 35.5 91.7% 32.9%;
+
+  .primary-yellow {
+    --primary: 47.9 95.8% 53.1%;
+    --primary-foreground: 26 83.3% 14.1%;
+
+    --secondary: 12 6.5% 15.1%;
+    --secondary-foreground: 60 9.1% 97.8%;
+  }
+
+  .primary-blue {
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+  }
+
+  .primary-green {
+    --primary: 142.1 70.6% 45.3%;
+    --primary-foreground: 144.9 80.4% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+  }
+
+  .primary-purple {
+    --primary: 263.4 70% 50.4%;
+    --primary-foreground: 210 20% 98%;
+
+    --secondary: 215 27.9% 16.9%;
+    --secondary-foreground: 210 20% 98%;
+  }
+}
+
+:is(p) {
+  @apply text-muted-foreground;
 }

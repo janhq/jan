@@ -97,25 +97,25 @@ const SettingsScreen = () => {
             <label className="text-muted-foreground font-bold uppercase">
               Options
             </label>
-            <div className="mt-1 font-semibold">
+            <div className="mt-2 font-semibold">
               {menus.map((menu, i) => {
                 const isActive = activeStaticMenu === menu
                 return (
-                  <div key={i} className="relative block py-2">
-                    <button
+                  <div key={i} className="relative my-0.5 block py-1.5">
+                    <div
                       onClick={() => {
                         setActiveStaticMenu(menu)
                         setActivePreferencePlugin('')
                       }}
-                      className="block w-full text-left"
+                      className="block w-full cursor-pointer"
                     >
-                      <p className={twMerge(isActive && 'relative z-10')}>
+                      <span className={twMerge(isActive && 'relative z-10')}>
                         {menu}
-                      </p>
-                    </button>
+                      </span>
+                    </div>
                     {isActive && (
                       <m.div
-                        className="absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md bg-blue-600 p-2"
+                        className="bg-primary/20 absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md"
                         layoutId="active-static-menu"
                       />
                     )}
@@ -131,30 +131,30 @@ const SettingsScreen = () => {
                 Core plugins
               </label>
             )}
-            <div className="mt-1 font-semibold">
+            <div className="mt-2 font-semibold">
               {preferencePlugins.map((menu, i) => {
                 const isActive = activePreferencePlugin === menu
                 return (
-                  <div key={i} className="relative block py-2">
-                    <button
+                  <div key={i} className="relative my-0.5 block py-1.5">
+                    <div
                       onClick={() => {
                         setActivePreferencePlugin(menu)
                         setActiveStaticMenu('')
                       }}
-                      className="block w-full text-left"
+                      className="block w-full cursor-pointer"
                     >
-                      <p
+                      <span
                         className={twMerge(
                           'capitalize',
                           isActive && 'relative z-10'
                         )}
                       >
                         {formatPluginsName(String(menu))}
-                      </p>
-                    </button>
+                      </span>
+                    </div>
                     {isActive ? (
                       <m.div
-                        className="absolute inset-0 -left-5 h-full w-[calc(100%+32px)] rounded-md bg-blue-600 p-2"
+                        className="bg-primary/20 absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md"
                         layoutId="active-static-menu"
                       />
                     ) : null}
