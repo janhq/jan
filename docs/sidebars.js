@@ -110,7 +110,7 @@ const sidebars = {
     // },
   ],
 
-  companySidebar: [
+  aboutSidebar: [
     // {
     //   type: "category",
     //   label: "About Jan",
@@ -127,6 +127,10 @@ const sidebars = {
     //   ],
     // },
     {
+      type: "doc",
+      id: "about/about",
+    },
+    {
       type: "category",
       label: "Events",
       collapsible: true,
@@ -139,14 +143,20 @@ const sidebars = {
         },
       ],
     },
-    // {
-    //   type: "category",
-    //   label: "Company Handbook",
-    //   collapsible: true,
-    //   collapsed: true,
-    //   link: { type: "doc", id: "handbook/handbook" },
-    //   items: ["handbook/remote-work"],
-    // },
+    {
+      type: "category",
+      label: "Company Handbook",
+      collapsible: true,
+      collapsed: true,
+      link: { type: "doc", id: "handbook/handbook" },
+      items: [
+        {
+          type: "category",
+          label: "Engineering",
+          items: ["handbook/engineering/internal"],
+        },
+      ],
+    },
   ],
 };
 

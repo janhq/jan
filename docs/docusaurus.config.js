@@ -118,30 +118,24 @@ const config = {
         },
         items: [
           // Navbar left
-          // {
-          //   type: "docSidebar",
-          //   sidebarId: "featuresSidebar",
-          //   position: "left",
-          //   label: "Platform",
-          // },
-          {
-            type: "docSidebar",
-            sidebarId: "companySidebar",
-            position: "left",
-            label: "Company",
-          },
-          // Navbar right
           {
             type: "docSidebar",
             sidebarId: "guidesSidebar",
-            position: "right",
+            position: "left",
             label: "User Guides",
           },
           {
             type: "docSidebar",
             sidebarId: "devSidebar",
-            position: "right",
+            position: "left",
             label: "Developer",
+          },
+          // Navbar right
+          {
+            type: "docSidebar",
+            sidebarId: "aboutSidebar",
+            position: "right",
+            label: "About",
           },
         ],
       },

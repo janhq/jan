@@ -1,6 +1,5 @@
 ---
-title: Internal Guidelines
-sidebar_position: 6
+title: Cookbook
 ---
 
 # Internal Guidelines
