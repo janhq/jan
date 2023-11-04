@@ -5,9 +5,7 @@
 export type CoreService =
   | StoreService
   | DataService
-  | InferenceService
   | ModelManagementService
-  | SystemMonitoringService
   | PreferenceService
   | PluginService;
 
@@ -94,27 +92,6 @@ export enum DataService {
 }
 
 /**
- * InferenceService exports.
- * @enum {string}
- */
-export enum InferenceService {
-  /**
-   * Initializes a model for inference.
-   */
-  InitModel = "initModel",
-
-  /**
-   * Stops a running inference model.
-   */
-  StopModel = "stopModel",
-
-  /**
-   * Single inference response.
-   */
-  InferenceRequest = "inferenceRequest",
-}
-
-/**
  * ModelManagementService exports.
  * @enum {string}
  */
@@ -174,22 +151,6 @@ export enum PreferenceService {
    * Gets the plugin preferences.
    */
   PluginPreferences = "pluginPreferences",
-}
-
-/**
- * SystemMonitoringService exports.
- * @enum {string}
- */
-export enum SystemMonitoringService {
-  /**
-   * Gets information about system resources.
-   */
-  GetResourcesInfo = "getResourcesInfo",
-
-  /**
-   * Gets the current system load.
-   */
-  GetCurrentLoad = "getCurrentLoad",
 }
 
 /**

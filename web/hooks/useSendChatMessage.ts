@@ -2,13 +2,12 @@ import { currentPromptAtom } from '@helpers/JotaiWrapper'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   EventName,
-  InferenceService,
   MessageHistory,
   NewMessageRequest,
+  PluginType,
   events,
 } from '@janhq/core'
 import { toChatMessage } from '@models/ChatMessage'
-import { executeSerial } from '@services/pluginService'
 import {
   addNewMessageAtom,
   getCurrentChatMessagesAtom,
@@ -18,6 +17,8 @@ import {
   updateConversationAtom,
   updateConversationWaitingForResponseAtom,
 } from '@helpers/atoms/Conversation.atom'
+import { pluginManager } from '@plugin/PluginManager'
+import { InferencePlugin } from '@janhq/core/lib/plugins'
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom)
@@ -44,10 +45,9 @@ export default function useSendChatMessage() {
         setTimeout(async () => {
           newMessage.message =
             'summary this conversation in 5 words, the response should just include the summary'
-          const result = await executeSerial(
-            InferenceService.InferenceRequest,
-            newMessage
-          )
+          const result = await pluginManager
+            .get<InferencePlugin>(PluginType.Inference)
+            ?.inferenceRequest(newMessage)
 
           if (
             result?.message &&

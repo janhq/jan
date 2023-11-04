@@ -1,8 +1,9 @@
-import { executeSerial } from '@services/pluginService'
-import { InferenceService } from '@janhq/core'
+import {  PluginType } from '@janhq/core'
+import { InferencePlugin } from '@janhq/core/lib/plugins'
 import { useAtom, useSetAtom } from 'jotai'
 import { activeAssistantModelAtom, stateModel } from '@helpers/atoms/Model.atom'
 import useGetModelById from './useGetModelById'
+import { pluginManager } from '@plugin/PluginManager'
 
 export default function useStartStopModel() {
   const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom)
@@ -47,7 +48,9 @@ export default function useStartStopModel() {
   const stopModel = async (modelId: string) => {
     setStateModel({ state: 'stop', loading: true, model: modelId })
     setTimeout(async () => {
-      await executeSerial(InferenceService.StopModel, modelId)
+      await pluginManager
+        .get<InferencePlugin>(PluginType.Inference)
+        ?.stopModel()
       setActiveModel(undefined)
       setStateModel({ state: 'stop', loading: false, model: modelId })
     }, 500)
@@ -57,5 +60,7 @@ export default function useStartStopModel() {
 }
 
 const initModel = async (modelId: string): Promise<any> => {
-  return executeSerial(InferenceService.InitModel, modelId)
+  await pluginManager
+    .get<InferencePlugin>(PluginType.Inference)
+    ?.initModel(modelId)
 }
