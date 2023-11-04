@@ -63,15 +63,15 @@ const Providers = (props: PropsWithChildren) => {
 
   return (
     <JotaiWrapper>
-      {setupCore && activated && (
-        <ThemeWrapper>
+      <ThemeWrapper>
+        {setupCore && activated && (
           <FeatureToggleWrapper>
             <EventListenerWrapper>
               <ModalWrapper>{children}</ModalWrapper>
             </EventListenerWrapper>
           </FeatureToggleWrapper>
-        </ThemeWrapper>
-      )}
+        )}
+      </ThemeWrapper>
     </JotaiWrapper>
   )
 }
