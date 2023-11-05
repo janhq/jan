@@ -70,9 +70,9 @@ export default function Home() {
                     <span className="font-bold uppercase text-blue-600">
                       Event
                     </span>
-                    <a href="/events/hcmc-oct23">
+                    <a href="/events/nvidia-llm-day-nov-23">
                       <p className="font-bold">
-                        24-28 Oct: Jan's AI Hacker House (Ho Chi Minh City)
+                        8 Nov 2023: Nvidia LLM Day (Hanoi)
                       </p>
                     </a>
                   </div>
@@ -81,19 +81,16 @@ export default function Home() {
                     Personal AI
                   </h1>
                   <p className="text-xl leading-relaxed lg:text-2xl lg:leading-relaxed text-gray-500 dark:text-gray-400">
-                    {/* Run Large Language Models locally on&nbsp;
-                    <span className="dark:text-white text-black">Mac</span>
-                    ,&nbsp;
-                    <span className="dark:text-white text-black">Windows</span>
-                    &nbsp;or&nbsp;
-                    <span className="dark:text-white text-black">Linux</span>. */}
                     Jan is a powerful&nbsp;
-                    <span className="dark:text-white text-black">Personal AI</span>
-                    &nbsp;built to run locally on your machine,
-                    <br/>
-                    with a rich&nbsp;
-                    <span className="dark:text-white text-black">app</span>&nbsp;and&nbsp;
-                    <span className="dark:text-white text-black">plugin ecosystem</span>.
+                    <span className="dark:text-white text-black">
+                      Personal AI
+                    </span>
+                    &nbsp;built to run locally on your computer,
+                    <br />
+                    inifinitely customizable via&nbsp;
+                    <span className="dark:text-white text-black">apps</span>
+                    &nbsp;and&nbsp;
+                    <span className="dark:text-white text-black">plugins</span>.
                   </p>
 
                   <div className="my-6 flex flex-col-reverse md:flex-row items-center justify-center gap-4 relative z-20">

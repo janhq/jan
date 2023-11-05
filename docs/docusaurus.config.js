@@ -73,7 +73,10 @@ const config = {
           filename: "sitemap.xml",
         },
         // Will be passed to @docusaurus/plugin-content-blog (false to disable)
-        blog: false,
+        blog: {
+          blogSidebarTitle: "All Posts",
+          blogSidebarCount: "ALL",
+        },
         // Will be passed to @docusaurus/theme-classic.
         theme: {
           customCss: require.resolve("./src/styles/main.scss"),
@@ -131,6 +134,11 @@ const config = {
             label: "Developers",
           },
           // Navbar right
+          {
+            to: "blog",
+            label: "Blog",
+            position: "right",
+          },
           {
             type: "docSidebar",
             sidebarId: "aboutSidebar",
