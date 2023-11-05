@@ -118,7 +118,7 @@ const sidebars = {
       label: "Company Handbook",
       collapsible: true,
       collapsed: true,
-      link: { type: "doc", id: "handbook/handbook" },
+      // link: { type: "doc", id: "handbook/handbook" },
       items: [
         {
           type: "doc",
