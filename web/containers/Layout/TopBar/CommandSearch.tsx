@@ -86,6 +86,7 @@ export default function CommandSearch() {
     }
     document.addEventListener('keydown', down)
     return () => document.removeEventListener('keydown', down)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
@@ -93,7 +94,7 @@ export default function CommandSearch() {
       <div className="relative">
         <Button
           themes="outline"
-          className="unset-drag h-8 w-[280px] justify-start text-left text-xs text-muted-foreground focus:ring-0"
+          className="unset-drag h-8 w-[300px] justify-start text-left text-xs text-muted-foreground focus:ring-0"
           onClick={() => setOpen((open) => !open)}
         >
           Search menus...

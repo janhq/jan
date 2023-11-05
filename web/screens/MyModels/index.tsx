@@ -55,6 +55,7 @@ const MyModelsScreen = () => {
         <div className="p-4">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {downloadedModels.map((model, i) => {
+              console.log(downloadedModels)
               const isActiveModel = stateModel.model === model._id
               return (
                 <div
@@ -84,6 +85,9 @@ const MyModelsScreen = () => {
                             {toGigabytes(model.size)}
                           </Badge>
                         </div>
+                        <p className="mt-2 line-clamp-2">
+                          {model.longDescription}
+                        </p>
                       </div>
                     </div>
                     <div className="mt-4 flex items-center justify-center gap-x-2 gap-y-4 border-t border-border pt-4">

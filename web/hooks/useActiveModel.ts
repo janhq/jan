@@ -2,6 +2,8 @@
 import { InferenceService } from '@janhq/core'
 import { atom, useAtom } from 'jotai'
 
+import { toaster } from '@/containers/Toast'
+
 import { executeSerial } from '@/services/pluginService'
 
 import { useGetModelById } from './useGetModelById'
@@ -55,6 +57,11 @@ export function useActiveModel() {
         }ms`
       )
       setActiveModel(model)
+      toaster({
+        title: 'Success start a Model',
+        description: `Model ${modelId} has been started.`,
+        type: 'success',
+      })
       setStateModel(() => ({
         state: 'stop',
         loading: false,
@@ -69,6 +76,11 @@ export function useActiveModel() {
       await executeSerial(InferenceService.StopModel, modelId)
       setActiveModel(undefined)
       setStateModel({ state: 'start', loading: false, model: '' })
+      toaster({
+        title: 'Success stop a Model',
+        description: `Model ${modelId} has been stopped.`,
+        type: 'success',
+      })
     }, 500)
   }
 
