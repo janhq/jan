@@ -96,7 +96,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   return (
     <div className="flex items-center justify-between rounded-t-md border-b border-border bg-background/50 px-4 py-2">
       <div className="flex items-center gap-2">
-        <span>{exploreModel.name}</span>
+        <span className="font-medium">{exploreModel.name}</span>
         {performanceTag && renderBadge(performanceTag)}
       </div>
       {downloadButton}

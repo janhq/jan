@@ -2,10 +2,15 @@
 
 import { forwardRef, useEffect, useState } from 'react'
 
+import { Badge } from '@janhq/uikit'
+
 import useGetMostSuitableModelVersion from '@/hooks/useGetMostSuitableModelVersion'
 
 import ExploreModelItemHeader from '@/screens/ExploreModels/ExploreModelItemHeader'
 import ModelVersionList from '@/screens/ExploreModels/ModelVersionList'
+
+import { toGigabytes } from '@/utils/converter'
+import { displayDate } from '@/utils/datetime'
 
 type Props = {
   model: ModelCatalog
@@ -44,55 +49,47 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
           <p>{model.longDescription}</p>
         </div>
 
-        <div className="flex justify-between">
-          {/* <div className="flex flex-1 flex-col gap-y-4">
-            <div className="flex flex-col gap-1">
-              <div className="font-semibold">Release Date</div>
-              <p className="mt-1 ">{displayDate(model.releaseDate)}</p>
+        <div className="mb-4 flex space-x-6 border-b border-border pb-4">
+          <div>
+            <span className="font-semibold">Author</span>
+            <p className="mt-1 font-medium">{model.author}</p>
+          </div>
+          <div>
+            <span className="mb-1 font-semibold">Compatibility</span>
+            <div className="mt-1 flex gap-2">
+              <Badge themes="secondary" className="line-clamp-1 max-w-[400px]">
+                {usecase}
+              </Badge>
+              <Badge themes="secondary" className="line-clamp-1">
+                {toGigabytes(maxRamRequired)} RAM required
+              </Badge>
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="font-semibold">Version</div>
-              <div className="flex gap-2">
-                <Badge>v{model.version}</Badge>
-                {quantMethod && <Badge themes="outline">{quantMethod}</Badge>}
-                <Badge themes="outline">{`${bits} Bits`}</Badge>
-              </div>
-            </div>
-          </div> */}
+          </div>
+        </div>
 
-          {/* <div className="flex flex-1 flex-col gap-y-4">
-            <div>
-              <div className="font-semibold">Author</div>
-              <p className="mt-1 ">{model.author}</p>
+        <div className="grid grid-cols-3 items-center gap-4">
+          <div>
+            <span className="font-semibold">Version</span>
+            <div className="mt-2 flex space-x-2">
+              <Badge themes="outline">v{model.version}</Badge>
+              {quantMethod && <Badge themes="outline">{quantMethod}</Badge>}
+              <Badge themes="outline">{`${bits} Bits`}</Badge>
             </div>
-            <div className="flex flex-col gap-2">
-              <div className="font-semibold">Compatibility</div>
-              <div className="flex gap-2">
-                <Badge themes="outline" className="line-clamp-1">
-                  {usecase}
+          </div>
+          <div>
+            <span className="font-semibold">Release Date</span>
+            <p className="mt-1 ">{displayDate(model.releaseDate)}</p>
+          </div>
+          <div>
+            <span className="font-semibold">Tags</span>
+            <div className="mt-2 flex space-x-2">
+              {model.tags.map((tag, i) => (
+                <Badge key={i} themes="outline">
+                  {tag}
                 </Badge>
-                <Badge themes="outline" className="line-clamp-1">
-                  {toGigabytes(maxRamRequired)} RAM required
-                </Badge>
-              </div>
+              ))}
             </div>
-          </div> */}
-
-          {/* <div className="flex flex-1 flex-col gap-y-4">
-            <div>
-              <div className="font-medium">Tags</div>
-              <div className="mt-1 flex flex-wrap gap-2">
-                {model.tags.map((tag) => (
-                  <SimpleTag
-                    key={tag}
-                    title={tag}
-                    type={MiscellanousTag.MiscellanousDefault}
-                    clickable={false}
-                  />
-                ))}
-              </div>
-            </div>
-          </div> */}
+          </div>
         </div>
 
         {model.availableVersions?.length > 0 && (

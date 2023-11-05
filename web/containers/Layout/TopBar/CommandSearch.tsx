@@ -14,7 +14,6 @@ import {
 import {
   MessageCircleIcon,
   SettingsIcon,
-  BotIcon,
   LayoutGridIcon,
   CpuIcon,
   BookOpenIcon,
@@ -45,15 +44,8 @@ export default function CommandSearch() {
       ),
       state: MainViewState.Chat,
     },
-    ...(experimentalFeatureEnabed
-      ? [
-          {
-            name: 'Bot',
-            icon: <BotIcon size={16} className="mr-3 text-muted-foreground" />,
-            state: MainViewState.CreateBot,
-          },
-        ]
-      : []),
+    // Added experimental feature here
+    ...(experimentalFeatureEnabed ? [] : []),
     {
       name: 'Explore Models',
       icon: <CpuIcon size={16} className="mr-3 text-muted-foreground" />,

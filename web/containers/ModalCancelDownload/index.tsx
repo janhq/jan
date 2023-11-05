@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 
 import {
-  Badge,
   Modal,
   ModalTrigger,
   ModalClose,
