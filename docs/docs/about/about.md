@@ -44,7 +44,7 @@ Jan has a very modular architecture that allows you to swap out or customize com
 
 ###  Open Source
 
-Jan is a for-profit company that wants to adopt an open source business model. We believe in the need for an open source AI ecosystem that has a self-sustaining business model. 
+Jan is a startup with an open source business model. We believe in the need for an open source AI ecosystem, and are committed to building it. 
 
 - [Jan: a Personal AI](https://github.com/janhq/jan) (AGPLv3)
 - [Nitro: run Local AI](https://github.com/janhq/nitro) (AGPLv3)
@@ -58,7 +58,7 @@ We use Github to build in public, and welcome anyone to join in.
 
 ### Bootstrapped
 
-Jan is currently a bootstrapped company. We balance technical invention with the search for a sustainable business model. 
+Jan is currently a bootstrapped startup. We balance technical invention with the search for a sustainable business model. 
 
 We appreciate any business that can balance growth with cashflow/profitability. 
 
