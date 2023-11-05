@@ -2,7 +2,7 @@ import { PluginType, fs, downloadFile } from "@janhq/core";
 import { ModelPlugin } from "@janhq/core/lib/plugins";
 import { Model, ModelCatalog } from "@janhq/core/lib/types";
 import { pollDownloadProgress } from "./helpers/cloudNative";
-import { parseToModel } from "./helper";
+import { parseToModel } from "./helpers/modelParser";
 
 /**
  * A plugin for managing machine learning models.
