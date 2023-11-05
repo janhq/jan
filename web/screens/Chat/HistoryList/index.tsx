@@ -60,7 +60,7 @@ export default function HistoryList() {
 
   return (
     <div>
-      <div className="sticky top-0 z-20 flex flex-col border-b border-border bg-background px-4 py-3">
+      <div className="sticky top-0 z-20 flex flex-col border-b border-border px-4 py-3">
         <Button size="sm" themes="outline" onClick={handleClickConversation}>
           Create New Chat
         </Button>
@@ -77,7 +77,7 @@ export default function HistoryList() {
           return (
             <div
               key={i}
-              className="relative flex cursor-pointer flex-col border-b border-border bg-background px-4 py-2 transition-colors hover:bg-secondary/10"
+              className="relative flex cursor-pointer flex-col border-b border-border px-4 py-2 transition-colors hover:bg-secondary/10"
               onClick={() => handleActiveModel(convo)}
             >
               <p className="mb-1 line-clamp-1 text-xs leading-5">

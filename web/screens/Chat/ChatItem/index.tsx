@@ -1,7 +1,6 @@
-/* eslint-disable react/display-name */
 import React, { forwardRef } from 'react'
 
-import renderChatMessage from '../ChatBody/renderChatMessage'
+import SimpleTextMessage from '../SimpleTextMessage'
 
 type Props = {
   message: ChatMessage
@@ -10,11 +9,18 @@ type Props = {
 type Ref = HTMLDivElement
 
 const ChatItem = forwardRef<Ref, Props>(({ message }, ref) => {
-  const item = renderChatMessage(message)
-
-  const content = ref ? <div ref={ref}>{item}</div> : item
-
-  return content
+  return (
+    <div ref={ref} className="my-2">
+      <SimpleTextMessage
+        key={message.id}
+        avatarUrl={message.senderAvatarUrl}
+        senderName={message.senderName}
+        createdAt={message.createdAt}
+        senderType={message.messageSenderType}
+        text={message.text}
+      />
+    </div>
+  )
 })
 
 export default ChatItem

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { ReactNode, useEffect } from 'react'
+import { PropsWithChildren, useEffect } from 'react'
 
 import { useSetAtom } from 'jotai'
 
@@ -13,11 +13,7 @@ import { pluginManager } from '@plugin/PluginManager'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { downloadingModelsAtom } from './atoms/Model.atom'
 
-type Props = {
-  children: ReactNode
-}
-
-export default function EventListenerWrapper({ children }: Props) {
+export default function EventListenerWrapper({ children }: PropsWithChildren) {
   const setProgress = useSetAtom(appDownloadProgress)
   const models = useAtomValue(downloadingModelsAtom)
   const modelsRef = useRef(models)

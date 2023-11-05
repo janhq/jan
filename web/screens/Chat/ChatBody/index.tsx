@@ -8,7 +8,7 @@ const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   return (
-    <div className="flex h-full flex-1 flex-col-reverse overflow-y-auto [&>*:nth-child(odd)]:bg-background">
+    <div className="flex h-full flex-1 flex-col-reverse">
       {messages.map((message) => (
         <ChatItem message={message} key={message.id} />
       ))}

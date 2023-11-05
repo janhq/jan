@@ -32,8 +32,8 @@ const useGetUserConversations = () => {
       })
       setConversationStates(convoStates)
       setConversations(convos ?? [])
-    } catch (ex) {
-      console.log(ex)
+    } catch (error) {
+      console.log(error)
     }
   }
 

@@ -7,11 +7,9 @@ import { Input, Button } from '@janhq/uikit'
 import { useAtom, useAtomValue } from 'jotai'
 import { Trash2Icon } from 'lucide-react'
 
-import HistoryListOld from '@/components/HistoryList'
-
-import InputToolbar from '@/components/InputToolbar'
-import LeftHeaderAction from '@/components/LeftHeaderAction'
-import MainHeader from '@/components/MainHeader'
+// import InputToolbar from '@/components/InputToolbar'
+// import LeftHeaderAction from '@/components/LeftHeaderAction'
+// import MainHeader from '@/components/MainHeader'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
@@ -112,24 +110,22 @@ const ChatScreen = () => {
               )}
             </div>
           )}
-          <form onSubmit={() => sendChatMessage()}>
-            <div className="flex w-full flex-shrink-0 items-center justify-center space-x-2 p-4">
-              <Input
-                type="text"
-                placeholder="Type your message ..."
-                disabled={!activeModel}
-                value={currentPrompt}
-                onChange={(e) => handleMessageChange(e.target.value)}
-              />
-              <Button
-                type="submit"
-                disabled={!activeModel || disabled}
-                themes={!activeModel ? 'secondary' : 'primary'}
-              >
-                Send
-              </Button>
-            </div>
-          </form>
+          <div className="flex w-full flex-shrink-0 items-center justify-center space-x-2 p-4">
+            <Input
+              type="text"
+              placeholder="Type your message ..."
+              disabled={!activeModel}
+              value={currentPrompt}
+              onChange={(e) => handleMessageChange(e.target.value)}
+            />
+            <Button
+              disabled={!activeModel || disabled}
+              themes={!activeModel ? 'secondary' : 'primary'}
+              onClick={() => sendChatMessage()}
+            >
+              Send
+            </Button>
+          </div>
         </div>
 
         {/* {activeModel ? (

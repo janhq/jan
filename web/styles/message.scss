@@ -4,4 +4,10 @@
     list-style: auto;
     padding-left: 24px;
   }
+  &.is-user {
+    @apply text-primary-foreground;
+    :is(p) {
+      @apply text-primary-foreground;
+    }
+  }
 }
