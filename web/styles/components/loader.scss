@@ -22,26 +22,7 @@
   margin: 0 4px;
 }
 
-@keyframes lol {
-  0% {
-    opacity: 0;
-    transform: translateX(-300px);
-  }
-  33% {
-    opacity: 1;
-    transform: translateX(0px);
-  }
-  66% {
-    opacity: 1;
-    transform: translateX(0px);
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(300px);
-  }
-}
-
-@-webkit-keyframes lol {
+@-webkit-keyframes loaderDot {
   0% {
     opacity: 0;
     -webkit-transform: translateX(-300px);
@@ -61,31 +42,31 @@
 }
 
 .loader-inner label:nth-child(6) {
-  -webkit-animation: lol 3s infinite ease-in-out;
-  animation: lol 3s infinite ease-in-out;
+  -webkit-animation: loaderDot 3s infinite ease-in-out;
+  animation: loaderDot 3s infinite ease-in-out;
 }
 
 .loader-inner label:nth-child(5) {
-  -webkit-animation: lol 3s 100ms infinite ease-in-out;
-  animation: lol 3s 100ms infinite ease-in-out;
+  -webkit-animation: loaderDot 3s 100ms infinite ease-in-out;
+  animation: loaderDot 3s 100ms infinite ease-in-out;
 }
 
 .loader-inner label:nth-child(4) {
-  -webkit-animation: lol 3s 200ms infinite ease-in-out;
-  animation: lol 3s 200ms infinite ease-in-out;
+  -webkit-animation: loaderDot 3s 200ms infinite ease-in-out;
+  animation: loaderDot 3s 200ms infinite ease-in-out;
 }
 
 .loader-inner label:nth-child(3) {
-  -webkit-animation: lol 3s 300ms infinite ease-in-out;
-  animation: lol 3s 300ms infinite ease-in-out;
+  -webkit-animation: loaderDot 3s 300ms infinite ease-in-out;
+  animation: loaderDot 3s 300ms infinite ease-in-out;
 }
 
 .loader-inner label:nth-child(2) {
-  -webkit-animation: lol 3s 400ms infinite ease-in-out;
-  animation: lol 3s 400ms infinite ease-in-out;
+  -webkit-animation: loaderDot 3s 400ms infinite ease-in-out;
+  animation: loaderDot 3s 400ms infinite ease-in-out;
 }
 
 .loader-inner label:nth-child(1) {
-  -webkit-animation: lol 3s 500ms infinite ease-in-out;
-  animation: lol 3s 500ms infinite ease-in-out;
+  -webkit-animation: loaderDot 3s 500ms infinite ease-in-out;
+  animation: loaderDot 3s 500ms infinite ease-in-out;
 }

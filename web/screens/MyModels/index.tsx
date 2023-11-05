@@ -89,7 +89,7 @@ const MyModelsScreen = () => {
                     <div className="mt-4 flex items-center justify-center gap-x-2 gap-y-4 border-t border-border pt-4">
                       <Modal>
                         <ModalTrigger asChild>
-                          <Button themes="outline" block>
+                          <Button themes="ghost" block>
                             Delete
                           </Button>
                         </ModalTrigger>

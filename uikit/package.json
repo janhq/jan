@@ -30,6 +30,7 @@
     "@radix-ui/react-tooltip": "^1.0.7",
     "autoprefixer": "^10.4.16",
     "class-variance-authority": "^0.7.0",
+    "cmdk": "^0.2.0",
     "lucide-react": "^0.292.0",
     "postcss": "^8.4.31",
     "react": "^18.2.0",
