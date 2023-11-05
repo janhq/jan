@@ -27,9 +27,6 @@
     "systeminformation": "^5.21.8",
     "ts-loader": "^9.5.0"
   },
-  "bundledDependencies": [
-    "systeminformation"
-  ],
   "files": [
     "dist/*",
     "package.json",

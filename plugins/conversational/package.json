@@ -1,5 +1,5 @@
 {
-  "name": "@janhq/conversational",
+  "name": "@janhq/conversational-plugin",
   "version": "1.0.7",
   "description": "Conversational Plugin - Stores jan app conversations",
   "main": "dist/index.js",
@@ -11,7 +11,8 @@
   ],
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "bundle": "rimraf *.tgz --glob && npm pack"
+    "postinstall": "rimraf *.tgz --glob && npm run build",
+    "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {
     ".": "./dist/index.js",
