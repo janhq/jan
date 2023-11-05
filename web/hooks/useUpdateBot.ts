@@ -1,5 +1,3 @@
-import { DataService } from '@janhq/core'
-
 export default function useUpdateBot() {
   const updateBot = async (
     bot: Bot,

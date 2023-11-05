@@ -1,5 +1,4 @@
 import React from 'react'
-import { execute } from '@plugin/extension-manager'
 
 type Props = {
   pluginName: string
@@ -8,25 +7,9 @@ type Props = {
 }
 
 import { formatPluginsName } from '@utils/converter'
-import { PluginService, preferences } from '@janhq/core'
 
 const PreferencePlugins = (props: Props) => {
   const { pluginName, preferenceValues, preferenceItems } = props
-
-  /**
-   * Notifies plugins of a preference update by executing the `PluginService.OnPreferencesUpdate` event.
-   * If a timeout is already set, it is cleared before setting a new timeout to execute the event.
-   */
-  let timeout: any | undefined = undefined
-  function notifyPreferenceUpdate() {
-    if (timeout) {
-      clearTimeout(timeout)
-    }
-    timeout = setTimeout(
-      () => execute(PluginService.OnPreferencesUpdate, {}),
-      100
-    )
-  }
 
   return (
     <div>
@@ -53,11 +36,7 @@ const PreferencePlugins = (props: Props) => {
                     (v: any) => v.key === e.preferenceKey
                   )[0]?.value
                 }
-                onChange={(event) => {
-                  preferences
-                    .set(e.pluginName, e.preferenceKey, event.target.value)
-                    .then(() => notifyPreferenceUpdate())
-                }}
+                onChange={(event) => {}}
               ></input>
             </div>
           </div>

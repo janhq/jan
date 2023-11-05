@@ -1,5 +1,3 @@
-import { DataService } from '@janhq/core'
-
 export default function useGetBots() {
   const getAllBots = async (): Promise<Bot[]> => {
     try {

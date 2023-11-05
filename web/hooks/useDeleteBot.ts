@@ -1,7 +1,6 @@
 import { useSetAtom } from 'jotai'
 import { activeBotAtom } from '@helpers/atoms/Bot.atom'
 import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
-import { DataService } from '@janhq/core'
 
 export default function useDeleteBot() {
   const setActiveBot = useSetAtom(activeBotAtom)

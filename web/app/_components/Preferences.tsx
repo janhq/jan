@@ -1,6 +1,5 @@
 'use client'
 import { useContext, useEffect, useRef, useState } from 'react'
-import { plugins, extensionPoints } from '@plugin'
 import {
   ChartPieIcon,
   CommandLineIcon,
@@ -9,10 +8,9 @@ import {
 
 import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
 import classNames from 'classnames'
-import { PluginService, preferences } from '@janhq/core'
-import { execute } from '@plugin/extension-manager'
 import LoadingIndicator from './LoadingIndicator'
 import { FeatureToggleContext } from '@helpers/FeatureToggleWrapper'
+import { pluginManager } from '@plugin/PluginManager'
 
 export const Preferences = () => {
   const [search, setSearch] = useState<string>('')
@@ -52,39 +50,8 @@ export const Preferences = () => {
    */
   useEffect(() => {
     const getActivePlugins = async () => {
-      const plgs = await plugins.getActive()
+      const plgs = await pluginManager.getActive()
       setActivePlugins(plgs)
-
-      if (extensionPoints.get('experimentComponent')) {
-        const components = await Promise.all(
-          extensionPoints.execute('experimentComponent', {})
-        )
-        if (components.length > 0) {
-          setIsTestAvailable(true)
-        }
-        components.forEach((e) => {
-          if (experimentRef.current) {
-            // @ts-ignore
-            experimentRef.current.appendChild(e)
-          }
-        })
-      }
-
-      if (extensionPoints.get('PluginPreferences')) {
-        const data = await Promise.all(
-          extensionPoints.execute('PluginPreferences', {})
-        )
-        setPreferenceItems(Array.isArray(data) ? data : [])
-        Promise.all(
-          (Array.isArray(data) ? data : []).map((e) =>
-            preferences
-              .get(e.pluginName, e.preferenceKey)
-              .then((k) => ({ key: e.preferenceKey, value: k }))
-          )
-        ).then((data) => {
-          setPreferenceValues(data)
-        })
-      }
     }
     getActivePlugins()
   }, [])
@@ -101,7 +68,7 @@ export const Preferences = () => {
 
     // Send the filename of the to be installed plugin
     // to the main process for installation
-    const installed = await plugins.install([pluginFile])
+    const installed = await pluginManager.install([pluginFile])
     if (installed) window.coreAPI?.relaunch()
   }
 
@@ -113,7 +80,7 @@ export const Preferences = () => {
   const uninstall = async (name: string) => {
     // Send the filename of the to be uninstalled plugin
     // to the main process for removal
-    const res = await plugins.uninstall([name])
+    const res = await pluginManager.uninstall([name])
     if (res) window.coreAPI?.relaunch()
   }
 
@@ -139,7 +106,7 @@ export const Preferences = () => {
   const downloadTarball = async (pluginName: string) => {
     setIsLoading(true)
     const pluginPath = await window.coreAPI?.installRemotePlugin(pluginName)
-    const installed = await plugins.install([pluginPath])
+    const installed = await pluginManager.install([pluginPath])
     setIsLoading(false)
     if (installed) window.coreAPI.relaunch()
   }
@@ -152,11 +119,6 @@ export const Preferences = () => {
     if (timeout) {
       clearTimeout(timeout)
     }
-    if (extensionPoints.get(PluginService.OnPreferencesUpdate))
-      timeout = setTimeout(
-        () => execute(PluginService.OnPreferencesUpdate, {}),
-        100
-      )
   }
 
   /**
@@ -416,11 +378,7 @@ export const Preferences = () => {
                         (v) => v.key === e.preferenceKey
                       )[0]?.value
                     }
-                    onChange={(event) => {
-                      preferences
-                        .set(e.pluginName, e.preferenceKey, event.target.value)
-                        .then(() => notifyPreferenceUpdate())
-                    }}
+                    onChange={(event) => {}}
                   ></input>
                 </div>
               </div>

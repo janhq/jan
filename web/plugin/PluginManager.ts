@@ -52,6 +52,27 @@ export class PluginManager {
   }
 
   /**
+   * Retrieves a list of all registered plugins.
+   * @returns An array of all registered plugins.
+   */
+  async getActive(): Promise<Plugin[]> {
+    const plgList = await window.pluggableElectronIpc?.getActive()
+    let plugins: Plugin[] = plgList.map(
+      (plugin: any) =>
+        new Plugin(
+          plugin.name,
+          plugin.url,
+          plugin.activationPoints,
+          plugin.active,
+          plugin.description,
+          plugin.version,
+          plugin.icon
+        )
+    )
+    return plugins
+  }
+
+  /**
    * Register a plugin with its class.
    * @param {Plugin} plugin plugin object as provided by the main process.
    * @returns {void}
@@ -77,19 +98,7 @@ export class PluginManager {
    */
   async registerActive() {
     // Get active plugins
-    const plgList = await window.pluggableElectronIpc?.getActive()
-    let plugins: Plugin[] = plgList.map(
-      (plugin: any) =>
-        new Plugin(
-          plugin.name,
-          plugin.url,
-          plugin.activationPoints,
-          plugin.active,
-          plugin.description,
-          plugin.version,
-          plugin.icon
-        )
-    )
+    const plugins = await this.getActive()
     // Activate all
     await Promise.all(
       plugins.map((plugin: Plugin) => this.activatePlugin(plugin))

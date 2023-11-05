@@ -1,5 +1,4 @@
 'use client'
-import { plugins } from '@plugin'
 import { PluginType } from '@janhq/core'
 import { pluginManager } from '@plugin/PluginManager'
 
@@ -27,7 +26,7 @@ export const setupBasePlugins = async () => {
     !pluginManager.get(PluginType.Inference) ||
     !pluginManager.get(PluginType.Model)
   ) {
-    const installed = await plugins.install(basePlugins)
+    const installed = await pluginManager.install(basePlugins)
     if (installed) {
       window.location.reload()
     }

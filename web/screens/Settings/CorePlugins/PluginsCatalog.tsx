@@ -5,9 +5,9 @@ import { Button, Switch } from '@uikit'
 import Loader from '@containers/Loader'
 import { formatPluginsName } from '@utils/converter'
 
-import { plugins, extensionPoints } from '@plugin'
 import useGetAppVersion from '@hooks/useGetAppVersion'
 import { FeatureToggleContext } from '@helpers/FeatureToggleWrapper'
+import { pluginManager } from '@plugin/PluginManager'
 
 const PluginCatalog = () => {
   const [activePlugins, setActivePlugins] = useState<any[]>([])
@@ -44,20 +44,8 @@ const PluginCatalog = () => {
    */
   useEffect(() => {
     const getActivePlugins = async () => {
-      const plgs = await plugins.getActive()
+      const plgs = await pluginManager.getActive()
       if (Array.isArray(plgs)) setActivePlugins(plgs)
-
-      if (extensionPoints.get('experimentComponent')) {
-        const components = await Promise.all(
-          extensionPoints.execute('experimentComponent', {})
-        )
-        components.forEach((e) => {
-          if (experimentRef.current) {
-            // @ts-ignore
-            experimentRef.current.appendChild(e)
-          }
-        })
-      }
     }
     getActivePlugins()
   }, [])
@@ -73,7 +61,7 @@ const PluginCatalog = () => {
 
     // Send the filename of the to be installed plugin
     // to the main process for installation
-    const installed = await plugins.install([pluginFile])
+    const installed = await pluginManager.install([pluginFile])
     if (installed) window.coreAPI?.relaunch()
   }
 
@@ -85,7 +73,7 @@ const PluginCatalog = () => {
   const uninstall = async (name: string) => {
     // Send the filename of the to be uninstalled plugin
     // to the main process for removal
-    const res = await plugins.uninstall([name])
+    const res = await pluginManager.uninstall([name])
     if (res) window.coreAPI?.relaunch()
   }
 
@@ -97,7 +85,7 @@ const PluginCatalog = () => {
   const downloadTarball = async (pluginName: string) => {
     setIsLoading(true)
     const pluginPath = await window.coreAPI?.installRemotePlugin(pluginName)
-    const installed = await plugins.install([pluginPath])
+    const installed = await pluginManager.install([pluginPath])
     setIsLoading(false)
     if (installed) window.coreAPI.relaunch()
   }
