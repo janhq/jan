@@ -79,16 +79,12 @@ export default function Home() {
                     Personal AI
                   </h1>
                   <p className="text-xl leading-relaxed lg:text-2xl lg:leading-relaxed text-gray-500 dark:text-gray-400">
-                    Jan is a&nbsp;
+                    Build your own&nbsp;
                     <span className="dark:text-white text-black">
-                      Personal AI
+                      Personal AI,
                     </span>
-                    &nbsp;that you can&nbsp;
-                    <span className="dark:text-white text-black">
-                      customize,
-                    </span>
+                    &nbsp;that runs&nbsp;
                     <br />
-                    that runs&nbsp;
                     <span className="dark:text-white text-black">
                       privately
                     </span>
