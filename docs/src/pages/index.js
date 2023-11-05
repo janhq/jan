@@ -36,7 +36,7 @@ const features = [
     icon: CubeTransparentIcon,
   },
   {
-    name: "Extendable via App and plugin framework",
+    name: "Extendable via App and Plugin framework",
     desc: "Jan has a versatile app and plugin framework, allowing you to customize it to your needs.",
     icon: FolderPlusIcon
   },
