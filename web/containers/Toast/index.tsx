@@ -39,6 +39,6 @@ export function toaster(props: Props) {
         </div>
       )
     },
-    { id: 'toast', duration: 7000 }
+    { id: 'toast', duration: 5000 }
   )
 }
