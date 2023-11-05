@@ -12,41 +12,65 @@ import {
   CpuChipIcon,
   ClipboardDocumentIcon,
   CubeTransparentIcon,
+  ComputerDesktopIcon,
+  FolderPlusIcon,
+
 } from "@heroicons/react/24/outline";
 
 import ThemedImage from "@theme/ThemedImage";
 
 const features = [
+  // {
+  //   name: "1 Click Installs.",
+  //   desc: "Llama2, MPT, CodeLlama, and more. 1 click to install the latest and greatest models directly from HuggingFace. Or easily upload your own models.",
+  //   icon: CursorArrowRaysIcon,
+  // },
+  // {
+  //   name: "Model Management.",
+  //   desc: "Configure advanced settings for each model. Manage your model versions. Easily switch between models. Get visibility into hardware performance.",
+  //   icon: CubeTransparentIcon,
+  // },
+  // {
+  //   name: "Cloud AI Compatible.",
+  //   desc: "Connect to ChatGPT, Claude via an API key. Alternatively, host your own AI server on any GPU cloud and use it from the app.",
+  //   icon: CloudArrowUpIcon,
+  // },
+  // {
+  //   name: "Data Security and Privacy.",
+  //   desc: "Jan runs locally on your machine. Your data never leaves your computer. You can even run Jan offline.",
+  //   icon: ShieldCheckIcon,
+  // },
+  // {
+  //   name: "Cross Device Compatible.",
+  //   desc: "Jan runs Nitro, a C++ inference engine, that is compatible with all major operating systems (CPU and GPU).",
+  //   icon: CpuChipIcon,
+  // },
+  // {
+  //   name: "Audit & compliance.",
+  //   desc: "Coming soon.",
+  //   icon: ClipboardDocumentIcon,
+  // },
   {
-    name: "1 Click Installs.",
-    desc: "Llama2, MPT, CodeLlama, and more. 1 click to install the latest and greatest models directly from HuggingFace. Or easily upload your own models.",
-    icon: CursorArrowRaysIcon,
+    name: "Personal AI that runs on your computer",
+    desc: "Jan runs directly on your local machine, offering privacy, convenience and customizability.",
+    icon: ComputerDesktopIcon,
   },
   {
-    name: "Model Management.",
-    desc: "Configure advanced settings for each model. Manage your model versions. Easily switch between models. Get visibility into hardware performance.",
-    icon: CubeTransparentIcon,
-  },
-  {
-    name: "Cloud AI Compatible.",
-    desc: "Connect to ChatGPT, Claude via an API key. Alternatively, host your own AI server on any GPU cloud and use it from the app.",
-    icon: CloudArrowUpIcon,
-  },
-  {
-    name: "Data Security and Privacy.",
-    desc: "Jan runs locally on your machine. Your data never leaves your computer. You can even run Jan offline.",
+    name: "Private and offline, your data never leaves your machine",
+    desc: "Your conversations and data are with an AI that runs on your computer, where only you have access.",
     icon: ShieldCheckIcon,
   },
   {
-    name: "Cross Device Compatible.",
-    desc: "Jan runs Nitro, a C++ inference engine, that is compatible with all major operating systems (CPU and GPU).",
-    icon: CpuChipIcon,
+    name: "No subscription fees, the AI runs on your computer",
+    desc: "Say goodbye to monthly subscriptions or usage-based APIs. Jan runs 100% free on your own hardware.",
+    icon: CubeTransparentIcon,
   },
   {
-    name: "Audit & compliance.",
-    desc: "Coming soon.",
-    icon: ClipboardDocumentIcon,
+    name: "Extendable via App and plugin framework",
+    desc: "Jan has a versatile app and plugin framework, allowing you to customize it to your needs.",
+    icon: FolderPlusIcon
   },
+  
 ];
 
 export default function Home() {
@@ -84,7 +108,7 @@ export default function Home() {
                   </div>
 
                   <h1 className="bg-gradient-to-r dark:from-white from-black to-gray-500 dark:to-gray-400 bg-clip-text text-4xl lg:text-6xl font-bold leading-tight text-transparent dark:text-transparent lg:leading-tight">
-                    Run Your Own AI
+                    Personal AI
                   </h1>
                   <p className="text-xl leading-relaxed lg:text-2xl lg:leading-relaxed text-gray-500 dark:text-gray-400">
                     {/* Run Large Language Models locally on&nbsp;
@@ -138,13 +162,13 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="container mt-10 mb-20 text-center">
+          <div className="container mt-10 mb-20 px-52 text-center">
             <h2>AI that you control</h2>
             <p className="text-base mt-2 w-full lg:w-2/5 mx-auto leading-relaxed">
               Jan runs Large Language Models locally on Windows, Mac and Linux.
               Available on Desktop and Cloud-Native.
             </p>
-            <div className="grid text-left lg:grid-cols-3 mt-16 gap-8">
+            <div className="grid text-left lg:grid-cols-2 mt-16 gap-16">
               {features.map((feat, i) => {
                 return (
                   <div className="flex gap-x-4" key={i}>
