@@ -20,36 +20,6 @@ import {
 import ThemedImage from "@theme/ThemedImage";
 
 const features = [
-  // {
-  //   name: "1 Click Installs.",
-  //   desc: "Llama2, MPT, CodeLlama, and more. 1 click to install the latest and greatest models directly from HuggingFace. Or easily upload your own models.",
-  //   icon: CursorArrowRaysIcon,
-  // },
-  // {
-  //   name: "Model Management.",
-  //   desc: "Configure advanced settings for each model. Manage your model versions. Easily switch between models. Get visibility into hardware performance.",
-  //   icon: CubeTransparentIcon,
-  // },
-  // {
-  //   name: "Cloud AI Compatible.",
-  //   desc: "Connect to ChatGPT, Claude via an API key. Alternatively, host your own AI server on any GPU cloud and use it from the app.",
-  //   icon: CloudArrowUpIcon,
-  // },
-  // {
-  //   name: "Data Security and Privacy.",
-  //   desc: "Jan runs locally on your machine. Your data never leaves your computer. You can even run Jan offline.",
-  //   icon: ShieldCheckIcon,
-  // },
-  // {
-  //   name: "Cross Device Compatible.",
-  //   desc: "Jan runs Nitro, a C++ inference engine, that is compatible with all major operating systems (CPU and GPU).",
-  //   icon: CpuChipIcon,
-  // },
-  // {
-  //   name: "Audit & compliance.",
-  //   desc: "Coming soon.",
-  //   icon: ClipboardDocumentIcon,
-  // },
   {
     name: "Personal AI that runs on your computer",
     desc: "Jan runs directly on your local machine, offering privacy, convenience and customizability.",
