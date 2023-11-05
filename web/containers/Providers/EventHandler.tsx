@@ -7,7 +7,6 @@ import { useSetAtom } from 'jotai'
 import { debounce } from 'lodash'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
-import useGetBots from '@/hooks/useGetBots'
 import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useGetUserConversations from '@/hooks/useGetUserConversations'
@@ -29,7 +28,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
   const updateConversation = useSetAtom(updateConversationAtom)
-  const { getBotById } = useGetBots()
+
+  const { getConversationById } = useGetUserConversations()
   const { setDownloadedModels } = useGetDownloadedModels()
   const { setDownloadState, setDownloadStateSuccess } = useDownloadState()
 
@@ -51,15 +51,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         (e) => e._id == message.conversationId
       )
       if (!convo) return
-      const botId = convo?.botId
-      if (botId) {
-        const bot = await getBotById(botId)
-        const newResponse = toChatMessage(message, bot)
-        addNewMessage(newResponse)
-      } else {
         const newResponse = toChatMessage(message)
         addNewMessage(newResponse)
-      }
     }
   }
   async function handleMessageResponseUpdate(

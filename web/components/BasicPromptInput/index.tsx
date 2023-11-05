@@ -4,11 +4,12 @@ import { ChangeEvent, useEffect, useRef } from 'react'
 
 import { useAtom, useAtomValue } from 'jotai'
 
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
+
 import useCreateConversation from '@/hooks/useCreateConversation'
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
-import { currentPromptAtom } from '@/containers/Providers/Jotai'
 import { getActiveConvoIdAtom } from '@/helpers/atoms/Conversation.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 

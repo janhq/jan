@@ -10,7 +10,6 @@ import useGetInputState from '@/hooks/useGetInputState'
 
 import BasicPromptAccessories from '../BasicPromptAccessories'
 import BasicPromptInput from '../BasicPromptInput'
-import SecondaryButton from '../SecondaryButton'
 
 import {
   currentConvoStateAtom,
@@ -63,10 +62,9 @@ const InputToolbar: React.FC = () => {
           {/* <p className="mx-auto my-5 line-clamp-2 text-ellipsis text-center italic text-gray-600">
             {message}
           </p> */}
-          <SecondaryButton
-            onClick={onStartModelClick}
-            title={`Start model ${currentConvo?.modelId}`}
-          />
+          <button onClick={onStartModelClick}>
+            `Start model ${currentConvo?.modelId}`
+          </button>
         </div>
       </div>
     )

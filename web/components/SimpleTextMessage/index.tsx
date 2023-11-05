@@ -74,7 +74,7 @@ const SimpleTextMessage: React.FC<Props> = ({
           <LoadingIndicator />
         ) : (
           <span
-            className="message text-muted-foreground text-xs font-normal leading-loose"
+            className="message text-xs font-normal leading-loose text-muted-foreground"
             // eslint-disable-next-line @typescript-eslint/naming-convention
             dangerouslySetInnerHTML={{ __html: parsedText }}
           />

@@ -6,7 +6,6 @@ import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
-import BotScreen from '@/screens/Bot'
 import ChatScreen from '@/screens/Chat'
 import ExploreModelsScreen from '@/screens/ExploreModels'
 import MyModelsScreen from '@/screens/MyModels'
@@ -20,10 +19,6 @@ export default function Page() {
   switch (mainViewState) {
     case MainViewState.Welcome:
       children = <WelcomeScreen />
-      break
-
-    case MainViewState.CreateBot:
-      children = <BotScreen />
       break
 
     case MainViewState.ExploreModels:

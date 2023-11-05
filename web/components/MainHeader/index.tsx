@@ -18,7 +18,7 @@ const MainHeader: React.FC = () => {
 
   return (
     <div className="sticky top-0 border-b border-border bg-background/90 px-4 py-2">
-      <span className="text-muted-foreground font-semibold">{title}</span>
+      <span className="font-semibold text-muted-foreground">{title}</span>
 
       {/* right most */}
       <div className="absolute right-4 top-2">

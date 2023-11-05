@@ -36,7 +36,7 @@ const SidebarEmptyHistory: React.FC = () => {
 
   const onClick = async () => {
     if (action === ActionButton.DownloadModel) {
-      setMainViewState(MainViewState.ExploreModelss)
+      setMainViewState(MainViewState.ExploreModels)
     } else {
       if (!activeModel) {
         modalNoActiveModel(true)

@@ -17,20 +17,7 @@ const useCreateConversation = () => {
   const addNewConvoState = useSetAtom(addNewConversationStateAtom)
   const models = useAtomValue(downloadedModelAtom)
 
-  const createConvoByBot = async (bot: Bot) => {
-    const model = models.find((e) => e._id === bot.modelId)
-
-    if (!model) {
-      alert(
-        `Model ${bot.modelId} not found! Please re-download the model first.`
-      )
-      return
-    }
-
-    return requestCreateConvo(model, bot)
-  }
-
-  const requestCreateConvo = async (model: Model, bot?: Bot) => {
+  const requestCreateConvo = async (model: AssistantModel, bot?: Bot) => {
     const conversationName = model.name
     const mappedConvo: Conversation = {
       _id: generateConversationId(),
@@ -50,7 +37,6 @@ const useCreateConversation = () => {
   }
 
   return {
-    createConvoByBot,
     requestCreateConvo,
   }
 }

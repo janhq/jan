@@ -11,7 +11,6 @@ import { motion as m } from 'framer-motion'
 import {
   MessageCircleIcon,
   SettingsIcon,
-  BotIcon,
   LayoutGridIcon,
   CpuIcon,
   BookOpenIcon,
@@ -21,45 +20,20 @@ import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
-// import useGetBots from '@/hooks/useGetBots'
-// import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
-// import { showingBotListModalAtom } from '@/helpers/atoms/Modal.atom'
-
 export default function RibbonNav() {
   const { mainViewState, setMainViewState } = useMainViewState()
-  // const currentState = useAtomValue(getMainViewStateAtom)
-  // const setMainViewState = useSetAtom(setMainViewStateAtom)
-  // const setBotListModal = useSetAtom(showingBotListModalAtom)
-  // const { downloadedModels } = useGetDownloadedModels()
-  // const { getAllBots } = useGetBots()
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
     setMainViewState(state)
   }
-
-  // const onBotListClick = async () => {
-  //   const bots = await getAllBots()
-  //   if (!bots || bots?.length === 0) {
-  //     alert('You have not created any bot')
-  //     return
-  //   }
-
-  //   if (downloadedModels.length === 0) {
-  //     alert('You have no model downloaded')
-  //     return
-  //   }
-
-  //   setBotListModal(true)
-  // }
 
   const primaryMenus = [
     {
@@ -75,15 +49,8 @@ export default function RibbonNav() {
   ]
 
   const secondaryMenus = [
-    ...(experimentalFeatureEnabed
-      ? [
-          {
-            name: 'Bot',
-            icon: <BotIcon size={22} className="flex-shrink-0" />,
-            state: MainViewState.CreateBot,
-          },
-        ]
-      : []),
+    // Add menu if experimental feature
+    ...(experimentalFeatureEnabed ? [] : []),
     {
       name: 'Explore Models',
       icon: <CpuIcon size={22} className="flex-shrink-0" />,

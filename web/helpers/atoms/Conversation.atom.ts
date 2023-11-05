@@ -1,6 +1,5 @@
 import { atom } from 'jotai'
 
-import { activeBotAtom } from './Bot.atom'
 // import { MainViewState, setMainViewStateAtom } from './MainView.atom'
 
 /**
@@ -17,7 +16,7 @@ export const setActiveConvoIdAtom = atom(
     //   console.debug(`Set active conversation id: ${convoId}`)
     //   set(setMainViewStateAtom, MainViewState.Chat)
     // }
-    set(activeBotAtom, undefined)
+
     set(activeConversationIdAtom, convoId)
   }
 )
