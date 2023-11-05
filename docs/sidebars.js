@@ -105,9 +105,10 @@ const sidebars = {
       collapsible: true,
       collapsed: true,
       items: [
+        "events/nvidia-llm-day-nov-23",
         {
           type: "doc",
-          label: "Ho Chi Minh City (Oct 2023)",
+          label: "Oct 23: HCMC Hacker House",
           id: "events/hcmc-oct23",
         },
       ],

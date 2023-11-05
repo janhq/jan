@@ -12,7 +12,7 @@ To begin using 👋Jan.ai on your Windows computer, follow these steps:
 1. Visit [Jan.ai](https://jan.ai/).
 2. Click on the "Download for Windows" button to download the Jan Installer.
 
-![Jan Installer](../img/jan-download.png)
+![Jan Installer](../img/jan-download.PNG)
 
 :::tip
 
