@@ -84,28 +84,19 @@ export default function Home() {
                   </div>
 
                   <h1 className="bg-gradient-to-r dark:from-white from-black to-gray-500 dark:to-gray-400 bg-clip-text text-4xl lg:text-6xl font-bold leading-tight text-transparent dark:text-transparent lg:leading-tight">
-                    Run Your Own AI
+                    Personal AI
                   </h1>
                   <p className="text-xl leading-relaxed lg:text-2xl lg:leading-relaxed text-gray-500 dark:text-gray-400">
-                    {/* Run Large Language Models locally on&nbsp;
-                    <span className="dark:text-white text-black">Mac</span>
-                    ,&nbsp;
-                    <span className="dark:text-white text-black">Windows</span>
-                    &nbsp;or&nbsp;
-                    <span className="dark:text-white text-black">Linux</span>. */}
                     Jan is a powerful&nbsp;
                     <span className="dark:text-white text-black">
                       Personal AI
                     </span>
-                    &nbsp;built to run locally on your machine,
+                    &nbsp;built to run locally on your computer,
                     <br />
-                    with a rich&nbsp;
-                    <span className="dark:text-white text-black">app</span>
+                    inifinitely customizable via&nbsp;
+                    <span className="dark:text-white text-black">apps</span>
                     &nbsp;and&nbsp;
-                    <span className="dark:text-white text-black">
-                      plugin ecosystem
-                    </span>
-                    .
+                    <span className="dark:text-white text-black">plugins</span>.
                   </p>
 
                   <div className="my-6 flex flex-col-reverse md:flex-row items-center justify-center gap-4 relative z-20">
