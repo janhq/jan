@@ -132,7 +132,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="container mt-10 mb-20 px-52 text-center">
+          <div className="container mt-10 mb-20 px-48 text-center">
             <h2>AI that you control</h2>
             <p className="text-base mt-2 w-full lg:w-2/5 mx-auto leading-relaxed">
               Jan runs Large Language Models locally on Windows, Mac and Linux.
