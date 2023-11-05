@@ -18,9 +18,9 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan is a powerful Personal AI built to run locally on your machine, with a rich app and plugin ecosystem.
+Jan is a tool to build your own Personal AI, that runs privately on your personal computer.
 
-Jan is free and open source, under the GPLv3 license.
+Jan is free and open source, under the AGPLv3 license.
 
 **Jan runs on any hardware.** From PCs to multi-GPU clusters, Jan supports universal architectures:
 
