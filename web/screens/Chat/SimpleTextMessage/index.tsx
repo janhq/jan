@@ -67,9 +67,9 @@ const SimpleTextMessage: React.FC<Props> = ({
       </div>
       <div
         className={twMerge(
-          'flex w-max max-w-[75%] items-start gap-2 rounded-xl bg-muted px-3 py-2',
+          'flex items-start gap-2 rounded-xl bg-muted px-3 py-2',
           isUser &&
-            'ml-auto flex w-max max-w-[75%] items-start gap-2 rounded-xl bg-primary px-3 py-2'
+            'ml-auto flex items-start gap-2 rounded-xl bg-primary px-3 py-2'
         )}
       >
         {/* {!isUser && (
@@ -81,7 +81,6 @@ const SimpleTextMessage: React.FC<Props> = ({
           alt=""
         />
       )} */}
-
         <div className="flex w-full flex-col gap-1">
           {text === '' ? (
             <LoadingIndicator />

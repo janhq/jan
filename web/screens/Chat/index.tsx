@@ -7,10 +7,6 @@ import { Input, Button } from '@janhq/uikit'
 import { useAtom, useAtomValue } from 'jotai'
 import { Trash2Icon } from 'lucide-react'
 
-// import InputToolbar from '@/components/InputToolbar'
-// import LeftHeaderAction from '@/components/LeftHeaderAction'
-// import MainHeader from '@/components/MainHeader'
-
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { MainViewState } from '@/constants/screens'
@@ -96,7 +92,7 @@ const ChatScreen = () => {
                   </Button>
                 </Fragment>
               )}
-              {!activeModel && (
+              {!activeModel && downloadedModels.length > 0 && (
                 <Fragment>
                   <h1 className="text-lg font-medium">{`You don’t have any actively running models`}</h1>
                   <p className="mt-1">{`Please start a downloaded model in My Models page to use this feature.`}</p>

@@ -8,7 +8,6 @@ import { searchAtom } from '@/containers/Providers/Jotai'
 
 import useGetUserConversations from '@/hooks/useGetUserConversations'
 
-import ExpandableHeader from '../ExpandableHeader'
 import HistoryItem from '../HistoryItem'
 
 import SidebarEmptyHistory from '../SidebarEmptyHistory'
@@ -27,7 +26,6 @@ const HistoryList: React.FC = () => {
 
   return (
     <div className="flex flex-grow flex-col gap-2 px-4 pb-4">
-      <ExpandableHeader title="CHAT HISTORY" />
       {conversations.length > 0 ? (
         <ul className={twMerge('mt-1 flex flex-col gap-y-3 overflow-y-auto')}>
           {conversations

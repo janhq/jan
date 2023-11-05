@@ -32,7 +32,7 @@ export default function DownloadingState() {
       {downloadStates?.length > 0 && (
         <Modal>
           <ModalTrigger asChild>
-            <div className="relative block overflow-hidden">
+            <div className="relative block">
               <Button size="sm" themes="outline">
                 <span>{downloadStates.length} Downloading model</span>
               </Button>

@@ -31,7 +31,7 @@ export default function HistoryList() {
   useEffect(() => {
     getUserConversations()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [conversations])
 
   const handleClickConversation = () => {
     if (activeModel) requestCreateConvo(activeModel as AssistantModel)
