@@ -22,7 +22,7 @@ export function toaster(props: Props) {
         >
           <h1
             className={twMerge(
-              'capitalize',
+              'font-medium capitalize',
               type === 'success' && 'font-medium text-primary-foreground'
             )}
           >
@@ -30,7 +30,7 @@ export function toaster(props: Props) {
           </h1>
           <p
             className={twMerge(
-              'text-muted-foreground',
+              'mt-1 text-muted-foreground',
               type === 'success' && 'text-primary-foreground/80'
             )}
           >

@@ -1,5 +1,3 @@
-'use client'
-
 import useChatMessages from '@/hooks/useChatMessages'
 
 import ChatItem from '../ChatItem'

@@ -85,7 +85,7 @@ export default function CommandSearch() {
       <div className="relative">
         <Button
           themes="outline"
-          className="unset-drag h-8 w-[300px] justify-start text-left text-xs text-muted-foreground focus:ring-0"
+          className="unset-drag h-8 w-[300px] justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
           onClick={() => setOpen((open) => !open)}
         >
           Search menus...

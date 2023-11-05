@@ -8,17 +8,12 @@ import BottomBar from '@/containers/Layout/BottomBar'
 import RibbonNav from '@/containers/Layout/Ribbon'
 
 import TopBar from '@/containers/Layout/TopBar'
-// import { SidebarRight } from '@/containers/Sidebar'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
-
-// import { rightSideBarExpandStateAtom } from '@/helpers/atoms/SideBarExpand.atom'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
   const { mainViewState } = useMainViewState()
-
-  // const isRightSidebarVisible = useAtomValue(rightSideBarExpandStateAtom)
 
   const { theme } = useTheme()
 
@@ -60,9 +55,6 @@ const BaseLayout = (props: PropsWithChildren) => {
           <BottomBar />
         </div>
       </div>
-      {/* {viewState === MainViewState.BotInfo && isRightSidebarVisible && (
-        <SidebarRight />
-      )} */}
     </div>
   )
 }

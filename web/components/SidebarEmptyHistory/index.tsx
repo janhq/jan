@@ -20,7 +20,6 @@ enum ActionButton {
 
 const SidebarEmptyHistory: React.FC = () => {
   const { downloadedModels } = useGetDownloadedModels()
-  const activeModel = useAtomValue(activeAssistantModelAtom)
   const { setMainViewState } = useMainViewState()
   const { requestCreateConvo } = useCreateConversation()
   const [action, setAction] = useState(ActionButton.DownloadModel)
@@ -34,6 +33,7 @@ const SidebarEmptyHistory: React.FC = () => {
     }
   }, [downloadedModels])
 
+  const activeModel = useAtomValue(activeAssistantModelAtom)
   const onClick = async () => {
     if (action === ActionButton.DownloadModel) {
       setMainViewState(MainViewState.ExploreModels)

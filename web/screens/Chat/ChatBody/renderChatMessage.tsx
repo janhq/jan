@@ -1,6 +1,6 @@
-import SimpleControlNetMessage from '../SimpleControlNetMessage'
-import SimpleImageMessage from '../SimpleImageMessage'
-import SimpleTextMessage from '../SimpleTextMessage'
+import SimpleControlNetMessage from '../../../components/SimpleControlNetMessage'
+import SimpleImageMessage from '../../../components/SimpleImageMessage'
+import SimpleTextMessage from '../../../components/SimpleTextMessage'
 
 import { ChatMessage, MessageType } from '@/models/ChatMessage'
 

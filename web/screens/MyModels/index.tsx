@@ -37,8 +37,6 @@ const MyModelsScreen = () => {
 
   const { activeModel, startModel, stopModel, stateModel } = useActiveModel()
 
-  console.log(stateModel, activeModel)
-
   if (downloadedModels.length === 0) return <BlankStateMyModel />
 
   const onModelActionClick = (modelId: string) => {
@@ -55,7 +53,6 @@ const MyModelsScreen = () => {
         <div className="p-4">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {downloadedModels.map((model, i) => {
-              console.log(downloadedModels)
               const isActiveModel = stateModel.model === model._id
               return (
                 <div

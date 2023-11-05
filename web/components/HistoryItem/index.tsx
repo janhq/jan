@@ -32,9 +32,8 @@ const HistoryItem: React.FC<Props> = ({
 }) => {
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
   const isSelected = activeConvoId === conversation._id
-  const activeModel = useAtomValue(activeModelAtom)
-  const { startModel } = useStartStopModel()
-
+  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const { startModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const models = useAtomValue(downloadedModelAtom)
