@@ -1,9 +1,15 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useMemo } from 'react'
 
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { Badge, Button } from '@janhq/uikit'
+
+import { atom, useAtomValue } from 'jotai'
+
+import ModalCancelDownload from '@/containers/ModalCancelDownload'
 
 import { MainViewState } from '@/constants/screens'
+
+import { ModelPerformance, TagType } from '@/constants/tagType'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
@@ -11,12 +17,7 @@ import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useGetPerformanceTag from '@/hooks/useGetPerformanceTag'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
-import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
-
-import ConfirmationModal from '../ConfirmationModal'
-import SimpleTag from '../SimpleTag'
-
-import { showingCancelDownloadModalAtom } from '@/helpers/atoms/Modal.atom'
+import { toGigabytes } from '@/utils/converter'
 
 type Props = {
   suitableModel: ModelVersion
@@ -29,7 +30,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
 }) => {
   const { downloadModel } = useDownloadModel()
   const { downloadedModels } = useGetDownloadedModels()
-  const { modelDownloadStateAtom } = useDownloadState()
+  const { modelDownloadStateAtom, downloadStates } = useDownloadState()
   const { performanceTag, title, getPerformanceForModel } =
     useGetPerformanceTag()
   const downloadAtom = useMemo(
@@ -38,9 +39,6 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   )
   const downloadState = useAtomValue(downloadAtom)
   const { setMainViewState } = useMainViewState()
-  const setShowingCancelDownloadModal = useSetAtom(
-    showingCancelDownloadModalAtom
-  )
 
   useEffect(() => {
     getPerformanceForModel(suitableModel)
@@ -56,62 +54,52 @@ const ExploreModelItemHeader: React.FC<Props> = ({
     downloadedModels.find((model) => model._id === suitableModel._id) != null
 
   let downloadButton = (
-    <button onClick={() => onDownloadClick()}>
+    <Button onClick={() => onDownloadClick()}>
       {suitableModel.size
         ? `Download (${toGigabytes(suitableModel.size)})`
         : 'Download'}
-    </button>
+    </Button>
   )
 
   if (isDownloaded) {
     downloadButton = (
-      <button
+      <Button
         onClick={() => {
           setMainViewState(MainViewState.MyModels)
         }}
       >
         View Downloaded Model
-      </button>
+      </Button>
     )
   }
 
-  if (downloadState != null) {
-    // downloading
-    downloadButton = (
-      <button
-        onClick={() => {
-          setShowingCancelDownloadModal(true)
-        }}
-      >
-        Cancel ({formatDownloadPercentage(downloadState.percent)})
-      </button>
-    )
+  if (downloadState != null && downloadStates.length > 0) {
+    downloadButton = <ModalCancelDownload suitableModel={suitableModel} />
   }
 
-  const cancelDownloadModal =
-    downloadState != null ? (
-      <ConfirmationModal
-        atom={showingCancelDownloadModalAtom}
-        title="Cancel Download"
-        description={`Are you sure you want to cancel the download of ${downloadState?.fileName}?`}
-        onConfirm={() => {
-          window.coreAPI?.abortDownload(downloadState?.fileName)
-        }}
-      />
-    ) : (
-      <></>
-    )
+  const renderBadge = (performance: TagType) => {
+    switch (performance) {
+      case ModelPerformance.PerformancePositive:
+        return <Badge themes="success">{title}</Badge>
+
+      case ModelPerformance.PerformanceNeutral:
+        return <Badge themes="secondary">{title}</Badge>
+
+      case ModelPerformance.PerformanceNegative:
+        return <Badge themes="danger">{title}</Badge>
+
+      default:
+        break
+    }
+  }
 
   return (
     <div className="flex items-center justify-between rounded-t-md border-b border-border bg-background/50 px-4 py-2">
       <div className="flex items-center gap-2">
         <span>{exploreModel.name}</span>
-        {performanceTag && (
-          <SimpleTag title={title} type={performanceTag} clickable={false} />
-        )}
+        {performanceTag && renderBadge(performanceTag)}
       </div>
       {downloadButton}
-      {cancelDownloadModal}
     </div>
   )
 }

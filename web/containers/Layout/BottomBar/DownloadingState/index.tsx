@@ -10,8 +10,6 @@ import {
   ModalTrigger,
 } from '@janhq/uikit'
 
-import SystemItem from '@/containers/Layout/BottomBar/SystemItem'
-
 import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
@@ -19,35 +17,32 @@ import { formatDownloadPercentage } from '@/utils/converter'
 export default function DownloadingState() {
   const { downloadStates } = useDownloadState()
 
+  const totalCurrentProgress = downloadStates
+    .map((a) => a.size.transferred + a.size.transferred)
+    .reduce((partialSum, a) => partialSum + a, 0)
+
+  const totalSize = downloadStates
+    .map((a) => a.size.total + a.size.total)
+    .reduce((partialSum, a) => partialSum + a, 0)
+
+  const totalPercentage = ((totalCurrentProgress / totalSize) * 100).toFixed(2)
+
   return (
     <Fragment>
-      {downloadStates.length === 1 && (
-        <Fragment>
-          <div className="flex w-[50px] items-center gap-x-2">
-            <Progress
-              className="h-2 border border-border"
-              value={
-                formatDownloadPercentage(downloadStates[0]?.percent, {
-                  hidePercentage: true,
-                }) as number
-              }
-            />
-          </div>
-          <SystemItem
-            name="Downloading"
-            value={`${downloadStates[0]?.fileName}: ${formatDownloadPercentage(
-              downloadStates[0]?.percent
-            )}`}
-          />
-        </Fragment>
-      )}
-
-      {downloadStates?.length > 1 && (
+      {downloadStates?.length > 0 && (
         <Modal>
           <ModalTrigger asChild>
-            <Button size="sm" themes="outline">
-              <span>{downloadStates.length} Downloading model</span>
-            </Button>
+            <div className="relative block overflow-hidden">
+              <Button size="sm" themes="outline">
+                <span>{downloadStates.length} Downloading model</span>
+              </Button>
+              <span
+                className="absolute left-0 h-full rounded-md rounded-l-md bg-primary/20"
+                style={{
+                  width: `${totalPercentage}%`,
+                }}
+              />
+            </div>
           </ModalTrigger>
           <ModalContent>
             <ModalHeader>
@@ -65,8 +60,19 @@ export default function DownloadingState() {
                     }
                   />
                   <div className="flex items-center justify-between">
-                    <p>{item?.fileName}</p>
-                    <span>{formatDownloadPercentage(item?.percent)}</span>
+                    <div className="flex gap-x-2">
+                      <p>{item?.fileName}</p>
+                      <span>{formatDownloadPercentage(item?.percent)}</span>
+                    </div>
+                    <Button
+                      themes="outline"
+                      size="sm"
+                      onClick={() =>
+                        window.coreAPI?.abortDownload(item.fileName)
+                      }
+                    >
+                      Cancel
+                    </Button>
                   </div>
                 </div>
               )

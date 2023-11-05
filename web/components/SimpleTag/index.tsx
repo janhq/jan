@@ -1,7 +1,8 @@
 import React from 'react'
 
+import { TagType } from '../../constants/tagType'
+
 import { tagStyleMapper } from './TagStyleMapper'
-import { TagType } from './TagType'
 
 type Props = {
   title: string

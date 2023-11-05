@@ -19,6 +19,10 @@ const setDownloadStateSuccessAtom = atom(null, (get, set, fileName: string) => {
   const state = currentState[fileName]
   if (!state) {
     console.error(`Cannot find download state for ${fileName}`)
+    toaster({
+      title: 'Cancel Download',
+      description: `Model ${fileName} cancel download`,
+    })
     return
   }
   delete currentState[fileName]
@@ -26,7 +30,6 @@ const setDownloadStateSuccessAtom = atom(null, (get, set, fileName: string) => {
   toaster({
     title: 'Download Completed',
     description: `Download ${fileName} completed`,
-    type: 'success',
   })
 })
 

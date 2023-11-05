@@ -1,4 +1,4 @@
-import { TagType } from './TagType'
+import { TagType } from '../../constants/tagType'
 
 export const tagStyleMapper: Record<TagType, string> = {
   GGUF: 'bg-yellow-100 dark:bg-yellow-200 text-yellow-800',

@@ -2,23 +2,10 @@
 
 import { forwardRef, useEffect, useState } from 'react'
 
-import ExploreModelItemHeader from '@/components/ExploreModelItemHeader'
-import ModelVersionList from '@/components/ModelVersionList'
-import SimpleTag from '@/components/SimpleTag'
-
-import {
-  MiscellanousTag,
-  NumOfBit,
-  QuantMethodTag,
-  RamRequired,
-  UsecaseTag,
-  VersionTag,
-} from '@/components/SimpleTag/TagType'
-
 import useGetMostSuitableModelVersion from '@/hooks/useGetMostSuitableModelVersion'
 
-import { toGigabytes } from '@/utils/converter'
-import { displayDate } from '@/utils/datetime'
+import ExploreModelItemHeader from '@/screens/ExploreModels/ExploreModelItemHeader'
+import ModelVersionList from '@/screens/ExploreModels/ModelVersionList'
 
 type Props = {
   model: ModelCatalog
@@ -54,64 +41,44 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
       <div className="flex flex-col p-4">
         <div className="mb-4 flex flex-col gap-1">
           <span className="font-semibold">About</span>
-          <span className="text-muted-foreground leading-relaxed">
-            {model.longDescription}
-          </span>
+          <p>{model.longDescription}</p>
         </div>
 
         <div className="flex justify-between">
-          <div className="flex flex-1 flex-col gap-y-4">
+          {/* <div className="flex flex-1 flex-col gap-y-4">
             <div className="flex flex-col gap-1">
               <div className="font-semibold">Release Date</div>
-              <p className="text-muted-foreground mt-1">
-                {displayDate(model.releaseDate)}
-              </p>
+              <p className="mt-1 ">{displayDate(model.releaseDate)}</p>
             </div>
             <div className="flex flex-col gap-2">
               <div className="font-semibold">Version</div>
               <div className="flex gap-2">
-                <SimpleTag
-                  title={model.version}
-                  type={VersionTag.Version}
-                  clickable={false}
-                />
-                <SimpleTag
-                  title={quantMethod}
-                  type={QuantMethodTag.Default}
-                  clickable={false}
-                />
-                <SimpleTag
-                  title={`${bits} Bits`}
-                  type={NumOfBit.Default}
-                  clickable={false}
-                />
+                <Badge>v{model.version}</Badge>
+                {quantMethod && <Badge themes="outline">{quantMethod}</Badge>}
+                <Badge themes="outline">{`${bits} Bits`}</Badge>
               </div>
             </div>
-          </div>
+          </div> */}
 
-          <div className="flex flex-1 flex-col gap-y-4">
+          {/* <div className="flex flex-1 flex-col gap-y-4">
             <div>
               <div className="font-semibold">Author</div>
-              <p className="text-muted-foreground mt-1">{model.author}</p>
+              <p className="mt-1 ">{model.author}</p>
             </div>
             <div className="flex flex-col gap-2">
               <div className="font-semibold">Compatibility</div>
               <div className="flex gap-2">
-                <SimpleTag
-                  title={usecase}
-                  type={UsecaseTag.UsecaseDefault}
-                  clickable={false}
-                />
-                <SimpleTag
-                  title={`${toGigabytes(maxRamRequired)} RAM required`}
-                  type={RamRequired.RamDefault}
-                  clickable={false}
-                />
+                <Badge themes="outline" className="line-clamp-1">
+                  {usecase}
+                </Badge>
+                <Badge themes="outline" className="line-clamp-1">
+                  {toGigabytes(maxRamRequired)} RAM required
+                </Badge>
               </div>
             </div>
-          </div>
+          </div> */}
 
-          <div className="flex flex-1 flex-col gap-y-4">
+          {/* <div className="flex flex-1 flex-col gap-y-4">
             <div>
               <div className="font-medium">Tags</div>
               <div className="mt-1 flex flex-wrap gap-2">
@@ -125,7 +92,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
                 ))}
               </div>
             </div>
-          </div>
+          </div> */}
         </div>
 
         {model.availableVersions?.length > 0 && (

@@ -1,3 +1,4 @@
+import { toaster } from '@/containers/Toast'
 import {
   getDownloadedModels,
   useGetDownloadedModels,
@@ -18,6 +19,10 @@ export default function useDeleteModel() {
     // reload models
     const downloadedModels = await getDownloadedModels()
     setDownloadedModels(downloadedModels)
+    toaster({
+      title: 'Delete a Model',
+      description: `Model ${model._id} has been deleted.`,
+    })
   }
 
   return { deleteModel }

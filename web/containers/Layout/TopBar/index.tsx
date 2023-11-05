@@ -13,7 +13,6 @@ const TopBar = () => {
           <span className="font-medium">{viewStateName}</span>
         </div>
         <CommandSearch />
-
         <div className="flex items-center gap-x-2">
           <span className="text-xs font-semibold text-muted-foreground">
             Jan v{appVersion?.version ?? ''}

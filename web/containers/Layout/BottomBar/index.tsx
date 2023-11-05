@@ -23,8 +23,6 @@ const BottomBar = () => {
           {!progress && progress === 0 ? (
             <ProgressBar total={100} used={progress} />
           ) : null}
-
-          <DownloadingState />
         </div>
 
         {stateModel.state === 'start' && stateModel.loading && (
@@ -36,6 +34,8 @@ const BottomBar = () => {
         {!stateModel.loading && (
           <SystemItem name="Active model:" value={activeModel?.name || '-'} />
         )}
+
+        <DownloadingState />
       </div>
       <div className="flex gap-x-2">
         <SystemItem name="CPU:" value={`${cpu}%`} />

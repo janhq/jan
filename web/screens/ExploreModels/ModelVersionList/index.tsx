@@ -7,11 +7,11 @@ type Props = {
   recommendedVersion: string
 }
 
-const ModelVersionList: React.FC<Props> = ({
+export default function ModelVersionList({
   model,
   versions,
   recommendedVersion,
-}) => {
+}: Props) {
   return (
     <div className="pt-4">
       {versions.map((item) => (
@@ -25,5 +25,3 @@ const ModelVersionList: React.FC<Props> = ({
     </div>
   )
 }
-
-export default ModelVersionList

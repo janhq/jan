@@ -60,7 +60,6 @@ export function useActiveModel() {
       toaster({
         title: 'Success start a Model',
         description: `Model ${modelId} has been started.`,
-        type: 'success',
       })
       setStateModel(() => ({
         state: 'stop',
@@ -79,7 +78,6 @@ export function useActiveModel() {
       toaster({
         title: 'Success stop a Model',
         description: `Model ${modelId} has been stopped.`,
-        type: 'success',
       })
     }, 500)
   }

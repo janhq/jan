@@ -74,7 +74,6 @@ export default function CommandSearch() {
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      console.log(e)
       if (e.key === 'j' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
         setOpen((open) => !open)

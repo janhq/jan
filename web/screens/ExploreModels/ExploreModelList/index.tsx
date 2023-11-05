@@ -1,4 +1,4 @@
-import ExploreModelItem from '@/containers/ExploreModelItem'
+import ExploreModelItem from '@/screens/ExploreModels/ExploreModelItem'
 
 
 

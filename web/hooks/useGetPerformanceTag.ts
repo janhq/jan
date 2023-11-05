@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { useAtomValue } from 'jotai'
 
-import { ModelPerformance, TagType } from '@/components/SimpleTag/TagType'
+import { ModelPerformance, TagType } from '@/constants/tagType'
 
 import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 import { ModelVersion } from '@janhq/core/lib/types'
