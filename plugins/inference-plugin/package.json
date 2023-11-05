@@ -21,7 +21,7 @@
     "downloadnitro:win-cpu": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-win-amd64.zip -e --strip 1 -o ./nitro/win-cpu",
     "downloadnitro:win-cuda": "NITRO_VERSION=$(cat ./nitro/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-win-amd64-cuda.zip -e --strip 1 -o ./nitro/win-cuda",
     "postinstall": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:linux-cpu && npm run downloadnitro:linux-cuda && npm run downloadnitro:mac-arm64 && npm run downloadnitro:mac-x64 && npm run downloadnitro:win-cpu && npm run downloadnitro:win-cuda && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
-    "postinstall:dev": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:mac-arm64 && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
+    "postinstall:dev": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:mac-arm64 && npm run downloadnitro:mac-x64 && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
     "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {
