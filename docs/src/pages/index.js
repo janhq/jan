@@ -14,7 +14,6 @@ import {
   CubeTransparentIcon,
   ComputerDesktopIcon,
   FolderPlusIcon,
-
 } from "@heroicons/react/24/outline";
 
 import ThemedImage from "@theme/ThemedImage";
@@ -38,9 +37,8 @@ const features = [
   {
     name: "Extendable via App and Plugin framework",
     desc: "Jan has a versatile app and plugin framework, allowing you to customize it to your needs.",
-    icon: FolderPlusIcon
+    icon: FolderPlusIcon,
   },
-  
 ];
 
 export default function Home() {
@@ -81,16 +79,23 @@ export default function Home() {
                     Personal AI
                   </h1>
                   <p className="text-xl leading-relaxed lg:text-2xl lg:leading-relaxed text-gray-500 dark:text-gray-400">
-                    Jan is a powerful&nbsp;
+                    Jan is a&nbsp;
                     <span className="dark:text-white text-black">
                       Personal AI
                     </span>
-                    &nbsp;built to run locally on your computer,
+                    &nbsp;that you can&nbsp;
+                    <span className="dark:text-white text-black">
+                      customize,
+                    </span>
                     <br />
-                    inifinitely customizable via&nbsp;
-                    <span className="dark:text-white text-black">apps</span>
-                    &nbsp;and&nbsp;
-                    <span className="dark:text-white text-black">plugins</span>.
+                    that runs&nbsp;
+                    <span className="dark:text-white text-black">
+                      privately
+                    </span>
+                    &nbsp;on your&nbsp;
+                    <span className="dark:text-white text-black">
+                      personal computer
+                    </span>
                   </p>
 
                   <div className="my-6 flex flex-col-reverse md:flex-row items-center justify-center gap-4 relative z-20">
