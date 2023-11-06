@@ -58,7 +58,6 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
                 ?.saveModel(model)
                 .then(() => {
                   setDownloadedModels([...downloadedModels, model])
-                  setDownloadedModels(models)
                 })
           }
         }

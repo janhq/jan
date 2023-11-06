@@ -144,7 +144,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           ?.saveModel(model)
           .then(() => {
             setDownloadedModels([...downloadedModels, model])
-            setDownloadedModels(models)
           })
     }
   }
