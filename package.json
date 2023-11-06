@@ -3,7 +3,6 @@
   "private": true,
   "workspaces": {
     "packages": [
-      "uikit",
       "electron",
       "web",
       "server"
@@ -56,6 +55,7 @@
   },
   "version": "0.0.0",
   "dependencies": {
-    "@janhq/core": "file:core"
+    "@janhq/core": "file:core",
+    "@janhq/uikit": "file:uikit"
   }
 }
