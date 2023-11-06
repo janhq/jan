@@ -10,7 +10,7 @@ type Ref = HTMLDivElement
 
 const ChatItem = forwardRef<Ref, Props>(({ message }, ref) => {
   return (
-    <div ref={ref} className="my-2">
+    <div ref={ref} className="py-4 even:bg-secondary/20">
       <SimpleTextMessage
         key={message.id}
         avatarUrl={message.senderAvatarUrl}

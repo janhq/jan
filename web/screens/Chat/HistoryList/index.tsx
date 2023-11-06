@@ -21,7 +21,6 @@ import {
 
 export default function HistoryList() {
   const conversations = useAtomValue(userConversationsAtom)
-  // const searchText = useAtomValue(searchAtom)
   const { getUserConversations } = useGetUserConversations()
   const { activeModel, startModel } = useActiveModel()
   const { requestCreateConvo } = useCreateConversation()
@@ -45,14 +44,13 @@ export default function HistoryList() {
       return
     }
     const model = downloadedModels.find((e) => e._id === convo.modelId)
+    // console.log(model?._id)
     if (convo == null) {
       console.debug('modelId is undefined')
       return
     }
     if (model != null) {
-      if (activeModel == null) {
-        startModel(model._id)
-      }
+      startModel(model._id)
     }
     if (activeConvoId !== convo._id) {
       setActiveConvoId(convo._id)
@@ -86,7 +84,7 @@ export default function HistoryList() {
           return (
             <div
               key={i}
-              className="relative flex cursor-pointer flex-col border-b border-border px-4 py-2 transition-colors hover:bg-secondary/10"
+              className="relative flex cursor-pointer flex-col border-b border-border px-4 py-2 hover:bg-secondary/10"
               onClick={() => handleActiveModel(convo as Conversation)}
             >
               <p className="mb-1 line-clamp-1 text-xs leading-5">
@@ -96,7 +94,7 @@ export default function HistoryList() {
               <span className="line-clamp-1">
                 {convo.summary ?? convo.name}
               </span>
-              <p className="mt-1 line-clamp-2 text-xs leading-relaxed">
+              <p className="mt-1 line-clamp-2 leading-relaxed">
                 {convo?.lastMessage ?? 'No new message'}
               </p>
             </div>

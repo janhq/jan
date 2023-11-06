@@ -37,7 +37,7 @@ const ChatScreen = () => {
   const currentConvo = useAtomValue(currentConversationAtom)
   const { downloadedModels } = useGetDownloadedModels()
   const { deleteConvo } = useDeleteConversation()
-  const { activeModel } = useActiveModel()
+  const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
 
   const isEnableChat = currentConvo && activeModel
@@ -77,12 +77,12 @@ const ChatScreen = () => {
 
   return (
     <div className="flex h-full">
-      <div className="flex h-full w-64 flex-shrink-0 flex-col border-r border-border ">
+      <div className="flex h-full w-64 flex-shrink-0 flex-col border-r border-border">
         <ScrollArea className="h-full w-full">
           <HistoryList />
         </ScrollArea>
       </div>
-      <div className="relative flex h-full w-full flex-col bg-background/50">
+      <div className="relative flex h-full w-full flex-col bg-muted/10">
         <div className="flex h-full w-full flex-col justify-between">
           {isEnableChat && (
             <div className="h-[53px] flex-shrink-0 border-b border-border p-4">
@@ -128,17 +128,19 @@ const ChatScreen = () => {
               )}
             </div>
           )}
-          <div className="flex w-full flex-shrink-0 items-center justify-center space-x-2 p-4">
+          <div className="flex w-full flex-shrink-0 items-center justify-center space-x-4 p-4">
             <Input
               type="text"
+              className="h-10"
               onKeyDown={(e) => handleKeyDown(e)}
               placeholder="Type your message ..."
-              disabled={!activeModel}
+              disabled={!activeModel || stateModel.loading}
               value={currentPrompt}
               onChange={(e) => handleMessageChange(e.target.value)}
             />
             <Button
-              disabled={!activeModel || disabled}
+              size="lg"
+              disabled={!activeModel || disabled || stateModel.loading}
               themes={!activeModel ? 'secondary' : 'primary'}
               onClick={handleSendMessage}
             >

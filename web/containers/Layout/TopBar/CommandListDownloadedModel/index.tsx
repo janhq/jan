@@ -72,7 +72,9 @@ export default function CommandListDownloadedModel() {
                     />
                     <div className="flex w-full items-center justify-between">
                       <span>{model.name}</span>
-                      {activeModel && <Badge>Active</Badge>}
+                      {activeModel && activeModel._id === model._id && (
+                        <Badge>Active</Badge>
+                      )}
                     </div>
                   </CommandItem>
                 )
