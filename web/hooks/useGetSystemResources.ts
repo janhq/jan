@@ -3,11 +3,11 @@ import { useEffect, useState } from 'react'
 import { PluginType } from '@janhq/core'
 import { MonitoringPlugin } from '@janhq/core/lib/plugins'
 
-import { atom, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 
+import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 import { pluginManager } from '@/plugin/PluginManager'
 
-export const totalRamAtom = atom<number>(0)
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
   const [cpu, setCPU] = useState<number>(0)
