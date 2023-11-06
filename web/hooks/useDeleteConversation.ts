@@ -4,11 +4,11 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
-import { MainViewState } from '@/constants/screens'
-
-import { useMainViewState } from '@/hooks/useMainViewState'
+import { toaster } from '@/containers/Toast'
 
 import { pluginManager } from '../plugin/PluginManager'
+
+import { useActiveModel } from './useActiveModel'
 
 import { deleteConversationMessage } from '@/helpers/atoms/ChatMessage.atom'
 import {
@@ -22,6 +22,7 @@ import {
 } from '@/helpers/atoms/Modal.atom'
 
 export default function useDeleteConversation() {
+  const { activeModel } = useActiveModel()
   const [userConversations, setUserConversations] = useAtom(
     userConversationsAtom
   )
@@ -32,7 +33,6 @@ export default function useDeleteConversation() {
 
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const deleteMessages = useSetAtom(deleteConversationMessage)
-  const { setMainViewState } = useMainViewState()
 
   const deleteConvo = async () => {
     if (activeConvoId) {
@@ -45,11 +45,13 @@ export default function useDeleteConversation() {
         )
         setUserConversations(currentConversations)
         deleteMessages(activeConvoId)
-
+        toaster({
+          title: 'Succes delete a chat',
+          description: `Delete chat with ${activeModel} has been completed`,
+        })
         if (currentConversations.length > 0) {
           setActiveConvoId(currentConversations[0]._id)
         } else {
-          setMainViewState(MainViewState.Welcome)
           setActiveConvoId(undefined)
         }
         setCurrentPrompt('')

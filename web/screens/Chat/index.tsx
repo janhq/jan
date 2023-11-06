@@ -1,5 +1,6 @@
 import { Fragment } from 'react'
 
+import { Model } from '@janhq/core/lib/types'
 import { ScrollArea, Input, Button, Badge } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
@@ -11,6 +12,7 @@ import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
+import { useCreateConversation } from '@/hooks/useCreateConversation'
 import useDeleteConversation from '@/hooks/useDeleteConversation'
 
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
@@ -23,9 +25,13 @@ import ChatBody from '@/screens/Chat/ChatBody'
 
 import HistoryList from '@/screens/Chat/HistoryList'
 
-import { currentConversationAtom } from '@/helpers/atoms/Conversation.atom'
+import {
+  currentConversationAtom,
+  getActiveConvoIdAtom,
+} from '@/helpers/atoms/Conversation.atom'
 
 import { currentConvoStateAtom } from '@/helpers/atoms/Conversation.atom'
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 
 const ChatScreen = () => {
   const currentConvo = useAtomValue(currentConversationAtom)
@@ -40,9 +46,33 @@ const ChatScreen = () => {
   const { sendChatMessage } = useSendChatMessage()
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
+  const activeConversationId = useAtomValue(getActiveConvoIdAtom)
+  const { requestCreateConvo } = useCreateConversation()
+  const selectedModel = useAtomValue(selectedModelAtom)
 
   const handleMessageChange = (value: string) => {
     setCurrentPrompt(value)
+  }
+
+  const handleSendMessage = async () => {
+    if (activeConversationId) {
+      sendChatMessage()
+    } else {
+      await requestCreateConvo(selectedModel as Model).then(() => {
+        sendChatMessage()
+      })
+    }
+  }
+
+  const handleKeyDown = async (
+    event: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (event.key === 'Enter') {
+      if (!event.shiftKey) {
+        event.preventDefault()
+        handleSendMessage()
+      }
+    }
   }
 
   return (
@@ -68,11 +98,9 @@ const ChatScreen = () => {
           )}
 
           {isEnableChat ? (
-            <ScrollArea className="flex h-full w-full">
-              <div className="p-4">
-                <ChatBody />
-              </div>
-            </ScrollArea>
+            <div className="flex h-full w-full overflow-y-auto p-4">
+              <ChatBody />
+            </div>
           ) : (
             <div className="mx-auto mt-8 flex h-full w-3/4 flex-col items-center justify-center text-center">
               {downloadedModels.length === 0 && (
@@ -103,15 +131,16 @@ const ChatScreen = () => {
           <div className="flex w-full flex-shrink-0 items-center justify-center space-x-2 p-4">
             <Input
               type="text"
+              onKeyDown={(e) => handleKeyDown(e)}
               placeholder="Type your message ..."
-              disabled={!isEnableChat}
+              disabled={!activeModel}
               value={currentPrompt}
               onChange={(e) => handleMessageChange(e.target.value)}
             />
             <Button
-              disabled={!isEnableChat || disabled}
-              themes={!isEnableChat ? 'secondary' : 'primary'}
-              onClick={() => sendChatMessage()}
+              disabled={!activeModel || disabled}
+              themes={!activeModel ? 'secondary' : 'primary'}
+              onClick={handleSendMessage}
             >
               Send
             </Button>

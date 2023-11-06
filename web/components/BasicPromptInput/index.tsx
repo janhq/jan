@@ -35,7 +35,6 @@ const BasicPromptInput: React.FC = () => {
             console.log('No model selected')
             return
           }
-
           await requestCreateConvo(selectedModel)
           sendChatMessage()
         }

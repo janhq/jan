@@ -24,7 +24,7 @@ export function toaster(props: Props) {
           <div>
             <h1
               className={twMerge(
-                'font-medium capitalize',
+                'font-medium',
                 type === 'success' && 'font-medium text-primary-foreground'
               )}
             >
