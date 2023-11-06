@@ -18,7 +18,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
    * Called when the plugin is loaded.
    */
   onLoad() {
-    console.debug("JanConversationalPlugin loaded")
+    console.debug("JanConversationalPlugin loaded");
     fs.mkdir("conversations");
   }
 
@@ -26,7 +26,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
    * Called when the plugin is unloaded.
    */
   onUnload() {
-    console.debug("JanConversationalPlugin unloaded")
+    console.debug("JanConversationalPlugin unloaded");
   }
 
   /**
@@ -123,7 +123,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
         if (currentMessage)
           currentMessage.message = trimmedLine.replace("- message:", "").trim();
       } else if (trimmedLine.startsWith("- Message ")) {
-        const messageMatch = trimmedLine.match(/- Message (message-\d+):/);
+        const messageMatch = trimmedLine.match(/- Message (m-\d+):/);
         if (messageMatch) {
           if (currentMessage) {
             conversation.messages.push(currentMessage);
@@ -137,11 +137,12 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
         currentMessage.message = currentMessage.message + "\n" + line.trim();
       } else if (trimmedLine.startsWith("## Messages")) {
         currentMessage = undefined;
-      } else {
-        console.log("missing field processing: ", trimmedLine);
       }
     }
 
+    if (currentMessage) {
+      conversation.messages.push(currentMessage);
+    }
     return conversation;
   }
 
@@ -203,7 +204,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
   private async writeMarkdownToFile(conversation: Conversation) {
     // Generate the Markdown content
     const markdownContent = this.generateMarkdown(conversation);
-    await fs.mkdir(`conversations/${conversation._id}`)
+    await fs.mkdir(`conversations/${conversation._id}`);
     // Write the content to a Markdown file
     await fs.writeFile(
       `conversations/${conversation._id}/${conversation._id}.md`,
