@@ -37,6 +37,7 @@
  * @property {Function} writeFile - Writes the given data to the file at the given path.
  * @property {Function} listFiles - Lists the files in the directory at the given path.
  * @property {Function} mkdir - Creates a directory at the given path.
+ * @property {Function} rmdir - Removes a directory at the given path recursively.
  * @property {Function} installRemotePlugin - Installs the remote plugin with the given name.
  * @property {Function} downloadFile - Downloads the file at the given URL to the given path.
  * @property {Function} pauseDownload - Pauses the download of the file with the given name.
@@ -93,6 +94,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   listFiles: (path: string) => ipcRenderer.invoke("listFiles", path),
 
   mkdir: (path: string) => ipcRenderer.invoke("mkdir", path),
+
+  rmdir: (path: string) => ipcRenderer.invoke("rmdir", path),
 
   installRemotePlugin: (pluginName: string) =>
     ipcRenderer.invoke("installRemotePlugin", pluginName),

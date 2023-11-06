@@ -40,6 +40,9 @@ const Providers = (props: PropsWithChildren) => {
   useEffect(() => {
     setupCoreServices()
     setSetupCore(true)
+    return () => {
+      pluginManager.unload()
+    }
   }, [])
 
   useEffect(() => {

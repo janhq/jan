@@ -16,6 +16,7 @@ import {
 } from "@janhq/core";
 import { InferencePlugin } from "@janhq/core/lib/plugins";
 import { requestInference } from "./helpers/sse";
+import { generateMessageId } from "./helpers/message";
 
 /**
  * A class that implements the InferencePlugin interface from the @janhq/core package.
@@ -117,7 +118,7 @@ export default class JanInferencePlugin implements InferencePlugin {
       message: "",
       user: "assistant",
       createdAt: new Date().toISOString(),
-      _id: `message-${Date.now()}`,
+      _id: generateMessageId(),
     };
     events.emit(EventName.OnNewMessageResponse, message);
 
