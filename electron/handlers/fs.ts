@@ -74,6 +74,28 @@ export function handleFs() {
   });
 
   /**
+   * Removes a directory in the user data directory.
+   * @param event - The event object.
+   * @param path - The path of the directory to remove.
+   * @returns A promise that resolves when the directory is removed successfully.
+   */
+  ipcMain.handle("rmdir", async (event, path: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      fs.rmdir(
+        join(app.getPath("userData"), path),
+        { recursive: true },
+        (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
+  });
+
+  /**
    * Lists the files in a directory in the user data directory.
    * @param event - The event object.
    * @param path - The path of the directory to list files from.

@@ -33,6 +33,13 @@ const mkdir: (path: string) => Promise<any> = (path) =>
   window.coreAPI?.mkdir(path) ?? window.electronAPI?.mkdir(path);
 
 /**
+ * Removes a directory at the specified path.
+ * @param {string} path - The path of the directory to remove.
+ * @returns {Promise<any>} A Promise that resolves when the directory is removed successfully.
+ */
+const rmdir: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.rmdir(path) ?? window.electronAPI?.rmdir(path);
+/**
  * Deletes a file from the local file system.
  * @param {string} path - The path of the file to delete.
  * @returns {Promise<any>} A Promise that resolves when the file is deleted.
@@ -45,5 +52,6 @@ export const fs = {
   readFile,
   listFiles,
   mkdir,
+  rmdir,
   deleteFile,
 };

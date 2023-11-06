@@ -4,7 +4,7 @@ import { Message, Conversation } from "@janhq/core/lib/types";
 
 /**
  * JanConversationalPlugin is a ConversationalPlugin implementation that provides
- * functionality for managing conversations in a Jan bot.
+ * functionality for managing conversations.
  */
 export default class JanConversationalPlugin implements ConversationalPlugin {
   /**
@@ -18,14 +18,15 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
    * Called when the plugin is loaded.
    */
   onLoad() {
-    console.debug("JanConversationalPlugin loaded");
+    console.debug("JanConversationalPlugin loaded")
+    fs.mkdir("conversations");
   }
 
   /**
    * Called when the plugin is unloaded.
    */
   onUnload() {
-    console.debug("JanConversationalPlugin unloaded");
+    console.debug("JanConversationalPlugin unloaded")
   }
 
   /**
@@ -36,7 +37,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
       Promise.all(
         conversationIds.map((conversationId) =>
           this.loadConversationFromMarkdownFile(
-            `conversations/${conversationId}`
+            `conversations/${conversationId}/${conversationId}.md`
           )
         )
       ).then((conversations) =>
@@ -61,7 +62,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
    * @param conversationId The ID of the conversation to delete.
    */
   deleteConversation(conversationId: string): Promise<void> {
-    return fs.deleteFile(`conversations/${conversationId}.md`);
+    return fs.rmdir(`conversations/${conversationId}`);
   }
 
   /**
@@ -71,9 +72,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
    */
   private async getConversationDocs(): Promise<string[]> {
     return fs.listFiles("conversations").then((files: string[]) => {
-      return Promise.all(
-        files.filter((file) => file.startsWith("jan-"))
-      );
+      return Promise.all(files.filter((file) => file.startsWith("jan-")));
     });
   }
 
@@ -202,10 +201,13 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
    * @private
    */
   private async writeMarkdownToFile(conversation: Conversation) {
-    await fs.mkdir("conversations");
     // Generate the Markdown content
     const markdownContent = this.generateMarkdown(conversation);
+    await fs.mkdir(`conversations/${conversation._id}`)
     // Write the content to a Markdown file
-    await fs.writeFile(`conversations/${conversation._id}.md`, markdownContent);
+    await fs.writeFile(
+      `conversations/${conversation._id}/${conversation._id}.md`,
+      markdownContent
+    );
   }
 }
