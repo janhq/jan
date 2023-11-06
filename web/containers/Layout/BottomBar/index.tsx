@@ -1,4 +1,4 @@
-import { Badge } from '@janhq/uikit'
+import { Badge, Button } from '@janhq/uikit'
 import { useAtomValue } from 'jotai'
 
 import ProgressBar from '@/components/ProgressBar'
@@ -9,15 +9,22 @@ import SystemItem from '@/containers/Layout/BottomBar/SystemItem'
 
 import { appDownloadProgress } from '@/containers/Providers/Jotai'
 
+import { MainViewState } from '@/constants/screens'
+
 import { useActiveModel } from '@/hooks/useActiveModel'
+
 import { useGetAppVersion } from '@/hooks/useGetAppVersion'
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
+import { useMainViewState } from '@/hooks/useMainViewState'
 
 const BottomBar = () => {
   const { activeModel, stateModel } = useActiveModel()
   const { ram, cpu } = useGetSystemResources()
   const progress = useAtomValue(appDownloadProgress)
   const appVersion = useGetAppVersion()
+  const { downloadedModels } = useGetDownloadedModels()
+  const { setMainViewState } = useMainViewState()
 
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/50 px-3">
@@ -34,15 +41,24 @@ const BottomBar = () => {
         {stateModel.state === 'stop' && stateModel.loading && (
           <SystemItem name="Stopping:" value={stateModel.model || '-'} />
         )}
-        {!stateModel.loading && (
+        {!stateModel.loading && downloadedModels.length !== 0 && (
           <SystemItem
             name="Active model:"
             value={
               activeModel?.name || (
-                <Badge themes="secondary">⌘e to active your model</Badge>
+                <Badge themes="secondary">⌘e to show your model</Badge>
               )
             }
           />
+        )}
+        {downloadedModels.length === 0 && stateModel.loading && (
+          <Button
+            size="sm"
+            themes="outline"
+            onClick={() => setMainViewState(MainViewState.ExploreModels)}
+          >
+            Download your first model
+          </Button>
         )}
 
         <DownloadingState />

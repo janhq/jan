@@ -68,7 +68,9 @@ export default function DownloadingState() {
                       themes="outline"
                       size="sm"
                       onClick={() =>
-                        window.coreAPI?.abortDownload(item.fileName)
+                        window.coreAPI?.abortDownload(
+                          `models/${item?.fileName}`
+                        )
                       }
                     >
                       Cancel
