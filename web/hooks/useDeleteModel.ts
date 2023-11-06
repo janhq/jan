@@ -1,15 +1,15 @@
-import { toaster } from '@/containers/Toast'
-import {
-  getDownloadedModels,
-  useGetDownloadedModels,
-} from '@/hooks/useGetDownloadedModels'
-import { pluginManager } from '@plugin/PluginManager'
+import { PluginType } from '@janhq/core'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { Model } from '@janhq/core/lib/types'
-import { PluginType } from '@janhq/core'
+
+import { toaster } from '@/containers/Toast'
+
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
+import { pluginManager } from '@/plugin/PluginManager'
 
 export default function useDeleteModel() {
-  const { setDownloadedModels } = useGetDownloadedModels()
+  const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
 
   const deleteModel = async (model: Model) => {
     await pluginManager
@@ -17,8 +17,7 @@ export default function useDeleteModel() {
       ?.deleteModel(model._id)
 
     // reload models
-    const downloadedModels = await getDownloadedModels()
-    setDownloadedModels(downloadedModels)
+    setDownloadedModels(downloadedModels.filter((e) => e._id !== model._id))
     toaster({
       title: 'Delete a Model',
       description: `Model ${model._id} has been deleted.`,

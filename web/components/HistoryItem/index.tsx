@@ -1,3 +1,4 @@
+import { Model } from '@janhq/core/lib/types'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
@@ -5,7 +6,8 @@ import { twMerge } from 'tailwind-merge'
 import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-import { useGetModelById } from '@/hooks/useGetModelById'
+
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { displayDate } from '@/utils/datetime'
@@ -36,7 +38,7 @@ const HistoryItem: React.FC<Props> = ({
   const { startModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
-  const models = useAtomValue(downloadedModelAtom)
+  const { downloadedModels } = useGetDownloadedModels()
 
   const onClick = async () => {
     if (conversation.modelId == null) {
@@ -44,7 +46,9 @@ const HistoryItem: React.FC<Props> = ({
       return
     }
 
-    const model = models.find((e) => e._id === conversation.modelId)
+    const model = downloadedModels.find(
+      (e: Model) => e._id === conversation.modelId
+    )
     if (model != null) {
       if (activeModel == null) {
         // if there's no active model, we simply load conversation's model

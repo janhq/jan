@@ -8,19 +8,17 @@ import { Switch, Button } from '@janhq/uikit'
 import Loader from '@/containers/Loader'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
-import { pluginManager } from '@plugin/PluginManager'
 
 import { useGetAppVersion } from '@/hooks/useGetAppVersion'
 
 import { formatPluginsName } from '@/utils/converter'
 
-import { plugins, extensionPoints } from '@/plugin'
+import { pluginManager } from '@/plugin'
 
 const PluginCatalog = () => {
   const [activePlugins, setActivePlugins] = useState<any[]>([])
   const [pluginCatalog, setPluginCatalog] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
-  const experimentRef = useRef(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const { version } = useGetAppVersion()
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)

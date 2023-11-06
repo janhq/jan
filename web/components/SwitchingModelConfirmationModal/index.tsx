@@ -3,11 +3,13 @@ import React, { Fragment } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline'
 
+import { Model } from '@janhq/core/lib/types'
 import { useAtom, useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { switchingModelConfirmationModalPropsAtom } from '@/helpers/atoms/Modal.atom'
+
 import { activeAssistantModelAtom } from '@/helpers/atoms/Model.atom'
 
 export type SwitchingModelConfirmationModalProps = {

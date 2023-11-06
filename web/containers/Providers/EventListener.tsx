@@ -1,17 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { PropsWithChildren, useEffect } from 'react'
+import { PropsWithChildren, useEffect, useRef } from 'react'
 
-import { useSetAtom } from 'jotai'
+import { PluginType } from '@janhq/core'
+import { ModelPlugin } from '@janhq/core/lib/plugins'
+
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
-import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
 import EventHandler from './EventHandler'
+
 import { appDownloadProgress } from './Jotai'
-import { pluginManager } from '@plugin/PluginManager'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
-import { downloadingModelsAtom } from './atoms/Model.atom'
+
+import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { pluginManager } from '@/plugin/PluginManager'
 
 export default function EventListenerWrapper({ children }: PropsWithChildren) {
   const setProgress = useSetAtom(appDownloadProgress)
@@ -20,7 +24,7 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
   useEffect(() => {
     modelsRef.current = models
   }, [models])
-  const { setDownloadedModels } = useGetDownloadedModels()
+  const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
   const { setDownloadState, setDownloadStateSuccess } = useDownloadState()
 
   useEffect(() => {
@@ -35,7 +39,8 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       window.electronAPI.onFileDownloadError(
         (_event: string, callback: any) => {
           console.log('Download error', callback)
-          setDownloadStateSuccess(callback.fileName)
+          const fileName = callback.fileName.replace('models/', '')
+          setDownloadStateSuccess(fileName)
         }
       )
 
@@ -51,9 +56,8 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
                 .get<ModelPlugin>(PluginType.Model)
                 ?.saveModel(model)
                 .then(() => {
-                  getDownloadedModels().then((models) => {
-                    setDownloadedModels(models)
-                  })
+                  setDownloadedModels([...downloadedModels, model])
+                  setDownloadedModels(models)
                 })
           }
         }
@@ -78,10 +82,12 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       })
     }
   }, [
+    setDownloadedModels,
     setDownloadState,
     setDownloadStateSuccess,
-    setDownloadedModels,
     setProgress,
+    downloadedModels,
+    models,
   ])
 
   return (

@@ -1,16 +1,23 @@
 import { useEffect } from 'react'
-import { atom } from 'jotai'
 
-import { useAtom } from 'jotai'
-
-const downloadedModelAtom = atom<AssistantModel[]>([])
+const downloadedModelAtom = atom<Model[]>([])
 import { PluginType } from '@janhq/core'
-import { pluginManager } from '@plugin/PluginManager'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { Model } from '@janhq/core/lib/types'
+import { atom, useAtom } from 'jotai'
+
+import { pluginManager } from '@/plugin/PluginManager'
 
 export function useGetDownloadedModels() {
   const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelAtom)
+
+  async function getDownloadedModels(): Promise<Model[]> {
+    const models =
+      ((await pluginManager
+        .get<ModelPlugin>(PluginType.Model)
+        ?.getDownloadedModels()) as Model[]) ?? []
+    return models
+  }
 
   useEffect(() => {
     getDownloadedModels().then((downloadedModels) => {
@@ -19,12 +26,4 @@ export function useGetDownloadedModels() {
   }, [setDownloadedModels])
 
   return { downloadedModels, setDownloadedModels }
-}
-
-export async function getDownloadedModels(): Promise<Model[]> {
-  const models =
-    ((await pluginManager
-      .get<ModelPlugin>(PluginType.Model)
-      ?.getDownloadedModels()) as Model[]) ?? []
-  return models
 }

@@ -9,6 +9,9 @@ import {
   setActiveConvoIdAtom,
   addNewConversationStateAtom,
 } from '@/helpers/atoms/Conversation.atom'
+import { pluginManager } from '@/plugin'
+import { ConversationalPlugin } from '@janhq/core/lib/plugins'
+import { PluginType } from '@janhq/core'
 
 export const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
@@ -33,6 +36,14 @@ export const useCreateConversation = () => {
       hasMore: true,
       waitingForResponse: false,
     })
+
+    pluginManager
+      .get<ConversationalPlugin>(PluginType.Conversational)
+      ?.saveConversation({
+        ...mappedConvo,
+        name: mappedConvo.name ?? '',
+        messages: [],
+      })
     setUserConversations([mappedConvo, ...userConversations])
     setActiveConvoId(mappedConvo._id)
   }

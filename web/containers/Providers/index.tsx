@@ -4,8 +4,6 @@ import { PropsWithChildren, useEffect, useState } from 'react'
 
 import { Toaster } from 'react-hot-toast'
 
-import { PluginService } from '@janhq/core'
-
 import { TooltipProvider } from '@janhq/uikit'
 
 import EventListenerWrapper from '@/containers/Providers/EventListener'
@@ -21,7 +19,7 @@ import {
 } from '@/services/pluginService'
 
 import { ModalWrapper } from '@/helpers/ModalWrapper'
-import { setup, plugins, activationPoints, extensionPoints } from '@/plugin'
+import { pluginManager } from '@/plugin'
 
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)

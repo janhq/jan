@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useMemo } from 'react'
 
+import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 import { Badge, Button } from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'

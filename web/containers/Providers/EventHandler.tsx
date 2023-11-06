@@ -1,26 +1,29 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ReactNode, useEffect } from 'react'
+import { ReactNode, useEffect, useRef } from 'react'
 
-import { events, EventName, NewMessageResponse, DataService } from '@janhq/core'
+import { events, EventName, NewMessageResponse, PluginType } from '@janhq/core'
 
-import { useSetAtom } from 'jotai'
-import { debounce } from 'lodash'
+import { ConversationalPlugin, ModelPlugin } from '@janhq/core/lib/plugins'
+import { Message } from '@janhq/core/lib/types'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
-import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-import useGetUserConversations from '@/hooks/useGetUserConversations'
 
 import {
   addNewMessageAtom,
+  chatMessages,
   updateMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   updateConversationAtom,
   updateConversationWaitingForResponseAtom,
+  userConversationsAtom,
 } from '@/helpers/atoms/Conversation.atom'
 
+import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 import { toChatMessage } from '@/models/ChatMessage'
+import { pluginManager } from '@/plugin'
 
 let currentConversation: Conversation | undefined = undefined
 
@@ -29,9 +32,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const updateMessage = useSetAtom(updateMessageAtom)
   const updateConversation = useSetAtom(updateConversationAtom)
 
-  const { getConversationById } = useGetUserConversations()
-  const { setDownloadedModels } = useGetDownloadedModels()
   const { setDownloadState, setDownloadStateSuccess } = useDownloadState()
+  const { downloadedModels, setDownloadedModels } = useGetDownloadedModels()
 
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
   const models = useAtomValue(downloadingModelsAtom)
@@ -51,8 +53,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         (e) => e._id == message.conversationId
       )
       if (!convo) return
-        const newResponse = toChatMessage(message)
-        addNewMessage(newResponse)
+      const newResponse = toChatMessage(message)
+      addNewMessage(newResponse)
     }
   }
   async function handleMessageResponseUpdate(
@@ -105,6 +107,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       const messagesData = (messagesRef.current ?? [])[convo._id].map<Message>(
         (e: ChatMessage) => {
           return {
+            // eslint-disable-next-line @typescript-eslint/naming-convention
             _id: e.id,
             message: e.text,
             user: e.senderUid,
@@ -117,6 +120,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         .get<ConversationalPlugin>(PluginType.Conversational)
         ?.saveConversation({
           ...convo,
+          // eslint-disable-next-line @typescript-eslint/naming-convention
           _id: convo._id ?? '',
           name: convo.name ?? '',
           messages: messagesData,
@@ -138,9 +142,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           .get<ModelPlugin>(PluginType.Model)
           ?.saveModel(model)
           .then(() => {
-            getDownloadedModels().then((models) => {
-              setDownloadedModels(models)
-            })
+            setDownloadedModels([...downloadedModels, model])
+            setDownloadedModels(models)
           })
     }
   }

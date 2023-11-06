@@ -1,8 +1,8 @@
-import useChatMessages from '@/hooks/useChatMessages'
+import { useAtomValue } from 'jotai'
 
 import ChatItem from '../ChatItem'
-import { useAtomValue } from 'jotai'
-import { getCurrentChatMessagesAtom } from '@helpers/atoms/ChatMessage.atom'
+
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)

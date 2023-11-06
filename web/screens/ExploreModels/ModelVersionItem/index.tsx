@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useMemo } from 'react'
 
+import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 import { Button } from '@janhq/uikit'
 import { Badge } from '@janhq/uikit'
 import { atom, useAtomValue } from 'jotai'
@@ -17,7 +18,6 @@ import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGigabytes } from '@/utils/converter'
-import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 
 type Props = {
   model: ModelCatalog

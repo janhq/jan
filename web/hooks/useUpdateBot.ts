@@ -8,6 +8,7 @@ export default function useUpdateBot() {
 
       for (const [key, value] of Object.entries(updatableField)) {
         if (value !== undefined) {
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           //@ts-ignore
           bot[key] = value
         }

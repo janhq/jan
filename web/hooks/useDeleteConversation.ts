@@ -1,3 +1,5 @@
+import { PluginType } from '@janhq/core'
+import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
@@ -6,10 +8,9 @@ import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
-import { executeSerial } from '@/services/pluginService'
+import { pluginManager } from '../plugin/PluginManager'
 
 import { deleteConversationMessage } from '@/helpers/atoms/ChatMessage.atom'
-import { PluginType } from '@janhq/core'
 import {
   userConversationsAtom,
   getActiveConvoIdAtom,
@@ -19,8 +20,6 @@ import {
   showingProductDetailAtom,
   showingAdvancedPromptAtom,
 } from '@/helpers/atoms/Modal.atom'
-import { pluginManager } from '../plugin/PluginManager'
-import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 
 export default function useDeleteConversation() {
   const [userConversations, setUserConversations] = useAtom(

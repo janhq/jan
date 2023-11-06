@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from 'react'
 
-import { preferences } from '@janhq/core'
-
 import { ScrollArea } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 
@@ -16,13 +14,11 @@ import PreferencePlugins from '@/screens/Settings/CorePlugins/PreferencePlugins'
 
 import { formatPluginsName } from '@/utils/converter'
 
-import { extensionPoints } from '@/plugin'
-
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')
+  const [menus, setMenus] = useState<any[]>([])
   const [preferenceItems, setPreferenceItems] = useState<any[]>([])
   const [preferenceValues, setPreferenceValues] = useState<any[]>([])
-  const [menus, setMenus] = useState<any[]>([])
 
   useEffect(() => {
     const menu = ['Appearance']
@@ -56,17 +52,15 @@ const SettingsScreen = () => {
       // })
     }
     getActivePluginPreferences()
-  }, [preferenceValues])
+  }, [])
 
   const preferencePlugins = preferenceItems
     .map((x) => x.pluginName)
     .filter((x, i) => {
-      return preferenceItems.map((x) => x.pluginName).indexOf(x) === i
+      //     return prefere/nceItems.map((x) => x.pluginName).indexOf(x) === i
     })
 
-  const [activePreferencePlugin, setActivePreferencePlugin] = useState(
-    preferencePlugins[0]
-  )
+  const [activePreferencePlugin, setActivePreferencePlugin] = useState('')
 
   const handleShowOptions = (menu: string) => {
     switch (menu) {

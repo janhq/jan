@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
 
+import { ModelVersion } from '@janhq/core/lib/types'
+
 import {
   Modal,
   ModalTrigger,
@@ -65,9 +67,12 @@ export default function ModalCancelDownload({
             <ModalClose asChild>
               <Button
                 themes="danger"
-                onClick={() =>
-                  window.coreAPI?.abortDownload(downloadState?.fileName)
-                }
+                onClick={() => {
+                  if (downloadState?.fileName)
+                    window.coreAPI?.abortDownload(
+                      `models/${downloadState?.fileName}`
+                    )
+                }}
               >
                 Yes
               </Button>

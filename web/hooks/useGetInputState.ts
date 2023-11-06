@@ -1,23 +1,22 @@
 import { useEffect, useState } from 'react'
 
+import { Model } from '@janhq/core/lib/types'
 import { useAtomValue } from 'jotai'
 
+import { useActiveModel } from './useActiveModel'
 import { useGetDownloadedModels } from './useGetDownloadedModels'
-import { Model } from '@janhq/core/lib/types'
 
 import { currentConversationAtom } from '@/helpers/atoms/Conversation.atom'
-import { activeAssistantModelAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useGetInputState() {
   const [inputState, setInputState] = useState<InputType>('loading')
   const currentConvo = useAtomValue(currentConversationAtom)
-  const activeModel = useAtomValue(activeModelAtom)
+  const { activeModel } = useActiveModel()
   const { downloadedModels } = useGetDownloadedModels()
 
   const handleInputState = (
     convo: Conversation | undefined,
-    currentModel: Model | undefined,
-    models: Model[]
+    currentModel: Model | undefined
   ) => {
     if (convo == null) return
     if (currentModel == null) {
@@ -47,7 +46,7 @@ export default function useGetInputState() {
   }
 
   useEffect(() => {
-    handleInputState(currentConvo, activeModel, downloadedModels)
+    handleInputState(currentConvo, activeModel)
   }, [currentConvo, activeModel, downloadedModels])
 
   return { inputState, currentConvo }

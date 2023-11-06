@@ -5,21 +5,27 @@ import {
   PluginType,
   events,
 } from '@janhq/core'
-import { toChatMessage } from '@/models/ChatMessage'
+
+import { InferencePlugin } from '@janhq/core/lib/plugins'
+
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
-import { useCreateConversation } from '@/hooks/useCreateConversation'
-import { addNewMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { generateMessageId } from '@/utils/message'
+
+import {
+  addNewMessageAtom,
+  getCurrentChatMessagesAtom,
+} from '@/helpers/atoms/ChatMessage.atom'
 import {
   currentConversationAtom,
   updateConversationAtom,
   updateConversationWaitingForResponseAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { toChatMessage } from '@/models/ChatMessage'
-import { pluginManager } from '@plugin/PluginManager'
+
+import { pluginManager } from '@/plugin/PluginManager'
 
 export default function useSendChatMessage() {
   // const { activeModel } = useActiveModel()
@@ -31,9 +37,9 @@ export default function useSendChatMessage() {
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
 
-  let timeout: any | undefined = undefined
+  let timeout: NodeJS.Timeout | undefined = undefined
 
-  function updateConvSummary(newMessage: any) {
+  function updateConvSummary(newMessage: NewMessageRequest) {
     if (timeout) {
       clearTimeout(timeout)
     }
@@ -90,6 +96,7 @@ export default function useSendChatMessage() {
         } as MessageHistory,
       ])
     const newMessage: NewMessageRequest = {
+      // eslint-disable-next-line @typescript-eslint/naming-convention
       _id: generateMessageId(),
       conversationId: convoId,
       message: prompt,
@@ -111,7 +118,7 @@ export default function useSendChatMessage() {
       }
 
       updateConversation(updatedConv)
-    } else {
+    } else if (currentConvo) {
       const updatedConv: Conversation = {
         ...currentConvo,
         lastMessage: prompt,

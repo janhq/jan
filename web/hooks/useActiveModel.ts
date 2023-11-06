@@ -1,21 +1,24 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { InferenceService } from '@janhq/core'
+import { PluginType } from '@janhq/core'
+import { InferencePlugin } from '@janhq/core/lib/plugins'
+import { Model } from '@janhq/core/lib/types'
+
 import { atom, useAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { executeSerial } from '@/services/pluginService'
+import { useGetDownloadedModels } from './useGetDownloadedModels'
 
-import { useGetModelById } from './useGetModelById'
+import { pluginManager } from '@/plugin'
 
-const activeAssistantModelAtom = atom<AssistantModel | undefined>(undefined)
+const activeAssistantModelAtom = atom<Model | undefined>(undefined)
 
 const stateModelAtom = atom({ state: 'start', loading: false, model: '' })
 
 export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom)
   const [stateModel, setStateModel] = useAtom(stateModelAtom)
-  const { getModelById } = useGetModelById()
+  const { downloadedModels } = useGetDownloadedModels()
 
   const startModel = async (modelId: string) => {
     if (activeModel && activeModel._id === modelId) {
@@ -25,7 +28,7 @@ export function useActiveModel() {
 
     setStateModel({ state: 'start', loading: true, model: modelId })
 
-    const model = await getModelById(modelId)
+    const model = await downloadedModels.find((e) => e._id === modelId)
 
     if (!modelId) {
       alert(`Model ${modelId} not found! Please re-download the model first.`)
@@ -40,7 +43,7 @@ export function useActiveModel() {
     const currentTime = Date.now()
     console.debug('Init model: ', modelId)
 
-    const res = await initModel(modelId)
+    const res = await initModel(`models/${modelId}`)
     if (res?.error) {
       const errorMessage = `Failed to init model: ${res.error}`
       console.error(errorMessage)
@@ -72,7 +75,8 @@ export function useActiveModel() {
   const stopModel = async (modelId: string) => {
     setStateModel({ state: 'stop', loading: true, model: modelId })
     setTimeout(async () => {
-      await executeSerial(InferenceService.StopModel, modelId)
+      pluginManager.get<InferencePlugin>(PluginType.Inference)?.stopModel()
+
       setActiveModel(undefined)
       setStateModel({ state: 'start', loading: false, model: '' })
       toaster({
@@ -86,5 +90,7 @@ export function useActiveModel() {
 }
 
 const initModel = async (modelId: string): Promise<any> => {
-  return executeSerial(InferenceService.InitModel, modelId)
+  return pluginManager
+    .get<InferencePlugin>(PluginType.Inference)
+    ?.initModel(modelId)
 }

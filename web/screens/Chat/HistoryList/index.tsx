@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 
+import { Conversation, Model } from '@janhq/core/lib/types'
 import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -7,7 +8,7 @@ import { GalleryHorizontalEndIcon } from 'lucide-react'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useCreateConversation } from '@/hooks/useCreateConversation'
-import { useGetModelById } from '@/hooks/useGetModelById'
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useGetUserConversations from '@/hooks/useGetUserConversations'
 
 import { displayDate } from '@/utils/datetime'
@@ -25,8 +26,8 @@ export default function HistoryList() {
   const { activeModel, startModel } = useActiveModel()
   const { requestCreateConvo } = useCreateConversation()
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
-  const { getModelById } = useGetModelById()
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
+  const { downloadedModels } = useGetDownloadedModels()
 
   useEffect(() => {
     getUserConversations()
@@ -34,7 +35,7 @@ export default function HistoryList() {
   }, [conversations])
 
   const handleClickConversation = () => {
-    if (activeModel) requestCreateConvo(activeModel as AssistantModel)
+    if (activeModel) requestCreateConvo(activeModel as Model)
     return
   }
 
@@ -43,7 +44,7 @@ export default function HistoryList() {
       console.debug('modelId is undefined')
       return
     }
-    const model = await getModelById(convo.modelId)
+    const model = downloadedModels.find((e) => e._id === convo.modelId)
     if (convo == null) {
       console.debug('modelId is undefined')
       return

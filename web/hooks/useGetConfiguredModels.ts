@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
-import { ModelCatalog } from '@janhq/core/lib/types'
-import { pluginManager } from '@plugin/PluginManager'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
+
 import { PluginType } from '@janhq/core'
-import { dummyModel } from '@utils/dummy'
+import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { ModelCatalog } from '@janhq/core/lib/types'
 
-import { executeSerial } from '@/services/pluginService'
+import { dummyModel } from '@/utils/dummy'
 
-export async function getConfiguredModels(): Promise<Product[]> {
-  return executeSerial(ModelManagementService.GetConfiguredModels)
+import { pluginManager } from '@/plugin/PluginManager'
+
+export async function getConfiguredModels(): Promise<ModelCatalog[]> {
+  return (
+    pluginManager.get<ModelPlugin>(PluginType.Model)?.getConfiguredModels() ??
+    []
+  )
 }
 
 export function useGetConfiguredModels() {

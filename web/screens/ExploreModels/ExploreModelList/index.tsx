@@ -1,6 +1,10 @@
+import { ModelCatalog } from '@janhq/core/lib/types'
+
 import ExploreModelItem from '@/screens/ExploreModels/ExploreModelItem'
 
-
+type Props = {
+  models: ModelCatalog[]
+}
 
 export default function ExploreModelList(props: Props) {
   const { models } = props

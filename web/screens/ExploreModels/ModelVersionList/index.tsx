@@ -1,5 +1,6 @@
-import ModelVersionItem from '../ModelVersionItem'
 import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
+
+import ModelVersionItem from '../ModelVersionItem'
 
 type Props = {
   model: ModelCatalog

@@ -4,10 +4,10 @@ import Loader from '@/containers/Loader'
 
 import { useGetConfiguredModels } from '@/hooks/useGetConfiguredModels'
 
-import ExploreModelList from '@/screens/ExploreModels/ExploreModelList'
+import ExploreModelList from './ExploreModelList'
 
-import { getConfiguredModels } from '@/hooks/useGetDownloadedModels'
-
+const ExploreModelsScreen = () => {
+  const { loading, models } = useGetConfiguredModels()
   if (loading) return <Loader description="loading ..." />
 
   return (

@@ -1,16 +1,26 @@
 import { PluginType } from '@janhq/core'
-import { Model, ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
-import { pluginManager } from '@plugin/PluginManager'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { Model, ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
+
+import { useAtom } from 'jotai'
+
 import { useDownloadState } from './useDownloadState'
+
+import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { pluginManager } from '@/plugin/PluginManager'
+
 export default function useDownloadModel() {
   const { setDownloadState } = useDownloadState()
+  const [downloadingModels, setDownloadingModels] = useAtom(
+    downloadingModelsAtom
+  )
 
   const assistanModel = (
     model: ModelCatalog,
     modelVersion: ModelVersion
   ): Model => {
     return {
+      // eslint-disable-next-line @typescript-eslint/naming-convention
       _id: modelVersion._id,
       name: modelVersion.name,
       quantMethod: modelVersion.quantMethod,
@@ -59,7 +69,9 @@ export default function useDownloadModel() {
 
     modelVersion.startDownloadAt = Date.now()
     const assistantModel = assistanModel(model, modelVersion)
-    setModelsAtom([...models, assistantModel])
+
+    setDownloadingModels([...downloadingModels, assistantModel])
+
     await pluginManager
       .get<ModelPlugin>(PluginType.Model)
       ?.downloadModel(assistantModel)

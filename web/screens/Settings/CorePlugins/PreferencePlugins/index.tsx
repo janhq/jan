@@ -1,5 +1,4 @@
-import React from 'react'
-
+/* eslint-disable @typescript-eslint/no-explicit-any */
 type Props = {
   pluginName: string
   preferenceValues: any
@@ -9,8 +8,6 @@ type Props = {
 import { useForm } from 'react-hook-form'
 
 import { zodResolver } from '@hookform/resolvers/zod'
-
-import { PluginService, preferences } from '@janhq/core'
 
 import {
   Form,
@@ -50,6 +47,8 @@ const PreferencePlugins = (props: Props) => {
 
   const onSubmit = async (values: z.infer<typeof FormSchema>) => {
     for (const [key, value] of Object.entries(values)) {
+      // await preferences.set(pluginName, key, value)
+      // await execute(PluginService.OnPreferencesUpdate, {})
     }
     toaster({
       title: formatPluginsName(pluginName),

@@ -2,6 +2,16 @@
 module.exports = {
   parser: '@typescript-eslint/parser',
   plugins: ['@typescript-eslint', 'react', 'react-hooks'],
+  ignorePatterns: [
+    'build',
+    'dist',
+    'node_modules',
+    'renderer',
+    '.next',
+    '_next',
+    '*.md',
+    'out',
+  ],
   extends: [
     'next/core-web-vitals',
     'eslint:recommended',

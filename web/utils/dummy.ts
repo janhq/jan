@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 
 export const dummyModel: ModelCatalog = {
