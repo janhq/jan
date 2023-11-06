@@ -14,7 +14,7 @@ import {
 import {
   MessageCircleIcon,
   SettingsIcon,
-  LayoutGridIcon,
+  DatabaseIcon,
   CpuIcon,
   BookOpenIcon,
 } from 'lucide-react'
@@ -53,7 +53,7 @@ export default function CommandSearch() {
     },
     {
       name: 'My Models',
-      icon: <LayoutGridIcon size={16} className="mr-3 text-muted-foreground" />,
+      icon: <DatabaseIcon size={16} className="mr-3 text-muted-foreground" />,
       state: MainViewState.MyModels,
     },
     {
