@@ -6,6 +6,7 @@ import {
 } from '@helpers/atoms/Conversation.atom'
 import { Model } from '@janhq/core/lib/types'
 import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
+import { generateConversationId } from '@utils/conversation'
 
 const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
@@ -31,7 +32,7 @@ const useCreateConversation = () => {
   const requestCreateConvo = async (model: Model, bot?: Bot) => {
     const conversationName = model.name
     const mappedConvo: Conversation = {
-      _id: `jan-${Date.now()}`,
+      _id: generateConversationId(),
       modelId: model._id,
       name: conversationName,
       createdAt: new Date().toISOString(),

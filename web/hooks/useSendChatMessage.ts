@@ -19,6 +19,7 @@ import {
 } from '@helpers/atoms/Conversation.atom'
 import { pluginManager } from '@plugin/PluginManager'
 import { InferencePlugin } from '@janhq/core/lib/plugins'
+import { generateMessageId } from '@utils/message'
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom)
@@ -88,7 +89,7 @@ export default function useSendChatMessage() {
         } as MessageHistory,
       ])
     const newMessage: NewMessageRequest = {
-      _id: `message-${Date.now()}`,
+      _id: generateMessageId(),
       conversationId: convoId,
       message: prompt,
       user: 'user',
