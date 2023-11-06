@@ -1,8 +1,4 @@
-type PrimaryColor =
-  | 'primary-blue'
-  | 'primary-green'
-  | 'primary-purple'
-  | 'primary-yellow'
+type PrimaryColor = 'primary-blue' | 'primary-green' | 'primary-purple'
 
 type UserConfig = {
   gettingStartedShow?: boolean

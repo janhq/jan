@@ -31,9 +31,6 @@
   --background: 0 0% 100%;
   --foreground: 20 14.3% 4.1%;
 
-  --card: 0 0% 100%;
-  --card-foreground: 20 14.3% 4.1%;
-
   --muted: 60 4.8% 95.9%;
   --muted-foreground: 25 5.3% 44.7%;
 
@@ -47,20 +44,12 @@
   --input: 20 5.9% 90%;
   --ring: 20 14.3% 4.1%;
 
-  .primary-yellow {
-    --primary: 47.9 95.8% 53.1%;
-    --primary-foreground: 26 83.3% 14.1%;
+  .primary-blue {
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
 
     --secondary: 60 4.8% 95.9%;
     --secondary-foreground: 24 9.8% 10%;
-  }
-
-  .primary-blue {
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
   }
 
   .primary-green {
@@ -84,9 +73,6 @@
   --background: 20 14.3% 4.1%;
   --foreground: 60 9.1% 97.8%;
 
-  --card: 20 14.3% 4.1%;
-  --card-foreground: 60 9.1% 97.8%;
-
   --muted: 12 6.5% 15.1%;
   --muted-foreground: 24 5.4% 63.9%;
 
@@ -100,20 +86,12 @@
   --input: 12 6.5% 15.1%;
   --ring: 35.5 91.7% 32.9%;
 
-  .primary-yellow {
-    --primary: 47.9 95.8% 53.1%;
-    --primary-foreground: 26 83.3% 14.1%;
+  .primary-blue {
+    --primary: 221 83% 53%;
+    --primary-foreground: 222.2 47.4% 11.2%;
 
     --secondary: 12 6.5% 15.1%;
     --secondary-foreground: 60 9.1% 97.8%;
-  }
-
-  .primary-blue {
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
   }
 
   .primary-green {

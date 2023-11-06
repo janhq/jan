@@ -1,3 +1,5 @@
+import { PluginType } from '@janhq/core'
+import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 import { Model } from '@janhq/core/lib/types'
 
 import { useAtom, useSetAtom } from 'jotai'
@@ -10,8 +12,6 @@ import {
   addNewConversationStateAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '@/plugin'
-import { ConversationalPlugin } from '@janhq/core/lib/plugins'
-import { PluginType } from '@janhq/core'
 
 export const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
@@ -20,7 +20,7 @@ export const useCreateConversation = () => {
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const addNewConvoState = useSetAtom(addNewConversationStateAtom)
 
-  const requestCreateConvo = async (model: Model, bot?: Bot) => {
+  const requestCreateConvo = async (model: Model) => {
     const conversationName = model.name
     const mappedConvo: Conversation = {
       // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -29,7 +29,6 @@ export const useCreateConversation = () => {
       name: conversationName,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      botId: bot?._id ?? undefined,
     }
 
     addNewConvoState(mappedConvo._id, {

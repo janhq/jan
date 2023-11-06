@@ -10,10 +10,6 @@ type PrimaryColorOption = {
 
 const primaryColorOptions: PrimaryColorOption[] = [
   {
-    value: 'primary-yellow',
-    class: 'bg-yellow-500',
-  },
-  {
     value: 'primary-blue',
     class: 'bg-blue-500',
   },

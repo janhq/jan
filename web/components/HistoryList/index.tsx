@@ -21,6 +21,7 @@ const HistoryList: React.FC = () => {
 
   useEffect(() => {
     getUserConversations()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (

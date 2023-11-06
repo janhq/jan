@@ -11,7 +11,7 @@ import { motion as m } from 'framer-motion'
 import {
   MessageCircleIcon,
   SettingsIcon,
-  LayoutGridIcon,
+  DatabaseIcon,
   CpuIcon,
   BookOpenIcon,
 } from 'lucide-react'
@@ -38,12 +38,12 @@ export default function RibbonNav() {
   const primaryMenus = [
     {
       name: 'Getting Started',
-      icon: <BookOpenIcon size={22} className="flex-shrink-0" />,
+      icon: <BookOpenIcon size={20} className="flex-shrink-0" />,
       state: MainViewState.Welcome,
     },
     {
       name: 'Chat',
-      icon: <MessageCircleIcon size={22} className="flex-shrink-0" />,
+      icon: <MessageCircleIcon size={20} className="flex-shrink-0" />,
       state: MainViewState.Chat,
     },
   ]
@@ -53,17 +53,17 @@ export default function RibbonNav() {
     ...(experimentalFeatureEnabed ? [] : []),
     {
       name: 'Explore Models',
-      icon: <CpuIcon size={22} className="flex-shrink-0" />,
+      icon: <CpuIcon size={20} className="flex-shrink-0" />,
       state: MainViewState.ExploreModels,
     },
     {
       name: 'My Models',
-      icon: <LayoutGridIcon size={22} className="flex-shrink-0" />,
+      icon: <DatabaseIcon size={20} className="flex-shrink-0" />,
       state: MainViewState.MyModels,
     },
     {
       name: 'Settings',
-      icon: <SettingsIcon size={22} className="flex-shrink-0" />,
+      icon: <SettingsIcon size={20} className="flex-shrink-0" />,
       state: MainViewState.Setting,
     },
   ]

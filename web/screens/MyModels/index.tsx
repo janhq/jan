@@ -73,7 +73,9 @@ const MyModelsScreen = () => {
                         </Avatar>
                       </div>
                       <div>
-                        <h2 className="mb-1 font-medium">{model.author}</h2>
+                        <h2 className="mb-1 font-medium capitalize">
+                          {model.author}
+                        </h2>
                         <p className="line-clamp-1">{model.productName}</p>
                         <div className="mt-2 flex items-center gap-2">
                           <Badge themes="secondary">v{model.version}</Badge>

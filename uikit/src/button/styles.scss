@@ -4,7 +4,7 @@
   @apply disabled:pointer-events-none disabled:opacity-50;
 
   &-primary {
-    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+    @apply bg-primary hover:bg-primary/90 text-white;
   }
 
   &-danger {

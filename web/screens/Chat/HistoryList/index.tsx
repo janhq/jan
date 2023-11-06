@@ -74,7 +74,10 @@ export default function HistoryList() {
 
       {conversations.length === 0 ? (
         <div className="px-4 py-8 text-center">
-          <GalleryHorizontalEndIcon size={24} className="mx-auto mb-3" />
+          <GalleryHorizontalEndIcon
+            size={24}
+            className="mx-auto mb-3 text-muted-foreground"
+          />
           <h2 className="font-semibold">No Chat History</h2>
           <p className="mt-1 text-xs">Get started by creating a new chat</p>
         </div>
@@ -84,7 +87,7 @@ export default function HistoryList() {
             <div
               key={i}
               className="relative flex cursor-pointer flex-col border-b border-border px-4 py-2 transition-colors hover:bg-secondary/10"
-              onClick={() => handleActiveModel(convo)}
+              onClick={() => handleActiveModel(convo as Conversation)}
             >
               <p className="mb-1 line-clamp-1 text-xs leading-5">
                 {convo.updatedAt &&
