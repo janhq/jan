@@ -98,7 +98,7 @@ const ChatScreen = () => {
           )}
 
           {isEnableChat ? (
-            <div className="flex h-full w-full overflow-y-auto p-4">
+            <div className="flex h-full w-full">
               <ChatBody />
             </div>
           ) : (
