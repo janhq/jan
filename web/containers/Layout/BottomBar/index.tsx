@@ -39,7 +39,7 @@ const BottomBar = () => {
             name="Active model:"
             value={
               activeModel?.name || (
-                <Badge themes="secondary">⌘e to show your model</Badge>
+                <Badge themes="secondary">⌘e to active your model</Badge>
               )
             }
           />

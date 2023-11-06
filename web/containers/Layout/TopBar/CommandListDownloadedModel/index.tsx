@@ -7,6 +7,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  Badge,
 } from '@janhq/uikit'
 
 import { DatabaseIcon, CpuIcon } from 'lucide-react'
@@ -19,7 +20,6 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 export default function CommandListDownloadedModel() {
   const { setMainViewState } = useMainViewState()
-
   const { downloadedModels } = useGetDownloadedModels()
   const { activeModel, startModel, stopModel } = useActiveModel()
 
@@ -70,7 +70,10 @@ export default function CommandListDownloadedModel() {
                       size={16}
                       className="mr-3 text-muted-foreground"
                     />
-                    <span>{model.name}</span>
+                    <div className="flex w-full items-center justify-between">
+                      <span>{model.name}</span>
+                      {activeModel && <Badge>Active</Badge>}
+                    </div>
                   </CommandItem>
                 )
               })}
