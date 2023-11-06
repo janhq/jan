@@ -6,8 +6,9 @@ import {
   events,
 } from '@janhq/core'
 
-import { InferencePlugin } from '@janhq/core/lib/plugins'
+import { ConversationalPlugin, InferencePlugin } from '@janhq/core/lib/plugins'
 
+import { Message } from '@janhq/core/lib/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
@@ -66,6 +67,22 @@ export default function useSendChatMessage() {
               summary: result.message,
             }
             updateConversation(updatedConv)
+            pluginManager
+              .get<ConversationalPlugin>(PluginType.Conversational)
+              ?.saveConversation({
+                ...updatedConv,
+                name: updatedConv.name ?? '',
+                messages: currentMessages.map<Message>((e: ChatMessage) => {
+                  return {
+                    // eslint-disable-next-line @typescript-eslint/naming-convention
+                    _id: e.id,
+                    message: e.text,
+                    user: e.senderUid,
+                    updatedAt: new Date(e.createdAt).toISOString(),
+                    createdAt: new Date(e.createdAt).toISOString(),
+                  }
+                }),
+              })
           }
         }, 1000)
       }
