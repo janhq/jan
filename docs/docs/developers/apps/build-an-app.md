@@ -2,8 +2,6 @@
 title: Build an app
 ---
 
-# Build and publish an app
-
 You can build a custom AI application on top of Jan.
 In this tutorial, you'll build a sample app and load it into Jan Desktop.
 
@@ -23,20 +21,38 @@ To complete this tutorial, you'll need:
 - A local development environment for [Node.js](https://node.js.org/en/about/).
 - A code editor, such as [Visual Studio Code](https://code.visualstudio.com/).
 
-> When developing apps, one mistake can lead to unintended changes to your app. Please backup your data.
+:::note
+When developing apps, one mistake can lead to unintended changes to your app. **Please backup your data.**
+:::
 
 ## Development
 
-### Step 1: Download the sample app
+- **Step 1:** Download the sample app
 
-- Go to [Jan sample app](https://github.com/janhq/jan-sample-app)
-- Select `Use this template button` at the top of the repository
-- Select `Create a new repository`
-- Select an owner and name for your new repository
-- Click `Create repository`
-- Git clone your new repository
+  - Go to [Jan sample app](https://github.com/janhq/jan-sample-app)
+  - Select `Use this template button` at the top of the repository
+  - Select `Create a new repository`
+  - Select an owner and name for your new repository
+  - Click `Create repository`
+  - Git clone your new repository
 
-### Step 2: Installation
+- **Step 2:** Installation
+
+  - Install the dependencies :hammer_and_wrench:
+
+    ```bash
+    npm install
+    ```
+
+  - Package the TypeScript for distribution :building_construction: 
+
+    ```bash
+    npm run bundle
+    ```
+
+  - Check your artifact :white_check_mark:
+
+    There will be a `.tgz` file in your `/src` directory now
 
 :::note
 You'll need to have a reasonably modern version of
@@ -47,40 +63,24 @@ root of your repository to install the version specified in
 [`package.json`](./package.json). Otherwise, 20.x or later should work!
 :::
 
-1. :hammer_and_wrench: Install the dependencies
+- **Step 3:** Update the App Manifest
 
-   ```bash
-   npm install
-   ```
+  The [`package.json`](package.json) file lets you define your apps metadata, e.g.
+  app name, main entry, description and version.
 
-1. :building_construction: Package the TypeScript for distribution
+- **Step 4:** Implementation
 
-   ```bash
-   npm run bundle
-   ```
+  The `src/` directory is the heart of your app! You can replace the contents of this directory with your own code.
 
-1. :white_check_mark: Check your artifact
+  - `index.ts` is your app's mainentrypoint. You can access the Web runtime and define UI in this file.
+  - `module.ts` is your Node runtime in which functions get executed. You should define core logic and compute-intensive workloads in this file.
+  - `index.ts` and `module.ts` interact with each other via RPC (See [Information flow](./app-anatomy.md#information-flow)) via [`invokePluginFunc`](../../reference/01_init.md#invokepluginfunc)
 
-   There will be a `.tgz` file in your `/src` directory now
+  - Import the Jan SDK
 
-### Step 3: Update the App Manifest
-
-The [`package.json`](package.json) file lets you define your apps metadata, e.g.
-app name, main entry, description and version.
-
-### Step 4: Implementation
-
-The [`src/`](./src/) directory is the heart of your app! You can replace the contents of this directory with your own code.
-
-- `index.ts` is your app's mainentrypoint. You can access the Web runtime and define UI in this file.
-- `module.ts` is your Node runtime in which functions get executed. You should define core logic and compute-intensive workloads in this file.
-- `index.ts` and `module.ts` interact with each other via RPC (See [Information flow](./app-anatomy.md#information-flow)) via [`invokePluginFunc`](../../reference/01_init.md#invokepluginfunc)
-
-Import the Jan SDK
-
-```typescript
-import { core } from "@janhq/core";
-```
+  ```typescript
+  import { core } from "@janhq/core";
+  ```
 
 #### index.ts
 

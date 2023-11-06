@@ -2,4 +2,6 @@
 title: "RAG Plugin"
 ---
 
-Coming soon.
+:::info
+Coming soon!
+:::

@@ -2,6 +2,10 @@
 title: "init"
 ---
 
+:::warning
+There will be substantial updates to this feature shortly that will disrupt its current functionality or compatibility.
+:::
+
 `init` is the entrypoint for your application and its custom logic. `init` is a reserved function that Jan will look for to initialize your application.
 
 ## Usage

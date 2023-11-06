@@ -2,6 +2,10 @@
 title: "store"
 ---
 
+:::warning
+There will be substantial updates to this feature shortly that will disrupt its current functionality or compatibility.
+:::
+
 `store` is a helper object for working with Jan app's local storage database.
 
 By default, Jan ships with a [pouchDB](https://pouchdb.com/) client side noSQL db to persist usage state.

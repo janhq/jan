@@ -2,6 +2,10 @@
 title: "preferences"
 ---
 
+:::warning
+There will be substantial updates to this feature shortly that will disrupt its current functionality or compatibility.
+:::
+
 `preferences` is a helper object for adding settings fields to your app.
 
 ## Usage

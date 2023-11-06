@@ -2,6 +2,10 @@
 title: "filesystem"
 ---
 
+:::warning
+There will be substantial updates to this feature shortly that will disrupt its current functionality or compatibility.
+:::
+
 The core package also provides functions to perform file operations. Here are a couple of examples:
 
 ## Usage

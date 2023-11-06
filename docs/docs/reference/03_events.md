@@ -2,6 +2,10 @@
 title: "events"
 ---
 
+:::warning
+There will be substantial updates to this feature shortly that will disrupt its current functionality or compatibility.
+:::
+
 `events` lets you receive events about actions that take place in the app, like when a user sends a new message.
 
 You can then implement custom logic handlers for such events.
