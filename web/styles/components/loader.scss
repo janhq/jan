@@ -11,7 +11,7 @@
   top: 50%;
   position: absolute;
   width: 100%;
-  color: #fff;
+  color: white;
   padding: 0 100px;
   text-align: center;
 }
@@ -22,22 +22,22 @@
   margin: 0 4px;
 }
 
-@-webkit-keyframes loaderDot {
+@keyframes loaderDot {
   0% {
     opacity: 0;
-    -webkit-transform: translateX(-300px);
+    transform: translateX(-300px);
   }
   33% {
     opacity: 1;
-    -webkit-transform: translateX(0px);
+    transform: translateX(0px);
   }
   66% {
     opacity: 1;
-    -webkit-transform: translateX(0px);
+    transform: translateX(0px);
   }
   100% {
     opacity: 0;
-    -webkit-transform: translateX(300px);
+    transform: translateX(300px);
   }
 }
 

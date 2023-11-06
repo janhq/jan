@@ -110,7 +110,7 @@ const PluginCatalog = () => {
     }
   }
 
-  if (isLoading) return <Loader description="Installing ..." />
+  if (!isLoading) return <Loader description="Installing ..." />
 
   return (
     <div className="block w-full">
