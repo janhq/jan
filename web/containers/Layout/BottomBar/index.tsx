@@ -51,7 +51,7 @@ const BottomBar = () => {
             }
           />
         )}
-        {downloadedModels.length === 0 && stateModel.loading && (
+        {downloadedModels.length === 0 && !stateModel.loading && (
           <Button
             size="sm"
             themes="outline"
