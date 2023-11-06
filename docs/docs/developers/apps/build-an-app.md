@@ -38,14 +38,14 @@ To complete this tutorial, you'll need:
 
 ### Step 2: Installation
 
-> [!NOTE]
->
-> You'll need to have a reasonably modern version of
-> [Node.js](https://nodejs.org) handy. If you are using a version manager like
-> [`nodenv`](https://github.com/nodenv/nodenv) or
-> [`nvm`](https://github.com/nvm-sh/nvm), you can run `nodenv install` in the
-> root of your repository to install the version specified in
-> [`package.json`](./package.json). Otherwise, 20.x or later should work!
+:::note
+You'll need to have a reasonably modern version of
+[Node.js](https://nodejs.org) handy. If you are using a version manager like
+[`nodenv`](https://github.com/nodenv/nodenv) or
+[`nvm`](https://github.com/nvm-sh/nvm), you can run `nodenv install` in the
+root of your repository to install the version specified in
+[`package.json`](./package.json). Otherwise, 20.x or later should work!
+:::
 
 1. :hammer_and_wrench: Install the dependencies
 
@@ -61,7 +61,7 @@ To complete this tutorial, you'll need:
 
 1. :white_check_mark: Check your artifact
 
-   There will be a tgz file in your src directory now
+   There will be a `.tgz` file in your `/src` directory now
 
 ### Step 3: Update the App Manifest
 
