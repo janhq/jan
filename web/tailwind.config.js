@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/naming-convention */
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const defaultTheme = require('tailwindcss/defaultTheme')
+
 /** @type {import('tailwindcss').Config} */
+
 module.exports = {
   darkMode: 'class',
   content: [
@@ -46,7 +50,9 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        sans: ['var(--font-inter)'],
+        fontFamily: {
+          sans: ['Inter var', ...defaultTheme.fontFamily.sans],
+        },
       },
       colors: {
         'background': 'hsl(var(--background))',
