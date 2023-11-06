@@ -2,13 +2,9 @@
   "name": "@janhq/uikit",
   "version": "0.1.0",
   "license": "MIT",
-  "sideEffects": false,
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
-  "exports": {
-    ".": "./dist/index.js"
-  },
   "files": [
     "dist/**"
   ],
@@ -16,7 +12,7 @@
     "build:styles": "postcss src/main.scss -o dist/index.css --use postcss-import",
     "build:react": "tsup src/index.{ts,tsx} --format cjs,esm --dts --external react react-dom --minify terser --splitting --sourcemap",
     "dev:react": "tsup src/index.{ts,tsx} --format cjs,esm --watch --dts",
-    "dev:styles": "postcss src/main.scss -o dist/index.css -w --use postcss-import",
+    "dev:styles": "postcss src/main.scss -o dist/index.css -u postcss-import -w",
     "build": "yarn build:styles && yarn build:react",
     "dev": "concurrently --kill-others \"yarn dev:styles\" \"yarn dev:react\""
   },

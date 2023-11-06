@@ -9,7 +9,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <input
         type={type}
-        className={twMerge('input', className)}
+        className={twMerge('input test', className)}
         ref={ref}
         {...props}
       />
