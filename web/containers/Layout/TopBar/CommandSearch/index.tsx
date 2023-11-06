@@ -94,7 +94,6 @@ export default function CommandSearch() {
           ⌘ j
         </div>
       </div>
-
       <CommandModal open={open} onOpenChange={setOpen}>
         <CommandInput placeholder="Type a command or search..." />
         <CommandList>

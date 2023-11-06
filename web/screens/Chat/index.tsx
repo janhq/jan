@@ -1,8 +1,6 @@
 import { Fragment } from 'react'
 
-import { ScrollArea } from '@janhq/uikit'
-
-import { Input, Button } from '@janhq/uikit'
+import { ScrollArea, Input, Button, Badge } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
 import { Trash2Icon } from 'lucide-react'
@@ -96,12 +94,10 @@ const ChatScreen = () => {
                 <Fragment>
                   <h1 className="text-lg font-medium">{`You don’t have any actively running models`}</h1>
                   <p className="mt-1">{`Please start a downloaded model in My Models page to use this feature.`}</p>
-                  <Button
-                    className="mt-4"
-                    onClick={() => setMainViewState(MainViewState.MyModels)}
-                  >
-                    Go to My Model
-                  </Button>
+
+                  <Badge className="mt-4" themes="secondary">
+                    ⌘e to show your model
+                  </Badge>
                 </Fragment>
               )}
             </div>

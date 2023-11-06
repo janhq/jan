@@ -1,3 +1,4 @@
+import CommandListDownloadedModel from '@/containers/Layout/TopBar/CommandListDownloadedModel'
 import CommandSearch from '@/containers/Layout/TopBar/CommandSearch'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
@@ -12,6 +13,8 @@ const TopBar = () => {
           <span className="font-medium">{viewStateName}</span>
         </div>
         <CommandSearch />
+        {/* Command without trigger interface */}
+        <CommandListDownloadedModel />
       </div>
     </div>
   )
