@@ -104,13 +104,13 @@ const ChatScreen = () => {
             <Input
               type="text"
               placeholder="Type your message ..."
-              disabled={!activeModel}
+              disabled={!isEnableChat}
               value={currentPrompt}
               onChange={(e) => handleMessageChange(e.target.value)}
             />
             <Button
-              disabled={!activeModel || disabled}
-              themes={!activeModel ? 'secondary' : 'primary'}
+              disabled={!isEnableChat || disabled}
+              themes={!isEnableChat ? 'secondary' : 'primary'}
               onClick={() => sendChatMessage()}
             >
               Send
