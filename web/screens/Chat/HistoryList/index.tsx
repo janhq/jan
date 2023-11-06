@@ -75,7 +75,7 @@ export default function HistoryList() {
       {conversations.length === 0 ? (
         <div className="px-4 py-8 text-center">
           <GalleryHorizontalEndIcon
-            size={24}
+            size={26}
             className="mx-auto mb-3 text-muted-foreground"
           />
           <h2 className="font-semibold">No Chat History</h2>

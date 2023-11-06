@@ -1,6 +1,8 @@
+import { ReactNode } from 'react'
+
 type Props = {
   name?: string
-  value: string
+  value: string | ReactNode
 }
 
 export default function SystemItem({ name, value }: Props) {

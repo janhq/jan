@@ -84,7 +84,7 @@ const MyModelsScreen = () => {
                             {toGigabytes(model.size)}
                           </Badge>
                         </div>
-                        <p className="mt-2 line-clamp-2">
+                        <p className="mt-2 line-clamp-2 break-all">
                           {model.longDescription}
                         </p>
                       </div>

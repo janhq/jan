@@ -1,3 +1,4 @@
+import { Badge } from '@janhq/uikit'
 import { useAtomValue } from 'jotai'
 
 import ProgressBar from '@/components/ProgressBar'
@@ -34,7 +35,14 @@ const BottomBar = () => {
           <SystemItem name="Stopping:" value={stateModel.model || '-'} />
         )}
         {!stateModel.loading && (
-          <SystemItem name="Active model:" value={activeModel?.name || '-'} />
+          <SystemItem
+            name="Active model:"
+            value={
+              activeModel?.name || (
+                <Badge themes="secondary">⌘e to show your model</Badge>
+              )
+            }
+          />
         )}
 
         <DownloadingState />
