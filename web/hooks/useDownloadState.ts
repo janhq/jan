@@ -20,10 +20,6 @@ const setDownloadStateSuccessAtom = atom(null, (get, set, fileName: string) => {
   const state = currentState[fileName]
   if (!state) {
     console.error(`Cannot find download state for ${fileName}`)
-    toaster({
-      title: 'Cancel Download',
-      description: `Model ${fileName} cancel download`,
-    })
     return
   }
   delete currentState[fileName]
@@ -34,10 +30,26 @@ const setDownloadStateSuccessAtom = atom(null, (get, set, fileName: string) => {
   })
 })
 
+const setDownloadStateFailedAtom = atom(null, (get, set, fileName: string) => {
+  const currentState = { ...get(modelDownloadStateAtom) }
+  const state = currentState[fileName]
+  if (!state) {
+    console.error(`Cannot find download state for ${fileName}`)
+    toaster({
+      title: 'Cancel Download',
+      description: `Model ${fileName} cancel download`,
+    })
+    return
+  }
+  delete currentState[fileName]
+  set(modelDownloadStateAtom, currentState)
+})
+
 export function useDownloadState() {
   const modelDownloadState = useAtomValue(modelDownloadStateAtom)
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
+  const setDownloadStateFailed = useSetAtom(setDownloadStateFailedAtom)
 
   const downloadStates: DownloadState[] = []
   for (const [, value] of Object.entries(modelDownloadState)) {
@@ -49,6 +61,7 @@ export function useDownloadState() {
     modelDownloadState,
     setDownloadState,
     setDownloadStateSuccess,
+    setDownloadStateFailed,
     downloadStates,
   }
 }

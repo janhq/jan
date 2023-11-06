@@ -7,6 +7,7 @@ const packageJson = require('./package.json')
 
 const nextConfig = {
   output: 'export',
+  assetPrefix: '.',
   images: {
     unoptimized: true,
     remotePatterns: [

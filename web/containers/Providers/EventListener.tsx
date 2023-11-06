@@ -25,7 +25,8 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
     modelsRef.current = models
   }, [models])
   const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
-  const { setDownloadState, setDownloadStateSuccess } = useDownloadState()
+  const { setDownloadState, setDownloadStateSuccess, setDownloadStateFailed } =
+    useDownloadState()
 
   useEffect(() => {
     if (window && window.electronAPI) {
@@ -40,7 +41,7 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
         (_event: string, callback: any) => {
           console.log('Download error', callback)
           const fileName = callback.fileName.replace('models/', '')
-          setDownloadStateSuccess(fileName)
+          setDownloadStateFailed(fileName)
         }
       )
 
@@ -81,14 +82,8 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
         setProgress(-1)
       })
     }
-  }, [
-    setDownloadedModels,
-    setDownloadState,
-    setDownloadStateSuccess,
-    setProgress,
-    downloadedModels,
-    models,
-  ])
+    return () => {}
+  }, [])
 
   return (
     <div id="eventlistener">

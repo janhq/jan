@@ -28,8 +28,6 @@ import { toChatMessage } from '@/models/ChatMessage'
 import { pluginManager } from '@/plugin/PluginManager'
 
 export default function useSendChatMessage() {
-  // const { activeModel } = useActiveModel()
-  // const { requestCreateConvo } = useCreateConversation()
   const currentConvo = useAtomValue(currentConversationAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateConversation = useSetAtom(updateConversationAtom)
@@ -109,7 +107,6 @@ export default function useSendChatMessage() {
     addNewMessage(newChatMessage)
 
     events.emit(EventName.OnNewMessageRequest, newMessage)
-
     if (!currentConvo?.summary && currentConvo) {
       const updatedConv: Conversation = {
         ...currentConvo,
@@ -129,11 +126,6 @@ export default function useSendChatMessage() {
 
     updateConvSummary(newMessage)
   }
-
-  // if (!currentConvo?._id) {
-  //   requestCreateConvo(activeModel as AssistantModel)
-  //   sendChatMessage()
-  // }
 
   return {
     sendChatMessage,
