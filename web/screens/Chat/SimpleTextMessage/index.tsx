@@ -60,8 +60,6 @@ const SimpleTextMessage: React.FC<Props> = ({
   const parsedText = marked.parse(text)
   const isUser = senderType === 'user'
 
-  console.log(text)
-
   return (
     <div className="mx-auto flex w-full flex-col items-start gap-1 rounded-xl px-4 lg:w-3/4">
       <div

@@ -2,9 +2,12 @@ import { useEffect } from 'react'
 
 import { Conversation, Model } from '@janhq/core/lib/types'
 import { Button } from '@janhq/uikit'
+import { motion as m } from 'framer-motion'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { GalleryHorizontalEndIcon } from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useCreateConversation } from '@/hooks/useCreateConversation'
@@ -44,7 +47,6 @@ export default function HistoryList() {
       return
     }
     const model = downloadedModels.find((e) => e._id === convo.modelId)
-    // console.log(model?._id)
     if (convo == null) {
       console.debug('modelId is undefined')
       return
@@ -84,7 +86,10 @@ export default function HistoryList() {
           return (
             <div
               key={i}
-              className="relative flex cursor-pointer flex-col border-b border-border px-4 py-2 hover:bg-secondary/10"
+              className={twMerge(
+                'relative flex cursor-pointer flex-col border-b border-border px-4 py-2 hover:bg-secondary/20',
+                activeConvoId === convo._id && 'bg-secondary-10'
+              )}
               onClick={() => handleActiveModel(convo as Conversation)}
             >
               <p className="mb-1 line-clamp-1 text-xs leading-5">
@@ -94,9 +99,15 @@ export default function HistoryList() {
               <span className="line-clamp-1">
                 {convo.summary ?? convo.name}
               </span>
-              <p className="mt-1 line-clamp-2 leading-relaxed">
+              <p className="mt-1 line-clamp-2 text-xs">
                 {convo?.lastMessage ?? 'No new message'}
               </p>
+              {activeModel && activeConvoId === convo._id && (
+                <m.div
+                  className="absolute right-0 top-0 h-full w-1 bg-primary/50"
+                  layoutId="active-convo"
+                />
+              )}
             </div>
           )
         })
