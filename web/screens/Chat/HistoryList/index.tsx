@@ -6,7 +6,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { GalleryHorizontalEndIcon } from 'lucide-react'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-import useCreateConversation from '@/hooks/useCreateConversation'
+import { useCreateConversation } from '@/hooks/useCreateConversation'
 import { useGetModelById } from '@/hooks/useGetModelById'
 import useGetUserConversations from '@/hooks/useGetUserConversations'
 
@@ -60,8 +60,13 @@ export default function HistoryList() {
 
   return (
     <div>
-      <div className="sticky top-0 z-20 flex flex-col border-b border-border px-4 py-3">
-        <Button size="sm" themes="outline" onClick={handleClickConversation}>
+      <div className="sticky top-0 z-20 flex flex-col border-b border-border bg-background px-4 py-3">
+        <Button
+          size="sm"
+          themes="outline"
+          onClick={handleClickConversation}
+          disabled={!activeModel}
+        >
           Create New Chat
         </Button>
       </div>

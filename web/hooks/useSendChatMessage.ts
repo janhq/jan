@@ -10,6 +10,8 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
+import { useCreateConversation } from '@/hooks/useCreateConversation'
 import { addNewMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   currentConversationAtom,
@@ -20,6 +22,8 @@ import { toChatMessage } from '@/models/ChatMessage'
 import { pluginManager } from '@plugin/PluginManager'
 
 export default function useSendChatMessage() {
+  // const { activeModel } = useActiveModel()
+  // const { requestCreateConvo } = useCreateConversation()
   const currentConvo = useAtomValue(currentConversationAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateConversation = useSetAtom(updateConversationAtom)
@@ -65,9 +69,8 @@ export default function useSendChatMessage() {
   }
 
   const sendChatMessage = async () => {
-    const convoId = currentConvo?._id
+    const convoId = currentConvo?._id as string
 
-    if (!convoId) return
     setCurrentPrompt('')
     updateConvWaiting(convoId, true)
 
@@ -119,6 +122,11 @@ export default function useSendChatMessage() {
 
     updateConvSummary(newMessage)
   }
+
+  // if (!currentConvo?._id) {
+  //   requestCreateConvo(activeModel as AssistantModel)
+  //   sendChatMessage()
+  // }
 
   return {
     sendChatMessage,

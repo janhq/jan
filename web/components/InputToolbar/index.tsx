@@ -3,7 +3,7 @@
 
 import { useAtomValue } from 'jotai'
 
-// import useCreateConversation from '@/hooks/useCreateConversation'
+// import { useCreateConversation } from '@/hooks/useCreateConversation'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 import useGetInputState from '@/hooks/useGetInputState'

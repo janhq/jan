@@ -6,7 +6,7 @@ import { useAtom, useAtomValue } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
-import useCreateConversation from '@/hooks/useCreateConversation'
+import { useCreateConversation } from '@/hooks/useCreateConversation'
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 

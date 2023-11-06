@@ -6,7 +6,7 @@ import { MessageCircle } from 'lucide-react'
 
 import { MainViewState } from '@/constants/screens'
 
-import useCreateConversation from '@/hooks/useCreateConversation'
+import { useCreateConversation } from '@/hooks/useCreateConversation'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
