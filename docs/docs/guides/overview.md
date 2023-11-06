@@ -2,8 +2,11 @@
 title: Overview
 slug: /guides
 ---
-- Jan Platform: Desktop app/ Cloud native SaaS that can run on Linux, Windows, Mac, or even a Server that comes with extensibilities, toolbox, and state-of-the-art but optimized models for next-gen Apps.
-- Jan App: Next-gen App built on Jan Plaform as `portable intelligence` that can be run everywhere.
-- Models:
-  - Large Language Models
-  - Stable Diffusion models
+Jan is a framework to build your own Personal AI, that runs privately on your own computer.
+
+We envision a future where our lives are improved by helpful and practical AI assistants, that we continuously customize to meet our needs.
+
+Jan has 2 main features:
+
+- Large Language Models.
+- Plugins and Apps.
