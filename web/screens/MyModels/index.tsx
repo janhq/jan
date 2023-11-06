@@ -150,7 +150,7 @@ const MyModelsScreen = () => {
                 <div>
                   <h2 className="text-lg font-medium">Download more model?</h2>
                   <p className="mt-2 leading-relaxed">
-                    You have <span>{downloadedModels.length}</span> models
+                    You have <span>{downloadedModels.length}</span> model(s)
                     downloaded.&nbsp;
                     {downloadStates.length > 0 && (
                       <span>

@@ -13,6 +13,7 @@ import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
+import { useDownloadState } from '@/hooks/useDownloadState'
 import { useGetAppVersion } from '@/hooks/useGetAppVersion'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
@@ -25,6 +26,7 @@ const BottomBar = () => {
   const appVersion = useGetAppVersion()
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
+  const { downloadStates } = useDownloadState()
 
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/50 px-3">
@@ -51,15 +53,17 @@ const BottomBar = () => {
             }
           />
         )}
-        {downloadedModels.length === 0 && !stateModel.loading && (
-          <Button
-            size="sm"
-            themes="outline"
-            onClick={() => setMainViewState(MainViewState.ExploreModels)}
-          >
-            Download your first model
-          </Button>
-        )}
+        {downloadedModels.length === 0 &&
+          !stateModel.loading &&
+          downloadStates.length === 0 && (
+            <Button
+              size="sm"
+              themes="outline"
+              onClick={() => setMainViewState(MainViewState.ExploreModels)}
+            >
+              Download your first model
+            </Button>
+          )}
 
         <DownloadingState />
       </div>
