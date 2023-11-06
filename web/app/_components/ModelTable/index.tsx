@@ -1,9 +1,10 @@
 import React from 'react'
 import ModelRow from '../ModelRow'
 import ModelTableHeader from '../ModelTableHeader'
+import { Model } from '@janhq/core/lib/types'
 
 type Props = {
-  models: AssistantModel[]
+  models: Model[]
 }
 
 const tableHeaders = ['MODEL', 'FORMAT', 'SIZE', 'STATUS', 'ACTIONS']

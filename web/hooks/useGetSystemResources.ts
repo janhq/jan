@@ -1,24 +1,24 @@
 import { useEffect, useState } from 'react'
-import { extensionPoints } from '@plugin'
-import { SystemMonitoringService } from '@janhq/core'
+import { PluginType } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 import { totalRamAtom } from '@helpers/atoms/SystemBar.atom'
-import { executeSerial } from '@services/pluginService'
+import { pluginManager } from '@plugin/PluginManager'
+import { MonitoringPlugin } from '@janhq/core/lib/plugins'
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
   const [cpu, setCPU] = useState<number>(0)
   const setTotalRam = useSetAtom(totalRamAtom)
 
   const getSystemResources = async () => {
-    if (!extensionPoints.get(SystemMonitoringService.GetResourcesInfo)) {
+    if (!pluginManager.get<MonitoringPlugin>(PluginType.SystemMonitoring)) {
       return
     }
-    const resourceInfor = await executeSerial(
-      SystemMonitoringService.GetResourcesInfo
+    const monitoring = pluginManager.get<MonitoringPlugin>(
+      PluginType.SystemMonitoring
     )
-    const currentLoadInfor = await executeSerial(
-      SystemMonitoringService.GetCurrentLoad
-    )
+    const resourceInfor = await monitoring?.getResourcesInfo()
+    const currentLoadInfor = await monitoring?.getCurrentLoad()
+
     const ram =
       (resourceInfor?.mem?.active ?? 0) / (resourceInfor?.mem?.total ?? 1)
     if (resourceInfor?.mem?.total) setTotalRam(resourceInfor.mem.total)

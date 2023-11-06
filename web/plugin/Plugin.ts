@@ -1,5 +1,3 @@
-import { callExport } from './import-manager'
-
 /**
  * A slimmed down representation of a plugin for the renderer.
  */
@@ -41,14 +39,6 @@ class Plugin {
     this.description = description
     this.version = version
     this.icon = icon
-  }
-
-  /**
-   * Trigger an exported callback on the plugin's main file.
-   * @param {string} exp exported callback to trigger.
-   */
-  triggerExport(exp: string) {
-    if (this.url && this.name) callExport(this.url, exp, this.name)
   }
 }
 

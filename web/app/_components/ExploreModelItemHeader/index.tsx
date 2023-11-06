@@ -13,10 +13,11 @@ import {
 } from '@helpers/atoms/MainView.atom'
 import ConfirmationModal from '../ConfirmationModal'
 import { showingCancelDownloadModalAtom } from '@helpers/atoms/Modal.atom'
+import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 
 type Props = {
   suitableModel: ModelVersion
-  exploreModel: Product
+  exploreModel: ModelCatalog
 }
 
 const ExploreModelItemHeader: React.FC<Props> = ({

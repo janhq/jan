@@ -5,7 +5,7 @@
 import ExploreModelItemHeader from '../ExploreModelItemHeader'
 import { Button } from '@uikit'
 import ModelVersionList from '../ModelVersionList'
-import { Fragment, forwardRef, useEffect, useState } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
 import SimpleTag from '../SimpleTag'
 import {
   MiscellanousTag,
@@ -18,9 +18,10 @@ import {
 import { displayDate } from '@utils/datetime'
 import useGetMostSuitableModelVersion from '@hooks/useGetMostSuitableModelVersion'
 import { toGigabytes } from '@utils/converter'
+import { ModelCatalog } from '@janhq/core/lib/types'
 
 type Props = {
-  model: Product
+  model: ModelCatalog
 }
 
 const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {

@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import { ModelManagementService } from '@janhq/core'
+import { PluginType } from '@janhq/core'
 import { useAtom } from 'jotai'
 import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
-import { extensionPoints } from '@plugin'
-import { executeSerial } from '@services/pluginService'
+import { pluginManager } from '@plugin/PluginManager'
+import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { Model } from '@janhq/core/lib/types'
 
 export function useGetDownloadedModels() {
   const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelAtom)
@@ -17,16 +18,10 @@ export function useGetDownloadedModels() {
   return { downloadedModels }
 }
 
-export async function getDownloadedModels(): Promise<AssistantModel[]> {
-  if (!extensionPoints.get(ModelManagementService.GetFinishedDownloadModels)) {
-    return []
-  }
-  const downloadedModels: AssistantModel[] = await executeSerial(
-    ModelManagementService.GetFinishedDownloadModels
-  )
-  return downloadedModels ?? []
-}
-
-export async function getConfiguredModels(): Promise<Product[]> {
-  return executeSerial(ModelManagementService.GetConfiguredModels)
+export async function getDownloadedModels(): Promise<Model[]> {
+  const models =
+    ((await pluginManager
+      .get<ModelPlugin>(PluginType.Model)
+      ?.getDownloadedModels()) as Model[]) ?? []
+  return models
 }

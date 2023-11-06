@@ -6,11 +6,11 @@ import useGetAppVersion from '@hooks/useGetAppVersion'
 import useGetSystemResources from '@hooks/useGetSystemResources'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { formatDownloadPercentage } from '@utils/converter'
-import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { activeModelAtom } from '@helpers/atoms/Model.atom'
 
 const MonitorBar: React.FC = () => {
   const progress = useAtomValue(appDownloadProgress)
-  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const activeModel = useAtomValue(activeModelAtom)
   const { version } = useGetAppVersion()
   const { ram, cpu } = useGetSystemResources()
   const modelDownloadStates = useAtomValue(modelDownloadStateAtom)

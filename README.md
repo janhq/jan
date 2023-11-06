@@ -96,20 +96,23 @@ Note: This instruction is tested on MacOS only.
 
 1. **Clone the Repository:**
 
-   ```
+```bash
    git clone https://github.com/janhq/jan
    git checkout DESIRED_BRANCH
    cd jan
-   ```
+```
 
 2. **Install dependencies:**
 
-   ```
+```bash
    yarn install
+
+   # Build core module
+   yarn build:core
 
    # Packing base plugins
    yarn build:plugins
-   ```
+```
 
 3. **Run development and Using Jan Desktop**
 
@@ -127,6 +130,11 @@ Note: This instruction is tested on MacOS only.
 git clone https://github.com/janhq/jan
 cd jan
 yarn install
+
+# Build core module
+yarn build:core
+
+# Package base plugins
 yarn build:plugins
 
 # Build the app

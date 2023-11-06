@@ -1,8 +1,9 @@
+import { Model } from '@janhq/core/lib/types'
 import ConversationalCard from '../ConversationalCard'
 import { ChatBubbleBottomCenterTextIcon } from '@heroicons/react/24/outline'
 
 type Props = {
-  models: AssistantModel[]
+  models: Model[]
 }
 
 const ConversationalList: React.FC<Props> = ({ models }) => (

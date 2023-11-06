@@ -1,15 +1,15 @@
 import React, { useMemo } from 'react'
 import { formatDownloadPercentage, toGigabytes } from '@utils/converter'
-import Image from 'next/image'
 import useDownloadModel from '@hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
 import { atom, useAtomValue } from 'jotai'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 import SimpleTag from '../SimpleTag'
 import { RamRequired, UsecaseTag } from '../SimpleTag/TagType'
+import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 
 type Props = {
-  model: Product
+  model: ModelCatalog
   modelVersion: ModelVersion
   isRecommended: boolean
 }
