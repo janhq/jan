@@ -47,30 +47,3 @@ curl --location 'http://localhost:3928/inferences/llamacpp/chat_completion' \
       }'
 ```
 
-## Using Nitro
-
-**Step 1: Obtain Nitro**:  
-Access Nitro binaries from the release page.  
-🔗 [Download Nitro](https://github.com/janhq/nitro/releases)
-
-**Step 2: Source a Model**:  
-For those interested in the llama C++ integration, obtain a "GGUF" model from The Bloke's repository.  
-🔗 [Download Model](https://huggingface.co/TheBloke)
-
-**Step 3: Initialize Nitro**:  
-Launch Nitro and position your model using the following API call:
-
-```bash
-curl -X POST 'http://localhost:3928/inferences/llamacpp/loadmodel' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "llama_model_path": "/path/to/your_model.gguf",
-    "ctx_len": 2048,
-    "ngl": 100,
-    "embedding": true
-  }'
-```
-
-## Architecture diagram
-
-![Nitro Architecture](../developers/img/architecture.png)

@@ -112,7 +112,17 @@ const sidebars = {
   ],
 
   nitroSidebar: [
-    "nitro/nitro",
+    {
+      type: "category",
+      label: "Nitro",
+      collapsible: true,
+      collapsed: false,
+      link: { type: "doc", id: "nitro/nitro" },
+      items: [
+        "nitro/architecture",
+        "nitro/using-nitro",
+      ],
+    },
   ],
 
   communitySidebar: [
