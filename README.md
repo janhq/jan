@@ -112,6 +112,9 @@ Note: This instruction is tested on MacOS only.
 
    # Packing base plugins
    yarn build:plugins
+
+   # Packing uikit
+   yarn build:uikit
 ```
 
 3. **Run development and Using Jan Desktop**
@@ -136,6 +139,9 @@ yarn build:core
 
 # Package base plugins
 yarn build:plugins
+
+# Packing uikit
+yarn build:uikit
 
 # Build the app
 yarn build
