@@ -79,11 +79,10 @@ export default function Home() {
                     Personal AI
                   </h1>
                   <p className="text-xl leading-relaxed lg:text-2xl lg:leading-relaxed text-gray-500 dark:text-gray-400">
-                    Build your own&nbsp;
+                    Run &nbsp;
                     <span className="dark:text-white text-black">
-                      Personal AI,
+                      Large Language Models
                     </span>
-                    &nbsp;that runs&nbsp;
                     <br />
                     <span className="dark:text-white text-black">
                       privately

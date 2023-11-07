@@ -2,17 +2,17 @@
 title: About Jan
 ---
 
-Jan is a tool to build your own Personal AI, that runs privately on your own computer. 
+Jan is a tool to run LLMs privately on your personal computer. 
 
-We envision a future where our lives are improved by helpful and practical AI assistants, that we continuously customize to meet our needs. 
+Jan's roadmap is to build a framework for Personal AIs that can be customized and extended by anyone. 
 
 ## Why does Jan Exist?
 
-### Our Mission
+### Mission
 
 To enable high-productivity individuals to use AI to scale themselves. 
 
-### Our Ideal Customer
+### Ideal Customer
 
 Our ideal customer is an AI Enthusiast who wants to experiment with solving problems using AI, and is ok with experimental software. 
 
@@ -22,7 +22,7 @@ Our ideal customer is an AI Enthusiast who wants to experiment with solving prob
 
 Our goal in 2023 is to find 500 of these ideal customers. 
 
-### Problem Statement
+### Problem
 
 Our ideal customer has clear ideas for how to solve his/her problems using AI, but has not done so because:
 
@@ -30,7 +30,7 @@ Our ideal customer has clear ideas for how to solve his/her problems using AI, b
 - Doesn't have 10 hours/week to build and maintain a Personal AI
 - Uncomfortable with giving personal info to ChatGPT
 
-### Our Solution
+### Solution
 
 Jan is a Personal AI that you can customize, and runs privately on your own computer.
 
@@ -42,7 +42,7 @@ Jan has a very modular architecture that allows you to swap out or customize com
 
 ## How Jan Works
 
-###  Open Source
+### Open Source
 
 Jan is a startup with an open source business model. We believe in the need for an open source AI ecosystem, and are committed to building it. 
 
