@@ -36,6 +36,6 @@ test.afterAll(async () => {
 
 test("shows my models", async () => {
   await page.getByTestId("My Models").first().click();
-  await page.getByTestId("testid-mymodels-header").isVisible();
+  await page.getByTestId("testid-my-models").isVisible();
   //   More test cases here...
 });

@@ -13,7 +13,7 @@ const ExploreModelsScreen = () => {
   return (
     <div className="flex h-full w-full overflow-y-auto">
       <div className="h-full w-full p-4">
-        <div className="h-full">
+        <div className="h-full" data-test-id="testid-explore-models">
           <ScrollArea>
             <ExploreModelList models={models} />
           </ScrollArea>
