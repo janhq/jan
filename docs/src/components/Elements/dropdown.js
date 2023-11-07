@@ -53,6 +53,22 @@ export default function Dropdown() {
     return match ? match[1] : null;
   };
 
+  const changeDefaultSystem = (systems) => {
+    const userAgent = navigator.userAgent;
+    if (userAgent.includes("Windows")) {
+      // windows user
+      setDefaultSystem(systems[2]);
+    } else if (userAgent.includes("Linux")) {
+      // linux user
+      setDefaultSystem(systems[3]);
+    } else if (userAgent.includes("Mac OS") && userAgent.includes("Intel")) {
+      // mac intel user
+      setDefaultSystem(systems[1]);
+    } else {
+      // mac user and also default
+      setDefaultSystem(systems[0]);
+    }
+  };
   useEffect(() => {
     const updateDownloadLinks = async () => {
       try {
@@ -67,6 +83,7 @@ export default function Dropdown() {
             "Failed to extract appname from file name:",
             firstAssetName
           );
+          changeDefaultSystem(systems);
           return;
         }
 
@@ -86,7 +103,7 @@ export default function Dropdown() {
         });
 
         setSystems(updatedSystems);
-        setDefaultSystem(updatedSystems[0]);
+        changeDefaultSystem(updatedSystems);
       } catch (error) {
         console.error("Failed to update download links:", error);
       }
@@ -101,11 +118,7 @@ export default function Dropdown() {
         className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-3.5 py-2.5 text-base font-semibold text-white bg-blue-600 hover:bg-blue-500 hover:text-white"
         href={defaultSystem.href}
       >
-        <img
-          src={require("@site/static/img/apple-logo-white.png").default}
-          alt="Logo"
-          className="h-5 mr-3 -mt-1"
-        />
+        <img src={defaultSystem.logo} alt="Logo" className="h-5 mr-3 -mt-1" />
         {defaultSystem.name}
       </a>
       <Menu as="div" className="relative -ml-px block">
@@ -125,7 +138,10 @@ export default function Dropdown() {
           <Menu.Items className="absolute right-0 z-10 mt-1 w-72 text-left origin-top-right rounded-md bg-blue-600 shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none overflow-hidden">
             <div className="overflow-hidden">
               {systems.map((system) => (
-                <Menu.Item key={system.name}>
+                <Menu.Item
+                  key={system.name}
+                  onClick={() => setDefaultSystem(system)}
+                >
                   {({ active }) => (
                     <a
                       href={system.href}
