@@ -67,6 +67,7 @@ const ChatScreen = () => {
       setIsWaitingToSend(false)
       sendChatMessage()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitingToSendMessage, activeConversationId])
 
   const handleKeyDown = async (
