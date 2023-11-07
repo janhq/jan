@@ -82,9 +82,8 @@ const config = {
           customCss: require.resolve("./src/styles/main.scss"),
         },
         // GTM is always inactive in development and only active in production to avoid polluting the analytics statistics.
-        // Will Replace container ID later once already create
         googleTagManager: {
-          containerId: "GTM-12345",
+          containerId: "GTM-59R6474K",
         },
         // Will be passed to @docusaurus/plugin-content-pages (false to disable)
         // pages: {},
