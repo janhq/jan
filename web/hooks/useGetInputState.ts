@@ -47,7 +47,8 @@ export default function useGetInputState() {
 
   useEffect(() => {
     handleInputState(currentConvo, activeModel)
-  }, [currentConvo, activeModel, downloadedModels])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return { inputState, currentConvo }
 }

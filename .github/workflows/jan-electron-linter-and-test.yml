@@ -4,29 +4,31 @@ on:
     branches:
       - main
     paths:
-      - 'electron/**'
+      - "electron/**"
       - .github/workflows/jan-electron-linter-and-test.yml
-      - 'web/**'
-      - 'package.json'
-      - 'node_modules/**'
-      - 'yarn.lock'
+      - "web/**"
+      - "uikit/**"
+      - "package.json"
+      - "node_modules/**"
+      - "yarn.lock"
 
   pull_request:
     branches:
       - main
     paths:
-      - 'electron/**'
+      - "electron/**"
       - .github/workflows/linter-and-test.yml
-      - 'web/**'
-      - 'package.json'
-      - 'node_modules/**'
-      - 'yarn.lock'
+      - "web/**"
+      - "uikit/**"
+      - "package.json"
+      - "node_modules/**"
+      - "yarn.lock"
 
 jobs:
   test-on-macos:
     runs-on: [self-hosted, macOS, macos-desktop]
     steps:
-      - name: 'Cleanup build folder'
+      - name: "Cleanup build folder"
         run: |
           ls -la ./
           rm -rf ./* || true
@@ -49,6 +51,7 @@ jobs:
           yarn lint
           yarn build:plugins
           yarn build:test
+          yarn build:uikit
           yarn test
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -79,13 +82,14 @@ jobs:
           yarn build:core
           yarn install
           yarn build:plugins
+          yarn build:uikit
           yarn build:test-win32
           yarn test
 
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
     steps:
-      - name: 'Cleanup build folder'
+      - name: "Cleanup build folder"
         run: |
           ls -la ./
           rm -rf ./* || true
@@ -108,5 +112,6 @@ jobs:
           yarn build:core
           yarn install
           yarn build:plugins
+          yarn build:uikit
           yarn build:test-linux
           yarn test

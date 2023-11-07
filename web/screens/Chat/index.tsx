@@ -31,7 +31,6 @@ import {
 } from '@/helpers/atoms/Conversation.atom'
 
 import { currentConvoStateAtom } from '@/helpers/atoms/Conversation.atom'
-import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 
 const ChatScreen = () => {
   const currentConvo = useAtomValue(currentConversationAtom)
@@ -48,7 +47,6 @@ const ChatScreen = () => {
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
   const activeConversationId = useAtomValue(getActiveConvoIdAtom)
   const { requestCreateConvo } = useCreateConversation()
-  const selectedModel = useAtomValue(selectedModelAtom)
 
   const handleMessageChange = (value: string) => {
     setCurrentPrompt(value)
@@ -58,9 +56,8 @@ const ChatScreen = () => {
     if (activeConversationId) {
       sendChatMessage()
     } else {
-      await requestCreateConvo(selectedModel as Model).then(() => {
-        sendChatMessage()
-      })
+      await requestCreateConvo(activeModel as Model)
+      sendChatMessage()
     }
   }
 
