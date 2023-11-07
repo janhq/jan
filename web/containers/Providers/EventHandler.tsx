@@ -123,6 +123,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           // eslint-disable-next-line @typescript-eslint/naming-convention
           _id: convo._id ?? '',
           name: convo.name ?? '',
+          message: convo.lastMessage ?? '',
           messages: messagesData,
         })
     }

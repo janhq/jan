@@ -72,6 +72,7 @@ export default function useSendChatMessage() {
               ?.saveConversation({
                 ...updatedConv,
                 name: updatedConv.name ?? '',
+                message: updatedConv.lastMessage ?? '',
                 messages: currentMessages.map<Message>((e: ChatMessage) => {
                   return {
                     // eslint-disable-next-line @typescript-eslint/naming-convention
