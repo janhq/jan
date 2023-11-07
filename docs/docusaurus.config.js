@@ -123,22 +123,29 @@ const config = {
           // Navbar left
           {
             type: "docSidebar",
-            sidebarId: "guidesSidebar",
+            sidebarId: "docusSidebar",
             position: "left",
-            label: "User Guide",
+            label: "Documentations",
           },
           {
             type: "docSidebar",
-            sidebarId: "devSidebar",
+            sidebarId: "nitroSidebar",
             position: "left",
-            label: "Developers",
+            label: "Nitro",
+          },
+          {
+            type: "docSidebar",
+            sidebarId: "communitySidebar",
+            position: "left",
+            label: "Community",
+          },
+          {
+            type: "docSidebar",
+            sidebarId: "companySidebar",
+            position: "left",
+            label: "Company",
           },
           // Navbar right
-          {
-            to: "blog",
-            label: "Blog",
-            position: "right",
-          },
           {
             type: "docSidebar",
             sidebarId: "aboutSidebar",

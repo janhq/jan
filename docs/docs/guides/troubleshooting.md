@@ -1,9 +1,8 @@
 ---
-title: Troubleshooting
+title: Troubleshooting Guide
 sidebar_position: 5
 ---
 
-# Jan.ai Troubleshooting Guide
 Please note that 👋Jan is in "development mode," and you might encounter issues. If you need to reset your installation, follow these steps:
 
 ## Issue 1: Broken Build
