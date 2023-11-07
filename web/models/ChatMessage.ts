@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 import { NewMessageResponse } from '@janhq/core'
 import { Message } from '@janhq/core/lib/types'
 export enum MessageType {
@@ -43,7 +44,7 @@ export interface RawMessage {
 
 export const toChatMessage = (
   m: RawMessage | Message | NewMessageResponse,
-  bot?: Bot,
+
   conversationId?: string
 ): ChatMessage => {
   const createdAt = new Date(m.createdAt ?? '').getTime()
@@ -59,10 +60,7 @@ export const toChatMessage = (
 
   const content = m.message ?? ''
 
-  let senderName = m.user === 'user' ? 'You' : 'Assistant'
-  if (senderName === 'Assistant' && bot) {
-    senderName = bot.name
-  }
+  const senderName = m.user === 'user' ? 'You' : 'Assistant'
 
   return {
     id: (m._id ?? 0).toString(),

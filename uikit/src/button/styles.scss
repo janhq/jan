@@ -1,0 +1,64 @@
+.btn {
+  @apply inline-flex items-center justify-center whitespace-nowrap rounded-md font-semibold transition-colors;
+  @apply focus-visible:ring-ring cursor-pointer focus-visible:outline-none focus-visible:ring-1;
+  @apply disabled:pointer-events-none disabled:opacity-50;
+
+  &-primary {
+    @apply bg-primary hover:bg-primary/90 text-white;
+  }
+
+  &-danger {
+    @apply bg-danger text-danger-foreground hover:bg-danger/90;
+  }
+
+  &-outline {
+    @apply border-input hover:bg-accent hover:text-accent-foreground border bg-transparent;
+  }
+
+  &-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+
+  &-ghost {
+    @apply hover:bg-accent hover:text-accent-foreground;
+  }
+
+  &-sm {
+    @apply h-7 rounded-md px-3 text-xs;
+  }
+
+  &-md {
+    @apply h-9 px-4 py-2;
+  }
+
+  &-lg {
+    @apply h-10 rounded-md px-8;
+  }
+
+  &-loading {
+    @apply pointer-events-none opacity-50;
+    &-circle {
+      @apply mr-2 h-4 animate-spin opacity-50;
+      > circle {
+        opacity: 0.25;
+      }
+      > path {
+        opacity: 0.75;
+      }
+    }
+  }
+}
+
+[type='button'],
+[type='reset'],
+[type='submit'] {
+  &.btn-primary {
+    @apply bg-primary hover:bg-primary/90;
+  }
+  &.btn-secondary {
+    @apply bg-secondary hover:bg-secondary/80;
+  }
+  &.btn-danger {
+    @apply bg-danger hover:bg-danger/90;
+  }
+}

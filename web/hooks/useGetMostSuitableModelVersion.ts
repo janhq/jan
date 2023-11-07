@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { useAtomValue } from 'jotai'
-import { totalRamAtom } from '@helpers/atoms/SystemBar.atom'
+
 import { ModelVersion } from '@janhq/core/lib/types'
+import { useAtomValue } from 'jotai'
+
+import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 
 export default function useGetMostSuitableModelVersion() {
   const [suitableModel, setSuitableModel] = useState<ModelVersion | undefined>()

@@ -4,29 +4,31 @@ on:
     branches:
       - main
     paths:
-      - 'electron/**'
+      - "electron/**"
       - .github/workflows/jan-electron-linter-and-test.yml
-      - 'web/**'
-      - 'package.json'
-      - 'node_modules/**'
-      - 'yarn.lock'
+      - "web/**"
+      - "uikit/**"
+      - "package.json"
+      - "node_modules/**"
+      - "yarn.lock"
 
   pull_request:
     branches:
       - main
     paths:
-      - 'electron/**'
+      - "electron/**"
       - .github/workflows/linter-and-test.yml
-      - 'web/**'
-      - 'package.json'
-      - 'node_modules/**'
-      - 'yarn.lock'
+      - "web/**"
+      - "uikit/**"
+      - "package.json"
+      - "node_modules/**"
+      - "yarn.lock"
 
 jobs:
   test-on-macos:
     runs-on: [self-hosted, macOS, macos-desktop]
     steps:
-      - name: 'Cleanup build folder'
+      - name: "Cleanup build folder"
         run: |
           ls -la ./
           rm -rf ./* || true
@@ -40,6 +42,12 @@ jobs:
         uses: actions/setup-node@v1
         with:
           node-version: 20
+
+      - name: Build uikit
+        run: |
+          cd uikit
+          yarn install
+          yarn build
 
       - name: Linter and test
         run: |
@@ -73,6 +81,12 @@ jobs:
         with:
           node-version: 20
 
+      - name: Build uikit
+        run: |
+          cd uikit
+          yarn install
+          yarn build
+
       - name: Linter and test
         run: |
           yarn config set network-timeout 300000
@@ -85,7 +99,7 @@ jobs:
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
     steps:
-      - name: 'Cleanup build folder'
+      - name: "Cleanup build folder"
         run: |
           ls -la ./
           rm -rf ./* || true
@@ -99,6 +113,12 @@ jobs:
         uses: actions/setup-node@v1
         with:
           node-version: 20
+
+      - name: Build uikit
+        run: |
+          cd uikit
+          yarn install
+          yarn build
 
       - name: Linter and test
         run: |

@@ -53,11 +53,12 @@ app.on("quit", () => {
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
+    minWidth: 800,
     height: 800,
     show: false,
     trafficLightPosition: {
-      x: 16,
-      y: 10,
+      x: 10,
+      y: 15,
     },
     titleBarStyle: "hidden",
     vibrancy: "sidebar",

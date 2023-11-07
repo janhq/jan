@@ -1,4 +1,4 @@
-import { ChatMessage } from '@models/ChatMessage'
+import { ChatMessage } from '@/models/ChatMessage'
 
 /**
  * Util function to merge two array of messages and remove duplicates.

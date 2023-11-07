@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 enum MessageType {
   Text = 'Text',
   Image = 'Image',

@@ -1,15 +1,13 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 /** @type {import('next').NextConfig} */
-const { version } = require('os')
+
 const webpack = require('webpack')
+
 const packageJson = require('./package.json')
 
 const nextConfig = {
   output: 'export',
   assetPrefix: '.',
-  transpilePackages: ['lucide-react'],
-  experimental: {
-    serverActions: false,
-  },
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -19,7 +17,7 @@ const nextConfig = {
       },
     ],
   },
-  webpack: (config, env) => {
+  webpack: (config) => {
     // do some stuff here
     config.optimization.minimize = false
     config.optimization.minimizer = []
@@ -29,7 +27,7 @@ const nextConfig = {
         PLUGIN_CATALOG: JSON.stringify(
           'https://cdn.jsdelivr.net/npm/@janhq/plugin-catalog@latest/dist/index.js'
         ),
-        VERSION: JSON.stringify(packageJson.version)
+        VERSION: JSON.stringify(packageJson.version),
       }),
     ]
     return config

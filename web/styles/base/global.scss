@@ -1,0 +1,34 @@
+@layer base {
+  img {
+    pointer-events: none;
+  }
+
+  svg {
+    stroke-width: 1.5;
+  }
+
+  .title-bar {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+    width: 100%;
+    height: 48px;
+    user-select: none;
+    -webkit-app-region: drag;
+  }
+
+  .unset-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  .unselect {
+    user-select: none;
+  }
+
+  button,
+  [type='button'],
+  [type='reset'],
+  [type='submit'] {
+    background-color: inherit;
+  }
+}

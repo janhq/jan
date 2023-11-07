@@ -1,13 +1,11 @@
 'use client'
 
-import BotListModal from '@/_components/BotListModal'
-import ConfirmDeleteConversationModal from '@/_components/ConfirmDeleteConversationModal'
-import ConfirmDeleteModelModal from '@/_components/ConfirmDeleteModelModal'
-import ConfirmSignOutModal from '@/_components/ConfirmSignOutModal'
-import MobileMenuPane from '@/_components/MobileMenuPane'
-import SwitchingModelConfirmationModal from '@/_components/SwitchingModelConfirmationModal'
-import ModalNoActiveModel from '@/_components/ModalNoActiveModel'
 import { ReactNode } from 'react'
+
+import ConfirmDeleteConversationModal from '@/components/ConfirmDeleteConversationModal'
+
+import ModalNoActiveModel from '@/components/ModalNoActiveModel'
+import SwitchingModelConfirmationModal from '@/components/SwitchingModelConfirmationModal'
 
 type Props = {
   children: ReactNode
@@ -15,11 +13,7 @@ type Props = {
 
 export const ModalWrapper: React.FC<Props> = ({ children }) => (
   <>
-    <MobileMenuPane />
     <ConfirmDeleteConversationModal />
-    <ConfirmSignOutModal />
-    <ConfirmDeleteModelModal />
-    <BotListModal />
     <SwitchingModelConfirmationModal />
     <ModalNoActiveModel />
     {children}

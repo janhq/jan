@@ -3,11 +3,17 @@
   "private": true,
   "workspaces": {
     "packages": [
+      "uikit",
+      "core",
       "electron",
       "web",
       "server"
     ],
     "nohoist": [
+      "uikit",
+      "uikit/*",
+      "core",
+      "core/*",
       "electron",
       "electron/**",
       "web",
@@ -23,13 +29,15 @@
     "dev:web": "yarn workspace jan-web dev",
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "test-local": "yarn lint && yarn build:test && yarn test",
+    "dev:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit dev",
+    "build:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build",
     "build:core": "cd core && yarn install && yarn run build",
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
     "build:pull-plugins": "rimraf ./electron/core/pre-install/*.tgz && cd ./electron/core/pre-install && npm pack @janhq/inference-plugin @janhq/monitoring-plugin",
-    "build:plugins": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-plugin && npm install && npm run postinstall && npm run build:publish\" \"cd ./plugins/inference-plugin && npm install --ignore-scripts && npm run postinstall:dev && npm run build:publish\" \"cd ./plugins/model-plugin && npm install && npm run postinstall && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm install && npm run postinstall && npm run build:publish\"",
-    "build:plugins-web": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-plugin && npm install && npm run build:deps && npm run postinstall\" \"cd ./plugins/inference-plugin && npm install && npm run postinstall\" \"cd ./plugins/model-plugin && npm install && npm run postinstall\" \"cd ./plugins/monitoring-plugin && npm install && npm run postinstall\" && concurrently --kill-others-on-fail \"cd ./plugins/conversational-plugin && npm run build:publish\" \"cd ./plugins/inference-plugin && npm run build:publish\" \"cd ./plugins/model-plugin && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm run build:publish\"",
+    "build:plugins": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm install && npm run postinstall && npm run build:publish\" \"cd ./plugins/inference-plugin && npm install --ignore-scripts && npm run postinstall:dev && npm run build:publish\" \"cd ./plugins/model-plugin && npm install && npm run postinstall && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm install && npm run postinstall && npm run build:publish\"",
+    "build:plugins-web": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm install && npm run build:deps && npm run postinstall\" \"cd ./plugins/inference-plugin && npm install && npm run postinstall\" \"cd ./plugins/model-plugin && npm install && npm run postinstall\" \"cd ./plugins/monitoring-plugin && npm install && npm run postinstall\" && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm run build:publish\" \"cd ./plugins/inference-plugin && npm run build:publish\" \"cd ./plugins/model-plugin && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm run build:publish\"",
     "build": "yarn build:web && yarn build:electron",
     "build:test": "yarn build:web && yarn build:electron:test",
     "build:test-darwin": "yarn build:web && yarn workspace jan build:test-darwin",
@@ -42,7 +50,7 @@
     "build:publish-darwin": "yarn build:web && yarn workspace jan build:publish-darwin",
     "build:publish-win32": "yarn build:web && yarn workspace jan build:publish-win32",
     "build:publish-linux": "yarn build:web && yarn workspace jan build:publish-linux",
-    "build:web-plugins": "yarn build:web && yarn build:plugins-web && mkdir -p \"./web/out/plugins/conversational-plugin\" && cp \"./plugins/conversational-plugin/dist/index.js\" \"./web/out/plugins/conversational-plugin\" && mkdir -p \"./web/out/plugins/inference-plugin\" &&  cp \"./plugins/inference-plugin/dist/index.js\" \"./web/out/plugins/inference-plugin\" && mkdir -p \"./web/out/plugins/model-plugin\" && cp \"./plugins/model-plugin/dist/index.js\" \"./web/out/plugins/model-plugin\" && mkdir -p \"./web/out/plugins/monitoring-plugin\" && cp \"./plugins/monitoring-plugin/dist/index.js\" \"./web/out/plugins/monitoring-plugin\"",
+    "build:web-plugins": "yarn build:web && yarn build:plugins-web && mkdir -p \"./web/out/plugins/conversational-json\" && cp \"./plugins/conversational-json/dist/index.js\" \"./web/out/plugins/conversational-json\" && mkdir -p \"./web/out/plugins/inference-plugin\" &&  cp \"./plugins/inference-plugin/dist/index.js\" \"./web/out/plugins/inference-plugin\" && mkdir -p \"./web/out/plugins/model-plugin\" && cp \"./plugins/model-plugin/dist/index.js\" \"./web/out/plugins/model-plugin\" && mkdir -p \"./web/out/plugins/monitoring-plugin\" && cp \"./plugins/monitoring-plugin/dist/index.js\" \"./web/out/plugins/monitoring-plugin\"",
     "server:prod": "yarn workspace server build && yarn build:web-plugins && cpx \"web/out/**\" \"server/build/renderer/\" && mkdir -p ./server/build/@janhq && cp -r ./plugins/* ./server/build/@janhq",
     "start:server": "yarn server:prod && node server/build/main.js"
   },
@@ -52,8 +60,5 @@
     "rimraf": "^3.0.2",
     "wait-on": "^7.0.1"
   },
-  "version": "0.0.0",
-  "dependencies": {
-    "@janhq/core": "file:core"
-  }
+  "version": "0.0.0"
 }

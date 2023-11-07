@@ -1,5 +1,10 @@
 import { useAtom } from 'jotai'
-import { userConfigs } from '@helpers/JotaiWrapper'
+import { atomWithStorage } from 'jotai/utils'
+
+export const userConfigs = atomWithStorage<UserConfig>('config', {
+  gettingStartedShow: true,
+  primaryColor: 'primary-blue',
+})
 
 export function useUserConfigs() {
   return useAtom(userConfigs)

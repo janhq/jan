@@ -1,6 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 import { PluginType } from '@janhq/core'
-import { pluginManager } from '@plugin/PluginManager'
+
+import { pluginManager } from '@/plugin/PluginManager'
 
 export const isCorePluginInstalled = () => {
   if (!pluginManager.get(PluginType.Conversational)) {

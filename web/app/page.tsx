@@ -1,49 +1,31 @@
 'use client'
 
-import { useAtomValue } from 'jotai'
-import WelcomeScreen from '@screens/Welcome'
-import BotScreen from '@screens/Bot'
-import ChatScreen from '@screens/Chat'
-import ExploreModelsScreen from '@screens/ExploreModels'
-import MyModelsScreen from '@screens/MyModels'
-import SettingsScreen from '@screens/Settings'
-import EmptyChatScreen from '@screens/Chat/EmptyChatScreen'
+import BaseLayout from '@/containers/Layout'
 
-import {
-  MainViewState,
-  getMainViewStateAtom,
-} from '@helpers/atoms/MainView.atom'
+import { MainViewState } from '@/constants/screens'
 
-import React from 'react'
+import { useMainViewState } from '@/hooks/useMainViewState'
 
-import BaseLayout from '@containers/Layout'
+import ChatScreen from '@/screens/Chat'
+import ExploreModelsScreen from '@/screens/ExploreModels'
+import MyModelsScreen from '@/screens/MyModels'
+import SettingsScreen from '@/screens/Settings'
+import WelcomeScreen from '@/screens/Welcome'
 
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-
-const Page: React.FC = () => {
-  const viewState = useAtomValue(getMainViewStateAtom)
+export default function Page() {
+  const { mainViewState } = useMainViewState()
 
   let children = null
-  switch (viewState) {
-    case MainViewState.ConversationEmptyModel:
-      children = <EmptyChatScreen />
-      break
-
+  switch (mainViewState) {
     case MainViewState.Welcome:
       children = <WelcomeScreen />
       break
 
-    case MainViewState.CreateBot:
-      children = <BotScreen />
-      break
-
-    case MainViewState.ExploreModel:
+    case MainViewState.ExploreModels:
       children = <ExploreModelsScreen />
       break
 
-    case MainViewState.ResourceMonitor:
-    case MainViewState.MyModel:
+    case MainViewState.MyModels:
       children = <MyModelsScreen />
       break
 
@@ -56,10 +38,5 @@ const Page: React.FC = () => {
       break
   }
 
-  return <BaseLayout>
-  {children}
-  <div><ToastContainer /></div>
-  </BaseLayout>
+  return <BaseLayout>{children}</BaseLayout>
 }
-
-export default Page

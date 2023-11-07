@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { JanPlugin, PluginType } from '@janhq/core'
+
 import Plugin from './Plugin'
 
 /**
@@ -57,12 +59,11 @@ export class PluginManager {
    */
   async getActive(): Promise<Plugin[]> {
     const plgList = await window.pluggableElectronIpc?.getActive()
-    let plugins: Plugin[] = plgList.map(
+    const plugins: Plugin[] = plgList.map(
       (plugin: any) =>
         new Plugin(
           plugin.name,
           plugin.url,
-          plugin.activationPoints,
           plugin.active,
           plugin.description,
           plugin.version,
@@ -118,12 +119,7 @@ export class PluginManager {
     const plgList = await window.pluggableElectronIpc?.install(plugins)
     if (plgList.cancelled) return false
     return plgList.map(async (plg: any) => {
-      const plugin = new Plugin(
-        plg.name,
-        plg.url,
-        plg.activationPoints,
-        plg.active
-      )
+      const plugin = new Plugin(plg.name, plg.url, plg.active)
       await this.activatePlugin(plugin)
       return plugin
     })

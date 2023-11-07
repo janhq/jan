@@ -1,15 +1,16 @@
-import React, { useEffect } from 'react'
-import ExploreModelItem from '@/_components/ExploreModelItem'
-import useGetConfiguredModels from '@hooks/useGetConfiguredModels'
+import { ModelCatalog } from '@janhq/core/lib/types'
 
-const ExploreModelList: React.FC = () => {
-  const { models } = useGetConfiguredModels()
+import ExploreModelItem from '@/screens/ExploreModels/ExploreModelItem'
 
+type Props = {
+  models: ModelCatalog[]
+}
+
+export default function ExploreModelList(props: Props) {
+  const { models } = props
   return (
     <div className="relative h-full w-full flex-shrink-0">
       {models?.map((item) => <ExploreModelItem key={item._id} model={item} />)}
     </div>
   )
 }
-
-export default ExploreModelList

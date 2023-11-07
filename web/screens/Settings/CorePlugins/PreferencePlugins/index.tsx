@@ -1,46 +1,99 @@
-import React from 'react'
-
+/* eslint-disable @typescript-eslint/no-explicit-any */
 type Props = {
   pluginName: string
   preferenceValues: any
   preferenceItems: any
 }
 
-import { formatPluginsName } from '@utils/converter'
+import { useForm } from 'react-hook-form'
+
+import { zodResolver } from '@hookform/resolvers/zod'
+
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  Input,
+  FormLabel,
+  FormMessage,
+  Button,
+} from '@janhq/uikit'
+
+import * as z from 'zod'
+
+import { toaster } from '@/containers/Toast'
+
+import { formatPluginsName } from '@/utils/converter'
 
 const PreferencePlugins = (props: Props) => {
   const { pluginName, preferenceValues, preferenceItems } = props
 
+  const FormSchema = z.record(
+    z
+      .string({ required_error: 'Field is Required' })
+      .min(1, { message: 'Field is Required' })
+  )
+
+  const form = useForm<z.infer<typeof FormSchema>>({
+    resolver: zodResolver(FormSchema),
+    defaultValues: preferenceValues.reduce(
+      (obj: any, item: { key: any; value: any }) =>
+        Object.assign(obj, { [item.key]: item.value }),
+      {}
+    ),
+  })
+
+  const onSubmit = async (values: z.infer<typeof FormSchema>) => {
+    for (const [key, value] of Object.entries(values)) {
+      // await preferences.set(pluginName, key, value)
+      // await execute(PluginService.OnPreferencesUpdate, {})
+    }
+    toaster({
+      title: formatPluginsName(pluginName),
+      description: 'Success update preferences',
+    })
+  }
+
   return (
-    <div>
-      <h6 className="mb-6 text-sm font-semibold capitalize">
+    <div className="mx-auto w-full lg:mt-10 lg:w-1/2">
+      <h6 className="mb-6 text-lg font-semibold capitalize">
         {formatPluginsName(pluginName)}
       </h6>
-
-      {preferenceItems
-        .filter((x: any) => x.pluginName === pluginName)
-        ?.map((e: any) => (
-          <div key={e.preferenceKey} className="mb-4 flex flex-col">
-            <div className="space-y-2">
-              <span className="">Setting:</span>
-              <span className="">{e.preferenceName}</span>
-            </div>
-            <span className="mt-1 text-muted-foreground">
-              {e.preferenceDescription}
-            </span>
-            <div className="mt-2 flex flex-row items-center space-x-4">
-              <input
-                className="block w-full rounded-md border-0 bg-background/80 py-1.5 text-xs shadow-sm ring-1 ring-inset ring-border placeholder:text-muted-foreground focus:ring-2 focus:ring-inset focus:ring-accent/50 sm:leading-6"
-                defaultValue={
-                  preferenceValues.filter(
-                    (v: any) => v.key === e.preferenceKey
-                  )[0]?.value
-                }
-                onChange={(event) => {}}
-              ></input>
-            </div>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {preferenceItems
+            .filter((x: any) => x.pluginName === pluginName)
+            ?.map((e: any) => (
+              <FormField
+                key={e.preferenceKey}
+                control={form.control}
+                name={e.preferenceKey}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{e.preferenceName}</FormLabel>
+                    <FormDescription className="mb-2">
+                      {e.preferenceDescription}
+                    </FormDescription>
+                    <FormControl>
+                      <Input
+                        placeholder={`Enter your ${e.preferenceName}`}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ))}
+          <div className="pt-4">
+            <Button type="submit" block>
+              Submit
+            </Button>
           </div>
-        ))}
+        </form>
+      </Form>
     </div>
   )
 }

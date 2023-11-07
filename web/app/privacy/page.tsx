@@ -1,7 +1,7 @@
 import { Metadata } from 'next'
+
 import Image from 'next/image'
 import Link from 'next/link'
-import React from 'react'
 
 export const metadata: Metadata = {
   title: 'Privacy - Jan.ai',
@@ -19,7 +19,7 @@ const Page: React.FC = () => {
           </div>
         </Link>
       </div>
-      <article className="prose my-20 w-full lg:prose-xl">
+      <article className="prose lg:prose-xl my-20 w-full">
         <h1>Privacy Policy </h1>
         <p>
           Jan is committed to protecting your privacy and ensuring that your

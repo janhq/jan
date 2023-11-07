@@ -1,35 +1,18 @@
-import React from 'react'
-import CompactLogo from '@containers/Logo/CompactLogo'
-import { useSetAtom } from 'jotai'
-import {
-  setMainViewStateAtom,
-  MainViewState,
-} from '@helpers/atoms/MainView.atom'
-
-import { Button } from '@uikit'
+import LogoMark from '@/containers/Brand/Logo/Mark'
 
 const WelcomeScreen = () => {
-  const setMainViewState = useSetAtom(setMainViewStateAtom)
-
   return (
     <div className="flex h-full items-center justify-center px-4">
       <div className="text-center">
-        <CompactLogo width={40} height={40} />
-        <h1
-          data-testid="testid-welcome-title"
-          className="text-2xl font-bold leading-snug"
-        >
+        <LogoMark
+          className="mx-auto mb-4 animate-wave"
+          width={56}
+          height={56}
+        />
+        <h1 data-testid="testid-welcome-title" className="text-2xl font-bold">
           Welcome to Jan
         </h1>
-        <p className="text-base tracking-wide text-gray-600 dark:text-gray-400">{`let’s download your first model`}</p>
-        <div className="mt-4">
-          <Button
-            themes="accent"
-            onClick={() => setMainViewState(MainViewState.ExploreModel)}
-          >
-            Explore Models
-          </Button>
-        </div>
+        <p className="">{`let’s download your first model`}</p>
       </div>
     </div>
   )

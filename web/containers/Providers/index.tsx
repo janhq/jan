@@ -1,19 +1,25 @@
 'use client'
 
-import { PropsWithChildren } from 'react'
-import { ThemeWrapper } from '@helpers/ThemeWrapper'
-import JotaiWrapper from '@helpers/JotaiWrapper'
-import { ModalWrapper } from '@helpers/ModalWrapper'
-import { useEffect, useState } from 'react'
-import CompactLogo from '@containers/Logo/CompactLogo'
-import EventListenerWrapper from '@helpers/EventListenerWrapper'
-import { setupCoreServices } from '@services/coreService'
+import { PropsWithChildren, useEffect, useState } from 'react'
+
+import { Toaster } from 'react-hot-toast'
+
+import { TooltipProvider } from '@janhq/uikit'
+
+import EventListenerWrapper from '@/containers/Providers/EventListener'
+import JotaiWrapper from '@/containers/Providers/Jotai'
+import ThemeWrapper from '@/containers/Providers/Theme'
+
+import FeatureToggleWrapper from '@/context/FeatureToggle'
+
+import { setupCoreServices } from '@/services/coreService'
 import {
   isCorePluginInstalled,
   setupBasePlugins,
-} from '@services/pluginService'
-import { FeatureToggleWrapper } from '@helpers/FeatureToggleWrapper'
-import { pluginManager } from '../../plugin/PluginManager'
+} from '@/services/pluginService'
+
+import { ModalWrapper } from '@/helpers/ModalWrapper'
+import { pluginManager } from '@/plugin'
 
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
@@ -59,21 +65,18 @@ const Providers = (props: PropsWithChildren) => {
 
   return (
     <JotaiWrapper>
-      {setupCore && (
-        <ThemeWrapper>
-          {activated ? (
-            <FeatureToggleWrapper>
-              <EventListenerWrapper>
+      <ThemeWrapper>
+        {setupCore && activated && (
+          <FeatureToggleWrapper>
+            <EventListenerWrapper>
+              <TooltipProvider>
                 <ModalWrapper>{children}</ModalWrapper>
-              </EventListenerWrapper>
-            </FeatureToggleWrapper>
-          ) : (
-            <div className="flex h-screen w-screen items-center justify-center bg-background">
-              <CompactLogo width={56} height={56} />
-            </div>
-          )}
-        </ThemeWrapper>
-      )}
+              </TooltipProvider>
+            </EventListenerWrapper>
+            <Toaster position="top-right" />
+          </FeatureToggleWrapper>
+        )}
+      </ThemeWrapper>
     </JotaiWrapper>
   )
 }

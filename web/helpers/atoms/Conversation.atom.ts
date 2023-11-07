@@ -1,6 +1,6 @@
 import { atom } from 'jotai'
-import { MainViewState, setMainViewStateAtom } from './MainView.atom'
-import { activeBotAtom } from './Bot.atom'
+
+// import { MainViewState, setMainViewStateAtom } from './MainView.atom'
 
 /**
  * Stores the current active conversation id.
@@ -12,11 +12,11 @@ export const getActiveConvoIdAtom = atom((get) => get(activeConversationIdAtom))
 export const setActiveConvoIdAtom = atom(
   null,
   (_get, set, convoId: string | undefined) => {
-    if (convoId) {
-      console.debug(`Set active conversation id: ${convoId}`)
-      set(setMainViewStateAtom, MainViewState.Conversation)
-    }
-    set(activeBotAtom, undefined)
+    // if (convoId) {
+    //   console.debug(`Set active conversation id: ${convoId}`)
+    //   set(setMainViewStateAtom, MainViewState.Chat)
+    // }
+
     set(activeConversationIdAtom, convoId)
   }
 )

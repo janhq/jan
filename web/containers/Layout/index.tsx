@@ -1,20 +1,19 @@
 import React, { PropsWithChildren, useEffect } from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+
 import { useTheme } from 'next-themes'
-import { SidebarLeft, SidebarRight } from '@containers/Sidebar'
-import { twMerge } from 'tailwind-merge'
-import { rightSideBarExpandStateAtom } from '@helpers/atoms/SideBarExpand.atom'
-import Topbar from '@containers/Topbar'
-import BottomBar from '@containers/BottomBar'
+
 import { motion as m } from 'framer-motion'
-import { getMainViewStateAtom } from '@helpers/atoms/MainView.atom'
-import { MainViewState } from '@helpers/atoms/MainView.atom'
+
+import BottomBar from '@/containers/Layout/BottomBar'
+import RibbonNav from '@/containers/Layout/Ribbon'
+
+import TopBar from '@/containers/Layout/TopBar'
+
+import { useMainViewState } from '@/hooks/useMainViewState'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
-
-  const isRightSidebarVisible = useAtomValue(rightSideBarExpandStateAtom)
-  const viewState = useAtomValue(getMainViewStateAtom)
+  const { mainViewState } = useMainViewState()
 
   const { theme } = useTheme()
 
@@ -35,19 +34,12 @@ const BaseLayout = (props: PropsWithChildren) => {
 
   return (
     <div className="flex h-screen w-screen flex-1 overflow-hidden">
-      <SidebarLeft />
-      <div
-        className={twMerge(
-          'border-border bg-background/50 relative top-8 flex h-[calc(100vh-72px)] w-full overflow-hidden rounded-lg border',
-          viewState === MainViewState.BotInfo && isRightSidebarVisible
-            ? 'mr-0'
-            : 'mr-4'
-        )}
-      >
+      <RibbonNav />
+      <div className=" relative top-12 flex h-[calc(100vh-96px)] w-full overflow-hidden bg-background/50">
         <div className="w-full">
-          <Topbar />
+          <TopBar />
           <m.div
-            key={viewState}
+            key={mainViewState}
             initial={{ opacity: 0, y: -8 }}
             className="h-full"
             animate={{
@@ -63,9 +55,6 @@ const BaseLayout = (props: PropsWithChildren) => {
           <BottomBar />
         </div>
       </div>
-      {viewState === MainViewState.BotInfo && isRightSidebarVisible && (
-        <SidebarRight />
-      )}
     </div>
   )
 }

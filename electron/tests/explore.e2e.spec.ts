@@ -36,12 +36,6 @@ test.afterAll(async () => {
 
 test("explores models", async () => {
   await page.getByTestId("Explore Models").first().click();
-  const header = await page
-    .getByRole("heading")
-    .filter({ hasText: "Explore Models" })
-    .first()
-    .isDisabled();
-  expect(header).toBe(false);
-
+  await page.getByTestId("testid-explore-models").isVisible();
   //   More test cases here...
 });

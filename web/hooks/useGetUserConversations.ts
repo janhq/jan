@@ -1,14 +1,15 @@
+import { PluginType } from '@janhq/core'
+import { ConversationalPlugin } from '@janhq/core/lib/plugins'
+import { Conversation } from '@janhq/core/lib/types'
 import { useSetAtom } from 'jotai'
+
+import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   conversationStatesAtom,
   userConversationsAtom,
-} from '@helpers/atoms/Conversation.atom'
-import { pluginManager } from '../plugin/PluginManager'
-import { PluginType } from '@janhq/core'
-import { setConvoMessagesAtom } from '@helpers/atoms/ChatMessage.atom'
-import { toChatMessage } from '@models/ChatMessage'
-import { ConversationalPlugin } from '@janhq/core/lib/plugins'
-import { Conversation } from "@janhq/core/lib/types"
+} from '@/helpers/atoms/Conversation.atom'
+import { toChatMessage } from '@/models/ChatMessage'
+import { pluginManager } from '@/plugin/PluginManager'
 
 const useGetUserConversations = () => {
   const setConversationStates = useSetAtom(conversationStatesAtom)
@@ -33,8 +34,8 @@ const useGetUserConversations = () => {
       })
       setConversationStates(convoStates)
       setConversations(convos ?? [])
-    } catch (ex) {
-      console.log(ex)
+    } catch (error) {
+      console.log(error)
     }
   }
 

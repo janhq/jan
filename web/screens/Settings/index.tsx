@@ -1,24 +1,24 @@
-'use client'
-import React from 'react'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { useEffect, useState } from 'react'
 
+import { ScrollArea } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
-
-import AppearanceOptions from './Appearance'
-import PluginCatalog from './CorePlugins/PluginsCatalog'
-import PreferencePlugins from './CorePlugins/PreferencePlugins'
 
 import { twMerge } from 'tailwind-merge'
 
-import { formatPluginsName } from '@utils/converter'
+import Advanced from '@/screens/Settings/Advanced'
+import AppearanceOptions from '@/screens/Settings/Appearance'
+import PluginCatalog from '@/screens/Settings/CorePlugins/PluginsCatalog'
+import PreferencePlugins from '@/screens/Settings/CorePlugins/PreferencePlugins'
 
-import Advanced from './Advanced'
+import { formatPluginsName } from '@/utils/converter'
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')
+  const [menus, setMenus] = useState<any[]>([])
   const [preferenceItems, setPreferenceItems] = useState<any[]>([])
   const [preferenceValues, setPreferenceValues] = useState<any[]>([])
-  const [menus, setMenus] = useState<any[]>([])
 
   useEffect(() => {
     const menu = ['Appearance']
@@ -57,12 +57,10 @@ const SettingsScreen = () => {
   const preferencePlugins = preferenceItems
     .map((x) => x.pluginName)
     .filter((x, i) => {
-      return preferenceItems.map((x) => x.pluginName).indexOf(x) === i
+      //     return prefere/nceItems.map((x) => x.pluginName).indexOf(x) === i
     })
 
-  const [activePreferencePlugin, setActivePreferencePlugin] = useState(
-    preferencePlugins[0]
-  )
+  const [activePreferencePlugin, setActivePreferencePlugin] = useState('')
 
   const handleShowOptions = (menu: string) => {
     switch (menu) {
@@ -88,90 +86,89 @@ const SettingsScreen = () => {
 
   return (
     <div className="flex h-full">
-      <div className="flex h-full w-80 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
-        <div className="p-5">
-          <h1 className="text-lg font-bold">Settings</h1>
-          <p
-            data-testid="testid-setting-description"
-            className="mt-2 text-gray-600 text-muted-foreground"
-          >
-            Manage your account settings
-          </p>
-          <div className="mt-5 flex-shrink-0">
-            <label className="font-bold uppercase text-muted-foreground">
-              Options
-            </label>
-            <div className="mt-1 font-semibold">
-              {menus.map((menu, i) => {
-                const isActive = activeStaticMenu === menu
-                return (
-                  <div key={i} className="relative block py-2">
-                    <button
-                      onClick={() => {
-                        setActiveStaticMenu(menu)
-                        setActivePreferencePlugin('')
-                      }}
-                      className="block w-full text-left"
-                    >
-                      <p className={twMerge(isActive && 'relative z-10')}>
-                        {menu}
-                      </p>
-                    </button>
-                    {isActive ? (
-                      <m.div
-                        className="absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md bg-accent/20 p-2"
-                        layoutId="active-static-menu"
-                      />
-                    ) : null}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          <div className="mt-5 flex-shrink-0">
-            {preferencePlugins.length > 0 && (
-              <label className="font-bold uppercase text-gray-500">
-                Core plugins
+      <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+        <ScrollArea className="h-full w-full">
+          <div className="p-4">
+            <div className="flex-shrink-0">
+              <label className="font-bold uppercase text-muted-foreground">
+                Options
               </label>
-            )}
-            <div className="mt-1 font-semibold">
-              {preferencePlugins.map((menu, i) => {
-                const isActive = activePreferencePlugin === menu
-                return (
-                  <div key={i} className="relative block py-2">
-                    <button
-                      onClick={() => {
-                        setActivePreferencePlugin(menu)
-                        setActiveStaticMenu('')
-                      }}
-                      className="block w-full text-left"
-                    >
-                      <p
-                        className={twMerge(
-                          'capitalize',
-                          isActive && 'relative z-10'
-                        )}
+              <div className="mt-2 font-medium">
+                {menus.map((menu, i) => {
+                  const isActive = activeStaticMenu === menu
+                  return (
+                    <div key={i} className="relative my-0.5 block py-1.5">
+                      <div
+                        onClick={() => {
+                          setActiveStaticMenu(menu)
+                          setActivePreferencePlugin('')
+                        }}
+                        className="block w-full cursor-pointer"
                       >
-                        {formatPluginsName(String(menu))}
-                      </p>
-                    </button>
-                    {isActive ? (
-                      <m.div
-                        className="absolute inset-0 -left-4 h-full w-[calc(100%+32px)] rounded-md  bg-accent/20 p-2"
-                        layoutId="active-static-menu"
-                      />
-                    ) : null}
-                  </div>
-                )
-              })}
+                        <span className={twMerge(isActive && 'relative z-10')}>
+                          {menu}
+                        </span>
+                      </div>
+                      {isActive && (
+                        <m.div
+                          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/50"
+                          layoutId="active-static-menu"
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="mt-5 flex-shrink-0">
+              {preferencePlugins.length > 0 && (
+                <label className="font-bold uppercase text-muted-foreground">
+                  Core plugins
+                </label>
+              )}
+              <div className="mt-2 font-medium">
+                {preferencePlugins.map((menu, i) => {
+                  const isActive = activePreferencePlugin === menu
+                  return (
+                    <div key={i} className="relative my-0.5 block py-1.5">
+                      <div
+                        onClick={() => {
+                          setActivePreferencePlugin(menu)
+                          setActiveStaticMenu('')
+                        }}
+                        className="block w-full cursor-pointer"
+                      >
+                        <span
+                          className={twMerge(
+                            'capitalize',
+                            isActive && 'relative z-10'
+                          )}
+                        >
+                          {formatPluginsName(String(menu))}
+                        </span>
+                      </div>
+                      {isActive ? (
+                        <m.div
+                          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/50"
+                          layoutId="active-static-menu"
+                        />
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
-        </div>
+        </ScrollArea>
       </div>
 
-      <div className="w-full overflow-y-auto bg-background/50 p-5">
-        {handleShowOptions(activeStaticMenu || activePreferencePlugin)}
+      <div className="h-full w-full bg-background/50">
+        <ScrollArea className="h-full w-full">
+          <div className="p-4">
+            {handleShowOptions(activeStaticMenu || activePreferencePlugin)}
+          </div>
+        </ScrollArea>
       </div>
     </div>
   )

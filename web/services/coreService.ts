@@ -1,5 +1,5 @@
-import { EventEmitter } from './eventsService'
 import * as cn from './cloudNativeService'
+import { EventEmitter } from './eventsService'
 export const setupCoreServices = () => {
   if (typeof window === 'undefined') {
     console.log('undefine', window)
