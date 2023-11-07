@@ -1,9 +1,9 @@
-import { Fragment } from 'react'
+import { Fragment, useEffect } from 'react'
 
 import { Model } from '@janhq/core/lib/types'
 import { ScrollArea, Input, Button, Badge } from '@janhq/uikit'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { Trash2Icon } from 'lucide-react'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
@@ -28,6 +28,7 @@ import HistoryList from '@/screens/Chat/HistoryList'
 import {
   currentConversationAtom,
   getActiveConvoIdAtom,
+  waitingToSendMessage,
 } from '@/helpers/atoms/Conversation.atom'
 
 import { currentConvoStateAtom } from '@/helpers/atoms/Conversation.atom'
@@ -46,6 +47,7 @@ const ChatScreen = () => {
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
   const activeConversationId = useAtomValue(getActiveConvoIdAtom)
+  const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const { requestCreateConvo } = useCreateConversation()
 
   const handleMessageChange = (value: string) => {
@@ -56,10 +58,16 @@ const ChatScreen = () => {
     if (activeConversationId) {
       sendChatMessage()
     } else {
+      setIsWaitingToSend(true)
       await requestCreateConvo(activeModel as Model)
-      sendChatMessage()
     }
   }
+  useEffect(() => {
+    if (isWaitingToSend && activeConversationId) {
+      setIsWaitingToSend(false)
+      sendChatMessage()
+    }
+  }, [waitingToSendMessage, activeConversationId])
 
   const handleKeyDown = async (
     event: React.KeyboardEvent<HTMLInputElement>

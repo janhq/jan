@@ -12,15 +12,11 @@ export const getActiveConvoIdAtom = atom((get) => get(activeConversationIdAtom))
 export const setActiveConvoIdAtom = atom(
   null,
   (_get, set, convoId: string | undefined) => {
-    // if (convoId) {
-    //   console.debug(`Set active conversation id: ${convoId}`)
-    //   set(setMainViewStateAtom, MainViewState.Chat)
-    // }
-
     set(activeConversationIdAtom, convoId)
   }
 )
 
+export const waitingToSendMessage = atom<boolean | undefined>(undefined)
 /**
  * Stores all conversation states for the current user
  */
