@@ -1,9 +1,0 @@
-{
-  "extends": "./../tsconfig.json",
-  "compilerOptions": {
-    "outDir": "./../dist/esm",
-    "module": "esnext"
-  },
-  "include": ["@types/*"],
-  "files": ["../@types/global.d.ts", "../index.ts"]
-}

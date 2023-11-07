@@ -1,23 +1,23 @@
-import { useAtom, useSetAtom } from 'jotai'
-import { executeSerial } from '@services/pluginService'
-import { DataService, ModelManagementService } from '@janhq/core'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   userConversationsAtom,
   setActiveConvoIdAtom,
   addNewConversationStateAtom,
 } from '@helpers/atoms/Conversation.atom'
-import useGetModelById from './useGetModelById'
+import { Model } from '@janhq/core/lib/types'
+import { downloadedModelAtom } from '@helpers/atoms/DownloadedModel.atom'
+import { generateConversationId } from '@utils/conversation'
 
 const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
     userConversationsAtom
   )
-  const { getModelById } = useGetModelById()
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
   const addNewConvoState = useSetAtom(addNewConversationStateAtom)
+  const models = useAtomValue(downloadedModelAtom)
 
   const createConvoByBot = async (bot: Bot) => {
-    const model = await getModelById(bot.modelId)
+    const model = models.find((e) => e._id === bot.modelId)
 
     if (!model) {
       alert(
@@ -29,19 +29,10 @@ const useCreateConversation = () => {
     return requestCreateConvo(model, bot)
   }
 
-  const requestCreateConvo = async (model: AssistantModel, bot?: Bot) => {
+  const requestCreateConvo = async (model: Model, bot?: Bot) => {
     const conversationName = model.name
-    const conv: Conversation = {
-      modelId: model._id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      name: conversationName,
-      botId: bot?._id ?? undefined,
-    }
-    const id = await executeSerial(DataService.CreateConversation, conv)
-
     const mappedConvo: Conversation = {
-      _id: id,
+      _id: generateConversationId(),
       modelId: model._id,
       name: conversationName,
       createdAt: new Date().toISOString(),
@@ -49,12 +40,12 @@ const useCreateConversation = () => {
       botId: bot?._id ?? undefined,
     }
 
-    addNewConvoState(id ?? '', {
+    addNewConvoState(mappedConvo._id, {
       hasMore: true,
       waitingForResponse: false,
     })
     setUserConversations([mappedConvo, ...userConversations])
-    setActiveConvoId(id)
+    setActiveConvoId(mappedConvo._id)
   }
 
   return {

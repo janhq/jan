@@ -54,6 +54,11 @@ jobs:
           for dir in $(cat /tmp/change_dir.txt)
           do
             echo "$dir"
+            if [ ! -d "$dir" ]; then
+              echo "Directory $dir does not exist, plugin might be removed, skipping..."
+              continue
+            fi
+
             # Extract current version
             current_version=$(jq -r '.version' $dir/package.json)
 
@@ -80,6 +85,11 @@ jobs:
         with:
           node-version: "20.x"
           registry-url: "https://registry.npmjs.org"
+      - name: Build core module
+        run: |
+          cd core
+          npm install
+          npm run build
 
       - name: Publish npm packages
         run: |
@@ -87,6 +97,10 @@ jobs:
           for dir in $(cat /tmp/change_dir.txt)
           do
             echo $dir
+            if [ ! -d "$dir" ]; then
+              echo "Directory $dir does not exist, plugin might be removed, skipping..."
+              continue
+            fi
             cd $dir
             npm install
             if [[ $dir == 'data-plugin' ]]; then
@@ -112,6 +126,10 @@ jobs:
           for dir in $(cat /tmp/change_dir.txt)
           do
             echo "$dir"
+            if [ ! -d "$dir" ]; then
+              echo "Directory $dir does not exist, plugin might be removed, skipping..."
+              continue
+            fi
             version=$(jq -r '.version' plugins/$dir/package.json)
             git config --global user.email "service@jan.ai"
             git config --global user.name "Service Account"

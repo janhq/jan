@@ -4,7 +4,7 @@ import { getActiveConvoIdAtom } from './Conversation.atom'
 /**
  * Stores all chat messages for all conversations
  */
-const chatMessages = atom<Record<string, ChatMessage[]>>({})
+export const chatMessages = atom<Record<string, ChatMessage[]>>({})
 
 /**
  * Return the chat messages for the current active conversation
@@ -12,7 +12,8 @@ const chatMessages = atom<Record<string, ChatMessage[]>>({})
 export const getCurrentChatMessagesAtom = atom<ChatMessage[]>((get) => {
   const activeConversationId = get(getActiveConvoIdAtom)
   if (!activeConversationId) return []
-  return get(chatMessages)[activeConversationId] ?? []
+  const messages = get(chatMessages)[activeConversationId]
+  return messages ?? []
 })
 
 export const setCurrentChatMessagesAtom = atom(
@@ -25,6 +26,17 @@ export const setCurrentChatMessagesAtom = atom(
       ...get(chatMessages),
     }
     newData[currentConvoId] = messages
+    set(chatMessages, newData)
+  }
+)
+
+export const setConvoMessagesAtom = atom(
+  null,
+  (get, set, messages: ChatMessage[], convoId: string) => {
+    const newData: Record<string, ChatMessage[]> = {
+      ...get(chatMessages),
+    }
+    newData[convoId] = messages
     set(chatMessages, newData)
   }
 )

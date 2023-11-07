@@ -3,12 +3,13 @@ import ModelDownloadButton from '../ModelDownloadButton'
 import ModelDownloadingButton from '../ModelDownloadingButton'
 import { useAtomValue } from 'jotai'
 import { modelDownloadStateAtom } from '@helpers/atoms/DownloadState.atom'
+import { Model } from '@janhq/core/lib/types'
 
 type Props = {
-  model: AssistantModel
+  model: Model
   isRecommend: boolean
   required?: string
-  onDownloadClick?: (model: AssistantModel) => void
+  onDownloadClick?: (model: Model) => void
 }
 
 const AvailableModelCard: React.FC<Props> = ({
@@ -53,7 +54,7 @@ const AvailableModelCard: React.FC<Props> = ({
           description={model.shortDescription}
           isRecommend={isRecommend}
           name={model.name}
-          type={model.type}
+          type={'LLM'}
         />
         {downloadButton}
       </div>

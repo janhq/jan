@@ -2,9 +2,10 @@ import React from 'react'
 import Image from 'next/image'
 import useCreateConversation from '@hooks/useCreateConversation'
 import { PlayIcon } from '@heroicons/react/24/outline'
+import { Model } from '@janhq/core/lib/types'
 
 type Props = {
-  model: AssistantModel
+  model: Model
 }
 
 const ConversationalCard: React.FC<Props> = ({ model }) => {

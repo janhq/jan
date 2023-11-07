@@ -1,5 +1,4 @@
 import React from 'react'
-import SearchBar from '../SearchBar'
 import ModelTable from '../ModelTable'
 import { useGetDownloadedModels } from '@hooks/useGetDownloadedModels'
 

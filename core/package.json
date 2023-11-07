@@ -1,6 +1,6 @@
 {
   "name": "@janhq/core",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Plugin core lib",
   "keywords": [
     "jan",
@@ -17,7 +17,7 @@
   },
   "exports": {
     ".": "./lib/index.js",
-    "./store": "./lib/store.js"
+    "./plugin": "./lib/plugins/index.js"
   },
   "files": [
     "lib",

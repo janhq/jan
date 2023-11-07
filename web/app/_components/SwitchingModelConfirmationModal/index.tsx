@@ -3,16 +3,17 @@ import { Dialog, Transition } from '@headlessui/react'
 import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { switchingModelConfirmationModalPropsAtom } from '@helpers/atoms/Modal.atom'
 import { useAtom, useAtomValue } from 'jotai'
-import { activeAssistantModelAtom } from '@helpers/atoms/Model.atom'
+import { activeModelAtom } from '@helpers/atoms/Model.atom'
 import useStartStopModel from '@hooks/useStartStopModel'
+import { Model } from '@janhq/core/lib/types'
 
 export type SwitchingModelConfirmationModalProps = {
-  replacingModel: AssistantModel
+  replacingModel: Model
 }
 
 const SwitchingModelConfirmationModal: React.FC = () => {
   const [props, setProps] = useAtom(switchingModelConfirmationModalPropsAtom)
-  const activeModel = useAtomValue(activeAssistantModelAtom)
+  const activeModel = useAtomValue(activeModelAtom)
   const { startModel } = useStartStopModel()
 
   const onConfirmSwitchModelClick = () => {

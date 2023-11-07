@@ -1,8 +1,9 @@
 import React from 'react'
 import ModelVersionItem from '../ModelVersionItem'
+import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 
 type Props = {
-  model: Product
+  model: ModelCatalog
   versions: ModelVersion[]
   recommendedVersion: string
 }

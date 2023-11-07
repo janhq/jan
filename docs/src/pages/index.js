@@ -129,13 +129,13 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="container mt-10 mb-20 px-48 text-center">
+          <div className="container mt-10 mb-20 text-center">
             <h2>AI that you control</h2>
             <p className="text-base mt-2 w-full lg:w-2/5 mx-auto leading-relaxed">
               Jan runs Large Language Models locally on Windows, Mac and Linux.
               Available on Desktop and Cloud-Native.
             </p>
-            <div className="grid text-left lg:grid-cols-2 mt-16 gap-16">
+            <div className="grid text-left lg:grid-cols-2 lg:px-48 mt-16 gap-16">
               {features.map((feat, i) => {
                 return (
                   <div className="flex gap-x-4" key={i}>

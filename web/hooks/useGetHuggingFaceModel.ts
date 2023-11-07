@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useSetAtom } from 'jotai'
 import { modelLoadMoreAtom } from '@helpers/atoms/ExploreModelLoading.atom'
+import { ModelCatalog } from '@janhq/core/lib/types'
 
 export default function useGetHuggingFaceModel() {
   const setLoadMoreInProgress = useSetAtom(modelLoadMoreAtom)
-  const [modelList, setModelList] = useState<Product[]>([])
+  const [modelList, setModelList] = useState<ModelCatalog[]>([])
   const [currentOwner, setCurrentOwner] = useState<string | undefined>(
     undefined
   )
