@@ -47,7 +47,7 @@ export default function useDeleteConversation() {
         deleteMessages(activeConvoId)
         toaster({
           title: 'Succes delete a chat',
-          description: `Delete chat with ${activeModel} has been completed`,
+          description: `Delete chat with ${activeModel?.name} has been completed`,
         })
         if (currentConversations.length > 0) {
           setActiveConvoId(currentConversations[0]._id)
