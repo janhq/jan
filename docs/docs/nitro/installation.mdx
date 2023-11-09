@@ -1,0 +1,101 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Installation
+## How to install
+
+This guide provides step-by-step instructions for installing the software on various operating systems. Please follow the steps that correspond to your system.
+
+### Step 1: Install dependencies
+
+First, you need to install the necessary dependencies.
+
+<Tabs>
+  <TabItem value="macosAppleSilicon" label="MacOS">
+    <p>Open the terminal, navigate to the project directory, and run:</p>
+    <pre><code>./install_deps.sh</code></pre>
+  </TabItem>
+  <TabItem value="Windows" label="Windows">
+    <p>Open Command Prompt as Administrator, navigate to the project directory, and execute:</p>
+    <pre><code>cmake -S ./nitro_deps -B ./build_deps/nitro_deps<br/>
+cmake --build ./build_deps/nitro_deps --config Release</code></pre>
+  </TabItem>  
+</Tabs>
+
+A new folder named `build_deps` will be created.
+
+### Step 2: Generate Build Files
+
+You will now generate the build files needed to compile the software.
+
+<Tabs>
+  <TabItem value="macosIntel" label="MacOS (Intel)">
+    <p>In the terminal, run:</p>
+    <pre><code>mkdir build && cd build<br/>
+cmake -DLLAMA_METAL=OFF ..</code></pre>
+  </TabItem>
+  <TabItem value="linuxCuda" label="Linux (CUDA)">
+    <p>In the terminal, run:</p>
+    <pre><code>mkdir build && cd build<br/>
+cmake -DLLAMA_CUBLAS=ON ..</code></pre>
+  </TabItem>
+  <TabItem value="macosAppleSilicon" label="MacOS (Apple Silicon)">
+    <p>In the terminal, run:</p>
+    <pre><code>mkdir build && cd build<br/>
+cmake ..</code></pre>
+  </TabItem>
+  <TabItem value="otherLinuxWindows" label="Other Linux, Windows">
+    <p>In the terminal (or Command Prompt for Windows), run:</p>
+    <pre><code>mkdir build && cd build<br/>
+cmake ..</code></pre>
+  </TabItem>
+</Tabs>
+
+### Step 3: Build the Application
+
+Now it's time to compile the software.
+
+<Tabs>
+  <TabItem value="macos" label="MacOS">
+    <p>Open the terminal and enter:</p>
+    <pre><code>make -j $(sysctl -n hw.physicalcpu)</code></pre>
+  </TabItem>
+  <TabItem value="linux" label="Linux">
+    <p>Open the terminal and enter:</p>
+    <pre><code>make -j $(nproc)</code></pre>
+  </TabItem>
+  <TabItem value="windows" label="Windows">
+    <p>In Command Prompt, run:</p>
+    <pre><code>cmake --build . --config Release</code></pre>
+  </TabItem>
+</Tabs>
+
+### Step 4: Run the Application
+
+To start the application:
+
+<Tabs>
+  <TabItem value="macos" label="MacOS">
+    <p>In the terminal, navigate to the build directory and run:</p>
+    <pre><code>./nitro</code></pre>
+  </TabItem>
+  <TabItem value="linux" label="Linux">
+    <p>In the terminal, navigate to the build directory and run:</p>
+    <pre><code>./nitro</code></pre>
+  </TabItem>
+  <TabItem value="windows" label="Windows">
+    <p>In Command Prompt, navigate to the Release directory within the build folder and execute:</p>
+    <pre><code>copy ..\..\build_deps\_install\bin\zlib.dll .<br/>
+nitro.exe</code></pre>
+  </TabItem>
+</Tabs>
+
+### Verification:
+
+To verify if the build was successful, open your web browser and go to:
+
+```
+localhost:8080/test
+```
+
+You should see a confirmation page if the installation was successful.

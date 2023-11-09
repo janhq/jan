@@ -121,6 +121,7 @@ const sidebars = {
       items: [
         "nitro/architecture",
         "nitro/using-nitro",
+        "nitro/installation"
       ],
     },
   ],
