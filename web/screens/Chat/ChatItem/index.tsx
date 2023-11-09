@@ -12,6 +12,7 @@ const ChatItem = forwardRef<Ref, Props>(({ message }, ref) => {
   return (
     <div ref={ref} className="py-4 even:bg-secondary dark:even:bg-secondary/20">
       <SimpleTextMessage
+        status={message.status}
         key={message.id}
         avatarUrl={message.senderAvatarUrl}
         senderName={message.senderName}

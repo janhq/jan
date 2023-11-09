@@ -70,3 +70,67 @@
   -webkit-animation: loaderDot 3s 500ms infinite ease-in-out;
   animation: loaderDot 3s 500ms infinite ease-in-out;
 }
+
+.bubble-loader {
+  position: relative;
+  margin-top: 8px;
+  height: 32px;
+  @apply bg-secondary;
+  border-radius: 20px;
+  width: 56px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.bubble-loader span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  position: absolute;
+  left: 50%;
+  margin-left: -4px;
+  animation: 3s infinite linear;
+}
+
+.bubble-loader span:nth-child(1) {
+  @apply bg-secondary-foreground/50;
+  animation: DotLeft 1.5s infinite linear;
+}
+.bubble-loader span:nth-child(2) {
+  @apply bg-secondary-foreground/50;
+  z-index: 100;
+}
+.bubble-loader span:nth-child(3) {
+  @apply bg-secondary-foreground/50;
+  animation: DotRight 1.5s infinite linear;
+}
+
+@keyframes DotRight {
+  0% {
+    -webkit-transform: translateX(14px);
+  }
+
+  50% {
+    -webkit-transform: translateX(-14px);
+  }
+
+  100% {
+    -webkit-transform: translateX(14px);
+    z-index: 200;
+  }
+}
+
+@keyframes DotLeft {
+  0% {
+    -webkit-transform: translateX(-14px);
+    z-index: 200;
+  }
+  50% {
+    -webkit-transform: translateX(14px);
+  }
+  100% {
+    -webkit-transform: translateX(-14px);
+  }
+}
