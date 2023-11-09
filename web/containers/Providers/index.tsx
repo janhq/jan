@@ -18,7 +18,6 @@ import {
   setupBasePlugins,
 } from '@/services/pluginService'
 
-import { ModalWrapper } from '@/helpers/ModalWrapper'
 import { pluginManager } from '@/plugin'
 
 const Providers = (props: PropsWithChildren) => {
