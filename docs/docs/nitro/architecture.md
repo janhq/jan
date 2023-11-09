@@ -2,6 +2,10 @@
 title: Architecture 
 ---
 
+:::info
+This document is being updated. Please stay tuned.
+:::
+
 ![Nitro Architecture](img/architecture.drawio.png)
 
 ### Components

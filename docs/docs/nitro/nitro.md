@@ -3,7 +3,7 @@ title: Nitro
 slug: /nitro
 ---
 
-Nitro, is the inference engine that powers Jan. Nitro is written in C++, optimized for edge deployment.
+Nitro, is the lightweight inference engine that powers Jan. Nitro is written in C++, optimized for edge deployment.
 
 ⚡ Explore Nitro's codebase: [GitHub](https://github.com/janhq/nitro)
 

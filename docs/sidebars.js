@@ -119,6 +119,7 @@ const sidebars = {
       collapsed: false,
       link: { type: "doc", id: "nitro/nitro" },
       items: [
+        "nitro/key-concepts",
         "nitro/architecture",
         "nitro/using-nitro",
         "nitro/installation"
