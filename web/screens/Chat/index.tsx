@@ -1,7 +1,7 @@
 import { Fragment, useEffect } from 'react'
 
 import { Model } from '@janhq/core/lib/types'
-import { ScrollArea, Input, Button, Badge } from '@janhq/uikit'
+import { Input, Button, Badge } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
 import { Trash2Icon } from 'lucide-react'
@@ -90,18 +90,14 @@ const ChatScreen = () => {
     }
   }
 
-  console.log(currentConvo)
-
   return (
     <div className="flex h-full">
-      <div className="flex h-full w-64 flex-shrink-0 flex-col border-r border-border">
-        <ScrollArea className="h-full w-full">
-          <HistoryList />
-        </ScrollArea>
+      <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+        <HistoryList />
       </div>
-      <div className="relative flex h-full w-full flex-col bg-muted/10">
+      <div className="relative flex h-full w-[calc(100%-256px)] flex-col bg-muted/10">
         <div className="flex h-full w-full flex-col justify-between">
-          {isEnableChat && (
+          {isEnableChat && currentConvo && (
             <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
               <div className="flex items-center justify-between">
                 <span>{currentConvo?.name ?? ''}</span>
@@ -135,7 +131,7 @@ const ChatScreen = () => {
           )}
 
           {isEnableChat ? (
-            <div className="flex h-full w-full overflow-x-auto">
+            <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
               <ChatBody />
             </div>
           ) : (
@@ -165,7 +161,7 @@ const ChatScreen = () => {
               )}
             </div>
           )}
-          <div className="flex w-full flex-shrink-0 items-center justify-center space-x-4 p-4">
+          <div className="mx-auto flex w-full flex-shrink-0 items-center justify-center space-x-4 p-4 lg:w-3/4">
             <Input
               type="text"
               className="h-10"

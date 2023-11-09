@@ -69,9 +69,7 @@ const Providers = (props: PropsWithChildren) => {
         {setupCore && activated && (
           <FeatureToggleWrapper>
             <EventListenerWrapper>
-              <TooltipProvider>
-                <ModalWrapper>{children}</ModalWrapper>
-              </TooltipProvider>
+              <TooltipProvider>{children}</TooltipProvider>
             </EventListenerWrapper>
             <Toaster position="top-right" />
           </FeatureToggleWrapper>

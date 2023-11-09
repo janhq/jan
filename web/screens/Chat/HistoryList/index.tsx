@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 
 import { Conversation, Model } from '@janhq/core/lib/types'
-import { Badge, Button } from '@janhq/uikit'
+import { Button } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -96,9 +96,7 @@ export default function HistoryList() {
                 {convo.updatedAt &&
                   displayDate(new Date(convo.updatedAt).getTime())}
               </p>
-              <span className="line-clamp-1">
-                {convo.summary ?? convo.name}
-              </span>
+              <h2 className="line-clamp-1">{convo.summary ?? convo.name}</h2>
               <p className="mt-1 line-clamp-2 text-xs">
                 {convo?.lastMessage ?? 'No new message'}
               </p>
