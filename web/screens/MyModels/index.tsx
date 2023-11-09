@@ -113,7 +113,8 @@ const MyModelsScreen = () => {
                                 <Button
                                   themes="danger"
                                   onClick={() =>
-                                    setTimeout(() => {
+                                    setTimeout(async () => {
+                                      await stopModel(model._id)
                                       deleteModel(model)
                                     }, 500)
                                   }

@@ -40,6 +40,7 @@ export function useGetConfiguredModels() {
   // TODO allow user for filter
   useEffect(() => {
     fetchModels()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return { loading, models }

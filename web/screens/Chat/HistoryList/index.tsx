@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 
 import { Conversation, Model } from '@janhq/core/lib/types'
-import { Button } from '@janhq/uikit'
+import { Badge, Button } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -64,7 +64,7 @@ export default function HistoryList() {
       <div className="sticky top-0 z-20 flex flex-col border-b border-border bg-background px-4 py-3">
         <Button
           size="sm"
-          themes="outline"
+          themes="secondary"
           onClick={handleClickConversation}
           disabled={!activeModel}
         >
