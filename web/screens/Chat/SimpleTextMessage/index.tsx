@@ -3,14 +3,11 @@ import React, { useState } from 'react'
 
 import hljs from 'highlight.js'
 
-import { atom, useAtom } from 'jotai'
 import { Marked } from 'marked'
 
 import { markedHighlight } from 'marked-highlight'
 
 import { twMerge } from 'tailwind-merge'
-
-import Typewriter from 'typewriter-effect'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
