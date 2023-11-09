@@ -1,6 +1,6 @@
-import { PluginType, fs } from "@janhq/core";
-import { ConversationalPlugin } from "@janhq/core/lib/plugins";
-import { Conversation } from "@janhq/core/lib/types";
+import { PluginType, fs } from '@janhq/core'
+import { ConversationalPlugin } from '@janhq/core/lib/plugins'
+import { Conversation } from '@janhq/core/lib/types'
 
 /**
  * JSONConversationalPlugin is a ConversationalPlugin implementation that provides
@@ -11,44 +11,52 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
    * Returns the type of the plugin.
    */
   type(): PluginType {
-    return PluginType.Conversational;
+    return PluginType.Conversational
   }
 
   /**
    * Called when the plugin is loaded.
    */
   onLoad() {
-    fs.mkdir("conversations")
-    console.debug("JSONConversationalPlugin loaded")
+    fs.mkdir('conversations')
+    console.debug('JSONConversationalPlugin loaded')
   }
 
   /**
    * Called when the plugin is unloaded.
    */
   onUnload() {
-    console.debug("JSONConversationalPlugin unloaded")
+    console.debug('JSONConversationalPlugin unloaded')
   }
 
   /**
    * Returns a Promise that resolves to an array of Conversation objects.
    */
-  getConversations(): Promise<Conversation[]> {
-    return this.getConversationDocs().then((conversationIds) =>
-      Promise.all(
-        conversationIds.map((conversationId) =>
-          fs
-            .readFile(`conversations/${conversationId}/${conversationId}.json`)
-            .then((data) => {
-              return JSON.parse(data) as Conversation;
-            })
-        )
-      ).then((conversations) =>
-        conversations.sort(
-          (a, b) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        )
+  async getConversations(): Promise<Conversation[]> {
+    try {
+      const convoIds = await this.getConversationDocs()
+
+      const promises = convoIds.map((conversationId) => {
+        return this.readConvo(conversationId)
+      })
+      const promiseResults = await Promise.allSettled(promises)
+      const convos = promiseResults
+        .map((result) => {
+          if (result.status === 'fulfilled') {
+            return JSON.parse(result.value) as Conversation
+          }
+        })
+        .filter((convo) => convo != null)
+      convos.sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       )
-    );
+      console.debug('getConversations: ', JSON.stringify(convos, null, 2))
+      return convos
+    } catch (error) {
+      console.error(error)
+      return []
+    }
   }
 
   /**
@@ -63,7 +71,7 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
           `conversations/${conversation._id}/${conversation._id}.json`,
           JSON.stringify(conversation)
         )
-      );
+      )
   }
 
   /**
@@ -71,7 +79,16 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
    * @param conversationId The ID of the conversation to delete.
    */
   deleteConversation(conversationId: string): Promise<void> {
-    return fs.rmdir(`conversations/${conversationId}`);
+    return fs.rmdir(`conversations/${conversationId}`)
+  }
+
+  /**
+   * A promise builder for reading a conversation from a file.
+   * @param convoId the conversation id we are reading from.
+   * @returns data of the conversation
+   */
+  private async readConvo(convoId: string): Promise<any> {
+    return fs.readFile(`conversations/${convoId}/${convoId}.json`)
   }
 
   /**
@@ -81,7 +98,7 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
    */
   private async getConversationDocs(): Promise<string[]> {
     return fs.listFiles(`conversations`).then((files: string[]) => {
-      return Promise.all(files.filter((file) => file.startsWith("jan-")));
-    });
+      return Promise.all(files.filter((file) => file.startsWith('jan-')))
+    })
   }
 }

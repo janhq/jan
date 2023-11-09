@@ -11,7 +11,8 @@
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
     "postinstall": "rimraf *.tgz --glob && npm run build",
-    "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
+    "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install",
+    "build:debug": "rimraf *.tgz --glob && npm run build && npm pack"
   },
   "exports": {
     ".": "./dist/index.js",
