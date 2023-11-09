@@ -3,7 +3,7 @@ import { Fragment, useEffect } from 'react'
 import { Model } from '@janhq/core/lib/types'
 import { ScrollArea, Input, Button, Badge } from '@janhq/uikit'
 
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { Trash2Icon } from 'lucide-react'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
@@ -17,6 +17,7 @@ import useDeleteConversation from '@/hooks/useDeleteConversation'
 
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
+import useGetUserConversations from '@/hooks/useGetUserConversations'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
@@ -28,6 +29,7 @@ import HistoryList from '@/screens/Chat/HistoryList'
 import {
   currentConversationAtom,
   getActiveConvoIdAtom,
+  userConversationsAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Conversation.atom'
 
@@ -40,7 +42,6 @@ const ChatScreen = () => {
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
 
-  const isEnableChat = currentConvo && activeModel
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const currentConvoState = useAtomValue(currentConvoStateAtom)
   const { sendChatMessage } = useSendChatMessage()
@@ -49,6 +50,14 @@ const ChatScreen = () => {
   const activeConversationId = useAtomValue(getActiveConvoIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const { requestCreateConvo } = useCreateConversation()
+  const { getUserConversations } = useGetUserConversations()
+  const conversations = useAtomValue(userConversationsAtom)
+  const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
+
+  useEffect(() => {
+    getUserConversations()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleMessageChange = (value: string) => {
     setCurrentPrompt(value)
@@ -81,6 +90,8 @@ const ChatScreen = () => {
     }
   }
 
+  console.log(currentConvo)
+
   return (
     <div className="flex h-full">
       <div className="flex h-full w-64 flex-shrink-0 flex-col border-r border-border">
@@ -91,14 +102,34 @@ const ChatScreen = () => {
       <div className="relative flex h-full w-full flex-col bg-muted/10">
         <div className="flex h-full w-full flex-col justify-between">
           {isEnableChat && (
-            <div className="h-[53px] flex-shrink-0 border-b border-border p-4">
+            <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
               <div className="flex items-center justify-between">
                 <span>{currentConvo?.name ?? ''}</span>
-                <Trash2Icon
-                  size={16}
-                  className="cursor-pointer text-muted-foreground"
-                  onClick={() => deleteConvo()}
-                />
+                {downloadedModels.find((x) => x.name === currentConvo?.name) ||
+                activeModel?._id === currentConvo?.modelId ? (
+                  <Fragment>
+                    {!stateModel.loading && (
+                      <Trash2Icon
+                        size={16}
+                        className="cursor-pointer text-muted-foreground"
+                        onClick={() => deleteConvo()}
+                      />
+                    )}
+                  </Fragment>
+                ) : (
+                  <div>
+                    <Button
+                      themes="secondary"
+                      size="sm"
+                      className="-mt-1"
+                      onClick={() => {
+                        setMainViewState(MainViewState.ExploreModels)
+                      }}
+                    >
+                      Download Model
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -140,7 +171,11 @@ const ChatScreen = () => {
               className="h-10"
               onKeyDown={(e) => handleKeyDown(e)}
               placeholder="Type your message ..."
-              disabled={!activeModel || stateModel.loading}
+              disabled={
+                !activeModel ||
+                stateModel.loading ||
+                activeModel._id !== currentConvo?.modelId
+              }
               value={currentPrompt}
               onChange={(e) => handleMessageChange(e.target.value)}
             />

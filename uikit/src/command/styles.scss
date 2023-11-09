@@ -25,7 +25,7 @@
   }
 
   &-list-item {
-    @apply text-foreground aria-selected:bg-accent relative flex cursor-pointer select-none items-center rounded-md px-2 py-2 text-sm outline-none;
+    @apply text-foreground aria-selected:bg-primary relative flex cursor-pointer select-none items-center rounded-md px-2 py-2 text-sm outline-none;
   }
 
   &-empty {

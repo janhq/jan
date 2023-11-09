@@ -12,7 +12,7 @@
   }
 
   &-outline {
-    @apply border-input hover:bg-accent hover:text-accent-foreground border bg-transparent;
+    @apply border-input hover:bg-primary hover:text-primary-foreground border bg-transparent;
   }
 
   &-secondary {
@@ -20,7 +20,7 @@
   }
 
   &-ghost {
-    @apply hover:bg-accent hover:text-accent-foreground;
+    @apply hover:bg-primary hover:text-primary-foreground;
   }
 
   &-sm {
