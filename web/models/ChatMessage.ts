@@ -79,6 +79,6 @@ export const toChatMessage = (
     text: content,
     imageUrls: imageUrls,
     createdAt: createdAt,
-    status: m.message === '' ? MessageStatus.Pending : MessageStatus.Ready,
+    status: MessageStatus.Ready,
   }
 }

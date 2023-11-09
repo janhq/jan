@@ -22,7 +22,7 @@ import {
 } from '@/helpers/atoms/Conversation.atom'
 
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-import { toChatMessage } from '@/models/ChatMessage'
+import { MessageStatus, toChatMessage } from '@/models/ChatMessage'
 import { pluginManager } from '@/plugin'
 
 let currentConversation: Conversation | undefined = undefined
@@ -68,7 +68,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       updateMessage(
         messageResponse._id,
         messageResponse.conversationId,
-        messageResponse.message
+        messageResponse.message,
+        MessageStatus.Pending
       )
     }
 
@@ -99,6 +100,19 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   ) {
     if (!messageResponse.conversationId || !convoRef.current) return
     updateConvWaiting(messageResponse.conversationId, false)
+
+    if (
+      messageResponse.conversationId &&
+      messageResponse._id &&
+      messageResponse.message
+    ) {
+      updateMessage(
+        messageResponse._id,
+        messageResponse.conversationId,
+        messageResponse.message,
+        MessageStatus.Ready
+      )
+    }
 
     const convo = convoRef.current.find(
       (e) => e._id == messageResponse.conversationId

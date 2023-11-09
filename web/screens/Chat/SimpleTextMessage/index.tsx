@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { Fragment } from 'react'
+import React, { useState } from 'react'
 
 import hljs from 'highlight.js'
 
@@ -10,7 +10,7 @@ import { markedHighlight } from 'marked-highlight'
 
 import { twMerge } from 'tailwind-merge'
 
-// import Typewriter from 'typewriter-effect'
+import Typewriter from 'typewriter-effect'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
@@ -19,10 +19,6 @@ import BubbleLoader from '@/containers/Loader/Bubble'
 import { displayDate } from '@/utils/datetime'
 
 import { MessageSenderType, MessageStatus } from '@/models/ChatMessage'
-
-// export const currentStreamingMessageAtom = atom<ChatMessage | undefined>(
-//   undefined
-// )
 
 type Props = {
   avatarUrl: string
@@ -62,7 +58,8 @@ const SimpleTextMessage: React.FC<Props> = ({
   senderName,
   senderType,
   createdAt,
-  status,
+  // will use status as streaming text
+  // status,
   text = '',
 }) => {
   const parsedText = marked.parse(text)
@@ -87,7 +84,7 @@ const SimpleTextMessage: React.FC<Props> = ({
         ) : (
           <>
             <span
-              className="message text-[15px] font-normal leading-relaxed"
+              className={'message text-[15px] font-normal leading-relaxed'}
               // eslint-disable-next-line @typescript-eslint/naming-convention
               dangerouslySetInnerHTML={{ __html: parsedText }}
             />
