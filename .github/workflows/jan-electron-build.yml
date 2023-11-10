@@ -60,7 +60,7 @@ jobs:
         run: |
           yarn build:core
           yarn install
-          yarn build:plugins
+          yarn build:plugins-darwin
         env:
           APP_PATH: "."
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
@@ -119,7 +119,7 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins
+          yarn build:plugins-linux-windows
 
       - name: Build and publish app
         run: |
@@ -175,7 +175,7 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins
+          yarn build:plugins-linux-windows
 
       - name: Build and publish app
         run: |

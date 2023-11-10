@@ -92,7 +92,7 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins
+          yarn build:plugins-linux-windows
           yarn build:test-win32
           yarn test
 
@@ -127,6 +127,6 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins
+          yarn build:plugins-linux-windows
           yarn build:test-linux
           yarn test
