@@ -111,6 +111,7 @@ jobs:
       - name: Build uikit
         run: |
           cd uikit
+          yarn config set network-timeout 300000
           yarn install
           yarn build
 

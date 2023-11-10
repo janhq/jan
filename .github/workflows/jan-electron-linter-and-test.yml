@@ -83,6 +83,7 @@ jobs:
 
       - name: Build uikit
         run: |
+          yarn config set network-timeout 300000
           cd uikit
           yarn install
           yarn build
@@ -95,7 +96,7 @@ jobs:
           yarn install
           yarn build:plugins-windows
           yarn build:test-win32
-          set CI="e2e"
+          $env:CI="e2e"
           yarn test
 
   test-on-ubuntu:
