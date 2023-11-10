@@ -116,10 +116,12 @@ jobs:
           yarn build
 
       - name: Install yarn dependencies
+        shell: powershell
         run: |
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
+          $env:NITRO_VERSION = Get-Content .\plugins\inference-plugin\nitro\version.txt; echo $env:NITRO_VERSION
           yarn build:plugins-windows
 
       - name: Build and publish app
