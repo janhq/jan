@@ -53,14 +53,22 @@
 }
 
 .hljs {
-  overflow-x: auto;
+  overflow: auto;
+  display: block;
+  width: auto;
   background: #2b2b2b;
   color: #f8f8f2;
   padding: 0.5em;
   font-size: 14px;
+  word-wrap: normal;
   border-radius: 0.4rem;
   margin-top: 1rem;
   margin-bottom: 1rem;
+}
+pre > code {
+  display: block;
+  text-indent: 0;
+  white-space: inherit;
 }
 
 .hljs-emphasis {
