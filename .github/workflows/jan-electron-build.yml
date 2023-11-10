@@ -2,7 +2,7 @@ name: Jan Build Electron App
 
 on:
   push:
-    tags: ['v*.*.*']
+    tags: ["v*.*.*"]
 
 jobs:
   build-macos:
@@ -19,13 +19,13 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install jq      
+      - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
       - name: Get tag
         id: tag
         uses: dawidd6/action-get-tag@v1
-  
+
       - name: Update app version base on tag
         run: |
           if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -49,8 +49,16 @@ jobs:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
+
+      - name: Build uikit
+        run: |
+          cd uikit
+          yarn install
+          yarn build
+
       - name: Install yarn dependencies
         run: |
+          yarn build:core
           yarn install
           yarn build:plugins
         env:
@@ -81,13 +89,13 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install jq      
+      - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
       - name: Get tag
         id: tag
         uses: dawidd6/action-get-tag@v1
-  
+
       - name: Update app version base on tag
         shell: bash
         run: |
@@ -100,9 +108,16 @@ jobs:
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
 
+      - name: Build uikit
+        run: |
+          cd uikit
+          yarn install
+          yarn build
+
       - name: Install yarn dependencies
         run: |
           yarn config set network-timeout 300000
+          yarn build:core
           yarn install
           yarn build:plugins
 
@@ -128,7 +143,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install jq      
+      - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
       - name: Install Snapcraft
@@ -137,7 +152,7 @@ jobs:
       - name: Get tag
         id: tag
         uses: dawidd6/action-get-tag@v1
-  
+
       - name: Update app version base on tag
         run: |
           if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -149,9 +164,16 @@ jobs:
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
 
+      - name: Build uikit
+        run: |
+          cd uikit
+          yarn install
+          yarn build
+
       - name: Install yarn dependencies
         run: |
           yarn config set network-timeout 300000
+          yarn build:core
           yarn install
           yarn build:plugins
 
