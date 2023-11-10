@@ -17,7 +17,7 @@ on:
       - main
     paths:
       - "electron/**"
-      - .github/workflows/linter-and-test.yml
+      - .github/workflows/jan-electron-linter-and-test.yml
       - "web/**"
       - "uikit/**"
       - "package.json"
@@ -88,12 +88,14 @@ jobs:
           yarn build
 
       - name: Linter and test
+        shell: powershell
         run: |
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins-linux-windows
+          yarn build:plugins-windows
           yarn build:test-win32
+          set CI="e2e"
           yarn test
 
   test-on-ubuntu:
@@ -127,6 +129,6 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins-linux-windows
+          yarn build:plugins-linux
           yarn build:test-linux
           yarn test
