@@ -83,6 +83,7 @@ jobs:
 
       - name: Build uikit
         run: |
+          yarn config set network-timeout 300000
           cd uikit
           yarn install
           yarn build
@@ -93,9 +94,10 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
+          $env:NITRO_VERSION = Get-Content .\plugins\inference-plugin\nitro\version.txt; echo $env:NITRO_VERSION
           yarn build:plugins-windows
           yarn build:test-win32
-          set CI="e2e"
+          $env:CI="e2e"
           yarn test
 
   test-on-ubuntu:
