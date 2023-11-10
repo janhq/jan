@@ -119,7 +119,7 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins-linux-windows
+          yarn build:plugins-windows
 
       - name: Build and publish app
         run: |
@@ -175,7 +175,7 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins-linux-windows
+          yarn build:plugins-linux
 
       - name: Build and publish app
         run: |
