@@ -37,6 +37,7 @@
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "2.4.1",
+    "dotenv": "^16.3.1",
     "tailwindcss-animate": "^1.0.7"
   },
   "browserslist": {
