@@ -1,7 +1,7 @@
-import { Fragment, useEffect } from 'react'
+import { Fragment, useEffect, useRef } from 'react'
 
 import { Model } from '@janhq/core/lib/types'
-import { Input, Button, Badge } from '@janhq/uikit'
+import { Button, Badge, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
 import { Trash2Icon } from 'lucide-react'
@@ -54,13 +54,15 @@ const ChatScreen = () => {
   const conversations = useAtomValue(userConversationsAtom)
   const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
   useEffect(() => {
     getUserConversations()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleMessageChange = (value: string) => {
-    setCurrentPrompt(value)
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setCurrentPrompt(e.target.value)
   }
 
   const handleSendMessage = async () => {
@@ -71,6 +73,7 @@ const ChatScreen = () => {
       await requestCreateConvo(activeModel as Model)
     }
   }
+
   useEffect(() => {
     if (isWaitingToSend && activeConversationId) {
       setIsWaitingToSend(false)
@@ -79,12 +82,24 @@ const ChatScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitingToSendMessage, activeConversationId])
 
-  const handleKeyDown = async (
-    event: React.KeyboardEvent<HTMLInputElement>
-  ) => {
-    if (event.key === 'Enter') {
-      if (!event.shiftKey) {
-        event.preventDefault()
+  useEffect(() => {
+    if (textareaRef.current !== null) {
+      const scrollHeight = textareaRef.current.scrollHeight
+      if (currentPrompt.length === 0) {
+        textareaRef.current.style.height = '40px'
+      } else {
+        textareaRef.current.style.height = `${
+          scrollHeight < 40 ? 40 : scrollHeight
+        }px`
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPrompt])
+
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      if (!e.shiftKey) {
+        e.preventDefault()
         handleSendMessage()
       }
     }
@@ -162,9 +177,9 @@ const ChatScreen = () => {
             </div>
           )}
           <div className="mx-auto flex w-full flex-shrink-0 items-center justify-center space-x-4 p-4 lg:w-3/4">
-            <Input
-              type="text"
-              className="h-10"
+            <Textarea
+              className="min-h-10 h-10 max-h-16 resize-none pr-20"
+              ref={textareaRef}
               onKeyDown={(e) => handleKeyDown(e)}
               placeholder="Type your message ..."
               disabled={
@@ -173,7 +188,9 @@ const ChatScreen = () => {
                 activeModel._id !== currentConvo?.modelId
               }
               value={currentPrompt}
-              onChange={(e) => handleMessageChange(e.target.value)}
+              onChange={(e) => {
+                handleMessageChange(e)
+              }}
             />
             <Button
               size="lg"
