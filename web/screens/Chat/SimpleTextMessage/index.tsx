@@ -80,8 +80,11 @@ const SimpleTextMessage: React.FC<Props> = ({
           <BubbleLoader />
         ) : (
           <>
-            <span
-              className={'message text-[15px] font-normal leading-relaxed'}
+            <div
+              className={twMerge(
+                'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
+                isUser && 'whitespace-pre-wrap break-words'
+              )}
               // eslint-disable-next-line @typescript-eslint/naming-convention
               dangerouslySetInnerHTML={{ __html: parsedText }}
             />
