@@ -6,6 +6,8 @@ import { Button, Badge, Textarea } from '@janhq/uikit'
 import { useAtom, useAtomValue } from 'jotai'
 import { Trash2Icon } from 'lucide-react'
 
+import { twMerge } from 'tailwind-merge'
+
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { MainViewState } from '@/constants/screens'
@@ -116,31 +118,34 @@ const ChatScreen = () => {
             <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
               <div className="flex items-center justify-between">
                 <span>{currentConvo?.name ?? ''}</span>
-                {downloadedModels.find((x) => x.name === currentConvo?.name) ||
-                activeModel?._id === currentConvo?.modelId ? (
-                  <Fragment>
-                    {!stateModel.loading && (
-                      <Trash2Icon
-                        size={16}
-                        className="cursor-pointer text-muted-foreground"
-                        onClick={() => deleteConvo()}
-                      />
-                    )}
-                  </Fragment>
-                ) : (
-                  <div>
+                <div
+                  className={twMerge(
+                    'flex items-center space-x-3',
+                    downloadedModels.filter(
+                      (x) => x.name === currentConvo?.name
+                    ).length === 0 && '-mt-1'
+                  )}
+                >
+                  {downloadedModels.filter((x) => x.name === currentConvo?.name)
+                    .length === 0 && (
                     <Button
                       themes="secondary"
                       size="sm"
-                      className="-mt-1"
                       onClick={() => {
                         setMainViewState(MainViewState.ExploreModels)
                       }}
                     >
                       Download Model
                     </Button>
-                  </div>
-                )}
+                  )}
+                  {!stateModel.loading && (
+                    <Trash2Icon
+                      size={16}
+                      className="cursor-pointer text-muted-foreground"
+                      onClick={() => deleteConvo()}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           )}
