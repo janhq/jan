@@ -1,6 +1,8 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
+require("dotenv").config();
+
 const lightCodeTheme = require("prism-react-renderer/themes/github");
 const darkCodeTheme = require("prism-react-renderer/themes/dracula");
 
@@ -83,7 +85,7 @@ const config = {
         },
         // GTM is always inactive in development and only active in production to avoid polluting the analytics statistics.
         googleTagManager: {
-          containerId: "GTM-59R6474K",
+          containerId: process.env.GTM_ID,
         },
         // Will be passed to @docusaurus/plugin-content-pages (false to disable)
         // pages: {},
