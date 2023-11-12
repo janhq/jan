@@ -2,43 +2,54 @@
 title: About Jan
 ---
 
-Jan is a tool to run LLMs privately on your personal computer. 
+Jan is a free, open source alternative to OpenAI that runs on your personal computer. 
 
-Jan's roadmap is to build a framework for Personal AIs that can be customized and extended by anyone. 
+We believe in the need for an open source AI ecosystem, and are building the infra and tooling to allow open source AIs to be as usable and comprehensive as proprietary ones.
+
+Jan's long-term vision is to build a cognitive framework for future robots. We build towards a future where humans and businesses are augmented by practical, useful assistants in everyday life. 
 
 ## Why does Jan Exist?
 
 ### Mission
 
-To enable high-productivity individuals to use AI to scale themselves. 
+Our mission is to allow humans and businesses to own their AI, with the right to tinker, repair and innovate. 
 
 ### Ideal Customer
 
-Our ideal customer is an AI Enthusiast who wants to experiment with solving problems using AI, and is ok with experimental software. 
-
-- Semi-technical (i.e. can code simple Javascript/Python scripts), i.e. not able to build the whole thing themselves
-- Will file bugs
-- [Plus] Wants to share their solution with others 
-
-Our goal in 2023 is to find 500 of these ideal customers. 
+Our ideal customer is an AI enthusiast who wants to solve problems with open source AI. 
 
 ### Problem
 
-Our ideal customer has clear ideas for how to solve his/her problems using AI, but has not done so because:
+Our ideal customer is usually motivated to find an alternative to OpenAI for the following reasons:
 
-- Lack full skillset across UI, Backend and MLOps to build their own custom Personal AI
-- Doesn't have 10 hours/week to build and maintain a Personal AI
-- Uncomfortable with giving personal info to ChatGPT
+*Control*
+- Control (e.g. no vendor lock-in)
+- Stability (e.g. runs predictably every time)
+- Local-use (e.g. for speed, or for airgapped environments)
+ 
+*Privacy*
+- Data protection (e.g. personal data or company data)
+- Privacy (e.g. nsfw) 
+
+*Customizability*
+- Niche Models (e.g. fine-tuned models that outperform OpenAI)
+- Tinkerability (e.g. ability to change model, experiment)
+- Fine-tuning (e.g. for domain-specific use cases)
+
+Sources: [^1] [^2] [^3] [^4]
+
+[^1]: [What are you guys doing that can't be done with ChatGPT?](https://www.reddit.com/r/LocalLLaMA/comments/17mghqr/comment/k7ksti6/?utm_source=share&utm_medium=web2x&context=3)
+[^2]: [What's your main interest in running a local LLM instead of an existing API?](https://www.reddit.com/r/LocalLLaMA/comments/1718a9o/whats_your_main_interest_in_running_a_local_llm/)
+[^3]: [Ask HN: What's the best self-hosted/local alternative to GPT-4?](https://news.ycombinator.com/item?id=36138224) 
+[^4]: [LoRAs](https://www.reddit.com/r/LocalLLaMA/comments/17mghqr/comment/k7mdz1i/?utm_source=share&utm_medium=web2x&context=3)
 
 ### Solution
 
-Jan is a Personal AI that you can customize, and runs privately on your own computer.
+Jan is a seamless user experience that runs on your personal computer, that glues the different pieces of the open source AI ecosystem to provide an alternative to OpenAI's closed platform. 
 
-- Tinker and customize in <10 lines of code
-- Pre-built plugins (e.g. RAG, Langchain, LlamaIndex)
-- Mobile support (including helpful widgets)
-
-Jan has a very modular architecture that allows you to swap out or customize components, without having to rebuild everything. 
+- We build a comprehensive, seamless platform that takes care of the technical chores across the stack required to run open source AI
+- We run on top of a local folder of non-proprietary files, that anyone can tinker with (yes, even other apps!) 
+- We provide open formats for packaging and distributing AI to run reproducibly across devices
 
 ## How Jan Works
 
@@ -64,7 +75,7 @@ We appreciate any business that can balance growth with cashflow/profitability.
 
 ### Remote Team
 
-Jan has a fully-remote team. We are mainly based in the Asia timezone. We use [Github](https://github.com/janhq) and [Discord](https://discord.gg/af6SaTdzpx) to work. 
+Jan has a fully-remote team. We are mainly based in the Asia timezone. We use [Discord](https://discord.gg/af6SaTdzpx) and [Github](https://github.com/janhq) to work. 
 
 ## Contact
 
@@ -78,4 +89,4 @@ Drop us a message in our [Discord](https://discord.gg/af6SaTdzpx) and we'll get 
 
 ### Careers
 
-Jan has a culture of ownership, independent thinking, and lightning fast execution. If you'd like to join us, we have open positions on our [careers page](https://janai.bamboohr.com/careers).   
+Jan has a culture of ownership, independent thought, and lightning fast execution. If you'd like to join us, we have open positions on our [careers page](https://janai.bamboohr.com/careers).   

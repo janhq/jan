@@ -76,18 +76,16 @@ export default function Home() {
                   </div>
 
                   <h1 className="bg-gradient-to-r dark:from-white from-black to-gray-500 dark:to-gray-400 bg-clip-text text-4xl lg:text-6xl font-bold leading-tight text-transparent dark:text-transparent lg:leading-tight">
-                    Personal AI
+                    Own your AI
                   </h1>
                   <p className="text-xl leading-relaxed lg:text-2xl lg:leading-relaxed text-gray-500 dark:text-gray-400">
-                    Run &nbsp;
+                    A &nbsp;
                     <span className="dark:text-white text-black">
-                      Large Language Models
+                      free, open-source
                     </span>
+                    &nbsp;alternative to OpenAI
                     <br />
-                    <span className="dark:text-white text-black">
-                      privately
-                    </span>
-                    &nbsp;on your&nbsp;
+                    &nbsp;that runs on your&nbsp;
                     <span className="dark:text-white text-black">
                       personal computer
                     </span>
