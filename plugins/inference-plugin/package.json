@@ -22,7 +22,8 @@
     "postinstall": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:linux-cpu && npm run downloadnitro:linux-cuda && npm run downloadnitro:mac-arm64 && npm run downloadnitro:mac-x64 && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
     "postinstall:dev": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:mac-arm64 && npm run downloadnitro:mac-x64 && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
     "postinstall:windows": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:win-cpu && npm run downloadnitro:win-cuda && rimraf dist/nitro/* && cpx \"nitro/**\" \"dist/nitro\"",
-    "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install"
+    "build:publish": "npm pack && cpx *.tgz ../../electron/core/pre-install",
+    "build:debug": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {
     ".": "./dist/index.js",
@@ -40,7 +41,8 @@
     "kill-port": "^2.0.1",
     "rxjs": "^7.8.1",
     "tcp-port-used": "^1.0.2",
-    "ts-loader": "^9.5.0"
+    "ts-loader": "^9.5.0",
+    "ulid": "^2.3.0"
   },
   "engines": {
     "node": ">=18.0.0"

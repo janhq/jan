@@ -12,6 +12,7 @@ import {
   addNewConversationStateAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '@/plugin'
+import { Conversation } from '@/types/chatMessage'
 
 export const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(

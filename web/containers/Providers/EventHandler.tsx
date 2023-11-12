@@ -24,6 +24,7 @@ import {
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 import { MessageStatus, toChatMessage } from '@/models/ChatMessage'
 import { pluginManager } from '@/plugin'
+import { ChatMessage, Conversation } from '@/types/chatMessage'
 
 let currentConversation: Conversation | undefined = undefined
 
