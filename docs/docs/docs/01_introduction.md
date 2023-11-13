@@ -1,5 +1,6 @@
 ---
 title: Introduction
+slug: /docs
 ---
 
 Jan can be used to build a variety of AI use cases, at every level of the stack:
