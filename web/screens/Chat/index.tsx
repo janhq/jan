@@ -56,7 +56,7 @@ const ChatScreen = () => {
   const conversations = useAtomValue(userConversationsAtom)
   const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
   const [isModelAvailable, setIsModelAvailable] = useState(
-    downloadedModels.filter((x) => x.name === currentConvo?.name).length === 0
+    downloadedModels.some((x) => x.name !== currentConvo?.name)
   )
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -72,7 +72,7 @@ const ChatScreen = () => {
 
   useEffect(() => {
     setIsModelAvailable(
-      downloadedModels.filter((x) => x.name === currentConvo?.name).length === 0
+      downloadedModels.some((x) => x.name !== currentConvo?.name)
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentConvo, downloadedModels])
