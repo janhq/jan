@@ -51,8 +51,8 @@ const config = {
     [
       "posthog-docusaurus",
       {
-        apiKey: process.env.POSTHOG_PROJECT_API_KEY,
-        appUrl: process.env.POSTHOG_APP_URL, // optional
+        apiKey: process.env.POSTHOG_PROJECT_API_KEY || "XXX",
+        appUrl: process.env.POSTHOG_APP_URL || "XXX", // optional
         enableInDevelopment: false, // optional
       },
     ],
@@ -93,7 +93,7 @@ const config = {
         },
         // GTM is always inactive in development and only active in production to avoid polluting the analytics statistics.
         googleTagManager: {
-          containerId: process.env.GTM_ID,
+          containerId: process.env.GTM_ID || "XXX",
         },
         // Will be passed to @docusaurus/plugin-content-pages (false to disable)
         // pages: {},
