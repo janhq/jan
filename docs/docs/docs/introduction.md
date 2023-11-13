@@ -36,8 +36,6 @@ Jan can be used to build a variety of AI use cases, at every level of the stack:
 | Threads    | Conversations | [/thread](/api/thread)       |
 | Messages   | Messages      | [/message](/api/message)     |
 
-![image](https://hackmd.io/_uploads/SkbP7LjmT.png)
-
 ### Local Filesystem
 
 - Jan runs on top of standard structure of local files on user's filesystem

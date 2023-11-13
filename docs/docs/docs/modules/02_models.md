@@ -60,6 +60,8 @@ TODO:
 
 ## Model Filesystem
 
+How `models` map onto your local filesystem
+
 ```sh
 /janroot
     /models
