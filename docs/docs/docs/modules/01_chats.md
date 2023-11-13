@@ -16,7 +16,7 @@ See [/chat](/api/chat)
 
 - Equivalent to: https://platform.openai.com/docs/api-reference/chat
 
-```sh=
+```sh
 POST https://localhost:1337/v1/chat/completions
 
 TODO:

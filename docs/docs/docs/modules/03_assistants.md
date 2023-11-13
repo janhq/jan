@@ -13,7 +13,7 @@ Assistants can use models and tools.
 - `assistant.json`
 - Equivalent to: https://platform.openai.com/docs/api-reference/assistants/object
 
-```json=
+```json
 {
   // Jan specific properties
   "avatar": "https://lala.png"
@@ -42,7 +42,7 @@ Assistants can use models and tools.
 
 - _TODO_: What would modifying Assistant do? (doesn't mutate `index.js`?)
 
-```sh=
+```sh
 GET https://api.openai.com/v1/assistants                       # List
 POST https://api.openai.com/v1/assistants                      # C
 GET https://api.openai.com/v1/assistants/{assistant_id}        # R
@@ -52,7 +52,7 @@ DELETE https://api.openai.com/v1/assistants/{assistant_id}     # D
 
 ## Assistants Filesystem
 
-```sh=
+```sh
 /assistants
     /jan
         assistant.json    # Assistant configs (see below)
