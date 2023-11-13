@@ -44,8 +44,10 @@ _Video: Jan v0.3.0 on Mac Air M2, 16GB Ventura_
 
 ## Quicklinks
 
+- [User Guides](https://jan.ai/docs)
 - [Developer docs](https://jan.ai/docs)
-- [Nitro Github](https://nitro.jan.ai): A C++ inference engine
+- [API reference](https://jan.ai/api/overview)
+- [Nitro Github](https://nitro.jan.ai): Nitro is a C++ inference engine
 
 ## Troubleshooting
 
