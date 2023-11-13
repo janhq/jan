@@ -66,14 +66,20 @@ export default function Dropdown() {
     } else if (userAgent.includes("Linux")) {
       // linux user
       setDefaultSystem(systems[3]);
-    } else if (userAgent.includes("Mac OS")) {
-      if (arc && arc.architecture === "arm") {
-        // mac m1, m2
-        setDefaultSystem(systems[0]);
-      } else {
-        // mac user intel
-        setDefaultSystem(systems[1]);
-      }
+    } else if (
+      userAgent.includes("Mac OS") &&
+      arc &&
+      arc.architecture === "arm"
+    ) {
+      // mac m1, m2
+      setDefaultSystem(systems[0]);
+    } else if (
+      userAgent.includes("Mac OS") &&
+      arc &&
+      arc.architecture !== "arm"
+    ) {
+      // mac intel
+      setDefaultSystem(systems[1]);
     } else {
       setDefaultSystem(systems[0]);
     }
