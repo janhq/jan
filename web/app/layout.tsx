@@ -2,17 +2,9 @@ import { PropsWithChildren } from 'react'
 
 import { Metadata } from 'next'
 
-// import { Inter } from 'next/font/google'
-
 import Providers from '@/containers/Providers'
 
 import '@/styles/main.scss'
-
-// const inter = Inter({
-//   subsets: ['latin'],
-//   display: 'swap',
-//   variable: '--font-inter',
-// })
 
 export const metadata: Metadata = {
   title: 'Jan',
