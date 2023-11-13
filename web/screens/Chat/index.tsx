@@ -131,9 +131,7 @@ const ChatScreen = () => {
                 <div
                   className={twMerge(
                     'flex items-center space-x-3',
-                    downloadedModels.filter(
-                      (x) => x.name === currentConvo?.name
-                    ).length === 0 && '-mt-1'
+                    isModelAvailable && '-mt-1'
                   )}
                 >
                   {isModelAvailable && (
