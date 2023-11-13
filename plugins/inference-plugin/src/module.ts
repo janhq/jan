@@ -23,29 +23,27 @@ const initModel = (fileName) => {
             let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
             let binaryName;
 
-            if (process.platform === "win32") {
-              // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-              binaryName = "win-start.bat";
-            } else if (process.platform === "darwin") {
-              // Mac OS platform
-              if (process.arch === "arm64") {
-                binaryFolder = path.join(binaryFolder, "mac-arm64");
-              } else {
-                binaryFolder = path.join(binaryFolder, "mac-x64");
-              }
-              binaryName = "nitro";
-            } else {
-              // Linux
-              // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-              binaryName = "linux-start.sh"; // For other platforms
-            }
+        if (process.platform === "win32") {
+          // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+          binaryName = "win-start.bat";
+        } else if (process.platform === "darwin") {
+          // Mac OS platform
+          if (process.arch === "arm64") {
+            binaryFolder = path.join(binaryFolder, "mac-arm64")
+          } else {
+            binaryFolder = path.join(binaryFolder, "mac-x64")
+          }
+          binaryName = "nitro"
+        } else {
+          // Linux
+          // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+          binaryName = "linux-start.sh"; // For other platforms
+        }
 
             const binaryPath = path.join(binaryFolder, binaryName);
 
-            // Execute the binary
-            subprocess = spawn(binaryPath, ["0.0.0.0", PORT], {
-              cwd: binaryFolder,
-            });
+        // Execute the binary
+        subprocess = spawn(binaryPath,["0.0.0.0", PORT], { cwd: binaryFolder });
 
             // Handle subprocess output
             subprocess.stdout.on("data", (data) => {
@@ -115,12 +113,7 @@ function appPath() {
   if (app) {
     return app.getPath("userData");
   }
-  return (
-    process.env.APPDATA ||
-    (process.platform == "darwin"
-      ? process.env.HOME + "/Library/Preferences"
-      : process.env.HOME + "/.local/share")
-  );
+  return process.env.APPDATA || (process.platform == 'darwin' ? process.env.HOME + '/Library/Preferences' : process.env.HOME + "/.local/share");
 }
 
 module.exports = {
