@@ -33,6 +33,7 @@
  * @property {Function} relaunch - Relaunches the app.
  * @property {Function} openAppDirectory - Opens the app directory.
  * @property {Function} deleteFile - Deletes the file at the given path.
+ * @property {Function} join - Joins the given paths.
  * @property {Function} readFile - Reads the file at the given path.
  * @property {Function} writeFile - Writes the given data to the file at the given path.
  * @property {Function} listFiles - Lists the files in the directory at the given path.
@@ -85,6 +86,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openAppDirectory: () => ipcRenderer.invoke("openAppDirectory"),
 
   deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
+
+  join: (...args: string[]) => ipcRenderer.invoke("join", ...args),
 
   readFile: (path: string) => ipcRenderer.invoke("readFile", path),
 

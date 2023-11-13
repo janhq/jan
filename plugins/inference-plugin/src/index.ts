@@ -81,7 +81,7 @@ export default class JanInferencePlugin implements InferencePlugin {
         content: data.message,
       },
     ];
-    const recentMessages = await (data.history ?? prompts);
+    const recentMessages = data.history ?? prompts;
 
     return new Promise(async (resolve, reject) => {
       requestInference([

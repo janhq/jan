@@ -28,9 +28,9 @@ export function useActiveModel() {
 
     setStateModel({ state: 'start', loading: true, model: modelId })
 
-    const model = await downloadedModels.find((e) => e._id === modelId)
+    const model = downloadedModels.find((e) => e._id === modelId)
 
-    if (!modelId) {
+    if (!model) {
       alert(`Model ${modelId} not found! Please re-download the model first.`)
       setStateModel(() => ({
         state: 'start',

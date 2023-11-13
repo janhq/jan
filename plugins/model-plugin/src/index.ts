@@ -1,20 +1,21 @@
-import { PluginType, fs, downloadFile } from "@janhq/core";
-import { ModelPlugin } from "@janhq/core/lib/plugins";
-import { Model, ModelCatalog } from "@janhq/core/lib/types";
-import { pollDownloadProgress } from "./helpers/cloudNative";
-import { parseToModel } from "./helpers/modelParser";
+import { PluginType, fs, downloadFile } from '@janhq/core'
+import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { Model, ModelCatalog } from '@janhq/core/lib/types'
+import { pollDownloadProgress } from './helpers/cloudNative'
+import { parseToModel } from './helpers/modelParser'
 
 /**
  * A plugin for managing machine learning models.
  */
 export default class JanModelPlugin implements ModelPlugin {
+  private static readonly _homeDir = 'models'
   /**
    * Implements type from JanPlugin.
    * @override
    * @returns The type of the plugin.
    */
   type(): PluginType {
-    return PluginType.Model;
+    return PluginType.Model
   }
 
   /**
@@ -25,6 +26,7 @@ export default class JanModelPlugin implements ModelPlugin {
     /**  Cloud Native
      * TODO: Fetch all downloading progresses?
      **/
+    fs.mkdir(JanModelPlugin._homeDir)
   }
 
   /**
@@ -39,12 +41,11 @@ export default class JanModelPlugin implements ModelPlugin {
    * @returns A Promise that resolves when the model is downloaded.
    */
   async downloadModel(model: Model): Promise<void> {
-    await fs.mkdir("models");
-    downloadFile(model.downloadLink, `models/${model._id}`);
+    downloadFile(model.downloadLink, `${JanModelPlugin._homeDir}/${model._id}`)
     /**  Cloud Native
      * MARK: Poll Downloading Progress
      **/
-    pollDownloadProgress(model._id);
+    pollDownloadProgress(model._id)
   }
 
   /**
@@ -52,10 +53,13 @@ export default class JanModelPlugin implements ModelPlugin {
    * @param filePath - The path to the model file to delete.
    * @returns A Promise that resolves when the model is deleted.
    */
-  deleteModel(filePath: string): Promise<void> {
-    return fs
-      .deleteFile(`models/${filePath}`)
-      .then(() => fs.deleteFile(`models/m-${filePath}.json`));
+  async deleteModel(filePath: string): Promise<void> {
+    try {
+      await fs.deleteFile(`${JanModelPlugin._homeDir}/${filePath}`)
+      await fs.deleteFile(`${JanModelPlugin._homeDir}/m-${filePath}.json`)
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   /**
@@ -64,16 +68,23 @@ export default class JanModelPlugin implements ModelPlugin {
    * @returns A Promise that resolves when the model is saved.
    */
   async saveModel(model: Model): Promise<void> {
-    await fs.writeFile(`models/m-${model._id}.json`, JSON.stringify(model));
+    try {
+      await fs.writeFile(
+        `${JanModelPlugin._homeDir}/m-${model._id}.json`,
+        JSON.stringify(model)
+      )
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   /**
    * Gets all downloaded models.
    * @returns A Promise that resolves with an array of all models.
    */
-  getDownloadedModels(): Promise<Model[]> {
+  async getDownloadedModels(): Promise<Model[]> {
     return fs
-      .listFiles("models")
+      .listFiles(JanModelPlugin._homeDir)
       .then((files: string[]) => {
         return Promise.all(
           files
@@ -81,13 +92,14 @@ export default class JanModelPlugin implements ModelPlugin {
             .map(async (file) => {
               const model: Model = JSON.parse(
                 await fs.readFile(`models/${file}`)
-              );
-              return model;
+              )
+              return model
             })
-        );
+        )
       })
-      .catch((e) => fs.mkdir("models").then(() => []));
+      .catch((e) => fs.mkdir(JanModelPlugin._homeDir).then(() => []))
   }
+
   /**
    * Gets all available models.
    * @returns A Promise that resolves with an array of all models.
@@ -96,10 +108,6 @@ export default class JanModelPlugin implements ModelPlugin {
     // Add a timestamp to the URL to prevent caching
     return import(
       /* webpackIgnore: true */ MODEL_CATALOG_URL + `?t=${Date.now()}`
-    ).then((module) =>
-      module.default.map((e) => {
-        return parseToModel(e);
-      })
-    );
+    ).then((module) => module.default.map((e) => parseToModel(e)))
   }
 }
