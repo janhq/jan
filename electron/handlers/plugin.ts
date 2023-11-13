@@ -4,7 +4,7 @@ import { ModuleManager } from "../managers/module";
 import { join, extname } from "path";
 import { PluginManager } from "../managers/plugin";
 import { WindowManager } from "../managers/window";
-const pacote = require("pacote");
+import { manifest, tarball } from "pacote";
 
 export function handlePluginIPCs() {
   /**
@@ -107,10 +107,9 @@ export function handlePluginIPCs() {
       app.getPath("userData"),
       pluginName.replace(/^@.*\//, "") + ".tgz"
     );
-    return pacote
-      .manifest(pluginName)
+    return manifest(pluginName)
       .then(async (manifest: any) => {
-        await pacote.tarball(manifest._resolved).then((data: Buffer) => {
+        await tarball(manifest._resolved).then((data: Buffer) => {
           writeFileSync(destination, data);
         });
       })
