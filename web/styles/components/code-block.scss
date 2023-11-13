@@ -64,11 +64,12 @@
   border-radius: 0.4rem;
   margin-top: 1rem;
   margin-bottom: 1rem;
+  white-space: normal;
 }
 pre > code {
   display: block;
   text-indent: 0;
-  white-space: inherit;
+  white-space: pre;
 }
 
 .hljs-emphasis {
