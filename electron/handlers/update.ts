@@ -1,7 +1,6 @@
 import { app, dialog } from "electron";
 import { WindowManager } from "../managers/window";
-
-const { autoUpdater } = require("electron-updater");
+import { autoUpdater } from "electron-updater";
 
 export function handleAppUpdates() {
   /* Should not check for update during development */
