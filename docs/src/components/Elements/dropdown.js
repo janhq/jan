@@ -53,19 +53,28 @@ export default function Dropdown() {
     return match ? match[1] : null;
   };
 
-  const changeDefaultSystem = (systems) => {
+  const changeDefaultSystem = async (systems) => {
     const userAgent = navigator.userAgent;
+
+    const arc = await navigator?.userAgentData?.getHighEntropyValues([
+      "architecture",
+    ]);
+
     if (userAgent.includes("Windows")) {
       // windows user
       setDefaultSystem(systems[2]);
     } else if (userAgent.includes("Linux")) {
       // linux user
       setDefaultSystem(systems[3]);
-    } else if (userAgent.includes("Mac OS") && userAgent.includes("Intel")) {
-      // mac intel user
-      setDefaultSystem(systems[1]);
+    } else if (userAgent.includes("Mac OS")) {
+      if (arc && arc.architecture === "arm") {
+        // mac m1, m2
+        setDefaultSystem(systems[0]);
+      } else {
+        // mac user intel
+        setDefaultSystem(systems[1]);
+      }
     } else {
-      // mac user and also default
       setDefaultSystem(systems[0]);
     }
   };
