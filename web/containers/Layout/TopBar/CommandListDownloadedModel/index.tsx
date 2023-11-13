@@ -24,7 +24,7 @@ export default function CommandListDownloadedModel() {
   const { activeModel, startModel, stopModel } = useActiveModel()
 
   const onModelActionClick = (modelId: string) => {
-    if (activeModel && activeModel._id === modelId) {
+    if (activeModel && activeModel.id === modelId) {
       stopModel(modelId)
     } else {
       startModel(modelId)
@@ -62,7 +62,7 @@ export default function CommandListDownloadedModel() {
                   <CommandItem
                     key={i}
                     onSelect={() => {
-                      onModelActionClick(model._id)
+                      onModelActionClick(model.id)
                       setOpen(false)
                     }}
                   >
@@ -72,7 +72,7 @@ export default function CommandListDownloadedModel() {
                     />
                     <div className="flex w-full items-center justify-between">
                       <span>{model.name}</span>
-                      {activeModel && activeModel._id === model._id && (
+                      {activeModel && activeModel.id === model.id && (
                         <Badge themes="secondary">Active</Badge>
                       )}
                     </div>

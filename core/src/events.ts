@@ -20,7 +20,7 @@ export type MessageHistory = {
  * The `NewMessageRequest` type defines the shape of a new message request object.
  */
 export type NewMessageRequest = {
-  _id?: string;
+  id?: string;
   conversationId?: string;
   user?: string;
   avatar?: string;
@@ -34,7 +34,7 @@ export type NewMessageRequest = {
  * The `NewMessageRequest` type defines the shape of a new message request object.
  */
 export type NewMessageResponse = {
-  _id?: string;
+  id?: string;
   conversationId?: string;
   user?: string;
   avatar?: string;

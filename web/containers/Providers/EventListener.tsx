@@ -33,14 +33,17 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       window.electronAPI.onFileDownloadUpdate(
         (_event: string, state: DownloadState | undefined) => {
           if (!state) return
-          setDownloadState(state)
+          setDownloadState({
+            ...state,
+            fileName: state.fileName.split('/').pop() ?? '',
+          })
         }
       )
 
       window.electronAPI.onFileDownloadError(
         (_event: string, callback: any) => {
-          console.log('Download error', callback)
-          const fileName = callback.fileName.replace('models/', '')
+          console.error('Download error', callback)
+          const fileName = callback.fileName.split('/').pop() ?? ''
           setDownloadStateFailed(fileName)
         }
       )
@@ -48,10 +51,10 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       window.electronAPI.onFileDownloadSuccess(
         (_event: string, callback: any) => {
           if (callback && callback.fileName) {
-            const fileName = callback.fileName.replace('models/', '')
+            const fileName = callback.fileName.split('/').pop() ?? ''
             setDownloadStateSuccess(fileName)
 
-            const model = modelsRef.current.find((e) => e._id === fileName)
+            const model = modelsRef.current.find((e) => e.id === fileName)
             if (model)
               pluginManager
                 .get<ModelPlugin>(PluginType.Model)
@@ -66,13 +69,13 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       window.electronAPI.onAppUpdateDownloadUpdate(
         (_event: string, progress: any) => {
           setProgress(progress.percent)
-          console.log('app update progress:', progress.percent)
+          console.debug('app update progress:', progress.percent)
         }
       )
 
       window.electronAPI.onAppUpdateDownloadError(
         (_event: string, callback: any) => {
-          console.log('Download error', callback)
+          console.error('Download error', callback)
           setProgress(-1)
         }
       )

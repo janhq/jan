@@ -42,7 +42,7 @@ export function handleAppUpdates() {
 
   /* App Update Progress */
   autoUpdater.on("download-progress", (progress: any) => {
-    console.log("app update progress: ", progress.percent);
+    console.debug("app update progress: ", progress.percent);
     WindowManager.instance.currentWindow?.webContents.send(
       "APP_UPDATE_PROGRESS",
       {

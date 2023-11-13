@@ -1,7 +1,5 @@
-import { Conversation, ConversationState } from '@/types/chatMessage'
+import { Conversation, ConversationState } from '@janhq/core'
 import { atom } from 'jotai'
-
-// import { MainViewState, setMainViewStateAtom } from './MainView.atom'
 
 /**
  * Stores the current active conversation id.
@@ -78,13 +76,13 @@ export const updateConversationHasMoreAtom = atom(
 export const updateConversationAtom = atom(
   null,
   (get, set, conversation: Conversation) => {
-    const id = conversation._id
+    const id = conversation.id
     if (!id) return
-    const convo = get(userConversationsAtom).find((c) => c._id === id)
+    const convo = get(userConversationsAtom).find((c) => c.id === id)
     if (!convo) return
 
     const newConversations: Conversation[] = get(userConversationsAtom).map(
-      (c) => (c._id === id ? conversation : c)
+      (c) => (c.id === id ? conversation : c)
     )
 
     // sort new conversations based on updated at
@@ -103,5 +101,5 @@ export const updateConversationAtom = atom(
  */
 export const userConversationsAtom = atom<Conversation[]>([])
 export const currentConversationAtom = atom<Conversation | undefined>((get) =>
-  get(userConversationsAtom).find((c) => c._id === get(getActiveConvoIdAtom))
+  get(userConversationsAtom).find((c) => c.id === get(getActiveConvoIdAtom))
 )

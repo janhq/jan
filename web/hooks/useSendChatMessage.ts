@@ -4,13 +4,13 @@ import {
   NewMessageRequest,
   PluginType,
   events,
+  ChatMessage,
+  Message,
+  Conversation,
+  MessageSenderType,
 } from '@janhq/core'
-
 import { ConversationalPlugin, InferencePlugin } from '@janhq/core/lib/plugins'
-
-import { Message } from '@janhq/core/lib/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 import { ulid } from 'ulid'
 import {
@@ -22,10 +22,8 @@ import {
   updateConversationAtom,
   updateConversationWaitingForResponseAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import { MessageSenderType, toChatMessage } from '@/models/ChatMessage'
-
 import { pluginManager } from '@/plugin/PluginManager'
-import { ChatMessage, Conversation } from '@/types/chatMessage'
+import { toChatMessage } from '@/utils/message'
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom)
@@ -59,7 +57,7 @@ export default function useSendChatMessage() {
           if (
             result?.message &&
             result.message.split(' ').length <= 10 &&
-            conv?._id
+            conv?.id
           ) {
             const updatedConv = {
               ...conv,
@@ -73,7 +71,7 @@ export default function useSendChatMessage() {
                 name: updatedConv.name ?? '',
                 message: updatedConv.lastMessage ?? '',
                 messages: currentMessages.map<Message>((e: ChatMessage) => ({
-                  _id: e.id,
+                  id: e.id,
                   message: e.text,
                   user: e.senderUid,
                   updatedAt: new Date(e.createdAt).toISOString(),
@@ -87,7 +85,11 @@ export default function useSendChatMessage() {
   }
 
   const sendChatMessage = async () => {
-    const convoId = currentConvo?._id as string
+    const convoId = currentConvo?.id
+    if (!convoId) {
+      console.error('No conversation id')
+      return
+    }
 
     setCurrentPrompt('')
     updateConvWaiting(convoId, true)
@@ -106,8 +108,7 @@ export default function useSendChatMessage() {
         } as MessageHistory,
       ])
     const newMessage: NewMessageRequest = {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
-      _id: ulid(),
+      id: ulid(),
       conversationId: convoId,
       message: prompt,
       user: MessageSenderType.User,

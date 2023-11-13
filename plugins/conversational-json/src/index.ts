@@ -1,12 +1,15 @@
 import { PluginType, fs } from '@janhq/core'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 import { Conversation } from '@janhq/core/lib/types'
+import { join } from 'path'
 
 /**
  * JSONConversationalPlugin is a ConversationalPlugin implementation that provides
  * functionality for managing conversations.
  */
 export default class JSONConversationalPlugin implements ConversationalPlugin {
+  private static readonly _homeDir = 'threads'
+
   /**
    * Returns the type of the plugin.
    */
@@ -18,7 +21,7 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
    * Called when the plugin is loaded.
    */
   onLoad() {
-    fs.mkdir('conversations')
+    fs.mkdir(JSONConversationalPlugin._homeDir)
     console.debug('JSONConversationalPlugin loaded')
   }
 
@@ -65,10 +68,14 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
    */
   saveConversation(conversation: Conversation): Promise<void> {
     return fs
-      .mkdir(`conversations/${conversation._id}`)
+      .mkdir(`${JSONConversationalPlugin._homeDir}/${conversation.id}`)
       .then(() =>
         fs.writeFile(
-          `conversations/${conversation._id}/${conversation._id}.json`,
+          join(
+            JSONConversationalPlugin._homeDir,
+            conversation.id,
+            `${conversation.id}.json`
+          ),
           JSON.stringify(conversation)
         )
       )
@@ -79,7 +86,9 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
    * @param conversationId The ID of the conversation to delete.
    */
   deleteConversation(conversationId: string): Promise<void> {
-    return fs.rmdir(`conversations/${conversationId}`)
+    return fs.rmdir(
+      join(JSONConversationalPlugin._homeDir, `${conversationId}`)
+    )
   }
 
   /**
@@ -88,7 +97,9 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
    * @returns data of the conversation
    */
   private async readConvo(convoId: string): Promise<any> {
-    return fs.readFile(`conversations/${convoId}/${convoId}.json`)
+    return fs.readFile(
+      join(JSONConversationalPlugin._homeDir, convoId, `${convoId}.json`)
+    )
   }
 
   /**
@@ -97,8 +108,10 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
    * @private
    */
   private async getConversationDocs(): Promise<string[]> {
-    return fs.listFiles(`conversations`).then((files: string[]) => {
-      return Promise.all(files.filter((file) => file.startsWith('jan-')))
-    })
+    return fs
+      .listFiles(JSONConversationalPlugin._homeDir)
+      .then((files: string[]) => {
+        return Promise.all(files.filter((file) => file.startsWith('jan-')))
+      })
   }
 }

@@ -10,6 +10,7 @@ import { toaster } from '@/containers/Toast'
 import { useGetDownloadedModels } from './useGetDownloadedModels'
 
 import { pluginManager } from '@/plugin'
+import { join } from 'path'
 
 const activeAssistantModelAtom = atom<Model | undefined>(undefined)
 
@@ -21,16 +22,16 @@ export function useActiveModel() {
   const { downloadedModels } = useGetDownloadedModels()
 
   const startModel = async (modelId: string) => {
-    if (activeModel && activeModel._id === modelId) {
+    if (activeModel && activeModel.id === modelId) {
       console.debug(`Model ${modelId} is already init. Ignore..`)
       return
     }
 
     setStateModel({ state: 'start', loading: true, model: modelId })
 
-    const model = await downloadedModels.find((e) => e._id === modelId)
+    const model = downloadedModels.find((e) => e.id === modelId)
 
-    if (!modelId) {
+    if (!model) {
       alert(`Model ${modelId} not found! Please re-download the model first.`)
       setStateModel(() => ({
         state: 'start',
@@ -42,8 +43,8 @@ export function useActiveModel() {
 
     const currentTime = Date.now()
     console.debug('Init model: ', modelId)
-
-    const res = await initModel(`models/${modelId}`)
+    const path = join('models', model.productName, modelId)
+    const res = await initModel(path)
     if (res?.error) {
       const errorMessage = `${res.error}`
       alert(errorMessage)

@@ -33,6 +33,8 @@
  * @property {Function} relaunch - Relaunches the app.
  * @property {Function} openAppDirectory - Opens the app directory.
  * @property {Function} deleteFile - Deletes the file at the given path.
+ * @property {Function} isDirectory - Returns true if the file at the given path is a directory.
+ * @property {Function} getUserSpace - Returns the user space.
  * @property {Function} readFile - Reads the file at the given path.
  * @property {Function} writeFile - Writes the given data to the file at the given path.
  * @property {Function} listFiles - Lists the files in the directory at the given path.
@@ -52,81 +54,85 @@
  */
 
 // Make Pluggable Electron's facade available to the renderer on window.plugins
-import { useFacade } from "./core/plugin/facade";
+import { useFacade } from './core/plugin/facade'
 
-useFacade();
+useFacade()
 
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld("electronAPI", {
+contextBridge.exposeInMainWorld('electronAPI', {
   invokePluginFunc: (plugin: any, method: any, ...args: any[]) =>
-    ipcRenderer.invoke("invokePluginFunc", plugin, method, ...args),
+    ipcRenderer.invoke('invokePluginFunc', plugin, method, ...args),
 
-  setNativeThemeLight: () => ipcRenderer.invoke("setNativeThemeLight"),
+  setNativeThemeLight: () => ipcRenderer.invoke('setNativeThemeLight'),
 
-  setNativeThemeDark: () => ipcRenderer.invoke("setNativeThemeDark"),
+  setNativeThemeDark: () => ipcRenderer.invoke('setNativeThemeDark'),
 
-  setNativeThemeSystem: () => ipcRenderer.invoke("setNativeThemeSystem"),
+  setNativeThemeSystem: () => ipcRenderer.invoke('setNativeThemeSystem'),
 
-  basePlugins: () => ipcRenderer.invoke("basePlugins"),
+  basePlugins: () => ipcRenderer.invoke('basePlugins'),
 
-  pluginPath: () => ipcRenderer.invoke("pluginPath"),
+  pluginPath: () => ipcRenderer.invoke('pluginPath'),
 
-  appDataPath: () => ipcRenderer.invoke("appDataPath"),
+  appDataPath: () => ipcRenderer.invoke('appDataPath'),
 
-  reloadPlugins: () => ipcRenderer.invoke("reloadPlugins"),
+  reloadPlugins: () => ipcRenderer.invoke('reloadPlugins'),
 
-  appVersion: () => ipcRenderer.invoke("appVersion"),
+  appVersion: () => ipcRenderer.invoke('appVersion'),
 
-  openExternalUrl: (url: string) => ipcRenderer.invoke("openExternalUrl", url),
+  openExternalUrl: (url: string) => ipcRenderer.invoke('openExternalUrl', url),
 
-  relaunch: () => ipcRenderer.invoke("relaunch"),
+  relaunch: () => ipcRenderer.invoke('relaunch'),
 
-  openAppDirectory: () => ipcRenderer.invoke("openAppDirectory"),
+  openAppDirectory: () => ipcRenderer.invoke('openAppDirectory'),
 
-  deleteFile: (filePath: string) => ipcRenderer.invoke("deleteFile", filePath),
+  deleteFile: (filePath: string) => ipcRenderer.invoke('deleteFile', filePath),
 
-  readFile: (path: string) => ipcRenderer.invoke("readFile", path),
+  isDirectory: (filePath: string) => ipcRenderer.invoke('isDirectory', filePath),
+
+  getUserSpace: () => ipcRenderer.invoke('getUserSpace'),
+
+  readFile: (path: string) => ipcRenderer.invoke('readFile', path),
 
   writeFile: (path: string, data: string) =>
-    ipcRenderer.invoke("writeFile", path, data),
+    ipcRenderer.invoke('writeFile', path, data),
 
-  listFiles: (path: string) => ipcRenderer.invoke("listFiles", path),
+  listFiles: (path: string) => ipcRenderer.invoke('listFiles', path),
 
-  mkdir: (path: string) => ipcRenderer.invoke("mkdir", path),
+  mkdir: (path: string) => ipcRenderer.invoke('mkdir', path),
 
-  rmdir: (path: string) => ipcRenderer.invoke("rmdir", path),
+  rmdir: (path: string) => ipcRenderer.invoke('rmdir', path),
 
   installRemotePlugin: (pluginName: string) =>
-    ipcRenderer.invoke("installRemotePlugin", pluginName),
+    ipcRenderer.invoke('installRemotePlugin', pluginName),
 
   downloadFile: (url: string, path: string) =>
-    ipcRenderer.invoke("downloadFile", url, path),
+    ipcRenderer.invoke('downloadFile', url, path),
 
   pauseDownload: (fileName: string) =>
-    ipcRenderer.invoke("pauseDownload", fileName),
+    ipcRenderer.invoke('pauseDownload', fileName),
 
   resumeDownload: (fileName: string) =>
-    ipcRenderer.invoke("resumeDownload", fileName),
+    ipcRenderer.invoke('resumeDownload', fileName),
 
   abortDownload: (fileName: string) =>
-    ipcRenderer.invoke("abortDownload", fileName),
+    ipcRenderer.invoke('abortDownload', fileName),
 
   onFileDownloadUpdate: (callback: any) =>
-    ipcRenderer.on("FILE_DOWNLOAD_UPDATE", callback),
+    ipcRenderer.on('FILE_DOWNLOAD_UPDATE', callback),
 
   onFileDownloadError: (callback: any) =>
-    ipcRenderer.on("FILE_DOWNLOAD_ERROR", callback),
+    ipcRenderer.on('FILE_DOWNLOAD_ERROR', callback),
 
   onFileDownloadSuccess: (callback: any) =>
-    ipcRenderer.on("FILE_DOWNLOAD_COMPLETE", callback),
+    ipcRenderer.on('FILE_DOWNLOAD_COMPLETE', callback),
 
   onAppUpdateDownloadUpdate: (callback: any) =>
-    ipcRenderer.on("APP_UPDATE_PROGRESS", callback),
+    ipcRenderer.on('APP_UPDATE_PROGRESS', callback),
 
   onAppUpdateDownloadError: (callback: any) =>
-    ipcRenderer.on("APP_UPDATE_ERROR", callback),
+    ipcRenderer.on('APP_UPDATE_ERROR', callback),
 
   onAppUpdateDownloadSuccess: (callback: any) =>
-    ipcRenderer.on("APP_UPDATE_COMPLETE", callback),
-});
+    ipcRenderer.on('APP_UPDATE_COMPLETE', callback),
+})

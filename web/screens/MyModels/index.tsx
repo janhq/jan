@@ -40,7 +40,7 @@ const MyModelsScreen = () => {
   if (downloadedModels.length === 0) return <BlankStateMyModel />
 
   const onModelActionClick = (modelId: string) => {
-    if (activeModel && activeModel._id === modelId) {
+    if (activeModel && activeModel.id === modelId) {
       stopModel(modelId)
     } else {
       startModel(modelId)
@@ -53,7 +53,7 @@ const MyModelsScreen = () => {
         <div className="p-4" data-test-id="testid-my-models">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {downloadedModels.map((model, i) => {
-              const isActiveModel = stateModel.model === model._id
+              const isActiveModel = stateModel.model === model.id
               return (
                 <div
                   key={i}
@@ -114,7 +114,7 @@ const MyModelsScreen = () => {
                                   themes="danger"
                                   onClick={() =>
                                     setTimeout(async () => {
-                                      await stopModel(model._id)
+                                      await stopModel(model.id)
                                       deleteModel(model)
                                     }, 500)
                                   }
@@ -135,7 +135,7 @@ const MyModelsScreen = () => {
                         }
                         className="capitalize"
                         loading={isActiveModel ? stateModel.loading : false}
-                        onClick={() => onModelActionClick(model._id)}
+                        onClick={() => onModelActionClick(model.id)}
                       >
                         {isActiveModel ? stateModel.state : 'Start'}
                         &nbsp;Model

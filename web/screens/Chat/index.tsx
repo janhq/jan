@@ -56,7 +56,7 @@ const ChatScreen = () => {
   const conversations = useAtomValue(userConversationsAtom)
   const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
   const [isModelAvailable, setIsModelAvailable] = useState(
-    downloadedModels.some((x) => x._id === currentConvo?.modelId)
+    downloadedModels.some((x) => x.id === currentConvo?.modelId)
   )
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -72,7 +72,7 @@ const ChatScreen = () => {
 
   useEffect(() => {
     setIsModelAvailable(
-      downloadedModels.some((x) => x._id === currentConvo?.modelId)
+      downloadedModels.some((x) => x.id === currentConvo?.modelId)
     )
   }, [currentConvo, downloadedModels])
 
@@ -196,7 +196,7 @@ const ChatScreen = () => {
               disabled={
                 !activeModel ||
                 stateModel.loading ||
-                activeModel._id !== currentConvo?.modelId
+                activeModel.id !== currentConvo?.modelId
               }
               value={currentPrompt}
               onChange={(e) => {

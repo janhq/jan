@@ -1,13 +1,9 @@
 import { useEffect, useState } from 'react'
-
-import { Model } from '@janhq/core/lib/types'
+import { Model, Conversation } from '@janhq/core'
 import { useAtomValue } from 'jotai'
-
 import { useActiveModel } from './useActiveModel'
 import { useGetDownloadedModels } from './useGetDownloadedModels'
-
 import { currentConversationAtom } from '@/helpers/atoms/Conversation.atom'
-import { Conversation } from '@/types/chatMessage'
 
 export default function useGetInputState() {
   const [inputState, setInputState] = useState<InputType>('loading')
@@ -27,7 +23,7 @@ export default function useGetInputState() {
 
     // check if convo model id is in downloaded models
     const isModelAvailable = downloadedModels.some(
-      (model) => model._id === convo.modelId
+      (model) => model.id === convo.modelId
     )
 
     if (!isModelAvailable) {
@@ -36,7 +32,7 @@ export default function useGetInputState() {
       return
     }
 
-    if (convo.modelId !== currentModel._id) {
+    if (convo.modelId !== currentModel.id) {
       // in case convo model and active model is different,
       // ask user to init the required model
       setInputState('model-mismatch')

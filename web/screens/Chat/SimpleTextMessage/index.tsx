@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState } from 'react'
 
+import { MessageSenderType, MessageStatus } from '@janhq/core'
 import hljs from 'highlight.js'
 
 import { Marked } from 'marked'
@@ -14,8 +15,6 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 import BubbleLoader from '@/containers/Loader/Bubble'
 
 import { displayDate } from '@/utils/datetime'
-
-import { MessageSenderType, MessageStatus } from '@/models/ChatMessage'
 
 type Props = {
   avatarUrl: string

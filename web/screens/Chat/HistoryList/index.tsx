@@ -46,16 +46,16 @@ export default function HistoryList() {
       console.debug('modelId is undefined')
       return
     }
-    const model = downloadedModels.find((e) => e._id === convo.modelId)
+    const model = downloadedModels.find((e) => e.id === convo.modelId)
     if (convo == null) {
       console.debug('modelId is undefined')
       return
     }
     if (model != null) {
-      startModel(model._id)
+      startModel(model.id)
     }
-    if (activeConvoId !== convo._id) {
-      setActiveConvoId(convo._id)
+    if (activeConvoId !== convo.id) {
+      setActiveConvoId(convo.id)
     }
   }
 
@@ -88,7 +88,7 @@ export default function HistoryList() {
               key={i}
               className={twMerge(
                 'relative flex cursor-pointer flex-col border-b border-border px-4 py-2 hover:bg-secondary/20',
-                activeConvoId === convo._id && 'bg-secondary-10'
+                activeConvoId === convo.id && 'bg-secondary-10'
               )}
               onClick={() => handleActiveModel(convo as Conversation)}
             >
@@ -100,7 +100,7 @@ export default function HistoryList() {
               <p className="mt-1 line-clamp-2 text-xs">
                 {convo?.lastMessage ?? 'No new message'}
               </p>
-              {activeModel && activeConvoId === convo._id && (
+              {activeModel && activeConvoId === convo.id && (
                 <m.div
                   className="absolute right-0 top-0 h-full w-1 bg-primary/50"
                   layoutId="active-convo"

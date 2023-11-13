@@ -124,7 +124,7 @@ function killSubprocess(): Promise<void> {
   if (subprocess) {
     subprocess.kill();
     subprocess = null;
-    console.log("Subprocess terminated.");
+    console.debug("Subprocess terminated.");
   } else {
     return kill(PORT, "tcp").then(console.log).catch(console.log);
   }

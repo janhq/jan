@@ -1,7 +1,6 @@
 import { PluginType } from '@janhq/core'
+import { Conversation, Model } from '@janhq/core'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
-import { Model } from '@janhq/core/lib/types'
-
 import { useAtom, useSetAtom } from 'jotai'
 
 import { generateConversationId } from '@/utils/conversation'
@@ -12,7 +11,6 @@ import {
   addNewConversationStateAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '@/plugin'
-import { Conversation } from '@/types/chatMessage'
 
 export const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
@@ -24,15 +22,15 @@ export const useCreateConversation = () => {
   const requestCreateConvo = async (model: Model) => {
     const conversationName = model.name
     const mappedConvo: Conversation = {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
-      _id: generateConversationId(),
-      modelId: model._id,
+      id: generateConversationId(),
+      modelId: model.id,
       name: conversationName,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      messages: [],
     }
 
-    addNewConvoState(mappedConvo._id, {
+    addNewConvoState(mappedConvo.id, {
       hasMore: true,
       waitingForResponse: false,
     })
@@ -45,7 +43,7 @@ export const useCreateConversation = () => {
         messages: [],
       })
     setUserConversations([mappedConvo, ...userConversations])
-    setActiveConvoId(mappedConvo._id)
+    setActiveConvoId(mappedConvo.id)
   }
 
   return {

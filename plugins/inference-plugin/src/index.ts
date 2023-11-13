@@ -18,7 +18,7 @@ import { InferencePlugin } from "@janhq/core/lib/plugins";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
 import { join } from "path";
-import { appDataPath } from "@janhq/core";
+import { fs } from "@janhq/core";
 
 /**
  * A class that implements the InferencePlugin interface from the @janhq/core package.
@@ -54,8 +54,10 @@ export default class JanInferencePlugin implements InferencePlugin {
    * @returns {Promise<void>} A promise that resolves when the model is initialized.
    */
   async initModel(modelFileName: string): Promise<void> {
-    const appPath = await appDataPath();
-    return executeOnMain(MODULE, "initModel", join(appPath, modelFileName));
+    const userSpacePath = await fs.getUserSpace();
+    const modelFullPath = join(userSpacePath, modelFileName);
+
+    return executeOnMain(MODULE, "initModel", modelFullPath);
   }
 
   /**
@@ -84,7 +86,7 @@ export default class JanInferencePlugin implements InferencePlugin {
         content: data.message,
       },
     ];
-    const recentMessages = await (data.history ?? prompts);
+    const recentMessages = data.history ?? prompts;
 
     return new Promise(async (resolve, reject) => {
       requestInference([
@@ -121,7 +123,7 @@ export default class JanInferencePlugin implements InferencePlugin {
       message: "",
       user: "assistant",
       createdAt: new Date().toISOString(),
-      _id: ulid(),
+      id: ulid(),
     };
     events.emit(EventName.OnNewMessageResponse, message);
 
