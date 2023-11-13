@@ -1,5 +1,5 @@
 ---
-title: Nitro 
+title: Nitro
 slug: /nitro
 ---
 
@@ -73,4 +73,4 @@ curl -X POST 'http://localhost:3928/inferences/llamacpp/loadmodel' \
 
 ## Architecture diagram
 
-![Nitro Architecture](../developers/img/architecture.png)
+![Nitro Architecture](../docs/img/architecture.png)
