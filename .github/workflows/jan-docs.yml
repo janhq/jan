@@ -25,6 +25,25 @@ jobs:
         with:
           node-version: 18
 
+      - name: Install jq      
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Fill env vars
+        run: |
+          env_example_file=".env.example"
+          touch .env
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" == *"="* ]]; then
+              var_name=$(echo $line | cut -d '=' -f 1)
+              echo $var_name
+              var_value="$(jq -r --arg key "$var_name" '.[$key]' <<< "$SECRETS")"
+              echo "$var_name=$var_value" >> .env
+            fi
+          done < "$env_example_file"
+        working-directory: docs
+        env:
+          SECRETS: '${{ toJson(secrets) }}'
+
       - name: Install dependencies
         run: yarn install
         working-directory: docs
