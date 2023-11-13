@@ -17,9 +17,6 @@ import {
 } from "@heroicons/react/24/outline";
 
 import ThemedImage from "@theme/ThemedImage";
-import posthog from 'posthog-js'
-
-posthog.init('phc_cJ95zWbMwdef6nVasPCoSNOvV8lUcL5IykIYOoyGXVm', { api_host: 'https://app.posthog.com' })
 
 const features = [
   {
