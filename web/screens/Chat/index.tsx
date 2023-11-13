@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 
 import { Model } from '@janhq/core/lib/types'
 import { Button, Badge, Textarea } from '@janhq/uikit'
@@ -55,6 +55,9 @@ const ChatScreen = () => {
   const { getUserConversations } = useGetUserConversations()
   const conversations = useAtomValue(userConversationsAtom)
   const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
+  const [isModelAvailable, setIsModelAvailable] = useState(
+    downloadedModels.filter((x) => x.name === currentConvo?.name).length === 0
+  )
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -66,6 +69,13 @@ const ChatScreen = () => {
   const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)
   }
+
+  useEffect(() => {
+    setIsModelAvailable(
+      downloadedModels.filter((x) => x.name === currentConvo?.name).length === 0
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentConvo])
 
   const handleSendMessage = async () => {
     if (activeConversationId) {
@@ -126,8 +136,7 @@ const ChatScreen = () => {
                     ).length === 0 && '-mt-1'
                   )}
                 >
-                  {downloadedModels.filter((x) => x.name === currentConvo?.name)
-                    .length === 0 && (
+                  {isModelAvailable && (
                     <Button
                       themes="secondary"
                       size="sm"
