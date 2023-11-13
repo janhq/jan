@@ -64,7 +64,8 @@ export default function Home() {
             <div className="container py-16">
               <div className="grid grid-cols-1 items-center gap-4">
                 <div className="relative z-10 text-center ">
-                  <div className="bg-red-50 mb-4 inline-flex items-center py-1 rounded-full px-4 gap-x-2">
+                  {/* TODO: Add upcoming events here */}
+                  {/* <div className="bg-red-50 mb-4 inline-flex items-center py-1 rounded-full px-4 gap-x-2">
                     <span className="font-bold uppercase text-blue-600">
                       Event
                     </span>
@@ -73,7 +74,7 @@ export default function Home() {
                         8 Nov 2023: Nvidia LLM Day (Hanoi)
                       </p>
                     </a>
-                  </div>
+                  </div> */}
 
                   <h1 className="bg-gradient-to-r dark:from-white from-black to-gray-500 dark:to-gray-400 bg-clip-text text-4xl lg:text-6xl font-bold leading-tight text-transparent dark:text-transparent lg:leading-tight">
                     Own your AI
