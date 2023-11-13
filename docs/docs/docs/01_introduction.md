@@ -23,6 +23,8 @@ Jan can be used to build a variety of AI use cases, at every level of the stack:
 
 ### Modules
 
+Jan is comprised of system-level modules that mirror OpenAI’s, exposing similar APIs and objects
+
 - Modules are modular, atomic implementations of a single OpenAI-compatible endpoint
 - Modules can be swapped out for alternate implementations
   - The default `messages` module persists messages in thread-specific `.json`
@@ -38,8 +40,7 @@ Jan can be used to build a variety of AI use cases, at every level of the stack:
 
 ### Local Filesystem
 
-- Jan runs on top of standard structure of local files on user's filesystem
-- This allows for composability and tinkerability
+Jan use the local filesystem for data persistence, similar to VSCode. This allows for composability and tinkerability.
 
 ```sh=
 /janroot               # Jan's root folder (e.g. ~/jan)
@@ -89,7 +90,9 @@ Jan can be used to build a variety of AI use cases, at every level of the stack:
 
 ### Jan: a "global" assistant
 
-Jan provides `/jan`, a default assistant that is available to users out-of-the-box. It is a generic assistant to illustrate power of Jan. In the future, it will support additional features e.g. multi-assistant conversations
+Jan ships with a default assistant "Jan" that lets users chat with any open source model out-of-the-box.
+
+This assistant is defined in `/jan`. It is a generic assistant to illustrate power of Jan. In the future, it will support additional features e.g. multi-assistant conversations
 
 - Your Assistant "Jan" lets you pick any model that is in the root /models folder
 - Right panel: pick LLM model and set model parameters
