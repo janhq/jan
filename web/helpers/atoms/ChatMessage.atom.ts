@@ -2,6 +2,8 @@ import { atom } from 'jotai'
 
 import { getActiveConvoIdAtom } from './Conversation.atom'
 
+import { MessageStatus } from '@/models/ChatMessage'
+
 /**
  * Stores all chat messages for all conversations
  */
@@ -89,11 +91,19 @@ export const deleteConversationMessage = atom(null, (get, set, id: string) => {
 
 export const updateMessageAtom = atom(
   null,
-  (get, set, id: string, conversationId: string, text: string) => {
+  (
+    get,
+    set,
+    id: string,
+    conversationId: string,
+    text: string,
+    status: MessageStatus
+  ) => {
     const messages = get(chatMessages)[conversationId] ?? []
     const message = messages.find((e) => e.id === id)
     if (message) {
       message.text = text
+      message.status = status
       const updatedMessages = [...messages]
 
       const newData: Record<string, ChatMessage[]> = {

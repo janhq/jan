@@ -17,7 +17,7 @@ on:
       - main
     paths:
       - "electron/**"
-      - .github/workflows/linter-and-test.yml
+      - .github/workflows/jan-electron-linter-and-test.yml
       - "web/**"
       - "uikit/**"
       - "package.json"
@@ -83,17 +83,21 @@ jobs:
 
       - name: Build uikit
         run: |
+          yarn config set network-timeout 300000
           cd uikit
           yarn install
           yarn build
 
       - name: Linter and test
+        shell: powershell
         run: |
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins
+          $env:NITRO_VERSION = Get-Content .\plugins\inference-plugin\nitro\version.txt; echo $env:NITRO_VERSION
+          yarn build:plugins-windows
           yarn build:test-win32
+          $env:CI="e2e"
           yarn test
 
   test-on-ubuntu:
@@ -127,6 +131,6 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins
+          yarn build:plugins-linux
           yarn build:test-linux
           yarn test

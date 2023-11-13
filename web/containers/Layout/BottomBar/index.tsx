@@ -1,11 +1,10 @@
 import { Badge, Button } from '@janhq/uikit'
 import { useAtomValue } from 'jotai'
 
-import ProgressBar from '@/components/ProgressBar'
-
 import DownloadingState from '@/containers/Layout/BottomBar/DownloadingState'
 
 import SystemItem from '@/containers/Layout/BottomBar/SystemItem'
+import ProgressBar from '@/containers/ProgressBar'
 
 import { appDownloadProgress } from '@/containers/Providers/Jotai'
 

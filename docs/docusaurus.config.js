@@ -1,6 +1,8 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
+require("dotenv").config();
+
 const lightCodeTheme = require("prism-react-renderer/themes/github");
 const darkCodeTheme = require("prism-react-renderer/themes/dracula");
 
@@ -81,6 +83,10 @@ const config = {
         theme: {
           customCss: require.resolve("./src/styles/main.scss"),
         },
+        // GTM is always inactive in development and only active in production to avoid polluting the analytics statistics.
+        googleTagManager: {
+          containerId: process.env.GTM_ID,
+        },
         // Will be passed to @docusaurus/plugin-content-pages (false to disable)
         // pages: {},
       }),
@@ -129,9 +135,15 @@ const config = {
           },
           {
             type: "docSidebar",
-            sidebarId: "devSidebar",
+            sidebarId: "docsSidebar",
             position: "left",
-            label: "Developers",
+            label: "Documentation",
+          },
+          {
+            type: "docSidebar",
+            sidebarId: "apiSidebar",
+            position: "left",
+            label: "API Reference",
           },
           // Navbar right
           {

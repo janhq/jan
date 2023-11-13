@@ -59,9 +59,9 @@ export default function DownloadingState() {
                       }) as number
                     }
                   />
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-x-2">
                     <div className="flex gap-x-2">
-                      <p>{item?.fileName}</p>
+                      <p className="line-clamp-1">{item?.fileName}</p>
                       <span>{formatDownloadPercentage(item?.percent)}</span>
                     </div>
                     <Button

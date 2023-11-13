@@ -12,15 +12,16 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.jan.ai/">Getting Started</a> - <a href="https://docs.jan.ai">Docs</a> 
-  - <a href="https://github.com/janhq/jan/releases">Changelog</a> - <a href="https://github.com/janhq/jan/issues">Bug reports</a> - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
+  <a href="https://jan.ai/guides">Getting Started</a> 
+  - <a href="https://jan.ai/docs">Docs</a> 
+  - <a href="https://github.com/janhq/jan/releases">Changelog</a> 
+  - <a href="https://github.com/janhq/jan/issues">Bug reports</a> 
+  - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan is a tool to build your own Personal AI, that runs privately on your personal computer.
-
-Jan is free and open source, under the AGPLv3 license.
+Jan is a free, open-source alternative to OpenAI that runs on your personal computer.
 
 **Jan runs on any hardware.** From PCs to multi-GPU clusters, Jan supports universal architectures:
 
@@ -43,28 +44,10 @@ _Video: Jan v0.3.0 on Mac Air M2, 16GB Ventura_
 
 ## Quicklinks
 
-- [Developer docs](https://jan.ai/docs) (WIP)
-- Mobile App shell: [App Store](https://apps.apple.com/us/app/jan-on-device-ai-cloud-ais/id6449664703) | [Android](https://play.google.com/store/apps/details?id=com.jan.ai)
-- [Nitro Github](https://nitro.jan.ai): Jan's AI engine
-
-## Plugins
-
-Jan supports core & 3rd party extensions:
-
-- [x] **LLM chat**: Self-hosted Llama2 and LLMs
-- [x] **Model Manager**: 1-click to install, swap, and delete models with HuggingFace integration
-- [x] **Storage**: Optionally save conversation history and other data in SQLite
-- [ ] **3rd-party AIs**: Connect to ChatGPT, Claude via API Key (in progress)
-- [ ] **Cross device support**: Mobile & Web support for custom shared servers (in progress)
-- [ ] **File retrieval**: User can chat with docs
-- [ ] **Multi-user support**: Share a single server across a team/friends (planned)
-- [ ] **Compliance**: Auditing and flagging features (planned)
-
-## Nitro (Jan's AI engine)
-
-In the background, Jan runs [Nitro](https://nitro.jan.ai), an open source, C++ inference engine. It runs various model formats (GGUF/TensorRT) on various hardware (Mac M1/M2/Intel, Windows, Linux, and datacenter-grade Nvidia GPUs) with optional GPU acceleration.
-
-> See the open source Nitro codebase at https://nitro.jan.ai.
+- [User Guides](https://jan.ai/docs)
+- [Developer docs](https://jan.ai/docs)
+- [API reference](https://jan.ai/api/overview)
+- [Nitro Github](https://nitro.jan.ai): Nitro is a C++ inference engine
 
 ## Troubleshooting
 
@@ -78,8 +61,6 @@ To reset your installation:
    `rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron`
    OR
    `rm -rf /Users/$(whoami)/Library/Application\ Support/jan`
-
----
 
 ## Contributing
 
@@ -162,3 +143,7 @@ Jan builds on top of other open-source projects:
 - For discussion: join our Discord [here](https://discord.gg/FTk2MvZwJH)
 - For business inquiries: email hello@jan.ai
 - For jobs: please email hr@jan.ai
+
+## License
+
+Jan is free and open source, under the AGPLv3 license.

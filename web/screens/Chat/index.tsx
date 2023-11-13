@@ -1,10 +1,12 @@
-import { Fragment, useEffect } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 
 import { Model } from '@janhq/core/lib/types'
-import { ScrollArea, Input, Button, Badge } from '@janhq/uikit'
+import { Button, Badge, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
 import { Trash2Icon } from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
@@ -53,15 +55,27 @@ const ChatScreen = () => {
   const { getUserConversations } = useGetUserConversations()
   const conversations = useAtomValue(userConversationsAtom)
   const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
+  const [isModelAvailable, setIsModelAvailable] = useState(
+    downloadedModels.some((x) => x.name !== currentConvo?.name)
+  )
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     getUserConversations()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleMessageChange = (value: string) => {
-    setCurrentPrompt(value)
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setCurrentPrompt(e.target.value)
   }
+
+  useEffect(() => {
+    setIsModelAvailable(
+      downloadedModels.some((x) => x.name !== currentConvo?.name)
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentConvo, downloadedModels])
 
   const handleSendMessage = async () => {
     if (activeConversationId) {
@@ -71,6 +85,7 @@ const ChatScreen = () => {
       await requestCreateConvo(activeModel as Model)
     }
   }
+
   useEffect(() => {
     if (isWaitingToSend && activeConversationId) {
       setIsWaitingToSend(false)
@@ -79,63 +94,71 @@ const ChatScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitingToSendMessage, activeConversationId])
 
-  const handleKeyDown = async (
-    event: React.KeyboardEvent<HTMLInputElement>
-  ) => {
-    if (event.key === 'Enter') {
-      if (!event.shiftKey) {
-        event.preventDefault()
+  useEffect(() => {
+    if (textareaRef.current !== null) {
+      const scrollHeight = textareaRef.current.scrollHeight
+      if (currentPrompt.length === 0) {
+        textareaRef.current.style.height = '40px'
+      } else {
+        textareaRef.current.style.height = `${
+          scrollHeight < 40 ? 40 : scrollHeight
+        }px`
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPrompt])
+
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      if (!e.shiftKey) {
+        e.preventDefault()
         handleSendMessage()
       }
     }
   }
 
-  console.log(currentConvo)
-
   return (
     <div className="flex h-full">
-      <div className="flex h-full w-64 flex-shrink-0 flex-col border-r border-border">
-        <ScrollArea className="h-full w-full">
-          <HistoryList />
-        </ScrollArea>
+      <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+        <HistoryList />
       </div>
-      <div className="relative flex h-full w-full flex-col bg-muted/10">
+      <div className="relative flex h-full w-[calc(100%-256px)] flex-col bg-muted/10">
         <div className="flex h-full w-full flex-col justify-between">
-          {isEnableChat && (
+          {isEnableChat && currentConvo && (
             <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
               <div className="flex items-center justify-between">
                 <span>{currentConvo?.name ?? ''}</span>
-                {downloadedModels.find((x) => x.name === currentConvo?.name) ||
-                activeModel?._id === currentConvo?.modelId ? (
-                  <Fragment>
-                    {!stateModel.loading && (
-                      <Trash2Icon
-                        size={16}
-                        className="cursor-pointer text-muted-foreground"
-                        onClick={() => deleteConvo()}
-                      />
-                    )}
-                  </Fragment>
-                ) : (
-                  <div>
+                <div
+                  className={twMerge(
+                    'flex items-center space-x-3',
+                    isModelAvailable && '-mt-1'
+                  )}
+                >
+                  {isModelAvailable && (
                     <Button
                       themes="secondary"
                       size="sm"
-                      className="-mt-1"
                       onClick={() => {
                         setMainViewState(MainViewState.ExploreModels)
                       }}
                     >
                       Download Model
                     </Button>
-                  </div>
-                )}
+                  )}
+                  {!stateModel.loading && (
+                    <Trash2Icon
+                      size={16}
+                      className="cursor-pointer text-muted-foreground"
+                      onClick={() => deleteConvo()}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           )}
 
           {isEnableChat ? (
-            <div className="flex h-full w-full overflow-x-auto">
+            <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
               <ChatBody />
             </div>
           ) : (
@@ -165,10 +188,10 @@ const ChatScreen = () => {
               )}
             </div>
           )}
-          <div className="flex w-full flex-shrink-0 items-center justify-center space-x-4 p-4">
-            <Input
-              type="text"
-              className="h-10"
+          <div className="mx-auto flex w-full flex-shrink-0 items-center justify-center space-x-4 p-4 lg:w-3/4">
+            <Textarea
+              className="min-h-10 h-10 max-h-16 resize-none pr-20"
+              ref={textareaRef}
               onKeyDown={(e) => handleKeyDown(e)}
               placeholder="Type your message ..."
               disabled={
@@ -177,7 +200,9 @@ const ChatScreen = () => {
                 activeModel._id !== currentConvo?.modelId
               }
               value={currentPrompt}
-              onChange={(e) => handleMessageChange(e.target.value)}
+              onChange={(e) => {
+                handleMessageChange(e)
+              }}
             />
             <Button
               size="lg"

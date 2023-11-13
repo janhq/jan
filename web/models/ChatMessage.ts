@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import { NewMessageResponse } from '@janhq/core'
 import { Message } from '@janhq/core/lib/types'
+
 export enum MessageType {
   Text = 'Text',
   Image = 'Image',

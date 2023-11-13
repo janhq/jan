@@ -11,6 +11,7 @@ $ yarn
 ### Local Development
 
 ```
+$ cp .env.example .env
 $ yarn start
 ```
 
