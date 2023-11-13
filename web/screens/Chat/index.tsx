@@ -75,7 +75,7 @@ const ChatScreen = () => {
       downloadedModels.filter((x) => x.name === currentConvo?.name).length === 0
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentConvo])
+  }, [currentConvo, downloadedModels])
 
   const handleSendMessage = async () => {
     if (activeConversationId) {
