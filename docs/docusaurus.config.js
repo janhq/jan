@@ -129,9 +129,15 @@ const config = {
           },
           {
             type: "docSidebar",
-            sidebarId: "devSidebar",
+            sidebarId: "docsSidebar",
             position: "left",
-            label: "Developers",
+            label: "Documentation",
+          },
+          {
+            type: "docSidebar",
+            sidebarId: "apiSidebar",
+            position: "left",
+            label: "API Reference",
           },
           // Navbar right
           {
