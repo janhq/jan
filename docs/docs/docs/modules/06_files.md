@@ -31,7 +31,7 @@ Files can be used by `threads`, `assistants` and `fine-tuning`
 - Files can exist in several parts of Jan's filesystem
 - TODO: are files hard copied into these folders? Or do we define a `files.json` and only record the relative filepath?
 
-```sh=
+```sh
 /files                  # root `/files` for finetuning, etc
 /assistants
     /jan

@@ -41,7 +41,7 @@ Messages are within `threads` and capture additional metadata.
 
 - Equivalent to: https://platform.openai.com/docs/api-reference/messages
 
-```sh=
+```sh
 POST https://api.openai.com/v1/threads/{thread_id}/messages # create msg
 GET https://api.openai.com/v1/threads/{thread_id}/messages  # list messages
 GET https://api.openai.com/v1/threads/{thread_id}/messages/{message_id}

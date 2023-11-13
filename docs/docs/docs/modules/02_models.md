@@ -12,7 +12,7 @@ Models are AI models like Llama and Mistral
 
 > Equivalent to: https://platform.openai.com/docs/api-reference/models/object
 
-```json=
+```json
 {
     // OpenAI model compatibility
     // https://platform.openai.com/docs/api-reference/models)
@@ -48,7 +48,7 @@ See [/model](/api/model)
 
 - Equivalent to: https://platform.openai.com/docs/api-reference/models
 
-```sh=
+```sh
 GET https://localhost:1337/v1/models             # List models
 GET https://localhost:1337/v1/models/{model}     # Get model object
 DELETE https://localhost:1337/v1/models/{model}  # Delete model
