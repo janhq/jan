@@ -27,10 +27,10 @@
     --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
   }
   body {
-    @apply text-sm;
+    @apply text-base;
     @apply antialiased;
     @apply bg-white dark:bg-black;
-    @apply text-gray-700 dark:text-gray-400;
+    @apply text-gray-800 dark:text-gray-300;
   }
   img {
     pointer-events: none;

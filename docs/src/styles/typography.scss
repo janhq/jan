@@ -1,38 +1,38 @@
 h1,
 .h1 {
-  line-height: 48px;
   font-size: 40px;
+  line-height: 48px;
   @apply font-bold text-black dark:text-white;
 }
 h2,
 .h2 {
-  font-size: 32px;
+  font-size: 36px;
+  line-height: 42px;
   @apply font-bold text-black dark:text-white;
-  line-height: 40px;
 }
 h3,
 .h3 {
-  font-size: 28px;
-  @apply font-bold text-black dark:text-white;
+  font-size: 32px;
   line-height: 40px;
+  @apply font-bold text-black dark:text-white;
 }
 h4,
 .h4 {
-  font-size: 24px;
+  font-size: 28px;
+  line-height: 40px;
   @apply font-bold text-black dark:text-white;
-  line-height: 32px;
 }
 h5,
 .h5 {
-  font-size: 20px;
+  font-size: 24px;
+  line-height: 32px;
   @apply font-bold text-black dark:text-white;
-  line-height: 28px;
 }
 h6,
 .h6 {
-  font-size: 16px;
+  font-size: 20px;
+  line-height: 28px;
   @apply font-bold text-black dark:text-white;
-  line-height: 24px;
 }
 p {
   line-height: 24px;

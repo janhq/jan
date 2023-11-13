@@ -92,9 +92,23 @@
   }
   ul,
   ol {
-    padding-left: 16px;
+    padding-left: 32px;
     li {
       @apply leading-loose;
     }
   }
+}
+
+.markdown h1:first-child,
+.markdown > p {
+  margin-bottom: 16px;
+}
+
+.theme-code-block {
+  font-size: 14px;
+  background-color: black;
+}
+
+.table-of-contents {
+  font-size: 14px;
 }
