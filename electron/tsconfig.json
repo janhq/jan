@@ -8,6 +8,7 @@
     "outDir": "./build",
     "rootDir": "./",
     "noEmitOnError": true,
+    "esModuleInterop": true,
     "baseUrl": ".",
     "allowJs": true,
     "skipLibCheck": true,

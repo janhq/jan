@@ -5,7 +5,7 @@ import { join } from "path";
 /**
  * Handles file system operations.
  */
-export function handleFs() {
+export function handleFsIPCs() {
   /**
    * Reads a file from the user data directory.
    * @param event - The event object.
@@ -115,4 +115,29 @@ export function handleFs() {
       });
     }
   );
+
+  /**
+   * Deletes a file from the user data folder.
+   * @param _event - The IPC event object.
+   * @param filePath - The path to the file to delete.
+   * @returns A string indicating the result of the operation.
+   */
+  ipcMain.handle("deleteFile", async (_event, filePath) => {
+    const userDataPath = app.getPath("userData");
+    const fullPath = join(userDataPath, filePath);
+
+    let result = "NULL";
+    fs.unlink(fullPath, function (err) {
+      if (err && err.code == "ENOENT") {
+        result = `File not exist: ${err}`;
+      } else if (err) {
+        result = `File delete error: ${err}`;
+      } else {
+        result = "File deleted successfully";
+      }
+      console.log(`Delete file ${filePath} from ${fullPath} result: ${result}`);
+    });
+
+    return result;
+  });
 }
