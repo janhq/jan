@@ -28,6 +28,7 @@ interface InitModelResponse {
  * @param fileName - The name of the machine learning model file.
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
+ * TODO: Should it be startModel instead?
  */
 function initModel(fileName: string): Promise<InitModelResponse> {
   // 1. Check if the model file exists
