@@ -45,10 +45,11 @@ function initModel(fileName: string): Promise<InitModelResponse> {
       // 6. Check if the model is loaded successfully
       .then(async (res) => {
         if (res.ok) {
+          // Success - Model loaded
           return {};
         }
         const json = await res.json();
-        throw new Error(`Nitro: Model failed to load. ${json}`);
+        throw new Error(`${json?.message ?? "Model loading failed."}`);
       })
       .catch((err) => {
         return { error: err };
