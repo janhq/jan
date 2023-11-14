@@ -122,7 +122,7 @@ jobs:
           yarn build:core
           yarn install
           $env:NITRO_VERSION = Get-Content .\plugins\inference-plugin\nitro\version.txt; echo $env:NITRO_VERSION
-          yarn build:plugins-windows
+          yarn build:plugins-win32
 
       - name: Build and publish app
         run: |
