@@ -17,6 +17,8 @@ import {
 import { InferencePlugin } from "@janhq/core/lib/plugins";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
+import { join } from "path";
+import { appDataPath } from "@janhq/core";
 
 /**
  * A class that implements the InferencePlugin interface from the @janhq/core package.
@@ -48,18 +50,19 @@ export default class JanInferencePlugin implements InferencePlugin {
 
   /**
    * Initializes the model with the specified file name.
-   * @param {string} modelFileName - The name of the model file.
+   * @param {string} modelFileName - The file name of the model file.
    * @returns {Promise<void>} A promise that resolves when the model is initialized.
    */
-  initModel(modelFileName: string): Promise<void> {
-    return executeOnMain(MODULE, "initModel", modelFileName);
+  async initModel(modelFileName: string): Promise<void> {
+    const appPath = await appDataPath();
+    return executeOnMain(MODULE, "initModel", join(appPath, modelFileName));
   }
 
   /**
    * Stops the model.
    * @returns {Promise<void>} A promise that resolves when the model is stopped.
    */
-  stopModel(): Promise<void> {
+  async stopModel(): Promise<void> {
     return executeOnMain(MODULE, "killSubprocess");
   }
 
