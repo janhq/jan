@@ -46,7 +46,6 @@ export function useActiveModel() {
     const res = await initModel(`models/${modelId}`)
     if (res?.error) {
       const errorMessage = `${res.error}`
-      console.error(errorMessage)
       alert(errorMessage)
       setStateModel(() => ({
         state: 'start',

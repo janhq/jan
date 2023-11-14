@@ -38,7 +38,8 @@ function initModel(modelFile: string): Promise<InitModelResponse> {
 
   return (
     // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
-    checkAndUnloadNitro()
+    validateModelVersion()
+      .then(checkAndUnloadNitro)
       // 2. Spawn the Nitro subprocess
       .then(spawnNitroProcess)
       // 3. Wait until the port is used (Nitro http server is up)
@@ -47,6 +48,9 @@ function initModel(modelFile: string): Promise<InitModelResponse> {
       .then(loadLLMModel)
       // 5. Check if the model is loaded successfully
       .then(validateModelStatus)
+      .catch((err) => {
+        return { error: err };
+      })
   );
 }
 
@@ -71,6 +75,10 @@ function loadLLMModel(): Promise<Response> {
     body: JSON.stringify(config),
     retries: 3,
     retryDelay: 500,
+  }).catch((err) => {
+    console.error(err);
+    // Fetch error, Nitro server might not started properly
+    throw new Error("Model loading failed.");
   });
 }
 
@@ -190,6 +198,44 @@ function spawnNitroProcess() {
   subprocess.on("close", (code) => {
     console.log(`child process exited with code ${code}`);
     subprocess = null;
+  });
+}
+
+/**
+ * Validate the model version, if it is GGUFv1, reject the promise
+ * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
+ */
+function validateModelVersion(): Promise<void> {
+  // Read the file
+  return new Promise((resolve, reject) => {
+    fs.open(currentModelFile, "r", (err, fd) => {
+      if (err) {
+        console.error(err.message);
+        return;
+      }
+
+      // Buffer to store the byte
+      const buffer = Buffer.alloc(1);
+
+      // Model version will be the 5th byte of the file
+      fs.read(fd, buffer, 0, 1, 4, (err, bytesRead, buffer) => {
+        if (err) {
+          console.error(err.message);
+        } else {
+          // Interpret the byte as ASCII
+          if (buffer[0] === 0x01) {
+            // This is GGUFv1, which is deprecated
+            reject("GGUFv1 model is deprecated, please try another model.");
+          }
+        }
+
+        // Close the file descriptor
+        fs.close(fd, (err) => {
+          if (err) console.error(err.message);
+        });
+        resolve();
+      });
+    });
   });
 }
 
