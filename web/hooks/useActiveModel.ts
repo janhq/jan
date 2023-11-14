@@ -45,9 +45,7 @@ export function useActiveModel() {
 
     const res = await initModel(`models/${modelId}`)
     if (res?.error) {
-      const errorMessage = `Failed to init model: ${res.error}`
-      console.error(errorMessage)
-      alert(errorMessage)
+      alert(res.error ?? 'Model loading failed.')
       setStateModel(() => ({
         state: 'start',
         loading: false,
