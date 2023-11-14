@@ -2,7 +2,7 @@ import { atom } from 'jotai'
 
 import { getActiveConvoIdAtom } from './Conversation.atom'
 
-import { MessageStatus } from '@/models/ChatMessage'
+import { ChatMessage, MessageStatus } from '@/models/ChatMessage'
 
 /**
  * Stores all chat messages for all conversations

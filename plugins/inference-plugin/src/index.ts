@@ -16,7 +16,7 @@ import {
 } from "@janhq/core";
 import { InferencePlugin } from "@janhq/core/lib/plugins";
 import { requestInference } from "./helpers/sse";
-import { generateMessageId } from "./helpers/message";
+import { ulid } from "ulid";
 
 /**
  * A class that implements the InferencePlugin interface from the @janhq/core package.
@@ -112,13 +112,13 @@ export default class JanInferencePlugin implements InferencePlugin {
         content: data.message,
       },
     ];
-    const recentMessages = await (data.history ?? prompts);
+    const recentMessages = data.history ?? prompts;
     const message = {
       ...data,
       message: "",
       user: "assistant",
       createdAt: new Date().toISOString(),
-      _id: generateMessageId(),
+      _id: ulid(),
     };
     events.emit(EventName.OnNewMessageResponse, message);
 

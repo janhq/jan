@@ -7,6 +7,7 @@ import { useActiveModel } from './useActiveModel'
 import { useGetDownloadedModels } from './useGetDownloadedModels'
 
 import { currentConversationAtom } from '@/helpers/atoms/Conversation.atom'
+import { Conversation } from '@/types/chatMessage'
 
 export default function useGetInputState() {
   const [inputState, setInputState] = useState<InputType>('loading')

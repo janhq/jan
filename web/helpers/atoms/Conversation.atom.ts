@@ -1,3 +1,4 @@
+import { Conversation, ConversationState } from '@/types/chatMessage'
 import { atom } from 'jotai'
 
 // import { MainViewState, setMainViewStateAtom } from './MainView.atom'
