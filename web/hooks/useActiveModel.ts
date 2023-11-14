@@ -52,6 +52,7 @@ export function useActiveModel() {
         loading: false,
         model: modelId,
       }))
+      setActiveModel(undefined)
     } else {
       console.debug(
         `Init model ${modelId} successfully!, take ${
