@@ -20,11 +20,11 @@
     "downloadnitro:win32-cpu": "download https://github.com/janhq/nitro/releases/download/v%NITRO_VERSION%/nitro-%NITRO_VERSION%-win-amd64.zip -e --strip 1 -o ./nitro/win-cpu",
     "downloadnitro:win32-cuda": "download https://github.com/janhq/nitro/releases/download/v%NITRO_VERSION%/nitro-%NITRO_VERSION%-win-amd64-cuda.zip -e --strip 1 -o ./nitro/win-cuda",
     "downloadnitro:all": "npm run downloadnitro:darwin-arm64 && npm run downloadnitro:darwin-x64 && downloadnitro:win32-cpu && npm run downloadnitro:win32-cuda && npm run downloadnitro:linux-cpu && npm run downloadnitro:linux-cuda",
-    "build:publish": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:darwin-arm64 && npm run downloadnitro:darwin-x64 && npm pack && cpx *.tgz ../../electron/core/pre-install",
-    "build:publish-darwin": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:darwin-arm64 && npm run downloadnitro:darwin-x64 && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../electron/core/pre-install",
-    "build:publish-win32": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:win32-cpu && npm run downloadnitro:win32-cuda && npm pack && cpx *.tgz ../../electron/core/pre-install",
-    "build:publish-linux": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:linux-cpu && npm run downloadnitro:linux-cuda &&  npm pack && cpx *.tgz ../../electron/core/pre-install",
-    "build:publish-all": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:all && npm pack && cpx *.tgz ../../electron/core/pre-install"
+    "build:publish": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:darwin-arm64 && npm run downloadnitro:darwin-x64 && cpx \"nitro/**\" \"dist/nitro\" && npm pack && cpx *.tgz ../../electron/core/pre-install",
+    "build:publish-darwin": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:darwin-arm64 && npm run downloadnitro:darwin-x64 && ../../.github/scripts/auto-sign.sh && cpx \"nitro/**\" \"dist/nitro\" && npm pack && cpx *.tgz ../../electron/core/pre-install",
+    "build:publish-win32": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:win32-cpu && npm run downloadnitro:win32-cuda && cpx \"nitro/**\" \"dist/nitro\" && npm pack && cpx *.tgz ../../electron/core/pre-install",
+    "build:publish-linux": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:linux-cpu && npm run downloadnitro:linux-cuda && cpx \"nitro/**\" \"dist/nitro\" &&  npm pack && cpx *.tgz ../../electron/core/pre-install",
+    "build:publish-all": "rimraf *.tgz --glob && npm run build && npm run downloadnitro:all && cpx \"nitro/**\" \"dist/nitro\" && npm pack && cpx *.tgz ../../electron/core/pre-install"
   },
   "exports": {
     ".": "./dist/index.js",
