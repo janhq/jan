@@ -33,7 +33,7 @@ const sidebars = {
     {
       type: "category",
       label: "Getting Started",
-      collapsible: true,
+      collapsible: false,
       collapsed: false,
       items: [
         "docs/introduction",
