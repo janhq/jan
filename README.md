@@ -1,6 +1,7 @@
-# Jan - Personal AI
+# Jan - Own Your AI
 
-![Project Cover](https://github.com/janhq/jan/assets/89722390/be4f07ef-13df-4621-8f25-b861f1d5b7b3)
+![README](https://github.com/janhq/jan/assets/89722390/85a3c0fd-8453-46d0-857b-fb893a286222)
+
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
@@ -21,7 +22,7 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan is a free, open-source alternative to OpenAI that runs on your personal computer.
+Jan is a free, open-source alternative to OpenAI's platform that runs on a local folder of open-format files.
 
 **Jan runs on any hardware.** From PCs to multi-GPU clusters, Jan supports universal architectures:
 
