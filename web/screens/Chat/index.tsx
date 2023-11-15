@@ -56,7 +56,7 @@ const ChatScreen = () => {
   const conversations = useAtomValue(userConversationsAtom)
   const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
   const [isModelAvailable, setIsModelAvailable] = useState(
-    downloadedModels.some((x) => x.name !== currentConvo?.name)
+    downloadedModels.some((x) => x._id === currentConvo?.modelId)
   )
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -72,9 +72,8 @@ const ChatScreen = () => {
 
   useEffect(() => {
     setIsModelAvailable(
-      downloadedModels.some((x) => x.name !== currentConvo?.name)
+      downloadedModels.some((x) => x._id === currentConvo?.modelId)
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentConvo, downloadedModels])
 
   const handleSendMessage = async () => {
@@ -131,10 +130,10 @@ const ChatScreen = () => {
                 <div
                   className={twMerge(
                     'flex items-center space-x-3',
-                    isModelAvailable && '-mt-1'
+                    !isModelAvailable && '-mt-1'
                   )}
                 >
-                  {isModelAvailable && (
+                  {!isModelAvailable && (
                     <Button
                       themes="secondary"
                       size="sm"

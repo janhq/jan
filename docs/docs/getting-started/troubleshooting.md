@@ -7,21 +7,28 @@ sidebar_position: 5
 Please note that 👋Jan is in "development mode," and you might encounter issues. If you need to reset your installation, follow these steps:
 
 ## Issue 1: Broken Build
-1. Delete the Jan Application from your computer.
 
-2. Clear the cache by running one of the following commands:
+As Jan is development mode, you might get stuck on a broken build.
 
-    ```sh
-    rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron
-    ```
+To reset your installation:
 
-    or
+1. Delete Jan from your `/Applications` folder
 
-    ```sh
-    rm -rf /Users/$(whoami)/Library/Application\ Support/jan
-    ```
+1. Delete Application data:
+   ```sh
+   # Newer versions
+   rm -rf /Users/$(whoami)/Library/Application\ Support/jan
 
-3. If the above steps fail, use the following commands to find and kill any problematic processes:
+   # Versions 0.2.0 and older
+   rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron
+   ```
+   
+1. Clear Application cache:
+   ```sh
+   rm -rf /Users/$(whoami)/Library/Caches/jan*
+   ```
+
+1. Use the following commands to remove any dangling backend processes:
 
     ```sh
     ps aux | grep nitro
@@ -32,3 +39,4 @@ Please note that 👋Jan is in "development mode," and you might encounter issue
     ```sh
     kill -9 <PID>
     ```
+    

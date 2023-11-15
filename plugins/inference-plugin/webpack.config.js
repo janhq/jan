@@ -18,7 +18,10 @@ module.exports = {
   plugins: [
     new webpack.DefinePlugin({
       MODULE: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
-      INFERENCE_URL: JSON.stringify(process.env.INFERENCE_URL || "http://127.0.0.1:3928/inferences/llamacpp/chat_completion"),
+      INFERENCE_URL: JSON.stringify(
+        process.env.INFERENCE_URL ||
+          "http://127.0.0.1:3928/inferences/llamacpp/chat_completion"
+      ),
     }),
   ],
   output: {
@@ -28,6 +31,9 @@ module.exports = {
   },
   resolve: {
     extensions: [".ts", ".js"],
+    fallback: {
+      path: require.resolve("path-browserify"),
+    },
   },
   optimization: {
     minimize: false,

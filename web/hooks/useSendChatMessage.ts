@@ -12,9 +12,7 @@ import { Message } from '@janhq/core/lib/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
-
-import { generateMessageId } from '@/utils/message'
-
+import { ulid } from 'ulid'
 import {
   addNewMessageAtom,
   getCurrentChatMessagesAtom,
@@ -24,9 +22,10 @@ import {
   updateConversationAtom,
   updateConversationWaitingForResponseAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import { toChatMessage } from '@/models/ChatMessage'
+import { MessageSenderType, toChatMessage } from '@/models/ChatMessage'
 
 import { pluginManager } from '@/plugin/PluginManager'
+import { ChatMessage, Conversation } from '@/types/chatMessage'
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom)
@@ -73,16 +72,13 @@ export default function useSendChatMessage() {
                 ...updatedConv,
                 name: updatedConv.name ?? '',
                 message: updatedConv.lastMessage ?? '',
-                messages: currentMessages.map<Message>((e: ChatMessage) => {
-                  return {
-                    // eslint-disable-next-line @typescript-eslint/naming-convention
-                    _id: e.id,
-                    message: e.text,
-                    user: e.senderUid,
-                    updatedAt: new Date(e.createdAt).toISOString(),
-                    createdAt: new Date(e.createdAt).toISOString(),
-                  }
-                }),
+                messages: currentMessages.map<Message>((e: ChatMessage) => ({
+                  _id: e.id,
+                  message: e.text,
+                  user: e.senderUid,
+                  updatedAt: new Date(e.createdAt).toISOString(),
+                  createdAt: new Date(e.createdAt).toISOString(),
+                })),
               })
           }
         }, 1000)
@@ -98,31 +94,34 @@ export default function useSendChatMessage() {
 
     const prompt = currentPrompt.trim()
     const messageHistory: MessageHistory[] = currentMessages
-      .map((msg) => {
-        return {
-          role: msg.senderUid === 'user' ? 'user' : 'assistant',
-          content: msg.text ?? '',
-        }
-      })
+      .map((msg) => ({
+        role: msg.senderUid,
+        content: msg.text ?? '',
+      }))
       .reverse()
       .concat([
         {
-          role: 'user',
+          role: MessageSenderType.User,
           content: prompt,
         } as MessageHistory,
       ])
     const newMessage: NewMessageRequest = {
       // eslint-disable-next-line @typescript-eslint/naming-convention
-      _id: generateMessageId(),
+      _id: ulid(),
       conversationId: convoId,
       message: prompt,
-      user: 'user',
+      user: MessageSenderType.User,
       createdAt: new Date().toISOString(),
       history: messageHistory,
     }
 
     const newChatMessage = toChatMessage(newMessage)
     addNewMessage(newChatMessage)
+
+    // delay randomly from 50 - 100ms
+    // to prevent duplicate message id
+    const delay = Math.floor(Math.random() * 50) + 50
+    await new Promise((resolve) => setTimeout(resolve, delay))
 
     events.emit(EventName.OnNewMessageRequest, newMessage)
     if (!currentConvo?.summary && currentConvo) {

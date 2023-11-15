@@ -10,6 +10,7 @@ import {
 } from '@/helpers/atoms/Conversation.atom'
 import { toChatMessage } from '@/models/ChatMessage'
 import { pluginManager } from '@/plugin/PluginManager'
+import { ChatMessage, ConversationState } from '@/types/chatMessage'
 
 const useGetUserConversations = () => {
   const setConversationStates = useSetAtom(conversationStatesAtom)

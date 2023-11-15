@@ -6,7 +6,7 @@ enum MessageType {
   Error = 'Error',
 }
 
-enum MessageSenderType {
+export enum MessageSenderType {
   Ai = 'assistant',
   User = 'user',
 }
