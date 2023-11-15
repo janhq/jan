@@ -34,4 +34,4 @@ export { fs } from "./fs";
  * Plugin base module export.
  * @module
  */
-export { JanPlugin, PluginType } from "./plugin";
+export * from "./plugin";
