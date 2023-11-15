@@ -7,7 +7,7 @@ title: macOS
 
 ## Installation
 
-1. To get the lastest version of the Jan desktop app, visit the [download page for Jan](https://jan.ai/).
+1. To get the latest version of the Jan desktop app, visit the [download page for Jan](https://jan.ai/).
 2. Download the latest version of Jan for macOS by clicking on the **Download for macOS** ensure to select the **Mac Apple Chip** version if you are using a Mac with an Apple silicon processor.
 3. In your computer's `Download` folder, double-click the Jan application file. Then, drag ```Jan.app``` to the **Application** folder, making it available in the macOS Launchpad.
 4. Open Jan by clicking on the Jan icon in the Launchpad. 

@@ -6,7 +6,7 @@ title: Linux
 
 ## Installation
 
-1. To get the lastest version of the Jan desktop app, visit the [download page for Jan](https://jan.ai/).
+1. To get the latest version of the Jan desktop app, visit the [download page for Jan](https://jan.ai/).
 2. Download the latest version of Jan for macOS by clicking on the **Download for Linux**.
 3. For Debian/Ubuntu-based distributions, the recommended installation method is through the .deb package (64-bit). This can be done either through the graphical software center, if available, or via the command line using the following:
 ```bash
