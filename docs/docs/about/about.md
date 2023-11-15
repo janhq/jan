@@ -2,11 +2,11 @@
 title: About Jan
 ---
 
-Jan is a free, open source alternative to OpenAI's platform that runs on your personal computer. 
+Jan is a free, open source alternative to OpenAI's platform that runs on a local folder of open-format files. 
 
 We believe in the need for an open source AI ecosystem, and are building the infra and tooling to allow open source AIs to be as usable and comprehensive as proprietary ones.
 
-Jan's long-term vision is to build a cognitive framework for future robots. We build towards a future where humans and businesses are augmented by practical, useful assistants in everyday life. 
+Jan's long-term vision is to build a cognitive framework for future robots, who are practical, useful assistants for humans and businesses in everyday life. 
 
 ## Why does Jan Exist?
 
