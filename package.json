@@ -36,27 +36,16 @@
     "build:electron": "yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
     "build:plugins": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm install && npm run build:publish\" \"cd ./plugins/inference-plugin && npm install && npm run build:publish\" \"cd ./plugins/model-plugin && npm install && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm install && npm run build:publish\"",
-    "build:plugins-win32": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm install && npm run build:publish\" \"cd ./plugins/inference-plugin && npm install && npm run build:publish-win32\" \"cd ./plugins/model-plugin && npm install && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm install && npm run build:publish\"",
-    "build:plugins-linux": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm install && npm run build:publish\" \"cd ./plugins/inference-plugin && npm install && npm run build:publish-linux\" \"cd ./plugins/model-plugin && npm install && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm install && npm run build:publish\"",
-    "build:plugins-darwin": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm install && npm run build:publish\" \"cd ./plugins/inference-plugin && npm install && npm run build:publish-darwin\" \"cd ./plugins/model-plugin && npm install && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm install && npm run build:publish\"",
-    "build:test": "yarn build:web && yarn build:electron:test",
-    "build:test-darwin": "yarn build:web && yarn workspace jan build:test-darwin",
-    "build:test-win32": "yarn build:web && yarn workspace jan build:test-win32",
-    "build:test-linux": "yarn build:web && yarn workspace jan build:test-linux",
-    "build": "yarn build:web && yarn build:electron",
-    "build:darwin": "yarn build:web && yarn workspace jan build:darwin",
-    "build:win32": "yarn build:web && yarn workspace jan build:win32",
-    "build:linux": "yarn build:web && yarn workspace jan build:linux",
-    "build:publish": "yarn build:web && yarn workspace jan build:publish",
-    "build:publish-darwin": "yarn build:web && yarn workspace jan build:publish-darwin",
-    "build:publish-win32": "yarn build:web && yarn workspace jan build:publish-win32",
-    "build:publish-linux": "yarn build:web && yarn workspace jan build:publish-linux"
+    "build:test": "yarn build:web && yarn workspace jan build:test",
+    "build": "yarn build:web && yarn workspace jan build",
+    "build:publish": "yarn build:web && yarn workspace jan build:publish"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
-    "wait-on": "^7.0.1"
+    "wait-on": "^7.0.1",
+    "run-script-os": "^1.1.6"
   },
   "version": "0.0.0"
 }
