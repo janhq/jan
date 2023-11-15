@@ -60,14 +60,14 @@ jobs:
         run: |
           yarn build:core
           yarn install
-          yarn build:plugins-darwin
+          yarn build:plugins
         env:
           APP_PATH: "."
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
 
       - name: Build and publish app
         run: |
-          yarn build:publish-darwin
+          yarn build:publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: "/tmp/codesign.p12"
@@ -122,11 +122,11 @@ jobs:
           yarn build:core
           yarn install
           $env:NITRO_VERSION = Get-Content .\plugins\inference-plugin\nitro\version.txt; echo $env:NITRO_VERSION
-          yarn build:plugins-win32
+          yarn build:plugins
 
       - name: Build and publish app
         run: |
-          yarn build:publish-win32
+          yarn build:publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -178,11 +178,11 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins-linux
+          yarn build:plugins
 
       - name: Build and publish app
         run: |
-          yarn build:publish-linux
+          yarn build:publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
