@@ -95,7 +95,7 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div className="container mt-10 mb-20 text-center">
+          <div className="container mt-10 mb-10 lg:mb-20 text-center">
             <h2>AI that you control</h2>
             <p className="text-base mt-2 w-full lg:w-2/5 mx-auto leading-relaxed">
               Private. Local. Infinitely Customizable.
@@ -182,8 +182,10 @@ export default function Home() {
           <div class="container lg:px-20 py-20 text-center lg:text-left">
             <div class="flex  flex-col lg:flex-row space-y-20 lg:space-y-0">
               <div>
-                <h1 className="text-7xl">Your AI, forever.</h1>
-                <p className="text-2xl mt-2">
+                <h1 className="bg-gradient-to-r dark:from-white from-black to-gray-500 dark:to-gray-400 bg-clip-text text-4xl lg:text-6xl font-bold leading-tight text-transparent dark:text-transparent lg:leading-tight">
+                  Your AI, forever.
+                </h1>
+                <p className="text-lg lg:text-2xl mt-2">
                   Apps come and go, but your AI and data should last.{" "}
                 </p>
                 <div class="w-full lg:w-3/4 mt-8">
