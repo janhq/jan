@@ -1,15 +1,20 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useMemo } from 'react'
+
 import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 import { Button } from '@janhq/uikit'
 import { Badge } from '@janhq/uikit'
 import { atom, useAtomValue } from 'jotai'
+
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
+
 import { MainViewState } from '@/constants/screens'
+
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
+
 import { toGigabytes } from '@/utils/converter'
 
 type Props = {
@@ -23,13 +28,13 @@ const ModelVersionItem: React.FC<Props> = ({ model, modelVersion }) => {
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
   const isDownloaded =
-    downloadedModels.find((model) => model.id === modelVersion.id) != null
+    downloadedModels.find((model) => model.id === modelVersion.name) != null
 
   const { modelDownloadStateAtom, downloadStates } = useDownloadState()
 
   const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[modelVersion.id ?? '']),
-    [modelVersion.id]
+    () => atom((get) => get(modelDownloadStateAtom)[modelVersion.name ?? '']),
+    [modelVersion.name]
   )
   const downloadState = useAtomValue(downloadAtom)
 

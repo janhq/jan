@@ -1,18 +1,20 @@
 import {
+  ChatCompletionMessage,
+  ChatCompletionRole,
   EventName,
-  MessageHistory,
-  NewMessageRequest,
+  MessageRequest,
+  MessageStatus,
   PluginType,
+  Thread,
   events,
-  ChatMessage,
-  Message,
-  Conversation,
-  MessageSenderType,
 } from '@janhq/core'
 import { ConversationalPlugin, InferencePlugin } from '@janhq/core/lib/plugins'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { currentPromptAtom } from '@/containers/Providers/Jotai'
+
 import { ulid } from 'ulid'
+
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
+
 import {
   addNewMessageAtom,
   getCurrentChatMessagesAtom,
@@ -23,7 +25,6 @@ import {
   updateConversationWaitingForResponseAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '@/plugin/PluginManager'
-import { toChatMessage } from '@/utils/message'
 
 export default function useSendChatMessage() {
   const currentConvo = useAtomValue(currentConversationAtom)
@@ -35,7 +36,7 @@ export default function useSendChatMessage() {
 
   let timeout: NodeJS.Timeout | undefined = undefined
 
-  function updateConvSummary(newMessage: NewMessageRequest) {
+  function updateConvSummary(newMessage: MessageRequest) {
     if (timeout) {
       clearTimeout(timeout)
     }
@@ -46,13 +47,19 @@ export default function useSendChatMessage() {
         currentConvo.summary === '' ||
         currentConvo.summary.startsWith('Prompt:')
       ) {
+        const summaryMsg: ChatCompletionMessage = {
+          role: ChatCompletionRole.User,
+          content:
+            'summary this conversation in 5 words, the response should just include the summary',
+        }
         // Request convo summary
         setTimeout(async () => {
-          newMessage.message =
-            'summary this conversation in 5 words, the response should just include the summary'
           const result = await pluginManager
             .get<InferencePlugin>(PluginType.Inference)
-            ?.inferenceRequest(newMessage)
+            ?.inferenceRequest({
+              ...newMessage,
+              messages: newMessage.messages?.concat([summaryMsg]),
+            })
 
           if (
             result?.message &&
@@ -68,15 +75,7 @@ export default function useSendChatMessage() {
               .get<ConversationalPlugin>(PluginType.Conversational)
               ?.saveConversation({
                 ...updatedConv,
-                name: updatedConv.name ?? '',
-                message: updatedConv.lastMessage ?? '',
-                messages: currentMessages.map<Message>((e: ChatMessage) => ({
-                  id: e.id,
-                  message: e.text,
-                  user: e.senderUid,
-                  updatedAt: new Date(e.createdAt).toISOString(),
-                  createdAt: new Date(e.createdAt).toISOString(),
-                })),
+                messages: currentMessages,
               })
           }
         }, 1000)
@@ -95,29 +94,32 @@ export default function useSendChatMessage() {
     updateConvWaiting(convoId, true)
 
     const prompt = currentPrompt.trim()
-    const messageHistory: MessageHistory[] = currentMessages
-      .map((msg) => ({
-        role: msg.senderUid,
-        content: msg.text ?? '',
+    const messages: ChatCompletionMessage[] = currentMessages
+      .map<ChatCompletionMessage>((msg) => ({
+        role: msg.role ?? ChatCompletionRole.User,
+        content: msg.content ?? '',
       }))
       .reverse()
       .concat([
         {
-          role: MessageSenderType.User,
+          role: ChatCompletionRole.User,
           content: prompt,
-        } as MessageHistory,
+        } as ChatCompletionMessage,
       ])
-    const newMessage: NewMessageRequest = {
+    const newMessage: MessageRequest = {
       id: ulid(),
-      conversationId: convoId,
-      message: prompt,
-      user: MessageSenderType.User,
-      createdAt: new Date().toISOString(),
-      history: messageHistory,
+      threadId: convoId,
+      messages,
     }
 
-    const newChatMessage = toChatMessage(newMessage)
-    addNewMessage(newChatMessage)
+    addNewMessage({
+      id: newMessage.id,
+      threadId: newMessage.threadId,
+      content: prompt,
+      role: ChatCompletionRole.User,
+      createdAt: new Date().toISOString(),
+      status: MessageStatus.Ready,
+    })
 
     // delay randomly from 50 - 100ms
     // to prevent duplicate message id
@@ -126,17 +128,9 @@ export default function useSendChatMessage() {
 
     events.emit(EventName.OnNewMessageRequest, newMessage)
     if (!currentConvo?.summary && currentConvo) {
-      const updatedConv: Conversation = {
+      const updatedConv: Thread = {
         ...currentConvo,
-        lastMessage: prompt,
         summary: `Prompt: ${prompt}`,
-      }
-
-      updateConversation(updatedConv)
-    } else if (currentConvo) {
-      const updatedConv: Conversation = {
-        ...currentConvo,
-        lastMessage: prompt,
       }
 
       updateConversation(updatedConv)

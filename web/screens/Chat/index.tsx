@@ -126,7 +126,7 @@ const ChatScreen = () => {
           {isEnableChat && currentConvo && (
             <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
               <div className="flex items-center justify-between">
-                <span>{currentConvo?.name ?? ''}</span>
+                <span>{currentConvo?.summary ?? ''}</span>
                 <div
                   className={twMerge(
                     'flex items-center space-x-3',
