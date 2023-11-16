@@ -25,6 +25,7 @@ const useGetUserConversations = () => {
         convoStates[convo.id ?? ''] = {
           hasMore: true,
           waitingForResponse: false,
+          lastMessage: convo.messages[0]?.content ?? '',
         }
         setConvoMessages(convo.messages, convo.id ?? '')
       })

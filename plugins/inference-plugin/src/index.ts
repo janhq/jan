@@ -105,7 +105,7 @@ export default class JanInferencePlugin implements InferencePlugin {
    */
   private async handleMessageRequest(data: MessageRequest) {
     const message: ThreadMessage = {
-      ...data,
+      threadId: data.threadId,
       content: "",
       role: ChatCompletionRole.Assistant,
       createdAt: new Date().toISOString(),
