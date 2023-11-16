@@ -1,7 +1,6 @@
 import React, { forwardRef } from 'react'
-
+import { ChatMessage } from '@janhq/core'
 import SimpleTextMessage from '../SimpleTextMessage'
-import { ChatMessage } from '@/types/chatMessage'
 
 type Props = {
   message: ChatMessage

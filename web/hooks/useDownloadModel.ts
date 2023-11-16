@@ -21,7 +21,7 @@ export default function useDownloadModel() {
   ): Model => {
     return {
       // eslint-disable-next-line @typescript-eslint/naming-convention
-      _id: modelVersion._id,
+      id: modelVersion.id,
       name: modelVersion.name,
       quantMethod: modelVersion.quantMethod,
       bits: modelVersion.bits,
@@ -31,7 +31,7 @@ export default function useDownloadModel() {
       downloadLink: modelVersion.downloadLink,
       startDownloadAt: modelVersion.startDownloadAt,
       finishDownloadAt: modelVersion.finishDownloadAt,
-      productId: model._id,
+      productId: model.id,
       productName: model.name,
       shortDescription: model.shortDescription,
       longDescription: model.longDescription,
@@ -53,7 +53,7 @@ export default function useDownloadModel() {
   ) => {
     // set an initial download state
     setDownloadState({
-      modelId: modelVersion._id,
+      modelId: modelVersion.id,
       time: {
         elapsed: 0,
         remaining: 0,
@@ -64,7 +64,7 @@ export default function useDownloadModel() {
         total: 0,
         transferred: 0,
       },
-      fileName: modelVersion._id,
+      fileName: modelVersion.id,
     })
 
     modelVersion.startDownloadAt = Date.now()

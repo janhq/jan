@@ -1,5 +1,5 @@
 export interface Conversation {
-  _id: string;
+  id: string;
   modelId?: string;
   botId?: string;
   name: string;
@@ -8,11 +8,23 @@ export interface Conversation {
   createdAt?: string;
   updatedAt?: string;
   messages: Message[];
+  lastMessage?: string;
 }
+
 export interface Message {
+  id: string;
   message?: string;
   user?: string;
-  _id: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RawMessage {
+  id?: string;
+  conversationId?: string;
+  user?: string;
+  avatar?: string;
+  message?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -22,7 +34,7 @@ export interface Model {
    * Combination of owner and model name.
    * Being used as file name. MUST be unique.
    */
-  _id: string;
+  id: string;
   name: string;
   quantMethod: string;
   bits: number;
@@ -51,7 +63,7 @@ export interface Model {
   tags: string[];
 }
 export interface ModelCatalog {
-  _id: string;
+  id: string;
   name: string;
   shortDescription: string;
   avatarUrl: string;
@@ -74,7 +86,7 @@ export type ModelVersion = {
    * Combination of owner and model name.
    * Being used as file name. Should be unique.
    */
-  _id: string;
+  id: string;
   name: string;
   quantMethod: string;
   bits: number;
@@ -88,4 +100,41 @@ export type ModelVersion = {
    */
   startDownloadAt?: number;
   finishDownloadAt?: number;
+};
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  messageType: MessageType;
+  messageSenderType: MessageSenderType;
+  senderUid: string;
+  senderName: string;
+  senderAvatarUrl: string;
+  text: string | undefined;
+  imageUrls?: string[] | undefined;
+  createdAt: number;
+  status: MessageStatus;
+}
+
+export enum MessageType {
+  Text = "Text",
+  Image = "Image",
+  ImageWithText = "ImageWithText",
+  Error = "Error",
+}
+
+export enum MessageSenderType {
+  Ai = "assistant",
+  User = "user",
+}
+
+export enum MessageStatus {
+  Ready = "ready",
+  Pending = "pending",
+}
+
+export type ConversationState = {
+  hasMore: boolean;
+  waitingForResponse: boolean;
+  error?: Error;
 };

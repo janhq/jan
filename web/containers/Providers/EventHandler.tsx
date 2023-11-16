@@ -1,14 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ReactNode, useEffect, useRef } from 'react'
 
-import { events, EventName, NewMessageResponse, PluginType } from '@janhq/core'
-
+import {
+  events,
+  EventName,
+  NewMessageResponse,
+  PluginType,
+  ChatMessage,
+} from '@janhq/core'
+import { Conversation, Message, MessageStatus } from '@janhq/core'
 import { ConversationalPlugin, ModelPlugin } from '@janhq/core/lib/plugins'
-import { Message } from '@janhq/core/lib/types'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
+import { toChatMessage } from '@/utils/message'
 
 import {
   addNewMessageAtom,
@@ -20,11 +27,8 @@ import {
   updateConversationWaitingForResponseAtom,
   userConversationsAtom,
 } from '@/helpers/atoms/Conversation.atom'
-
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-import { MessageStatus, toChatMessage } from '@/models/ChatMessage'
 import { pluginManager } from '@/plugin'
-import { ChatMessage, Conversation } from '@/types/chatMessage'
 
 let currentConversation: Conversation | undefined = undefined
 
@@ -50,9 +54,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   async function handleNewMessageResponse(message: NewMessageResponse) {
     if (message.conversationId) {
-      const convo = convoRef.current.find(
-        (e) => e._id == message.conversationId
-      )
+      const convo = convoRef.current.find((e) => e.id == message.conversationId)
       if (!convo) return
       const newResponse = toChatMessage(message)
       addNewMessage(newResponse)
@@ -63,11 +65,11 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   ) {
     if (
       messageResponse.conversationId &&
-      messageResponse._id &&
+      messageResponse.id &&
       messageResponse.message
     ) {
       updateMessage(
-        messageResponse._id,
+        messageResponse.id,
         messageResponse.conversationId,
         messageResponse.message,
         MessageStatus.Pending
@@ -77,11 +79,11 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     if (messageResponse.conversationId) {
       if (
         !currentConversation ||
-        currentConversation._id !== messageResponse.conversationId
+        currentConversation.id !== messageResponse.conversationId
       ) {
         if (convoRef.current && messageResponse.conversationId)
           currentConversation = convoRef.current.find(
-            (e) => e._id == messageResponse.conversationId
+            (e) => e.id == messageResponse.conversationId
           )
       }
 
@@ -104,11 +106,11 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
     if (
       messageResponse.conversationId &&
-      messageResponse._id &&
+      messageResponse.id &&
       messageResponse.message
     ) {
       updateMessage(
-        messageResponse._id,
+        messageResponse.id,
         messageResponse.conversationId,
         messageResponse.message,
         MessageStatus.Ready
@@ -116,27 +118,23 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     }
 
     const convo = convoRef.current.find(
-      (e) => e._id == messageResponse.conversationId
+      (e) => e.id == messageResponse.conversationId
     )
     if (convo) {
-      const messagesData = (messagesRef.current ?? [])[convo._id].map<Message>(
-        (e: ChatMessage) => {
-          return {
-            // eslint-disable-next-line @typescript-eslint/naming-convention
-            _id: e.id,
-            message: e.text,
-            user: e.senderUid,
-            updatedAt: new Date(e.createdAt).toISOString(),
-            createdAt: new Date(e.createdAt).toISOString(),
-          }
-        }
+      const messagesData = (messagesRef.current ?? [])[convo.id].map<Message>(
+        (e: ChatMessage) => ({
+          id: e.id,
+          message: e.text,
+          user: e.senderUid,
+          updatedAt: new Date(e.createdAt).toISOString(),
+          createdAt: new Date(e.createdAt).toISOString(),
+        })
       )
       pluginManager
         .get<ConversationalPlugin>(PluginType.Conversational)
         ?.saveConversation({
           ...convo,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
-          _id: convo._id ?? '',
+          id: convo.id ?? '',
           name: convo.name ?? '',
           message: convo.lastMessage ?? '',
           messages: messagesData,
@@ -153,7 +151,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     if (state && state.fileName && state.success === true) {
       state.fileName = state.fileName.replace('models/', '')
       setDownloadStateSuccess(state.fileName)
-      const model = models.find((e) => e._id === state.fileName)
+      const model = models.find((e) => e.id === state.fileName)
       if (model)
         pluginManager
           .get<ModelPlugin>(PluginType.Model)

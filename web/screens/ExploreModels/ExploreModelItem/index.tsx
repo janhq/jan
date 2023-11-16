@@ -105,7 +105,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
               <ModelVersionList
                 model={model}
                 versions={model.availableVersions}
-                recommendedVersion={suitableModel?._id ?? ''}
+                recommendedVersion={suitableModel?.id ?? ''}
               />
             )}
           </div>

@@ -2,10 +2,10 @@ import * as cn from './cloudNativeService'
 import { EventEmitter } from './eventsService'
 export const setupCoreServices = () => {
   if (typeof window === 'undefined') {
-    console.log('undefine', window)
+    console.debug('undefine', window)
     return
   } else {
-    console.log('Setting up core services')
+    console.debug('Setting up core services')
   }
   if (!window.corePlugin) {
     window.corePlugin = {

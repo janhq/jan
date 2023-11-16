@@ -83,15 +83,15 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
    */
   private parseConversationMarkdown(markdown: string): Conversation {
     const conversation: Conversation = {
-      _id: "",
+      id: "",
       name: "",
       messages: [],
     };
     var currentMessage: Message | undefined = undefined;
     for (const line of markdown.split("\n")) {
       const trimmedLine = line.trim();
-      if (trimmedLine.startsWith("- _id:")) {
-        conversation._id = trimmedLine.replace("- _id:", "").trim();
+      if (trimmedLine.startsWith("- id:")) {
+        conversation.id = trimmedLine.replace("- id:", "").trim();
       } else if (trimmedLine.startsWith("- modelId:")) {
         conversation.modelId = trimmedLine.replace("- modelId:", "").trim();
       } else if (trimmedLine.startsWith("- name:")) {
@@ -128,7 +128,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
           if (currentMessage) {
             conversation.messages.push(currentMessage);
           }
-          currentMessage = { _id: messageMatch[1] };
+          currentMessage = { id: messageMatch[1] };
         }
       } else if (
         currentMessage?.message &&
@@ -170,7 +170,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
   private generateMarkdown(conversation: Conversation): string {
     // Generate the Markdown content based on the Conversation object
     const conversationMetadata = `
-  - _id: ${conversation._id}
+  - id: ${conversation.id}
   - modelId: ${conversation.modelId}
   - name: ${conversation.name}
   - lastMessage: ${conversation.message}
@@ -182,7 +182,7 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
 
     const messages = conversation.messages.map(
       (message) => `
-  - Message ${message._id}:
+  - Message ${message.id}:
     - createdAt: ${message.createdAt}
     - user: ${message.user}
     - message: ${message.message?.trim()}
@@ -204,10 +204,10 @@ export default class JanConversationalPlugin implements ConversationalPlugin {
   private async writeMarkdownToFile(conversation: Conversation) {
     // Generate the Markdown content
     const markdownContent = this.generateMarkdown(conversation);
-    await fs.mkdir(`conversations/${conversation._id}`);
+    await fs.mkdir(`conversations/${conversation.id}`);
     // Write the content to a Markdown file
     await fs.writeFile(
-      `conversations/${conversation._id}/${conversation._id}.md`,
+      `conversations/${conversation.id}/${conversation.id}.md`,
       markdownContent
     );
   }

@@ -46,7 +46,7 @@ const BottomBar = () => {
           <SystemItem
             name="Active model:"
             value={
-              activeModel?._id || (
+              activeModel?.id || (
                 <Badge themes="secondary">⌘e to show your model</Badge>
               )
             }

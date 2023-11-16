@@ -1,10 +1,10 @@
-import { app, ipcMain } from "electron";
-import { DownloadManager } from "../managers/download";
-import { resolve, join } from "path";
-import { WindowManager } from "../managers/window";
-import request from "request";
-import { createWriteStream, unlink } from "fs";
-const progress = require("request-progress");
+import { app, ipcMain } from 'electron'
+import { DownloadManager } from '../managers/download'
+import { resolve, join } from 'path'
+import { WindowManager } from '../managers/window'
+import request from 'request'
+import { createWriteStream, unlink } from 'fs'
+const progress = require('request-progress')
 
 export function handleDownloaderIPCs() {
   /**
@@ -12,18 +12,18 @@ export function handleDownloaderIPCs() {
    * @param _event - The IPC event object.
    * @param fileName - The name of the file being downloaded.
    */
-  ipcMain.handle("pauseDownload", async (_event, fileName) => {
-    DownloadManager.instance.networkRequests[fileName]?.pause();
-  });
+  ipcMain.handle('pauseDownload', async (_event, fileName) => {
+    DownloadManager.instance.networkRequests[fileName]?.pause()
+  })
 
   /**
    * Handles the "resumeDownload" IPC message by resuming the download associated with the provided fileName.
    * @param _event - The IPC event object.
    * @param fileName - The name of the file being downloaded.
    */
-  ipcMain.handle("resumeDownload", async (_event, fileName) => {
-    DownloadManager.instance.networkRequests[fileName]?.resume();
-  });
+  ipcMain.handle('resumeDownload', async (_event, fileName) => {
+    DownloadManager.instance.networkRequests[fileName]?.resume()
+  })
 
   /**
    * Handles the "abortDownload" IPC message by aborting the download associated with the provided fileName.
@@ -31,24 +31,26 @@ export function handleDownloaderIPCs() {
    * @param _event - The IPC event object.
    * @param fileName - The name of the file being downloaded.
    */
-  ipcMain.handle("abortDownload", async (_event, fileName) => {
-    const rq = DownloadManager.instance.networkRequests[fileName];
-    DownloadManager.instance.networkRequests[fileName] = undefined;
-    const userDataPath = app.getPath("userData");
-    const fullPath = join(userDataPath, fileName);
-    rq?.abort();
-    let result = "NULL";
+  ipcMain.handle('abortDownload', async (_event, fileName) => {
+    const rq = DownloadManager.instance.networkRequests[fileName]
+    DownloadManager.instance.networkRequests[fileName] = undefined
+    const userDataPath = app.getPath('userData')
+    const fullPath = join(userDataPath, fileName)
+    rq?.abort()
+    let result = 'NULL'
     unlink(fullPath, function (err) {
-      if (err && err.code == "ENOENT") {
-        result = `File not exist: ${err}`;
+      if (err && err.code == 'ENOENT') {
+        result = `File not exist: ${err}`
       } else if (err) {
-        result = `File delete error: ${err}`;
+        result = `File delete error: ${err}`
       } else {
-        result = "File deleted successfully";
+        result = 'File deleted successfully'
       }
-      console.log(`Delete file ${fileName} from ${fullPath} result: ${result}`);
-    });
-  });
+      console.debug(
+        `Delete file ${fileName} from ${fullPath} result: ${result}`
+      )
+    })
+  })
 
   /**
    * Downloads a file from a given URL.
@@ -56,51 +58,51 @@ export function handleDownloaderIPCs() {
    * @param url - The URL to download the file from.
    * @param fileName - The name to give the downloaded file.
    */
-  ipcMain.handle("downloadFile", async (_event, url, fileName) => {
-    const userDataPath = app.getPath("userData");
-    const destination = resolve(userDataPath, fileName);
-    const rq = request(url);
+  ipcMain.handle('downloadFile', async (_event, url, fileName) => {
+    const userDataPath = join(app.getPath('home'), 'jan')
+    const destination = resolve(userDataPath, fileName)
+    const rq = request(url)
 
     progress(rq, {})
-      .on("progress", function (state: any) {
+      .on('progress', function (state: any) {
         WindowManager?.instance.currentWindow?.webContents.send(
-          "FILE_DOWNLOAD_UPDATE",
+          'FILE_DOWNLOAD_UPDATE',
           {
             ...state,
             fileName,
           }
-        );
+        )
       })
-      .on("error", function (err: Error) {
+      .on('error', function (err: Error) {
         WindowManager?.instance.currentWindow?.webContents.send(
-          "FILE_DOWNLOAD_ERROR",
+          'FILE_DOWNLOAD_ERROR',
           {
             fileName,
             err,
           }
-        );
+        )
       })
-      .on("end", function () {
+      .on('end', function () {
         if (DownloadManager.instance.networkRequests[fileName]) {
           WindowManager?.instance.currentWindow?.webContents.send(
-            "FILE_DOWNLOAD_COMPLETE",
+            'FILE_DOWNLOAD_COMPLETE',
             {
               fileName,
             }
-          );
-          DownloadManager.instance.setRequest(fileName, undefined);
+          )
+          DownloadManager.instance.setRequest(fileName, undefined)
         } else {
           WindowManager?.instance.currentWindow?.webContents.send(
-            "FILE_DOWNLOAD_ERROR",
+            'FILE_DOWNLOAD_ERROR',
             {
               fileName,
-              err: "Download cancelled",
+              err: 'Download cancelled',
             }
-          );
+          )
         }
       })
-      .pipe(createWriteStream(destination));
+      .pipe(createWriteStream(destination))
 
-    DownloadManager.instance.setRequest(fileName, rq);
-  });
+    DownloadManager.instance.setRequest(fileName, rq)
+  })
 }

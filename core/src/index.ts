@@ -20,12 +20,9 @@ export { events } from "./events";
  * Events types exports.
  * @module
  */
-export {
-  EventName,
-  NewMessageRequest,
-  NewMessageResponse,
-  MessageHistory,
-} from "./events";
+export * from "./events";
+
+export * from "./types/index";
 
 /**
  * Filesystem module exports.
