@@ -1,6 +1,6 @@
 import { PluginType, fs } from '@janhq/core'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
-import { Conversation } from '@janhq/core/lib/types'
+import { Thread } from '@janhq/core/lib/types'
 import { join } from 'path'
 
 /**
@@ -35,7 +35,7 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
   /**
    * Returns a Promise that resolves to an array of Conversation objects.
    */
-  async getConversations(): Promise<Conversation[]> {
+  async getConversations(): Promise<Thread[]> {
     try {
       const convoIds = await this.getConversationDocs()
 
@@ -46,7 +46,7 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
       const convos = promiseResults
         .map((result) => {
           if (result.status === 'fulfilled') {
-            return JSON.parse(result.value) as Conversation
+            return JSON.parse(result.value) as Thread
           }
         })
         .filter((convo) => convo != null)
@@ -66,7 +66,7 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
    * Saves a Conversation object to a Markdown file.
    * @param conversation The Conversation object to save.
    */
-  saveConversation(conversation: Conversation): Promise<void> {
+  saveConversation(conversation: Thread): Promise<void> {
     return fs
       .mkdir(`${JSONConversationalPlugin._homeDir}/${conversation.id}`)
       .then(() =>

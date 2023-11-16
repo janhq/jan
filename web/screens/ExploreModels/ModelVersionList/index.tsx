@@ -17,10 +17,10 @@ export default function ModelVersionList({
     <div className="pt-4">
       {versions.map((item) => (
         <ModelVersionItem
-          key={item.id}
+          key={item.name}
           model={model}
           modelVersion={item}
-          isRecommended={item.id === recommendedVersion}
+          isRecommended={item.name === recommendedVersion}
         />
       ))}
     </div>

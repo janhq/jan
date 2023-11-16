@@ -10,7 +10,7 @@ const ChatBody: React.FC = () => {
   return (
     <div className="flex h-full w-full flex-col-reverse overflow-y-auto">
       {messages.map((message) => (
-        <ChatItem message={message} key={message.id} />
+        <ChatItem {...message} key={message.id} />
       ))}
     </div>
   )
