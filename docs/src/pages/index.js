@@ -238,46 +238,44 @@ export default function Home() {
             </h2>
             <div class="mt-14">
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="card h-52 relative flex items-center justify-center">
-                  <div class="relative z-50">
-                    <img
-                      src="/img/discord-logo.png"
-                      alt="Discord logo"
-                      className="w-28"
-                    />
-                  </div>
-                  <a
-                    href="https://discord.com/invite/FTk2MvZwJH"
-                    target="_blank"
-                  >
+                <a href="https://discord.com/invite/FTk2MvZwJH" target="_blank">
+                  <div class="card h-52 relative flex items-center justify-center">
+                    <div class="relative z-50">
+                      <img
+                        src="/img/discord-logo.png"
+                        alt="Discord logo"
+                        className="w-28"
+                      />
+                    </div>
+
                     <div class="card-link card-link-bg dark:card-link-bg-dark absolute right-4 top-5">
                       Join our Discord
                     </div>
-                  </a>
-                  <ThemedImage
-                    alt="Discord Element"
-                    sources={{
-                      light: useBaseUrl("/img/discord-element-light.png"),
-                      dark: useBaseUrl("/img/discord-element-dark.png"),
-                    }}
-                    className="absolute"
-                  />
-                </div>
-                <div class="card h-52 relative flex items-center justify-center">
-                  <div class="relative z-50">
-                    <AiOutlineGithub className="text-8xl dark:text-white text-black" />
+                    <ThemedImage
+                      alt="Discord Element"
+                      sources={{
+                        light: useBaseUrl("/img/discord-element-light.png"),
+                        dark: useBaseUrl("/img/discord-element-dark.png"),
+                      }}
+                      className="absolute"
+                    />
                   </div>
-                  <a href="https://github.com/janhq/jan" target="_blank">
+                </a>
+                <a href="https://github.com/janhq/jan" target="_blank">
+                  <div class="card h-52 relative flex items-center justify-center">
+                    <div class="relative z-50">
+                      <AiOutlineGithub className="text-8xl dark:text-white text-black" />
+                    </div>
                     <div class="card-link card-link-bg dark:card-link-bg-dark absolute right-4 top-5">
                       View Github
                     </div>
-                  </a>
-                  <img
-                    alt="Github Element"
-                    src="/img/github-element-dark.png"
-                    className="absolute left-8"
-                  />
-                </div>
+                    <img
+                      alt="Github Element"
+                      src="/img/github-element-dark.png"
+                      className="absolute left-8"
+                    />
+                  </div>
+                </a>
               </div>
             </div>
           </div>
