@@ -105,7 +105,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   function handleDownloadSuccess(state: any) {
     if (state && state.fileName && state.success === true) {
-      state.fileName = state.fileName.replace('models/', '')
+      state.fileName = state.fileName.split('/').pop() ?? ''
       setDownloadStateSuccess(state.fileName)
       const model = models.find((e) => e.id === state.fileName)
       if (model)

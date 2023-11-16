@@ -27,6 +27,11 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
   const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
   const { setDownloadState, setDownloadStateSuccess, setDownloadStateFailed } =
     useDownloadState()
+  const downloadedModelRef = useRef(downloadedModels)
+
+  useEffect(() => {
+    downloadedModelRef.current = downloadedModels
+  }, [downloadedModels])
 
   useEffect(() => {
     if (window && window.electronAPI) {
@@ -60,7 +65,7 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
                 .get<ModelPlugin>(PluginType.Model)
                 ?.saveModel(model)
                 .then(() => {
-                  setDownloadedModels([...downloadedModels, model])
+                  setDownloadedModels([...downloadedModelRef.current, model])
                 })
           }
         }
