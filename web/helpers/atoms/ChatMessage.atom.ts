@@ -1,7 +1,11 @@
 import { MessageStatus, ThreadMessage } from '@janhq/core'
 import { atom } from 'jotai'
 
-import { getActiveConvoIdAtom } from './Conversation.atom'
+import {
+  conversationStatesAtom,
+  getActiveConvoIdAtom,
+  updateThreadStateLastMessageAtom,
+} from './Conversation.atom'
 
 /**
  * Stores all chat messages for all conversations
@@ -77,6 +81,8 @@ export const addNewMessageAtom = atom(
     }
     newData[currentConvoId] = updatedMessages
     set(chatMessages, newData)
+    // Update thread last message
+    set(updateThreadStateLastMessageAtom, currentConvoId, newMessage.content)
   }
 )
 
@@ -110,6 +116,8 @@ export const updateMessageAtom = atom(
       }
       newData[conversationId] = updatedMessages
       set(chatMessages, newData)
+      // Update thread last message
+      set(updateThreadStateLastMessageAtom, conversationId, text)
     }
   }
 )

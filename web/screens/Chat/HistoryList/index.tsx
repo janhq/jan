@@ -17,6 +17,7 @@ import useGetUserConversations from '@/hooks/useGetUserConversations'
 import { displayDate } from '@/utils/datetime'
 
 import {
+  conversationStatesAtom,
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
   userConversationsAtom,
@@ -24,6 +25,7 @@ import {
 
 export default function HistoryList() {
   const conversations = useAtomValue(userConversationsAtom)
+  const threadStates = useAtomValue(conversationStatesAtom)
   const { getUserConversations } = useGetUserConversations()
   const { activeModel, startModel } = useActiveModel()
   const { requestCreateConvo } = useCreateConversation()
@@ -83,6 +85,7 @@ export default function HistoryList() {
         </div>
       ) : (
         conversations.map((convo, i) => {
+          const lastMessage = threadStates[convo.id]?.lastMessage
           return (
             <div
               key={i}
@@ -99,7 +102,9 @@ export default function HistoryList() {
               <h2 className="line-clamp-1">{convo.summary}</h2>
               <p className="mt-1 line-clamp-2 text-xs">
                 {/* TODO: Check latest message update */}
-                {convo?.messages[0]?.content ?? 'No new message'}
+                {lastMessage && lastMessage.length > 0
+                  ? lastMessage
+                  : 'No new message'}
               </p>
               {activeModel && activeConvoId === convo.id && (
                 <m.div
