@@ -1,4 +1,5 @@
 import { ModelCatalog } from '@janhq/core/lib/types'
+
 import ExploreModelItem from '@/screens/ExploreModels/ExploreModelItem'
 
 type Props = {
@@ -7,7 +8,9 @@ type Props = {
 
 const ExploreModelList: React.FC<Props> = ({ models }) => (
   <div className="relative h-full w-full flex-shrink-0">
-    {models?.map((item, i) => <ExploreModelItem key={item.id} model={item} />)}
+    {models?.map((item, i) => (
+      <ExploreModelItem key={item.name + '/' + item.id} model={item} />
+    ))}
   </div>
 )
 

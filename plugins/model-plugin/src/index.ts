@@ -42,7 +42,7 @@ export default class JanModelPlugin implements ModelPlugin {
    */
   async downloadModel(model: Model): Promise<void> {
     // create corresponding directory
-    const directoryPath = join(JanModelPlugin._homeDir, model.productName)
+    const directoryPath = join(JanModelPlugin._homeDir, model.name)
     await fs.mkdir(directoryPath)
 
     // path to model binary
@@ -72,7 +72,7 @@ export default class JanModelPlugin implements ModelPlugin {
    * @returns A Promise that resolves when the model is saved.
    */
   async saveModel(model: Model): Promise<void> {
-    const directoryPath = join(JanModelPlugin._homeDir, model.productName)
+    const directoryPath = join(JanModelPlugin._homeDir, model.name)
     const jsonFilePath = join(directoryPath, `${model.id}.json`)
 
     try {

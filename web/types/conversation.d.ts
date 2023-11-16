@@ -1,4 +1,4 @@
-export type ConversationState = {
+export type ThreadState = {
   hasMore: boolean
   waitingForResponse: boolean
   error?: Error
