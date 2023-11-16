@@ -6,6 +6,7 @@ import {
   MessageStatus,
   PluginType,
   Thread,
+  ThreadMessage,
   events,
 } from '@janhq/core'
 import { ConversationalPlugin, InferencePlugin } from '@janhq/core/lib/plugins'
@@ -84,14 +85,14 @@ export default function useSendChatMessage() {
   }
 
   const sendChatMessage = async () => {
-    const convoId = currentConvo?.id
-    if (!convoId) {
+    const threadId = currentConvo?.id
+    if (!threadId) {
       console.error('No conversation id')
       return
     }
 
     setCurrentPrompt('')
-    updateConvWaiting(convoId, true)
+    updateConvWaiting(threadId, true)
 
     const prompt = currentPrompt.trim()
     const messages: ChatCompletionMessage[] = currentMessages
@@ -106,27 +107,28 @@ export default function useSendChatMessage() {
           content: prompt,
         } as ChatCompletionMessage,
       ])
-    const newMessage: MessageRequest = {
+    const messageRequest: MessageRequest = {
       id: ulid(),
-      threadId: convoId,
+      threadId: threadId,
       messages,
     }
 
-    addNewMessage({
-      id: newMessage.id,
-      threadId: newMessage.threadId,
+    const threadMessage: ThreadMessage = {
+      id: messageRequest.id,
+      threadId: messageRequest.threadId,
       content: prompt,
       role: ChatCompletionRole.User,
       createdAt: new Date().toISOString(),
       status: MessageStatus.Ready,
-    })
+    }
+    addNewMessage(threadMessage)
 
     // delay randomly from 50 - 100ms
     // to prevent duplicate message id
     const delay = Math.floor(Math.random() * 50) + 50
     await new Promise((resolve) => setTimeout(resolve, delay))
 
-    events.emit(EventName.OnNewMessageRequest, newMessage)
+    events.emit(EventName.OnNewMessageRequest, messageRequest)
     if (!currentConvo?.summary && currentConvo) {
       const updatedConv: Thread = {
         ...currentConvo,
@@ -136,7 +138,7 @@ export default function useSendChatMessage() {
       updateConversation(updatedConv)
     }
 
-    updateConvSummary(newMessage)
+    updateConvSummary(messageRequest)
   }
 
   return {

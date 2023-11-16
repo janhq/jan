@@ -71,6 +71,18 @@ export const updateConversationHasMoreAtom = atom(
   }
 )
 
+export const updateThreadStateLastMessageAtom = atom(
+  null,
+  (get, set, conversationId: string, lastMessage?: string) => {
+    const currentState = { ...get(conversationStatesAtom) }
+    currentState[conversationId] = {
+      ...currentState[conversationId],
+      lastMessage,
+    }
+    set(conversationStatesAtom, currentState)
+  }
+)
+
 export const updateConversationAtom = atom(
   null,
   (get, set, conversation: Thread) => {
