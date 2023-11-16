@@ -125,6 +125,7 @@ const sidebars = {
           label: "Engineering",
           id: "handbook/engineering/engineering",
         },
+        "handbook/helloworld"
       ],
     },
   ],
