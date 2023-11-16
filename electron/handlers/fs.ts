@@ -25,8 +25,9 @@ export function handleFsIPCs() {
    * @returns A promise that resolves with a boolean indicating whether the path is a directory.
    */
   ipcMain.handle('isDirectory', (_event, path: string): Promise<boolean> => {
+    const fullPath = join(userSpacePath, path)
     return Promise.resolve(
-      fs.existsSync(path) && fs.lstatSync(path).isDirectory()
+      fs.existsSync(fullPath) && fs.lstatSync(fullPath).isDirectory()
     )
   })
 

@@ -91,7 +91,8 @@ export default class JanModelPlugin implements ModelPlugin {
     const allDirs: string[] = await fs.listFiles(JanModelPlugin._homeDir)
     for (const dir of allDirs) {
       const modelDirPath = join(JanModelPlugin._homeDir, dir)
-      if (!fs.isDirectory(modelDirPath)) {
+      const isModelDir = await fs.isDirectory(modelDirPath)
+      if (!isModelDir) {
         // if not a directory, ignore
         continue
       }
