@@ -7,64 +7,106 @@ Models are AI models like Llama and Mistral
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models
 
 ## Model Object
-
-- LOCAL MODEL `model-zephyr-7B.json` 
-  - Reference: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/
-
 > Equivalent to: https://platform.openai.com/docs/api-reference/models/object
 
-```sh=
-# Required
+- LOCAL MODEL - 1 binary `model-zephyr-7B.json` - [Reference](https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/)
 
-"url": TheBloke/zephyr-7B-beta-GGUF
+```json
+# Required
+"origin": "TheBloke/zephyr-7B-beta-GGUF"
     
 # Optional - by default use `default``
-import_format: thebloke
+"import_format": "thebloke"
 #    default         # downloads the whole thing
 #    thebloke        # custom importer (detects from URL)
 #    janhq           # Custom importers
 #    openai
-"default_download": zephyr-7b-beta.Q2_K.gguf # optional, by default download model with recommended hardware
+
+# optional, by default download model with recommended hardware
+"download_url": "zephyr-7b-beta.Q2_K.gguf" - 
+# https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/resolve/main/zephyr-7b-beta.Q2_K.gguf?download=true
 
 # Optional: OpenAI format
-"id": "/huggingface.co/TheBloke/zephyr-7B-beta-GGUF", # Autofilled by Jan with required URL above 
+"id": {model_file_name}, # No need to specify, only need to return in API
 "object": "model",
-"created": 1686935002, 
+"created": 1686935002, # Unix timestamp
 "owned_by": "TheBloke"
 
 # Optional: params
-"init_parameters": {
-    "ctx_len": 2048,
-    "ngl": 100,
-    "embedding": true,
-    "n_parallel": 4,
-    "pre_prompt": "A chat between a curious user and an artificial intelligence",
-    "user_prompt": "USER: ",
-    "ai_prompt": "ASSISTANT: "
-},
-
-"runtime_parameters": {
-    "temperature": "0.7",
-    "token_limit": "2048",
-    "top_k": "",
-    "top_p": "..",
+parameters: {
+    "init": {
+        "ctx_len": 2048,
+        "ngl": 100,
+        "embedding": true,
+        "n_parallel": 4,
+        "pre_prompt": "A chat between a curious user and an artificial intelligence",
+        "user_prompt": "USER: ",
+        "ai_prompt": "ASSISTANT: "
+    },
+    "runtime": {
+        "temperature": "0.7",
+        "token_limit": "2048",
+        "top_k": "",
+        "top_p": "..",
+    }
 }
 
 // Jan specific configs
 "metadata": {               // @Q: should we put all under "jan"
-    "engine": "api",               // enum[llamacpp,api]
+    "engine": "llamacpp",               // enum[llamacpp,api]
 }
 ```
 
-- REMOTE MODEL `model-azure-openai-gpt4-turbo.json` 
-  - Reference: https://learn.microsoft.com/en-us/azure/ai-services/openai/quickstart?tabs=command-line%2Cpython&pivots=rest-api
+- LOCAL MODEL - multiple binaries `model-llava-v1.5-ggml.json` [Reference](https://huggingface.co/mys/ggml_llava-v1.5-13b)
 
-> Equivalent to: https://platform.openai.com/docs/api-reference/models/object
-
-```sh=
+```json
 # Required
 
-"url": https://docs-test-001.openai.azure.com/ # This is `api.openai.com` if it's OpenAI platform
+"origin": "mys/ggml_llava-v1.5-13b"
+    
+# Optional - by default use `default``
+"import_format": "default"
+#    default         # downloads the whole thing
+#    thebloke        # custom importer (detects from URL)
+#    janhq           # Custom importers
+#    openai
+
+# Optional: OpenAI format
+"id": {model_file_name}, # No need to specify, only need to return in API"object": "model",
+"created": 1686935002, 
+"owned_by": "TheBloke"
+
+# Optional: params
+parameters: {
+    "init": {
+        "ctx_len": 2048,
+        "ngl": 100,
+        "embedding": true,
+        "n_parallel": 4,
+        "pre_prompt": "A chat between a curious user and an artificial intelligence",
+        "user_prompt": "USER: ",
+        "ai_prompt": "ASSISTANT: "
+    },
+    "runtime": {
+        "temperature": "0.7",
+        "token_limit": "2048",
+        "top_k": "",
+        "top_p": "..",
+    }
+}
+
+// Jan specific configs
+"metadata": {               // @Q: should we put all under "jan"
+    "engine": "llamacpp",               // enum[llamacpp,api]
+}
+```
+
+- REMOTE MODEL `model-azure-openai-gpt4-turbo.json` - [Reference](https://learn.microsoft.com/en-us/azure/ai-services/openai/)quickstart?tabs=command-line%2Cpython&pivots=rest-api
+
+```json
+# Required
+"origin": "https://docs-test-001.openai.azure.com/" 
+# This is `api.openai.com` if it's OpenAI platform
     
 # Optional - by default use `default``
 import_format: azure_openai
@@ -73,7 +115,6 @@ import_format: azure_openai
 #    janhq           # Custom importers
 #    azure_openai    # Custom importers
 #    openai          # Custom importers
-"default_download": zephyr-7b-beta.Q2_K.gguf # optional, by default download model with recommended hardware
 
 # Optional: OpenAI format
 "id": "/openai.azure.com/docs-test-001/gpt4-turbo", # Autofilled by Jan with required URL above 
@@ -83,19 +124,20 @@ import_format: azure_openai
 
 # Optional: params
 # This is the one model gets configured and cannot be changed by assistant
-"init_parameters": {
-    "API-KEY": "",
-    "DEPLOYMENT-NAME": "",
-    "api-version": "2023-05-15"
-},
 
-# This is the one that assistant can override
-"runtime_parameters": {
-    "temperature": "0.7",
-    "max_tokens": "2048",
-    "presence_penalty": "0",
-    "top_p": "1",
-    "stream": "true"
+parameters: {
+    "init": {
+        "API-KEY": "",
+        "DEPLOYMENT-NAME": "",
+        "api-version": "2023-05-15"
+    },
+    "runtime": {
+        "temperature": "0.7",
+        "max_tokens": "2048",
+        "presence_penalty": "0",
+        "top_p": "1",
+        "stream": "true"
+    }
 }
 
 // Jan specific configs
@@ -105,7 +147,6 @@ import_format: azure_openai
 ```
 
 ## Model API
-
 See [/model](/api/model)
 
 - Equivalent to: https://platform.openai.com/docs/api-reference/models
@@ -130,7 +171,7 @@ PUT https://localhost:1337/v1/models/{model_id}/start # json file name as {model
 {
   "id": [string] # The model name to be used in `chat_completion` = model_id
   "model_parameters": [jsonPayload],
-  "engine": [enum](llamacpp)
+  "engine": [enum](llamacpp,openai)
 }
 ```
 
@@ -141,28 +182,29 @@ How `models` map onto your local filesystem
 ```shell=
 /janroot
     /models
-        llama2-70b.json
-        llama2-7b-gguf.json
+        azure-openai/
+            azure-openai-gpt3-5.json
+
+        llama2-70b/
+            model.json
+            .gguf
         
-        huggingface.co/ # Model registries (de-factor open source)
-            meta-llama/
-                llama2-70b-chat-hf/
-                llama2-7b-chat/
-            thebloke/
-                llama2-70b-chat-hf-gguf/
-                llama2-7b-chat/
-                    llama7b_q2_K_L.gguf
-                    llama7b_q3_K_L.gguf
-        model.louis.ai/ # Private model registries
-            meta-llama/
-                llama2-70b-chat-hf-tensorrt-llm/
-                llama2-70b-chat-hf-awq/
-                    model.json
-            thebloke/
-                llava-1-5-gguf/ # Use case with multiple model 
-                    mmproj.bin
-                    model-q5.ggml
-                    
-        llama-70b-finetune.bin
-        llama-70b-finetune.json
+        llama2-7b-gguf/
+            llama2-7b-gguf-Q2.json
+            llama2-7b-gguf-Q3_K_L.json
+            .bin
+        
+        llava-ggml/
+            llava-ggml-Q5.json
+            .proj
+            ggml
+        
+        llama-70b-finetune
+            llama-70b-finetune-q5.json
+            .bin
 ```
+
+- Test cases
+    1. If user airdrop model, drag and drop to Jan (bin + json file), Jan can pick up and use
+    2. If user have fine tuned model, same as step 1
+    3. If user have 1 model that needs multiple binaries 
