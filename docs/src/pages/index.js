@@ -5,38 +5,12 @@ import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import useBaseUrl from "@docusaurus/useBaseUrl";
 import Layout from "@theme/Layout";
 import AnnoncementBanner from "@site/src/components/Announcement";
-import {
-  CloudArrowUpIcon,
-  CursorArrowRaysIcon,
-  ShieldCheckIcon,
-  CpuChipIcon,
-  ClipboardDocumentIcon,
-  CubeTransparentIcon,
-  ComputerDesktopIcon,
-  FolderPlusIcon,
-} from "@heroicons/react/24/outline";
-import { AiOutlineGithub, AiOutlineTwitter } from "react-icons/ai";
+
+import { AiOutlineGithub } from "react-icons/ai";
 
 import ThemedImage from "@theme/ThemedImage";
 
-const features = [
-  {
-    name: "Personal AI that runs on your computer",
-    desc: "Jan runs directly on your local machine, offering privacy, convenience and customizability.",
-  },
-  {
-    name: "Extendable via App and Plugin framework",
-    desc: "Jan has a versatile app and plugin framework, allowing you to customize it to your needs.",
-  },
-  {
-    name: "Private and offline, your data never leaves your machine",
-    desc: "Your conversations and data are with an AI that runs on your computer, where only you have access.",
-  },
-  {
-    name: "No subscription fees, the AI runs on your computer",
-    desc: "Say goodbye to monthly subscriptions or usage-based APIs. Jan runs 100% free on your own hardware.",
-  },
-];
+import DownloadLink from "@site/src/components/Elements/downloadLink";
 
 export default function Home() {
   const { siteConfig } = useDocusaurusContext();
@@ -45,19 +19,18 @@ export default function Home() {
       <AnnoncementBanner />
       <Layout
         title={`${siteConfig.tagline}`}
-        description="Jan runs Large Language Models locally on Windows, Mac and Linux.
-              Available on Desktop and Cloud-Native."
+        description="Jan runs Large Language Models locally on Windows, Mac and Linux. Available on Desktop and Cloud-Native."
       >
         <main className="bg-gray-50 dark:bg-gray-950/95 relative">
           <div className="relative">
-            {/* <ThemedImage
+            <ThemedImage
               alt="App screenshot"
               sources={{
                 light: useBaseUrl("/img/bg-hero-light.svg"),
                 dark: useBaseUrl("/img/bg-hero-dark.svg"),
               }}
               className="absolute w-full h-full opacity-10 dark:opacity-20 top-0 object-cover blur-3xl"
-            /> */}
+            />
             <div className="container py-16">
               <div className="grid grid-cols-1 items-center gap-4">
                 <div className="relative z-10 text-center ">
@@ -72,7 +45,6 @@ export default function Home() {
                       </p>
                     </a>
                   </div> */}
-
                   <h1 className="bg-gradient-to-r dark:from-white from-black to-gray-500 dark:to-gray-400 bg-clip-text text-4xl lg:text-6xl font-bold leading-tight text-transparent dark:text-transparent lg:leading-tight">
                     Own your AI
                   </h1>
@@ -108,7 +80,6 @@ export default function Home() {
                 </div>
 
                 <div className="text-center relative ">
-                  {/* <div className="el-blur-hero absolute -left-40 w-full top-1/2 -translate-y-1/2" /> */}
                   <div className="p-3 border dark:border-gray-500 border-gray-400 inline-block rounded-lg">
                     <ThemedImage
                       alt="App screenshot"
@@ -124,36 +95,142 @@ export default function Home() {
               </div>
             </div>
           </div>
-          {/* <div className="container mt-10 mb-20 text-center">
+          <div className="container mt-10 mb-20 text-center">
             <h2>AI that you control</h2>
             <p className="text-base mt-2 w-full lg:w-2/5 mx-auto leading-relaxed">
               Private. Local. Infinitely Customizable.
             </p>
-            <div className="grid text-left lg:grid-cols-2 mt-16 gap-16">
-              {features.map((feat, i) => {
-                return (
-                  <div
-                    className="flex gap-x-4 p-8 rounded-3xl border bg-gray-100 border-gray-100 dark:border-[#202231] dark:bg-[#111217]"
-                    key={i}
-                  >
-                    <div>
-                      <h5>{feat.name}</h5>
-                      <p className="mt-2">{feat.desc}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div> */}
-          <div class="container">
-            <div class="flex">
-              <div>
-                <h1 className="text-7xl">Your AI, forever.</h1>
-                <p>Apps come and go, but your AI and data should last. </p>
+            <div className="grid text-left lg:grid-cols-2 mt-16 gap-4">
+              <div className="card relative min-h-[380px] lg:min-h-[460px]">
+                <img
+                  src="/img/card-element.png"
+                  alt="Element"
+                  className="absolute w-full bottom-0 left-0"
+                />
+                <div class="p-8 relative z-40">
+                  <h5>Personal AI that runs on your computer</h5>
+                  <p className="mt-2">
+                    Jan runs directly on your local machine, offering privacy,
+                    convenience and customizability.
+                  </p>
+                  <ThemedImage
+                    alt="Group Chat"
+                    sources={{
+                      light: useBaseUrl("/img/group-chat-light.png"),
+                      dark: useBaseUrl("/img/group-chat-dark.png"),
+                    }}
+                    className="mt-10"
+                  />
+                </div>
+              </div>
+              <div className="card relative min-h-[380px] lg:min-h-[460px]">
+                <div className="p-8">
+                  <h5>Extendable via App and Plugin framework</h5>
+                  <p className="mt-2">
+                    Jan has a versatile app and plugin framework, allowing you
+                    to customize it to your needs.
+                  </p>
+                </div>
+                <ThemedImage
+                  alt="Framework"
+                  sources={{
+                    light: useBaseUrl("/img/card-framework-light.png"),
+                    dark: useBaseUrl("/img/card-framework-dark.png"),
+                  }}
+                  className="w-11/12 ml-auto mt-auto"
+                />
+              </div>
+              <div className="card relative min-h-[380px] lg:min-h-[460px]">
+                <div className="p-8">
+                  <h5>
+                    Private and offline, your data never leaves your machine
+                  </h5>
+                  <p className="mt-2">
+                    Your conversations and data are with an AI that runs on your
+                    computer, where only you have access.
+                  </p>
+                </div>
+                <ThemedImage
+                  alt="Group Chat"
+                  sources={{
+                    light: useBaseUrl("/img/card-nitro-light.png"),
+                    dark: useBaseUrl("/img/card-nitro-dark.png"),
+                  }}
+                  className="w-3/4 mx-auto mt-auto"
+                />
+              </div>
+              <div className="card relative min-h-[380px] lg:min-h-[460px]">
+                <div className="p-8">
+                  <h5>No subscription fees, the AI runs on your computer</h5>
+                  <p className="mt-2">
+                    Say goodbye to monthly subscriptions or usage-based APIs.
+                    Jan runs 100% free on your own hardware.
+                  </p>
+                </div>
+                <ThemedImage
+                  alt="Group Chat"
+                  sources={{
+                    light: useBaseUrl("/img/card-free-light.png"),
+                    dark: useBaseUrl("/img/card-free-dark.png"),
+                  }}
+                  className="w-full mt-auto mx-auto"
+                />
               </div>
             </div>
           </div>
-          <div class="container py-20 text-center">
+
+          <div class="container lg:px-20 py-20 text-center lg:text-left">
+            <div class="flex  flex-col lg:flex-row space-y-20 lg:space-y-0">
+              <div>
+                <h1 className="text-7xl">Your AI, forever.</h1>
+                <p className="text-2xl mt-2">
+                  Apps come and go, but your AI and data should last.{" "}
+                </p>
+                <div class="w-full lg:w-3/4 mt-8">
+                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-24">
+                    <div>
+                      <img
+                        src="/img/ic-park-solid-unlock.svg"
+                        alt="Icon - Lock"
+                        className="w-8 mb-4 mx-auto lg:mx-0"
+                      />
+                      <p>
+                        Jan uses open, standard and non-proprietary files stored
+                        locally on your device.
+                      </p>
+                    </div>
+                    <div>
+                      <img
+                        src="img/ic-baseline-control-camera.svg"
+                        alt="Icon - Camera"
+                        className="w-8 mb-4 mx-auto lg:mx-0"
+                      />
+                      <p>
+                        You have total control over your AI, which means you can
+                        use Jan offline and switch to another app easily if you
+                        want.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="w-full lg:w-80 text-center">
+                <ThemedImage
+                  alt="App screenshot"
+                  sources={{
+                    light: useBaseUrl("/img/jan-icon-light.png"),
+                    dark: useBaseUrl("/img/jan-icon-dark.png"),
+                  }}
+                  className="w-40 lg:w-full mx-auto"
+                />
+                <p className="mt-1 font-bold">100% free on your own hardware</p>
+                <DownloadLink />
+              </div>
+            </div>
+          </div>
+
+          <div class="container pb-20 pt-10 text-center">
             <h2>
               We are open-source. <br /> Join Jan community.
             </h2>

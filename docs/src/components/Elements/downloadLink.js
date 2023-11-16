@@ -1,7 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { Fragment } from "react";
-import { Menu, Transition } from "@headlessui/react";
-import { ChevronDownIcon } from "@heroicons/react/20/solid";
 import axios from "axios";
 
 const systemsTemplate = [
@@ -31,7 +28,7 @@ function classNames(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
-export default function Dropdown() {
+export default function DownloadLink() {
   const [systems, setSystems] = useState(systemsTemplate);
   const [defaultSystem, setDefaultSystem] = useState(systems[0]);
 
@@ -121,57 +118,10 @@ export default function Dropdown() {
   }, []);
 
   return (
-    <div className="inline-flex align-items-stretch">
-      <a
-        className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-3.5 py-2.5 text-base font-semibold text-white bg-blue-600 hover:bg-blue-500 hover:text-white"
-        href={defaultSystem.href}
-      >
-        <img src={defaultSystem.logo} alt="Logo" className="h-5 mr-3 -mt-1" />
-        {defaultSystem.name}
+    <div className="mt-2">
+      <a href={defaultSystem.href}>
+        <span className="text-blue-600 font-bold">Download Jan</span>
       </a>
-      <Menu as="div" className="relative -ml-px block">
-        <Menu.Button className="cursor-pointer relative inline-flex items-center rounded-r-md border-l border-blue-500 h-full text-white bg-blue-600 w-8 justify-center">
-          <span className="sr-only">Open OS options</span>
-          <ChevronDownIcon className="h-6 w-6" aria-hidden="true" />
-        </Menu.Button>
-        <Transition
-          as={Fragment}
-          enter="transition ease-out duration-100"
-          enterFrom="transform opacity-0 scale-95"
-          enterTo="transform opacity-100 scale-100"
-          leave="transition ease-in duration-75"
-          leaveFrom="transform opacity-100 scale-100"
-          leaveTo="transform opacity-0 scale-95"
-        >
-          <Menu.Items className="absolute right-0 z-10 mt-1 w-72 text-left origin-top-right rounded-md bg-blue-600 shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none overflow-hidden">
-            <div className="overflow-hidden">
-              {systems.map((system) => (
-                <Menu.Item
-                  key={system.name}
-                  onClick={() => setDefaultSystem(system)}
-                >
-                  {({ active }) => (
-                    <a
-                      href={system.href}
-                      className={classNames(
-                        active ? "bg-blue-500 hover:text-white" : "text-white",
-                        "flex px-4 py-3 items-center text-white hover:text-white"
-                      )}
-                    >
-                      <img
-                        src={system.logo}
-                        alt="Logo"
-                        className="w-3 mr-3 -mt-1 flex-shrink-0"
-                      />
-                      <span className="text-white">{system.name}</span>
-                    </a>
-                  )}
-                </Menu.Item>
-              ))}
-            </div>
-          </Menu.Items>
-        </Transition>
-      </Menu>
     </div>
   );
 }
