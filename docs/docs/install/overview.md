@@ -16,12 +16,18 @@ Jan is lightweight and can run on a variety of hardware and platform versions. Y
 ### Requirements for Jan
 
 #### Hardware
-Jan is a small download (<100 MB) and has a disk footprint of under 300 MB. Being a lightweight platform, it should run smoothly on modern hardware. Additionally, as you will download, store and run open-source LLM models via Jan, we recommend that you have
+Jan is a small download (<200 MB) and has a disk footprint of under 300 MB. Being a lightweight platform, it should run smoothly on modern hardware. Additionally, as you will download, store and run open-source LLM models via Jan, we recommend that you have
 - At least 5 GB of free disk space
 - At least 8 GB of RAM
 
-#### Platform
+#### Platform & architecture 
 Jan is supported on the following platforms:
 - Linux
 - macOS (Mac Intel Chip and Apple Silicon Chip)
 - Windows (64-bit)
+
+Jan is designed to run on multiple architectures, ensuring versatility and widespread usuability. The support architectures include:
+- CPU
+    - ARM
+    - x86
+-
