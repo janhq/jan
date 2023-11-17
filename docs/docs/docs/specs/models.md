@@ -4,174 +4,135 @@
 
 ## User Stories
 
-*Users can download from model registries or reuse downloaded model binaries with an model*
+_Users can download a model via a web URL_
 
-*Users can use some default assistants*
-- User can use existing models (openai, llama2-7b-Q3) right away
-- User can browse model in model catalog
-- If user airdrop model, drag and drop to Jan (bin + json file), Jan can pick up and use
+- Wireframes here
 
-*Users can create an model from scratch*
-- User can choose model from remote model registry or even their fine-tuned model locally, even multiple model binaries
-- User can import and use the model easily on Jan
+_Users can import a model from local directory_
 
-*Users can create an custom model from an existing model*
+- Wireframes here
 
+_Users can configure model settings, like run parameters_
+
+- Wireframes here
 
 ## Jan Model Object
-> Equivalent to: https://platform.openai.com/docs/api-reference/models/object
 
+- A `Jan Model Object` is a “representation of an model
+- Objects are defined by `model-uuid.json` files in json format
+- Objects are identified by `folder-name/model-uuid`, where its `id` is indicative of its file location.
+- Objects are designed to be compatible with `OpenAI Model Objects`, with additional properties needed to run on our infrastructure.
+- ALL object properties are optional, i.e. users should be able to run a model declared by an empty `json` file.
 
-| Property | Type | Description | Validation |
-| -------- | -------- | -------- | -------- |
-| `origin` | string | Unique identifier for the source of the model object. | Required |
-| `import_format` | enum: `default`, `thebloke`, `janhq`, `openai` | Specifies the format for importing the object. | Defaults to `default` |
-| `download_url` | string | URL for downloading the model. | Optional; defaults to model with recommended hardware |
-| `id` | string | Identifier of the model file. Used mainly for API responses. | Optional; auto-generated if not specified |
-| `object` | enum: `model`, `assistant`, `thread`, `message` | Type of the Jan Object. | Defaults to `model` |
-| `created` | integer | Unix timestamp of the model's creation time. | Optional |
-| `owned_by` | string | Identifier of the owner of the model. | Optional |
-| `parameters` | object | Defines initialization and runtime parameters for the assistant. | Optional; specific sub-properties for `init` and `runtime` |
-| -- `init` | object | Defines initialization parameters for the model. | Required |
-| --`runtime` | object | Defines runtime parameters for the model. | Optional; Can be overridden by `Asissitant` |
+| Property          | Type                                            | Description                                                               | Validation                                       |
+| ----------------- | ----------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
+| `source_url`      | string                                          | The model download source. It can be an external url or a local filepath. | Defaults to `pwd`. See [Source_url](#Source_url) |
+| `object`          | enum: `model`, `assistant`, `thread`, `message` | Type of the Jan Object. Always `model`                                    | Defaults to "model"                              |
+| `name`            | string                                          | A vanity name                                                             | Defaults to filename                             |
+| `description`     | string                                          | A vanity description of the model                                         | Defaults to ""                                   |
+| `parameters`      | map                                             | Defines default model run parameters used by any assistant.               | Defaults to `{}`                                 |
+| `metadata`        | map                                             | Stores additional structured information about the model.                 | Defaults to `{}`                                 |
+| `metadata.engine` | enum: `llamacpp`, `api`, `tensorrt`             | The model backend used to run model.                                      | Defaults to "llamacpp"                           |
 
-| `metadata` | map | Stores additional structured information about the model. | Optional; defaults to `{}` |
+### Source_url
 
-###  LOCAL MODEL - 1 binary `model-zephyr-7B.json`
-> [Reference](https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/)
+- Users can download models from a `remote` source or reference an existing `local` model.
+- If this property is not specified in the Model Object file, then the default behavior is to look in the current directory.
+
+#### Local source_url
+
+- Users can import a local model by providing the filepath to the model
 
 ```json
-# Required
-"origin": "TheBloke/zephyr-7B-beta-GGUF"
-    
-# Optional - by default use `default``
-"import_format": "thebloke"
-#    default         # downloads the whole thing
-#    thebloke        # custom importer (detects from URL)
-#    janhq           # Custom importers
-#    openai
+// ./models/llama2/llama2-7bn-gguf.json
+"source_url": "~/Downloads/llama-2-7bn-q5-k-l.gguf",
 
-# optional, by default download model with recommended hardware
-"download_url": "zephyr-7b-beta.Q2_K.gguf" - 
-# https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/resolve/main/zephyr-7b-beta.Q2_K.gguf?download=true
+// Default, if property is omitted
+"source_url": "./",
+```
 
-# Optional: OpenAI format
-"id": {model_file_name}, # No need to specify, only need to return in API
-"object": "model",
-"created": 1686935002, # Unix timestamp
-"owned_by": "TheBloke"
+#### Remote source_url
 
-parameters: {
-    "init": {
-        "ctx_len": 2048,
-        "ngl": 100,
-        "embedding": true,
-        "n_parallel": 4,
-        "pre_prompt": "A chat between a curious user and an artificial intelligence",
-        "user_prompt": "USER: ",
-        "ai_prompt": "ASSISTANT: "
-    },
-    "runtime": {
-        "temperature": "0.7",
-        "token_limit": "2048",
-        "top_k": "",
-        "top_p": "..",
-    }
-}
+- Users can download a model by remote URL.
+- Supported url formats:
+  - `https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF/blob/main/llama-2-7b-chat.Q3_K_L.gguf`
+  - `https://any-source.com/.../model-binary.bin`
 
-// Jan specific configs
-"metadata": {               // @Q: should we put all under "jan"
-    "engine": "llamacpp",               // enum[llamacpp,api]
+#### Custom importers
+
+Additionally, Jan supports importing popular formats. For example, if you provide a HuggingFace URL for a `TheBloke` model, Jan automatically downloads and catalogs all quantizations. Custom importers autofills properties like `metadata.quantization` and `metadata.size`.
+
+Supported URL formats with custom importers:
+
+- `huggingface/thebloke`: `TODO: URL here`
+- `janhq`: `TODO: put URL here`
+- `azure_openai`: `TODO: put URL here`
+- `openai`: `TODO: put URL here`
+
+### Generic Example
+
+- Model has 1 binary `model-zephyr-7B.json`
+- See [source](https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/)
+
+```json
+// ./models/zephr/zephyr-7b-beta-Q4_K_M.json
+// Note: Default fields are omitted for brevity
+"source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
+"parameters": {
+    "ctx_len": 2048,
+    "ngl": 100,
+    "embedding": true,
+    "n_parallel": 4,
+    "pre_prompt": "A chat between a curious user and an artificial intelligence",
+    "user_prompt": "USER: ",
+    "ai_prompt": "ASSISTANT: "
+    "temperature": "0.7",
+    "token_limit": "2048",
+    "top_k": "..",
+    "top_p": "..",
+},
+"metadata": {
+    "quantization": "..",
+    "size": "..",
 }
 ```
 
-### LOCAL MODEL - multiple binaries `model-llava-v1.5-ggml.json` 
-> [Reference](https://huggingface.co/mys/ggml_llava-v1.5-13b)
+### Example: multiple binaries `model-llava-v1.5-ggml.json`
+
+- Model has multiple binaries
+- See [source](https://huggingface.co/mys/ggml_llava-v1.5-13b)
 
 ```json
-# Required
-"origin": "mys/ggml_llava-v1.5-13b"
-    
-# Optional - by default use `default``
-"import_format": "default"
-#    default         # downloads the whole thing
-#    thebloke        # custom importer (detects from URL)
-#    janhq           # Custom importers
-#    openai
-
-# Optional: OpenAI format
-"id": {model_file_name}, # No need to specify, only need to return in API"object": "model",
-"created": 1686935002, 
-"owned_by": "TheBloke"
-
-parameters: {
-    "init": {
-        "ctx_len": 2048,
-        "ngl": 100,
-        "embedding": true,
-        "n_parallel": 4,
-        "pre_prompt": "A chat between a curious user and an artificial intelligence",
-        "user_prompt": "USER: ",
-        "ai_prompt": "ASSISTANT: "
-    },
-    "runtime": {
-        "temperature": "0.7",
-        "token_limit": "2048",
-        "top_k": "",
-        "top_p": "..",
-    }
-}
-
-// Jan specific configs
-"metadata": {               // @Q: should we put all under "jan"
-    "engine": "llamacpp",               // enum[llamacpp,api]
+"source_url": "https://huggingface.co/mys/ggml_llava-v1.5-13b"
+"metadata": {
+    "binaries": "..",
 }
 ```
 
-### REMOTE MODEL `model-azure-openai-gpt4-turbo.json`
-> [Reference](https://learn.microsoft.com/en-us/azure/ai-services/openai/quickstart?tabs=command-line%2Cpython&pivots=rest-api)
+### Example: Azure API
+
+- Using a remote API to access model
+- See [source](https://learn.microsoft.com/en-us/azure/ai-services/openai/quickstart?tabs=command-line%2Cpython&pivots=rest-api)
 
 ```json
-# Required
-"origin": "https://docs-test-001.openai.azure.com/" 
-# This is `api.openai.com` if it's OpenAI platform
-    
-# Optional - by default use `default``
-"import_format": "azure_openai"
-#    default         # downloads the whole thing
-#    thebloke        # custom importer (detects from URL)
-#    janhq           # Custom importers
-#    azure_openai    # Custom importers
-#    openai          # Custom importers
-
-# Optional: OpenAI format
-"id": "/openai.azure.com/docs-test-001/gpt4-turbo", # Autofilled by Jan with required URL above 
-"object": "model",
-"created": 1686935002, 
-"owned_by": "OpenAI Azure"
-
-parameters: {
-    "init": {
-        "API-KEY": "",
-        "DEPLOYMENT-NAME": "",
-        "api-version": "2023-05-15"
-    },
-    "runtime": {
-        "temperature": "0.7",
-        "max_tokens": "2048",
-        "presence_penalty": "0",
-        "top_p": "1",
-        "stream": "true"
-    }
+"source_url": "https://docs-test-001.openai.azure.com/openai.azure.com/docs-test-001/gpt4-turbo",
+"parameters": {
+    "API-KEY": "",
+    "DEPLOYMENT-NAME": "",
+    "api-version": "2023-05-15",
+    "temperature": "0.7",
+    "max_tokens": "2048",
+    "presence_penalty": "0",
+    "top_p": "1",
+    "stream": "true"
 }
-
-// Jan specific configs
-"metadata": {               // @Q: should we put all under "jan"
-    "engine": "api",               // enum[llamacpp,api]
+"metadata": {
+    "engine": "api",
 }
 ```
 
 ## Filesystem
+
 How `models` map onto your local filesystem
 
 ```shell=
@@ -183,24 +144,26 @@ How `models` map onto your local filesystem
         llama2-70b/
             model.json
             .gguf
-        
+
         llama2-7b-gguf/
             llama2-7b-gguf-Q2.json
             llama2-7b-gguf-Q3_K_L.json
             .bin
-        
+
         llava-ggml/
             llava-ggml-Q5.json
             .proj
             ggml
-        
+
         llama-70b-finetune
             llama-70b-finetune-q5.json
             .bin
 ```
 
 ## Jan API
+
 ### Jan Model API
+
 > Equivalent to: https://platform.openai.com/docs/api-reference/models
 
 ```sh
@@ -208,16 +171,16 @@ How `models` map onto your local filesystem
 GET https://localhost:1337/v1/models?state=[enum](all,running,downloaded,downloading)
 [
     {
-        "id": "model-azure-openai-gpt4-turbo", # Autofilled by Jan with required URL above 
+        "id": "model-azure-openai-gpt4-turbo", # Autofilled by Jan with required URL above
         "object": "model",
-        "created": 1686935002, 
+        "created": 1686935002,
         "owned_by": "OpenAI Azure",
         "state": enum[all,running,downloaded,downloading]
     },
     {
-        "id": "model-llava-v1.5-ggml", # Autofilled by Jan with required URL above 
+        "id": "model-llava-v1.5-ggml", # Autofilled by Jan with required URL above
         "object": "model",
-        "created": 1686935002, 
+        "created": 1686935002,
         "owned_by": "mys",
         "state": enum[all,running,downloaded,downloading]
     }
@@ -226,9 +189,9 @@ GET https://localhost:1337/v1/models?state=[enum](all,running,downloaded,downloa
 # Get model object
 GET https://localhost:1337/v1/models/{model_id} # json file name as {model_id} model-azure-openai-gpt4-turbo, model-zephyr-7B
 {
-    "id": "model-azure-openai-gpt4-turbo", # Autofilled by Jan with required URL above 
+    "id": "model-azure-openai-gpt4-turbo", # Autofilled by Jan with required URL above
     "object": "model",
-    "created": 1686935002, 
+    "created": 1686935002,
     "owned_by": "OpenAI Azure",
     "state": enum[all,running,downloaded,downloading]
 },
