@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import { ModelCatalog, ModelVersion } from '@janhq/core'
+import { ModelCatalog } from '@janhq/core'
 
 export const dummyModel: ModelCatalog = {
   id: 'aladar/TinyLLama-v0-GGUF',

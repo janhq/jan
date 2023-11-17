@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { toast } from 'react-toastify'
 const API_BASE_PATH: string = '/api/v1'
@@ -48,7 +47,7 @@ export async function fetchApi(
       method: pluginFunc,
       args: args,
     }),
-    headers: { 'Content-Type': 'application/json', 'Authorization': '' },
+    headers: { contentType: 'application/json', Authorization: '' },
   })
 
   if (!response.ok) {

@@ -12,11 +12,10 @@ export function useGetDownloadedModels() {
   const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelAtom)
 
   async function getDownloadedModels(): Promise<Model[]> {
-    const models =
-      ((await pluginManager
-        .get<ModelPlugin>(PluginType.Model)
-        ?.getDownloadedModels()) as Model[]) ?? []
-    return models
+    const models = await pluginManager
+      .get<ModelPlugin>(PluginType.Model)
+      ?.getDownloadedModels()
+    return models ?? []
   }
 
   useEffect(() => {
