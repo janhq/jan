@@ -30,7 +30,7 @@ _Users can configure model settings, like run parameters_
 
 _Users can override run settings at runtime_
 
-- See [assistant]() and [thread]()
+- See Assistant Spec and Thread
 
 ## Jan Model Object
 
