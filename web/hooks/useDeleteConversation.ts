@@ -41,8 +41,8 @@ export default function useDeleteConversation() {
         deleteMessages(activeConvoId)
         setCurrentPrompt('')
         toaster({
-          title: 'Succes delete a chat',
-          description: `Delete chat with ${activeModel?.name} has been completed`,
+          title: 'Chat successfully deleted.',
+          description: `Chat with ${activeModel?.name} has been successfully deleted.`,
         })
         if (currentConversations.length > 0) {
           setActiveConvoId(currentConversations[0].id)
