@@ -19,8 +19,8 @@ _Users can configure model settings, like run parameters_
 ## Jan Model Object
 
 - A `Jan Model Object` is a “representation of an model
-- Objects are defined by `model-uuid.json` files in json format
-- Objects are identified by `folder-name/model-uuid`, where its `id` is indicative of its file location.
+- Objects are defined by `model-name.json` files in json format
+- Objects are identified by `folder-name/model-name`, where its `id` is indicative of its file location.
 - Objects are designed to be compatible with `OpenAI Model Objects`, with additional properties needed to run on our infrastructure.
 - ALL object properties are optional, i.e. users should be able to run a model declared by an empty `json` file.
 
