@@ -16,23 +16,30 @@ _Users can configure model settings, like run parameters_
 
 - Wireframes here
 
+_Users can override run settings at runtime_
+
+- See [assistant]() and [thread]()
+
 ## Jan Model Object
 
-- A `Jan Model Object` is a “representation of an model
-- Objects are defined by `model-name.json` files in json format
+- A `Jan Model Object` is a “representation" of a model
+- Objects are defined by `model-name.json` files in `json` format
 - Objects are identified by `folder-name/model-name`, where its `id` is indicative of its file location.
 - Objects are designed to be compatible with `OpenAI Model Objects`, with additional properties needed to run on our infrastructure.
 - ALL object properties are optional, i.e. users should be able to run a model declared by an empty `json` file.
 
-| Property          | Type                                            | Description                                                               | Validation                                       |
-| ----------------- | ----------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
-| `source_url`      | string                                          | The model download source. It can be an external url or a local filepath. | Defaults to `pwd`. See [Source_url](#Source_url) |
-| `object`          | enum: `model`, `assistant`, `thread`, `message` | Type of the Jan Object. Always `model`                                    | Defaults to "model"                              |
-| `name`            | string                                          | A vanity name                                                             | Defaults to filename                             |
-| `description`     | string                                          | A vanity description of the model                                         | Defaults to ""                                   |
-| `parameters`      | map                                             | Defines default model run parameters used by any assistant.               | Defaults to `{}`                                 |
-| `metadata`        | map                                             | Stores additional structured information about the model.                 | Defaults to `{}`                                 |
-| `metadata.engine` | enum: `llamacpp`, `api`, `tensorrt`             | The model backend used to run model.                                      | Defaults to "llamacpp"                           |
+| Property                | Type                                                          | Description                                                               | Validation                                       |
+| ----------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
+| `source_url`            | string                                                        | The model download source. It can be an external url or a local filepath. | Defaults to `pwd`. See [Source_url](#Source_url) |
+| `object`                | enum: `model`, `assistant`, `thread`, `message`               | Type of the Jan Object. Always `model`                                    | Defaults to "model"                              |
+| `name`                  | string                                                        | A vanity name                                                             | Defaults to filename                             |
+| `description`           | string                                                        | A vanity description of the model                                         | Defaults to ""                                   |
+| `state`                 | enum[`running` , `stopped`, `not-downloaded` , `downloading`] | Needs more thought                                                        | Defaults to `not-downloaded`                     |
+| `parameters`            | map                                                           | Defines default model run parameters used by any assistant.               | Defaults to `{}`                                 |
+| `metadata`              | map                                                           | Stores additional structured information about the model.                 | Defaults to `{}`                                 |
+| `metadata.engine`       | enum: `llamacpp`, `api`, `tensorrt`                           | The model backend used to run model.                                      | Defaults to "llamacpp"                           |
+| `metadata.quantization` | string                                                        | Supported formats only                                                    | See [Custom importers](#Custom-importers)        |
+| `metadata.binaries`     | array                                                         | Supported formats only.                                                   | See [Custom importers](#Custom-importers)        |
 
 ### Source_url
 
@@ -76,7 +83,7 @@ Supported URL formats with custom importers:
 
 ```json
 // ./models/zephr/zephyr-7b-beta-Q4_K_M.json
-// Note: Default fields are omitted for brevity
+// Note: Default fields omitted for brevity
 "source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
 "parameters": {
     "ctx_len": 2048,
@@ -97,7 +104,7 @@ Supported URL formats with custom importers:
 }
 ```
 
-### Example: multiple binaries `model-llava-v1.5-ggml.json`
+### Example: multiple binaries
 
 - Model has multiple binaries
 - See [source](https://huggingface.co/mys/ggml_llava-v1.5-13b)
@@ -105,7 +112,7 @@ Supported URL formats with custom importers:
 ```json
 "source_url": "https://huggingface.co/mys/ggml_llava-v1.5-13b"
 "metadata": {
-    "binaries": "..",
+    "binaries": "..", // TODO: what should this property be
 }
 ```
 
@@ -134,10 +141,10 @@ Supported URL formats with custom importers:
 ## Filesystem
 
 - Everything needed to represent a `model` is packaged into an `Model folder`.
-- The folder is standalone and can be easily zipped, imported, and exported, e.g. to Github.
-- The folder always contains at least one `Model Object`, declared in a `json` format.
-  - The folder and file do not have to share the same name
-- The model `id` is made up of `folder_name` + `filename` and is thus always unique.
+- The `folder` is standalone and can be easily zipped, imported, and exported, e.g. to Github.
+- The `folder` always contains at least one `Model Object`, declared in a `json` format.
+  - The `folder` and `file` do not have to share the same name
+- The model `id` is made up of `folder_name/filename` and is thus always unique.
 
 ```sh
 /janroot
@@ -150,20 +157,23 @@ Supported URL formats with custom importers:
             .gguf
 ```
 
-### Default model package
+### Default ./model folder
 
-- Jan ships iwht a dfault model package containing recommended models
-- ONly the Model Object `json` files are included
-- Users must explicitly download the model binaries
+- Jan ships with a default model folders containing recommended models
+- Only the Model Object `json` files are included
+- Users must later explicitly download the model binaries
 
 ```sh
-mistral-7b/
-    mistral-7b.json
-hermes-7b/
-    hermes-7b.json
+models/
+    mistral-7b/
+        mistral-7b.json
+    hermes-7b/
+        hermes-7b.json
 ```
 
 ### Multiple quantizations
+
+- Each quantization has its own `Jan Model Object` file
 
 ```sh
 llama2-7b-gguf/
@@ -174,6 +184,8 @@ llama2-7b-gguf/
 
 ### Multiple model partitions
 
+- A Model that is partitioned into several binaries use just 1 file
+
 ```sh
 llava-ggml/
     llava-ggml-Q5.json
@@ -183,59 +195,74 @@ llava-ggml/
 
 ### ?? whats this example for?
 
+- ??
+
 ```sh
 llama-70b-finetune/
     llama-70b-finetune-q5.json
     .bin
 ```
 
-## Jan API - TODO
+## Jan API
 
-### Jan Model API
+### Model API Object
 
-> Equivalent to: https://platform.openai.com/docs/api-reference/models
+- The `Jan Model Object` maps into the `OpenAI Model Object`.
+- Properties marked with `*` are compatible with the [OpenAI `model` object](https://platform.openai.com/docs/api-reference/models)
+- Note: The `Jan Model Object` has additional properties when retrieved via its API endpoint.
+- https://platform.openai.com/docs/api-reference/models/object
 
-```sh
-# List models
-GET https://localhost:1337/v1/models?state=[enum](all,running,downloaded,downloading)
-[
-    {
-        "id": "model-azure-openai-gpt4-turbo", # Autofilled by Jan with required URL above
-        "object": "model",
-        "created": 1686935002,
-        "owned_by": "OpenAI Azure",
-        "state": enum[all,running,downloaded,downloading]
-    },
-    {
-        "id": "model-llava-v1.5-ggml", # Autofilled by Jan with required URL above
-        "object": "model",
-        "created": 1686935002,
-        "owned_by": "mys",
-        "state": enum[all,running,downloaded,downloading]
-    }
-]
+| Property      | Type           | Public Description                                          | Jan Model Object (`m`) Property              |
+| ------------- | -------------- | ----------------------------------------------------------- | -------------------------------------------- |
+| `id`\*        | string         | Model uuid; also the file location under `/models`          | `folder/filename`                            |
+| `object`\*    | string         | Always "model"                                              | `m.object`                                   |
+| `created`\*   | integer        | Timestamp when model was created.                           | `m.json` creation time                       |
+| `owned_by`\*  | string         | The organization that owns the model.                       | grep author from `m.source_url` OR $(whoami) |
+| `name`        | string or null | A display name                                              | `m.name` or filename                         |
+| `description` | string         | A vanity description of the model                           | `m.description`                              |
+| `state`       | enum           |                                                             |                                              |
+| `parameters`  | map            | Defines default model run parameters used by any assistant. |                                              |
+| `metadata`    | map            | Stores additional structured information about the model.   |                                              |
 
-# Get model object
-GET https://localhost:1337/v1/models/{model_id} # json file name as {model_id} model-azure-openai-gpt4-turbo, model-zephyr-7B
-{
-    "id": "model-azure-openai-gpt4-turbo", # Autofilled by Jan with required URL above
-    "object": "model",
-    "created": 1686935002,
-    "owned_by": "OpenAI Azure",
-    "state": enum[all,running,downloaded,downloading]
-},
+### List models
 
-# Delete model
-DELETE https://localhost:1337/v1/models/{model_id} # json file name as {model_id} model-azure-openai-gpt4-turbo, model-zephyr-7B
+- https://platform.openai.com/docs/api-reference/models/list
 
-# Stop model
-PUT https://localhost:1337/v1/models/{model_id}/stop # json file name as {model_id} model-azure-openai-gpt4-turbo, model-zephyr-7B
+TODO: @hiro
 
-# Start model
-PUT https://localhost:1337/v1/models/{model_id}/start # json file name as {model_id} model-azure-openai-gpt4-turbo, model-zephyr-7B
-{
-  "id": [string] # The model name to be used in `chat_completion` = model_id
-  "model_parameters": [jsonPayload],
-  "engine": [enum](llamacpp,openai)
-}
-```
+### Get Model
+
+- https://platform.openai.com/docs/api-reference/models/retrieve
+
+TODO: @hiro
+
+### Delete Model
+
+- https://platform.openai.com/docs/api-reference/models/delete
+
+TODO: @hiro
+
+### Get Model State
+
+> Jan-only endpoint
+> TODO: @hiro
+
+### Get Model Metadata
+
+> Jan-only endpoint
+> TODO: @hiro
+
+### Download Model
+
+> Jan-only endpoint
+> TODO: @hiro
+
+### Start Model
+
+> Jan-only endpoint
+> TODO: @hiro
+
+### Stop Model
+
+> Jan-only endpoint
+> TODO: @hiro
