@@ -123,11 +123,6 @@ export default function useSendChatMessage() {
     }
     addNewMessage(threadMessage)
 
-    // delay randomly from 50 - 100ms
-    // to prevent duplicate message id
-    const delay = Math.floor(Math.random() * 50) + 50
-    await new Promise((resolve) => setTimeout(resolve, delay))
-
     events.emit(EventName.OnNewMessageRequest, messageRequest)
     if (!currentConvo?.summary && currentConvo) {
       const updatedConv: Thread = {
