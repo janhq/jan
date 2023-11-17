@@ -16,10 +16,6 @@ import {
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import {
-  showingProductDetailAtom,
-  showingAdvancedPromptAtom,
-} from '@/helpers/atoms/Modal.atom'
 
 export default function useDeleteConversation() {
   const { activeModel } = useActiveModel()
@@ -27,8 +23,6 @@ export default function useDeleteConversation() {
     userConversationsAtom
   )
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
-  const setShowingProductDetail = useSetAtom(showingProductDetailAtom)
-  const setShowingAdvancedPrompt = useSetAtom(showingAdvancedPromptAtom)
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
 
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
@@ -45,6 +39,7 @@ export default function useDeleteConversation() {
         )
         setUserConversations(currentConversations)
         deleteMessages(activeConvoId)
+        setCurrentPrompt('')
         toaster({
           title: 'Succes delete a chat',
           description: `Delete chat with ${activeModel?.name} has been completed`,
@@ -54,9 +49,6 @@ export default function useDeleteConversation() {
         } else {
           setActiveConvoId(undefined)
         }
-        setCurrentPrompt('')
-        setShowingProductDetail(false)
-        setShowingAdvancedPrompt(false)
       } catch (err) {
         console.error(err)
       }

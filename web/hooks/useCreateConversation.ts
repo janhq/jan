@@ -35,7 +35,7 @@ export const useCreateConversation = () => {
       waitingForResponse: false,
     })
 
-    pluginManager
+    await pluginManager
       .get<ConversationalPlugin>(PluginType.Conversational)
       ?.saveConversation(mappedConvo)
     setUserConversations([mappedConvo, ...userConversations])
