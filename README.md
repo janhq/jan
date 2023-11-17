@@ -1,6 +1,6 @@
 # Jan - Own Your AI
 
-![README](https://github.com/janhq/jan/assets/89722390/67300882-067c-47d8-a6ec-107b8e1eae0f)
+![Jan banner](https://github.com/janhq/jan/assets/89722390/35daac7d-b895-487c-a6ac-6663daaad78e)
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
