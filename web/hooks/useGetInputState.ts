@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Model, Conversation } from '@janhq/core'
+
+import { Model, Thread } from '@janhq/core'
 import { useAtomValue } from 'jotai'
+
 import { useActiveModel } from './useActiveModel'
 import { useGetDownloadedModels } from './useGetDownloadedModels'
+
 import { currentConversationAtom } from '@/helpers/atoms/Conversation.atom'
 
 export default function useGetInputState() {
@@ -12,7 +15,7 @@ export default function useGetInputState() {
   const { downloadedModels } = useGetDownloadedModels()
 
   const handleInputState = (
-    convo: Conversation | undefined,
+    convo: Thread | undefined,
     currentModel: Model | undefined
   ) => {
     if (convo == null) return

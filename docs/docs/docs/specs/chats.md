@@ -2,6 +2,12 @@
 title: "Chats"
 ---
 
+:::warning
+
+Draft Specification: functionality has not been implemented yet. 
+
+:::
+
 Chats are essentially inference requests to a model
 
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/chat

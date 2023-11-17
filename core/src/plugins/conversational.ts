@@ -1,5 +1,5 @@
+import { Thread } from "../index";
 import { JanPlugin } from "../plugin";
-import { Conversation } from "../types/index";
 
 /**
  * Abstract class for conversational plugins.
@@ -17,10 +17,10 @@ export abstract class ConversationalPlugin extends JanPlugin {
   /**
    * Saves a conversation.
    * @abstract
-   * @param {Conversation} conversation - The conversation to save.
+   * @param {Thread} conversation - The conversation to save.
    * @returns {Promise<void>} A promise that resolves when the conversation is saved.
    */
-  abstract saveConversation(conversation: Conversation): Promise<void>;
+  abstract saveConversation(conversation: Thread): Promise<void>;
 
   /**
    * Deletes a conversation.

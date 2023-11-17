@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { join } from 'path'
+
 import { PluginType } from '@janhq/core'
 import { InferencePlugin } from '@janhq/core/lib/plugins'
 import { Model } from '@janhq/core/lib/types'
@@ -10,7 +12,6 @@ import { toaster } from '@/containers/Toast'
 import { useGetDownloadedModels } from './useGetDownloadedModels'
 
 import { pluginManager } from '@/plugin'
-import { join } from 'path'
 
 const activeAssistantModelAtom = atom<Model | undefined>(undefined)
 
@@ -43,7 +44,7 @@ export function useActiveModel() {
 
     const currentTime = Date.now()
     console.debug('Init model: ', modelId)
-    const path = join('models', model.productName, modelId)
+    const path = join('models', model.name, modelId)
     const res = await initModel(path)
     if (res?.error) {
       const errorMessage = `${res.error}`

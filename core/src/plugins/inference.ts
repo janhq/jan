@@ -1,4 +1,4 @@
-import { NewMessageRequest } from "../events";
+import { MessageRequest } from "../index";
 import { JanPlugin } from "../plugin";
 
 /**
@@ -21,5 +21,5 @@ export abstract class InferencePlugin extends JanPlugin {
    * @param data - The data for the inference request.
    * @returns The result of the inference request.
    */
-  abstract inferenceRequest(data: NewMessageRequest): Promise<any>;
+  abstract inferenceRequest(data: MessageRequest): Promise<any>;
 }

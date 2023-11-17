@@ -1,5 +1,7 @@
-import { Conversation, ConversationState } from '@janhq/core'
+import { Thread } from '@janhq/core'
 import { atom } from 'jotai'
+
+import { ThreadState } from '@/types/conversation'
 
 /**
  * Stores the current active conversation id.
@@ -19,23 +21,19 @@ export const waitingToSendMessage = atom<boolean | undefined>(undefined)
 /**
  * Stores all conversation states for the current user
  */
-export const conversationStatesAtom = atom<Record<string, ConversationState>>(
-  {}
-)
-export const currentConvoStateAtom = atom<ConversationState | undefined>(
-  (get) => {
-    const activeConvoId = get(activeConversationIdAtom)
-    if (!activeConvoId) {
-      console.debug('Active convo id is undefined')
-      return undefined
-    }
-
-    return get(conversationStatesAtom)[activeConvoId]
+export const conversationStatesAtom = atom<Record<string, ThreadState>>({})
+export const currentConvoStateAtom = atom<ThreadState | undefined>((get) => {
+  const activeConvoId = get(activeConversationIdAtom)
+  if (!activeConvoId) {
+    console.debug('Active convo id is undefined')
+    return undefined
   }
-)
+
+  return get(conversationStatesAtom)[activeConvoId]
+})
 export const addNewConversationStateAtom = atom(
   null,
-  (get, set, conversationId: string, state: ConversationState) => {
+  (get, set, conversationId: string, state: ThreadState) => {
     const currentState = { ...get(conversationStatesAtom) }
     currentState[conversationId] = state
     set(conversationStatesAtom, currentState)
@@ -73,16 +71,28 @@ export const updateConversationHasMoreAtom = atom(
   }
 )
 
+export const updateThreadStateLastMessageAtom = atom(
+  null,
+  (get, set, conversationId: string, lastMessage?: string) => {
+    const currentState = { ...get(conversationStatesAtom) }
+    currentState[conversationId] = {
+      ...currentState[conversationId],
+      lastMessage,
+    }
+    set(conversationStatesAtom, currentState)
+  }
+)
+
 export const updateConversationAtom = atom(
   null,
-  (get, set, conversation: Conversation) => {
+  (get, set, conversation: Thread) => {
     const id = conversation.id
     if (!id) return
     const convo = get(userConversationsAtom).find((c) => c.id === id)
     if (!convo) return
 
-    const newConversations: Conversation[] = get(userConversationsAtom).map(
-      (c) => (c.id === id ? conversation : c)
+    const newConversations: Thread[] = get(userConversationsAtom).map((c) =>
+      c.id === id ? conversation : c
     )
 
     // sort new conversations based on updated at
@@ -99,7 +109,7 @@ export const updateConversationAtom = atom(
 /**
  * Stores all conversations for the current user
  */
-export const userConversationsAtom = atom<Conversation[]>([])
-export const currentConversationAtom = atom<Conversation | undefined>((get) =>
+export const userConversationsAtom = atom<Thread[]>([])
+export const currentConversationAtom = atom<Thread | undefined>((get) =>
   get(userConversationsAtom).find((c) => c.id === get(getActiveConvoIdAtom))
 )

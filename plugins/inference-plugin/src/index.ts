@@ -7,10 +7,13 @@
  */
 
 import {
+  ChatCompletionMessage,
+  ChatCompletionRole,
   EventName,
-  MessageHistory,
-  NewMessageRequest,
+  MessageRequest,
+  MessageStatus,
   PluginType,
+  ThreadMessage,
   events,
   executeOnMain,
 } from "@janhq/core";
@@ -70,29 +73,19 @@ export default class JanInferencePlugin implements InferencePlugin {
 
   /**
    * Makes a single response inference request.
-   * @param {NewMessageRequest} data - The data for the inference request.
+   * @param {MessageRequest} data - The data for the inference request.
    * @returns {Promise<any>} A promise that resolves with the inference response.
    */
-  async inferenceRequest(data: NewMessageRequest): Promise<any> {
+  async inferenceRequest(data: MessageRequest): Promise<any> {
     const message = {
       ...data,
       message: "",
       user: "assistant",
       createdAt: new Date().toISOString(),
     };
-    const prompts: [MessageHistory] = [
-      {
-        role: "user",
-        content: data.message,
-      },
-    ];
-    const recentMessages = data.history ?? prompts;
 
     return new Promise(async (resolve, reject) => {
-      requestInference([
-        ...recentMessages,
-        { role: "user", content: data.message },
-      ]).subscribe({
+      requestInference(data.messages ?? []).subscribe({
         next: (content) => {
           message.message = content;
         },
@@ -108,37 +101,33 @@ export default class JanInferencePlugin implements InferencePlugin {
 
   /**
    * Handles a new message request by making an inference request and emitting events.
-   * @param {NewMessageRequest} data - The data for the new message request.
+   * @param {MessageRequest} data - The data for the new message request.
    */
-  private async handleMessageRequest(data: NewMessageRequest) {
-    const prompts: [MessageHistory] = [
-      {
-        role: "user",
-        content: data.message,
-      },
-    ];
-    const recentMessages = data.history ?? prompts;
-    const message = {
-      ...data,
-      message: "",
-      user: "assistant",
+  private async handleMessageRequest(data: MessageRequest) {
+    const message: ThreadMessage = {
+      threadId: data.threadId,
+      content: "",
+      role: ChatCompletionRole.Assistant,
       createdAt: new Date().toISOString(),
       id: ulid(),
+      status: MessageStatus.Pending,
     };
     events.emit(EventName.OnNewMessageResponse, message);
 
-    requestInference(recentMessages).subscribe({
+    requestInference(data.messages).subscribe({
       next: (content) => {
-        message.message = content;
+        message.content = content;
         events.emit(EventName.OnMessageResponseUpdate, message);
       },
       complete: async () => {
-        message.message = message.message.trim();
+        message.content = message.content.trim();
+        message.status = MessageStatus.Ready;
         events.emit(EventName.OnMessageResponseFinished, message);
       },
       error: async (err) => {
-        message.message =
-          message.message.trim() + "\n" + "Error occurred: " + err.message;
+        message.content =
+          message.content.trim() + "\n" + "Error occurred: " + err.message;
+        message.status = MessageStatus.Ready;
         events.emit(EventName.OnMessageResponseUpdate, message);
       },
     });
