@@ -2,6 +2,15 @@
 title: "Assistants"
 ---
 
+:::warning
+
+Draft Specification: functionality has not been implemented yet. 
+
+Feedback: [HackMD: Assistants Spec](https://hackmd.io/KKAznzZvS668R6Vmyf8fCg) 
+
+:::
+
+
 ## User Stories
 
 _Users can chat with an assistant_
@@ -17,7 +26,7 @@ _Users can use Jan - the default assistant_
 _Users can create an assistant from scratch_
 
 - [Wireframes here - show create asst flow]
-- Users can select any model for an assistant. See [Model Spec]()
+- Users can select any model for an assistant. See Model Spec
 
 _Users can create an assistant from an existing assistant_
 

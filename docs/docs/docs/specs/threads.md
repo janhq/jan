@@ -2,6 +2,14 @@
 title: "Threads"
 ---
 
+:::warning
+
+Draft Specification: functionality has not been implemented yet. 
+
+Feedback: [HackMD: Threads Spec](https://hackmd.io/BM_8o_OCQ-iLCYhunn2Aug)
+
+:::
+
 ## User Stories
 
 _Users can chat with an assistant in a thread_
@@ -27,12 +35,12 @@ _Users can delete all thread history_
 - Objects are designed to be compatible with `OpenAI Thread Objects` with additional properties needed to run on our infrastructure.
 - Objects contain a `models` field, to track when the user overrides the assistant's default model parameters.
 
-| Property   | Type                                            | Description                                                                                                                                                                                       | Validation                     |
-| ---------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `object`   | enum: `model`, `assistant`, `thread`, `message` | The Jan Object type                                                                                                                                                                               | Defaults to `thread`           |
-| `models`   | array                                           | An array of Jan Model Objects. Threads can "override" an assistant's model run parameters. Thread-level model parameters are directly saved in the `thread.models` property! [See `model` spec]() | Defaults to `assistant.models` |
-| `messages` | array                                           | An array of Jan Message Objects. [See `message` spec](https://hackmd.io/7a4Tcaa6QDurEzMY9g8HNg)                                                                                                   | Defaults to `[]`               |
-| `metadata` | map                                             | Useful for storing additional information about the object in a structured format.                                                                                                                | Defaults to `{}`               |
+| Property   | Type                                            | Description                                                                                                                                                                                    | Validation                     |
+| ---------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `object`   | enum: `model`, `assistant`, `thread`, `message` | The Jan Object type                                                                                                                                                                            | Defaults to `thread`           |
+| `models`   | array                                           | An array of Jan Model Objects. Threads can "override" an assistant's model run parameters. Thread-level model parameters are directly saved in the `thread.models` property! (see Models spec) | Defaults to `assistant.models` |
+| `messages` | array                                           | An array of Jan Message Objects. (see Messages spec)                                                                                                                                           | Defaults to `[]`               |
+| `metadata` | map                                             | Useful for storing additional information about the object in a structured format.                                                                                                             | Defaults to `{}`               |
 
 ### Generic Example
 

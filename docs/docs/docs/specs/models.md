@@ -2,6 +2,14 @@
 title: "Models"
 ---
 
+:::warning
+
+Draft Specification: functionality has not been implemented yet. 
+
+Feedback: [HackMD: Models Spec](https://hackmd.io/ulO3uB1AQCqLa5SAAMFOQw) 
+
+:::
+
 Models are AI models like Llama and Mistral
 
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models
