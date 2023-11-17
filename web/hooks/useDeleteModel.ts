@@ -20,8 +20,8 @@ export default function useDeleteModel() {
     // reload models
     setDownloadedModels(downloadedModels.filter((e) => e.id !== model.id))
     toaster({
-      title: 'Delete a Model',
-      description: `Model ${model.id} has been deleted.`,
+      title: 'Model Deletion Successful',
+      description: `The model ${model.id} has been successfully deleted.`,
     })
   }
 

@@ -109,10 +109,10 @@ async function validateModelStatus(): Promise<InitModelResponse> {
           return { error: undefined };
         }
       }
-      return { error: "Model is not loaded successfully" };
+      return { error: "Model loading failed" };
     })
     .catch((err) => {
-      return { error: `Model is not loaded successfully. ${err.message}` };
+      return { error: `Model loading failed. ${err.message}` };
     });
 }
 
