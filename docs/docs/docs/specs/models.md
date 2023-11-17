@@ -133,34 +133,63 @@ Supported URL formats with custom importers:
 
 ## Filesystem
 
-How `models` map onto your local filesystem
+- Everything needed to represent a `model` is packaged into an `Model folder`.
+- The folder is standalone and can be easily zipped, imported, and exported, e.g. to Github.
+- The folder always contains at least one `Model Object`, declared in a `json` format.
+  - The folder and file do not have to share the same name
+- The model `id` is made up of `folder_name` + `filename` and is thus always unique.
 
-```shell=
+```sh
 /janroot
     /models
-        azure-openai/
-            azure-openai-gpt3-5.json
+        azure-openai/                       # Folder name
+            azure-openai-gpt3-5.json        # File name
 
         llama2-70b/
             model.json
             .gguf
-
-        llama2-7b-gguf/
-            llama2-7b-gguf-Q2.json
-            llama2-7b-gguf-Q3_K_L.json
-            .bin
-
-        llava-ggml/
-            llava-ggml-Q5.json
-            .proj
-            ggml
-
-        llama-70b-finetune
-            llama-70b-finetune-q5.json
-            .bin
 ```
 
-## Jan API
+### Default model package
+
+- Jan ships iwht a dfault model package containing recommended models
+- ONly the Model Object `json` files are included
+- Users must explicitly download the model binaries
+
+```sh
+mistral-7b/
+    mistral-7b.json
+hermes-7b/
+    hermes-7b.json
+```
+
+### Multiple quantizations
+
+```sh
+llama2-7b-gguf/
+    llama2-7b-gguf-Q2.json
+    llama2-7b-gguf-Q3_K_L.json
+    .bin
+```
+
+### Multiple model partitions
+
+```sh
+llava-ggml/
+    llava-ggml-Q5.json
+    .proj
+    ggml
+```
+
+### ?? whats this example for?
+
+```sh
+llama-70b-finetune/
+    llama-70b-finetune-q5.json
+    .bin
+```
+
+## Jan API - TODO
 
 ### Jan Model API
 
