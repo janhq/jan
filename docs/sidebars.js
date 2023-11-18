@@ -68,6 +68,7 @@ const sidebars = {
             "specs/jan",
             "specs/fine-tuning",
             "specs/settings",
+            "specs/prompts",
           ],
         },
       ],
