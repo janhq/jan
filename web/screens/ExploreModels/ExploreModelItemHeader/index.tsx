@@ -35,8 +35,8 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   const { performanceTag, title, getPerformanceForModel } =
     useGetPerformanceTag()
   const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[suitableModel._id]),
-    [suitableModel._id]
+    () => atom((get) => get(modelDownloadStateAtom)[suitableModel.name]),
+    [suitableModel.name]
   )
   const downloadState = useAtomValue(downloadAtom)
   const { setMainViewState } = useMainViewState()
@@ -51,8 +51,9 @@ const ExploreModelItemHeader: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exploreModel, suitableModel])
 
+  // TODO: Comparing between Model Id and Version Name?
   const isDownloaded =
-    downloadedModels.find((model) => model._id === suitableModel._id) != null
+    downloadedModels.find((model) => model.id === suitableModel.name) != null
 
   let downloadButton = (
     <Button onClick={() => onDownloadClick()}>

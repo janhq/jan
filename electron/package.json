@@ -52,18 +52,18 @@
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "test:e2e": "playwright test --workers=1",
     "dev": "tsc -p . && electron .",
-    "build": "tsc -p . && electron-builder -p never -m",
-    "build:test": "tsc -p . && electron-builder --dir -p never -m",
-    "build:test-darwin": "tsc -p . && electron-builder -p never -m --x64 --arm64 --dir",
-    "build:test-win32": "tsc -p . && electron-builder -p never -w --dir",
-    "build:test-linux": "tsc -p . && electron-builder -p never -l --dir",
-    "build:darwin": "tsc -p . && electron-builder -p never -m --x64 --arm64",
+    "build": "run-script-os",
+    "build:test": "run-script-os",
+    "build:test:darwin": "tsc -p . && electron-builder -p never -m --dir",
+    "build:test:win32": "tsc -p . && electron-builder -p never -w --dir",
+    "build:test:linux": "tsc -p . && electron-builder -p never -l --dir",
+    "build:darwin": "tsc -p . && electron-builder -p never -m",
     "build:win32": "tsc -p . && electron-builder -p never -w",
     "build:linux": "tsc -p . && electron-builder -p never --linux deb",
-    "build:publish": "tsc -p . && electron-builder -p onTagOrDraft -m",
-    "build:publish-darwin": "tsc -p . && electron-builder -p onTagOrDraft -m --x64 --arm64",
-    "build:publish-win32": "tsc -p . && electron-builder -p onTagOrDraft -w",
-    "build:publish-linux": "tsc -p . && electron-builder -p onTagOrDraft --linux deb "
+    "build:publish": "run-script-os",
+    "build:publish:darwin": "tsc -p . && electron-builder -p onTagOrDraft -m --x64 --arm64",
+    "build:publish:win32": "tsc -p . && electron-builder -p onTagOrDraft -w",
+    "build:publish:linux": "tsc -p . && electron-builder -p onTagOrDraft -l deb"
   },
   "dependencies": {
     "@npmcli/arborist": "^7.1.0",
@@ -86,7 +86,8 @@
     "electron": "26.2.1",
     "electron-builder": "^24.6.4",
     "electron-playwright-helpers": "^1.6.0",
-    "eslint-plugin-react": "^7.33.2"
+    "eslint-plugin-react": "^7.33.2",
+    "run-script-os": "^1.1.6"
   },
   "installConfig": {
     "hoistingLimits": "workspaces"

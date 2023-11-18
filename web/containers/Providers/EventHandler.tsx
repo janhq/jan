@@ -1,10 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ReactNode, useEffect, useRef } from 'react'
 
-import { events, EventName, NewMessageResponse, PluginType } from '@janhq/core'
-
+import {
+  events,
+  EventName,
+  ThreadMessage,
+  PluginType,
+  MessageStatus,
+} from '@janhq/core'
 import { ConversationalPlugin, ModelPlugin } from '@janhq/core/lib/plugins'
-import { Message } from '@janhq/core/lib/types'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
@@ -16,22 +20,15 @@ import {
   updateMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
-  updateConversationAtom,
   updateConversationWaitingForResponseAtom,
   userConversationsAtom,
 } from '@/helpers/atoms/Conversation.atom'
-
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-import { MessageStatus, toChatMessage } from '@/models/ChatMessage'
 import { pluginManager } from '@/plugin'
-import { ChatMessage, Conversation } from '@/types/chatMessage'
-
-let currentConversation: Conversation | undefined = undefined
 
 export default function EventHandler({ children }: { children: ReactNode }) {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
-  const updateConversation = useSetAtom(updateConversationAtom)
 
   const { setDownloadState, setDownloadStateSuccess } = useDownloadState()
   const { downloadedModels, setDownloadedModels } = useGetDownloadedModels()
@@ -48,98 +45,55 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     convoRef.current = conversations
   }, [messages, conversations])
 
-  async function handleNewMessageResponse(message: NewMessageResponse) {
-    if (message.conversationId) {
-      const convo = convoRef.current.find(
-        (e) => e._id == message.conversationId
-      )
+  async function handleNewMessageResponse(message: ThreadMessage) {
+    if (message.threadId) {
+      const convo = convoRef.current.find((e) => e.id == message.threadId)
       if (!convo) return
-      const newResponse = toChatMessage(message)
-      addNewMessage(newResponse)
+      addNewMessage(message)
     }
   }
-  async function handleMessageResponseUpdate(
-    messageResponse: NewMessageResponse
-  ) {
+  async function handleMessageResponseUpdate(messageResponse: ThreadMessage) {
     if (
-      messageResponse.conversationId &&
-      messageResponse._id &&
-      messageResponse.message
+      messageResponse.threadId &&
+      messageResponse.id &&
+      messageResponse.content
     ) {
       updateMessage(
-        messageResponse._id,
-        messageResponse.conversationId,
-        messageResponse.message,
+        messageResponse.id,
+        messageResponse.threadId,
+        messageResponse.content,
         MessageStatus.Pending
       )
     }
-
-    if (messageResponse.conversationId) {
-      if (
-        !currentConversation ||
-        currentConversation._id !== messageResponse.conversationId
-      ) {
-        if (convoRef.current && messageResponse.conversationId)
-          currentConversation = convoRef.current.find(
-            (e) => e._id == messageResponse.conversationId
-          )
-      }
-
-      if (currentConversation) {
-        const updatedConv: Conversation = {
-          ...currentConversation,
-          lastMessage: messageResponse.message,
-        }
-
-        updateConversation(updatedConv)
-      }
-    }
   }
 
-  async function handleMessageResponseFinished(
-    messageResponse: NewMessageResponse
-  ) {
-    if (!messageResponse.conversationId || !convoRef.current) return
-    updateConvWaiting(messageResponse.conversationId, false)
+  async function handleMessageResponseFinished(messageResponse: ThreadMessage) {
+    if (!messageResponse.threadId || !convoRef.current) return
+    updateConvWaiting(messageResponse.threadId, false)
 
     if (
-      messageResponse.conversationId &&
-      messageResponse._id &&
-      messageResponse.message
+      messageResponse.threadId &&
+      messageResponse.id &&
+      messageResponse.content
     ) {
       updateMessage(
-        messageResponse._id,
-        messageResponse.conversationId,
-        messageResponse.message,
+        messageResponse.id,
+        messageResponse.threadId,
+        messageResponse.content,
         MessageStatus.Ready
       )
     }
 
-    const convo = convoRef.current.find(
-      (e) => e._id == messageResponse.conversationId
+    const thread = convoRef.current.find(
+      (e) => e.id == messageResponse.threadId
     )
-    if (convo) {
-      const messagesData = (messagesRef.current ?? [])[convo._id].map<Message>(
-        (e: ChatMessage) => {
-          return {
-            // eslint-disable-next-line @typescript-eslint/naming-convention
-            _id: e.id,
-            message: e.text,
-            user: e.senderUid,
-            updatedAt: new Date(e.createdAt).toISOString(),
-            createdAt: new Date(e.createdAt).toISOString(),
-          }
-        }
-      )
+    if (thread) {
       pluginManager
         .get<ConversationalPlugin>(PluginType.Conversational)
         ?.saveConversation({
-          ...convo,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
-          _id: convo._id ?? '',
-          name: convo.name ?? '',
-          message: convo.lastMessage ?? '',
-          messages: messagesData,
+          ...thread,
+          id: thread.id ?? '',
+          messages: messagesRef.current[thread.id] ?? [],
         })
     }
   }
@@ -151,9 +105,9 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   function handleDownloadSuccess(state: any) {
     if (state && state.fileName && state.success === true) {
-      state.fileName = state.fileName.replace('models/', '')
+      state.fileName = state.fileName.split('/').pop() ?? ''
       setDownloadStateSuccess(state.fileName)
-      const model = models.find((e) => e._id === state.fileName)
+      const model = models.find((e) => e.id === state.fileName)
       if (model)
         pluginManager
           .get<ModelPlugin>(PluginType.Model)

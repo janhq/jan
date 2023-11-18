@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import { Conversation, Model } from '@janhq/core/lib/types'
+import { Thread, Model } from '@janhq/core'
 import { Button } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -17,6 +17,7 @@ import useGetUserConversations from '@/hooks/useGetUserConversations'
 import { displayDate } from '@/utils/datetime'
 
 import {
+  conversationStatesAtom,
   getActiveConvoIdAtom,
   setActiveConvoIdAtom,
   userConversationsAtom,
@@ -24,6 +25,7 @@ import {
 
 export default function HistoryList() {
   const conversations = useAtomValue(userConversationsAtom)
+  const threadStates = useAtomValue(conversationStatesAtom)
   const { getUserConversations } = useGetUserConversations()
   const { activeModel, startModel } = useActiveModel()
   const { requestCreateConvo } = useCreateConversation()
@@ -41,21 +43,21 @@ export default function HistoryList() {
     return
   }
 
-  const handleActiveModel = async (convo: Conversation) => {
+  const handleActiveModel = async (convo: Thread) => {
     if (convo.modelId == null) {
       console.debug('modelId is undefined')
       return
     }
-    const model = downloadedModels.find((e) => e._id === convo.modelId)
+    const model = downloadedModels.find((e) => e.id === convo.modelId)
     if (convo == null) {
       console.debug('modelId is undefined')
       return
     }
     if (model != null) {
-      startModel(model._id)
+      startModel(model.id)
     }
-    if (activeConvoId !== convo._id) {
-      setActiveConvoId(convo._id)
+    if (activeConvoId !== convo.id) {
+      setActiveConvoId(convo.id)
     }
   }
 
@@ -83,24 +85,28 @@ export default function HistoryList() {
         </div>
       ) : (
         conversations.map((convo, i) => {
+          const lastMessage = threadStates[convo.id]?.lastMessage
           return (
             <div
               key={i}
               className={twMerge(
                 'relative flex cursor-pointer flex-col border-b border-border px-4 py-2 hover:bg-secondary/20',
-                activeConvoId === convo._id && 'bg-secondary-10'
+                activeConvoId === convo.id && 'bg-secondary-10'
               )}
-              onClick={() => handleActiveModel(convo as Conversation)}
+              onClick={() => handleActiveModel(convo as Thread)}
             >
               <p className="mb-1 line-clamp-1 text-xs leading-5">
                 {convo.updatedAt &&
                   displayDate(new Date(convo.updatedAt).getTime())}
               </p>
-              <h2 className="line-clamp-1">{convo.summary ?? convo.name}</h2>
+              <h2 className="line-clamp-1">{convo.summary}</h2>
               <p className="mt-1 line-clamp-2 text-xs">
-                {convo?.lastMessage ?? 'No new message'}
+                {/* TODO: Check latest message update */}
+                {lastMessage && lastMessage.length > 0
+                  ? lastMessage
+                  : 'No new message'}
               </p>
-              {activeModel && activeConvoId === convo._id && (
+              {activeModel && activeConvoId === convo.id && (
                 <m.div
                   className="absolute right-0 top-0 h-full w-1 bg-primary/50"
                   layoutId="active-convo"

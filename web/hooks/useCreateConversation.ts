@@ -1,7 +1,6 @@
 import { PluginType } from '@janhq/core'
+import { Thread, Model } from '@janhq/core'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
-import { Model } from '@janhq/core/lib/types'
-
 import { useAtom, useSetAtom } from 'jotai'
 
 import { generateConversationId } from '@/utils/conversation'
@@ -12,7 +11,6 @@ import {
   addNewConversationStateAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '@/plugin'
-import { Conversation } from '@/types/chatMessage'
 
 export const useCreateConversation = () => {
   const [userConversations, setUserConversations] = useAtom(
@@ -22,30 +20,26 @@ export const useCreateConversation = () => {
   const addNewConvoState = useSetAtom(addNewConversationStateAtom)
 
   const requestCreateConvo = async (model: Model) => {
-    const conversationName = model.name
-    const mappedConvo: Conversation = {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
-      _id: generateConversationId(),
-      modelId: model._id,
-      name: conversationName,
+    const summary = model.name
+    const mappedConvo: Thread = {
+      id: generateConversationId(),
+      modelId: model.id,
+      summary,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      messages: [],
     }
 
-    addNewConvoState(mappedConvo._id, {
+    addNewConvoState(mappedConvo.id, {
       hasMore: true,
       waitingForResponse: false,
     })
 
     pluginManager
       .get<ConversationalPlugin>(PluginType.Conversational)
-      ?.saveConversation({
-        ...mappedConvo,
-        name: mappedConvo.name ?? '',
-        messages: [],
-      })
+      ?.saveConversation(mappedConvo)
     setUserConversations([mappedConvo, ...userConversations])
-    setActiveConvoId(mappedConvo._id)
+    setActiveConvoId(mappedConvo.id)
   }
 
   return {

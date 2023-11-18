@@ -12,44 +12,16 @@ export enum EventName {
   OnDownloadError = "onDownloadError",
 }
 
-export type MessageHistory = {
-  role: string;
-  content: string;
-};
-/**
- * The `NewMessageRequest` type defines the shape of a new message request object.
- */
-export type NewMessageRequest = {
-  _id?: string;
-  conversationId?: string;
-  user?: string;
-  avatar?: string;
-  message?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  history?: MessageHistory[];
-};
-
-/**
- * The `NewMessageRequest` type defines the shape of a new message request object.
- */
-export type NewMessageResponse = {
-  _id?: string;
-  conversationId?: string;
-  user?: string;
-  avatar?: string;
-  message?: string;
-  createdAt?: string;
-  updatedAt?: string;
-};
-
 /**
  * Adds an observer for an event.
  *
  * @param eventName The name of the event to observe.
  * @param handler The handler function to call when the event is observed.
  */
-const on: (eventName: string, handler: Function) => void = (eventName, handler) => {
+const on: (eventName: string, handler: Function) => void = (
+  eventName,
+  handler
+) => {
   window.corePlugin?.events?.on(eventName, handler);
 };
 
@@ -59,7 +31,10 @@ const on: (eventName: string, handler: Function) => void = (eventName, handler) 
  * @param eventName The name of the event to stop observing.
  * @param handler The handler function to call when the event is observed.
  */
-const off: (eventName: string, handler: Function) => void = (eventName, handler) => {
+const off: (eventName: string, handler: Function) => void = (
+  eventName,
+  handler
+) => {
   window.corePlugin?.events?.off(eventName, handler);
 };
 

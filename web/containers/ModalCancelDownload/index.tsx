@@ -32,9 +32,9 @@ export default function ModalCancelDownload({
   const { modelDownloadStateAtom } = useDownloadState()
   useGetPerformanceTag()
   const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[suitableModel._id]),
+    () => atom((get) => get(modelDownloadStateAtom)[suitableModel.name]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [suitableModel._id]
+    [suitableModel.name]
   )
   const downloadState = useAtomValue(downloadAtom)
 

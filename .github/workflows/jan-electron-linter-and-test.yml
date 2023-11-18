@@ -95,8 +95,8 @@ jobs:
           yarn build:core
           yarn install
           $env:NITRO_VERSION = Get-Content .\plugins\inference-plugin\nitro\version.txt; echo $env:NITRO_VERSION
-          yarn build:plugins-win32
-          yarn build:test-win32
+          yarn build:plugins
+          yarn build:test
           $env:CI="e2e"
           yarn test
 
@@ -131,6 +131,6 @@ jobs:
           yarn config set network-timeout 300000
           yarn build:core
           yarn install
-          yarn build:plugins-linux
-          yarn build:test-linux
+          yarn build:plugins
+          yarn build:test
           yarn test

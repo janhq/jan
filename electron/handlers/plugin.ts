@@ -30,7 +30,7 @@ export function handlePluginIPCs() {
       if (typeof module[method] === "function") {
         return module[method](...args);
       } else {
-        console.log(module[method]);
+        console.debug(module[method]);
         console.error(`Function "${method}" does not exist in the module.`);
       }
     }
@@ -75,7 +75,7 @@ export function handlePluginIPCs() {
     const fullPath = join(userDataPath, "plugins");
 
     rmdir(fullPath, { recursive: true }, function (err) {
-      if (err) console.log(err);
+      if (err) console.error(err);
       ModuleManager.instance.clearImportedModules();
 
       // just relaunch if packaged, should launch manually in development mode

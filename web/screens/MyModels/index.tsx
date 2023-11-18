@@ -40,7 +40,7 @@ const MyModelsScreen = () => {
   if (downloadedModels.length === 0) return <BlankStateMyModel />
 
   const onModelActionClick = (modelId: string) => {
-    if (activeModel && activeModel._id === modelId) {
+    if (activeModel && activeModel.id === modelId) {
       stopModel(modelId)
     } else {
       startModel(modelId)
@@ -53,7 +53,7 @@ const MyModelsScreen = () => {
         <div className="p-4" data-test-id="testid-my-models">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             {downloadedModels.map((model, i) => {
-              const isActiveModel = stateModel.model === model._id
+              const isActiveModel = stateModel.model === model.id
               return (
                 <div
                   key={i}
@@ -76,7 +76,7 @@ const MyModelsScreen = () => {
                         <h2 className="mb-1 font-medium capitalize">
                           {model.author}
                         </h2>
-                        <p className="line-clamp-1">{model.productName}</p>
+                        <p className="line-clamp-1">{model.name}</p>
                         <div className="mt-2 flex items-center gap-2">
                           <Badge themes="secondary">v{model.version}</Badge>
                           <Badge themes="outline">GGUF</Badge>
@@ -101,7 +101,7 @@ const MyModelsScreen = () => {
                             <ModalTitle>Are you sure?</ModalTitle>
                           </ModalHeader>
                           <p className="leading-relaxed">
-                            Delete model {model.productName}, v{model.version},{' '}
+                            Delete model {model.name}, v{model.version},{' '}
                             {toGigabytes(model.size)}.
                           </p>
                           <ModalFooter>
@@ -114,7 +114,7 @@ const MyModelsScreen = () => {
                                   themes="danger"
                                   onClick={() =>
                                     setTimeout(async () => {
-                                      await stopModel(model._id)
+                                      await stopModel(model.id)
                                       deleteModel(model)
                                     }, 500)
                                   }
@@ -135,7 +135,7 @@ const MyModelsScreen = () => {
                         }
                         className="capitalize"
                         loading={isActiveModel ? stateModel.loading : false}
-                        onClick={() => onModelActionClick(model._id)}
+                        onClick={() => onModelActionClick(model.id)}
                       >
                         {isActiveModel ? stateModel.state : 'Start'}
                         &nbsp;Model

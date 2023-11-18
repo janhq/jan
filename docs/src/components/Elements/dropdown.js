@@ -76,6 +76,7 @@ export default function Dropdown() {
       setDefaultSystem(systems[1]);
     }
   };
+
   useEffect(() => {
     const updateDownloadLinks = async () => {
       try {

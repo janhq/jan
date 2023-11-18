@@ -1,3 +1,5 @@
+import { join } from 'path'
+
 import { PluginType } from '@janhq/core'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { Model } from '@janhq/core/lib/types'
@@ -12,15 +14,14 @@ export default function useDeleteModel() {
   const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
 
   const deleteModel = async (model: Model) => {
-    await pluginManager
-      .get<ModelPlugin>(PluginType.Model)
-      ?.deleteModel(model._id)
+    const path = join('models', model.name, model.id)
+    await pluginManager.get<ModelPlugin>(PluginType.Model)?.deleteModel(path)
 
     // reload models
-    setDownloadedModels(downloadedModels.filter((e) => e._id !== model._id))
+    setDownloadedModels(downloadedModels.filter((e) => e.id !== model.id))
     toaster({
       title: 'Delete a Model',
-      description: `Model ${model._id} has been deleted.`,
+      description: `Model ${model.id} has been deleted.`,
     })
   }
 

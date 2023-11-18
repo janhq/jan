@@ -138,13 +138,7 @@ const config = {
           src: "img/logo.svg",
         },
         items: [
-          // Navbar left
-          {
-            type: "docSidebar",
-            sidebarId: "guidesSidebar",
-            position: "left",
-            label: "User Guide",
-          },
+          // Navbar Left
           {
             type: "docSidebar",
             sidebarId: "docsSidebar",
