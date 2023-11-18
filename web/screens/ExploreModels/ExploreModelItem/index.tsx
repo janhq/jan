@@ -58,10 +58,18 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
           <div>
             <span className="mb-1 font-semibold">Compatibility</span>
             <div className="mt-1 flex gap-2">
-              <Badge themes="secondary" className="line-clamp-1 max-w-[400px]">
+              <Badge
+                themes="secondary"
+                className="line-clamp-1 max-w-[400px] lg:line-clamp-none lg:max-w-none"
+                title={usecase}
+              >
                 {usecase}
               </Badge>
-              <Badge themes="secondary" className="line-clamp-1">
+              <Badge
+                themes="secondary"
+                className="line-clamp-1 lg:line-clamp-none"
+                title={`${toGigabytes(maxRamRequired)} RAM required`}
+              >
                 {toGigabytes(maxRamRequired)} RAM required
               </Badge>
             </div>
