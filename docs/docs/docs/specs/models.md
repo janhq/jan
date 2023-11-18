@@ -46,7 +46,7 @@ _Users can override run settings at runtime_
 | `object`                | enum: `model`, `assistant`, `thread`, `message`               | Type of the Jan Object. Always `model`                                    | Defaults to "model"                              |
 | `name`                  | string                                                        | A vanity name                                                             | Defaults to filename                             |
 | `description`           | string                                                        | A vanity description of the model                                         | Defaults to ""                                   |
-| `state`                 | enum[`running` , `stopped`, `not-downloaded` , `downloading`] | Needs more thought                                                        | Defaults to `not-downloaded`                     |
+| `state`                 | enum[`to_download` , `downloading`, `ready` , `running`] | Needs more thought                                                        | Defaults to `to_download`                     |
 | `parameters`            | map                                                           | Defines default model run parameters used by any assistant.               | Defaults to `{}`                                 |
 | `metadata`              | map                                                           | Stores additional structured information about the model.                 | Defaults to `{}`                                 |
 | `metadata.engine`       | enum: `llamacpp`, `api`, `tensorrt`                           | The model backend used to run model.                                      | Defaults to "llamacpp"                           |
@@ -84,6 +84,7 @@ Additionally, Jan supports importing popular formats. For example, if you provid
 Supported URL formats with custom importers:
 
 - `huggingface/thebloke`: [Link](https://huggingface.co/TheBloke/Llama-2-7B-GGUF)
+- `huggingface/thebloke`: [Link](https://huggingface.co/TheBloke/Llama-2-7B-GGUF)
 - `janhq`: `TODO: put URL here`
 - `azure_openai`: `https://docs-test-001.openai.azure.com/openai.azure.com/docs-test-001/gpt4-turbo`
 - `openai`: `api.openai.com`
@@ -98,17 +99,22 @@ Supported URL formats with custom importers:
 // Note: Default fields omitted for brevity
 "source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
 "parameters": {
-    "ctx_len": 2048,
-    "ngl": 100,
-    "embedding": true,
-    "n_parallel": 4,
+  "init": {
+    "ctx_len": "2048",
+    "ngl": "100",
+    "embedding": "true",
+    "n_parallel": "4",
     "pre_prompt": "A chat between a curious user and an artificial intelligence",
     "user_prompt": "USER: ",
-    "ai_prompt": "ASSISTANT: ",
+    "ai_prompt": "ASSISTANT: "
+  },
+  "runtime": {
     "temperature": "0.7",
     "token_limit": "2048",
     "top_k": "0",
     "top_p": "1",
+    "stream": "true"
+  }
 },
 "metadata": {
     "engine": "llamacpp",
@@ -123,13 +129,13 @@ Supported URL formats with custom importers:
 - See [source](https://huggingface.co/mys/ggml_llava-v1.5-13b)
 
 ```json
-"source_url": "https://huggingface.co/mys/ggml_llava-v1.5-13b"
-"parameters": {}
+"source_url": "https://huggingface.co/mys/ggml_llava-v1.5-13b",
+"parameters": {"init": {}, "runtime": {}}
 "metadata": {
     "mmproj_binary": "https://huggingface.co/mys/ggml_llava-v1.5-13b/blob/main/mmproj-model-f16.gguf",
     "ggml_binary": "https://huggingface.co/mys/ggml_llava-v1.5-13b/blob/main/ggml-model-q5_k.gguf",
     "engine": "llamacpp",
-    "quantization": "Q5_K",
+    "quantization": "Q5_K"
 }
 ```
 
@@ -141,14 +147,18 @@ Supported URL formats with custom importers:
 ```json
 "source_url": "https://docs-test-001.openai.azure.com/openai.azure.com/docs-test-001/gpt4-turbo",
 "parameters": {
+  "init" {
     "API-KEY": "",
     "DEPLOYMENT-NAME": "",
-    "api-version": "2023-05-15",
+    "api-version": "2023-05-15"
+  },
+  "runtime": {
     "temperature": "0.7",
     "max_tokens": "2048",
     "presence_penalty": "0",
     "top_p": "1",
     "stream": "true"
+  }
 }
 "metadata": {
     "engine": "api",
@@ -160,7 +170,7 @@ Supported URL formats with custom importers:
 - Everything needed to represent a `model` is packaged into an `Model folder`.
 - The `folder` is standalone and can be easily zipped, imported, and exported, e.g. to Github.
 - The `folder` always contains at least one `Model Object`, declared in a `json` format.
-  - The `folder` and `file` do not have to share the same name
+- The `folder` and `file` do not have to share the same name
 - The model `id` is made up of `folder_name/filename` and is thus always unique.
 
 ```sh
@@ -219,79 +229,29 @@ llama-70b-finetune/
 - The `Jan Model Object` maps into the `OpenAI Model Object`.
 - Properties marked with `*` are compatible with the [OpenAI `model` object](https://platform.openai.com/docs/api-reference/models)
 - Note: The `Jan Model Object` has additional properties when retrieved via its API endpoint.
-- https://platform.openai.com/docs/api-reference/models/object
-
-| Property      | Type           | Public Description                                          | Jan Model Object (`m`) Property              |
-| ------------- | -------------- | ----------------------------------------------------------- | -------------------------------------------- |
-| `id`\*        | string         | Model uuid; also the file location under `/models`          | `folder/filename`                            |
-| `object`\*    | string         | Always "model"                                              | `m.object`                                   |
-| `created`\*   | integer        | Timestamp when model was created.                           | `m.json` creation time                       |
-| `owned_by`\*  | string         | The organization that owns the model.                       | grep author from `m.source_url` OR $(whoami) |
-| `name`        | string or null | A display name                                              | `m.name` or filename                         |
-| `description` | string         | A vanity description of the model                           | `m.description`                              |
-| `state`       | enum           |                                                             |                                              |
-| `parameters`  | map            | Defines default model run parameters used by any assistant. |                                              |
-| `metadata`    | map            | Stores additional structured information about the model.   |                                              |
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models/object
 
 ### Model lifecycle
 Model has 4 states (enum)
-- `not_downloaded`
-- `downloaded`
+- `to_download`
+- `downloading`
+- `ready`
 - `running`
-- `not_running`
 
-### List models
-Lists the currently available models, and provides basic information about each one such as the owner and availability.
-- [OAI Reference](https://platform.openai.com/docs/api-reference/models/list)
-- Example request
-```shell=
-curl {JAN_URL}/v1/models
-```
-- Example response
-```json=
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "model-zephyr-7B",
-      "object": "model",
-      "created": 1686935002,
-      "owned_by": "thebloke",
-      "state": "running"
-    },
-    {
-      "id": "ft-llama-70b-gguf",
-      "object": "model",
-      "created": 1686935002,
-      "owned_by": "you",
-      "state": "stopped"
-    },
-    {
-      "id": "model-azure-openai-gpt4-turbo",
-      "object": "model",
-      "created": 1686935002,
-      "owned_by": "azure_openai",
-      "state": "running"
-    },
-  ],
-  "object": "list"
-}
-```
 ### Get Model
-Retrieves a model instance, providing basic information about the model such as the owner and permissioning.
-- [OAI Reference](https://platform.openai.com/docs/api-reference/models/retrieve)
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models/retrieve
 - Example request
-```shell=
-curl {JAN_URL}/v1/models/model-zephyr-7B
+```shell
+curl {JAN_URL}/v1/models/{model_id}
 ```
 - Example response
-```json=
+```json
 {
   "id": "model-zephyr-7B",
   "object": "model",
-  "created": 1686935002,
+  "created_at": 1686935002,
   "owned_by": "thebloke",
-  "state": "running" # enum[not_downloaded, downloaded, running, stopped],
+  "state": "running",
   "source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
   "parameters": {
      "ctx_len": 2048,
@@ -300,7 +260,7 @@ curl {JAN_URL}/v1/models/model-zephyr-7B
      "n_parallel": 4,
      "pre_prompt": "A chat between a curious user and an artificial intelligence",
      "user_prompt": "USER: ",
-     "ai_prompt": "ASSISTANT: "
+     "ai_prompt": "ASSISTANT: ",
      "temperature": "0.7",
      "token_limit": "2048",
      "top_k": "0",
@@ -313,30 +273,67 @@ curl {JAN_URL}/v1/models/model-zephyr-7B
   }
 }
 ```
-### Delete Model
-Delete a tuned model.
-- [OAI Reference](https://platform.openai.com/docs/api-reference/models/delete)
+### List models
+Lists the currently available models, and provides basic information about each one such as the owner and availability.
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models/list
 - Example request
 ```shell=
-curl -X DELETE {JAN_URL}/v1/models/model-zephyr-7B
+curl {JAN_URL}/v1/models
 ```
 - Example response
-```json=
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "model-zephyr-7B",
+      "object": "model",
+      "created_at": 1686935002,
+      "owned_by": "thebloke",
+      "state": "running"
+    },
+    {
+      "id": "ft-llama-70b-gguf",
+      "object": "model",
+      "created_at": 1686935002,
+      "owned_by": "you",
+      "state": "stopped"
+    },
+    {
+      "id": "model-azure-openai-gpt4-turbo",
+      "object": "model",
+      "created_at": 1686935002,
+      "owned_by": "azure_openai",
+      "state": "running"
+    },
+  ],
+  "object": "list"
+}
+```
+### Delete Model
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models/delete
+`- Example request
+```shell
+curl -X DELETE {JAN_URL}/v1/models/{model_id}
+```
+- Example response
+```json
 {
   "id": "model-zephyr-7B",
   "object": "model",
-  "deleted": true
+  "deleted": true,
+  "state": "to_download"
 }
 ```
 ### Start Model
 > Jan-only endpoint
-The request to start `model` by changing model state from `downloaded` to `running`
+The request to start `model` by changing model state from `ready` to `running`
 - Example request
-```shell=
-curl -X PUT {JAN_URL}/v1/models/model-zephyr-7B/start
+```shell
+curl -X PUT {JAN_URL}/v1/models{model_id}/start
 ```
 - Example response
-```json=
+```json
 {
   "id": "model-zephyr-7B",
   "object": "model",
@@ -345,19 +342,31 @@ curl -X PUT {JAN_URL}/v1/models/model-zephyr-7B/start
 ```
 ### Stop Model
 > Jan-only endpoint
-The request to start `model` by changing model state from `running` to `downloaded`
+The request to start `model` by changing model state from `running` to `ready`
 - Example request
-```shell=
-curl -X PUT {JAN_URL}/v1/models/model-zephyr-7B/stop
+```shell
+curl -X PUT {JAN_URL}/v1/models/{model_id}/stop
 ```
 - Example response
-```json=
+```json
 {
   "id": "model-zephyr-7B",
   "object": "model",
-  "state": "downloaded"
+  "state": "ready"
 }
 ```
 ### Download Model
 > Jan-only endpoint
-> TODO: @hiro
+The request to download `model` by changing model state from `to_download` to `downloading` then `ready`once it's done.
+- Example request
+```shell
+curl -X POST {JAN_URL}/v1/models/
+```
+- Example response
+```json
+{
+  "id": "model-zephyr-7B",
+  "object": "model",
+  "state": "downloading"
+}
+```

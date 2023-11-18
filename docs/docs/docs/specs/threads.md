@@ -14,13 +14,9 @@ Feedback: [HackMD: Threads Spec](https://hackmd.io/BM_8o_OCQ-iLCYhunn2Aug)
 
 _Users can chat with an assistant in a thread_
 
-- See [Messages Spec]
+- See [Messages Spec](./messages.md)
 
-_Users can change model in a new thread_
-
-- Wireframes here
-
-_Users can change model parameters in a thread_
+_Users can change assistant and model parameters in a thread_
 
 - Wireframes of
 
@@ -38,7 +34,7 @@ _Users can delete all thread history_
 | Property   | Type                                            | Description                                                                                                                                                                                    | Validation                     |
 | ---------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | `object`   | enum: `model`, `assistant`, `thread`, `message` | The Jan Object type                                                                                                                                                                            | Defaults to `thread`           |
-| `models`   | array                                           | An array of Jan Model Objects. Threads can "override" an assistant's model run parameters. Thread-level model parameters are directly saved in the `thread.models` property! (see Models spec) | Defaults to `assistant.models` |
+| `assistants`   | array                                           | An array of Jan Assistant Objects. Threads can "override" an assistant's parameters. Thread-level model parameters are directly saved in the `thread.models` property! (see Models spec) | Defaults to `assistant.name` |
 | `messages` | array                                           | An array of Jan Message Objects. (see Messages spec)                                                                                                                                           | Defaults to `[]`               |
 | `metadata` | map                                             | Useful for storing additional information about the object in a structured format.                                                                                                             | Defaults to `{}`               |
 
@@ -46,6 +42,7 @@ _Users can delete all thread history_
 
 ```json
 // janroot/threads/jan_1700123404.json
+"assistants": ["assistant-123"],
 "messages": [
     {...message0}, {...message1}
 ],
@@ -56,7 +53,7 @@ _Users can delete all thread history_
 
 ## Filesystem
 
-- `Jan Thread Objects`' `json` files always has the naming schema: `assistant_uuid` + `unix_time_thread_created_at. See below.
+- `Jan Thread Objects`'s `json` files always has the naming schema: `assistant_uuid` + `unix_time_thread_created_at. See below.
 - Threads are all saved in the `janroot/threads` folder in a flat folder structure.
 - The folder is standalone and can be easily zipped, exported, and cleared.
 
@@ -68,67 +65,129 @@ janroot/
 ```
 
 ## Jan API
-
-### Thread API Object
-
-#### `GET /v1/threads/{thread_id}`
-
-- The `Jan Thread Object` maps into the `OpenAI Thread Object`.
-- Properties marked with `*` are compatible with the [OpenAI `thread` object](https://platform.openai.com/docs/api-reference/threads)
-- Note: The `Jan Thread Object` has additional properties when retrieved via its API endpoint.
-- https://platform.openai.com/docs/api-reference/threads/getThread
-
-| Property       | Type    | Public Description                                                  | Jan Thread Object (`t`) Property |
-| -------------- | ------- | ------------------------------------------------------------------- | -------------------------------- |
-| `id`\*         | string  | Thread uuid, also the name of the Jan Thread Object file: `id.json` | `json` filename                  |
-| `object`\*     | string  | Always "thread"                                                     | `t.object`                       |
-| `created_at`\* | integer |                                                                     | `json` file creation time        |
-| `metadata`\*   | map     |                                                                     | `t.metadata`                     |
-| `models`       | array   |                                                                     | `t.models`                       |
-| `messages`     | array   |                                                                     | `t.messages`                     |
-
+### Get thread
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/threads/getThread
+- Example request
+```shell
+    curl {JAN_URL}/v1/threads/{thread_id}
+```
+- Example response
+```json
+    {
+    "id": "thread_abc123",
+    "object": "thread",
+    "created_at": 1699014083,
+    "assistants": ["assistant-001"],
+    "metadata": {},
+    "messages": []
+    }
+```
 ### Create Thread
-
-#### `POST /v1/threads`
-
-- https://platform.openai.com/docs/api-reference/threads/createThread
-
-### Retrieve Thread
-
-#### `GET v1/threads/{thread_id}`
-
-- https://platform.openai.com/docs/api-reference/threads/getThread
-
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/threads/createThread
+- Example request
+```shell
+    curl -X POST {JAN_URL}/v1/threads \
+    -H "Content-Type: application/json" \
+    -d '{
+        "messages": [{
+            "role": "user",
+            "content": "Hello, what is AI?",
+            "file_ids": ["file-abc123"]
+        }, {
+            "role": "user",
+            "content": "How does AI work? Explain it in simple terms."
+        }]
+    }'
+```
+- Example response
+```json
+    {
+    "id": 'thread_abc123',
+    "object": 'thread',
+    "created_at": 1699014083,
+    "metadata": {}
+    }
+```
 ### Modify Thread
-
-#### `POST v1/threads/{thread_id}`
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/threads/modifyThread
+- Example request
+```shell
+    curl -X POST {JAN_URL}/v1/threads/{thread_id} \
+    -H "Content-Type: application/json" \
+    -d '{
+        "messages": [{
+            "role": "user",
+            "content": "Hello, what is AI?",
+            "file_ids": ["file-abc123"]
+        }, {
+            "role": "user",
+            "content": "How does AI work? Explain it in simple terms."
+        }]
+    }'
+```
+- Example response
+```json
+    {
+    "id": 'thread_abc123',
+    "object": 'thread',
+    "created_at": 1699014083,
+    "metadata": {}
+    }
+```
 
 - https://platform.openai.com/docs/api-reference/threads/modifyThread
 
 ### Delete Thread
-
-#### `DELETE v1/threads/{thread_id}`
-
-- https://platform.openai.com/docs/api-reference/threads/deleteThread
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/threads/deleteThread
+- Example request
+```shell
+    curl -X DELETE {JAN_URL}/v1/threads/{thread_id}
+```
+- Example response
+```json
+    {
+    "id": "thread_abc123",
+    "object": "thread.deleted",
+    "deleted": true
+    }
+```
 
 ### List Threads
-
 > This is a Jan-only endpoint, not supported by OAI yet.
+- Example request
+```shell
+    curl {JAN_URL}/v1/threads \
+    -H "Content-Type: application/json" \
+```
+- Example response
+```json
+    [
+        {
+            "id": "thread_abc123",
+            "object": "thread",
+            "created_at": 1699014083,
+            "assistants": ["assistant-001"],
+            "metadata": {},
+            "messages": []
+        },
+        {
+            "id": "thread_abc456",
+            "object": "thread",
+            "created_at": 1699014083,
+            "assistants": ["assistant-002", "assistant-002"],
+            "metadata": {},
+        }
+    ]
+```
 
-#### `GET v1/threads`
+### Get & Modify `Thread.Assistants`
+-> Can achieve this goal by calling `Modify Thread` API
 
-### Get & Modify `Thread.Models`
+#### `GET v1/threads/{thread_id}/assistants`
+-> Can achieve this goal by calling `Get Thread` API
 
-> This is a Jan-only endpoint, not supported by OAI yet.
-
-#### `GET v1/threads/{thread_id}/models`
-
-#### `POST v1/threads/{thread_id}/models/{model_id}`
-
-- Since users can change model parameters in an existing thread
+#### `POST v1/threads/{thread_id}/assistants/{assistant_id}`
+-> Can achieve this goal by calling `Modify Assistant` API with `thread.assistant[]`
 
 ### List `Thread.Messages`
-
-> This is a Jan-only endpoint, not supported by OAI yet.
-
-#### `GET v1/threads/{thread_id}/messages`
+-> Can achieve this goal by calling `Get Thread` API
