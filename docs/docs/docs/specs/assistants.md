@@ -2,188 +2,239 @@
 title: "Assistants"
 ---
 
-:::warning
-
-Draft Specification: functionality has not been implemented yet. 
-
-Feedback: [HackMD: Assistants Spec](https://hackmd.io/KKAznzZvS668R6Vmyf8fCg) 
-
-:::
-
+Assistants can use models and tools.
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants
+- Jan's `Assistants` are even more powerful than OpenAI due to customizable code in `index.js`
 
 ## User Stories
 
-_Users can chat with an assistant_
+_Users can download an assistant via a web URL_
 
-- [Wireframes - show asst object properties]
-- See [Threads Spec](https://hackmd.io/BM_8o_OCQ-iLCYhunn2Aug)
+- Wireframes here
 
-_Users can use Jan - the default assistant_
+_Users can import an assistant from local directory_
 
-- [Wireframes here - show model picker]
-- See [Default Jan Object](#Default-Jan-Example)
+- Wireframes here
 
-_Users can create an assistant from scratch_
+_Users can configure assistant settings_
 
-- [Wireframes here - show create asst flow]
-- Users can select any model for an assistant. See Model Spec
+- Wireframes here
 
-_Users can create an assistant from an existing assistant_
+## Assistant Object
 
-- [Wireframes showing asst edit mode]
-
-## Jan Assistant Object
-
-- A `Jan Assistant Object` is a "representation of an assistant"
-- Objects are defined by `assistant-uuid.json` files in `json` format
-- Objects are designed to be compatible with `OpenAI Assistant Objects` with additional properties needed to run on our infrastructure.
-- ALL object properties are optional, i.e. users should be able to use an assistant declared by an empty `json` file.
-
-| Property      | Type                                            | Description                                                                                    | Validation                      |
-| ------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------- |
-| `object`      | enum: `model`, `assistant`, `thread`, `message` | The Jan Object type                                                                            | Defaults to `assistant`         |
-| `name`        | string                                          | A vanity name.                                                                                 | Defaults to filename            |
-| `description` | string                                          | A vanity description.                                                                          | Max `n` chars. Defaults to `""` |
-| `models`      | array                                           | A list of Model Objects that the assistant can use.                                            | Defaults to ALL models          |
-| `metadata`    | map                                             | This can be useful for storing additional information about the object in a structured format. | Defaults to `{}`                |
-| `tools`       | array                                           | TBA.                                                                                           | TBA                             |
-| `files`       | array                                           | TBA.                                                                                           | TBA                             |
-
-### Generic Example
+- `assistant.json`
+> OpenAI Equivalen: https://platform.openai.com/docs/api-reference/assistants/object
 
 ```json
-// janroot/assistants/example/example.json
-"name": "Homework Helper",
+{
+  // Jan specific properties
+  "avatar": "https://lala.png",
+  "thread_location": "ROOT/threads",  // Default to root (optional field)
+  // TODO: add moar
 
-// Option 1 (default): all models in janroot/models are available via Model Picker
-"models": [],
-
-// Option 2: creator can configure custom parameters on existing models in `janroot/models` &&
-// Option 3: creator can package a custom model with the assistant
-"models": [{ ...modelObject1 }, { ...modelObject2 }],
+  // OpenAI compatible properties: https://platform.openai.com/docs/api-reference/assistants
+  "id": "asst_abc123",
+  "object": "assistant",
+  "created_at": 1698984975,
+  "name": "Math Tutor",
+  "description": null,
+  "instructions": "...",
+  "tools": [
+    {
+      "type": "retrieval"
+    },
+    {
+      "type": "web_browsing"
+    }
+  ],
+  "file_ids": ["file_id"],
+  "models": ["<model_id>"],
+  "metadata": {}
+}
 ```
 
-### Default Jan Example
+### Assistant lifecycle
+Assistant has 4 states (enum)
+- `to_download`
+- `downloading`
+- `ready`
+- `running`
 
-- Every user install has a default "Jan Assistant" declared below.
-  > Q: can we omit most properties in `jan.json`? It's all defaults anyway.
+## Assistants API
 
+- What would modifying Assistant do? (doesn't mutate `index.js`?)
+  - By default, `index.js` loads `assistant.json` file and executes exactly like so. This supports builders with little time to write code.
+  - The `assistant.json` is 1 source of truth for the definitions of `models` and `built-in tools` that they can use it without writing more code.
+
+### Get list assistants
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/listAssistants
+- Example request
+```shell
+  curl {JAN_URL}/v1/assistants?order=desc&limit=20 \
+    -H "Content-Type: application/json"
+```
+- Example response
 ```json
-// janroot/assistants/jan/jan.json
-"description": "Use Jan to chat with all models",
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "asst_abc123",
+      "object": "assistant",
+      "created_at": 1698982736,
+      "name": "Coding Tutor",
+      "description": null,
+      "models": ["model_zephyr_7b", "azure-openai-gpt4-turbo"],
+      "instructions": "You are a helpful assistant designed to make me better at coding!",
+      "tools": [],
+      "file_ids": [],
+      "metadata": {},
+      "state": "ready"
+    },
+  ],
+  "first_id": "asst_abc123",
+  "last_id": "asst_abc789",
+  "has_more": false
+}
 ```
 
-## Filesystem
-
-- Everything needed to represent & run an assistant is packaged into an `Assistant folder`.
-- The folder is standalone and can be easily zipped, imported, and exported, e.g. to Github.
-- The folder always contains an `Assistant Object`, declared in an `assistant-uuid.json`.
-  - The folder and file must share the same name: `assistant-uuid`
-- In the future, the folder will contain all of the resources an assistant needs to run, e.g. custom model binaries, pdf files, custom code, etc.
-
-```sh
-janroot/
-    assistants/
-        jan/                       # Assistant Folder
-            jan.json               # Assistant Object
-        homework-helper/           # Assistant Folder
-            homework-helper.json   # Assistant Object
+### Get assistant
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/getAssistant
+- Example request
+```shell
+  curl {JAN_URL}/v1/assistants/{assistant_id}   \
+    -H "Content-Type: application/json"
+```
+- Example response
+```json
+{
+  "id": "asst_abc123",
+  "object": "assistant",
+  "created_at": 1699009709,
+  "name": "HR Helper",
+  "description": null,
+  "models": ["model_zephyr_7b", "azure-openai-gpt4-turbo"],
+  "instructions": "You are an HR bot, and you have access to files to answer employee questions about company policies.",
+  "tools": [
+    {
+      "type": "retrieval"
+    }
+  ],
+  "file_ids": [
+    "file-abc123"
+  ],
+  "metadata": {},
+  "state": "ready"
+}
 ```
 
-### Custom Code
-
-> Not in scope yet. Sharing as a preview only.
-
-- Assistants can call custom code in the future
-- Custom code extends beyond `function calling` to any features that can be implemented in `/src`
-
-```sh
-example/                       # Assistant Folder
-    example.json               # Assistant Object
-    package.json
-    src/
-        index.ts
-        helpers.ts
+### Create an assistant
+Create an assistant with models and instructions.
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/createAssistant
+- Example request
+```shell
+  curl -X POST {JAN_URL}/v1/assistants   \
+    -H "Content-Type: application/json" \
+    -d {
+      "instructions": "You are a personal math tutor. When asked a question, write and run Python code to answer the question.",
+      "name": "Math Tutor",
+      "tools": [{"type": "retrieval"}],
+      "model": ["model_zephyr_7b", "azure-openai-gpt4-turbo"]
+    }
 ```
-
-### Knowledge Files
-
-> Not in scope yet. Sharing as a preview only
-
-- Assistants can do `retrieval` in future
-
-```sh
-
-example/                       # Assistant Folder
-    example.json               # Assistant Object
-    files/
+- Example response
+```json
+{
+  "id": "asst_abc123",
+  "object": "assistant",
+  "created_at": 1698984975,
+  "name": "Math Tutor",
+  "description": null,
+  "model": ["model_zephyr_7b", "azure-openai-gpt4-turbo"]
+  "instructions": "You are a personal math tutor. When asked a question, write and run Python code to answer the question.",
+  "tools": [
+    {
+      "type": "retrieval"
+    }
+  ],
+  "file_ids": [],
+  "metadata": {},
+  "state": "ready"
+}
 ```
-
-## Jan API
-
-### Assistant API Object
-
-#### `GET /v1/assistants/{assistant_id}`
-
-- The `Jan Assistant Object` maps into the `OpenAI Assistant Object`.
-- Properties marked with `*` are compatible with the [OpenAI `assistant` object](https://platform.openai.com/docs/api-reference/assistants)
-- Note: The `Jan Assistant Object` has additional properties when retrieved via its API endpoint.
-- https://platform.openai.com/docs/api-reference/assistants/getAssistant
-
-| Property         | Type           | Public Description                                                        | Jan Assistant Object (`a`) Property |
-| ---------------- | -------------- | ------------------------------------------------------------------------- | ----------------------------------- |
-| `id`\*           | string         | Assistant uuid, also the name of the Jan Assistant Object file: `id.json` | `json` filename                     |
-| `object`\*       | string         | Always "assistant"                                                        | `a.object`                          |
-| `created_at`\*   | integer        | Timestamp when assistant was created.                                     | `a.json` creation time              |
-| `name`\*         | string or null | A display name                                                            | `a.name` or `id`                    |
-| `description`\*  | string or null | A description                                                             | `a.description`                     |
-| `model`\*        | string         | Text                                                                      | `a.models[0].name`                  |
-| `instructions`\* | string or null | Text                                                                      | `a.models[0].parameters.prompt`     |
-| `tools`\*        | array          | TBA                                                                       | `a.tools`                           |
-| `file_ids`\*     | array          | TBA                                                                       | `a.files`                           |
-| `metadata`\*     | map            | TBA                                                                       | `a.metadata`                        |
-| `models`         | array          | TBA                                                                       | `a.models`                          |
-
-### Create Assistant
-
-#### `POST /v1/assistants`
-
-- https://platform.openai.com/docs/api-reference/assistants/createAssistant
-
-### Retrieve Assistant
-
-#### `GET v1/assistants/{assistant_id}`
-
-- https://platform.openai.com/docs/api-reference/assistants/getAssistant
-
-### Modify Assistant
-
-#### `POST v1/assistants/{assistant_id}`
-
-- https://platform.openai.com/docs/api-reference/assistants/modifyAssistant
-
+### Modify an assistant
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/modifyAssistant
+- Example request
+```shell
+  curl -X POST {JAN_URL}/v1/assistants/{assistant_id}   \
+    -H "Content-Type: application/json" \
+    -d {
+      "instructions": "You are a personal math tutor. When asked a question, write and run Python code to answer the question.",
+      "name": "Math Tutor",
+      "tools": [{"type": "retrieval"}],
+      "model": ["model_zephyr_7b", "azure-openai-gpt4-turbo"]
+    }
+```
+- Example response
+```json
+{
+  "id": "asst_abc123",
+  "object": "assistant",
+  "created_at": 1698984975,
+  "name": "Math Tutor",
+  "description": null,
+  "model": ["model_zephyr_7b", "azure-openai-gpt4-turbo"]
+  "instructions": "You are a personal math tutor. When asked a question, write and run Python code to answer the question.",
+  "tools": [
+    {
+      "type": "retrieval"
+    }
+  ],
+  "file_ids": [],
+  "metadata": {},
+  "state": "ready"
+}
+```
 ### Delete Assistant
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/deleteAssistant
+`- Example request
+```shell
+curl -X DELETE {JAN_URL}/v1/assistant/model-zephyr-7B
+```
+- Example response
+```json
+{
+  "id": "asst_abc123",
+  "object": "assistant.deleted",
+  "deleted": true,
+  "state": "to_download"
+}
+```
 
-#### `DELETE v1/assistants/{assistant_id}`
+## Assistants Filesystem
 
-- https://platform.openai.com/docs/api-reference/assistants/deleteAssistant
+```sh
+/assistants
+    /jan
+        assistant.json    # Assistant configs (see below)
 
-### List Assistants
+        # For any custom code
+        package.json      # Import npm modules
+                          # e.g. Langchain, Llamaindex
+        /src              # Supporting files (needs better name)
+            index.js      # Entrypoint
+            process.js    # For electron IPC processes (needs better name)
 
-#### `GET v1/assistants`
+        # `/threads` at root level
+        # `/models` at root level
+    /shakespeare
+        assistant.json
+        package.json
+        /src
+            index.js
+            process.js
 
-- https://platform.openai.com/docs/api-reference/assistants/listAssistants
-
-### CRUD Assistant.Models
-
-- This is a Jan-only endpoint, since Jan supports the ModelPicker, i.e. an `assistant` can be created to run with many `models`.
-
-#### `POST /v1/assistants/{assistant_id}/models`
-
-#### `GET /v1/assistants/{assistant_id}/models`
-
-#### `GET /v1/assistants/{assistant_id}/models/{model_id}`
-
-#### `DELETE /v1/assistants/{assistant_id}/models`
-
-Note: There's no need to implement `Modify Assistant.Models`
+        /threads          # Assistants remember conversations in the future
+        /models           # Users can upload custom models
+            /finetuned-model
+```
