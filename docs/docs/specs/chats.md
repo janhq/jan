@@ -1,5 +1,5 @@
 ---
-title: "Chats"
+title: Chats
 ---
 
 :::warning

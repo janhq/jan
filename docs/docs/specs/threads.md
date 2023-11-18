@@ -1,5 +1,5 @@
 ---
-title: "Threads"
+title: Threads
 ---
 
 :::warning

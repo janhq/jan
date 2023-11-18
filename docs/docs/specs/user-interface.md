@@ -18,7 +18,7 @@ To Link:
 
 ## Views
 
-![Jan Views](./img/jan-views.png)
+![Jan Views](/img/jan-views.png)
 TODO: add a better image.
 
 ### Ribbon
