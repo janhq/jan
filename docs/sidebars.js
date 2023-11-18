@@ -34,7 +34,7 @@ const sidebars = {
       label: "Using Jan",
       collapsible: true,
       collapsed: true,
-      items: ["guide/models"],
+      items: ["guide/models", "guide/server"],
     },
     {
       type: "category",
@@ -70,6 +70,7 @@ const sidebars = {
             "specs/assistants",
             "specs/files",
             "specs/jan",
+            "specs/fine-tuning",
           ],
         },
       ],
