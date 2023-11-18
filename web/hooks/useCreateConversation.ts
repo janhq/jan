@@ -1,5 +1,5 @@
 import { PluginType } from '@janhq/core'
-import { Conversation, Model } from '@janhq/core'
+import { Thread, Model } from '@janhq/core'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 import { useAtom, useSetAtom } from 'jotai'
 
@@ -20,11 +20,11 @@ export const useCreateConversation = () => {
   const addNewConvoState = useSetAtom(addNewConversationStateAtom)
 
   const requestCreateConvo = async (model: Model) => {
-    const conversationName = model.name
-    const mappedConvo: Conversation = {
+    const summary = model.name
+    const mappedConvo: Thread = {
       id: generateConversationId(),
       modelId: model.id,
-      name: conversationName,
+      summary,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       messages: [],
@@ -37,11 +37,7 @@ export const useCreateConversation = () => {
 
     pluginManager
       .get<ConversationalPlugin>(PluginType.Conversational)
-      ?.saveConversation({
-        ...mappedConvo,
-        name: mappedConvo.name ?? '',
-        messages: [],
-      })
+      ?.saveConversation(mappedConvo)
     setUserConversations([mappedConvo, ...userConversations])
     setActiveConvoId(mappedConvo.id)
   }

@@ -1,24 +1,14 @@
 import React, { forwardRef } from 'react'
-import { ChatMessage } from '@janhq/core'
-import SimpleTextMessage from '../SimpleTextMessage'
 
-type Props = {
-  message: ChatMessage
-}
+import { ThreadMessage } from '@janhq/core'
+
+import SimpleTextMessage from '../SimpleTextMessage'
 
 type Ref = HTMLDivElement
 
-const ChatItem = forwardRef<Ref, Props>(({ message }, ref) => (
+const ChatItem = forwardRef<Ref, ThreadMessage>((message, ref) => (
   <div ref={ref} className="py-4 even:bg-secondary dark:even:bg-secondary/20">
-    <SimpleTextMessage
-      status={message.status}
-      key={message.id}
-      avatarUrl={message.senderAvatarUrl}
-      senderName={message.senderName}
-      createdAt={message.createdAt}
-      senderType={message.messageSenderType}
-      text={message.text}
-    />
+    <SimpleTextMessage {...message} />
   </div>
 ))
 

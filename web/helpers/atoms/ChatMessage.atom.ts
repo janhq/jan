@@ -1,17 +1,21 @@
-import { ChatMessage, MessageStatus } from '@janhq/core'
+import { MessageStatus, ThreadMessage } from '@janhq/core'
 import { atom } from 'jotai'
 
-import { getActiveConvoIdAtom } from './Conversation.atom'
+import {
+  conversationStatesAtom,
+  getActiveConvoIdAtom,
+  updateThreadStateLastMessageAtom,
+} from './Conversation.atom'
 
 /**
  * Stores all chat messages for all conversations
  */
-export const chatMessages = atom<Record<string, ChatMessage[]>>({})
+export const chatMessages = atom<Record<string, ThreadMessage[]>>({})
 
 /**
  * Return the chat messages for the current active conversation
  */
-export const getCurrentChatMessagesAtom = atom<ChatMessage[]>((get) => {
+export const getCurrentChatMessagesAtom = atom<ThreadMessage[]>((get) => {
   const activeConversationId = get(getActiveConvoIdAtom)
   if (!activeConversationId) return []
   const messages = get(chatMessages)[activeConversationId]
@@ -20,11 +24,11 @@ export const getCurrentChatMessagesAtom = atom<ChatMessage[]>((get) => {
 
 export const setCurrentChatMessagesAtom = atom(
   null,
-  (get, set, messages: ChatMessage[]) => {
+  (get, set, messages: ThreadMessage[]) => {
     const currentConvoId = get(getActiveConvoIdAtom)
     if (!currentConvoId) return
 
-    const newData: Record<string, ChatMessage[]> = {
+    const newData: Record<string, ThreadMessage[]> = {
       ...get(chatMessages),
     }
     newData[currentConvoId] = messages
@@ -34,8 +38,8 @@ export const setCurrentChatMessagesAtom = atom(
 
 export const setConvoMessagesAtom = atom(
   null,
-  (get, set, messages: ChatMessage[], convoId: string) => {
-    const newData: Record<string, ChatMessage[]> = {
+  (get, set, messages: ThreadMessage[], convoId: string) => {
+    const newData: Record<string, ThreadMessage[]> = {
       ...get(chatMessages),
     }
     newData[convoId] = messages
@@ -48,14 +52,14 @@ export const setConvoMessagesAtom = atom(
  */
 export const addOldMessagesAtom = atom(
   null,
-  (get, set, newMessages: ChatMessage[]) => {
+  (get, set, newMessages: ThreadMessage[]) => {
     const currentConvoId = get(getActiveConvoIdAtom)
     if (!currentConvoId) return
 
     const currentMessages = get(chatMessages)[currentConvoId] ?? []
     const updatedMessages = [...currentMessages, ...newMessages]
 
-    const newData: Record<string, ChatMessage[]> = {
+    const newData: Record<string, ThreadMessage[]> = {
       ...get(chatMessages),
     }
     newData[currentConvoId] = updatedMessages
@@ -65,23 +69,25 @@ export const addOldMessagesAtom = atom(
 
 export const addNewMessageAtom = atom(
   null,
-  (get, set, newMessage: ChatMessage) => {
+  (get, set, newMessage: ThreadMessage) => {
     const currentConvoId = get(getActiveConvoIdAtom)
     if (!currentConvoId) return
 
     const currentMessages = get(chatMessages)[currentConvoId] ?? []
     const updatedMessages = [newMessage, ...currentMessages]
 
-    const newData: Record<string, ChatMessage[]> = {
+    const newData: Record<string, ThreadMessage[]> = {
       ...get(chatMessages),
     }
     newData[currentConvoId] = updatedMessages
     set(chatMessages, newData)
+    // Update thread last message
+    set(updateThreadStateLastMessageAtom, currentConvoId, newMessage.content)
   }
 )
 
 export const deleteConversationMessage = atom(null, (get, set, id: string) => {
-  const newData: Record<string, ChatMessage[]> = {
+  const newData: Record<string, ThreadMessage[]> = {
     ...get(chatMessages),
   }
   newData[id] = []
@@ -101,15 +107,17 @@ export const updateMessageAtom = atom(
     const messages = get(chatMessages)[conversationId] ?? []
     const message = messages.find((e) => e.id === id)
     if (message) {
-      message.text = text
+      message.content = text
       message.status = status
       const updatedMessages = [...messages]
 
-      const newData: Record<string, ChatMessage[]> = {
+      const newData: Record<string, ThreadMessage[]> = {
         ...get(chatMessages),
       }
       newData[conversationId] = updatedMessages
       set(chatMessages, newData)
+      // Update thread last message
+      set(updateThreadStateLastMessageAtom, conversationId, text)
     }
   }
 )
@@ -130,14 +138,14 @@ export const updateLastMessageAsReadyAtom = atom(
     if (!messageToUpdate) return
 
     const index = currentMessages.indexOf(messageToUpdate)
-    const updatedMsg: ChatMessage = {
+    const updatedMsg: ThreadMessage = {
       ...messageToUpdate,
       status: MessageStatus.Ready,
-      text: text,
+      content: text,
     }
 
     currentMessages[index] = updatedMsg
-    const newData: Record<string, ChatMessage[]> = {
+    const newData: Record<string, ThreadMessage[]> = {
       ...get(chatMessages),
     }
     newData[currentConvoId] = currentMessages

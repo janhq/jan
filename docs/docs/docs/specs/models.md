@@ -1,4 +1,16 @@
-# Model Specs
+---
+title: "Models"
+---
+
+:::warning
+
+Draft Specification: functionality has not been implemented yet. 
+
+Feedback: [HackMD: Models Spec](https://hackmd.io/ulO3uB1AQCqLa5SAAMFOQw) 
+
+:::
+
+Models are AI models like Llama and Mistral
 
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models
 
@@ -18,7 +30,7 @@ _Users can configure model settings, like run parameters_
 
 _Users can override run settings at runtime_
 
-- See [assistant]() and [thread]()
+- See Assistant Spec and Thread
 
 ## Jan Model Object
 

@@ -2,6 +2,12 @@
 title: "Files"
 ---
 
+:::warning
+
+Draft Specification: functionality has not been implemented yet. 
+
+:::
+
 Files can be used by `threads`, `assistants` and `fine-tuning`
 
 > Equivalent to: https://platform.openai.com/docs/api-reference/files

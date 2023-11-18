@@ -2,6 +2,14 @@
 title: "Messages"
 ---
 
+:::warning
+
+Draft Specification: functionality has not been implemented yet. 
+
+Feedback: [HackMD: Threads Spec](https://hackmd.io/BM_8o_OCQ-iLCYhunn2Aug)
+
+:::
+
 Messages are within `threads` and capture additional metadata.
 
 - Equivalent to: https://platform.openai.com/docs/api-reference/messages
