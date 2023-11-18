@@ -55,19 +55,21 @@ const sidebars = {
       collapsed: true,
       items: [
         "specs/architecture",
+        "specs/data-structures",
+        "specs/user-interface",
         {
           type: "category",
           label: "Specifications",
           collapsible: true,
           collapsed: false,
           items: [
-            "specs/user-interface",
             "specs/chats",
             "specs/models",
             "specs/threads",
             "specs/messages",
             "specs/assistants",
             "specs/files",
+            "specs/jan",
           ],
         },
       ],
