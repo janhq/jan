@@ -2,6 +2,9 @@
 title: Architecture
 ---
 
+- Jan is built using modules
+- Plugin architecture (on Pluggable-Electron)
+
 ## Concepts
 
 ```mermaid
@@ -23,19 +26,3 @@ graph LR
 - Model object
 - Thread object
 - Built-in tool object
-
-## File system
-```sh
-janroot/
-	assistants/
-		assistant-a/
-			assistant.json
-			src/
-				index.ts
-			threads/
-				thread-a/
-				thread-b
-	models/
-		model-a/
-			model.json
-```

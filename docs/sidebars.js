@@ -19,7 +19,7 @@ const sidebars = {
       label: "Introduction",
       link: { type: "doc", id: "intro/introduction" },
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       items: ["intro/quickstart", "intro/how-jan-works"],
     },
     {
@@ -39,6 +39,7 @@ const sidebars = {
     {
       type: "category",
       label: "Extending Jan",
+      link: { type: "doc", id: "guide/extensions" },
       collapsible: true,
       collapsed: true,
       items: [
@@ -71,6 +72,7 @@ const sidebars = {
             "specs/files",
             "specs/jan",
             "specs/fine-tuning",
+            "specs/settings",
           ],
         },
       ],
