@@ -26,21 +26,21 @@ const sidebars = {
       type: "category",
       label: "Installation",
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       items: ["install/windows", "install/mac", "install/linux"],
     },
     {
       type: "category",
       label: "Using Jan",
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       items: ["guide/models"],
     },
     {
       type: "category",
       label: "Extending Jan",
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       items: [
         "guide/assistants",
         "guide/themes",
@@ -52,7 +52,7 @@ const sidebars = {
       type: "category",
       label: "Building Jan",
       collapsible: true,
-      collapsed: false,
+      collapsed: true,
       items: [
         "specs/architecture",
         {
