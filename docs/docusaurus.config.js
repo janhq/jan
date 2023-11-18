@@ -127,6 +127,12 @@ const config = {
       liveCodeBlock: {
         playgroundPosition: "bottom",
       },
+      docs: {
+        sidebar: {
+          hideable: true,
+          autoCollapseCategories: true,
+        },
+      },
       navbar: {
         title: "Jan",
         logo: {
