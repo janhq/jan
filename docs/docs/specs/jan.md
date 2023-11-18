@@ -1,5 +1,5 @@
 ---
-title: Jan
+title: Jan (Assistant)
 ---
 
 ## Jan: a "global" assistant

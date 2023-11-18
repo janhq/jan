@@ -1,6 +1,6 @@
 ---
 title: Introduction
-slug: /docs
+slug: /intro
 ---
 
 Jan is a ChatGPT-alternative that runs on your own computer. 
@@ -11,22 +11,21 @@ Jan ships with an [OpenAI-compatible API](/api) and a powerful [Assistant framew
 
 ## Why Jan?
 
-💻 **Own your AI**<br />
+#### 💻 Own your AI
 Jan runs 100% on your own machine, [predictably](https://www.reddit.com/r/LocalLLaMA/comments/17mghqr/comment/k7ksti6/?utm_source=share&utm_medium=web2x&context=3), privately and even offline. No one else can see your conversations, not even us. 
 
-🏗️ **Customizability**<br />
+#### 🏗️ Extensions
 Jan ships with a powerful [extension framework](/guide/extensions), which allows developers to extend and customize Jan's functionality. In fact, most core modules of Jan are [built as extensions](/specs/architecture) and use the same extensions API. 
 
-🗂️ **Open File Formats**<br />
+#### 🗂️ Open File Formats
 Jan stores data in a [local folder of non-proprietary files](/specs/data-structures). You're never locked-in and can do what you want with your data with extensions, or even a different app. 
 
-🌍 **Open Source**<br />
-Both Jan and [Nitro](https://nitro.jan.ai), our lightweight inference engine, are open source via the [AGPLv3 license](https://github.com/janhq/jan/blob/main/LICENSE). 
+#### 🌍 Open Source
+Both Jan and [Nitro](https://nitro.jan.ai), our lightweight inference engine, are licensed via the open source [AGPLv3 license](https://github.com/janhq/jan/blob/main/LICENSE). 
 
 <!-- ## Design Principles -->
 
 <!-- OpenAI meets VSCode meets Obsidian. 
-
 
 Minimalism: https://docusaurus.io/docs#design-principles. Not having abstractions is better than having the wrong abstractions. Assistants as code. Only including features that are absolutely necessary in the Jan API. 
 

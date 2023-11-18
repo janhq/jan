@@ -34,20 +34,15 @@ const sidebars = {
       label: "Using Jan",
       collapsible: true,
       collapsed: true,
-      items: ["guide/models", "guide/server"],
+      items: ["docs/models", "docs/server"],
     },
     {
       type: "category",
       label: "Extending Jan",
-      link: { type: "doc", id: "guide/extensions" },
+      link: { type: "doc", id: "docs/extensions" },
       collapsible: true,
       collapsed: true,
-      items: [
-        "guide/assistants",
-        "guide/themes",
-        "guide/tools",
-        "guide/modules",
-      ],
+      items: ["docs/assistants", "docs/themes", "docs/tools", "docs/modules"],
     },
     {
       type: "category",

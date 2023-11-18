@@ -1,3 +1,3 @@
 ---
-title: .jan
+title: Settings
 ---
