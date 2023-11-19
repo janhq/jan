@@ -105,12 +105,8 @@ const config = {
       {
         specs: [
           {
-            spec: "openapi/OpenAPISpec.json",
-            route: "/api"
-          },
-          {
             spec: "openapi/OpenAIAPI.yaml", // can be local file, url, or parsed json object
-            route: "/api/openai",
+            route: "/api-reference", // path where to render docs
           },
         ],
         theme: {
