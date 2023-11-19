@@ -2,6 +2,8 @@
 title: Models
 ---
 
+import ApiSchema from '@theme/ApiSchema';
+
 :::warning
 
 Draft Specification: functionality has not been implemented yet. 
@@ -14,7 +16,7 @@ Feedback: [HackMD: Models Spec](https://hackmd.io/ulO3uB1AQCqLa5SAAMFOQw)
 
 Jan's Model API aims to be as similar as possible to [OpenAI's Models API](https://platform.openai.com/docs/api-reference/models), with additional methods for managing and running models locally. 
 
-### User Objectives
+### Objectives
 
 - Users can start/stop models and use them in a thread (or via Chat Completions API)
 - Users can download, import and delete models  
@@ -62,6 +64,8 @@ Jan's models follow a `<model_name>.json` naming convention.
 Jan's `model.json` aims for rough equivalence with [OpenAI's Model Object](https://platform.openai.com/docs/api-reference/models/object), and add additional properties to support local models.  
 
 Jan's `model.json` object properties are optional, i.e. users should be able to run a model declared by an empty `json` file.
+
+<ApiSchema example pointer="#/components/schemas/Model" />;
 
 ```json
 // ./models/zephr/zephyr-7b-beta-Q4_K_M.json
