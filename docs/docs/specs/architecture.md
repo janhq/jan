@@ -2,6 +2,12 @@
 title: Architecture
 ---
 
+:::warning
+
+This page is still under construction, and should be read as a scratchpad
+
+:::
+
 - Jan is built using modules
 - Plugin architecture (on Pluggable-Electron)
 

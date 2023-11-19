@@ -2,6 +2,12 @@
 title: Data Structures
 ---
 
+:::warning
+
+This page is still under construction, and should be read as a scratchpad
+
+:::
+
 
 ```sh
 janroot/
@@ -17,8 +23,6 @@ janroot/
 		model-a/
 			model.json
 ```
-
-
 
 Jan use the local filesystem for data persistence, similar to VSCode. This allows for composability and tinkerability.
 

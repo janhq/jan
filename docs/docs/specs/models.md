@@ -222,8 +222,9 @@ Currently, pasting a TheBloke Huggingface link in the Explore Models page will f
 
 - We should use the OpenAPI spec to discuss APIs
 - Dan's view: This needs @louis and App Pod to review as they are more familiar with this
+- Dan's view: Start/Stop model should have some UI indicator (show state, block input) 
 
-:::
+::: 
 
 See http://localhost:3001/api-reference#tag/Models. 
 

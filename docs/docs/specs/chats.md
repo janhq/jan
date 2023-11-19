@@ -4,7 +4,7 @@ title: Chats
 
 :::warning
 
-Draft Specification: functionality has not been implemented yet. 
+This page is still under construction, and should be read as a scratchpad
 
 :::
 
