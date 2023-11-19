@@ -2309,6 +2309,7 @@ paths:
               ]
             }
 
+  # Models
   /models:
     get:
       operationId: listModels
@@ -2373,6 +2374,61 @@ paths:
                 },
               ],
               "object": "list"
+            }
+    post:
+      operationId: importModel
+      tags:
+        - Models
+      summary: Import Model
+      description: Imports a model instance. The model can be from a local folder, remote source, or an API endpoint. The model importer will examine the source_url for formatting.
+      parameters:
+        - in: path
+          name: source_url
+          required: true
+          schema:
+            type: string
+            # ideally this will be an actual ID, so this will always work from browser
+            example: https://huggingface.com/thebloke/example.gguf
+          description: The ID of the model to use for this request
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+      x-oaiMeta:
+        name: Import model
+        returns: The [model](/docs/api-reference/models/object) object matching the specified ID.
+        examples:
+          request:
+            curl: |
+              curl https://api.openai.com/v1/models/VAR_model_id \
+                -H "Authorization: Bearer $OPENAI_API_KEY"
+            python: |
+              from openai import OpenAI
+              client = OpenAI()
+
+              client.models.retrieve("VAR_model_id")
+            node.js: |-
+              import OpenAI from "openai";
+
+              const openai = new OpenAI();
+
+              async function main() {
+                const model = await openai.models.retrieve("gpt-3.5-turbo");
+
+                console.log(model);
+              }
+
+              main();
+          response: &retrieve_model_response |
+            {
+              "id": "VAR_model_id",
+              "object": "model",
+              "created": 1686935002,
+              "owned_by": "openai",
+              "state": "ready"
             }
   /models/{model}:
     get:
@@ -2480,6 +2536,70 @@ paths:
               "id": "ft:gpt-3.5-turbo:acemeco:suffix:abc123",
               "object": "model",
               "deleted": true
+            }
+    post:
+      operationId: startModel
+      tags:
+        - Models
+      summary: Start Model
+      description: Starts an imported model. Loads the model into V/RAM.
+      parameters:
+        - in: path
+          name: model
+          required: true
+          schema:
+            type: string
+            # ideally this will be an actual ID, so this will always work from browser
+            example: gpt-3.5-turbo
+          description: The ID of the model to use for this request
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+      x-oaiMeta:
+        name: Import model
+        returns: The [model](/docs/api-reference/models/object) object matching the specified ID.
+        examples:
+          response: &retrieve_model_response |
+            {
+              "id": "VAR_model_id",
+              "object": "model",
+              "created": 1686935002,
+              "owned_by": "openai"
+            }
+  /models/{model}/stop:
+    post:
+      operationId: stopModel
+      tags:
+        - Models
+      summary: Stop Model
+      description: Stops a running model. Unloads the model from V/RAM.
+      parameters:
+        - in: path
+          name: model
+          required: true
+          schema:
+            type: string
+          description: The ID of the model that is running.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunObject"
+      x-oaiMeta:
+        name: Stop a running model
+        beta: true
+        returns: The modified [run](/docs/api-reference/runs/object) object matching the specified ID.
+        examples:
+          request:
+          response: |
+            {
+              "todo": "run_BeRGmpGt2wb1VI22ZRniOkrR"
             }
 
   /moderations:
@@ -3062,6 +3182,7 @@ paths:
               "deleted": true
             }
 
+  # Threads
   /threads:
     post:
       operationId: createThread
@@ -7324,7 +7445,7 @@ components:
         object:
           type: string
           default: model
-        version: 
+        version:
           type: integer
           description: The version of the Model Object file
           default: 1
@@ -7333,14 +7454,14 @@ components:
           format: uri
           example: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
           description: The model download source. It can be an external url or a local filepath.
-        id:               # OpenAI-equivalent
+        id: # OpenAI-equivalent
           type: string
           description: The model identifier, which can be referenced in the API endpoints.
           example: zephyr-7b
         name:
           type: string
           description: Human-readable name that is used for UI
-        owned_by:         # OpenAI-equivalent
+        owned_by: # OpenAI-equivalent
           type: string
           description: The organization that owns the model (you!)
           default: you # TODO
@@ -7356,16 +7477,16 @@ components:
           default: to_download
         parameters:
           type: object
-          description: 
+          description:
           properties:
             init:
               type: object
               properties:
-                ctx_len: 
+                ctx_len:
                   type: string
                   description: TODO
                   default: 2048
-                ngl: 
+                ngl:
                   type: string
                   description: TODO
                   default: 100
@@ -7373,92 +7494,90 @@ components:
                   type: bool
                   description: TODO
                   default: true
-                n_parallel: 
+                n_parallel:
                   type: string
                   description: TODO
                   default: 4
-                pre_prompt: 
+                pre_prompt:
                   type: string
                   description: TODO
                   default: A chat between a curious user and an artificial intelligence
-                user_prompt: 
+                user_prompt:
                   type: string
                   description: TODO
                   default: "USER:"
-                ai_prompt: 
+                ai_prompt:
                   type: string
                   description: TODO
                   default: "ASSISTANT:"
-              default: {
-                ctx_len: 2048,
-                ngl: 100,
-                embedding: true,
-                n_parallel: 4,
-                pre_prompt: "A chat between a curious user and an artificial intelligence",
-                user_prompt: "USER:",
-                ai_prompt: "ASSISTANT:"
-              }
+              default:
+                {
+                  ctx_len: 2048,
+                  ngl: 100,
+                  embedding: true,
+                  n_parallel: 4,
+                  pre_prompt: "A chat between a curious user and an artificial intelligence",
+                  user_prompt: "USER:",
+                  ai_prompt: "ASSISTANT:",
+                }
             runtime:
               type: object
               properties:
-                temperature: 
-                  type: string 
+                temperature:
+                  type: string
                   description: TODO
                   default: 0.7
-                token_limit: 
+                token_limit:
                   type: string
                   description: TODO
                   default: 2048
-                top_k: 
+                top_k:
                   type: string
                   description: TODO
                   default: 0
-                top_p: 
+                top_p:
                   type: string
                   description: TODO
                   default: 1
-                stream: 
+                stream:
                   type: string
                   description: TODO
                   default: true
-              default: {
-                temperature: 0.7,
-                token_limit: 2048,
-                top_k: 0,
-                top_p: 1,
-                stream: true
-              }
+              default:
+                {
+                  temperature: 0.7,
+                  token_limit: 2048,
+                  top_k: 0,
+                  top_p: 1,
+                  stream: true,
+                }
         metadata:
           type: object
           properties:
             engine:
               type: string
-              enum: [llamacpp, api,tensorrt]
+              enum: [llamacpp, api, tensorrt]
               default: llamacpp
             quantization:
               type: string
               description: TODO
               default: Q4_K_M
-            size: 
+            size:
               type: string
               default: 7b
             binaries:
               type: array
               description: TODO
               default: TODO
-          default: {
-            engine: llamacpp,
-            quantization: Q4_K_M,
-            size: 7b,
-            binaries: TODO
-          }
+          default:
+            { engine: llamacpp, quantization: Q4_K_M, size: 7b, binaries: TODO }
       required:
-        - id            # From OpenAI
+        - id # From OpenAI
         - version
         - source_url
-        - created       # From OpenAI, autogenerated in Jan
-        - object        # From OpenAI, autogenerated in Jan
-        - owned_by      # From OpenAI, autogenerated in Jan
+        - created # From OpenAI, autogenerated in Jan
+        - object # From OpenAI, autogenerated in Jan
+        - owned_by # From OpenAI, autogenerated in Jan
       x-oaiMeta:
         name: The model object
         example: *retrieve_model_response
