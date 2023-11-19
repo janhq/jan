@@ -5,9 +5,9 @@ slug: /intro
 
 Jan is a ChatGPT-alternative that runs on your own computer. 
 
-Jan uses [open-source AI models](/guide/models), stores data in [open file formats](/specs/data-structures) and is is highly customizable via [extensions](/guide/extensions). 
+Jan uses [open-source AI models](/guide/models), stores data in [open file formats](/specs/data-structures) is highly customizable via [extensions](/guide/extensions), and provides an [OpenAI-compatible API](/api). 
 
-Jan ships with an [OpenAI-compatible API](/api) and a powerful [Assistant framework](/guide/assistants) to create custom AIs.
+Jan believes in the need for an open source AI ecosystem. We aim build fully-equivalent infra and tooling to allow open source AIs to compete on a level playing field with proprietary offerings. 
 
 ## Why Jan?
 
