@@ -103,7 +103,7 @@ const config = {
       {
         specs: [
           {
-            spec: "openapi/OpenAIAPI.yaml", // can be local file, url, or parsed json object
+            spec: "openapi/jan.yaml", // can be local file, url, or parsed json object
             route: "/api-reference", // path where to render docs
           },
         ],
@@ -144,9 +144,8 @@ const config = {
           label: "Documentation",
         },
         {
-          type: "docSidebar",
-          sidebarId: "apiSidebar",
           position: "left",
+          to: "/api-reference",
           label: "API Reference",
         },
         // Navbar right
