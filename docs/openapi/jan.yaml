@@ -2591,12 +2591,12 @@ paths:
               "created": 1686935002,
               "owned_by": "openai"
             }
-  /models/{model}/cancel:
+  /models/{model}/stop:
     post:
-      operationId: cancelModel
+      operationId: stopModel
       tags:
         - Models
-      summary: Cancel Model
+      summary: Stop Model
       description: Stops a running model. Unloads the model from V/RAM.
       parameters:
         - in: path
