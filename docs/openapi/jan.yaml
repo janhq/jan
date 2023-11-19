@@ -2314,7 +2314,8 @@ paths:
       operationId: listModels
       tags:
         - Models
-      summary: Lists the currently available models, and provides basic information about each one such as the owner and availability.
+      summary: List Models
+      description: Lists the currently available models, and provides basic information about each one such as the owner and availability.
       responses:
         "200":
           description: OK
@@ -2378,7 +2379,8 @@ paths:
       operationId: retrieveModel
       tags:
         - Models
-      summary: Retrieves a model instance, providing basic information about the model such as the owner and permissioning.
+      summary: Retrieve Model
+      description: Retrieves a model instance, providing basic information about the model such as the owner and permissioning.
       parameters:
         - in: path
           name: model
@@ -2431,7 +2433,8 @@ paths:
       operationId: deleteModel
       tags:
         - Models
-      summary: Delete a fine-tuned model. You must have the Owner role in your organization to delete a model.
+      summary: Delete Model
+      description: Delete a fine-tuned model. You must have the Owner role in your organization to delete a model.
       parameters:
         - in: path
           name: model
