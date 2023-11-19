@@ -7384,6 +7384,15 @@ components:
                   type: string
                   description: TODO
                   default: "ASSISTANT:"
+              default: {
+                ctx_len: 2048,
+                ngl: 100,
+                embedding: true,
+                n_parallel: 4,
+                pre_prompt: "A chat between a curious user and an artificial intelligence",
+                user_prompt: "USER:",
+                ai_prompt: "ASSISTANT:"
+              }
             runtime:
               type: object
               properties:
@@ -7407,7 +7416,13 @@ components:
                   type: string
                   description: TODO
                   default: true
-          default: {}
+              default: {
+                temperature: 0.7,
+                token_limit: 2048,
+                top_k: 0,
+                top_p: 1,
+                stream: true
+              }
         metadata:
           type: object
           properties:
@@ -7418,10 +7433,20 @@ components:
             quantization:
               type: string
               description: TODO
+              default: Q4_K_M
+            size: 
+              type: string
+              default: 7b
             binaries:
               type: array
               description: TODO
-          default: {}
+              default: TODO
+          default: {
+            engine: llamacpp,
+            quantization: Q4_K_M,
+            size: 7b,
+            binaries: TODO
+          }
       required:
         - object
         - source_url

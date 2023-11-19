@@ -65,50 +65,7 @@ Jan's `model.json` aims for rough equivalence with [OpenAI's Model Object](https
 
 Jan's `model.json` object properties are optional, i.e. users should be able to run a model declared by an empty `json` file.
 
-<ApiSchema example pointer="#/components/schemas/Model" />;
-
-```json
-// ./models/zephr/zephyr-7b-beta-Q4_K_M.json
-{
-    "source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
-    "parameters": {
-        "init": {
-            "ctx_len": "2048",
-            "ngl": "100",
-            "embedding": "true",
-            "n_parallel": "4",
-            "pre_prompt": "A chat between a curious user and an artificial intelligence",
-            "user_prompt": "USER: ",
-            "ai_prompt": "ASSISTANT: "
-        },
-        "runtime": {
-            "temperature": "0.7",
-            "token_limit": "2048",
-            "top_k": "0",
-            "top_p": "1",
-            "stream": "true"
-        }
-    },
-    "metadata": {
-        "engine": "llamacpp",
-        "quantization": "Q4_K_M",
-        "size": "7B",
-    }
-}
-```
-
-| Property                | Type                                                          | Description                                                               | Validation                                       |
-| ----------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
-| `object`                | enum: `model`, `assistant`, `thread`, `message`               | Type of the Jan Object. Always `model`                                    | Defaults to "model"                              |
-| `source_url`            | string                                                        | The model download source. It can be an external url or a local filepath. | Defaults to `pwd`. See [Source_url](#Source_url) |
-| `parameters`            | map                                                           | Defines default model run parameters used by any assistant.               | Defaults to `{}`                                 |
-| `description`           | string                                                        | A vanity description of the model                                         | Defaults to ""                                   |
-| `metadata`              | map                                                           | Stores additional structured information about the model.                 | Defaults to `{}`                                 |
-| `metadata.engine`       | enum: `llamacpp`, `api`, `tensorrt`                           | The model backend used to run model.                                      | Defaults to "llamacpp"                           |
-| `metadata.quantization` | string                                                        | Supported formats only                                                    | See [Custom importers](#Custom-importers)        |
-| `metadata.binaries`     | array                                                         | Supported formats only.                                                   | See [Custom importers](#Custom-importers)        |
-| `state`                 | enum[`to_download` , `downloading`, `ready` , `running`] | Needs more thought                                                        | Defaults to `to_download`                     |
-| `name`                  | string                                                        | A vanity name                                                             | Defaults to filename                             |
+<ApiSchema example pointer="#/components/schemas/Model" />
 
 ### Model Source
 
