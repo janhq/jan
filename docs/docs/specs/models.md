@@ -68,6 +68,14 @@ A model's folder name is its `model.id` and contains:
 
 ### Importing Models
 
+:::warning
+
+- This has not been confirmed
+- Dan's view: Jan should auto-detect and create folders automatically
+- Jan's UI will allow users to rename folders and add metadata
+
+:::
+
 You can import a model by just dragging it into the `/models` folder, similar to Oobabooga. 
 
 - Jan will detect and generate a corresponding `model-filename.json` file based on filename
@@ -76,41 +84,77 @@ You can import a model by just dragging it into the `/models` folder, similar to
 
 ## Model Object
 
+:::warning
+
+- This is currently not finalized
+- Dan's view: I think the current JSON is extremely clunky
+  - We should move `init` to top-level (e.g. "settings"?)
+  - We should move `runtime` to top-level (e.g. "parameters"?)
+  - `metadata` is extremely overloaded and should be refactored
+- Dan's view: we should make a model object very extensible
+  - A `GGUF` model would "extend" a common model object with extra fields (at top level)
+- Dan's view: State is extremely badly named
+  - Recommended: `downloaded`, `started`, `stopped`, null (for yet-to-download)
+  - We should also note that this is only for local models (not remote)
+
+:::
+
 Jan represents models as `json`-based Model Object files, known colloquially as `model.jsons`. Jan aims for rough equivalence with [OpenAI's Model Object](https://platform.openai.com/docs/api-reference/models/object) with additional properties to support local models.  
 
 Jan's models follow a `model_id.json` naming convention, and are built to be extremely lightweight, with the only mandatory field being a `source_url` to download the model binaries. 
 
 <ApiSchema example pointer="#/components/schemas/Model" />
 
-### Model Source
+### Types of Models
 
-There are 3 types of model sources
+:::warning
+
+- This is currently not in the Model Object, and requires further discussion.
+- Dan's view: we should have a field to differentiate between `local` and `remote` models
+
+:::
+
+There are 3 types of models. 
 
 - Local model
-- Remote source
-- Cloud API
+- Local model, yet-to-be downloaded (we have the URL)
+- Remote model (i.e. OpenAI API)
 
-- Users can download models from a `remote` source or reference an existing `local` model.
-- If this property is not specified in the Model Object file, then the default behavior is to look in the current directory.
-- Users can import a local model by providing the filepath to the model
+#### Local Models
+
+:::warning
+
+- This is currently not finalized
+- Dan's view: we should have `download_url` and `local_url` for local models (and possibly more)
+
+:::
+
+A `model.json` for a local model should always reference the following fields: 
+
+- `download_url`: the original download source of the model
+- `local_url`: the current location of the model binaries (may be array of multiple binaries)
 
 ```json
 // ./models/llama2/llama2-7bn-gguf.json
-"source_url": "~/Downloads/llama-2-7bn-q5-k-l.gguf",
-
-// Default, if property is omitted
-"source_url": "./",
+"local_url": "~/Downloads/llama-2-7bn-q5-k-l.gguf",
 ```
 
-- Users can download a model by remote URL.
-- Supported url formats:
-  - `https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF/blob/main/llama-2-7b-chat.Q3_K_L.gguf`
-  - `https://any-source.com/.../model-binary.bin`
+#### Remote Models
 
-- Using a remote API to access model `model-azure-openai-gpt4-turbo.json`
-- See [source](https://learn.microsoft.com/en-us/azure/ai-services/openai/quickstart?tabs=command-line%2Cpython&pivots=rest-api)
+:::warning
+
+- This is currently not finalized 
+- Dan's view: each cloud model should be provided via a syste module, or define its own params field on the `model` or `model.init` object
+
+:::
+
+A `model.json` for a remote model should always reference the following fields:
+
+- `api_url`: the API endpoint of the model
+- Any authentication parameters
 
 ```json
+// Dan's view: This needs to be refactored pretty significantly
 "source_url": "https://docs-test-001.openai.azure.com/openai.azure.com/docs-test-001/gpt4-turbo",
 "parameters": {
   "init" {
@@ -127,24 +171,75 @@ There are 3 types of model sources
   }
 }
 "metadata": {
-    "engine": "api",
+    "engine": "api",        // Dan's view: this should be a `type` field
 }
 ```
 
-### Model Formats
+### Importers
 
-Additionally, Jan supports importing popular formats. For example, if you provide a HuggingFace URL for a `TheBloke` model, Jan automatically downloads and catalogs all quantizations. Custom importers autofills properties like `metadata.quantization` and `metadata.size`.
+:::caution
 
-Supported URL formats with custom importers:
+- This is only an idea, has not been confirmed as part of spec
 
-- `huggingface/thebloke`: [Link](https://huggingface.co/TheBloke/Llama-2-7B-GGUF)
-- `huggingface/thebloke`: [Link](https://huggingface.co/TheBloke/Llama-2-7B-GGUF)
-- `janhq`: `TODO: put URL here`
-- `azure_openai`: `https://docs-test-001.openai.azure.com/openai.azure.com/docs-test-001/gpt4-turbo`
-- `openai`: `api.openai.com`
+:::
 
-<details>
-    <summary>Example: Zephyr 7B</summary>
+Jan builds "importers" for users to seamlessly import models from a single URL. 
+
+We currently only provide this for [TheBloke models on Huggingface](https://huggingface.co/TheBloke) (i.e. one of the patron saints of llama.cpp), but we plan to add more in the future. 
+
+Currently, pasting a TheBloke Huggingface link in the Explore Models page will fire an importer, resulting in an: 
+
+- Nicely-formatted model card
+- Fully-annotated `model.json` file
+
+### Multiple Binaries
+
+:::warning
+
+- This is currently not finalized
+- Dan's view: having these fields under `model.metadata` is not maintainable
+- We should explore some sort of `local_url` structure
+
+:::
+
+- Model has multiple binaries `model-llava-1.5-ggml.json`
+- See [source](https://huggingface.co/mys/ggml_llava-v1.5-13b)
+
+```json
+"source_url": "https://huggingface.co/mys/ggml_llava-v1.5-13b",
+"parameters": {"init": {}, "runtime": {}}
+"metadata": {
+    "mmproj_binary": "https://huggingface.co/mys/ggml_llava-v1.5-13b/blob/main/mmproj-model-f16.gguf",
+    "ggml_binary": "https://huggingface.co/mys/ggml_llava-v1.5-13b/blob/main/ggml-model-q5_k.gguf",
+    "engine": "llamacpp",
+    "quantization": "Q5_K"
+}
+```
+
+## Models API
+
+:::warning
+
+- We should use the OpenAPI spec to discuss APIs
+- Dan's view: This needs @louis and App Pod to review as they are more familiar with this
+- Dan's view: Start/Stop model should have some UI indicator (show state, block input) 
+
+::: 
+
+See http://localhost:3001/api-reference#tag/Models. 
+
+| Method         | API Call                        | OpenAI-equivalent |
+| -------------- | ------------------------------- | ----------------- |
+| List Models    | GET /v1/models                  | true              |
+| Get Model      | GET /v1/models/{model_id}       | true              |
+| Delete Model   | DELETE /v1/models/{model_id}    | true              |
+| Start Model    | PUT /v1/models/{model_id}/start |                   |
+| Stop Model     | PUT /v1/models/{model_id}/start |                   |
+| Download Model | POST /v1/models/                |                   |
+
+## Examples
+
+### Local Model
 
 - Model has 1 binary `model-zephyr-7B.json`
 - See [source](https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/)
@@ -177,208 +272,8 @@ Supported URL formats with custom importers:
     "size": "7B",
 }
 ```
-</details>
 
-### Multiple binaries
-
-- Model has multiple binaries `model-llava-1.5-ggml.json`
-- See [source](https://huggingface.co/mys/ggml_llava-v1.5-13b)
-
-```json
-"source_url": "https://huggingface.co/mys/ggml_llava-v1.5-13b",
-"parameters": {"init": {}, "runtime": {}}
-"metadata": {
-    "mmproj_binary": "https://huggingface.co/mys/ggml_llava-v1.5-13b/blob/main/mmproj-model-f16.gguf",
-    "ggml_binary": "https://huggingface.co/mys/ggml_llava-v1.5-13b/blob/main/ggml-model-q5_k.gguf",
-    "engine": "llamacpp",
-    "quantization": "Q5_K"
-}
-```
-
-## Models API
-
-### Get Model
-
-- OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models/retrieve
-- OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models/object
-- The `Jan Model Object` maps into the `OpenAI Model Object`.
-- Properties marked with `*` are compatible with the [OpenAI `model` object](https://platform.openai.com/docs/api-reference/models)
-- Note: The `Jan Model Object` has additional properties when retrieved via its API endpoint.
-
-#### Request
-
-```shell
-curl {JAN_URL}/v1/models/{model_id}
-```
-
-#### Response
-
-```json
-{
-  "id": "model-zephyr-7B",
-  "object": "model",
-  "created_at": 1686935002,
-  "owned_by": "thebloke",
-  "state": "running",
-  "source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
-  "parameters": {
-     "ctx_len": 2048,
-     "ngl": 100,
-     "embedding": true,
-     "n_parallel": 4,
-     "pre_prompt": "A chat between a curious user and an artificial intelligence",
-     "user_prompt": "USER: ",
-     "ai_prompt": "ASSISTANT: ",
-     "temperature": "0.7",
-     "token_limit": "2048",
-     "top_k": "0",
-     "top_p": "1",
-  },
-  "metadata": {
-     "engine": "llamacpp",
-     "quantization": "Q3_K_L",
-     "size": "7B",
-  }
-}
-```
-
-### List models
-Lists the currently available models, and provides basic information about each one such as the owner and availability.
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models/list
-
-#### Request
-
-```shell=
-curl {JAN_URL}/v1/models
-```
-
-#### Response
-
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "model-zephyr-7B",
-      "object": "model",
-      "created_at": 1686935002,
-      "owned_by": "thebloke",
-      "state": "running"
-    },
-    {
-      "id": "ft-llama-70b-gguf",
-      "object": "model",
-      "created_at": 1686935002,
-      "owned_by": "you",
-      "state": "stopped"
-    },
-    {
-      "id": "model-azure-openai-gpt4-turbo",
-      "object": "model",
-      "created_at": 1686935002,
-      "owned_by": "azure_openai",
-      "state": "running"
-    },
-  ],
-  "object": "list"
-}
-```
-
-### Delete Model
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/models/delete
-
-#### Request
-
-```shell
-curl -X DELETE {JAN_URL}/v1/models/{model_id}
-```
-
-#### Response
-
-```json
-{
-  "id": "model-zephyr-7B",
-  "object": "model",
-  "deleted": true,
-  "state": "to_download"
-}
-```
-
-### Start Model
-> Jan-only endpoint
-The request to start `model` by changing model state from `ready` to `running`
-
-#### Request
-
-```shell
-curl -X PUT {JAN_URL}/v1/models{model_id}/start
-```
-
-#### Response
-
-```json
-{
-  "id": "model-zephyr-7B",
-  "object": "model",
-  "state": "running"
-}
-```
-
-### Stop Model
-> Jan-only endpoint
-The request to start `model` by changing model state from `running` to `ready`
-
-#### Request
-
-```shell
-curl -X PUT {JAN_URL}/v1/models/{model_id}/stop
-```
-
-#### Response
-
-```json
-{
-  "id": "model-zephyr-7B",
-  "object": "model",
-  "state": "ready"
-}
-```
-
-### Download Model
-> Jan-only endpoint
-The request to download `model` by changing model state from `to_download` to `downloading` then `ready`once it's done.
-
-#### Request
-```shell
-curl -X POST {JAN_URL}/v1/models/
-```
-
-#### Response
-```json
-{
-  "id": "model-zephyr-7B",
-  "object": "model",
-  "state": "downloading"
-}
-```
-
-## Examples
-
-### Pre-loaded Models
-
-- Jan ships with a default model folders containing recommended models
-- Only the Model Object `json` files are included
-- Users must later explicitly download the model binaries
-- 
-```sh
-models/
-    mistral-7b/
-        mistral-7b.json
-    hermes-7b/
-        hermes-7b.json
-```
-
-### Azure OpenAI
+### Remote Model
 
 - Using a remote API to access model `model-azure-openai-gpt4-turbo.json`
 - See [source](https://learn.microsoft.com/en-us/azure/ai-services/openai/quickstart?tabs=command-line%2Cpython&pivots=rest-api)
@@ -404,9 +299,24 @@ models/
 }
 ```
 
+### Deferred Download
+
+- Jan ships with a default model folders containing recommended models
+- Only the Model Object `json` files are included
+- Users must later explicitly download the model binaries
+- 
+```sh
+models/
+    mistral-7b/
+        mistral-7b.json
+    hermes-7b/
+        hermes-7b.json
+```
+
 ### Multiple quantizations
 
 - Each quantization has its own `Jan Model Object` file
+- TODO: `model.json`?
 
 ```sh
 llama2-7b-gguf/
@@ -426,9 +336,7 @@ llava-ggml/
     ggml
 ```
 
-### Your locally fine-tuned model
-
-- ??
+### Locally fine-tuned model
 
 ```sh
 llama-70b-finetune/

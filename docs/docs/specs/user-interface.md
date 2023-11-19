@@ -2,6 +2,12 @@
 title: User Interface
 ---
 
+:::warning
+
+This page is still under construction, and should be read as a scratchpad
+
+:::
+
 Jan provides a UI Kit for customize the UI for your use case. This means you can personalize the entire application according to your own brand and visual styles.
 
 This page gives you an overview of how to customize the UI.
