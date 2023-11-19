@@ -33,6 +33,15 @@ Models in Jan are stored in the `/models` folder.
 - The `folder` and `file` do not have to share the same name
 - The model `id` is made up of `folder_name/filename` and is thus always unique.
 
+Folders are human readable names
+
+### Auto-detection
+
+You can import a model by just dragging it into the `/models` folder
+- Jan will detect and generate a corresponding `.json` file based on filename
+- Jan will move it into its own folder once you choose a human readable name for it
+- Jan will fill out the model.json file as you add metadata through the UI
+
 ```sh
 /janroot
     /models
