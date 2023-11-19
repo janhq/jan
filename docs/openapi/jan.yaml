@@ -2563,27 +2563,6 @@ paths:
         name: Import model
         returns: The [model](/docs/api-reference/models/object) object matching the specified ID.
         examples:
-          request:
-            curl: |
-              curl https://api.openai.com/v1/models/VAR_model_id \
-                -H "Authorization: Bearer $OPENAI_API_KEY"
-            python: |
-              from openai import OpenAI
-              client = OpenAI()
-
-              client.models.retrieve("VAR_model_id")
-            node.js: |-
-              import OpenAI from "openai";
-
-              const openai = new OpenAI();
-
-              async function main() {
-                const model = await openai.models.retrieve("gpt-3.5-turbo");
-
-                console.log(model);
-              }
-
-              main();
           response: &retrieve_model_response |
             {
               "id": "VAR_model_id",
@@ -2613,61 +2592,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/RunObject"
       x-oaiMeta:
-        name: Cancel a running model
+        name: Stop a running model
         beta: true
         returns: The modified [run](/docs/api-reference/runs/object) object matching the specified ID.
         examples:
           request:
-            curl: |
-              curl https://api.openai.com/v1/threads/thread_1cjnJPXj8MFiqTx58jU9TivC/runs/run_BeRGmpGt2wb1VI22ZRniOkrR/cancel \
-                -H 'Authorization: Bearer $OPENAI_API_KEY' \
-                -H 'OpenAI-Beta: assistants=v1' \
-                -X POST
-            python: |
-              from openai import OpenAI
-              client = OpenAI()
-
-              run = client.beta.threads.runs.cancel(
-                thread_id="thread_1cjnJPXj8MFiqTx58jU9TivC",
-                run_id="run_BeRGmpGt2wb1VI22ZRniOkrR"
-              )
-              print(run)
-            node.js: |
-              import OpenAI from "openai";
-
-              const openai = new OpenAI();
-
-              async function main() {
-                const run = await openai.beta.threads.runs.cancel(
-                  "thread_1cjnJPXj8MFiqTx58jU9TivC",
-                  "run_BeRGmpGt2wb1VI22ZRniOkrR"
-                );
-
-                console.log(run);
-              }
-
-              main();
           response: |
             {
-              "id": "run_BeRGmpGt2wb1VI22ZRniOkrR",
-              "object": "model",
-              "created_at": 1699076126,
-              "status": "cancelling",
-              "started_at": 1699076126,
-              "expires_at": 1699076726,
-              "cancelled_at": null,
-              "failed_at": null,
-              "completed_at": null,
-              "last_error": null,
-              "model": "gpt-4",
-              "instructions": "You summarize books.",
-              "tools": [
-                {
-                  "type": "retrieval"
-                }
-              ],
-              "file_ids": [],
-              "metadata": {}
+              "todo": "run_BeRGmpGt2wb1VI22ZRniOkrR"
             }
 
   /moderations:
