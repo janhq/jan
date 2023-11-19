@@ -1,5 +1,5 @@
 ---
-title: "Messages"
+title: Messages
 ---
 
 :::warning
