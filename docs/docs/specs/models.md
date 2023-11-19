@@ -335,7 +335,7 @@ llava-ggml/
     ggml
 ```
 
-### Your locally fine-tuned model
+### Locally fine-tuned model
 
 ```sh
 llama-70b-finetune/
