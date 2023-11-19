@@ -1,8 +1,9 @@
 ---
-title: "Architecture and Concepts"
+title: Architecture
 ---
 
 ## Concepts
+
 ```mermaid
 graph LR
     A1[("A User Integrators")] -->|uses| B1[assistant]

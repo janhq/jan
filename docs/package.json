@@ -17,7 +17,7 @@
     "@docusaurus/core": "^2.4.3",
     "@docusaurus/preset-classic": "^2.4.3",
     "@docusaurus/theme-live-codeblock": "^2.4.3",
-    "@docusaurus/theme-mermaid": "^3.0.0",
+    "@docusaurus/theme-mermaid": "^2.4.3",
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.0.18",
     "@mdx-js/react": "^1.6.22",
