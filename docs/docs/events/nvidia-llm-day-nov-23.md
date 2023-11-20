@@ -3,7 +3,7 @@ title: "Nov 23: Nvidia GenAI Day"
 description: Nvidia's LLM Day 
 ---
 
-![](../../static/img/nvidia-llm-day-header.png)
+![](/img/nvidia-llm-day-header.png)
 
 ## Nvidia GenAI Innovation Day
 
@@ -17,5 +17,5 @@ Jan will be at Nvidia's GenAI Innovation Day in Nov '23, focusing on Enterprise 
 
 ### Programme
 
-![](../../static/img/nvidia-llm-day.png)
+![](/img/nvidia-llm-day.png)
 
