@@ -11,4 +11,3 @@ title: Windows
 3. Once Jan installer (jan-win-x64-{version}.exe) is downloaded, run the installer. The installation process is expected to take around a minute.
 4. By default, Jan is installed under `C:\Users\{username}\AppData\Local\Programs\Jan`
 5. Once the installation is complete, you can launch Jan by clicking on the Jan icon.
-

@@ -1,6 +1,5 @@
-import { PluginType } from '@janhq/core'
+import { PluginType, Thread } from '@janhq/core'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
-import { Conversation } from '@janhq/core/lib/types'
 import { useSetAtom } from 'jotai'
 
 import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
@@ -8,9 +7,8 @@ import {
   conversationStatesAtom,
   userConversationsAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import { toChatMessage } from '@/models/ChatMessage'
 import { pluginManager } from '@/plugin/PluginManager'
-import { ChatMessage, ConversationState } from '@/types/chatMessage'
+import { ThreadState } from '@/types/conversation'
 
 const useGetUserConversations = () => {
   const setConversationStates = useSetAtom(conversationStatesAtom)
@@ -19,24 +17,22 @@ const useGetUserConversations = () => {
 
   const getUserConversations = async () => {
     try {
-      const convos: Conversation[] | undefined = await pluginManager
+      const convos: Thread[] | undefined = await pluginManager
         .get<ConversationalPlugin>(PluginType.Conversational)
         ?.getConversations()
-      const convoStates: Record<string, ConversationState> = {}
+      const convoStates: Record<string, ThreadState> = {}
       convos?.forEach((convo) => {
-        convoStates[convo._id ?? ''] = {
+        convoStates[convo.id ?? ''] = {
           hasMore: true,
           waitingForResponse: false,
+          lastMessage: convo.messages[0]?.content ?? '',
         }
-        setConvoMessages(
-          convo.messages.map<ChatMessage>((msg) => toChatMessage(msg)),
-          convo._id ?? ''
-        )
+        setConvoMessages(convo.messages, convo.id ?? '')
       })
       setConversationStates(convoStates)
       setConversations(convos ?? [])
     } catch (error) {
-      console.log(error)
+      console.error(error)
     }
   }
 

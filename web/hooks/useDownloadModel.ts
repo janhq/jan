@@ -7,6 +7,7 @@ import { useAtom } from 'jotai'
 import { useDownloadState } from './useDownloadState'
 
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
+
 import { pluginManager } from '@/plugin/PluginManager'
 
 export default function useDownloadModel() {
@@ -20,28 +21,24 @@ export default function useDownloadModel() {
     modelVersion: ModelVersion
   ): Model => {
     return {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
-      _id: modelVersion._id,
-      name: modelVersion.name,
-      quantMethod: modelVersion.quantMethod,
+      /**
+       * Id will be used for the model file name
+       * Should be the version name
+       */
+      id: modelVersion.name,
+      name: model.name,
+      quantizationName: modelVersion.quantizationName,
       bits: modelVersion.bits,
       size: modelVersion.size,
       maxRamRequired: modelVersion.maxRamRequired,
       usecase: modelVersion.usecase,
       downloadLink: modelVersion.downloadLink,
-      startDownloadAt: modelVersion.startDownloadAt,
-      finishDownloadAt: modelVersion.finishDownloadAt,
-      productId: model._id,
-      productName: model.name,
       shortDescription: model.shortDescription,
       longDescription: model.longDescription,
       avatarUrl: model.avatarUrl,
       author: model.author,
       version: model.version,
       modelUrl: model.modelUrl,
-      createdAt: new Date(model.createdAt).getTime(),
-      updatedAt: new Date(model.updatedAt ?? '').getTime(),
-      status: '',
       releaseDate: -1,
       tags: model.tags,
     }
@@ -53,7 +50,7 @@ export default function useDownloadModel() {
   ) => {
     // set an initial download state
     setDownloadState({
-      modelId: modelVersion._id,
+      modelId: modelVersion.name,
       time: {
         elapsed: 0,
         remaining: 0,
@@ -64,10 +61,9 @@ export default function useDownloadModel() {
         total: 0,
         transferred: 0,
       },
-      fileName: modelVersion._id,
+      fileName: modelVersion.name,
     })
 
-    modelVersion.startDownloadAt = Date.now()
     const assistantModel = assistanModel(model, modelVersion)
 
     setDownloadingModels([...downloadingModels, assistantModel])

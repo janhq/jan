@@ -13,23 +13,15 @@
 
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
-  featuresSidebar: [
+  docsSidebar: [
     {
       type: "category",
-      label: "Features",
+      label: "Introduction",
+      link: { type: "doc", id: "intro/introduction" },
       collapsible: true,
-      collapsed: false,
-      link: { type: "doc", id: "features/features" },
-      items: [
-        "features/ai-models",
-        "features/control",
-        "features/acceleration",
-        "features/extensions",
-      ],
+      collapsed: true,
+      items: ["intro/quickstart", "intro/how-jan-works"],
     },
-  ],
-
-  docsSidebar: [
     {
       type: "category",
       label: "Getting Started",
@@ -55,22 +47,28 @@ const sidebars = {
     {
       type: "category",
       label: "Building Jan",
-      collapsible: false,
-      collapsed: false,
+      collapsible: true,
+      collapsed: true,
       items: [
-        "docs/user-interface",
+        "specs/architecture",
+        "specs/data-structures",
+        "specs/user-interface",
         {
           type: "category",
           label: "Specifications",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
-            "docs/specs/chats",
-            "docs/specs/models",
-            "docs/specs/threads",
-            "docs/specs/messages",
-            "docs/specs/assistants",
-            "docs/specs/files",
+            "specs/chats",
+            "specs/models",
+            // "specs/threads",
+            // "specs/messages",
+            // "specs/assistants",
+            // "specs/files",
+            // "specs/jan",
+            // "specs/fine-tuning",
+            // "specs/settings",
+            // "specs/prompts",
           ],
         },
       ],

@@ -1,20 +1,21 @@
-import { PluginType, fs, downloadFile } from "@janhq/core";
-import { ModelPlugin } from "@janhq/core/lib/plugins";
-import { Model, ModelCatalog } from "@janhq/core/lib/types";
-import { pollDownloadProgress } from "./helpers/cloudNative";
-import { parseToModel } from "./helpers/modelParser";
+import { PluginType, fs, downloadFile } from '@janhq/core'
+import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { Model, ModelCatalog } from '@janhq/core/lib/types'
+import { parseToModel } from './helpers/modelParser'
+import { join } from 'path'
 
 /**
  * A plugin for managing machine learning models.
  */
 export default class JanModelPlugin implements ModelPlugin {
+  private static readonly _homeDir = 'models'
   /**
    * Implements type from JanPlugin.
    * @override
    * @returns The type of the plugin.
    */
   type(): PluginType {
-    return PluginType.Model;
+    return PluginType.Model
   }
 
   /**
@@ -25,6 +26,7 @@ export default class JanModelPlugin implements ModelPlugin {
     /**  Cloud Native
      * TODO: Fetch all downloading progresses?
      **/
+    fs.mkdir(JanModelPlugin._homeDir)
   }
 
   /**
@@ -39,12 +41,13 @@ export default class JanModelPlugin implements ModelPlugin {
    * @returns A Promise that resolves when the model is downloaded.
    */
   async downloadModel(model: Model): Promise<void> {
-    await fs.mkdir("models");
-    downloadFile(model.downloadLink, `models/${model._id}`);
-    /**  Cloud Native
-     * MARK: Poll Downloading Progress
-     **/
-    pollDownloadProgress(model._id);
+    // create corresponding directory
+    const directoryPath = join(JanModelPlugin._homeDir, model.name)
+    await fs.mkdir(directoryPath)
+
+    // path to model binary
+    const path = join(directoryPath, model.id)
+    downloadFile(model.downloadLink, path)
   }
 
   /**
@@ -52,10 +55,15 @@ export default class JanModelPlugin implements ModelPlugin {
    * @param filePath - The path to the model file to delete.
    * @returns A Promise that resolves when the model is deleted.
    */
-  deleteModel(filePath: string): Promise<void> {
-    return fs
-      .deleteFile(`models/${filePath}`)
-      .then(() => fs.deleteFile(`models/m-${filePath}.json`));
+  async deleteModel(filePath: string): Promise<void> {
+    try {
+      await Promise.allSettled([
+        fs.deleteFile(filePath),
+        fs.deleteFile(`${filePath}.json`),
+      ])
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   /**
@@ -64,30 +72,46 @@ export default class JanModelPlugin implements ModelPlugin {
    * @returns A Promise that resolves when the model is saved.
    */
   async saveModel(model: Model): Promise<void> {
-    await fs.writeFile(`models/m-${model._id}.json`, JSON.stringify(model));
+    const directoryPath = join(JanModelPlugin._homeDir, model.name)
+    const jsonFilePath = join(directoryPath, `${model.id}.json`)
+
+    try {
+      await fs.writeFile(jsonFilePath, JSON.stringify(model))
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   /**
    * Gets all downloaded models.
    * @returns A Promise that resolves with an array of all models.
    */
-  getDownloadedModels(): Promise<Model[]> {
-    return fs
-      .listFiles("models")
-      .then((files: string[]) => {
-        return Promise.all(
-          files
-            .filter((file) => /^m-.*\.json$/.test(file))
-            .map(async (file) => {
-              const model: Model = JSON.parse(
-                await fs.readFile(`models/${file}`)
-              );
-              return model;
-            })
-        );
-      })
-      .catch((e) => fs.mkdir("models").then(() => []));
+  async getDownloadedModels(): Promise<Model[]> {
+    const results: Model[] = []
+    const allDirs: string[] = await fs.listFiles(JanModelPlugin._homeDir)
+    for (const dir of allDirs) {
+      const modelDirPath = join(JanModelPlugin._homeDir, dir)
+      const isModelDir = await fs.isDirectory(modelDirPath)
+      if (!isModelDir) {
+        // if not a directory, ignore
+        continue
+      }
+
+      const jsonFiles: string[] = (await fs.listFiles(modelDirPath)).filter(
+        (file: string) => file.endsWith('.json')
+      )
+
+      for (const json of jsonFiles) {
+        const model: Model = JSON.parse(
+          await fs.readFile(join(modelDirPath, json))
+        )
+        results.push(model)
+      }
+    }
+
+    return results
   }
+
   /**
    * Gets all available models.
    * @returns A Promise that resolves with an array of all models.
@@ -96,10 +120,6 @@ export default class JanModelPlugin implements ModelPlugin {
     // Add a timestamp to the URL to prevent caching
     return import(
       /* webpackIgnore: true */ MODEL_CATALOG_URL + `?t=${Date.now()}`
-    ).then((module) =>
-      module.default.map((e) => {
-        return parseToModel(e);
-      })
-    );
+    ).then((module) => module.default.map((e) => parseToModel(e)))
   }
 }

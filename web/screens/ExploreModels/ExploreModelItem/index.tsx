@@ -33,7 +33,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
     return null
   }
 
-  const { quantMethod, bits, maxRamRequired, usecase } = suitableModel
+  const { quantizationName, bits, maxRamRequired, usecase } = suitableModel
 
   return (
     <div
@@ -73,7 +73,9 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
             <span className="font-semibold">Version</span>
             <div className="mt-2 flex space-x-2">
               <Badge themes="outline">v{model.version}</Badge>
-              {quantMethod && <Badge themes="outline">{quantMethod}</Badge>}
+              {quantizationName && (
+                <Badge themes="outline">{quantizationName}</Badge>
+              )}
               <Badge themes="outline">{`${bits} Bits`}</Badge>
             </div>
           </div>
@@ -105,7 +107,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
               <ModelVersionList
                 model={model}
                 versions={model.availableVersions}
-                recommendedVersion={suitableModel?._id ?? ''}
+                recommendedVersion={suitableModel?.name ?? ''}
               />
             )}
           </div>

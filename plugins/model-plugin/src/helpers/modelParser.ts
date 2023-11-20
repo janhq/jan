@@ -1,8 +1,8 @@
 export const parseToModel = (model) => {
-  const modelVersions = [];
+  const modelVersions = []
   model.versions.forEach((v) => {
     const version = {
-      _id: `${model.author}-${v.name}`,
+      id: `${model.author}-${v.name}`,
       name: v.name,
       quantMethod: v.quantMethod,
       bits: v.bits,
@@ -11,12 +11,12 @@ export const parseToModel = (model) => {
       usecase: v.usecase,
       downloadLink: v.downloadLink,
       productId: model.id,
-    };
-    modelVersions.push(version);
-  });
+    }
+    modelVersions.push(version)
+  })
 
   const product = {
-    _id: model.id,
+    id: model.id,
     name: model.name,
     shortDescription: model.shortDescription,
     avatarUrl: model.avatarUrl,
@@ -29,9 +29,9 @@ export const parseToModel = (model) => {
     type: model.type,
     createdAt: model.createdAt,
     longDescription: model.longDescription,
-    status: "Downloadable",
+    status: 'Downloadable',
     releaseDate: 0,
     availableVersions: modelVersions,
-  };
-  return product;
-};
+  }
+  return product
+}

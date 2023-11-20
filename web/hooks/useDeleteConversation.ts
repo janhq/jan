@@ -41,7 +41,7 @@ export default function useDeleteConversation() {
           .get<ConversationalPlugin>(PluginType.Conversational)
           ?.deleteConversation(activeConvoId)
         const currentConversations = userConversations.filter(
-          (c) => c._id !== activeConvoId
+          (c) => c.id !== activeConvoId
         )
         setUserConversations(currentConversations)
         deleteMessages(activeConvoId)
@@ -50,7 +50,7 @@ export default function useDeleteConversation() {
           description: `Delete chat with ${activeModel?.name} has been completed`,
         })
         if (currentConversations.length > 0) {
-          setActiveConvoId(currentConversations[0]._id)
+          setActiveConvoId(currentConversations[0].id)
         } else {
           setActiveConvoId(undefined)
         }

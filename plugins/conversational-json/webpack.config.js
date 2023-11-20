@@ -22,6 +22,9 @@ module.exports = {
   plugins: [new webpack.DefinePlugin({})],
   resolve: {
     extensions: [".ts", ".js"],
+    fallback: {
+      path: require.resolve('path-browserify'),
+    },
   },
   // Do not minify the output, otherwise it breaks the class registration
   optimization: {

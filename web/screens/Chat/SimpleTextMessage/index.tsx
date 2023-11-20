@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useState } from 'react'
+import React from 'react'
 
+import { ChatCompletionRole, ThreadMessage } from '@janhq/core'
 import hljs from 'highlight.js'
 
 import { Marked } from 'marked'
@@ -14,17 +15,6 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 import BubbleLoader from '@/containers/Loader/Bubble'
 
 import { displayDate } from '@/utils/datetime'
-
-import { MessageSenderType, MessageStatus } from '@/models/ChatMessage'
-
-type Props = {
-  avatarUrl: string
-  senderName: string
-  createdAt: number
-  senderType: MessageSenderType
-  status: MessageStatus
-  text?: string
-}
 
 const marked = new Marked(
   markedHighlight({
@@ -51,16 +41,9 @@ const marked = new Marked(
   }
 )
 
-const SimpleTextMessage: React.FC<Props> = ({
-  senderName,
-  senderType,
-  createdAt,
-  // will use status as streaming text
-  // status,
-  text = '',
-}) => {
-  const parsedText = marked.parse(text)
-  const isUser = senderType === 'user'
+const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
+  const parsedText = marked.parse(props.content ?? '')
+  const isUser = props.role === ChatCompletionRole.User
 
   return (
     <div className="mx-auto rounded-xl px-4 lg:w-3/4">
@@ -71,12 +54,12 @@ const SimpleTextMessage: React.FC<Props> = ({
         )}
       >
         {!isUser && <LogoMark width={20} />}
-        <div className="text-sm font-extrabold ">{senderName}</div>
-        <p className="text-xs font-medium">{displayDate(createdAt)}</p>
+        <div className="text-sm font-extrabold capitalize">{props.role}</div>
+        <p className="text-xs font-medium">{displayDate(props.createdAt)}</p>
       </div>
 
       <div className={twMerge('w-full')}>
-        {text === '' ? (
+        {!props.content || props.content === '' ? (
           <BubbleLoader />
         ) : (
           <>

@@ -42,14 +42,14 @@ export class PluginManager {
     return new Promise((resolve) => {
       const store = new Store();
       if (store.get("migrated_version") !== app.getVersion()) {
-        console.log("start migration:", store.get("migrated_version"));
+        console.debug("start migration:", store.get("migrated_version"));
         const userDataPath = app.getPath("userData");
         const fullPath = join(userDataPath, "plugins");
 
         rmdir(fullPath, { recursive: true }, function (err) {
-          if (err) console.log(err);
+          if (err) console.error(err);
           store.set("migrated_version", app.getVersion());
-          console.log("migrate plugins done");
+          console.debug("migrate plugins done");
           resolve(undefined);
         });
       } else {
