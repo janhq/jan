@@ -50,7 +50,7 @@ To remove all user data associated with Jan, you can delete the `/Jan` directory
 
 ## Troubleshooting
 
-### Microsoft Defender SmartScreen 
+### Microsoft Defender
 
 **Error: "Microsoft Defender Smartscreen prevented an unrecognized app from starting"**
 
