@@ -17,4 +17,4 @@ In case you wish to completely remove all user data associated with Jan after un
 
 ## Common Questions
 ### Windows Defender Warning
-When initiating the Jan Installer, be aware that Windows Defender may display a warning due to the application not originating from the Microsoft Store. This warning is a standard security measure, as the installer will make changes to the system. To proceed with the installation, navigate through the warning options, typically found in "More info" section and select the appropriate option to continue with the installation.
+When initiating the Jan Installer, be aware that Windows Defender may display a warning. This warning is a standard security measure, as the installer will make changes to the system. To proceed with the installation, navigate through the warning options, typically found in "More info" section and select the appropriate option to continue with the installation.
