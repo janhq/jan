@@ -20,11 +20,10 @@ export const useCreateConversation = () => {
   const addNewConvoState = useSetAtom(addNewConversationStateAtom)
 
   const requestCreateConvo = async (model: Model) => {
-    const summary = model.name
     const mappedConvo: Thread = {
       id: generateConversationId(),
       modelId: model.id,
-      summary,
+      summary: model.name,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       messages: [],
@@ -35,7 +34,7 @@ export const useCreateConversation = () => {
       waitingForResponse: false,
     })
 
-    pluginManager
+    await pluginManager
       .get<ConversationalPlugin>(PluginType.Conversational)
       ?.saveConversation(mappedConvo)
     setUserConversations([mappedConvo, ...userConversations])
