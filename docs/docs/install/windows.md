@@ -16,5 +16,5 @@ If you have installed Jan on your Windows computer, either as a User or System i
 In case you wish to completely remove all user data associated with Jan after uninstallation, you can delete the user data folders located at `%APPDATA%\Jan`. This will return your system to its state prior to the installation of Jan. This method can also be used to reset all settings if you are experiencing any issues with Jan.
 
 ## Common Questions
-### Windows Defender Warning
+### Microsoft Defender SmartScreen prevented an unrecognized app from starting
 When initiating the Jan Installer, be aware that Windows Defender may display a warning. This warning is a standard security measure, as the installer will make changes to the system. To proceed with the installation, navigate through the warning options, typically found in "More info" section and select the appropriate option to continue with the installation.
