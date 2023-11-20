@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/ban-types */
 export class EventEmitter {
   private handlers: Map<string, Function[]>
@@ -28,6 +27,7 @@ export class EventEmitter {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public emit(eventName: string, args: any): void {
     if (!this.handlers.has(eventName)) {
       return

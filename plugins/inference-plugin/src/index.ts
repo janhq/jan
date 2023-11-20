@@ -7,7 +7,6 @@
  */
 
 import {
-  ChatCompletionMessage,
   ChatCompletionRole,
   EventName,
   MessageRequest,
