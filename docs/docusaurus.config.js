@@ -104,7 +104,7 @@ const config = {
         specs: [
           {
             spec: "openapi/jan.yaml", // can be local file, url, or parsed json object
-            route: "/api-reference", // path where to render docs
+            route: "/api-reference/", // path where to render docs
           },
         ],
         theme: {
