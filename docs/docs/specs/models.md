@@ -4,7 +4,7 @@ title: Models
 
 :::caution
 
-Draft Specification: functionality has not been implemented yet.
+This is currently under development.
 
 :::
 
@@ -46,7 +46,7 @@ jan/                               # Jan root folder
 - `model.json` contains metadata and default parameters used to run a model.
 - The only required field is `source_url`.
 
-### GGUF Example
+### Example
 
 Here's a standard example `model.json` for a GGUF model.
 
@@ -95,7 +95,7 @@ See [Jan Models API](https://jan.ai/api-reference#tag/Models)
 
 :::caution
 
-This is current under development.
+This is currently under development.
 
 :::
 
