@@ -67,6 +67,7 @@ function loadLLMModel(): Promise<Response> {
     llama_model_path: currentModelFile,
     ctx_len: 2048,
     ngl: 100,
+    cont_batching: false,
     embedding: false, // Always enable embedding mode on
   };
 
@@ -117,7 +118,8 @@ async function validateModelStatus(): Promise<InitModelResponse> {
       return { error: "Model loading failed" };
     })
     .catch((err) => {
-      return { error: `Model loading failed. ${err.message}` };
+      log.error("Model loading failed" + err.toString());
+      return { error: `Model loading failed.` };
     });
 }
 
