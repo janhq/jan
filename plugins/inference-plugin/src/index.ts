@@ -28,6 +28,7 @@ import { fs } from "@janhq/core";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferencePlugin implements InferencePlugin {
+  controller = new AbortController();
   /**
    * Returns the type of the plugin.
    * @returns {PluginType} The type of the plugin.
@@ -75,7 +76,7 @@ export default class JanInferencePlugin implements InferencePlugin {
    * @returns {Promise<void>} A promise that resolves when the streaming is stopped.
    */
   async stopInference(): Promise<void> {
-    // TODO: Implementation
+    this.controller.abort();
   }
 
   /**
@@ -121,7 +122,9 @@ export default class JanInferencePlugin implements InferencePlugin {
     };
     events.emit(EventName.OnNewMessageResponse, message);
 
-    requestInference(data.messages).subscribe({
+    this.controller = new AbortController();
+
+    requestInference(data.messages, this.controller).subscribe({
       next: (content) => {
         message.content = content;
         events.emit(EventName.OnMessageResponseUpdate, message);
