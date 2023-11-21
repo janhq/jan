@@ -12,6 +12,9 @@ This is currently under development.
 
 `Messages` are in `threads` and capture additional metadata.
 
+- Users and assistants can send multimedia messages.
+- An [OpenAI Message API](https://platform.openai.com/docs/api-reference/messages) compatible endpoint at `localhost:3000/v1/messages`.
+
 ## Folder Structure
 
 - `Message` objects are stored in `thread.json` files under the `messages` property. See [threads](./threads.md).
