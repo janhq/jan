@@ -1,4 +1,7 @@
 @layer base {
+  html {
+    @apply scroll-smooth;
+  }
   html[data-theme="light"] {
     --ifm-background-color: white;
     --ifm-color-primary: #2563eb; /* New Primary Blue */
