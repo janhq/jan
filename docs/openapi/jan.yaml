@@ -1,0 +1,190 @@
+openapi: 3.0.0
+info:
+  title: Jan API Reference
+  description: Please see https://jan.ai for documentation.
+version: "0.1.8"
+contact:
+  name: Jan Discord
+  url: https://discord.gg/7EcEz7MrvA
+license:
+  name: AGPLv3
+  url: https://github.com/janhq/nitro/blob/main/LICENSE
+servers:
+  - url: https://localhost:1337/v1/
+tags:
+  - name: Models
+    description: List and describe the various models available in the API.
+  - name: Chat Completion
+    description: Given a list of messages comprising a conversation, the model will return a response.
+  - name: Messages
+    description: Operations for individual messages, including creation, retrieval, and modification
+  - name: Threads
+    description: Manages series of related messages or conversation threads
+  - name: Assistants
+    description: Configures and utilizes different AI assistants for varied tasks
+x-tagGroups:
+  - name: Endpoints
+    tags:
+      - Models
+      - Chat Completion
+  - name: Chat
+    tags:
+      - Assistants
+      - Messages
+      - Threads
+paths:
+  /models:
+    get:
+      operationId: listModels
+      tags:
+        - Models
+      summary: List Models
+      description: Lists the currently available models, and provides basic information about each one such as the owner and availability.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "specs/models/models.yaml#/components/schemas/ListModelsResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl https://localhost:1337/v1/models
+    post:
+      operationId: downloadModel
+      tags:
+        - Models
+      summary: Download Model
+      description: Download a model.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "specs/models/models.yaml#/components/schemas/DownloadModelResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X POST https://localhost:1337/v1/models
+  /models/{model_id}:          
+    get:
+      operationId: getModel
+      tags:
+        - Models
+      summary: Get Model
+      description: Get a model instance, providing basic information about the model such as the owner and permissioning.
+      parameters:
+        - in: path
+          name: source_url
+          required: true
+          schema:
+            type: string
+            # ideally this will be an actual ID, so this will always work from browser
+            example: https://huggingface.com/thebloke/example.gguf
+          description: The ID of the model to use for this request
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "specs/models/models.yaml#/components/schemas/GetModelResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl https://localhost:1337/v1/models/zephyr-7b
+    delete:
+      operationId: deleteModel
+      tags:
+        - Models
+      summary: Delete Model
+      description: Delete a model.
+      parameters:
+        - in: path
+          name: model
+          required: true
+          schema:
+            type: string
+            example: zephyr-7b
+          description: The model to delete
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "specs/models/models.yaml#/components/schemas/DeleteModelResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X DELETE https://localhost:1337/v1/models/zephyr-7b      
+  /models/{model_id}/start:
+    put:
+      operationId: startModel
+      tags:
+        - Models
+      summary: Start Model
+      description: Starts an imported model. Loads the model into V/RAM.
+      parameters:
+        - in: path
+          name: model
+          required: true
+          schema:
+            type: string
+            # ideally this will be an actual ID, so this will always work from browser
+            example: zephyr-7b
+          description: The ID of the model to use for this request
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "specs/models/models.yaml#/components/schemas/StartModelResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X PUT https://localhost:1337/v1/models/zephyr-7b/start      
+  /models/{model_id}/stop:
+    put:
+      operationId: stopModel
+      tags:
+        - Models
+      summary: Stop Model
+      description: Stop an imported model.
+      parameters:
+        - in: path
+          name: model
+          required: true
+          schema:
+            type: string
+            # ideally this will be an actual ID, so this will always work from browser
+            example: zephyr-7b
+          description: The ID of the model to use for this request
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "specs/models/models.yaml#/components/schemas/StopModelResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X PUT https://localhost:1337/v1/models/zephyr-7b/stop     
+    
+x-webhooks:
+  ModelObject:
+    post:
+      summary: The model object
+      description: Information about a model in the systems
+      operationId: ModelObject
+      tags:
+        - Models
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: 'specs/models/models.yaml#/components/schemas/ModelObject'
