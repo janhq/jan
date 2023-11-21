@@ -8,11 +8,11 @@ rules:
   no-unused-components: error
 
 theme:
-  # See https://redocly.com/docs/api-reference-docs/configuration/functionality/
   openapi:
-    disableSearch: true
-    # See https://redocly.com/docs/api-reference-docs/configuration/theming/
-    theme:
-      colors:
-        primary:
-          main: '#32329f'
+    schemaExpansionLevel: 2
+    generateCodeSamples:
+      languages:
+        - lang: curl
+        - lang: Python
+        - lang: JavaScript
+        - lang: Node.js
