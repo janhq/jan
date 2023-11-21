@@ -55,6 +55,23 @@ const rmdir: (path: string) => Promise<any> = (path) =>
 const deleteFile: (path: string) => Promise<any> = (path) =>
   window.coreAPI?.deleteFile(path) ?? window.electronAPI?.deleteFile(path);
 
+/**
+ * Appends data to a file at the specified path.
+ * @param path path to the file
+ * @param data data to append
+ */
+const appendFile: (path: string, data: string) => Promise<any> = (path, data) =>
+  window.coreAPI?.appendFile(path, data) ??
+  window.electronAPI?.appendFile(path, data);
+
+const readLineByLine: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.readLineByLine(path) ??
+  window.electronAPI?.readLineByLine(path);
+
+const openFileExplorer: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.openFileExplorer(path) ??
+  window.electronAPI?.openFileExplorer(path);
+
 export const fs = {
   isDirectory,
   writeFile,
@@ -63,4 +80,7 @@ export const fs = {
   mkdir,
   rmdir,
   deleteFile,
+  appendFile,
+  readLineByLine,
+  openFileExplorer,
 };

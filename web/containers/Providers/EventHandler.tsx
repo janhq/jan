@@ -21,7 +21,7 @@ import {
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   updateConversationWaitingForResponseAtom,
-  userConversationsAtom,
+  threadsAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 import { pluginManager } from '@/plugin'
@@ -36,7 +36,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
   const models = useAtomValue(downloadingModelsAtom)
   const messages = useAtomValue(chatMessages)
-  const conversations = useAtomValue(userConversationsAtom)
+  const conversations = useAtomValue(threadsAtom)
   const messagesRef = useRef(messages)
   const convoRef = useRef(conversations)
 
@@ -46,55 +46,48 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   }, [messages, conversations])
 
   async function handleNewMessageResponse(message: ThreadMessage) {
-    if (message.threadId) {
-      const convo = convoRef.current.find((e) => e.id == message.threadId)
-      if (!convo) return
-      addNewMessage(message)
-    }
-  }
-  async function handleMessageResponseUpdate(messageResponse: ThreadMessage) {
-    if (
-      messageResponse.threadId &&
-      messageResponse.id &&
-      messageResponse.content
-    ) {
-      updateMessage(
-        messageResponse.id,
-        messageResponse.threadId,
-        messageResponse.content,
-        MessageStatus.Pending
-      )
-    }
+    addNewMessage(message)
   }
 
-  async function handleMessageResponseFinished(messageResponse: ThreadMessage) {
-    if (!messageResponse.threadId || !convoRef.current) return
-    updateConvWaiting(messageResponse.threadId, false)
+  async function handleMessageResponseUpdate(message: ThreadMessage) {
+    updateMessage(
+      message.id,
+      message.thread_id,
+      message.content,
+      MessageStatus.Pending
+    )
+  }
 
-    if (
-      messageResponse.threadId &&
-      messageResponse.id &&
-      messageResponse.content
-    ) {
+  async function handleMessageResponseFinished(message: ThreadMessage) {
+    if (!convoRef.current) return
+    updateConvWaiting(message.thread_id, false)
+
+    if (message.id && message.content) {
       updateMessage(
-        messageResponse.id,
-        messageResponse.threadId,
-        messageResponse.content,
+        message.id,
+        message.thread_id,
+        message.content,
         MessageStatus.Ready
       )
     }
 
-    const thread = convoRef.current.find(
-      (e) => e.id == messageResponse.threadId
-    )
+    const thread = convoRef.current.find((e) => e.id == message.thread_id)
     if (thread) {
+      const messageContent = message.content[0]?.text.value ?? ''
+      const metadata = {
+        ...thread.metadata,
+        lastMessage: messageContent,
+      }
       pluginManager
         .get<ConversationalPlugin>(PluginType.Conversational)
-        ?.saveConversation({
+        ?.saveThread({
           ...thread,
-          id: thread.id ?? '',
-          messages: messagesRef.current[thread.id] ?? [],
+          metadata,
         })
+
+      pluginManager
+        .get<ConversationalPlugin>(PluginType.Conversational)
+        ?.addNewMessage(message)
     }
   }
 

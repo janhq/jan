@@ -26,10 +26,10 @@ export abstract class ModelPlugin extends JanPlugin {
 
   /**
    * Deletes a model.
-   * @param filePath - The file path of the model to delete.
+   * @param modelId - The ID of the model to delete.
    * @returns A Promise that resolves when the model has been deleted.
    */
-  abstract deleteModel(filePath: string): Promise<void>;
+  abstract deleteModel(modelId: string): Promise<void>;
 
   /**
    * Saves a model.

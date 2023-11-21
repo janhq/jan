@@ -64,28 +64,28 @@ const MyModelsScreen = () => {
                       <div className="inline-flex rounded-full border border-border p-1">
                         <Avatar className="h-8 w-8">
                           <AvatarImage
-                            src={model.avatarUrl}
-                            alt={model.author}
+                            src={model.metadata.avatarUrl}
+                            alt={model.metadata.author}
                           />
                           <AvatarFallback>
-                            {model.author.charAt(0)}
+                            {model.metadata.author.charAt(0)}
                           </AvatarFallback>
                         </Avatar>
                       </div>
                       <div>
                         <h2 className="mb-1 font-medium capitalize">
-                          {model.author}
+                          {model.metadata.author}
                         </h2>
                         <p className="line-clamp-1">{model.name}</p>
                         <div className="mt-2 flex items-center gap-2">
                           <Badge themes="secondary">v{model.version}</Badge>
                           <Badge themes="outline">GGUF</Badge>
                           <Badge themes="outline">
-                            {toGigabytes(model.size)}
+                            {toGigabytes(model.metadata.size)}
                           </Badge>
                         </div>
                         <p className="mt-2 line-clamp-2 break-all">
-                          {model.longDescription}
+                          {model.description}
                         </p>
                       </div>
                     </div>
@@ -102,7 +102,7 @@ const MyModelsScreen = () => {
                           </ModalHeader>
                           <p className="leading-relaxed">
                             Delete model {model.name}, v{model.version},{' '}
-                            {toGigabytes(model.size)}.
+                            {toGigabytes(model.metadata.size)}.
                           </p>
                           <ModalFooter>
                             <div className="flex gap-x-2">

@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 
+import { Model } from '@janhq/core/lib/types'
 import { PluginType } from '@janhq/core'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
-import { ModelVersion } from '@janhq/core/lib/types'
 
 import {
   Modal,
@@ -25,7 +25,7 @@ import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 import { pluginManager } from '@/plugin'
 
 type Props = {
-  suitableModel: ModelVersion
+  suitableModel: Model
   isFromList?: boolean
 }
 

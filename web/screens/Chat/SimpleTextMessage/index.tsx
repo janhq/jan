@@ -50,7 +50,12 @@ const marked = new Marked(
 )
 
 const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
-  const parsedText = marked.parse(props.content ?? '')
+  let text = ''
+  if (props.content && props.content.length > 0) {
+    text = props.content[0]?.text?.value ?? ''
+  }
+
+  const parsedText = marked.parse(text)
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
   const [tokenCount, setTokenCount] = useState(0)
@@ -66,7 +71,8 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     const currentTimestamp = new Date().getTime() // Get current time in milliseconds
     if (!lastTimestamp) {
       // If this is the first update, just set the lastTimestamp and return
-      if (props.content !== '') setLastTimestamp(currentTimestamp)
+      if (props.content[0]?.text?.value !== '')
+        setLastTimestamp(currentTimestamp)
       return
     }
 
@@ -89,7 +95,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       >
         {!isUser && !isSystem && <LogoMark width={20} />}
         <div className="text-sm font-extrabold capitalize">{props.role}</div>
-        <p className="text-xs font-medium">{displayDate(props.createdAt)}</p>
+        <p className="text-xs font-medium">{displayDate(props.created)}</p>
         <div
           className={twMerge(
             'absolute right-0 cursor-pointer transition-all',
@@ -104,7 +110,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
       <div className={twMerge('w-full')}>
         {props.status === MessageStatus.Pending &&
-        (!props.content || props.content === '') ? (
+        (!props.content[0] || props.content[0].text.value === '') ? (
           <BubbleLoader />
         ) : (
           <>

@@ -1,32 +1,36 @@
-import { Thread } from "../index";
+import { Thread, ThreadMessage } from "../index";
 import { JanPlugin } from "../plugin";
 
 /**
- * Abstract class for conversational plugins.
+ * Abstract class for Thread plugins.
  * @abstract
  * @extends JanPlugin
  */
 export abstract class ConversationalPlugin extends JanPlugin {
   /**
-   * Returns a list of conversations.
+   * Returns a list of thread.
    * @abstract
-   * @returns {Promise<any[]>} A promise that resolves to an array of conversations.
+   * @returns {Promise<Thread[]>} A promise that resolves to an array of threads.
    */
-  abstract getConversations(): Promise<any[]>;
+  abstract getThreads(): Promise<Thread[]>;
 
   /**
-   * Saves a conversation.
+   * Saves a thread.
    * @abstract
-   * @param {Thread} conversation - The conversation to save.
-   * @returns {Promise<void>} A promise that resolves when the conversation is saved.
+   * @param {Thread} thread - The thread to save.
+   * @returns {Promise<void>} A promise that resolves when the thread is saved.
    */
-  abstract saveConversation(conversation: Thread): Promise<void>;
+  abstract saveThread(thread: Thread): Promise<void>;
 
   /**
-   * Deletes a conversation.
+   * Deletes a thread.
    * @abstract
-   * @param {string} conversationId - The ID of the conversation to delete.
-   * @returns {Promise<void>} A promise that resolves when the conversation is deleted.
+   * @param {string} threadId - The ID of the thread to delete.
+   * @returns {Promise<void>} A promise that resolves when the thread is deleted.
    */
-  abstract deleteConversation(conversationId: string): Promise<void>;
+  abstract deleteThread(threadId: string): Promise<void>;
+
+  abstract addNewMessage(message: ThreadMessage): Promise<void>;
+
+  abstract getAllMessages(threadId: string): Promise<ThreadMessage[]>;
 }

@@ -9,6 +9,8 @@ import { join } from 'path'
  */
 export default class JanModelPlugin implements ModelPlugin {
   private static readonly _homeDir = 'models'
+  private static readonly _modelMetadataFileName = 'model.json'
+
   /**
    * Implements type from JanPlugin.
    * @override
@@ -42,12 +44,12 @@ export default class JanModelPlugin implements ModelPlugin {
    */
   async downloadModel(model: Model): Promise<void> {
     // create corresponding directory
-    const directoryPath = join(JanModelPlugin._homeDir, model.name)
+    const directoryPath = join(JanModelPlugin._homeDir, model.id)
     await fs.mkdir(directoryPath)
 
     // path to model binary
     const path = join(directoryPath, model.id)
-    downloadFile(model.downloadLink, path)
+    downloadFile(model.source_url, path)
   }
 
   /**
@@ -68,12 +70,10 @@ export default class JanModelPlugin implements ModelPlugin {
    * @param filePath - The path to the model file to delete.
    * @returns A Promise that resolves when the model is deleted.
    */
-  async deleteModel(filePath: string): Promise<void> {
+  async deleteModel(modelId: string): Promise<void> {
     try {
-      await Promise.allSettled([
-        fs.deleteFile(filePath),
-        fs.deleteFile(`${filePath}.json`),
-      ])
+      const dirPath = join(JanModelPlugin._homeDir, modelId)
+      await fs.rmdir(dirPath)
     } catch (err) {
       console.error(err)
     }
@@ -85,11 +85,14 @@ export default class JanModelPlugin implements ModelPlugin {
    * @returns A Promise that resolves when the model is saved.
    */
   async saveModel(model: Model): Promise<void> {
-    const directoryPath = join(JanModelPlugin._homeDir, model.name)
-    const jsonFilePath = join(directoryPath, `${model.id}.json`)
+    const jsonFilePath = join(
+      JanModelPlugin._homeDir,
+      model.id,
+      JanModelPlugin._modelMetadataFileName
+    )
 
     try {
-      await fs.writeFile(jsonFilePath, JSON.stringify(model))
+      await fs.writeFile(jsonFilePath, JSON.stringify(model, null, 2))
     } catch (err) {
       console.error(err)
     }
@@ -111,7 +114,7 @@ export default class JanModelPlugin implements ModelPlugin {
       }
 
       const jsonFiles: string[] = (await fs.listFiles(modelDirPath)).filter(
-        (file: string) => file.endsWith('.json')
+        (fileName: string) => fileName === JanModelPlugin._modelMetadataFileName
       )
 
       for (const json of jsonFiles) {

@@ -15,6 +15,11 @@ export { InferencePlugin } from "./inference";
 export { MonitoringPlugin } from "./monitoring";
 
 /**
+ * Assistant plugin for managing assistants.
+ */
+export { AssistantPlugin } from "./assistant";
+
+/**
  * Model plugin for managing models.
  */
 export { ModelPlugin } from "./model";

@@ -1,4 +1,4 @@
-import { ChatCompletionRole, PluginType } from '@janhq/core'
+import { PluginType } from '@janhq/core'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -13,74 +13,70 @@ import { useActiveModel } from './useActiveModel'
 import {
   cleanConversationMessages,
   deleteConversationMessage,
-  getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
-  userConversationsAtom,
-  getActiveConvoIdAtom,
-  setActiveConvoIdAtom,
+  threadsAtom,
+  getActiveThreadIdAtom,
+  setActiveThreadIdAtom,
 } from '@/helpers/atoms/Conversation.atom'
 
-export default function useDeleteConversation() {
+export default function useDeleteThread() {
   const { activeModel } = useActiveModel()
-  const [userConversations, setUserConversations] = useAtom(
-    userConversationsAtom
-  )
+  const [userConversations, setUserConversations] = useAtom(threadsAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
-  const activeConvoId = useAtomValue(getActiveConvoIdAtom)
+  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
 
-  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
+  const setActiveConvoId = useSetAtom(setActiveThreadIdAtom)
   const deleteMessages = useSetAtom(deleteConversationMessage)
   const cleanMessages = useSetAtom(cleanConversationMessages)
-  const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
 
   const cleanConvo = async () => {
-    if (activeConvoId) {
+    if (activeThreadId) {
       const currentConversation = userConversations.filter(
-        (c) => c.id === activeConvoId
+        (c) => c.id === activeThreadId
       )[0]
-      cleanMessages(activeConvoId)
+      cleanMessages(activeThreadId)
       if (currentConversation)
         await pluginManager
           .get<ConversationalPlugin>(PluginType.Conversational)
-          ?.saveConversation({
+          ?.saveThread({
             ...currentConversation,
-            id: activeConvoId,
-            messages: currentMessages.filter(
-              (e) => e.role === ChatCompletionRole.System
-            ),
+            id: activeThreadId,
           })
     }
   }
-  const deleteConvo = async () => {
-    if (activeConvoId) {
-      try {
-        await pluginManager
-          .get<ConversationalPlugin>(PluginType.Conversational)
-          ?.deleteConversation(activeConvoId)
-        const currentConversations = userConversations.filter(
-          (c) => c.id !== activeConvoId
-        )
-        setUserConversations(currentConversations)
-        deleteMessages(activeConvoId)
-        setCurrentPrompt('')
-        toaster({
-          title: 'Chat successfully deleted.',
-          description: `Chat with ${activeModel?.name} has been successfully deleted.`,
-        })
-        if (currentConversations.length > 0) {
-          setActiveConvoId(currentConversations[0].id)
-        } else {
-          setActiveConvoId(undefined)
-        }
-      } catch (err) {
-        console.error(err)
+
+  const deleteThread = async () => {
+    if (!activeThreadId) {
+      alert('No active thread')
+      return
+    }
+    try {
+      await pluginManager
+        .get<ConversationalPlugin>(PluginType.Conversational)
+        ?.deleteThread(activeThreadId)
+      const currentConversations = userConversations.filter(
+        (c) => c.id !== activeThreadId
+      )
+      setUserConversations(currentConversations)
+      deleteMessages(activeThreadId)
+      setCurrentPrompt('')
+      toaster({
+        title: 'Chat successfully deleted.',
+        description: `Chat with ${activeModel?.name} has been successfully deleted.`,
+      })
+      if (currentConversations.length > 0) {
+        setActiveConvoId(currentConversations[0].id)
+      } else {
+        setActiveConvoId(undefined)
       }
+    } catch (err) {
+      console.error(err)
     }
   }
 
   return {
     cleanConvo,
-    deleteConvo,
+    deleteThread,
   }
 }

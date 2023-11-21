@@ -35,10 +35,20 @@ interface InitModelResponse {
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  * TODO: Should it be startModel instead?
  */
-function initModel(modelFile: string): Promise<InitModelResponse> {
+function initModel(wrapper: any): Promise<InitModelResponse> {
   // 1. Check if the model file exists
-  currentModelFile = modelFile;
-  log.info("Started to load model " + modelFile);
+  currentModelFile = wrapper.modelFullPath;
+  log.info("Started to load model " + wrapper.modelFullPath);
+
+  const settings = {
+    llama_model_path: currentModelFile,
+    ctx_len: 2048,
+    ngl: 100,
+    cont_batching: false,
+    embedding: false, // Always enable embedding mode on
+    ...wrapper.settings,
+  };
+  log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
 
   return (
     // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
@@ -47,12 +57,12 @@ function initModel(modelFile: string): Promise<InitModelResponse> {
       // 2. Spawn the Nitro subprocess
       .then(spawnNitroProcess)
       // 4. Load the model into the Nitro subprocess (HTTP POST request)
-      .then(loadLLMModel)
+      .then(() => loadLLMModel(settings))
       // 5. Check if the model is loaded successfully
       .then(validateModelStatus)
       .catch((err) => {
         log.error("error: " + JSON.stringify(err));
-        return { error: err, modelFile };
+        return { error: err, currentModelFile };
       })
   );
 }
@@ -61,22 +71,14 @@ function initModel(modelFile: string): Promise<InitModelResponse> {
  * Loads a LLM model into the Nitro subprocess by sending a HTTP POST request.
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
-function loadLLMModel(): Promise<Response> {
-  const config = {
-    llama_model_path: currentModelFile,
-    ctx_len: 2048,
-    ngl: 100,
-    cont_batching: false,
-    embedding: false, // Always enable embedding mode on
-  };
-
+function loadLLMModel(settings): Promise<Response> {
   // Load model config
   return fetchRetry(NITRO_HTTP_LOAD_MODEL_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(config),
+    body: JSON.stringify(settings),
     retries: 3,
     retryDelay: 500,
   }).catch((err) => {
@@ -151,7 +153,7 @@ function checkAndUnloadNitro() {
           "Content-Type": "application/json",
         },
       }).catch((err) => {
-        console.log(err);
+        console.error(err);
         // Fallback to kill the port
         return killSubprocess();
       });
@@ -195,7 +197,7 @@ async function spawnNitroProcess(): Promise<void> {
 
     // Handle subprocess output
     subprocess.stdout.on("data", (data) => {
-      console.log(`stdout: ${data}`);
+      console.debug(`stdout: ${data}`);
     });
 
     subprocess.stderr.on("data", (data) => {
@@ -204,7 +206,7 @@ async function spawnNitroProcess(): Promise<void> {
     });
 
     subprocess.on("close", (code) => {
-      console.log(`child process exited with code ${code}`);
+      console.debug(`child process exited with code ${code}`);
       subprocess = null;
       reject(`Nitro process exited. ${code ?? ""}`);
     });

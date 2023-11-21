@@ -26,9 +26,13 @@ import { FeatureToggleContext } from '@/context/FeatureToggle'
 import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
+import { useSetAtom } from 'jotai'
+import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 
 export default function CommandSearch() {
   const { setMainViewState } = useMainViewState()
+  const [open, setOpen] = useState(false)
+  const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
 
   const menus = [
     {
@@ -60,8 +64,6 @@ export default function CommandSearch() {
       shortcut: <ShortCut menu="," />,
     },
   ]
-
-  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -120,6 +122,13 @@ export default function CommandSearch() {
           </CommandGroup>
         </CommandList>
       </CommandModal>
+      <Button
+        themes="outline"
+        className="unset-drag justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
+        onClick={() => setShowRightSideBar((show) => !show)}
+      >
+        Toggle right
+      </Button>
     </Fragment>
   )
 }
