@@ -29,6 +29,7 @@ import { fs } from "@janhq/core";
  */
 export default class JanInferencePlugin implements InferencePlugin {
   controller = new AbortController();
+  isCancelled = false;
   /**
    * Returns the type of the plugin.
    * @returns {PluginType} The type of the plugin.
@@ -41,7 +42,9 @@ export default class JanInferencePlugin implements InferencePlugin {
    * Subscribes to events emitted by the @janhq/core package.
    */
   onLoad(): void {
-    events.on(EventName.OnNewMessageRequest, this.handleMessageRequest);
+    events.on(EventName.OnNewMessageRequest, (data) =>
+      JanInferencePlugin.handleMessageRequest(data, this)
+    );
   }
 
   /**
@@ -76,7 +79,8 @@ export default class JanInferencePlugin implements InferencePlugin {
    * @returns {Promise<void>} A promise that resolves when the streaming is stopped.
    */
   async stopInference(): Promise<void> {
-    this.controller.abort();
+    this.isCancelled = true;
+    this.controller?.abort();
   }
 
   /**
@@ -109,9 +113,14 @@ export default class JanInferencePlugin implements InferencePlugin {
 
   /**
    * Handles a new message request by making an inference request and emitting events.
+   * Function registered in event manager, should be static to avoid binding issues.
+   * Pass instance as a reference.
    * @param {MessageRequest} data - The data for the new message request.
    */
-  private async handleMessageRequest(data: MessageRequest) {
+  private static async handleMessageRequest(
+    data: MessageRequest,
+    instance: JanInferencePlugin
+  ) {
     const message: ThreadMessage = {
       threadId: data.threadId,
       content: "",
@@ -122,9 +131,10 @@ export default class JanInferencePlugin implements InferencePlugin {
     };
     events.emit(EventName.OnNewMessageResponse, message);
 
-    this.controller = new AbortController();
+    instance.isCancelled = false;
+    instance.controller = new AbortController();
 
-    requestInference(data.messages, this.controller).subscribe({
+    requestInference(data.messages, instance.controller).subscribe({
       next: (content) => {
         message.content = content;
         events.emit(EventName.OnMessageResponseUpdate, message);
@@ -136,7 +146,8 @@ export default class JanInferencePlugin implements InferencePlugin {
       },
       error: async (err) => {
         message.content =
-          message.content.trim() + "\n" + "Error occurred: " + err.message;
+          message.content.trim() +
+          (instance.isCancelled ? "" : "\n" + "Error occurred: " + err.message);
         message.status = MessageStatus.Ready;
         events.emit(EventName.OnMessageResponseUpdate, message);
       },
