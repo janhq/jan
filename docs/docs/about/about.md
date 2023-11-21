@@ -2,9 +2,7 @@
 title: About Jan
 ---
 
-Jan is a free, open source alternative to OpenAI's platform that runs on a local folder of open-format files. 
-
-We believe in the need for an open source AI ecosystem, and are building the infra and tooling to allow open source AIs to be as usable and comprehensive as proprietary ones.
+Jan believes in the need for an open source AI ecosystem, and are building the infra and tooling to allow open source AIs to compete on a level playing field with proprietary ones.
 
 Jan's long-term vision is to build a cognitive framework for future robots, who are practical, useful assistants for humans and businesses in everyday life. 
 
@@ -89,3 +87,5 @@ Drop us a message in our [Discord](https://discord.gg/af6SaTdzpx) and we'll get 
 ### Careers
 
 Jan has a culture of ownership, independent thought, and lightning fast execution. If you'd like to join us, we have open positions on our [careers page](https://janai.bamboohr.com/careers).   
+
+## Footnotes

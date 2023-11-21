@@ -20,14 +20,13 @@ export function useGetConfiguredModels() {
   const [models, setModels] = useState<ModelCatalog[]>([])
 
   async function getConfiguredModels(): Promise<ModelCatalog[]> {
-    return (
-      ((await pluginManager
-        .get<ModelPlugin>(PluginType.Model)
-        ?.getConfiguredModels()) as ModelCatalog[]) ?? []
-    )
+    const models = await pluginManager
+      .get<ModelPlugin>(PluginType.Model)
+      ?.getConfiguredModels()
+    return models ?? []
   }
 
-  const fetchModels = async () => {
+  async function fetchModels() {
     setLoading(true)
     let models = await getConfiguredModels()
     if (process.env.NODE_ENV === 'development') {
@@ -37,10 +36,8 @@ export function useGetConfiguredModels() {
     setModels(models)
   }
 
-  // TODO allow user for filter
   useEffect(() => {
     fetchModels()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return { loading, models }

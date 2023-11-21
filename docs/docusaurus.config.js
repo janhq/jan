@@ -58,15 +58,13 @@ const config = {
     ],
   ],
 
-  // Only for react live
   themes: ["@docusaurus/theme-live-codeblock"],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
   presets: [
     [
-      "classic",
-      /** @type {import('@docusaurus/preset-classic').Options} */
-      ({
+      "@docusaurus/preset-classic",
+      {
         // Will be passed to @docusaurus/plugin-content-docs (false to disable)
         docs: {
           routeBasePath: "/",
@@ -97,7 +95,7 @@ const config = {
         },
         // Will be passed to @docusaurus/plugin-content-pages (false to disable)
         // pages: {},
-      }),
+      },
     ],
     // Redoc preset
     [
@@ -105,8 +103,8 @@ const config = {
       {
         specs: [
           {
-            spec: "openapi/OpenAPISpec.json", // can be local file, url, or parsed json object
-            route: "/api/",
+            spec: "openapi/jan.yaml", // can be local file, url, or parsed json object
+            route: "/api-reference", // path where to render docs
           },
         ],
         theme: {
@@ -119,59 +117,62 @@ const config = {
   ],
 
   // Docs: https://docusaurus.io/docs/api/themes/configuration
-  themeConfig:
-    /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
-    ({
-      image: "img/jan-social-card.png",
-      // Only for react live
-      liveCodeBlock: {
-        playgroundPosition: "bottom",
+  themeConfig: {
+    image: "img/jan-social-card.png",
+    // Only for react live
+    liveCodeBlock: {
+      playgroundPosition: "bottom",
+    },
+    docs: {
+      sidebar: {
+        hideable: true,
+        autoCollapseCategories: true,
       },
-      navbar: {
-        title: "Jan",
-        logo: {
-          alt: "Jan Logo",
-          src: "img/logo.svg",
+    },
+    navbar: {
+      title: "Jan",
+      logo: {
+        alt: "Jan Logo",
+        src: "img/logo.svg",
+      },
+      items: [
+        // Navbar Left
+        {
+          type: "docSidebar",
+          sidebarId: "docsSidebar",
+          position: "left",
+          label: "Documentation",
         },
-        items: [
-          // Navbar Left
-          {
-            type: "docSidebar",
-            sidebarId: "docsSidebar",
-            position: "left",
-            label: "Documentation",
-          },
-          {
-            type: "docSidebar",
-            sidebarId: "apiSidebar",
-            position: "left",
-            label: "API Reference",
-          },
-          // Navbar right
-          {
-            to: "blog",
-            label: "Blog",
-            position: "right",
-          },
-          {
-            type: "docSidebar",
-            sidebarId: "aboutSidebar",
-            position: "right",
-            label: "About",
-          },
-        ],
-      },
-      prism: {
-        theme: darkCodeTheme,
-        darkTheme: darkCodeTheme,
-        additionalLanguages: ["python"],
-      },
-      colorMode: {
-        defaultMode: "dark",
-        disableSwitch: false,
-        respectPrefersColorScheme: false,
-      },
-    }),
+        {
+          position: "left",
+          to: "/api-reference",
+          label: "API Reference",
+        },
+        // Navbar right
+        {
+          to: "blog",
+          label: "Blog",
+          position: "right",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "aboutSidebar",
+          position: "right",
+          label: "About",
+        },
+      ],
+    },
+    prism: {
+      theme: darkCodeTheme,
+      darkTheme: darkCodeTheme,
+      additionalLanguages: ["python"],
+    },
+    colorMode: {
+      defaultMode: "dark",
+      disableSwitch: false,
+      respectPrefersColorScheme: false,
+    },
+  },
 };
 
 module.exports = config;

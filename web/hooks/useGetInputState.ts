@@ -10,15 +10,15 @@ import { currentConversationAtom } from '@/helpers/atoms/Conversation.atom'
 
 export default function useGetInputState() {
   const [inputState, setInputState] = useState<InputType>('loading')
-  const currentConvo = useAtomValue(currentConversationAtom)
+  const currentThread = useAtomValue(currentConversationAtom)
   const { activeModel } = useActiveModel()
   const { downloadedModels } = useGetDownloadedModels()
 
   const handleInputState = (
-    convo: Thread | undefined,
+    thread: Thread | undefined,
     currentModel: Model | undefined
   ) => {
-    if (convo == null) return
+    if (thread == null) return
     if (currentModel == null) {
       setInputState('loading')
       return
@@ -26,7 +26,7 @@ export default function useGetInputState() {
 
     // check if convo model id is in downloaded models
     const isModelAvailable = downloadedModels.some(
-      (model) => model.id === convo.modelId
+      (model) => model.id === thread.modelId
     )
 
     if (!isModelAvailable) {
@@ -35,7 +35,7 @@ export default function useGetInputState() {
       return
     }
 
-    if (convo.modelId !== currentModel.id) {
+    if (thread.modelId !== currentModel.id) {
       // in case convo model and active model is different,
       // ask user to init the required model
       setInputState('model-mismatch')
@@ -46,11 +46,11 @@ export default function useGetInputState() {
   }
 
   useEffect(() => {
-    handleInputState(currentConvo, activeModel)
+    handleInputState(currentThread, activeModel)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { inputState, currentConvo }
+  return { inputState, currentThread }
 }
 
 type InputType = 'available' | 'loading' | 'model-mismatch' | 'model-not-found'

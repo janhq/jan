@@ -2,8 +2,8 @@
 import React, { useMemo } from 'react'
 
 import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
-import { Button } from '@janhq/uikit'
-import { Badge } from '@janhq/uikit'
+import { Button, Badge } from '@janhq/uikit'
+
 import { atom, useAtomValue } from 'jotai'
 
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
@@ -73,16 +73,25 @@ const ModelVersionItem: React.FC<Props> = ({ model, modelVersion }) => {
   return (
     <div className="flex items-center justify-between gap-4 border-t border-border pb-3 pl-3 pr-4 pt-3 first:border-t-0">
       <div className="flex items-center gap-2">
-        <span className="mb-4 line-clamp-1 flex-1">{modelVersion.name}</span>
+        <span className="line-clamp-1 flex-1" title={modelVersion.name}>
+          {modelVersion.name}
+        </span>
       </div>
       <div className="flex items-center gap-4">
         <div className="flex justify-end gap-2">
-          <Badge themes="secondary" className="line-clamp-1 max-w-[240px]">
+          <Badge
+            themes="secondary"
+            className="line-clamp-1 max-w-[240px] lg:line-clamp-none lg:max-w-none"
+            title={usecase}
+          >
             {usecase}
           </Badge>
-          <Badge themes="secondary" className="line-clamp-1 ">{`${toGigabytes(
-            maxRamRequired
-          )} RAM required`}</Badge>
+
+          <Badge
+            themes="secondary"
+            className="line-clamp-1"
+            title={`${toGigabytes(maxRamRequired)} RAM required`}
+          >{`${toGigabytes(maxRamRequired)} RAM required`}</Badge>
           <Badge themes="secondary">{toGigabytes(modelVersion.size)}</Badge>
         </div>
         {downloadButton}

@@ -16,6 +16,8 @@ import { ulid } from 'ulid'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
+import { useActiveModel } from './useActiveModel'
+
 import {
   addNewMessageAtom,
   getCurrentChatMessagesAtom,
@@ -34,54 +36,51 @@ export default function useSendChatMessage() {
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
-
-  let timeout: NodeJS.Timeout | undefined = undefined
+  const { activeModel } = useActiveModel()
 
   function updateConvSummary(newMessage: MessageRequest) {
-    if (timeout) {
-      clearTimeout(timeout)
-    }
-    timeout = setTimeout(() => {
-      const conv = currentConvo
-      if (
-        !currentConvo?.summary ||
+    if (
+      currentConvo &&
+      newMessage.messages &&
+      newMessage.messages.length > 2 &&
+      (!currentConvo.summary ||
         currentConvo.summary === '' ||
-        currentConvo.summary.startsWith('Prompt:')
-      ) {
-        const summaryMsg: ChatCompletionMessage = {
-          role: ChatCompletionRole.User,
-          content:
-            'summary this conversation in 5 words, the response should just include the summary',
-        }
-        // Request convo summary
-        setTimeout(async () => {
-          const result = await pluginManager
-            .get<InferencePlugin>(PluginType.Inference)
-            ?.inferenceRequest({
-              ...newMessage,
-              messages: newMessage.messages?.concat([summaryMsg]),
-            })
-
-          if (
-            result?.message &&
-            result.message.split(' ').length <= 10 &&
-            conv?.id
-          ) {
-            const updatedConv = {
-              ...conv,
-              summary: result.message,
-            }
-            updateConversation(updatedConv)
-            pluginManager
-              .get<ConversationalPlugin>(PluginType.Conversational)
-              ?.saveConversation({
-                ...updatedConv,
-                messages: currentMessages,
-              })
-          }
-        }, 1000)
+        currentConvo.summary === activeModel?.name)
+    ) {
+      const summaryMsg: ChatCompletionMessage = {
+        role: ChatCompletionRole.User,
+        content:
+          'summary this conversation in a few words, the response should just include the summary',
       }
-    }, 100)
+      // Request convo summary
+      setTimeout(async () => {
+        const result = await pluginManager
+          .get<InferencePlugin>(PluginType.Inference)
+          ?.inferenceRequest({
+            ...newMessage,
+            messages: newMessage.messages?.slice(0, -1).concat([summaryMsg]),
+          })
+        if (
+          currentConvo &&
+          currentConvo.id === newMessage.threadId &&
+          result?.message &&
+          result?.message?.trim().length > 0 &&
+          result.message.split(' ').length <= 10
+        ) {
+          const updatedConv = {
+            ...currentConvo,
+            summary: result.message,
+          }
+          updateConversation(updatedConv)
+          pluginManager
+            .get<ConversationalPlugin>(PluginType.Conversational)
+            ?.saveConversation({
+              ...updatedConv,
+              messages: currentMessages,
+            })
+        }
+      }, 1000)
+    }
   }
 
   const sendChatMessage = async () => {
@@ -123,21 +122,7 @@ export default function useSendChatMessage() {
     }
     addNewMessage(threadMessage)
 
-    // delay randomly from 50 - 100ms
-    // to prevent duplicate message id
-    const delay = Math.floor(Math.random() * 50) + 50
-    await new Promise((resolve) => setTimeout(resolve, delay))
-
     events.emit(EventName.OnNewMessageRequest, messageRequest)
-    if (!currentConvo?.summary && currentConvo) {
-      const updatedConv: Thread = {
-        ...currentConvo,
-        summary: `Prompt: ${prompt}`,
-      }
-
-      updateConversation(updatedConv)
-    }
-
     updateConvSummary(messageRequest)
   }
 

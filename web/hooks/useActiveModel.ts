@@ -33,7 +33,10 @@ export function useActiveModel() {
     const model = downloadedModels.find((e) => e.id === modelId)
 
     if (!model) {
-      alert(`Model ${modelId} not found! Please re-download the model first.`)
+      toaster({
+        title: `Model ${modelId} not found!`,
+        description: `Please download the model first.`,
+      })
       setStateModel(() => ({
         state: 'start',
         loading: false,
