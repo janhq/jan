@@ -1,4 +1,4 @@
-import { MessageRequest } from "../index";
+import { MessageRequest, ThreadMessage } from "../index";
 import { JanPlugin } from "../plugin";
 
 /**
@@ -17,9 +17,14 @@ export abstract class InferencePlugin extends JanPlugin {
   abstract stopModel(): Promise<void>;
 
   /**
+   * Stops the streaming inference.
+   */
+  abstract stopInference(): Promise<void>;
+
+  /**
    * Processes an inference request.
    * @param data - The data for the inference request.
    * @returns The result of the inference request.
    */
-  abstract inferenceRequest(data: MessageRequest): Promise<any>;
+  abstract inferenceRequest(data: MessageRequest): Promise<ThreadMessage>;
 }

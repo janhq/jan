@@ -71,22 +71,30 @@ export default class JanInferencePlugin implements InferencePlugin {
   }
 
   /**
+   * Stops streaming inference.
+   * @returns {Promise<void>} A promise that resolves when the streaming is stopped.
+   */
+  async stopInference(): Promise<void> {
+    // TODO: Implementation
+  }
+
+  /**
    * Makes a single response inference request.
    * @param {MessageRequest} data - The data for the inference request.
    * @returns {Promise<any>} A promise that resolves with the inference response.
    */
-  async inferenceRequest(data: MessageRequest): Promise<any> {
-    const message = {
-      ...data,
-      message: "",
-      user: "assistant",
+  async inferenceRequest(data: MessageRequest): Promise<ThreadMessage> {
+    const message: ThreadMessage = {
+      threadId: data.threadId,
+      content: "",
       createdAt: new Date().toISOString(),
+      status: MessageStatus.Ready,
     };
 
     return new Promise(async (resolve, reject) => {
       requestInference(data.messages ?? []).subscribe({
         next: (content) => {
-          message.message = content;
+          message.content = content;
         },
         complete: async () => {
           resolve(message);
