@@ -5,6 +5,8 @@ const { spawn } = require("child_process");
 const tcpPortUsed = require("tcp-port-used");
 const fetchRetry = require("fetch-retry")(global.fetch);
 
+const log = require("electron-log");
+
 // The PORT to use for the Nitro subprocess
 const PORT = 3928;
 const LOCAL_HOST = "127.0.0.1";
@@ -35,6 +37,7 @@ interface InitModelResponse {
 function initModel(modelFile: string): Promise<InitModelResponse> {
   // 1. Check if the model file exists
   currentModelFile = modelFile;
+  log.info("Started to load model " + modelFile);
 
   return (
     // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
@@ -49,6 +52,7 @@ function initModel(modelFile: string): Promise<InitModelResponse> {
       // 5. Check if the model is loaded successfully
       .then(validateModelStatus)
       .catch((err) => {
+        log.error("error: " + JSON.stringify(err));
         return { error: err };
       })
   );
@@ -77,6 +81,7 @@ function loadLLMModel(): Promise<Response> {
     retryDelay: 500,
   }).catch((err) => {
     console.error(err);
+    log.error("error: " + JSON.stringify(err));
     // Fetch error, Nitro server might not started properly
     throw new Error("Model loading failed.");
   });
@@ -192,6 +197,7 @@ function spawnNitroProcess() {
   });
 
   subprocess.stderr.on("data", (data) => {
+    log.error("subprocess error:" + data.toString());
     console.error(`stderr: ${data}`);
   });
 
@@ -206,11 +212,14 @@ function spawnNitroProcess() {
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
 function validateModelVersion(): Promise<void> {
+  log.info("validateModelVersion");
   // Read the file
   return new Promise((resolve, reject) => {
     fs.open(currentModelFile, "r", (err, fd) => {
       if (err) {
+        log.error("validateModelVersion error" + JSON.stringify(err));
         console.error(err.message);
+        reject(err);
         return;
       }
 
@@ -220,7 +229,13 @@ function validateModelVersion(): Promise<void> {
       // Model version will be the 5th byte of the file
       fs.read(fd, buffer, 0, 1, 4, (err, bytesRead, buffer) => {
         if (err) {
+          log.error("validateModelVersion open error" + JSON.stringify(err));
           console.error(err.message);
+          fs.close(fd, (err) => {
+            log.error("validateModelVersion close error" + JSON.stringify(err));
+            if (err) console.error(err.message);
+          });
+          reject(err);
         } else {
           // Interpret the byte as ASCII
           if (buffer[0] === 0x01) {
