@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'docs/**'
+    tags: ["v[0-9]+.[0-9]+.[0-9]+-docs"]
   pull_request:
     branches:
       - main
@@ -18,7 +19,14 @@ on:
 jobs:
   deploy:
     name: Deploy to GitHub Pages
+    env:
+      CLOUDFLARE_ACCOUNT_ID: 9707100ef42a1a25bd70e3ee2137bd0e
+      CLOUDFLARE_PROJECT_NAME: jan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
@@ -50,15 +58,33 @@ jobs:
       - name: Build website
         run: sed -i '/process.env.DEBUG = namespaces;/c\// process.env.DEBUG = namespaces;' ./node_modules/debug/src/node.js && yarn build
         working-directory: docs
-      
+
+      - name: Publish to Cloudflare Pages PR Preview and Staging
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main')
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
+          directory: ./docs/build
+          # Optional: Enable this if you want to have GitHub Deployments triggered
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+        id: deployCloudflarePages
+
+      - uses: mshick/add-pr-comment@v2
+        if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
+        with:
+          message: |
+              Preview URL: ${{ steps.deployCloudflarePages.outputs.url }}
+
       - name: Add Custome Domain file
-        if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         run: echo "${{ vars.DOCUSAURUS_DOMAIN }}" > ./docs/build/CNAME
 
       # Popular action to deploy to GitHub Pages:
       # Docs: https://github.com/peaceiris/actions-gh-pages#%EF%B8%8F-docusaurus
       - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
