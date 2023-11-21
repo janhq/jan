@@ -41,23 +41,16 @@ jan/
 Here's a standard example `thread.json` for a conversation between the user and the default Jan assistant.
 
 ```json
-"type": "thread",                     // Defaults to "thread"
+"id": "thread_....",                  // Defaults to foldername
+"object": "thread",                     // Defaults to "thread"
 "summary": "funny physics joke",      // Defaults to ""
 "assistants": ["jan"],                // Defaults to "jan"
 "created": 1231231                    // Defaults to file creation time
 "metadata": {},                       // Defaults to {}
-"messages": [
-    {...message_0}, {...message_1}
-],
-"model_id": "...",                    // Do we need this property?
-// Overrides assistant.settings && model.settings
-"settings": {
-    ...
-},
-// Overrides assistant.settings && model.settings
-"parameters": {
-    ...
-},
+"messages": [],
+"model_id": "...",                    // Defaults to assistant.model ???
+"settings": {},                       // Defaults to and overrides assistant.settings
+"parameters": {},                     // Defaults to and overrides assistant.settings
 ```
 
 ## API Reference
@@ -66,7 +59,7 @@ Jan's Threads API is compatible with [OpenAI's Threads API](https://platform.ope
 
 See [Jan Threads API](https://jan.ai/api-reference#tag/Threads)
 
-<!-- TODO clean this part up into api -->
+<!-- TODO clean this part up into API -->
 
 ### Get thread
 
