@@ -10,13 +10,11 @@ This is currently under development.
 
 ## Overview
 
-`Messages` are in `threads` and capture additional metadata:
-
-- Users can ...
+`Messages` are in `threads` and capture additional metadata.
 
 ## Folder Structure
 
-- `Message` objects are in `thread.json` files under `messages` property. See [threads](./threads.md)
+- `Message` objects are stored in `thread.json` files under the `messages` property. See [threads](./threads.md).
 
 ## `message` object
 
