@@ -30,7 +30,8 @@ Here's a standard example `message` json.
 "object": "thread.message",           // Defaults to "thread.message"
 "created_at": 1698983503,
 "thread_id": "thread_asdf",           // Defaults to parent thread
-"role": "assistant",                  // Defaults to "user" or "assistant"
+"assistant_id": "jan",                // Defaults to parent thread
+"role": "assistant",                  // From either "user" or "assistant"
 "content": [
   {
     "type": "text",
@@ -40,9 +41,9 @@ Here's a standard example `message` json.
     }
   }
 ],
-"assistant_id": "...",
-"run_id": "...",                      // The `run` resulting in this message
 "metadata": {},                       // Defaults to {}
+"chat_completion_id": "",             // For now, we use `chat` completion id
+// "run_id": "...",                   // Rather than `run` id
 // "file_ids": [],
 ```
 
