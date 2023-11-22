@@ -4,7 +4,7 @@ title: Models
 
 :::caution
 
-Draft Specification: functionality has not been implemented yet.
+This is currently under development.
 
 :::
 
@@ -46,19 +46,19 @@ jan/                               # Jan root folder
 - `model.json` contains metadata and default parameters used to run a model.
 - The only required field is `source_url`.
 
-### GGUF Example
+### Example
 
 Here's a standard example `model.json` for a GGUF model.
 
 - `source_url`: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/.
 
 ```json
-"source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
-"type": "model",                    // Defaults to "model"
-"version": "1",                     // Defaults to 1
 "id": "zephyr-7b"                   // Defaults to foldername
+"object": "model",                    // Defaults to "model"
+"source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
 "name": "Zephyr 7B"                 // Defaults to foldername
 "owned_by": "you"                   // Defaults to you
+"version": "1",                     // Defaults to 1
 "created": 1231231                  // Defaults to file creation time
 "description": ""
 "state": enum[null, "downloading", "ready", "starting", "stopping", ...]
@@ -95,7 +95,7 @@ See [Jan Models API](https://jan.ai/api-reference#tag/Models)
 
 :::caution
 
-This is current under development.
+This is currently under development.
 
 :::
 
