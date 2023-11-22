@@ -2,76 +2,21 @@
 title: Linux
 ---
 
-# Installing Jan on Linux
+# Jan on Linux
 
 ## Installation
 
-### Step 1: Download the Installer
-To begin using 👋Jan.ai on your Windows computer, follow these steps:
-
-1. Visit [Jan.ai](https://jan.ai/).
-2. Click on the "Download for Windows" button to download the Jan Installer.
-
-![Jan Installer](/img/jan-download.png)
-
-:::tip
-
-For faster results, you should enable your NVIDIA GPU. Make sure to have the CUDA toolkit installed. You can download it from your Linux distro's package manager or from here: [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads).
-
-:::
-
+1. To download the lastest version of Jan on Linux, please visit the [Jan's homepage](https://jan.ai/).
+2. For Debian/Ubuntu-based distributions, the recommended installation method is through the `.deb` package (64-bit). This can be done either through the graphical software center, if available, or via the command line using the following:
 ```bash
-apt install nvidia-cuda-toolkit
+sudo apt install ./jan-linux-amd64-<version>.deb
+# sudo apt install ./jan-linux-arm64-0.3.1.deb
 ```
 
-Check the installation by
-
+## Uninstall Jan
+To uninstall VS Code on Linux, you should use your package manager's uninstall or remove option. For Debian/Ubuntu-based distributions, if you installed Jan via the `.deb` package, you can uninstall Jan using the following command:
 ```bash
-nvidia-smi
-```
-
-:::tip
-
-For AMD GPU. You can download it from your Linux distro's package manager or from here: [ROCm Quick Start (Linux)](https://rocm.docs.amd.com/en/latest/deploy/linux/quick_start.html).
-
-:::
-
-### Step 2: Download your first model
-Now, let's get your first model:
-
-1. After installation, you'll find the 👋Jan application icon on your desktop. Double-click to open it.
-
-2. Welcome to the Jan homepage. Click on "Explore Models" to see the Model catalog.
-
-![Explore models](/img/explore-model.png)
-
-3. You can also see different quantized versions by clicking on "Show Available Versions."
-
-![Model versions](/img/model-version.png)
-
-> Note: Choose a model that matches your computer's memory and RAM.
-
-4. Select your preferred model and click "Download."
-
-![Downloading](/img/downloading.png)
-
-### Step 3: Start the model
-Once your model is downloaded. Go to "My Models" and then click "Start Model."
-
-![Start model](/img/start-model.png)
-
-
-### Step 4: Start the conversations
-Now you're ready to start using 👋Jan.ai for conversations:
-
-Click "Chat" and begin your first conversation by selecting "New conversation."
-
-You can also check the CPU and Memory usage of the computer.
-
-![Chat](/img/chat.png)
-
-That's it! Enjoy using Large Language Models (LLMs) with 👋Jan.ai.
-
-## Uninstallation
-
-## Troubleshooting
+sudo apt-get remove jan`
+# where jan is the name of Jan package
+``` 
+In case you wish to completely remove all user data associated with Jan after uninstallation, you can delete the user data folders located at `$HOME/.config/Jan` and ~/.jan. This will return your system to its state prior to the installation of Jan. This method can also be used to reset all settings if you are experiencing any issues with Jan.

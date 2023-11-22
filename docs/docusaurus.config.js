@@ -33,6 +33,10 @@ const config = {
     defaultLocale: "en",
     locales: ["en"],
   },
+  
+  markdown: {
+    mermaid: true,
+  },
 
   // Plugins we added
   plugins: [
@@ -58,7 +62,7 @@ const config = {
     ],
   ],
 
-  themes: ["@docusaurus/theme-live-codeblock"],
+  
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
   presets: [
@@ -104,7 +108,7 @@ const config = {
         specs: [
           {
             spec: "openapi/jan.yaml", // can be local file, url, or parsed json object
-            route: "/api-reference", // path where to render docs
+            route: "/api-reference/", // path where to render docs
           },
         ],
         theme: {
@@ -178,6 +182,7 @@ const config = {
       respectPrefersColorScheme: false,
     },
   },
+  themes: ["@docusaurus/theme-live-codeblock", "@docusaurus/theme-mermaid"], 
 };
 
 module.exports = config;
