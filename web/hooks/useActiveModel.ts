@@ -49,7 +49,7 @@ export function useActiveModel() {
     console.debug('Init model: ', modelId)
     const path = join('models', model.name, modelId)
     const res = await initModel(path)
-    if (res?.error && modelId === activeModel?.id) {
+    if (res?.error && (!activeModel?.id || modelId === activeModel?.id)) {
       const errorMessage = `${res.error}`
       alert(errorMessage)
       setStateModel(() => ({

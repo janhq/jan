@@ -45,8 +45,6 @@ function initModel(modelFile: string): Promise<InitModelResponse> {
       .then(checkAndUnloadNitro)
       // 2. Spawn the Nitro subprocess
       .then(spawnNitroProcess)
-      // 3. Wait until the port is used (Nitro http server is up)
-      .then(() => tcpPortUsed.waitUntilUsed(PORT, 300, 30000))
       // 4. Load the model into the Nitro subprocess (HTTP POST request)
       .then(loadLLMModel)
       // 5. Check if the model is loaded successfully
@@ -165,47 +163,53 @@ function checkAndUnloadNitro() {
  * Using child-process to spawn the process
  * Should run exactly platform specified Nitro binary version
  */
-function spawnNitroProcess() {
-  let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
-  let binaryName;
+async function spawnNitroProcess(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
+    let binaryName;
 
-  if (process.platform === "win32") {
-    // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-    binaryName = "win-start.bat";
-  } else if (process.platform === "darwin") {
-    // Mac OS platform
-    if (process.arch === "arm64") {
-      binaryFolder = path.join(binaryFolder, "mac-arm64");
+    if (process.platform === "win32") {
+      // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+      binaryName = "win-start.bat";
+    } else if (process.platform === "darwin") {
+      // Mac OS platform
+      if (process.arch === "arm64") {
+        binaryFolder = path.join(binaryFolder, "mac-arm64");
+      } else {
+        binaryFolder = path.join(binaryFolder, "mac-x64");
+      }
+      binaryName = "nitro";
     } else {
-      binaryFolder = path.join(binaryFolder, "mac-x64");
+      // Linux
+      // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+      binaryName = "linux-start.sh"; // For other platforms
     }
-    binaryName = "nitro";
-  } else {
-    // Linux
-    // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-    binaryName = "linux-start.sh"; // For other platforms
-  }
 
-  const binaryPath = path.join(binaryFolder, binaryName);
+    const binaryPath = path.join(binaryFolder, binaryName);
 
-  // Execute the binary
-  subprocess = spawn(binaryPath, [1, "0.0.0.0", PORT], {
-    cwd: binaryFolder,
-  });
+    // Execute the binary
+    subprocess = spawn(binaryPath, [1, "0.0.0.0", PORT], {
+      cwd: binaryFolder,
+    });
 
-  // Handle subprocess output
-  subprocess.stdout.on("data", (data) => {
-    console.log(`stdout: ${data}`);
-  });
+    // Handle subprocess output
+    subprocess.stdout.on("data", (data) => {
+      console.log(`stdout: ${data}`);
+    });
 
-  subprocess.stderr.on("data", (data) => {
-    log.error("subprocess error:" + data.toString());
-    console.error(`stderr: ${data}`);
-  });
+    subprocess.stderr.on("data", (data) => {
+      log.error("subprocess error:" + data.toString());
+      console.error(`stderr: ${data}`);
+    });
 
-  subprocess.on("close", (code) => {
-    console.log(`child process exited with code ${code}`);
-    subprocess = null;
+    subprocess.on("close", (code) => {
+      console.log(`child process exited with code ${code}`);
+      subprocess = null;
+      reject(`Nitro process exited. ${code ?? ""}`);
+    });
+    tcpPortUsed.waitUntilUsed(PORT, 300, 30000).then(() => {
+      resolve();
+    });
   });
 }
 
