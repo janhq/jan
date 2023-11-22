@@ -46,7 +46,7 @@ components:
           description: "Description of the model."
         state:
           type: string
-          enum: [null, "downloading", "available"]
+          enum: [null, "downloading", "ready", "starting", "stopping"]
           description: "Current state of the model."
         format:
           type: string

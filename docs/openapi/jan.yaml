@@ -33,6 +33,7 @@ x-tagGroups:
       - Messages
       - Threads
 paths:
+  ### MODELS
   /models:
     get:
       operationId: listModels
@@ -46,7 +47,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "specs/models/models.yaml#/components/schemas/ListModelsResponse"
+                $ref: "specs/models.yaml#/components/schemas/ListModelsResponse"
       x-codeSamples:
         - lang: "curl"
           source: |
@@ -63,7 +64,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "specs/models/models.yaml#/components/schemas/DownloadModelResponse"
+                $ref: "specs/models.yaml#/components/schemas/DownloadModelResponse"
       x-codeSamples:
         - lang: "curl"
           source: |
@@ -90,7 +91,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "specs/models/models.yaml#/components/schemas/GetModelResponse"
+                $ref: "specs/models.yaml#/components/schemas/GetModelResponse"
       x-codeSamples:
         - lang: "curl"
           source: |
@@ -115,7 +116,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "specs/models/models.yaml#/components/schemas/DeleteModelResponse"
+                $ref: "specs/models.yaml#/components/schemas/DeleteModelResponse"
       x-codeSamples:
         - lang: "curl"
           source: |
@@ -142,7 +143,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "specs/models/models.yaml#/components/schemas/StartModelResponse"
+                $ref: "specs/models.yaml#/components/schemas/StartModelResponse"
       x-codeSamples:
         - lang: "curl"
           source: |
@@ -169,12 +170,359 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "specs/models/models.yaml#/components/schemas/StopModelResponse"
+                $ref: "specs/models.yaml#/components/schemas/StopModelResponse"
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl -X PUT https://localhost:1337/v1/models/zephyr-7b/stop     
-    
+            curl -X PUT https://localhost:1337/v1/models/zephyr-7b/stop
+
+  ### THREADS
+  /threads:
+    post:
+      operationId: createThread
+      tags:
+        - Threads
+      summary: Create a new thread
+      description: Creates a new thread with an initial set of messages.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                messages:
+                  type: array
+                  description: "Initial set of messages for the thread."
+                  items:
+                    $ref: 'specs/threads.yaml#/components/schemas/ThreadMessageObject'
+              required:
+                - messages
+      responses:
+        "200":
+          description: Thread created successfully
+          content:
+            application/json:
+              schema:
+                $ref: 'specs/threads.yaml#/components/schemas/CreateThreadResponse'
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X POST {JAN_URL}/v1/threads \
+              -H "Content-Type: application/json" \
+              -d '{"messages": [{"role": "user", "content": "Hello, what is AI?", "file_ids": ["file-abc123"]}, {"role": "user", "content": "How does AI work? Explain it in simple terms."}]}'
+    get:
+      operationId: listThreads
+      tags:
+        - Threads
+      summary: List all threads
+      description: Retrieves a list of all threads available in the system.
+      responses:
+        "200":
+          description: List of threads retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: 'specs/threads.yaml#/components/schemas/ThreadObject'
+                example:
+                  - id: "thread_abc123"
+                    object: "thread"
+                    created_at: 1699014083
+                    assistants: ["assistant-001"]
+                    metadata: {}
+                    messages: []
+                  - id: "thread_abc456"
+                    object: "thread"
+                    created_at: 1699014083
+                    assistants: ["assistant-002", "assistant-003"]
+                    metadata: {}
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl {JAN_URL}/v1/threads \
+              -H "Content-Type: application/json"
+  
+  /threads/{thread_id}:
+    get:
+      operationId: getThread
+      tags:
+        - Threads
+      summary: Get details of a specific thread
+      description: Retrieves detailed information about a specific thread using its thread_id.
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread to retrieve.
+      responses:
+        "200":
+          description: Thread details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "specs/threads.yaml#/components/schemas/GetThreadResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl {JAN_URL}/v1/threads/{thread_id}
+    post:
+      operationId: modifyThread
+      tags:
+        - Threads
+      summary: Modify an existing thread
+      description: Updates a thread with new or modified messages.
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread to be modified.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                messages:
+                  type: array
+                  description: "Set of messages to update in the thread."
+                  items:
+                    $ref: 'specs/threads.yaml#/components/schemas/ThreadMessageObject'
+              required:
+                - messages
+      responses:
+        "200":
+          description: Thread modified successfully
+          content:
+            application/json:
+              schema:
+                $ref: 'specs/threads.yaml#/components/schemas/ModifyThreadResponse'
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X POST {JAN_URL}/v1/threads/{thread_id} \
+              -H "Content-Type: application/json" \
+              -d '{"messages": [{"role": "user", "content": "Hello, what is AI?", "file_ids": ["file-abc123"]}, {"role": "user", "content": "How does AI work? Explain it in simple terms."}]}'
+    delete:
+      operationId: deleteThread
+      tags:
+        - Threads
+      summary: Delete a specific thread
+      description: Deletes a thread identified by its thread_id.
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread to be deleted.
+      responses:
+        "200":
+          description: Thread deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: 'specs/threads.yaml#/components/schemas/DeleteThreadResponse'
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X DELETE {JAN_URL}/v1/threads/{thread_id}
+  ### MESSAGES
+  /threads/{thread_id}/messages:
+    get:
+      operationId: listMessages
+      tags:
+        - Messages
+      summary: Get a list of messages from a thread
+      description: Retrieves all messages from the specified thread.
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread from which to retrieve messages.
+      responses:
+        "200":
+          description: List of messages retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "specs/messages.yaml#/components/schemas/ListMessagesResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl {JAN_URL}/v1/threads/{thread_id}/messages \
+              -H "Content-Type: application/json"
+    post:
+      operationId: createMessage
+      tags:
+        - Messages
+      summary: Create a new message in a thread
+      description: Sends a new message to the specified thread.
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread to which the message will be posted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  description: "Role of the sender, either 'user' or 'assistant'."
+                  example: "user"
+                  enum: ["user", "assistant"]
+                content:
+                  type: string
+                  description: "Text content of the message."
+                  example: "How does AI work? Explain it in simple terms."
+              required:
+                - role
+                - content
+      responses:
+        "200":
+          description: Message created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "specs/messages.yaml#/components/schemas/CreateMessageResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X POST {JAN_URL}/v1/threads/{thread_id}/messages \
+              -H "Content-Type: application/json" \
+              -d '{"role": "user", "content": "How does AI work? Explain it in simple terms."}'
+
+  /threads/{thread_id}/messages/{message_id}:
+    get:
+      operationId: getMessage
+      tags:
+        - Messages
+      summary: Retrieve Message
+      description: Retrieve a specific message from a thread using its thread_id and message_id.
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread containing the message.
+        - in: path
+          name: message_id
+          required: true
+          schema:
+            type: string
+            example: msg_abc123
+          description: The ID of the message to retrieve.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "specs/messages.yaml#/components/schemas/GetMessageResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id} \
+              -H "Content-Type: application/json"
+
+  /threads/{thread_id}/messages/{message_id}/files:
+    get:
+      operationId: listMessageFiles
+      tags:
+        - Messages
+      summary: message files
+      description: Retrieves a list of files associated with a specific message in a thread.
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread containing the message.
+        - in: path
+          name: message_id
+          required: true
+          schema:
+            type: string
+            example: msg_abc123
+          description: The ID of the message whose files are to be listed.
+      responses:
+        "200":
+          description: List of files retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "specs/messages.yaml#/components/schemas/ListMessageFilesResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id}/files \
+              -H "Content-Type: application/json"
+
+  /threads/{thread_id}/messages/{message_id}/files/{file_id}:
+    get:
+      operationId: getMessageFile
+      tags:
+        - Messages
+      summary: Get message file
+      description: Retrieves a file associated with a specific message in a thread.
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread containing the message.
+        - in: path
+          name: message_id
+          required: true
+          schema:
+            type: string
+            example: msg_abc123
+          description: The ID of the message associated with the file.
+        - in: path
+          name: file_id
+          required: true
+          schema:
+            type: string
+            example: file-abc123
+          description: The ID of the file to retrieve.
+      responses:
+        "200":
+          description: File retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "specs/messages.yaml#/components/schemas/MessageFileObject"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id}/files/{file_id} \
+              -H "Content-Type: application/json"
+
 x-webhooks:
   ModelObject:
     post:
@@ -187,4 +535,30 @@ x-webhooks:
         content:
           application/json:
             schema:
-              $ref: 'specs/models/models.yaml#/components/schemas/ModelObject'
+              $ref: 'specs/models.yaml#/components/schemas/ModelObject'
+
+  MessageObject:
+    post:
+      summary: The message object
+      description: Information about a message in the thread
+      operationId: MessageObject
+      tags:
+        - Messages
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: 'specs/messages.yaml#/components/schemas/MessageObject'
+
+  ThreadObject:
+    post:
+      summary: The thread object
+      description: Information about a thread
+      operationId: ThreadObject
+      tags:
+        - Threads
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: 'specs/threads.yaml#/components/schemas/ThreadObject'

@@ -57,12 +57,12 @@ See [Jan Messages API](https://jan.ai/api-reference#tag/Messages)
 
 ### Get list message
 
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/messages/getMessage
+> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/messages/listMessages
 
 - Example request
 
 ```shell
-  curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id} \
+  curl {JAN_URL}/v1/threads/{thread_id}/messages \
     -H "Content-Type: application/json"
 ```
 
@@ -70,24 +70,54 @@ See [Jan Messages API](https://jan.ai/api-reference#tag/Messages)
 
 ```json
 {
-  "id": "msg_abc123",
-  "object": "thread.message",
-  "created_at": 1699017614,
-  "thread_id": "thread_abc123",
-  "role": "user",
-  "content": [
+  "object": "list",
+  "data": [
     {
-      "type": "text",
-      "text": {
-        "value": "How does AI work? Explain it in simple terms.",
-        "annotations": []
-      }
+      "id": "msg_abc123",
+      "object": "thread.message",
+      "created_at": 1699016383,
+      "thread_id": "thread_abc123",
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "value": "How does AI work? Explain it in simple terms.",
+            "annotations": []
+          }
+        }
+      ],
+      "file_ids": [],
+      "assistant_id": null,
+      "run_id": null,
+      "metadata": {}
+    },
+    {
+      "id": "msg_abc456",
+      "object": "thread.message",
+      "created_at": 1699016383,
+      "thread_id": "thread_abc123",
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "value": "Hello, what is AI?",
+            "annotations": []
+          }
+        }
+      ],
+      "file_ids": [
+        "file-abc123"
+      ],
+      "assistant_id": null,
+      "run_id": null,
+      "metadata": {}
     }
   ],
-  "file_ids": [],
-  "assistant_id": null,
-  "run_id": null,
-  "metadata": {}
+  "first_id": "msg_abc123",
+  "last_id": "msg_abc456",
+  "has_more": false
 }
 ```
 
