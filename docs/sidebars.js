@@ -27,7 +27,7 @@ const sidebars = {
       label: "Installation",
       collapsible: true,
       collapsed: true,
-      items: ["install/windows", "install/mac", "install/linux"],
+      items: ["install/overview","install/windows", "install/mac", "install/linux", "install/from-source"],
     },
     {
       type: "category",
