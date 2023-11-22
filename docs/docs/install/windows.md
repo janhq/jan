@@ -25,7 +25,6 @@ Within the Releases' assets, you will find the following files for Windows:
 ```bash
 # Windows Installers
 jan-win-x64-{version}.exe
-jan-win-x64-{version}.exe.blockmap
 ```
 
 ### Default Installation Directory
@@ -56,5 +55,5 @@ To remove all user data associated with Jan, you can delete the `/Jan` directory
 
 Windows Defender may display the above warning when running the Jan Installer, as a standard security measure. 
 
-To proceed, select the "More info" option and select the appropriate option to continue with the installation.
+To proceed, select the "More info" option and select the "Run Anyway" option to continue with the installation.
 
