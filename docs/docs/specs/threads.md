@@ -67,7 +67,7 @@ Jan's Threads API is compatible with [OpenAI's Threads API](https://platform.ope
 See [Jan Threads API](https://jan.ai/api-reference#tag/Threads)
 
 <!-- TODO clean this part up into API -->
-
+<!--
 ### Get thread
 
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/threads/getThread
@@ -224,4 +224,4 @@ See [Jan Threads API](https://jan.ai/api-reference#tag/Threads)
 
 ### List `Thread.Messages`
 
--> Can achieve this goal by calling `Get Thread` API
+-> Can achieve this goal by calling `Get Thread` API -->

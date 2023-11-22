@@ -95,7 +95,7 @@ Jan's `messages` API is compatible with [OpenAI's Messages API](https://platform
 See [Jan Messages API](https://jan.ai/api-reference#tag/Messages)
 
 <!-- TODO clean this part up into API -->
-
+<!--
 ### Get list message
 
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/messages/getMessage
@@ -254,4 +254,4 @@ See [Jan Messages API](https://jan.ai/api-reference#tag/Messages)
   "created_at": 1699061776,
   "message_id": "msg_abc123"
 }
-```
+``` -->
