@@ -28,12 +28,7 @@ jobs:
 
       - name: Update app version base on tag
         run: |
-          if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Error: Tag is not valid!"
-              exit 1
-          fi
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
+          make update-app-version
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
 
@@ -49,25 +44,9 @@ jobs:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
-
-      - name: Build uikit
-        run: |
-          cd uikit
-          yarn install
-          yarn build
-
-      - name: Install yarn dependencies
-        run: |
-          yarn build:core
-          yarn install
-          yarn build:plugins
-        env:
-          APP_PATH: "."
-          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
-
       - name: Build and publish app
         run: |
-          yarn build:publish
+          make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: "/tmp/codesign.p12"
@@ -75,6 +54,8 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "true"
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APP_PATH: "."
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
 
   build-windows-x64:
     runs-on: windows-latest
@@ -99,34 +80,13 @@ jobs:
       - name: Update app version base on tag
         shell: bash
         run: |
-          if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Error: Tag is not valid!"
-              exit 1
-          fi
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
+          make update-app-version
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
 
-      - name: Build uikit
-        run: |
-          cd uikit
-          yarn config set network-timeout 300000
-          yarn install
-          yarn build
-
-      - name: Install yarn dependencies
-        shell: powershell
-        run: |
-          yarn config set network-timeout 300000
-          yarn build:core
-          yarn install
-          $env:NITRO_VERSION = Get-Content .\plugins\inference-plugin\nitro\version.txt; echo $env:NITRO_VERSION
-          yarn build:plugins
-
       - name: Build and publish app
         run: |
-          yarn build:publish
+          make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -158,31 +118,13 @@ jobs:
 
       - name: Update app version base on tag
         run: |
-          if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Error: Tag is not valid!"
-              exit 1
-          fi
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
+          make update-app-version
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
 
-      - name: Build uikit
-        run: |
-          cd uikit
-          yarn install
-          yarn build
-
-      - name: Install yarn dependencies
-        run: |
-          yarn config set network-timeout 300000
-          yarn build:core
-          yarn install
-          yarn build:plugins
-
       - name: Build and publish app
         run: |
-          yarn build:publish
+          make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
