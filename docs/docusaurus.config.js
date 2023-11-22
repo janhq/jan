@@ -33,6 +33,10 @@ const config = {
     defaultLocale: "en",
     locales: ["en"],
   },
+  
+  markdown: {
+    mermaid: true,
+  },
 
   // Plugins we added
   plugins: [
@@ -58,7 +62,7 @@ const config = {
     ],
   ],
 
-  themes: ["@docusaurus/theme-live-codeblock"],
+  
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
   presets: [
@@ -173,6 +177,7 @@ const config = {
       respectPrefersColorScheme: false,
     },
   },
+  themes: ["@docusaurus/theme-live-codeblock", "@docusaurus/theme-mermaid"], 
 };
 
 module.exports = config;
