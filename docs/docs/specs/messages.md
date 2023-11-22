@@ -74,7 +74,7 @@ Here's an example `message` response from an assistant.
 "thread_id": "thread_asdf",           // Defaults to parent thread
 "assistant_id": "jan",                // Defaults to parent thread
 "role": "assistant",                  // From either "user" or "assistant"
-"content": [
+"content": [                          // Usually from Chat Completion obj
   {
     "type": "text",
     "text": {
@@ -86,6 +86,7 @@ Here's an example `message` response from an assistant.
 "metadata": {},                       // Defaults to {}
 // "run_id": "...",                   // KIV
 // "file_ids": [],                    // KIV
+// "usage": {}                        // KIV: saving chat completion properties https://platform.openai.com/docs/api-reference/chat/object
 ```
 
 ## API Reference
