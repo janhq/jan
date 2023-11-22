@@ -6,7 +6,7 @@ const menus = [
     child: [
       {
         menu: "Documentation (WIP)",
-        path: "/docs",
+        path: "/intro",
       },
       {
         menu: "Hardware (WIP)",
