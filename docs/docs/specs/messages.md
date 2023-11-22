@@ -10,23 +10,65 @@ This is currently under development.
 
 ## Overview
 
-`Messages` are in `threads` and capture additional metadata.
+`Messages` capture a conversation's content. This can include the content from LLM responses and other metadata from [chat completions](/specs/chats).
 
 - Users and assistants can send multimedia messages.
 - An [OpenAI Message API](https://platform.openai.com/docs/api-reference/messages) compatible endpoint at `localhost:3000/v1/messages`.
 
 ## Folder Structure
 
-- `Message` objects are stored in `thread.json` files under the `messages` property. See [threads](./threads.md).
+Messages are saved in the `/threads/{thread_id}` folder in `messages.jsonl` files
 
-## `message` object
+```sh
+jan/
+    threads/
+        assistant_name_unix_timestamp/
+            ...
+            messages.jsonl
+        jan_2341243134/
+            ...
+            messages.jsonl
+```
 
-### Example
+## `message.jsonl`
 
-Here's a standard example `message` json.
+Individual messages are saved in `jsonl` format for indexing purposes.
 
 ```json
-"id": "0",                            // Sequential or UUID?
+{...message_2}
+{...message_1}
+{...message_0}
+```
+
+### Examples
+
+Here's a standard example `message` sent from a user.
+
+```json
+"id": "0",                            // Sequential or UUID
+"object": "thread.message",           // Defaults to "thread.message"
+"created_at": 1698983503,
+"thread_id": "thread_asdf",           // Defaults to parent thread
+"assistant_id": "jan",                // Defaults to parent thread
+"role": "user",                  // From either "user" or "assistant"
+"content": [
+  {
+    "type": "text",
+    "text": {
+      "value": "Hi!?",
+      "annotations": []
+    }
+  }
+],
+"metadata": {},                       // Defaults to {}
+// "run_id": "...",                   // Rather than `run` id abstraction
+// "file_ids": [],
+```
+
+Here's an example `message` response from an assistant.
+
+```json
+"id": "0",                            // Sequential or UUID
 "object": "thread.message",           // Defaults to "thread.message"
 "created_at": 1698983503,
 "thread_id": "thread_asdf",           // Defaults to parent thread
@@ -42,14 +84,13 @@ Here's a standard example `message` json.
   }
 ],
 "metadata": {},                       // Defaults to {}
-"chat_completion_id": "",             // For now, we use `chat` completion id
-// "run_id": "...",                   // Rather than `run` id
-// "file_ids": [],
+// "run_id": "...",                   // KIV
+// "file_ids": [],                    // KIV
 ```
 
 ## API Reference
 
-Jan's Threads API is compatible with [OpenAI's Messages API](https://platform.openai.com/docs/api-reference/messages), with additional methods for managing messages locally.
+Jan's `messages` API is compatible with [OpenAI's Messages API](https://platform.openai.com/docs/api-reference/messages), with additional methods for managing messages locally.
 
 See [Jan Messages API](https://jan.ai/api-reference#tag/Messages)
 
