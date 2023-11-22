@@ -43,21 +43,9 @@ jobs:
         with:
           node-version: 20
 
-      - name: Build uikit
-        run: |
-          cd uikit
-          yarn install
-          yarn build
-
       - name: Linter and test
         run: |
-          yarn config set network-timeout 300000
-          yarn build:core
-          yarn install
-          yarn lint
-          yarn build:plugins
-          yarn build:test
-          yarn test
+          make test
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
@@ -81,24 +69,10 @@ jobs:
         with:
           node-version: 20
 
-      - name: Build uikit
-        run: |
-          yarn config set network-timeout 300000
-          cd uikit
-          yarn install
-          yarn build
-
       - name: Linter and test
         shell: powershell
         run: |
-          yarn config set network-timeout 300000
-          yarn build:core
-          yarn install
-          $env:NITRO_VERSION = Get-Content .\plugins\inference-plugin\nitro\version.txt; echo $env:NITRO_VERSION
-          yarn build:plugins
-          yarn build:test
-          $env:CI="e2e"
-          yarn test
+          make test
 
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
@@ -118,19 +92,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: Build uikit
-        run: |
-          cd uikit
-          yarn install
-          yarn build
-
       - name: Linter and test
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
           echo -e "Display ID: $DISPLAY"
-          yarn config set network-timeout 300000
-          yarn build:core
-          yarn install
-          yarn build:plugins
-          yarn build:test
-          yarn test
+          make test

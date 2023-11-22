@@ -91,10 +91,9 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 - node >= 20.0.0
 - yarn >= 1.22.0
+- make >= 3.81
 
 ### Instructions
-
-Note: This instruction is tested on MacOS only.
 
 1. **Clone the Repository:**
 
@@ -104,25 +103,10 @@ Note: This instruction is tested on MacOS only.
    cd jan
 ```
 
-2. **Install dependencies:**
-
-```bash
-   yarn install
-
-   # Build core module
-   yarn build:core
-
-   # Packing base plugins
-   yarn build:plugins
-
-   # Packing uikit
-   yarn build:uikit
-```
-
-3. **Run development and Using Jan Desktop**
+2. **Run development and Using Jan Desktop**
 
    ```
-   yarn dev
+   make dev
    ```
 
    This will start the development server and open the desktop app.
@@ -134,19 +118,9 @@ Note: This instruction is tested on MacOS only.
 # Do step 1 and 2 in previous section
 git clone https://github.com/janhq/jan
 cd jan
-yarn install
-
-# Build core module
-yarn build:core
-
-# Package base plugins
-yarn build:plugins
-
-# Packing uikit
-yarn build:uikit
 
 # Build the app
-yarn build
+make build
 ```
 
 This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
