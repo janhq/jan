@@ -110,16 +110,7 @@ components:
             type: string
           description: "List of assets related to the model."
       required:
-        - type
-        - version
-        - id
-        - name
-        - created
-        - state
-        - format
         - source_url
-        - settings
-        - parameters
 
     ModelObject:
       type: object
