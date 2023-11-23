@@ -16,7 +16,6 @@ import {
 import { atom, useAtomValue } from 'jotai'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
-import useGetPerformanceTag from '@/hooks/useGetPerformanceTag'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
@@ -30,7 +29,6 @@ export default function ModalCancelDownload({
   isFromList,
 }: Props) {
   const { modelDownloadStateAtom } = useDownloadState()
-  useGetPerformanceTag()
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[suitableModel.name]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
