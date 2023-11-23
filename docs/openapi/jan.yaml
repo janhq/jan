@@ -23,7 +23,7 @@ tags:
       `Threads` are conversations between an `assistant` and the user:
         - Users can tweak `model` params and `assistant` behavior within each thread.
         - Users can import and export threads.
-        - An [OpenAI Thread API](https://platform.openai.com/docs/api-reference/threads) compatible endpoint at `localhost:3000/v1/threads`. 
+        - An [OpenAI Thread API](https://platform.openai.com/docs/api-reference/threads) compatible endpoint at `localhost:1337/v1/threads`. 
   - name: Assistants
     description: Configures and utilizes different AI assistants for varied tasks
 x-tagGroups:
