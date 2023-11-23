@@ -21,12 +21,14 @@ This is currently under development.
 - Threads are saved in the `/threads` folder.
 - Threads are organized by folders, one for each thread, and can be easily zipped, exported, and cleared.
 - Thread folders follow the naming: `assistant_id` + `thread_created_at`.
+- Thread folders also contain `messages.jsonl` files. See [messages](/specs/messages).
 
 ```sh
 jan/
     threads/
         assistant_name_unix_timestamp/
             thread.json
+            messages.jsonl
         jan_2341243134/
             thread.json
 ```
@@ -34,7 +36,7 @@ jan/
 ## `thread.json`
 
 - Each `thread` folder contains a `thread.json` file, which is a representation of a thread.
-- `thread.json` contains metadata, model parameter overrides, and [message](https://jan.ai/specs/messages) history.
+- `thread.json` contains metadata and model parameter overrides.
 - There are no required fields.
 
 ### Example
@@ -43,15 +45,19 @@ Here's a standard example `thread.json` for a conversation between the user and 
 
 ```json
 "id": "thread_....",                  // Defaults to foldername
-"object": "thread",                     // Defaults to "thread"
-"summary": "funny physics joke",      // Defaults to ""
-"assistants": ["jan"],                // Defaults to "jan"
+"object": "thread",                   // Defaults to "thread"
+"title": "funny physics joke",        // Defaults to ""
+"assistants": [
+  {
+    "assistant_id": "jan",            // Defaults to "jan"
+    "model": {                        // Defaults to 1 currently active model (can be changed before thread is begun)
+      "settings": {},                 // Defaults to and overrides assistant.json's "settings" (and if none, then model.json "settings")
+      "parameters": {},               // Defaults to and overrides assistant.json's "parameters" (and if none, then model.json "parameters")
+    }
+  },
+],
 "created": 1231231                    // Defaults to file creation time
 "metadata": {},                       // Defaults to {}
-"messages": [],
-"model_id": "...",                    // Defaults to assistant.model ???
-"settings": {},                       // Defaults to and overrides assistant.settings
-"parameters": {},                     // Defaults to and overrides assistant.settings
 ```
 
 ## API Reference
@@ -61,7 +67,7 @@ Jan's Threads API is compatible with [OpenAI's Threads API](https://platform.ope
 See [Jan Threads API](https://jan.ai/api-reference#tag/Threads)
 
 <!-- TODO clean this part up into API -->
-
+<!--
 ### Get thread
 
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/threads/getThread
@@ -218,4 +224,4 @@ See [Jan Threads API](https://jan.ai/api-reference#tag/Threads)
 
 ### List `Thread.Messages`
 
--> Can achieve this goal by calling `Get Thread` API
+-> Can achieve this goal by calling `Get Thread` API -->

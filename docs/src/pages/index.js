@@ -31,7 +31,7 @@ export default function Home() {
               }}
               className="absolute w-full h-full opacity-10 dark:opacity-20 top-0 object-cover blur-3xl"
             />
-            <div className="container py-16">
+            <div className="container pt-16">
               <div className="grid grid-cols-1 items-center gap-4">
                 <div className="relative z-10 text-center ">
                   {/* TODO: Add upcoming events here */}
@@ -95,7 +95,7 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div className="container mt-10 mb-10 lg:mb-20 text-center">
+          <div className="container mt-40 text-center">
             <h2>AI that you control</h2>
             <p className="text-base mt-2 w-full lg:w-2/5 mx-auto leading-relaxed">
               Private. Local. Infinitely Customizable.
@@ -107,7 +107,7 @@ export default function Home() {
                   alt="Element"
                   className="absolute w-full bottom-0 left-0"
                 />
-                <div class="p-8 relative z-40">
+                <div className="p-8 relative z-40">
                   <h5>Personal AI that runs on your computer</h5>
                   <p className="mt-2">
                     Jan runs directly on your local machine, offering privacy,
@@ -179,8 +179,8 @@ export default function Home() {
             </div>
           </div>
 
-          <div class="container lg:px-20 py-20 text-center lg:text-left">
-            <div class="flex  flex-col lg:flex-row space-y-20 lg:space-y-0">
+          <div className="container lg:px-20 py-40 lg:py-[200px] text-center lg:text-left">
+            <div className="flex  flex-col lg:flex-row space-y-20 lg:space-y-0">
               <div>
                 <h1 className="bg-gradient-to-r dark:from-white from-black to-gray-500 dark:to-gray-400 bg-clip-text text-4xl lg:text-6xl font-bold leading-tight text-transparent dark:text-transparent lg:leading-tight">
                   Your AI, forever.
@@ -188,8 +188,8 @@ export default function Home() {
                 <p className="text-lg lg:text-2xl mt-2">
                   Apps come and go, but your AI and data should last.{" "}
                 </p>
-                <div class="w-full lg:w-3/4 mt-8">
-                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-24">
+                <div className="w-full lg:w-3/4 mt-8">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-24">
                     <div>
                       <img
                         src="/img/ic-park-solid-unlock.svg"
@@ -232,15 +232,15 @@ export default function Home() {
             </div>
           </div>
 
-          <div class="container pb-20 pt-10 text-center">
+          <div className="container pb-40 text-center">
             <h2>
               We are open-source. <br /> Join Jan community.
             </h2>
-            <div class="mt-14">
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="mt-14">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <a href="https://discord.com/invite/FTk2MvZwJH" target="_blank">
-                  <div class="card h-52 relative flex items-center justify-center">
-                    <div class="relative z-50">
+                  <div className="card h-52 relative flex items-center justify-center">
+                    <div className="relative z-50">
                       <img
                         src="/img/discord-logo.png"
                         alt="Discord logo"
@@ -248,7 +248,7 @@ export default function Home() {
                       />
                     </div>
 
-                    <div class="card-link card-link-bg dark:card-link-bg-dark absolute right-4 top-5">
+                    <div className="card-link card-link-bg dark:card-link-bg-dark absolute right-4 top-5">
                       Join our Discord
                     </div>
                     <ThemedImage
@@ -262,11 +262,11 @@ export default function Home() {
                   </div>
                 </a>
                 <a href="https://github.com/janhq/jan" target="_blank">
-                  <div class="card h-52 relative flex items-center justify-center">
-                    <div class="relative z-50">
+                  <div className="card h-52 relative flex items-center justify-center">
+                    <div className="relative z-50">
                       <AiOutlineGithub className="text-8xl dark:text-white text-black" />
                     </div>
-                    <div class="card-link card-link-bg dark:card-link-bg-dark absolute right-4 top-5">
+                    <div className="card-link card-link-bg dark:card-link-bg-dark absolute right-4 top-5">
                       View Github
                     </div>
                     <img

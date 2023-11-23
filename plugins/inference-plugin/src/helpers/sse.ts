@@ -4,7 +4,7 @@ import { Observable } from "rxjs";
  * @param recentMessages - An array of recent messages to use as context for the inference.
  * @returns An Observable that emits the generated response as a string.
  */
-export function requestInference(recentMessages: any[]): Observable<string> {
+export function requestInference(recentMessages: any[], controller?: AbortController): Observable<string> {
   return new Observable((subscriber) => {
     const requestBody = JSON.stringify({
       messages: recentMessages,
@@ -20,6 +20,7 @@ export function requestInference(recentMessages: any[]): Observable<string> {
         "Access-Control-Allow-Origin": "*",
       },
       body: requestBody,
+      signal: controller?.signal
     })
       .then(async (response) => {
         const stream = response.body;
