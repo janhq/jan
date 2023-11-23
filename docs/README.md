@@ -43,9 +43,9 @@ If you are using GitHub pages for hosting, this command is a convenient way to b
 
 ### Preview URL, Pre-release and Publishing Documentation
 
-When a PR is created, the preview URL will be automatically commented on the PR. For staging or pre-release documentation, use the following domains [https://pre-release.jan.ai/](https://pre-release.jan.ai/)
+When a PR is created, the preview URL will be automatically commented on the PR.
 
-To officially publish documentation, create a tag in the format `vx.y.z-docs` (e.g., `v0.1.1-docs`) on the `main` branch. The documentation will then be published to [https://jan.ai/](https://jan.ai/)
+The documentation will then be published to [https://jan.ai/](https://jan.ai/) when the PR is merged to `main`.
 
 ### Additional Plugins
 - @docusaurus/theme-live-codeblock
