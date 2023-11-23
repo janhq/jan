@@ -116,9 +116,6 @@ components:
           items:
             type: string
           description: "Array of file IDs associated with the message, if any."
-      required:
-        - role
-        - content
 
     ModifyThreadResponse:
       type: object

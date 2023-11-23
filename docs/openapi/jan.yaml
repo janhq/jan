@@ -189,7 +189,7 @@ paths:
       summary: Create thread
       description: Create a thread
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
@@ -296,7 +296,7 @@ paths:
             example: thread_abc123
           description: The ID of the thread to be modified.
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
@@ -307,8 +307,6 @@ paths:
                   description: "Set of messages to update in the thread."
                   items:
                     $ref: 'specs/threads.yaml#/components/schemas/ThreadMessageObject'
-              required:
-                - messages
       responses:
         "200":
           description: Thread modified successfully
