@@ -182,8 +182,8 @@ paths:
       operationId: createThread
       tags:
         - Threads
-      summary: Create a new thread
-      description: Creates a new thread with an initial set of messages.
+      summary: Create thread
+      description: Create a thread
       requestBody:
         required: true
         content:
@@ -196,8 +196,6 @@ paths:
                   description: "Initial set of messages for the thread."
                   items:
                     $ref: 'specs/threads.yaml#/components/schemas/ThreadMessageObject'
-              required:
-                - messages
       responses:
         "200":
           description: Thread created successfully
@@ -206,16 +204,25 @@ paths:
               schema:
                 $ref: 'specs/threads.yaml#/components/schemas/CreateThreadResponse'
       x-codeSamples:
-        - lang: "curl"
+        - lang: "cURL"
           source: |
             curl -X POST {JAN_URL}/v1/threads \
               -H "Content-Type: application/json" \
-              -d '{"messages": [{"role": "user", "content": "Hello, what is AI?", "file_ids": ["file-abc123"]}, {"role": "user", "content": "How does AI work? Explain it in simple terms."}]}'
+              -d '{
+                  "messages": [{
+                      "role": "user",
+                      "content": "Hello, what is AI?",
+                      "file_ids": ["file-abc123"]
+                  }, {
+                      "role": "user",
+                      "content": "How does AI work? Explain it in simple terms."
+                  }]
+              }'    
     get:
       operationId: listThreads
       tags:
         - Threads
-      summary: List all threads
+      summary: List threads
       description: Retrieves a list of all threads available in the system.
       responses:
         "200":
@@ -241,15 +248,15 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads \
-              -H "Content-Type: application/json"
+              curl {JAN_URL}/v1/threads \
+                -H "Content-Type: application/json" \
   
   /threads/{thread_id}:
     get:
       operationId: getThread
       tags:
         - Threads
-      summary: Get details of a specific thread
+      summary: Get thread
       description: Retrieves detailed information about a specific thread using its thread_id.
       parameters:
         - in: path
@@ -274,8 +281,8 @@ paths:
       operationId: modifyThread
       tags:
         - Threads
-      summary: Modify an existing thread
-      description: Updates a thread with new or modified messages.
+      summary: Modify thread
+      description: Modifies a thread
       parameters:
         - in: path
           name: thread_id
@@ -308,15 +315,24 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl -X POST {JAN_URL}/v1/threads/{thread_id} \
-              -H "Content-Type: application/json" \
-              -d '{"messages": [{"role": "user", "content": "Hello, what is AI?", "file_ids": ["file-abc123"]}, {"role": "user", "content": "How does AI work? Explain it in simple terms."}]}'
+                curl -X POST {JAN_URL}/v1/threads/{thread_id} \
+                  -H "Content-Type: application/json" \
+                  -d '{
+                      "messages": [{
+                          "role": "user",
+                          "content": "Hello, what is AI?",
+                          "file_ids": ["file-abc123"]
+                      }, {
+                          "role": "user",
+                          "content": "How does AI work? Explain it in simple terms."
+                      }]
+                  }'
     delete:
       operationId: deleteThread
       tags:
         - Threads
-      summary: Delete a specific thread
-      description: Deletes a thread identified by its thread_id.
+      summary: Delete thread
+      description: Delete a thread
       parameters:
         - in: path
           name: thread_id
@@ -336,6 +352,7 @@ paths:
         - lang: "curl"
           source: |
             curl -X DELETE {JAN_URL}/v1/threads/{thread_id}
+    
   ### MESSAGES
   /threads/{thread_id}/messages:
     get:
@@ -553,7 +570,8 @@ x-webhooks:
   ThreadObject:
     post:
       summary: The thread object
-      description: Information about a thread
+      description: 
+        - Each thread folder contains a `thread.json` file, which is a representation of a thread.
       operationId: ThreadObject
       tags:
         - Threads

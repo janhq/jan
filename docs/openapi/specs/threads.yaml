@@ -5,12 +5,12 @@ components:
       properties:
         id:
           type: string
-          description: "Identifier of the thread, defaults to folder name."
-          example: "thread_...."
+          description: "The identifier of the thread, defaults to foldername."
+          example: thread_....
         object:
           type: string
-          description: "Type of the object, typically 'thread'."
-          default: "thread"
+          description: "Type of the object, defaults to thread."
+          example: thread
         summary:
           type: string
           description: "A brief summary or description of the thread, defaults to an empty string."
@@ -19,91 +19,87 @@ components:
           type: array
           items:
             type: string
-          description: "List of assistants involved in the thread, defaults to ['jan']."
+          description: "List of assistants involved in the thread, defaults to [\"jan\"]."
           example: ["jan"]
         created:
           type: integer
           format: int64
           description: "Unix timestamp representing the creation time of the thread, defaults to file creation time."
+          example: 1231231
         metadata:
           type: object
           description: "Metadata associated with the thread, defaults to an empty object."
+          example: {}
         messages:
           type: array
           description: "List of messages within the thread."
           items:
             type: string
+          example: []
         model_id:
           type: string
-          description: "Model identifier associated with the thread, defaults to assistant's model."
+          description: "Model identifier associated with the thread, defaults to assistant.model."
           example: "..."
         settings:
           type: object
-          description: "Settings for the thread, defaults to and overrides assistant's settings."
+          description: "Settings for the thread, defaults to and overrides assistant.settings."
         parameters:
           type: object
-          description: "Parameters for the thread, defaults to and overrides assistant's settings."
-      required:
-        - id
-        - object
+          description: "Parameters for the thread, defaults to and overrides assistant.settings."
+
     GetThreadResponse:
       type: object
       properties:
         id:
           type: string
           description: "The identifier of the thread."
-          example: "thread_abc123"
+          example: thread_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's a thread."
-          default: "thread"
+          description: "Type of the object"
+          example: thread
         created_at:
           type: integer
           format: int64
           description: "Unix timestamp representing the creation time of the thread."
+          example: 1699014083
         assistants:
           type: array
           items:
             type: string
           description: "List of assistants involved in the thread."
+          example: ["assistant-001"]
         metadata:
           type: object
           description: "Metadata associated with the thread."
+          example: {}
         messages:
           type: array
           items:
             type: string
           description: "List of messages within the thread."
-      required:
-        - id
-        - object
-        - created_at
-        - assistants
-        - metadata
-        - messages
+          example: []
+
     CreateThreadResponse:
       type: object
       properties:
         id:
           type: string
           description: "The identifier of the newly created thread."
-          example: "thread_abc123"
+          example: thread_abc123
         object:
           type: string
           description: "Type of the object, indicating it's a thread."
-          default: "thread"
+          example: thread
         created_at:
           type: integer
           format: int64
           description: "Unix timestamp representing the creation time of the thread."
+          example: 1699014083
         metadata:
           type: object
           description: "Metadata associated with the newly created thread."
-      required:
-        - id
-        - object
-        - created_at
-        - metadata
+          example: {}
 
     ThreadMessageObject:
       type: object
@@ -130,23 +126,20 @@ components:
         id:
           type: string
           description: "The identifier of the modified thread."
-          example: "thread_abc123"
+          example: thread_abc123
         object:
           type: string
           description: "Type of the object, indicating it's a thread."
-          default: "thread"
+          example: thread
         created_at:
           type: integer
           format: int64
           description: "Unix timestamp representing the creation time of the thread."
+          example: 1699014083
         metadata:
           type: object
           description: "Metadata associated with the modified thread."
-      required:
-        - id
-        - object
-        - created_at
-        - metadata
+          example: {}
 
     DeleteThreadResponse:
       type: object
@@ -154,16 +147,12 @@ components:
         id:
           type: string
           description: "The identifier of the deleted thread."
-          example: "thread_abc123"
+          example: thread_abc123
         object:
           type: string
           description: "Type of the object, indicating the thread has been deleted."
-          default: "thread.deleted"
+          example: thread.deleted
         deleted:
           type: boolean
           description: "Indicates whether the thread was successfully deleted."
           example: true
-      required:
-        - id
-        - object
-        - deleted
