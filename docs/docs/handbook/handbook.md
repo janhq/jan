@@ -3,7 +3,6 @@ title: Onboarding Checklist
 slug: /handbook
 ---
 
-
 # Welcome
 
 Welcome to Jan! We’re really excited to bring you onboard.
@@ -46,9 +45,11 @@ Welcome to Jan! We’re really excited to bring you onboard.
 
 ### Apps you will need
 
-<aside> 💡 In order to feel connected in a remote workplace, we encourage you to add your profile photo to all the accounts.
+:::info
 
-</aside>
+💡 In order to feel connected in a remote workplace, we encourage you to add your profile photo to all the accounts.
+
+:::
 
 -   Company-wide
     -   [ ] Google:`[first_name]@jan.ai`
@@ -67,6 +68,3 @@ Welcome to Jan! We’re really excited to bring you onboard.
 -   Communications
     -   [ ] Fill in your contact details [here](https://docs.google.com/spreadsheets/d/1KAxya29_wb1bEESiFJeCrOec4pCG3uA2D4_VPgAn89U/edit#gid=0)
     -   [ ] To make sure everyone in the remote working environment understand more about each other, we encourage you to share your `How to work with me` in the [Drive Tab](https://docs.google.com/spreadsheets/d/1KAxya29_wb1bEESiFJeCrOec4pCG3uA2D4_VPgAn89U/edit#gid=0) under your name and the Discord `Internal` channel. 
-
-:::info UPDATING
-:::
