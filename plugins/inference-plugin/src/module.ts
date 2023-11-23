@@ -5,6 +5,8 @@ const { spawn } = require("child_process");
 const tcpPortUsed = require("tcp-port-used");
 const fetchRetry = require("fetch-retry")(global.fetch);
 
+const log = require("electron-log");
+
 // The PORT to use for the Nitro subprocess
 const PORT = 3928;
 const LOCAL_HOST = "127.0.0.1";
@@ -35,6 +37,7 @@ interface InitModelResponse {
 function initModel(modelFile: string): Promise<InitModelResponse> {
   // 1. Check if the model file exists
   currentModelFile = modelFile;
+  log.info("Started to load model " + modelFile);
 
   return (
     // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
@@ -42,13 +45,12 @@ function initModel(modelFile: string): Promise<InitModelResponse> {
       .then(checkAndUnloadNitro)
       // 2. Spawn the Nitro subprocess
       .then(spawnNitroProcess)
-      // 3. Wait until the port is used (Nitro http server is up)
-      .then(() => tcpPortUsed.waitUntilUsed(PORT, 300, 30000))
       // 4. Load the model into the Nitro subprocess (HTTP POST request)
       .then(loadLLMModel)
       // 5. Check if the model is loaded successfully
       .then(validateModelStatus)
       .catch((err) => {
+        log.error("error: " + JSON.stringify(err));
         return { error: err };
       })
   );
@@ -63,6 +65,7 @@ function loadLLMModel(): Promise<Response> {
     llama_model_path: currentModelFile,
     ctx_len: 2048,
     ngl: 100,
+    cont_batching: false,
     embedding: false, // Always enable embedding mode on
   };
 
@@ -77,6 +80,7 @@ function loadLLMModel(): Promise<Response> {
     retryDelay: 500,
   }).catch((err) => {
     console.error(err);
+    log.error("error: " + JSON.stringify(err));
     // Fetch error, Nitro server might not started properly
     throw new Error("Model loading failed.");
   });
@@ -112,7 +116,8 @@ async function validateModelStatus(): Promise<InitModelResponse> {
       return { error: "Model loading failed" };
     })
     .catch((err) => {
-      return { error: `Model loading failed. ${err.message}` };
+      log.error("Model loading failed" + err.toString());
+      return { error: `Model loading failed.` };
     });
 }
 
@@ -158,46 +163,53 @@ function checkAndUnloadNitro() {
  * Using child-process to spawn the process
  * Should run exactly platform specified Nitro binary version
  */
-function spawnNitroProcess() {
-  let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
-  let binaryName;
+async function spawnNitroProcess(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
+    let binaryName;
 
-  if (process.platform === "win32") {
-    // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-    binaryName = "win-start.bat";
-  } else if (process.platform === "darwin") {
-    // Mac OS platform
-    if (process.arch === "arm64") {
-      binaryFolder = path.join(binaryFolder, "mac-arm64");
+    if (process.platform === "win32") {
+      // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+      binaryName = "win-start.bat";
+    } else if (process.platform === "darwin") {
+      // Mac OS platform
+      if (process.arch === "arm64") {
+        binaryFolder = path.join(binaryFolder, "mac-arm64");
+      } else {
+        binaryFolder = path.join(binaryFolder, "mac-x64");
+      }
+      binaryName = "nitro";
     } else {
-      binaryFolder = path.join(binaryFolder, "mac-x64");
+      // Linux
+      // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
+      binaryName = "linux-start.sh"; // For other platforms
     }
-    binaryName = "nitro";
-  } else {
-    // Linux
-    // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-    binaryName = "linux-start.sh"; // For other platforms
-  }
 
-  const binaryPath = path.join(binaryFolder, binaryName);
+    const binaryPath = path.join(binaryFolder, binaryName);
 
-  // Execute the binary
-  subprocess = spawn(binaryPath, [1, "0.0.0.0", PORT], {
-    cwd: binaryFolder,
-  });
+    // Execute the binary
+    subprocess = spawn(binaryPath, [1, "0.0.0.0", PORT], {
+      cwd: binaryFolder,
+    });
 
-  // Handle subprocess output
-  subprocess.stdout.on("data", (data) => {
-    console.log(`stdout: ${data}`);
-  });
+    // Handle subprocess output
+    subprocess.stdout.on("data", (data) => {
+      console.log(`stdout: ${data}`);
+    });
 
-  subprocess.stderr.on("data", (data) => {
-    console.error(`stderr: ${data}`);
-  });
+    subprocess.stderr.on("data", (data) => {
+      log.error("subprocess error:" + data.toString());
+      console.error(`stderr: ${data}`);
+    });
 
-  subprocess.on("close", (code) => {
-    console.log(`child process exited with code ${code}`);
-    subprocess = null;
+    subprocess.on("close", (code) => {
+      console.log(`child process exited with code ${code}`);
+      subprocess = null;
+      reject(`Nitro process exited. ${code ?? ""}`);
+    });
+    tcpPortUsed.waitUntilUsed(PORT, 300, 30000).then(() => {
+      resolve();
+    });
   });
 }
 
@@ -206,11 +218,14 @@ function spawnNitroProcess() {
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
 function validateModelVersion(): Promise<void> {
+  log.info("validateModelVersion");
   // Read the file
   return new Promise((resolve, reject) => {
     fs.open(currentModelFile, "r", (err, fd) => {
       if (err) {
+        log.error("validateModelVersion error" + JSON.stringify(err));
         console.error(err.message);
+        reject(err);
         return;
       }
 
@@ -220,7 +235,13 @@ function validateModelVersion(): Promise<void> {
       // Model version will be the 5th byte of the file
       fs.read(fd, buffer, 0, 1, 4, (err, bytesRead, buffer) => {
         if (err) {
+          log.error("validateModelVersion open error" + JSON.stringify(err));
           console.error(err.message);
+          fs.close(fd, (err) => {
+            log.error("validateModelVersion close error" + JSON.stringify(err));
+            if (err) console.error(err.message);
+          });
+          reject(err);
         } else {
           // Interpret the byte as ASCII
           if (buffer[0] === 0x01) {

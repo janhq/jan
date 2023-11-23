@@ -63,13 +63,13 @@ export default function useSendChatMessage() {
         if (
           currentConvo &&
           currentConvo.id === newMessage.threadId &&
-          result?.message &&
-          result?.message?.trim().length > 0 &&
-          result.message.split(' ').length <= 10
+          result?.content &&
+          result?.content?.trim().length > 0 &&
+          result.content.split(' ').length <= 10
         ) {
           const updatedConv = {
             ...currentConvo,
-            summary: result.message,
+            summary: result.content,
           }
           updateConversation(updatedConv)
           pluginManager

@@ -67,8 +67,8 @@ const sidebars = {
           items: [
             "specs/chats",
             "specs/models",
-            // "specs/threads",
-            // "specs/messages",
+            "specs/threads",
+            "specs/messages",
             // "specs/assistants",
             // "specs/files",
             // "specs/jan",

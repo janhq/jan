@@ -28,6 +28,8 @@ import { fs } from "@janhq/core";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferencePlugin implements InferencePlugin {
+  controller = new AbortController();
+  isCancelled = false;
   /**
    * Returns the type of the plugin.
    * @returns {PluginType} The type of the plugin.
@@ -40,7 +42,9 @@ export default class JanInferencePlugin implements InferencePlugin {
    * Subscribes to events emitted by the @janhq/core package.
    */
   onLoad(): void {
-    events.on(EventName.OnNewMessageRequest, this.handleMessageRequest);
+    events.on(EventName.OnNewMessageRequest, (data) =>
+      JanInferencePlugin.handleMessageRequest(data, this)
+    );
   }
 
   /**
@@ -71,22 +75,31 @@ export default class JanInferencePlugin implements InferencePlugin {
   }
 
   /**
+   * Stops streaming inference.
+   * @returns {Promise<void>} A promise that resolves when the streaming is stopped.
+   */
+  async stopInference(): Promise<void> {
+    this.isCancelled = true;
+    this.controller?.abort();
+  }
+
+  /**
    * Makes a single response inference request.
    * @param {MessageRequest} data - The data for the inference request.
    * @returns {Promise<any>} A promise that resolves with the inference response.
    */
-  async inferenceRequest(data: MessageRequest): Promise<any> {
-    const message = {
-      ...data,
-      message: "",
-      user: "assistant",
+  async inferenceRequest(data: MessageRequest): Promise<ThreadMessage> {
+    const message: ThreadMessage = {
+      threadId: data.threadId,
+      content: "",
       createdAt: new Date().toISOString(),
+      status: MessageStatus.Ready,
     };
 
     return new Promise(async (resolve, reject) => {
       requestInference(data.messages ?? []).subscribe({
         next: (content) => {
-          message.message = content;
+          message.content = content;
         },
         complete: async () => {
           resolve(message);
@@ -100,9 +113,14 @@ export default class JanInferencePlugin implements InferencePlugin {
 
   /**
    * Handles a new message request by making an inference request and emitting events.
+   * Function registered in event manager, should be static to avoid binding issues.
+   * Pass instance as a reference.
    * @param {MessageRequest} data - The data for the new message request.
    */
-  private async handleMessageRequest(data: MessageRequest) {
+  private static async handleMessageRequest(
+    data: MessageRequest,
+    instance: JanInferencePlugin
+  ) {
     const message: ThreadMessage = {
       threadId: data.threadId,
       content: "",
@@ -113,7 +131,10 @@ export default class JanInferencePlugin implements InferencePlugin {
     };
     events.emit(EventName.OnNewMessageResponse, message);
 
-    requestInference(data.messages).subscribe({
+    instance.isCancelled = false;
+    instance.controller = new AbortController();
+
+    requestInference(data.messages, instance.controller).subscribe({
       next: (content) => {
         message.content = content;
         events.emit(EventName.OnMessageResponseUpdate, message);
@@ -125,7 +146,8 @@ export default class JanInferencePlugin implements InferencePlugin {
       },
       error: async (err) => {
         message.content =
-          message.content.trim() + "\n" + "Error occurred: " + err.message;
+          message.content.trim() +
+          (instance.isCancelled ? "" : "\n" + "Error occurred: " + err.message);
         message.status = MessageStatus.Ready;
         events.emit(EventName.OnMessageResponseUpdate, message);
       },

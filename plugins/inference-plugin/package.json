@@ -36,6 +36,7 @@
   "dependencies": {
     "@janhq/core": "file:../../core",
     "download-cli": "^1.1.1",
+    "electron-log": "^5.0.1",
     "fetch-retry": "^5.0.6",
     "kill-port": "^2.0.1",
     "path-browserify": "^1.0.1",
@@ -55,6 +56,7 @@
   "bundleDependencies": [
     "tcp-port-used",
     "kill-port",
-    "fetch-retry"
+    "fetch-retry",
+    "electron-log"
   ]
 }
