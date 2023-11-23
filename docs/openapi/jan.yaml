@@ -17,10 +17,18 @@ tags:
   - name: Chat Completion
     description: Given a list of messages comprising a conversation, the model will return a response.
   - name: Messages
-    description: Operations for individual messages, including creation, retrieval, and modification
+    description: |
+      Messages capture a conversation's content. This can include the content from LLM responses and other metadata from [chat completions](/specs/chats).
+
+      - Users and assistants can send multimedia messages.
+
+      - An [OpenAI Message API](https://platform.openai.com/docs/api-reference/messages) compatible endpoint at `localhost:1337/v1/messages`.
+
+      - Jan's `messages` API is compatible with [OpenAI's Messages API](https://platform.openai.com/docs/api-reference/messages), with additional methods for managing messages locally.
+
   - name: Threads
     description: |
-      `Threads` are conversations between an `assistant` and the user:
+      Threads are conversations between an `assistant` and the user:
         - Users can tweak `model` params and `assistant` behavior within each thread.
         - Users can import and export threads.
         - An [OpenAI Thread API](https://platform.openai.com/docs/api-reference/threads) compatible endpoint at `localhost:1337/v1/threads`. 
@@ -428,8 +436,8 @@ paths:
       operationId: listMessages
       tags:
         - Messages
-      summary: Get a list of messages from a thread
-      description: Retrieves all messages from the specified thread.
+      summary: List messaages
+      description: Retrieves all messages from the given thread.
       parameters:
         - in: path
           name: thread_id
@@ -454,8 +462,8 @@ paths:
       operationId: createMessage
       tags:
         - Messages
-      summary: Create a new message in a thread
-      description: Sends a new message to the specified thread.
+      summary: Create message
+      description: Create a message
       parameters:
         - in: path
           name: thread_id
@@ -493,13 +501,16 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl -X POST {JAN_URL}/v1/threads/{thread_id}/messages \
-              -H "Content-Type: application/json" \
-              -d '{"role": "user", "content": "How does AI work? Explain it in simple terms."}'
+              curl -X POST {JAN_URL}/v1/threads/{thread_id}/messages \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "role": "user",
+                  "content": "How does AI work? Explain it in simple terms."
+                }'
 
   /threads/{thread_id}/messages/{message_id}:
     get:
-      operationId: getMessage
+      operationId: retrieveMessage
       tags:
         - Messages
       summary: Retrieve Message
@@ -529,16 +540,16 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id} \
-              -H "Content-Type: application/json"
+                curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id} \
+                  -H "Content-Type: application/json"
 
   /threads/{thread_id}/messages/{message_id}/files:
     get:
       operationId: listMessageFiles
       tags:
         - Messages
-      summary: message files
-      description: Retrieves a list of files associated with a specific message in a thread.
+      summary: List message files
+      description: Returns a list of message files.
       parameters:
         - in: path
           name: thread_id
@@ -569,10 +580,10 @@ paths:
 
   /threads/{thread_id}/messages/{message_id}/files/{file_id}:
     get:
-      operationId: getMessageFile
+      operationId: retrieveMessageFile
       tags:
         - Messages
-      summary: Get message file
+      summary: Retrieve message file
       description: Retrieves a file associated with a specific message in a thread.
       parameters:
         - in: path
