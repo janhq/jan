@@ -19,7 +19,11 @@ tags:
   - name: Messages
     description: Operations for individual messages, including creation, retrieval, and modification
   - name: Threads
-    description: Manages series of related messages or conversation threads
+    description: |
+      `Threads` are conversations between an `assistant` and the user:
+        - Users can tweak `model` params and `assistant` behavior within each thread.
+        - Users can import and export threads.
+        - An [OpenAI Thread API](https://platform.openai.com/docs/api-reference/threads) compatible endpoint at `localhost:3000/v1/threads`. 
   - name: Assistants
     description: Configures and utilizes different AI assistants for varied tasks
 x-tagGroups:
@@ -637,8 +641,11 @@ x-webhooks:
   ThreadObject:
     post:
       summary: The thread object
-      description: 
-        - Each thread folder contains a `thread.json` file, which is a representation of a thread.
+      description: |
+        - Each `thread` folder contains a `thread.json` file, which is a representation of a thread.
+        - `thread.json` contains metadata and model parameter overrides.
+        - There are no required fields.
+
       operationId: ThreadObject
       tags:
         - Threads
