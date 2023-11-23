@@ -97,6 +97,9 @@
       @apply leading-loose;
       line-height: 1.5;
     }
+    + div {
+      margin-top: 12px;
+    }
   }
 }
 
@@ -116,4 +119,8 @@
 
 .task-list-item {
   list-style: none;
+}
+
+blockquote {
+  margin-bottom: 12px;
 }
