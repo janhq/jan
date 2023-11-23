@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
 import { Badge, Button } from '@janhq/uikit'
@@ -20,6 +20,8 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGigabytes } from '@/utils/converter'
 
+import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
+
 type Props = {
   suitableModel: ModelVersion
   exploreModel: ModelCatalog
@@ -32,8 +34,12 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   const { downloadModel } = useDownloadModel()
   const { downloadedModels } = useGetDownloadedModels()
   const { modelDownloadStateAtom, downloadStates } = useDownloadState()
-  const { performanceTag, title, getPerformanceForModel } =
-    useGetPerformanceTag()
+  const { getPerformanceForModel } = useGetPerformanceTag()
+  const [title, setTitle] = useState<string>('Recommended')
+  const totalRam = useAtomValue(totalRamAtom)
+  const [performanceTag, setPerformanceTag] = useState<TagType>(
+    ModelPerformance.PerformancePositive
+  )
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[suitableModel.name]),
     [suitableModel.name]
@@ -41,9 +47,20 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   const downloadState = useAtomValue(downloadAtom)
   const { setMainViewState } = useMainViewState()
 
+  const calculatePerformance = useCallback(
+    (suitableModel: ModelVersion) => async () => {
+      const { title, performanceTag } = await getPerformanceForModel(
+        suitableModel,
+        totalRam
+      )
+      setPerformanceTag(performanceTag)
+      setTitle(title)
+    },
+    [totalRam]
+  )
+
   useEffect(() => {
-    getPerformanceForModel(suitableModel)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    calculatePerformance(suitableModel)
   }, [suitableModel])
 
   const onDownloadClick = useCallback(() => {

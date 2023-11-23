@@ -1,11 +1,6 @@
-import { useState } from 'react'
-
 import { ModelVersion } from '@janhq/core/lib/types'
-import { useAtomValue } from 'jotai'
 
 import { ModelPerformance, TagType } from '@/constants/tagType'
-
-import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 
 // Recommendation:
 // `Recommended (green)`: "Max RAM required" is 80% of users max  RAM.
@@ -13,28 +8,30 @@ import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 // `Not enough RAM (red)`: User RAM is below "Max RAM required"
 
 export default function useGetPerformanceTag() {
-  const [performanceTag, setPerformanceTag] = useState<TagType | undefined>()
-  const totalRam = useAtomValue(totalRamAtom)
-
-  const getPerformanceForModel = async (modelVersion: ModelVersion) => {
+  async function getPerformanceForModel(
+    modelVersion: ModelVersion,
+    totalRam: number
+  ): Promise<{ title: string; performanceTag: TagType }> {
     const requiredRam = modelVersion.maxRamRequired
-    setPerformanceTag(calculateRamPerformance(requiredRam, totalRam))
+    const performanceTag = calculateRamPerformance(requiredRam, totalRam)
+
+    let title = ''
+
+    switch (performanceTag) {
+      case ModelPerformance.PerformancePositive:
+        title = 'Recommended'
+        break
+      case ModelPerformance.PerformanceNeutral:
+        title = 'Slow on your device'
+        break
+      case ModelPerformance.PerformanceNegative:
+        title = 'Not enough RAM'
+        break
+    }
+    return { title, performanceTag }
   }
 
-  let title = ''
-  switch (performanceTag) {
-    case ModelPerformance.PerformancePositive:
-      title = 'Recommended'
-      break
-    case ModelPerformance.PerformanceNeutral:
-      title = 'Slow on your device'
-      break
-    case ModelPerformance.PerformanceNegative:
-      title = 'Not enough RAM'
-      break
-  }
-
-  return { performanceTag, title, getPerformanceForModel }
+  return { getPerformanceForModel }
 }
 
 const calculateRamPerformance = (
