@@ -363,6 +363,25 @@ paths:
       summary: Get Thread.Assistants
       description: 
         - Can achieve this goal by calling Get thread API
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread to retrieve.
+      responses:
+        "200":
+          description: Thread details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "specs/threads.yaml#/components/schemas/GetThreadResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl {JAN_URL}/v1/threads/{thread_id}/assistants
 
   /threads/{thread_id}/assistants/{assistants_id}:
     post:
@@ -381,6 +400,25 @@ paths:
       summary: List Thread.Messages
       description: 
         -  Can achieve this goal by calling Get Thread API
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+            example: thread_abc123
+          description: The ID of the thread to retrieve.
+      responses:
+        "200":
+          description: Thread details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "specs/threads.yaml#/components/schemas/GetThreadResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl {JAN_URL}/v1/threads/{thread_id}
 
   ### MESSAGES
   /threads/{thread_id}/messages:
