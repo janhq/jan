@@ -327,6 +327,7 @@ paths:
                           "content": "How does AI work? Explain it in simple terms."
                       }]
                   }'
+      
     delete:
       operationId: deleteThread
       tags:
@@ -352,7 +353,35 @@ paths:
         - lang: "curl"
           source: |
             curl -X DELETE {JAN_URL}/v1/threads/{thread_id}
-    
+
+
+  /threads/{thread_id}/assistants:
+    get:
+      operationId: getThreadAssistants
+      tags:
+        - Threads
+      summary: Get Thread.Assistants
+      description: 
+        - Can achieve this goal by calling Get thread API
+
+  /threads/{thread_id}/assistants/{assistants_id}:
+    post:
+      operationId: postThreadAssistants
+      tags:
+        - Threads
+      summary: Modify Thread.Assistants
+      description: 
+        - Can achieve this goal by calling Modify Assistant API with thread.assistant[]
+  
+  /threads/{thread_id}/:
+    get:
+      operationId: listThreadMessage
+      tags:
+        - Threads
+      summary: List Thread.Messages
+      description: 
+        -  Can achieve this goal by calling Get Thread API
+
   ### MESSAGES
   /threads/{thread_id}/messages:
     get:
