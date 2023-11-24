@@ -86,7 +86,7 @@ Here's a standard example `model.json` for a GGUF model.
 
 Jan's Model API is compatible with [OpenAI's Models API](https://platform.openai.com/docs/api-reference/models), with additional methods for managing and running models locally.
 
-See [Jan Models API](https://jan.ai/api-reference#tag/Models)
+See [Jan Models API](https://jan.ai/api-reference#tag/Models).
 
 ## Importing Models
 

@@ -2,15 +2,29 @@
 title: Chats
 ---
 
-:::warning
+:::caution
 
-This page is still under construction, and should be read as a scratchpad
+This is currently under development.
 
 :::
 
-Chats are essentially inference requests to a model
+## Overview
 
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/chat
+In Jan, `chats` are LLM responses in the form of OpenAI compatible `chat completion objects`.
 
-- This should reference Nitro ChatCompletion API page to reduce duplication. 
-- We are fine with adding Jan API for this but it makes sense to use Nitro as reference as Nitro is default inference engine for Jan in this release
+- Models take a list of messages and return a model-generated response as output.
+- An [OpenAI Chat API](https://platform.openai.com/docs/api-reference/chat) compatible endpoint at `localhost:3000/v1/chats`.
+
+## Folder Structure
+
+Chats are stateless, thus are not saved in `janroot`. Any content and relevant metadata from calling this endpoint is extracted and persisted through [Messages](/specs/messages).
+
+## API Reference
+
+Jan's Chat API is compatible with [OpenAI's Chat API](https://platform.openai.com/docs/api-reference/chat).
+
+See [Jan Chat API](https://jan.ai/api-reference/#tag/Chat-Completion)
+
+## Implementation
+
+Under the hood, the `/chat` endpoint simply reroutes an existing endpoint from [Nitro server](https://nitro.jan.ai). Nitro is a lightweight & local inference server, written in C++ and embedded into the Jan app. See [Nitro documentation](https://nitro.jan.ai/docs).

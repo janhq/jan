@@ -62,4 +62,4 @@ Here's a standard example `thread.json` for a conversation between the user and 
 
 Jan's Threads API is compatible with [OpenAI's Threads API](https://platform.openai.com/docs/api-reference/threads), with additional methods for managing threads locally.
 
-See [Jan Threads API](https://jan.ai/api-reference#tag/Threads)
+See [Jan Threads API](https://jan.ai/api-reference#tag/Threads).

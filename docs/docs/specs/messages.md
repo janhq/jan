@@ -86,4 +86,4 @@ Here's an example `message` response from an assistant.
 
 Jan's `messages` API is compatible with [OpenAI's Messages API](https://platform.openai.com/docs/api-reference/messages), with additional methods for managing messages locally.
 
-See [Jan Messages API](https://jan.ai/api-reference#tag/Messages)
+See [Jan Messages API](https://jan.ai/api-reference#tag/Messages).
