@@ -12,9 +12,9 @@ For MacOS, the download should be available as a `.dmg` file in the following fo
 
 ```bash
 # Intel Mac 
-jan-mac-x64-<version>.dmg
+jan-mac-x64-{version}.dmg
 # Apple Silicon Mac
-jan-mac-arm64-<version>.dmg
+jan-mac-arm64-{version}.dmg
 ```
 
 The typical installation process taks around a minute.
