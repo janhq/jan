@@ -5,7 +5,6 @@ import { ChatCompletionRole, MessageStatus, ThreadMessage } from '@janhq/core'
 
 import hljs from 'highlight.js'
 
-import { MoreVertical } from 'lucide-react'
 import { Marked } from 'marked'
 
 import { markedHighlight } from 'marked-highlight'
