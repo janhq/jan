@@ -3,7 +3,6 @@ import { Fragment } from "react";
 import { Menu, Transition } from "@headlessui/react";
 import { ChevronDownIcon } from "@heroicons/react/20/solid";
 import axios from "axios";
-import { UAParser } from 'ua-parser-js';
 
 const systemsTemplate = [
   {
@@ -56,7 +55,7 @@ export default function Dropdown() {
 
   const changeDefaultSystem = async (systems) => {
     const userAgent = navigator.userAgent;
-    const { browser, cpu, device } = UAParser(userAgent);
+
     const arc = await navigator?.userAgentData?.getHighEntropyValues([
       "architecture",
     ]);
@@ -68,12 +67,19 @@ export default function Dropdown() {
       // linux user
       setDefaultSystem(systems[3]);
     } else if (
-      userAgent.includes("Mac OS") &&
-      cpu.is('arm')
+      userAgent.includes("Mac OS") && arc && arc.architecture === "arm"
     ) {
       setDefaultSystem(systems[0]);
     } else {
-      setDefaultSystem(systems[1]);
+      var w = document.createElement("canvas").getContext("webgl");
+      var d = w.getExtension('WEBGL_debug_renderer_info');
+      var g = d && w.getParameter(d.UNMASKED_RENDERER_WEBGL) || "";
+      console.log(g);
+      if (g === "Apple GPU") {
+        setDefaultSystem(systems[0]);
+      } else {
+        setDefaultSystem(systems[1]);
+      }
     }
   };
 
