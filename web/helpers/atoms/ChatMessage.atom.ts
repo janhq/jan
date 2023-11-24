@@ -3,6 +3,7 @@ import { atom } from 'jotai'
 
 import {
   conversationStatesAtom,
+  currentConversationAtom,
   getActiveConvoIdAtom,
   updateThreadStateLastMessageAtom,
 } from './Conversation.atom'
@@ -100,6 +101,17 @@ export const cleanConversationMessages = atom(null, (get, set, id: string) => {
   }
   newData[id] = newData[id].filter((e) => e.role === ChatCompletionRole.System)
   set(chatMessages, newData)
+})
+
+export const deleteMessage = atom(null, (get, set, id: string) => {
+  const newData: Record<string, ThreadMessage[]> = {
+    ...get(chatMessages),
+  }
+  const threadId = get(currentConversationAtom)?.id
+  if (threadId) {
+    newData[threadId] = newData[threadId].filter((e) => e.id !== id)
+    set(chatMessages, newData)
+  }
 })
 
 export const updateMessageAtom = atom(
