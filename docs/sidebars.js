@@ -69,7 +69,7 @@ const sidebars = {
             "specs/models",
             "specs/threads",
             "specs/messages",
-            // "specs/assistants",
+            "specs/assistants",
             // "specs/files",
             // "specs/jan",
             // "specs/fine-tuning",
