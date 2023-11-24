@@ -22,12 +22,9 @@ export default function FeatureToggleWrapper({
   const [experimentalEnabed, setExperimentalEnabled] = useState<boolean>(false)
 
   useEffect(() => {
-    // Global experimental feature is disabled
-    let globalFeatureEnabled = false
-    if (localStorage.getItem(EXPERIMENTAL_FEATURE_ENABLED) !== 'true') {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      globalFeatureEnabled = true
-    }
+    setExperimentalEnabled(
+      localStorage.getItem(EXPERIMENTAL_FEATURE_ENABLED) === 'true'
+    )
   }, [])
 
   const setExperimentalFeature = (on: boolean) => {
