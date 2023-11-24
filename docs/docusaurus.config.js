@@ -25,7 +25,7 @@ const config = {
 
   onBrokenLinks: "warn",
   onBrokenMarkdownLinks: "warn",
-
+  trailingSlash: true,
   // Even if you don't use internalization, you can use this field to set useful
   // metadata like html lang. For example, if your site is Chinese, you may want
   // to replace "en" with "zh-Hans".
@@ -112,6 +112,11 @@ const config = {
         theme: {
           primaryColor: "#1a73e8",
           primaryColorDark: "#1a73e8",
+          options: {
+              disableSearch: true,
+              requiredPropsFirst: true,
+              noAutoAuth: true
+            },
           // redocOptions: { hideDownloadButton: false },
         },
       },

@@ -14,7 +14,7 @@ This is currently under development.
 
 - Users can tweak `model` params and `assistant` behavior within each thread.
 - Users can import and export threads.
-- An [OpenAI Thread API](https://platform.openai.com/docs/api-reference/threads) compatible endpoint at `localhost:3000/v1/threads`.
+- An [OpenAI Thread API](https://platform.openai.com/docs/api-reference/threads) compatible endpoint at `localhost:1337/v1/threads`.
 
 ## Folder Structure
 
