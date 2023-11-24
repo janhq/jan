@@ -38,7 +38,8 @@
     "react-icons": "^4.11.0",
     "redocusaurus": "^2.0.0",
     "sass": "^1.69.3",
-    "tailwindcss": "^3.3.3"
+    "tailwindcss": "^3.3.3",
+    "ua-parser-js": "^1.0.37"
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.0.0",

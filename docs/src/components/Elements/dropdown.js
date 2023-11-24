@@ -3,6 +3,7 @@ import { Fragment } from "react";
 import { Menu, Transition } from "@headlessui/react";
 import { ChevronDownIcon } from "@heroicons/react/20/solid";
 import axios from "axios";
+import { UAParser } from 'ua-parser-js';
 
 const systemsTemplate = [
   {
@@ -55,7 +56,7 @@ export default function Dropdown() {
 
   const changeDefaultSystem = async (systems) => {
     const userAgent = navigator.userAgent;
-
+    const { browser, cpu, device } = UAParser(userAgent);
     const arc = await navigator?.userAgentData?.getHighEntropyValues([
       "architecture",
     ]);
@@ -68,8 +69,7 @@ export default function Dropdown() {
       setDefaultSystem(systems[3]);
     } else if (
       userAgent.includes("Mac OS") &&
-      arc &&
-      arc.architecture === "undefined"
+      cpu.is('arm')
     ) {
       setDefaultSystem(systems[0]);
     } else {
