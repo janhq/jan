@@ -44,6 +44,7 @@ const marked = new Marked(
 const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   const parsedText = marked.parse(props.content ?? '')
   const isUser = props.role === ChatCompletionRole.User
+  const isSystem = props.role === ChatCompletionRole.System
 
   return (
     <div className="mx-auto rounded-xl px-4 lg:w-3/4">
@@ -53,7 +54,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           !isUser && 'mt-2'
         )}
       >
-        {!isUser && <LogoMark width={20} />}
+        {!isUser && !isSystem && <LogoMark width={20} />}
         <div className="text-sm font-extrabold capitalize">{props.role}</div>
         <p className="text-xs font-medium">{displayDate(props.createdAt)}</p>
       </div>
