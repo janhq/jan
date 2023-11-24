@@ -1,6 +1,8 @@
 import {
   ChatCompletionRole,
+  ChatCompletionMessage,
   EventName,
+  MessageRequest,
   MessageStatus,
   PluginType,
   ThreadMessage,
@@ -46,7 +48,19 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
             className="mx-1 cursor-pointer rounded-sm bg-gray-800 px-[3px]"
             size={20}
             onClick={() => {
-              const messageRequest = messages[1]
+              const messageRequest: MessageRequest = {
+                id: message.id ?? '',
+                messages: messages
+                  .slice(1, messages.length)
+                  .reverse()
+                  .map((e) => {
+                    return {
+                      content: e.content,
+                      role: e.role,
+                    } as ChatCompletionMessage
+                  }),
+                threadId: message.threadId ?? '',
+              }
               if (message.role === ChatCompletionRole.Assistant) {
                 deleteAMessage(message.id ?? '')
               }
