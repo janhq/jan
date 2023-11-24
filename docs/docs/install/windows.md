@@ -16,9 +16,9 @@ jan-win-x64-{version}.exe
 
 The typical installation process takes around a minute. 
 
-### Github Releases
+### GitHub Releases
 
-Jan is also available from [Jan's Github Releases](https://github.com/janhq/jan/releases) page, with a recommended [latest stable release](https://github.com/janhq/jan/releases/latest). 
+Jan is also available from [Jan's GitHub Releases](https://github.com/janhq/jan/releases) page, with a recommended [latest stable release](https://github.com/janhq/jan/releases/latest). 
 
 Within the Releases' assets, you will find the following files for Windows:
 

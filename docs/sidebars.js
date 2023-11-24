@@ -13,7 +13,7 @@
 
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
-  docsSidebar: [
+  guidesSidebar: [
     {
       type: "category",
       label: "Introduction",
@@ -42,43 +42,14 @@ const sidebars = {
       collapsed: true,
       items: ["docs/models", "docs/server"],
     },
-    {
-      type: "category",
-      label: "Extending Jan",
-      link: { type: "doc", id: "docs/extensions" },
-      collapsible: true,
-      collapsed: true,
-      items: ["docs/assistants", "docs/themes", "docs/tools", "docs/modules"],
-    },
-    {
-      type: "category",
-      label: "Building Jan",
-      collapsible: true,
-      collapsed: true,
-      items: [
-        "specs/architecture",
-        "specs/data-structures",
-        "specs/user-interface",
-        {
-          type: "category",
-          label: "Specifications",
-          collapsible: true,
-          collapsed: false,
-          items: [
-            "specs/chats",
-            "specs/models",
-            "specs/threads",
-            "specs/messages",
-            "specs/assistants",
-            // "specs/files",
-            // "specs/jan",
-            // "specs/fine-tuning",
-            // "specs/settings",
-            // "specs/prompts",
-          ],
-        },
-      ],
-    },
+  ],
+
+  developerSidebar: [
+    "docs/extensions",
+    "docs/assistants",
+    "docs/themes",
+    "docs/tools",
+    "docs/modules",
   ],
 
   apiSidebar: [
@@ -97,17 +68,53 @@ const sidebars = {
     },
   ],
 
-  aboutSidebar: [
+  specsSidebar: [
     {
-      type: "doc",
-      label: "About Jan",
-      id: "about/about",
+      type: "category",
+      label: "Overview",
+      collapsible: true,
+      collapsed: false,
+      items: [
+        "specs/architecture",
+        "specs/data-structures",
+        "specs/user-interface",
+      ],
     },
     {
-      type: "link",
-      label: "Careers",
-      href: "https://janai.bamboohr.com/careers",
+      type: "category",
+      label: "Product",
+      collapsible: true,
+      collapsed: false,
+      items: [
+        "specs/home",
+        "specs/hub",
+        "specs/system-monitor",
+        "specs/settings",
+      ],
     },
+
+    {
+      type: "category",
+      label: "Engineering",
+      collapsible: true,
+      collapsed: false,
+      items: [
+        "specs/chats",
+        "specs/models",
+        "specs/threads",
+        "specs/messages",
+        // "specs/assistants",
+        // "specs/files",
+        // "specs/jan",
+        // "specs/fine-tuning",
+        // "specs/settings",
+        // "specs/prompts",
+      ],
+    },
+  ],
+
+  communitySidebar: [
+    "community/community",
     {
       type: "category",
       label: "Events",
@@ -121,6 +128,19 @@ const sidebars = {
           id: "events/hcmc-oct23",
         },
       ],
+    },
+  ],
+
+  aboutSidebar: [
+    {
+      type: "doc",
+      label: "About Jan",
+      id: "about/about",
+    },
+    {
+      type: "link",
+      label: "Careers",
+      href: "https://janai.bamboohr.com/careers",
     },
     {
       type: "category",
