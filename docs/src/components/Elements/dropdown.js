@@ -69,7 +69,7 @@ export default function Dropdown() {
     } else if (
       userAgent.includes("Mac OS") &&
       arc &&
-      arc.architecture === "arm"
+      arc.architecture === "undefined"
     ) {
       setDefaultSystem(systems[0]);
     } else {
