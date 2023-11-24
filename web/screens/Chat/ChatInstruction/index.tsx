@@ -8,7 +8,7 @@ import {
   events,
 } from '@janhq/core'
 
-import { Button, Input } from '@janhq/uikit'
+import { Button, Textarea } from '@janhq/uikit'
 import { useAtomValue } from 'jotai'
 
 import { getActiveConvoIdAtom } from '@/helpers/atoms/Conversation.atom'
@@ -46,11 +46,12 @@ const ChatInstruction = () => {
       )}
       {isSettingInstruction && (
         <div className="space-y-4">
-          <Input
+          <Textarea
             placeholder={`Enter your instructions`}
             onChange={(e) => {
               setInstruction(e.target.value)
             }}
+            className="h-24"
           />
           <Button
             themes={'outline'}
