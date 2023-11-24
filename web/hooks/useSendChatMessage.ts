@@ -5,7 +5,6 @@ import {
   MessageRequest,
   MessageStatus,
   PluginType,
-  Thread,
   ThreadMessage,
   events,
 } from '@janhq/core'
