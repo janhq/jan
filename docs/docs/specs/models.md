@@ -53,14 +53,14 @@ Here's a standard example `model.json` for a GGUF model.
 - `source_url`: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/.
 
 ```js
-"id": "zephyr-7b"                   // Defaults to foldername
+"id": "zephyr-7b",                  // Defaults to foldername
 "object": "model",                  // Defaults to "model"
 "source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
-"name": "Zephyr 7B"                 // Defaults to foldername
-"owned_by": "you"                   // Defaults to you
+"name": "Zephyr 7B",                // Defaults to foldername
+"owned_by": "you",                  // Defaults to "you"
 "version": "1",                     // Defaults to 1
-"created": 1231231                  // Defaults to file creation time
-"description": ""
+"created": 1231231,                 // Defaults to file creation time
+"description": null,                // Defaults to null
 "state": enum[null, "downloading", "ready", "starting", "stopping", ...]
 "format": "ggufv3",                 // Defaults to "ggufv3"
 "settings": {                       // Models are initialized with settings
@@ -68,7 +68,7 @@ Here's a standard example `model.json` for a GGUF model.
     "ngl": "100",
     "embedding": "true",
     "n_parallel": "4",
-}
+},
 "parameters": {                     // Models are called parameters
     "temperature": "0.7",
     "token_limit": "2048",
@@ -76,7 +76,7 @@ Here's a standard example `model.json` for a GGUF model.
     "top_p": "1",
     "stream": "true"
 },
-"metadata": {}                      // Defaults to {}
+"metadata": {},                     // Defaults to {}
 "assets": [                         // Defaults to current dir
     "file://.../zephyr-7b-q4_k_m.bin",
 ]
