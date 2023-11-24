@@ -8,66 +8,36 @@ This page is still under construction, and should be read as a scratchpad
 
 :::
 
-
-```sh
-janroot/
-	assistants/
-		assistant-a/
-			assistant.json
-			src/
-				index.ts
-			threads/
-				thread-a/
-				thread-b
-	models/
-		model-a/
-			model.json
-```
-
 Jan use the local filesystem for data persistence, similar to VSCode. This allows for composability and tinkerability.
 
-```sh=
-/janroot               # Jan's root folder (e.g. ~/jan)
-    /models            # For raw AI models
-    /threads           # For conversation history
-    /assistants        # For AI assistants' configs, knowledge, etc.
+```yaml
+janroot/               # Jan's root folder (e.g. ~/jan)
+    models/            # For raw AI models
+    threads/           # For conversation history
+    assistants/        # For AI assistants' configs, knowledge, etc.
 ```
 
-```sh=
+```yaml
 /models
     /modelA
         model.json        # Default model settings
         llama-7b-q4.gguf  # Model binaries
-        llama-7b-q5.gguf  # Include different quantizations
 /threads
-    /jan-unixstamp-salt
-        model.json        # Overrides assistant/model-level model settings
+    /jan-unixstamp
         thread.json       # thread metadata (e.g. subject)
-        messages.json     # messages
-        content.json      # What is this?
-        files/            # Future for RAG
+        messages.jsonl    # messages
+        files/            # RAG
 /assistants
-    /jan
+    /jan                  # A default assistant that can use all models
         assistant.json    # Assistant configs (see below)
-
-        # For any custom code
-        package.json      # Import npm modules
-                          # e.g. Langchain, Llamaindex
-        /src              # Supporting files (needs better name)
+        package.json      # Import npm modules, e.g. Langchain, Llamaindex
+        /src              # For custom code
             index.js      # Entrypoint
-            process.js    # For electron IPC processes (needs better name)
-
-        # `/threads` at root level
-        # `/models` at root level
-    /shakespeare
+                          # `/threads` at root level
+                          # `/models` at root level
+    /shakespeare          # Example of a custom assistant
         assistant.json
-        model.json        # Creator chooses model and settings
         package.json
-        /src
-            index.js
-            process.js
-
         /threads          # Assistants remember conversations in the future
         /models           # Users can upload custom models
-            /finetuned-model
 ```

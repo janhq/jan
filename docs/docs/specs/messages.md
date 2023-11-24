@@ -19,22 +19,19 @@ This is currently under development.
 
 Messages are saved in the `/threads/{thread_id}` folder in `messages.jsonl` files
 
-```sh
+```yaml
 jan/
     threads/
         assistant_name_unix_timestamp/
-            ...
-            messages.jsonl
-        jan_2341243134/
-            ...
-            messages.jsonl
+            thread.json                   # Thread metadata
+            messages.jsonl                # Messages are stored in jsonl format
 ```
 
 ## `message.jsonl`
 
 Individual messages are saved in `jsonl` format for indexing purposes.
 
-```json
+```js
 {...message_2}
 {...message_1}
 {...message_0}
@@ -44,13 +41,13 @@ Individual messages are saved in `jsonl` format for indexing purposes.
 
 Here's a standard example `message` sent from a user.
 
-```json
+```js
 "id": "0",                            // Sequential or UUID
 "object": "thread.message",           // Defaults to "thread.message"
 "created_at": 1698983503,
 "thread_id": "thread_asdf",           // Defaults to parent thread
 "assistant_id": "jan",                // Defaults to parent thread
-"role": "user",                  // From either "user" or "assistant"
+"role": "user",                       // From either "user" or "assistant"
 "content": [
   {
     "type": "text",
@@ -61,13 +58,11 @@ Here's a standard example `message` sent from a user.
   }
 ],
 "metadata": {},                       // Defaults to {}
-// "run_id": "...",                   // Rather than `run` id abstraction
-// "file_ids": [],
 ```
 
 Here's an example `message` response from an assistant.
 
-```json
+```js
 "id": "0",                            // Sequential or UUID
 "object": "thread.message",           // Defaults to "thread.message"
 "created_at": 1698983503,
@@ -84,9 +79,7 @@ Here's an example `message` response from an assistant.
   }
 ],
 "metadata": {},                       // Defaults to {}
-// "run_id": "...",                   // KIV
-// "file_ids": [],                    // KIV
-// "usage": {}                        // KIV: saving chat completion properties https://platform.openai.com/docs/api-reference/chat/object
+"usage": {}                           // Save chat completion properties https://platform.openai.com/docs/api-reference/chat/object
 ```
 
 ## API Reference
@@ -94,165 +87,3 @@ Here's an example `message` response from an assistant.
 Jan's `messages` API is compatible with [OpenAI's Messages API](https://platform.openai.com/docs/api-reference/messages), with additional methods for managing messages locally.
 
 See [Jan Messages API](https://jan.ai/api-reference#tag/Messages)
-
-<!-- TODO clean this part up into API -->
-<!--
-### Get list message
-
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/messages/getMessage
-
-- Example request
-
-```shell
-  curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id} \
-    -H "Content-Type: application/json"
-```
-
-- Example response
-
-```json
-{
-  "id": "msg_abc123",
-  "object": "thread.message",
-  "created_at": 1699017614,
-  "thread_id": "thread_abc123",
-  "role": "user",
-  "content": [
-    {
-      "type": "text",
-      "text": {
-        "value": "How does AI work? Explain it in simple terms.",
-        "annotations": []
-      }
-    }
-  ],
-  "file_ids": [],
-  "assistant_id": null,
-  "run_id": null,
-  "metadata": {}
-}
-```
-
-### Create message
-
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/messages/createMessage
-
-- Example request
-
-```shell
-  curl -X POST {JAN_URL}/v1/threads/{thread_id}/messages \
-    -H "Content-Type: application/json" \
-    -d '{
-      "role": "user",
-      "content": "How does AI work? Explain it in simple terms."
-    }'
-```
-
-- Example response
-
-```json
-{
-  "id": "msg_abc123",
-  "object": "thread.message",
-  "created_at": 1699017614,
-  "thread_id": "thread_abc123",
-  "role": "user",
-  "content": [
-    {
-      "type": "text",
-      "text": {
-        "value": "How does AI work? Explain it in simple terms.",
-        "annotations": []
-      }
-    }
-  ],
-  "file_ids": [],
-  "assistant_id": null,
-  "run_id": null,
-  "metadata": {}
-}
-```
-
-### Get message
-
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/listAssistants
-
-- Example request
-
-```shell
-  curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id} \
-    -H "Content-Type: application/json"
-```
-
-- Example response
-
-```json
-{
-  "id": "msg_abc123",
-  "object": "thread.message",
-  "created_at": 1699017614,
-  "thread_id": "thread_abc123",
-  "role": "user",
-  "content": [
-    {
-      "type": "text",
-      "text": {
-        "value": "How does AI work? Explain it in simple terms.",
-        "annotations": []
-      }
-    }
-  ],
-  "file_ids": [],
-  "assistant_id": null,
-  "run_id": null,
-  "metadata": {}
-}
-```
-
-### Modify message
-
-> Jan: TODO: Do we need to modify message? Or let user create new message?
-
-# Get message file
-
-> OpenAI Equivalent: https://api.openai.com/v1/threads/{thread_id}/messages/{message_id}/files/{file_id}
-
-- Example request
-
-```shell
-  curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id}/files/{file_id} \
-    -H "Content-Type: application/json"
-```
-
-- Example response
-
-```json
-{
-  "id": "file-abc123",
-  "object": "thread.message.file",
-  "created_at": 1699061776,
-  "message_id": "msg_abc123"
-}
-```
-
-# List message files
-
-> OpenAI Equivalent: https://api.openai.com/v1/threads/{thread_id}/messages/{message_id}/files
-
-````
-- Example request
-```shell
-  curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id}/files/{file_id} \
-    -H "Content-Type: application/json"
-````
-
-- Example response
-
-```json
-{
-  "id": "file-abc123",
-  "object": "thread.message.file",
-  "created_at": 1699061776,
-  "message_id": "msg_abc123"
-}
-``` -->

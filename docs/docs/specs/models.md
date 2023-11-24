@@ -22,7 +22,7 @@ In Jan, models are primary entities with the following capabilities:
 - Models are organized by individual folders, each containing the binaries and configurations needed to run the model. This makes for easy packaging and sharing.
 - Model folder names are unique and used as `model_id` default values.
 
-```bash
+```yaml
 jan/                               # Jan root folder
   models/
     llama2-70b-q4_k_m/             # Example: standard GGUF model
@@ -52,9 +52,9 @@ Here's a standard example `model.json` for a GGUF model.
 
 - `source_url`: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/.
 
-```json
+```js
 "id": "zephyr-7b"                   // Defaults to foldername
-"object": "model",                    // Defaults to "model"
+"object": "model",                  // Defaults to "model"
 "source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
 "name": "Zephyr 7B"                 // Defaults to foldername
 "owned_by": "you"                   // Defaults to you
@@ -63,24 +63,21 @@ Here's a standard example `model.json` for a GGUF model.
 "description": ""
 "state": enum[null, "downloading", "ready", "starting", "stopping", ...]
 "format": "ggufv3",                 // Defaults to "ggufv3"
-"settings": {                       // Models are initialized with these settings
+"settings": {                       // Models are initialized with settings
     "ctx_len": "2048",
     "ngl": "100",
     "embedding": "true",
     "n_parallel": "4",
-    // KIV: "pre_prompt": "A chat between a curious user and an artificial intelligence",
-    // KIV:"user_prompt": "USER: ",
-    // KIV: "ai_prompt": "ASSISTANT: "
 }
-"parameters": {                     // Models are called with these parameters
+"parameters": {                     // Models are called parameters
     "temperature": "0.7",
     "token_limit": "2048",
     "top_k": "0",
     "top_p": "1",
     "stream": "true"
 },
-"metadata": {}                    // Defaults to {}
-"assets": [                       // Filepaths to model binaries; Defaults to current dir
+"metadata": {}                      // Defaults to {}
+"assets": [                         // Defaults to current dir
     "file://.../zephyr-7b-q4_k_m.bin",
 ]
 ```

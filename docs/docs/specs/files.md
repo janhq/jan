@@ -4,7 +4,7 @@ title: "Files"
 
 :::warning
 
-Draft Specification: functionality has not been implemented yet. 
+Draft Specification: functionality has not been implemented yet.
 
 :::
 
@@ -18,7 +18,7 @@ Files can be used by `threads`, `assistants` and `fine-tuning`
 - Note: OAI's struct doesn't seem very well designed
 - `files.json`
 
-```json
+```js
 {
   // Public properties (OpenAI Compatible: https://platform.openai.com/docs/api-reference/files/object)
   "id": "file-BK7bzQj3FfZFXr7DbL6xJwfo",
@@ -31,19 +31,25 @@ Files can be used by `threads`, `assistants` and `fine-tuning`
 ```
 
 ## File API
+
 ### List Files
+
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/files/list
 
 ### Upload file
+
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/files/create
 
 ### Delete file
+
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/files/delete
 
 ### Retrieve file
+
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/files/retrieve
 
 ### Retrieve file content
+
 > OpenAI Equivalent: https://platform.openai.com/docs/api-reference/files/retrieve-contents
 
 ## Files Filesystem
