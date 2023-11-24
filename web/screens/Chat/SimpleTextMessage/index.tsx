@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useContext } from 'react'
+import React, { useContext, useEffect, useState } from 'react'
 
 import { ChatCompletionRole, MessageStatus, ThreadMessage } from '@janhq/core'
 
@@ -51,6 +51,29 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   const parsedText = marked.parse(props.content ?? '')
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
+  const [tokenCount, setTokenCount] = useState(0)
+
+  const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
+  const [tokenSpeed, setTokenSpeed] = useState(0)
+
+  useEffect(() => {
+    if (props.status === MessageStatus.Ready || !experimentalFeatureEnabed) {
+      return
+    }
+    const currentTimestamp = new Date().getTime() // Get current time in milliseconds
+    if (!lastTimestamp) {
+      // If this is the first update, just set the lastTimestamp and return
+      if (props.content !== '') setLastTimestamp(currentTimestamp)
+      return
+    }
+
+    const timeDiffInSeconds = (currentTimestamp - lastTimestamp) / 1000 // Time difference in seconds
+    const totalTokenCount = tokenCount + 1
+    const averageTokenSpeed = totalTokenCount / timeDiffInSeconds // Calculate average token speed
+
+    setTokenSpeed(averageTokenSpeed)
+    setTokenCount(totalTokenCount)
+  }, [props.content])
 
   return (
     <div className="group mx-auto rounded-xl px-4 lg:w-3/4">
@@ -88,6 +111,12 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           </>
         )}
       </div>
+      {experimentalFeatureEnabed &&
+        (props.status === MessageStatus.Pending || tokenSpeed > 0) && (
+          <p className="text-xs font-medium text-white">
+            Token Speed: {Number(tokenSpeed).toFixed(2)}/s
+          </p>
+        )}
     </div>
   )
 }
