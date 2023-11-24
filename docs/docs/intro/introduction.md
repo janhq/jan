@@ -1,6 +1,6 @@
 ---
 title: Introduction
-slug: /intro
+slug: /docs
 ---
 
 Jan is a ChatGPT-alternative that runs on your own computer, with a [local API server](/api). 
