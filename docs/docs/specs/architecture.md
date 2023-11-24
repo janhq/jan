@@ -8,10 +8,19 @@ This page is still under construction, and should be read as a scratchpad
 
 :::
 
-- Jan is built using modules
-- Plugin architecture (on Pluggable-Electron)
+## Overview
 
-Jan is comprised of system-level modules that mirror OpenAI’s, exposing similar APIs and objects
+- Jan built a modular infrastructure on top of Electron, in order to support extensions and AI functionality.
+- Jan is largely built on top of its own modules.
+- Jan uses a local [file-based approach](/specs/file-based) for data persistence.
+
+## Modules
+
+Modules are low level, system services. It is similar to OS kernel modules, in that modules provide abstractions to functionality like the filesystem, device system, databases, AI inference engines, etc.
+
+## Pluggable Modules
+
+Jan exports modules that mirror OpenAI’s, exposing similar APIs and objects:
 
 - Modules are modular, atomic implementations of a single OpenAI-compatible endpoint
 - Modules can be swapped out for alternate implementations
@@ -26,24 +35,10 @@ Jan is comprised of system-level modules that mirror OpenAI’s, exposing simila
 | Threads    | Conversations | [/thread](/api/thread)       |
 | Messages   | Messages      | [/message](/api/message)     |
 
-## Concepts
+<!-- TODO: link npm modules -->
 
-```mermaid
-graph LR
-    A1[("A User Integrators")] -->|uses| B1[assistant]
-    B1 -->|persist conversational history| C1[("thread A")]
-    B1 -->|executes| D1[("built-in tools as module")]
-    B1 -.->|uses| E1[model]
-    E1 -.->|model.json| D1
-    D1 --> F1[retrieval]
-    F1 -->|belongs to| G1[("web browsing")]
-    G1 --> H1[Google]
-    G1 --> H2[Duckduckgo]
-    F1 -->|belongs to| I1[("API calling")]
-    F1 --> J1[("knowledge files")]
-```
-- User/ Integrator
-- Assistant object
-- Model object
-- Thread object
-- Built-in tool object
+## Extensions
+
+Extensions are feature level services that include both UI and logic implementation.
+
+<!-- TODO[@linh]: add all of @linh's specs here -->
