@@ -11,14 +11,6 @@ ifeq ($(OS),Windows_NT)
 else
 	cd uikit && yarn install && yarn build
 endif
-# Updates the app version based on the tag
-update-app-version:
-	if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then \
-		echo "Error: Tag is not valid!"; \
-		exit 1; \
-	fi
-	jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
-	mv /tmp/package.json electron/package.json
 
 # Installs yarn dependencies and builds core and plugins
 install-and-build: build-uikit
