@@ -1,4 +1,4 @@
-import { MessageStatus, ThreadMessage } from '@janhq/core'
+import { ChatCompletionRole, MessageStatus, ThreadMessage } from '@janhq/core'
 import { atom } from 'jotai'
 
 import {
@@ -91,6 +91,14 @@ export const deleteConversationMessage = atom(null, (get, set, id: string) => {
     ...get(chatMessages),
   }
   newData[id] = []
+  set(chatMessages, newData)
+})
+
+export const cleanConversationMessages = atom(null, (get, set, id: string) => {
+  const newData: Record<string, ThreadMessage[]> = {
+    ...get(chatMessages),
+  }
+  newData[id] = newData[id].filter((e) => e.role === ChatCompletionRole.System)
   set(chatMessages, newData)
 })
 
