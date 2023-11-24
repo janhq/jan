@@ -2,13 +2,37 @@
 title: Mac
 ---
 
-# Jan on MacOS
+# Installing Jan on MacOS
 
 ## Installation
-1. To download the lastest version of Jan on MacOS, please visit the [Jan's homepage](https://jan.ai/).
-2. On the homepage, please choose the appropriate release version for your system architecture as follows:
-    - Intel Mac: `jan-mac-x64-<version>.dmg`
-    - Apple Silicon Mac: `jan-mac-arm64-<version>.dmg`
+
+Jan is available for download via our homepage, [https://jan.ai/](https://jan.ai/).
+
+For MacOS, the download should be available as a `.dmg` file in the following format.
+
+```bash
+# Intel Mac 
+jan-mac-x64-<version>.dmg
+# Apple Silicon Mac
+jan-mac-arm64-<version>.dmg
+```
+
+The typical installation process taks around a minute.
+
+## GitHub Releases
+Jan is also available from [Jan's GitHub Releases](https://github.com/janhq/jan/releases) page, with a recommended [latest stable release](https://github.com/janhq/jan/releases/latest). 
+
+Within the Releases' assets, you will find the following files for MacOS:
+
+```bash
+# Intel Mac (dmg file and zip file)
+jan-mac-x64-{version}.dmg
+jan-mac-x64-{version}.zip
+
+# Apple Silicon Mac (dmg file and zip file)
+jan-mac-arm64-{version}.dmg
+jan-mac-arm64-{version}.zip
+```
 
 ## Uninstall Jan
 As Jan is development mode, you might get stuck on a broken build
