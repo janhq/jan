@@ -16,7 +16,7 @@ This page is still under construction, and should be read as a scratchpad
 
 ## Modules
 
-Modules are low level, system services. It is similar to OS kernel modules, in that modules provide abstractions to functionality like the filesystem, device system, databases, AI inference engines, etc.
+Modules are low level, system services. It is similar to OS kernel modules, in that `modules` provide abstractions to device level, basic functionality like the filesystem, device system, databases, AI inference engines, etc.
 
 ## Pluggable Modules
 
