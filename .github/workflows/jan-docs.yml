@@ -24,7 +24,7 @@ jobs:
       CLOUDFLARE_PROJECT_NAME: jan
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       deployments: write
       pull-requests: write
     steps:
