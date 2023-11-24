@@ -146,16 +146,34 @@ const config = {
         // Navbar Left
         {
           type: "docSidebar",
-          sidebarId: "docsSidebar",
+          sidebarId: "guidesSidebar",
           position: "left",
-          label: "Documentation",
+          label: "Guides",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "developerSidebar",
+          position: "left",
+          label: "Developer",
         },
         {
           position: "left",
           to: "/api-reference",
           label: "API Reference",
         },
+        {
+          type: "docSidebar",
+          position: "left",
+          sidebarId: "specsSidebar",
+          label: "Specs",
+        },
         // Navbar right
+        {
+          type: "docSidebar",
+          position: "right",
+          sidebarId: "communitySidebar",
+          label: "Community",
+        },
         {
           to: "blog",
           label: "Blog",
