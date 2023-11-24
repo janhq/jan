@@ -49,7 +49,7 @@ export default function useSendChatMessage() {
       const summaryMsg: ChatCompletionMessage = {
         role: ChatCompletionRole.User,
         content:
-          'summary this conversation in a few words, the response should just include the summary',
+          'summary this conversation in less than 5 words, the response should just include the summary',
       }
       // Request convo summary
       setTimeout(async () => {
@@ -64,7 +64,7 @@ export default function useSendChatMessage() {
           currentConvo.id === newMessage.threadId &&
           result?.content &&
           result?.content?.trim().length > 0 &&
-          result.content.split(' ').length <= 10
+          result.content.split(' ').length <= 20
         ) {
           const updatedConv = {
             ...currentConvo,
