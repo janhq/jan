@@ -113,7 +113,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       </div>
       {experimentalFeatureEnabed &&
         (props.status === MessageStatus.Pending || tokenSpeed > 0) && (
-          <p className="text-xs font-medium text-white">
+          <p className="mt-1 text-xs font-medium text-white">
             Token Speed: {Number(tokenSpeed).toFixed(2)}/s
           </p>
         )}
