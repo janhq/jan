@@ -41,7 +41,7 @@ export default function useSendChatMessage() {
     if (
       currentConvo &&
       newMessage.messages &&
-      newMessage.messages.length > 2 &&
+      newMessage.messages.length >= 2 &&
       (!currentConvo.summary ||
         currentConvo.summary === '' ||
         currentConvo.summary === activeModel?.name)
