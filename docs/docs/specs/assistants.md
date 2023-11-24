@@ -2,96 +2,82 @@
 title: "Assistants"
 ---
 
-Assistants can use models and tools.
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants
-- Jan's `Assistants` are even more powerful than OpenAI due to customizable code in `index.js`
+:::caution
 
-## User Stories
+This is currently under development.
 
-_Users can download an assistant via a web URL_
+:::
 
-- Wireframes here
+## Overview
 
-_Users can import an assistant from local directory_
+In Jan, assistants are `primary` entities with the following capabilities:
 
-- Wireframes here
+- Assistants can use `models`, `tools`, handle and emit `events`, and invoke `custom code`.
+- Users can create custom assistants with saved `model` settings and parameters.
+- An [OpenAI Assistants API](https://platform.openai.com/docs/api-reference/assistants) compatible endpoint at `localhost:3000/v1/assistants`.
+- Jan ships with a default assistant called "Jan" that lets you use all models.
 
-_Users can configure assistant settings_ 
+## Folder Structure
 
-- Wireframes here
-
-## Assistant Object
-
-- `assistant.json`
-> OpenAI Equivalen: https://platform.openai.com/docs/api-reference/assistants/object
-
-// KIV 
-```shell=
-/$JANROOT
-    /models
-    /assistants  
-        /jarvis      # git push http://github.com/abentlen/jarvis
-            # TODO: n assistant to multiple assistants
-            /threads # Package threads with your Assistant
-    /threads
+```yaml
+/jan
+    /models/
+    /threads/
+    /assistants
+        /jan                  # An assistant available to you by default
+            assistant.json    # See below
+            /src              # Assistants can invoke custom code
+                index.js      # Entrypoint
+                process.js    # For server processes (needs better name)
+            package.json      # Import any npm libraries, e.g. Langchain, Llamaindex
+        /shakespeare          # You can create custom assistants
+            assistant.json
+        /chicken_man
 ```
 
-- Packaging
-    - An Assistant folder
+## `assistant.json`
 
-```json
+```js
 {
-  // Jan specific properties
-  "avatar": "https://lala.png",
-
-  // OpenAI compatible properties: https://platform.openai.com/docs/api-reference/assistants
-  "id": "asst_abc123",
-  "object": "assistant",
-  "version": 1,
+  "id": "asst_abc123",                // Defaults to foldername
+  "object": "assistant",              // Always "assistant"
+  "version": 1,                       // Defaults to 1
   "created_at": 1698984975,
-  "name": "Math Tutor", // required
+  "name": "Math Tutor",               // Defaults to foldername
   "description": null,
-  // This one omitted from assistant.json but will be covered in API
-  // "instructions": "", // This is openAI compatible. But it should be passed to model[i] as LLM model
-  // "tools": [
-  //   {
-  //     "type": "retrieval"
-  //   },
-  //   {
-  //     "type": "web_browsing"
-  //   }
-  // ],
-  // "file_ids": [],
-  // "memory": true,
-  // Persistent Memory (remembers all threads, files)
-  // if False, then files, etc are stored at /thread level
-  "models": "*",    // Jan - model picker (Default)
-  // v2
-  // If model is specified, then use the below
-  // omitted means default
-  "models": [
-      { "model_id": "", ..., "parameters": {} }
-      // v2 { "model_id": "", ... }
+  "avatar": "https://pic.png",
+  "models": [                         // Defaults to "*" all models
+      { ...model_0 }
   ],
-  // The idea here is for explicitly subscribing to event stream
-  // v3 
-  "events"*: {
-      "in": ["assistant:asst_abc123", "jan:*"],
-      "out": ["assistant:asst_abc123", "jan:*"]
-  },
-  // Alternate: Simplified version?
-  "events": "*",
-  "events": [
-      "onMessage",
-      "onThread",
-      { id: "onMessage", type: "out" } // Event configs
-  ]
-  // "threads": [<thread_folder_id>]  // Helpful for look up under ~/jan/thread/*
-  "metadata": {}
+  "events": [],                       // Defaults to "*"
+  "metadata": {},                     // Defaults to {}
+  // "tools": [],                     // Coming soon
+  // "file_ids": [],                  // Coming soon
+  // "memory/threads": true,          // Coming soon
 }
 ```
 
-### Assistant example src/index.ts
+### Examples
+
+Here's what the default Jan assistant's json file looks like:
+
+```js
+{
+  "name": "Jan",
+  "description": "A global assistant that lets you chat with all downloaded models",
+  "avatar": "https://jan.ai/img/logo.svg",
+  // All other properties are not explicitly declared and use the default values (see above).
+}
+```
+
+## Events
+
+Jan assistants can respond to event hooks. More powerfully, Jan assistants can register their own pubsub, so other entities, like other assistants can respond to your assistants events.
+
+## Custom Code
+
+Jan assistants are Turing complete. This means you can write freeform code, and use any dependencies, when customizing your assistant.
+
 ```typescript
 import {events, models} from "@janhq/core"
 import {retrieval} from "@hiro/best-rag-ever" // This can be featured on Jan hub but install from npm
@@ -103,141 +89,14 @@ events.on('assistant:asst_abc123', (event) => async {
 })
 ```
 
-### Assistant lifecycle
-Assistant has 4 states (enum)
-- `to_download`
-- `downloading`
-- `ready`
-- `running`
+## Tools
 
-## Assistants API
+> Coming soon
 
-- What would modifying Assistant do? (doesn't mutate `index.js`?)
-  - By default, `index.js` loads `assistant.json` file and executes exactly like so. This supports builders with little time to write code.
-  - The `assistant.json` is 1 source of truth for the definitions of `models` and `built-in tools` that they can use it without writing more code.
+## Functions
 
-### Get list assistants
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/listAssistants
+> Coming soon
 
-### Get assistant
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/getAssistant
+## Files
 
-### Create an assistant
-Create an assistant with models and instructions.
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/createAssistant
-
-### Modify an assistant
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/modifyAssistant
-
-### Delete Assistant
-> OpenAI Equivalent: https://platform.openai.com/docs/api-reference/assistants/deleteAssistant
-
-## Assistants Filesystem
-
-```shell
-/jan
-    /models/
-    /threads/
-        threads-1/   # jan
-        thread-<>/   # chicken
-        thread-2/    # multi-assistant (v22)
-    /assistants
-        /jan
-            assistant.json    # Assistant configs (see below)
-
-            # For any custom code
-            package.json      # Import npm modules
-                              # e.g. Langchain, Llamaindex
-            /src              # Supporting files (needs better name)
-                index.js      # Entrypoint
-                process.js    # For electron IPC processes (needs better name)
-
-            # `/threads` at root level
-            # `/models` at root level
-        /shakespeare
-            assistant.json
-            package.json
-            /src
-                index.js
-                process.js
-            /threads # if developer specifies
-        /chicken
-```
-
-### Example
-- Jan Assistant json
-TBU
-- Custom assistant json
-
-
-
-
-
-
-
-
-
-
-## Swagger file
-
-```yaml
-AssistantObject:
-  type: object
-  properties:
-    avatar:
-      type: string
-      description: "URL of the assistant's avatar. Jan-specific property."
-      example: "https://lala.png"
-    id:
-      type: string
-      description: "The identifier of the assistant."
-      example: "asst_abc123"
-    object:
-      type: string
-      description: "Type of the object, indicating it's an assistant."
-      default: "assistant"
-    version:
-      type: integer
-      description: "Version number of the assistant."
-      example: 1
-    created_at:
-      type: integer
-      format: int64
-      description: "Unix timestamp representing the creation time of the assistant."
-    name:
-      type: string
-      description: "Name of the assistant."
-      example: "Math Tutor"
-    description:
-      type: string
-      description: "Description of the assistant. Can be null."
-    models:
-      type: array
-      description: "List of models associated with the assistant. Jan-specific property."
-      items:
-        type: object
-        properties:
-          model_id:
-            type: string
-          # Additional properties for models can be added here
-    events:
-      type: object
-      description: "Event subscription settings for the assistant."
-      properties:
-        in:
-          type: array
-          items:
-            type: string
-        out:
-          type: array
-          items:
-            type: string
-      # If there are specific event types, they can be detailed here
-    metadata:
-      type: object
-      description: "Metadata associated with the assistant."
-  required:
-    - name
-    - models
-    - events
-```
+> Coming soon
