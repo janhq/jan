@@ -1,15 +1,16 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useContext, useEffect, useRef, useState } from 'react'
 
 import { Model } from '@janhq/core/lib/types'
 import { Button, Badge, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
-import { Trash2Icon } from 'lucide-react'
+import { Trash2Icon, Paintbrush } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 import ShortCut from '@/containers/Shortcut'
 
 import { MainViewState } from '@/constants/screens'
@@ -42,7 +43,7 @@ import { currentConvoStateAtom } from '@/helpers/atoms/Conversation.atom'
 const ChatScreen = () => {
   const currentConvo = useAtomValue(currentConversationAtom)
   const { downloadedModels } = useGetDownloadedModels()
-  const { deleteConvo } = useDeleteConversation()
+  const { deleteConvo, cleanConvo } = useDeleteConversation()
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
 
@@ -60,6 +61,7 @@ const ChatScreen = () => {
   const [isModelAvailable, setIsModelAvailable] = useState(
     downloadedModels.some((x) => x.id === currentConvo?.modelId)
   )
+  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -147,13 +149,20 @@ const ChatScreen = () => {
                       Download Model
                     </Button>
                   )}
-                  {!stateModel.loading && (
+                  {experimentalFeatureEnabed && (
+                    <Paintbrush
+                      size={16}
+                      className="cursor-pointer text-muted-foreground"
+                      onClick={() => cleanConvo()}
+                    />
+                  )}
+                  {
                     <Trash2Icon
                       size={16}
                       className="cursor-pointer text-muted-foreground"
                       onClick={() => deleteConvo()}
                     />
-                  )}
+                  }
                 </div>
               </div>
             </div>
