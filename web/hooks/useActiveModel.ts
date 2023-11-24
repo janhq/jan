@@ -23,7 +23,10 @@ export function useActiveModel() {
   const { downloadedModels } = useGetDownloadedModels()
 
   const startModel = async (modelId: string) => {
-    if (activeModel && activeModel.id === modelId) {
+    if (
+      (activeModel && activeModel.id === modelId) ||
+      (stateModel.model === modelId && stateModel.loading)
+    ) {
       console.debug(`Model ${modelId} is already init. Ignore..`)
       return
     }
