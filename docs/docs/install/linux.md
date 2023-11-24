@@ -2,15 +2,29 @@
 title: Linux
 ---
 
-# Jan on Linux
+# Installing Jan on Linux
 
 ## Installation
 
-1. To download the lastest version of Jan on Linux, please visit the [Jan's homepage](https://jan.ai/).
-2. For Debian/Ubuntu-based distributions, the recommended installation method is through the `.deb` package (64-bit). This can be done either through the graphical software center, if available, or via the command line using the following:
+Jan is available for download via our homepage, [https://jan.ai](https://jan.ai/).
+
+For Linux, the download should be available as a `.deb` file in the following format. 
+
 ```bash
-sudo apt install ./jan-linux-amd64-<version>.deb
-# sudo apt install ./jan-linux-arm64-0.3.1.deb
+jan-linux-amd64-{version}.deb
+```
+
+The typical installation process takes around a minute. 
+
+### GitHub Releases
+
+Jan is also available from [Jan's GitHub Releases](https://github.com/janhq/jan/releases) page, with a recommended [latest stable release](https://github.com/janhq/jan/releases/latest). 
+
+Within the Releases' assets, you will find the following files for Linux:
+
+```bash
+# Debian Linux distribution
+jan-linux-amd64-{version}.deb
 ```
 
 ## Uninstall Jan
