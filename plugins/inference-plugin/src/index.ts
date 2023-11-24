@@ -20,7 +20,7 @@ import { InferencePlugin } from "@janhq/core/lib/plugins";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
 import { join } from "path";
-import { fs } from "@janhq/core";
+import { getUserSpace } from "@janhq/core";
 
 /**
  * A class that implements the InferencePlugin interface from the @janhq/core package.
@@ -60,7 +60,7 @@ export default class JanInferencePlugin implements InferencePlugin {
    * @returns {Promise<void>} A promise that resolves when the model is initialized.
    */
   async initModel(modelFileName: string): Promise<void> {
-    const userSpacePath = await fs.getUserSpace();
+    const userSpacePath = await getUserSpace();
     const modelFullPath = join(userSpacePath, modelFileName);
 
     return executeOnMain(MODULE, "initModel", modelFullPath);

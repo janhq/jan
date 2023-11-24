@@ -41,9 +41,8 @@ const downloadFile: (url: string, fileName: string) => Promise<any> = (
   window.electronAPI?.downloadFile(url, fileName);
 
 /**
- * Deletes a file from the local file system.
- * @param {string} path - The path of the file to delete.
- * @returns {Promise<any>} A promise that resolves when the file is deleted.
+ * @deprecated This object is deprecated and should not be used.
+ * Use fs module instead.
  */
 const deleteFile: (path: string) => Promise<any> = (path) =>
   window.coreAPI?.deleteFile(path) ?? window.electronAPI?.deleteFile(path);
@@ -54,6 +53,13 @@ const deleteFile: (path: string) => Promise<any> = (path) =>
  * @returns A Promise that resolves with the path to the app data directory, or `undefined` if the `coreAPI` object is not available.
  */
 const appDataPath: () => Promise<any> = () => window.coreAPI?.appDataPath();
+
+/**
+ * Gets the user space path.
+ * @returns {Promise<any>} A Promise that resolves with the user space path.
+ */
+const getUserSpace = (): Promise<string> =>
+  window.coreAPI?.getUserSpace() ?? window.electronAPI?.getUserSpace();
 
 /** Register extension point function type definition
  *
@@ -75,6 +81,7 @@ export const core = {
   downloadFile,
   deleteFile,
   appDataPath,
+  getUserSpace,
 };
 
 /**
@@ -86,4 +93,5 @@ export {
   downloadFile,
   deleteFile,
   appDataPath,
+  getUserSpace,
 };

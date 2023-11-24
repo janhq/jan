@@ -9,13 +9,6 @@ const writeFile: (path: string, data: string) => Promise<any> = (path, data) =>
   window.electronAPI?.writeFile(path, data);
 
 /**
- * Gets the user space path.
- * @returns {Promise<any>} A Promise that resolves with the user space path.
- */
-const getUserSpace = (): Promise<string> =>
-  window.coreAPI?.getUserSpace() ?? window.electronAPI?.getUserSpace();
-
-/**
  * Checks whether the path is a directory.
  * @param path - The path to check.
  * @returns {boolean} A boolean indicating whether the path is a directory.
@@ -64,7 +57,6 @@ const deleteFile: (path: string) => Promise<any> = (path) =>
 
 export const fs = {
   isDirectory,
-  getUserSpace,
   writeFile,
   readFile,
   listFiles,
