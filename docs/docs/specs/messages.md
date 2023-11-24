@@ -13,7 +13,7 @@ This is currently under development.
 `Messages` capture a conversation's content. This can include the content from LLM responses and other metadata from [chat completions](/specs/chats).
 
 - Users and assistants can send multimedia messages.
-- An [OpenAI Message API](https://platform.openai.com/docs/api-reference/messages) compatible endpoint at `localhost:3000/v1/messages`.
+- An [OpenAI Message API](https://platform.openai.com/docs/api-reference/messages) compatible endpoint at `localhost:1337/v1/messages`.
 
 ## Folder Structure
 
