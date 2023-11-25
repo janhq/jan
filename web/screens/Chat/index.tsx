@@ -136,6 +136,7 @@ const ChatScreen = () => {
                   {!isModelAvailable && (
                     <Button
                       themes="secondary"
+                      className="relative z-10"
                       size="sm"
                       onClick={() => {
                         setMainViewState(MainViewState.ExploreModels)
