@@ -19,6 +19,8 @@ import {
   BookOpenIcon,
 } from 'lucide-react'
 
+import ShortCut from '@/containers/Shortcut'
+
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { MainViewState } from '@/constants/screens'
@@ -27,10 +29,8 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 export default function CommandSearch() {
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
-
   const { setMainViewState } = useMainViewState()
 
-  const [open, setOpen] = useState(false)
   const menus = [
     {
       name: 'Getting Started',
@@ -60,13 +60,15 @@ export default function CommandSearch() {
       name: 'Settings',
       icon: <SettingsIcon size={16} className="mr-3 text-muted-foreground" />,
       state: MainViewState.Setting,
-      shortcut: '⌘,',
+      shortcut: <ShortCut menu="," />,
     },
   ]
 
+  const [open, setOpen] = useState(false)
+
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.key === 'j' && (e.metaKey || e.ctrlKey)) {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
         setOpen((open) => !open)
       }
@@ -90,10 +92,11 @@ export default function CommandSearch() {
         >
           Search menus...
         </Button>
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-          ⌘ j
+        <div className="absolute right-2 top-1/2 -translate-y-1/2">
+          <ShortCut menu="K" />
         </div>
       </div>
+
       <CommandModal open={open} onOpenChange={setOpen}>
         <CommandInput placeholder="Type a command or search..." />
         <CommandList>
@@ -103,6 +106,7 @@ export default function CommandSearch() {
               return (
                 <CommandItem
                   key={i}
+                  value={menu.name}
                   onSelect={() => {
                     setMainViewState(menu.state)
                     setOpen(false)
