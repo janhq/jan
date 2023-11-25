@@ -10,6 +10,8 @@ import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
+import ShortCut from '@/containers/Shortcut'
+
 import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -181,8 +183,9 @@ const ChatScreen = () => {
                 <Fragment>
                   <h1 className="text-lg font-medium">{`You don’t have any actively running models`}</h1>
                   <p className="mt-1">{`Please start a downloaded model in My Models page to use this feature.`}</p>
-                  <Badge className="mt-4" themes="secondary">
-                    ⌘e to show your model
+                  <Badge className="mt-4" themes="outline">
+                    <ShortCut menu="E" />
+                    &nbsp; to show your model
                   </Badge>
                 </Fragment>
               )}

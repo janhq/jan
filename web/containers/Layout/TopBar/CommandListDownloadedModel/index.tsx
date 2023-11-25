@@ -61,6 +61,7 @@ export default function CommandListDownloadedModel() {
                 return (
                   <CommandItem
                     key={i}
+                    value={model.id}
                     onSelect={() => {
                       onModelActionClick(model.id)
                       setOpen(false)
@@ -71,7 +72,7 @@ export default function CommandListDownloadedModel() {
                       className="mr-3 text-muted-foreground"
                     />
                     <div className="flex w-full items-center justify-between">
-                      <span>{model.name}</span>
+                      <span>{model.id}</span>
                       {activeModel && activeModel.id === model.id && (
                         <Badge themes="secondary">Active</Badge>
                       )}

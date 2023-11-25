@@ -8,6 +8,8 @@ import ProgressBar from '@/containers/ProgressBar'
 
 import { appDownloadProgress } from '@/containers/Providers/Jotai'
 
+import ShortCut from '@/containers/Shortcut'
+
 import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -47,7 +49,10 @@ const BottomBar = () => {
             name="Active model:"
             value={
               activeModel?.id || (
-                <Badge themes="secondary">⌘e to show your model</Badge>
+                <Badge themes="outline">
+                  <ShortCut menu="E" />
+                  &nbsp; to show your model
+                </Badge>
               )
             }
           />
