@@ -1,7 +1,9 @@
 openapi: 3.0.0
 info:
   title: API Reference
-  description: Please see https://jan.ai for documentation.
+  description: |
+    # Introduction
+    Jan API is compatible with the [OpenAI API](https://platform.openai.com/docs/api-reference).
 version: "0.1.8"
 contact:
   name: Jan Discord
