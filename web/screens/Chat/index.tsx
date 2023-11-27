@@ -68,6 +68,11 @@ const ChatScreen = () => {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { startModel } = useActiveModel()
+  const modelRef = useRef(activeModel)
+
+  useEffect(() => {
+    modelRef.current = activeModel
+  }, [activeModel])
 
   useEffect(() => {
     getUserConversations()
@@ -95,7 +100,10 @@ const ChatScreen = () => {
           description: 'It will be sent once the model is done loading.',
         })
         startModel(model.id).then(() => {
-          if (activeModel) sendChatMessage()
+          setTimeout(() => {
+            if (modelRef?.current?.id === currentConvo?.modelId)
+              sendChatMessage()
+          }, 300)
         })
       }
       return
@@ -225,7 +233,7 @@ const ChatScreen = () => {
               ref={textareaRef}
               onKeyDown={(e) => handleKeyDown(e)}
               placeholder="Type your message ..."
-              disabled={stateModel.loading}
+              disabled={stateModel.loading || !currentConvo}
               value={currentPrompt}
               onChange={(e) => {
                 handleMessageChange(e)
@@ -233,7 +241,7 @@ const ChatScreen = () => {
             />
             <Button
               size="lg"
-              disabled={disabled || stateModel.loading}
+              disabled={disabled || stateModel.loading || !currentConvo}
               themes={'primary'}
               onClick={handleSendMessage}
             >
