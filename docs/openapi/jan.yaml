@@ -51,6 +51,7 @@ paths:
       operationId: listModels
       tags:
         - Models
+
       summary: List Models
       description: Lists the currently available models, and provides basic information about each one such as the owner and availability.
       responses:
@@ -548,8 +549,28 @@ paths:
       operationId: listMessageFiles
       tags:
         - Messages
-      summary: List message files
-      description: Returns a list of message files.
+      summary: List message files 
+      securitySchemes:
+        petstore_auth:
+          description: |
+            Get access to data while protecting your account credentials.
+            OAuth2 is also a safer and more secure way to give you access.
+          type: oauth2
+          flows:
+            implicit:
+              authorizationUrl: 'http://petstore.swagger.io/api/oauth/dialog'
+              scopes:
+                'write:pets': modify pets in your account
+                'read:pets': read your pets
+      description: | 
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #388434"> OpenAI Compatible </button></a>
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #fec928">Jan.AI Compatible    </button></a>
+
+        Returns a list of message files.
+
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #388434">OpenAI Compatible    </button></a>
+        
+
       parameters:
         - in: path
           name: thread_id
@@ -564,7 +585,10 @@ paths:
           schema:
             type: string
             example: msg_abc123
-          description: The ID of the message whose files are to be listed.
+          description: | 
+            The ID of the message whose files are to be listed. 
+            
+            <span style="color:#388434">Open.AI Compatible</span>
       responses:
         "200":
           description: List of files retrieved successfully

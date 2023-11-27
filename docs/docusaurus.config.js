@@ -113,11 +113,11 @@ const config = {
           primaryColor: "#1a73e8",
           primaryColorDark: "#1a73e8",
           options: {
-              disableSearch: true,
               requiredPropsFirst: true,
-              noAutoAuth: true
+              noAutoAuth: true,
+              hideDownloadButton: true,
+              disableSearch: true,
             },
-          // redocOptions: { hideDownloadButton: false },
         },
       },
     ],
