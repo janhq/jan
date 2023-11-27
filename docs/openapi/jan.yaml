@@ -14,8 +14,10 @@ servers:
 tags:
   - name: Models
     description: List and describe the various models available in the API.
-  - name: Chat Completion
-    description: Given a list of messages comprising a conversation, the model will return a response.
+  - name: Chat 
+    description: |
+      Given a list of messages comprising a conversation, the model will return a response.
+
   - name: Messages
     description: |
       Messages capture a conversation's content. This can include the content from LLM responses and other metadata from [chat completions](/specs/chats).
@@ -38,13 +40,51 @@ x-tagGroups:
   - name: Endpoints
     tags:
       - Models
-      - Chat Completion
+      - Chat
   - name: Chat
     tags:
       - Assistants
       - Messages
       - Threads
 paths:
+  /chat/completions:
+    post:
+      operationId: createChatCompletion
+      tags:
+        - Chat
+      summary: Create chat completion
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/chat/create">  <button style = "color: #388434"> OpenAI compatible </button></a>
+        and <span style = "color: #fec928">  Jan specified </span>
+        
+        Creates a model response for the given chat conversation.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "specs/chat.yaml#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "specs/chat.yaml#/components/schemas/ChatCompletionResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X POST 'http://localhost:3982/inferences/llamacpp/chat_completion' \
+                  -H "Content-Type: application/json" \
+                  -d '{
+                    "llama_model_path": "/path/to/your/model.gguf",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "hello"
+                      },
+                    ]
+                  }'
+      
   ### MODELS
   /models:
     get:
@@ -54,10 +94,9 @@ paths:
 
       summary: List models
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/models/list">  <button style = "color: #388434"> OpenAI Compatible </button></a>
+        <a  href = "https://platform.openai.com/docs/api-reference/models/list">  <button style = "color: #388434"> OpenAI compatible </button></a>
 
         Lists the currently available models, and provides basic information about each one such as the owner and availability.
-        
       responses:
         "200":
           description: OK
@@ -96,7 +135,7 @@ paths:
         - Models
       summary: Retrieve model
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/models/retrieve">  <button style = "color: #388434"> OpenAI Compatible </button></a>
+        <a  href = "https://platform.openai.com/docs/api-reference/models/retrieve">  <button style = "color: #388434"> OpenAI compatible </button></a>
         
         Get a model instance, providing basic information about the model such as the owner and permissioning.
       parameters:
@@ -128,7 +167,7 @@ paths:
         - Models
       summary: Delete model
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/models/delete">  <button style = "color: #388434"> OpenAI Compatible </button></a>
+        <a  href = "https://platform.openai.com/docs/api-reference/models/delete">  <button style = "color: #388434"> OpenAI compatible </button></a>
         
         Delete a model.
       parameters:
@@ -192,7 +231,7 @@ paths:
       summary: Stop model
       description: |
         <span style = "color: #fec928"> Jan </span>
-        
+
         Stop an imported model.
       parameters:
         - in: path
@@ -589,12 +628,12 @@ paths:
                 'write:pets': modify pets in your account
                 'read:pets': read your pets
       description: | 
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #388434"> OpenAI Compatible </button></a>
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #388434"> OpenAI compatible </button></a>
         <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #fec928"> Jan </button></a>
 
         Returns a list of message files.
 
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #388434">OpenAI Compatible    </button></a>
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #388434">OpenAI compatible    </button></a>
         
 
       parameters:
@@ -675,7 +714,7 @@ x-webhooks:
     post:
       summary: The model object
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/models/object">  <button style = "color: #388434"> OpenAI Compatible </button></a>
+        <a  href = "https://platform.openai.com/docs/api-reference/models/object">  <button style = "color: #388434"> OpenAI compatible </button></a>
         
         Describe a model offering that can be used with the API.
 
