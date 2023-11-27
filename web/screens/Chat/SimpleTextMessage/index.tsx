@@ -5,6 +5,7 @@ import { ChatCompletionRole, MessageStatus, ThreadMessage } from '@janhq/core'
 
 import hljs from 'highlight.js'
 
+import { useAtomValue } from 'jotai'
 import { Marked } from 'marked'
 
 import { markedHighlight } from 'marked-highlight'
@@ -20,6 +21,8 @@ import { FeatureToggleContext } from '@/context/FeatureToggle'
 import { displayDate } from '@/utils/datetime'
 
 import MessageToolbar from '../MessageToolbar'
+
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 const marked = new Marked(
   markedHighlight({
@@ -55,6 +58,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
   const [tokenSpeed, setTokenSpeed] = useState(0)
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   useEffect(() => {
     if (props.status === MessageStatus.Ready || !experimentalFeatureEnabed) {
@@ -73,22 +77,29 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
     setTokenSpeed(averageTokenSpeed)
     setTokenCount(totalTokenCount)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.content])
 
   return (
-    <div className="group mx-auto rounded-xl px-4 lg:w-3/4">
+    <div className="group relative mx-auto rounded-xl px-4 lg:w-3/4">
       <div
         className={twMerge(
-          'mb-1 flex items-center justify-start gap-2',
+          'mb-2 flex items-center justify-start gap-x-2',
           !isUser && 'mt-2'
         )}
       >
         {!isUser && !isSystem && <LogoMark width={20} />}
         <div className="text-sm font-extrabold capitalize">{props.role}</div>
         <p className="text-xs font-medium">{displayDate(props.createdAt)}</p>
-
         {experimentalFeatureEnabed && (
-          <div className="hidden cursor-pointer group-hover:flex">
+          <div
+            className={twMerge(
+              'absolute right-0 cursor-pointer transition-all',
+              messages[0].id === props.id
+                ? 'absolute -bottom-10 left-4'
+                : 'hidden group-hover:flex'
+            )}
+          >
             <MessageToolbar message={props} />
           </div>
         )}
@@ -113,7 +124,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       </div>
       {experimentalFeatureEnabed &&
         (props.status === MessageStatus.Pending || tokenSpeed > 0) && (
-          <p className="mt-1 text-xs font-medium text-white">
+          <p className="mt-2 text-xs font-medium text-foreground">
             Token Speed: {Number(tokenSpeed).toFixed(2)}/s
           </p>
         )}
