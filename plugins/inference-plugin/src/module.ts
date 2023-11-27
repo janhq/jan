@@ -25,6 +25,7 @@ let currentModelFile = null;
  */
 interface InitModelResponse {
   error?: any;
+  modelFile?: string;
 }
 
 /**
@@ -51,7 +52,7 @@ function initModel(modelFile: string): Promise<InitModelResponse> {
       .then(validateModelStatus)
       .catch((err) => {
         log.error("error: " + JSON.stringify(err));
-        return { error: err };
+        return { error: err, modelFile };
       })
   );
 }

@@ -31,6 +31,8 @@ export function useActiveModel() {
       return
     }
 
+    setActiveModel(undefined)
+
     setStateModel({ state: 'start', loading: true, model: modelId })
 
     const model = downloadedModels.find((e) => e.id === modelId)
@@ -52,7 +54,7 @@ export function useActiveModel() {
     console.debug('Init model: ', modelId)
     const path = join('models', model.name, modelId)
     const res = await initModel(path)
-    if (res?.error && (!activeModel?.id || modelId === activeModel?.id)) {
+    if (res && res.error && res.modelFile === stateModel.model) {
       const errorMessage = `${res.error}`
       alert(errorMessage)
       setStateModel(() => ({
@@ -60,7 +62,6 @@ export function useActiveModel() {
         loading: false,
         model: modelId,
       }))
-      setActiveModel(undefined)
     } else {
       console.debug(
         `Init model ${modelId} successfully!, take ${

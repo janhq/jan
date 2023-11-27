@@ -11,7 +11,6 @@ import { twMerge } from 'tailwind-merge'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useCreateConversation } from '@/hooks/useCreateConversation'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useGetUserConversations from '@/hooks/useGetUserConversations'
 
 import { displayDate } from '@/utils/datetime'
@@ -27,11 +26,10 @@ export default function HistoryList() {
   const conversations = useAtomValue(userConversationsAtom)
   const threadStates = useAtomValue(conversationStatesAtom)
   const { getUserConversations } = useGetUserConversations()
-  const { activeModel, startModel } = useActiveModel()
+  const { activeModel } = useActiveModel()
   const { requestCreateConvo } = useCreateConversation()
   const activeConvoId = useAtomValue(getActiveConvoIdAtom)
   const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
-  const { downloadedModels } = useGetDownloadedModels()
 
   useEffect(() => {
     getUserConversations()
@@ -47,14 +45,6 @@ export default function HistoryList() {
     if (convo.modelId == null) {
       console.debug('modelId is undefined')
       return
-    }
-    const model = downloadedModels.find((e) => e.id === convo.modelId)
-    if (convo == null) {
-      console.debug('modelId is undefined')
-      return
-    }
-    if (model != null) {
-      startModel(model.id)
     }
     if (activeConvoId !== convo.id) {
       setActiveConvoId(convo.id)
