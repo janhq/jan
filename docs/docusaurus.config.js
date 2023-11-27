@@ -139,7 +139,7 @@ const config = {
     // SEO Docusarus 
     metadata: [
       { name: 'description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
-      { name: 'keywords', content: 'Jan, ChatGPT alternative, on-premises AI, local API server, natural language processing, conversational AI, no-subscription fee' },
+      { name: 'keywords', content: 'Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee' },
       { property: 'og:title', content: 'Run your own AI | Jan' },
       { property: 'og:description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
       { property: 'og:image', content: 'https://jan.ai/img/jan-social-card.png' },
