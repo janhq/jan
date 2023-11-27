@@ -1,6 +1,6 @@
 openapi: 3.0.0
 info:
-  title: Jan API Reference
+  title: API Reference
   description: Please see https://jan.ai for documentation.
 version: "0.1.8"
 contact:
