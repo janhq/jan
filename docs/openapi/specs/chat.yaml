@@ -60,7 +60,7 @@ components:
           description: |
             Contains input data or prompts for the model to process
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
           example:
             [
               { "content": "Hello there :wave:", "role": "assistant" },
@@ -72,42 +72,42 @@ components:
           description: |
             Specifies the model being used for inference or processing tasks
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
         stream:
           type: boolean
           default: true
           description: |
             Enables continuous output generation, allowing for streaming of model responses
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
         max_tokens:
           type: number
           default: 2048
           description: |
             The maximum number of tokens the model will generate in a single response
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
         stop:
           type: arrays
           example: ["hello"]
           description: |
             Defines specific tokens or phrases at which the model will stop generating further output
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
         frequency_penalty:
           type: number
           default: 0
           description: |
             Adjusts the likelihood of the model repeating words or phrases in its output
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
         presence_penalty:
           type: number
           default: 0
           description: |
             Influences the generation of new and varied concepts in the model's output
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
         temperature:
           type: number
           default: 0.7
@@ -116,7 +116,7 @@ components:
           description: |
             Controls the randomness of the model's output
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
         top_p:
           type: number
           default: 0.95
@@ -125,7 +125,7 @@ components:
           description: |
             Set probability threshold for more relevant outputs
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
 
     ChatCompletionResponse:
       type: object

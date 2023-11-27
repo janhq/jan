@@ -120,14 +120,14 @@ components:
           description: |
             "The identifier of the model."
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
           example: "zephyr-7b"
         object:
           type: string
           description: |
             "The type of the object, indicating it's a model."
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
           default: "model"
         created:
           type: integer
@@ -135,14 +135,14 @@ components:
           description: | 
             "Unix timestamp representing the creation time of the model."
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
           example: "1253935178"
         owned_by:
           type: string
           description: |
             "The entity that owns the model."
 
-            <span style="color:#388434">OpenAI compatible</span>
+            <span style="color:#0ca47c">OpenAI compatible</span>
           example: "_"
 
     GetModelResponse:
