@@ -263,7 +263,10 @@ paths:
       tags:
         - Threads
       summary: Create thread
-      description: Create a thread
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/threads/createThread">  <button style = "color: #388434"> OpenAI compatible </button></a>
+
+        Create a thread
       requestBody:
         required: false
         content:
@@ -303,7 +306,10 @@ paths:
       tags:
         - Threads
       summary: List threads
-      description: Retrieves a list of all threads available in the system.
+      description: |
+        <span style = "color: #fec928"> Jan </span>
+
+        Retrieves a list of all threads available in the system.
       responses:
         "200":
           description: List of threads retrieved successfully
@@ -336,8 +342,11 @@ paths:
       operationId: getThread
       tags:
         - Threads
-      summary: Get thread
-      description: Retrieves detailed information about a specific thread using its thread_id.
+      summary: Retrieve thread
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/threads/getThread">  <button style = "color: #388434"> OpenAI compatible </button></a>
+        
+        Retrieves detailed information about a specific thread using its thread_id.
       parameters:
         - in: path
           name: thread_id
@@ -345,7 +354,10 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread to retrieve.
+          description: |
+            The ID of the thread to retrieve.
+
+            <span style="color:#388434">OpenAI compatible</span>
       responses:
         "200":
           description: Thread details retrieved successfully
@@ -362,7 +374,10 @@ paths:
       tags:
         - Threads
       summary: Modify thread
-      description: Modifies a thread
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/threads/modifyThread">  <button style = "color: #388434"> OpenAI compatible </button></a>
+
+        Modifies a thread
       parameters:
         - in: path
           name: thread_id
@@ -370,7 +385,10 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread to be modified.
+          description: |
+            The ID of the thread to be modified.
+
+            <span style="color:#388434">OpenAI compatible</span>
       requestBody:
         required: false
         content:
@@ -411,7 +429,10 @@ paths:
       tags:
         - Threads
       summary: Delete thread
-      description: Delete a thread
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/threads/deleteThread">  <button style = "color: #388434"> OpenAI compatible </button></a>
+
+        Delete a thread
       parameters:
         - in: path
           name: thread_id
@@ -419,7 +440,10 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread to be deleted.
+          description: |
+            The ID of the thread to be deleted.
+
+            <span style="color:#388434">OpenAI compatible</span>
       responses:
         "200":
           description: Thread deleted successfully
@@ -439,8 +463,10 @@ paths:
       tags:
         - Threads
       summary: Get Thread.Assistants
-      description: 
-        - Can achieve this goal by calling Get thread API
+      description: |
+        <span style = "color: #fec928"> Jan </span>
+
+        Can achieve this goal by calling Get thread API
       parameters:
         - in: path
           name: thread_id
@@ -467,8 +493,10 @@ paths:
       tags:
         - Threads
       summary: Modify Thread.Assistants
-      description: 
-        - Can achieve this goal by calling Modify Assistant API with thread.assistant[]
+      description: |
+        <span style = "color: #fec928"> Jan </span>
+
+        Can achieve this goal by calling Modify Assistant API with thread.assistant[]
   
   /threads/{thread_id}/:
     get:
@@ -476,8 +504,10 @@ paths:
       tags:
         - Threads
       summary: List Thread.Messages
-      description: 
-        -  Can achieve this goal by calling Get Thread API
+      description: | 
+        <span style = "color: #fec928"> Jan </span>
+        
+        Can achieve this goal by calling Get Thread API
       parameters:
         - in: path
           name: thread_id
@@ -775,9 +805,13 @@ x-webhooks:
     post:
       summary: The thread object
       description: |
-        - Each `thread` folder contains a `thread.json` file, which is a representation of a thread.
-        - `thread.json` contains metadata and model parameter overrides.
-        - There are no required fields.
+        <a  href = "https://platform.openai.com/docs/api-reference/threads/object">  <button style = "color: #388434"> OpenAI compatible </button></a> and <span style = "color: #fec928"> Jan </span>
+       
+        Each `thread` folder contains a `thread.json` file, which is a representation of a thread.
+        
+        `thread.json` contains metadata and model parameter overrides.
+        
+        There are no required fields.
 
       operationId: ThreadObject
       tags:
