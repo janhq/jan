@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "es5",
+    "module": "commonjs",
+    "noImplicitAny": true,
+    "sourceMap": true,
+    "strict": true,
+    "outDir": "./build",
+    "rootDir": "./",
+    "noEmitOnError": true,
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "allowJs": true,
+    "skipLibCheck": true,
+    "paths": { "*": ["node_modules/*"] },
+    "typeRoots": ["node_modules/@types"]
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["core", "build", "dist", "tests", "node_modules"]
+}
