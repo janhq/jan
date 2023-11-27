@@ -505,7 +505,10 @@ paths:
       tags:
         - Messages
       summary: List messages
-      description: Retrieves all messages from the given thread.
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #388434"> OpenAI compatible </button></a>
+
+        Retrieves all messages from the given thread.
       parameters:
         - in: path
           name: thread_id
@@ -513,7 +516,10 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread from which to retrieve messages.
+          description: |
+            The ID of the thread from which to retrieve messages.
+
+            <span style="color:#388434">OpenAI compatible</span>
       responses:
         "200":
           description: List of messages retrieved successfully
@@ -531,7 +537,10 @@ paths:
       tags:
         - Messages
       summary: Create message
-      description: Create a message
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/createMessage">  <button style = "color: #388434"> OpenAI compatible </button></a>
+
+        Create a message
       parameters:
         - in: path
           name: thread_id
@@ -539,7 +548,10 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread to which the message will be posted.
+          description: |
+            The ID of the thread to which the message will be posted.
+
+            <span style="color:#388434">OpenAI compatible</span>
       requestBody:
         required: true
         content:
@@ -549,12 +561,18 @@ paths:
               properties:
                 role:
                   type: string
-                  description: "Role of the sender, either 'user' or 'assistant'."
+                  description: |
+                    "Role of the sender, either 'user' or 'assistant'."
+
+                    <span style="color:#388434">OpenAI compatible</span>
                   example: "user"
                   enum: ["user", "assistant"]
                 content:
                   type: string
-                  description: "Text content of the message."
+                  description: |
+                    "Text content of the message."
+
+                    <span style="color:#388434">OpenAI compatible</span>
                   example: "How does AI work? Explain it in simple terms."
               required:
                 - role
@@ -581,8 +599,11 @@ paths:
       operationId: retrieveMessage
       tags:
         - Messages
-      summary: Retrieve Message
-      description: Retrieve a specific message from a thread using its thread_id and message_id.
+      summary: Retrieve message
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessage">  <button style = "color: #388434"> OpenAI compatible </button></a>
+
+        Retrieve a specific message from a thread using its thread_id and message_id.
       parameters:
         - in: path
           name: thread_id
@@ -590,14 +611,20 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread containing the message.
+          description: |
+            The ID of the thread containing the message.
+
+            <span style="color:#388434">OpenAI compatible</span>
         - in: path
           name: message_id
           required: true
           schema:
             type: string
             example: msg_abc123
-          description: The ID of the message to retrieve.
+          description: |
+            The ID of the message to retrieve.
+
+            <span style="color:#388434">OpenAI compatible</span>
       responses:
         "200":
           description: OK
@@ -617,27 +644,10 @@ paths:
       tags:
         - Messages
       summary: List message files 
-      securitySchemes:
-        petstore_auth:
-          description: |
-            Get access to data while protecting your account credentials.
-            OAuth2 is also a safer and more secure way to give you access.
-          type: oauth2
-          flows:
-            implicit:
-              authorizationUrl: 'http://petstore.swagger.io/api/oauth/dialog'
-              scopes:
-                'write:pets': modify pets in your account
-                'read:pets': read your pets
       description: | 
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #388434"> OpenAI compatible </button></a>
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #fec928"> Jan </button></a>
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessageFiles">  <button style = "color: #388434"> OpenAI compatible </button></a>
 
         Returns a list of message files.
-
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #388434">OpenAI compatible    </button></a>
-        
-
       parameters:
         - in: path
           name: thread_id
@@ -645,7 +655,10 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread containing the message.
+          description: |
+            The ID of the thread containing the message.
+
+            <span style="color:#388434">OpenAI compatible</span>
         - in: path
           name: message_id
           required: true
@@ -675,7 +688,10 @@ paths:
       tags:
         - Messages
       summary: Retrieve message file
-      description: Retrieves a file associated with a specific message in a thread.
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessageFile">  <button style = "color: #388434"> OpenAI compatible </button></a>
+
+        Retrieves a file associated with a specific message in a thread.
       parameters:
         - in: path
           name: thread_id
@@ -683,21 +699,30 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread containing the message.
+          description: |
+            The ID of the thread containing the message.
+
+            <span style="color:#388434">OpenAI compatible</span>
         - in: path
           name: message_id
           required: true
           schema:
             type: string
             example: msg_abc123
-          description: The ID of the message associated with the file.
+          description: |
+            The ID of the message associated with the file.
+
+            <span style="color:#388434">OpenAI compatible</span>
         - in: path
           name: file_id
           required: true
           schema:
             type: string
             example: file-abc123
-          description: The ID of the file to retrieve.
+          description: |
+            The ID of the file to retrieve.
+            
+            <span style="color:#388434">OpenAI compatible</span>
       responses:
         "200":
           description: File retrieved successfully
@@ -733,7 +758,10 @@ x-webhooks:
   MessageObject:
     post:
       summary: The message object
-      description: Information about a message in the thread
+      description: |
+        <a  href = "https://platform.openai.com/docs/api-reference/messages/object">  <button style = "color: #388434"> OpenAI compatible </button></a>
+
+        Information about a message in the thread
       operationId: MessageObject
       tags:
         - Messages

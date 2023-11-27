@@ -5,28 +5,46 @@ components:
       properties:
         id:
           type: string
-          description: "Sequential or UUID identifier of the message."
+          description: |
+            "Sequential or UUID identifier of the message."
+            
+            <span style="color:#388434">OpenAI compatible</span>
           example: 0
         object:
           type: string
-          description: "Type of the object, defaults to 'thread.message'."
+          description: |
+            "Type of the object, defaults to 'thread.message'."
+
+            <span style="color:#388434">OpenAI compatible</span>
           example: thread.message
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the message."
+          description: |
+            "Unix timestamp representing the creation time of the message."
+
+            <span style="color:#388434">OpenAI compatible</span>
         thread_id:
           type: string
-          description: "Identifier of the thread to which this message belongs. Defaults to parent thread."
+          description: |
+            "Identifier of the thread to which this message belongs. Defaults to parent thread."
+
+            <span style="color:#388434">OpenAI compatible</span>
           example: "thread_asdf"
         assistant_id:
           type: string
-          description: "Identifier of the assistant involved in the message. Defaults to parent thread."
+          description: |
+            "Identifier of the assistant involved in the message. Defaults to parent thread."
+
+            <span style="color:#388434">OpenAI compatible</span>
           example: jan
         role:
           type: string
           enum: ["user", "assistant"]
-          description: "Role of the sender, either 'user' or 'assistant'."
+          description: |
+            "Role of the sender, either 'user' or 'assistant'."
+
+            <span style="color:#388434">OpenAI compatible</span>
         content:
           type: array
           items:
@@ -34,23 +52,35 @@ components:
             properties:
               type:
                 type: string
-                description: "Type of content, e.g., 'text'."
+                description: |
+                  "Type of content, e.g., 'text'."
+
+                  <span style="color:#388434">OpenAI compatible</span>
               text:
                 type: object
                 properties:
                   value:
                     type: string
-                    description: "Text content of the message."
+                    description: |
+                      "Text content of the message."
+
+                      <span style="color:#388434">OpenAI compatible</span>
                     example: "Hi!?"
                   annotations:
                     type: array
                     items:
                       type: string
-                    description: "Annotations for the text content, if any."
+                    description: |
+                      "Annotations for the text content, if any."
+
+                      <span style="color:#388434">OpenAI compatible</span>
                     example: []
         metadata:
           type: object
-          description: "Metadata associated with the message, defaults to an empty object."
+          description: |
+            "Metadata associated with the message, defaults to an empty object."
+
+            <span style="color:#388434">OpenAI compatible</span>
           example: {}
 
     GetMessageResponse:
