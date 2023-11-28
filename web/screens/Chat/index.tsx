@@ -10,8 +10,11 @@ import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
 import ShortCut from '@/containers/Shortcut'
+
+import { toaster } from '@/containers/Toast'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -61,9 +64,13 @@ const ChatScreen = () => {
   const [isModelAvailable, setIsModelAvailable] = useState(
     downloadedModels.some((x) => x.id === currentConvo?.modelId)
   )
-  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
-
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { startModel } = useActiveModel()
+  const modelRef = useRef(activeModel)
+
+  useEffect(() => {
+    modelRef.current = activeModel
+  }, [activeModel])
 
   useEffect(() => {
     getUserConversations()
@@ -81,6 +88,24 @@ const ChatScreen = () => {
   }, [currentConvo, downloadedModels])
 
   const handleSendMessage = async () => {
+    if (!activeModel || activeModel.id !== currentConvo?.modelId) {
+      const model = downloadedModels.find((e) => e.id === currentConvo?.modelId)
+
+      // Model is available to start
+      if (model != null) {
+        toaster({
+          title: 'Message queued.',
+          description: 'It will be sent once the model is done loading.',
+        })
+        startModel(model.id).then(() => {
+          setTimeout(() => {
+            if (modelRef?.current?.id === currentConvo?.modelId)
+              sendChatMessage()
+          }, 300)
+        })
+      }
+      return
+    }
     if (activeConversationId) {
       sendChatMessage()
     } else {
@@ -149,20 +174,16 @@ const ChatScreen = () => {
                       Download Model
                     </Button>
                   )}
-                  {experimentalFeatureEnabed && (
-                    <Paintbrush
-                      size={16}
-                      className="cursor-pointer text-muted-foreground"
-                      onClick={() => cleanConvo()}
-                    />
-                  )}
-                  {
-                    <Trash2Icon
-                      size={16}
-                      className="cursor-pointer text-muted-foreground"
-                      onClick={() => deleteConvo()}
-                    />
-                  }
+                  <Paintbrush
+                    size={16}
+                    className="cursor-pointer text-muted-foreground"
+                    onClick={() => cleanConvo()}
+                  />
+                  <Trash2Icon
+                    size={16}
+                    className="cursor-pointer text-muted-foreground"
+                    onClick={() => deleteConvo()}
+                  />
                 </div>
               </div>
             </div>
@@ -206,11 +227,7 @@ const ChatScreen = () => {
               ref={textareaRef}
               onKeyDown={(e) => handleKeyDown(e)}
               placeholder="Type your message ..."
-              disabled={
-                !activeModel ||
-                stateModel.loading ||
-                activeModel.id !== currentConvo?.modelId
-              }
+              disabled={stateModel.loading || !currentConvo}
               value={currentPrompt}
               onChange={(e) => {
                 handleMessageChange(e)
@@ -218,8 +235,8 @@ const ChatScreen = () => {
             />
             <Button
               size="lg"
-              disabled={!activeModel || disabled || stateModel.loading}
-              themes={!activeModel ? 'secondary' : 'primary'}
+              disabled={disabled || stateModel.loading || !currentConvo}
+              themes={'primary'}
               onClick={handleSendMessage}
             >
               Send

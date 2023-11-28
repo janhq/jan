@@ -59,6 +59,7 @@ export default function useSendChatMessage() {
             ...newMessage,
             messages: newMessage.messages?.slice(0, -1).concat([summaryMsg]),
           })
+          .catch(console.error)
         if (
           currentConvo &&
           currentConvo.id === newMessage.threadId &&

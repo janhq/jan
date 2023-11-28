@@ -35,14 +35,16 @@ const ChatInstruction = () => {
         What does this Assistant do? How does it behave? What should it avoid
         doing?
       </p>
-      {!isSettingInstruction && (
-        <Button
-          themes={'outline'}
-          className="w-32"
-          onClick={() => setIsSettingInstruction(true)}
-        >
-          Give Instruction
-        </Button>
+      {!isSettingInstruction && activeConvoId && (
+        <>
+          <Button
+            themes={'outline'}
+            className="w-32"
+            onClick={() => setIsSettingInstruction(true)}
+          >
+            Give Instruction
+          </Button>
+        </>
       )}
       {isSettingInstruction && (
         <div className="space-y-4">

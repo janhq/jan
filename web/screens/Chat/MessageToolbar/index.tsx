@@ -35,63 +35,69 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   }
   return (
     <div className="flex flex-row items-center">
-      {message.status === MessageStatus.Pending && (
-        <StopCircle
-          className="mx-1 cursor-pointer rounded-sm bg-gray-800 px-[3px]"
-          size={20}
-          onClick={() => stopInference()}
-        />
-      )}
-      {message.status !== MessageStatus.Pending &&
-        message.id === messages[0]?.id && (
-          <RefreshCcw
-            className="mx-1 cursor-pointer rounded-sm bg-gray-800 px-[3px]"
-            size={20}
-            onClick={() => {
-              const messageRequest: MessageRequest = {
-                id: message.id ?? '',
-                messages: messages
-                  .slice(1, messages.length)
-                  .reverse()
-                  .map((e) => {
-                    return {
-                      content: e.content,
-                      role: e.role,
-                    } as ChatCompletionMessage
-                  }),
-                threadId: message.threadId ?? '',
-              }
-              if (message.role === ChatCompletionRole.Assistant) {
-                deleteAMessage(message.id ?? '')
-              }
-              events.emit(EventName.OnNewMessageRequest, messageRequest)
-            }}
-          />
+      <div className="flex overflow-hidden rounded-md border border-border bg-background/20">
+        {message.status === MessageStatus.Pending && (
+          <div
+            className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
+            onClick={() => stopInference()}
+          >
+            <StopCircle size={14} />
+          </div>
         )}
-      <ClipboardCopy
-        className="mx-1 cursor-pointer rounded-sm bg-gray-800 px-[3px]"
-        size={20}
-        onClick={() => {
-          navigator.clipboard.writeText(message.content ?? '')
-          toaster({
-            title: 'Copied to clipboard',
-          })
-        }}
-      />
-      <Trash2Icon
-        className="mx-1 cursor-pointer rounded-sm bg-gray-800 px-[3px]"
-        size={20}
-        onClick={async () => {
-          deleteAMessage(message.id ?? '')
-          if (thread)
-            await pluginManager
-              .get<ConversationalPlugin>(PluginType.Conversational)
-              ?.saveConversation({
-                ...thread,
-                messages: messages.filter((e) => e.id !== message.id),
-              })
-        }}
-      />
+        {message.status !== MessageStatus.Pending &&
+          message.id === messages[0]?.id && (
+            <div
+              className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
+              onClick={() => {
+                const messageRequest: MessageRequest = {
+                  id: message.id ?? '',
+                  messages: messages
+                    .slice(1, messages.length)
+                    .reverse()
+                    .map((e) => {
+                      return {
+                        content: e.content,
+                        role: e.role,
+                      } as ChatCompletionMessage
+                    }),
+                  threadId: message.threadId ?? '',
+                }
+                if (message.role === ChatCompletionRole.Assistant) {
+                  deleteAMessage(message.id ?? '')
+                }
+                events.emit(EventName.OnNewMessageRequest, messageRequest)
+              }}
+            >
+              <RefreshCcw size={14} />
+            </div>
+          )}
+        <div
+          className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
+          onClick={() => {
+            navigator.clipboard.writeText(message.content ?? '')
+            toaster({
+              title: 'Copied to clipboard',
+            })
+          }}
+        >
+          <ClipboardCopy size={14} />
+        </div>
+        <div
+          className="cursor-pointer px-2 py-2 hover:bg-background/80"
+          onClick={async () => {
+            deleteAMessage(message.id ?? '')
+            if (thread)
+              await pluginManager
+                .get<ConversationalPlugin>(PluginType.Conversational)
+                ?.saveConversation({
+                  ...thread,
+                  messages: messages.filter((e) => e.id !== message.id),
+                })
+          }}
+        >
+          <Trash2Icon size={14} />
+        </div>
+      </div>
     </div>
   )
 }
