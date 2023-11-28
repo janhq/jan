@@ -27,7 +27,7 @@ export function useActiveModel() {
       (activeModel && activeModel.id === modelId) ||
       (stateModel.model === modelId && stateModel.loading)
     ) {
-      console.debug(`Model ${modelId} is already init. Ignore..`)
+      console.debug(`Model ${modelId} is already initialized. Ignore..`)
       return
     }
 
@@ -64,13 +64,13 @@ export function useActiveModel() {
       }))
     } else {
       console.debug(
-        `Init model ${modelId} successfully!, take ${
+        `Model ${modelId} successfully initialized! Took ${
           Date.now() - currentTime
         }ms`
       )
       setActiveModel(model)
       toaster({
-        title: 'Success start a Model',
+        title: 'Success!',
         description: `Model ${modelId} has been started.`,
       })
       setStateModel(() => ({
@@ -89,7 +89,7 @@ export function useActiveModel() {
       setActiveModel(undefined)
       setStateModel({ state: 'start', loading: false, model: '' })
       toaster({
-        title: 'Success stop a Model',
+        title: 'Success!',
         description: `Model ${modelId} has been stopped.`,
       })
     }, 500)

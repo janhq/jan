@@ -31,10 +31,7 @@ const ChatInstruction = () => {
   }
   return (
     <div className="mx-auto mb-20 flex flex-col space-y-2">
-      <p>
-        What does this Assistant do? How does it behave? What should it avoid
-        doing?
-      </p>
+      <p>(Optional) Give your assistant an initial prompt.</p>
       {!isSettingInstruction && activeConvoId && (
         <>
           <Button
@@ -42,7 +39,7 @@ const ChatInstruction = () => {
             className="w-32"
             onClick={() => setIsSettingInstruction(true)}
           >
-            Give Instruction
+            Give Instructions
           </Button>
         </>
       )}
@@ -60,7 +57,7 @@ const ChatInstruction = () => {
             className="w-32"
             onClick={() => setSystemPrompt(instruction)}
           >
-            Set Instruction
+            Give Instructions
           </Button>
         </div>
       )}

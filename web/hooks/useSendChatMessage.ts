@@ -49,7 +49,7 @@ export default function useSendChatMessage() {
       const summaryMsg: ChatCompletionMessage = {
         role: ChatCompletionRole.User,
         content:
-          'summary this conversation in less than 5 words, the response should just include the summary',
+          'Summarize this conversation in less than 5 words, the response should just include the summary',
       }
       // Request convo summary
       setTimeout(async () => {
