@@ -1,0 +1,23 @@
+.redocusaurus {
+  .menu-content {
+    top: 80px !important;
+    background-color: transparent;
+  }
+
+  .scrollbar-container {
+    ul > li > label {
+      margin-bottom: 4px;
+      background-color: transparent;
+    }
+
+    ul > li > ul > li > label {
+      background-color: transparent;
+      &:hover {
+        @apply dark:bg-gray-800/50 bg-gray-100;
+      }
+      &.active {
+        @apply dark:bg-gray-800/50 bg-gray-100;
+      }
+    }
+  }
+}

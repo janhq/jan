@@ -25,38 +25,6 @@
   display: none;
 }
 
-.navbar {
-  @apply px-0 lg:h-16 border-b border-gray-200 dark:border-gray-800 bg-white/50 backdrop-blur-lg dark:bg-black/50 shadow-none;
-
-  .navbar__toggle {
-    width: 24px;
-  }
-
-  .navbar-sidebar__backdrop {
-    height: 100dvh;
-  }
-
-  .navbar-sidebar {
-    height: 100dvh;
-    .navbar-sidebar__close {
-      width: 14px;
-    }
-  }
-
-  .navbar__title {
-    @apply text-lg;
-  }
-  .navbar__brand {
-    margin-right: 24px;
-    &:hover {
-      color: inherit;
-    }
-  }
-  .navbar__inner {
-    @apply container;
-  }
-}
-
 .breadcrumbs__item {
   position: relative;
   &:first-child {
