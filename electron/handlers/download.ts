@@ -34,22 +34,7 @@ export function handleDownloaderIPCs() {
   ipcMain.handle('abortDownload', async (_event, fileName) => {
     const rq = DownloadManager.instance.networkRequests[fileName]
     DownloadManager.instance.networkRequests[fileName] = undefined
-    const userDataPath = app.getPath('userData')
-    const fullPath = join(userDataPath, fileName)
     rq?.abort()
-    let result = 'NULL'
-    unlink(fullPath, function (err) {
-      if (err && err.code == 'ENOENT') {
-        result = `File not exist: ${err}`
-      } else if (err) {
-        result = `File delete error: ${err}`
-      } else {
-        result = 'File deleted successfully'
-      }
-      console.debug(
-        `Delete file ${fileName} from ${fullPath} result: ${result}`
-      )
-    })
   })
 
   /**
