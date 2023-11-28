@@ -5,15 +5,15 @@ const menus = [
     name: "For Developers",
     child: [
       {
-        menu: "Documentation (WIP)",
+        menu: "Documentation",
         path: "/intro",
       },
       {
-        menu: "Hardware (WIP)",
+        menu: "Hardware",
         path: "/hardware",
       },
       {
-        menu: "API Reference (WIP)",
+        menu: "API Reference",
         path: "/api-reference",
       },
       {
@@ -67,7 +67,7 @@ const getCurrentYear = new Date().getFullYear();
 
 export default function Footer() {
   return (
-    <footer className="flex-shrink-0 border-t dark:border-gray-800 border-gray-200 py-10">
+    <footer className="flex-shrink-0 dark:bg-[#09090B]/10 bg-[#D4D4D8]/10 relative overflow-hidden py-10">
       <div className="container">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-2 lg:grid-cols-6">
           <div className="lg:col-span-3 col-span-2">
