@@ -29,7 +29,8 @@ export function handleAppIPCs() {
    * @param _event - The IPC event object.
    */
   ipcMain.handle("openAppDirectory", async (_event) => {
-    shell.openPath(app.getPath("userData"));
+    const userSpacePath = join(app.getPath('home'), 'jan')
+    shell.openPath(userSpacePath);
   });
 
   /**
