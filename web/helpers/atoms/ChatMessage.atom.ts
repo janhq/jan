@@ -92,7 +92,7 @@ export const cleanConversationMessages = atom(null, (get, set, id: string) => {
   set(chatMessages, newData)
 })
 
-export const deleteMessage = atom(null, (get, set, id: string) => {
+export const deleteMessageAtom = atom(null, (get, set, id: string) => {
   const newData: Record<string, ThreadMessage[]> = {
     ...get(chatMessages),
   }

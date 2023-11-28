@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 
-import { Model } from '@janhq/core/lib/types'
 import { PluginType } from '@janhq/core'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { Model } from '@janhq/core/lib/types'
 
 import {
   Modal,
@@ -79,7 +79,7 @@ export default function ModalCancelDownload({
                     if (!model) return
                     pluginManager
                       .get<ModelPlugin>(PluginType.Model)
-                      ?.cancelModelDownload(model.name, downloadState.fileName)
+                      ?.cancelModelDownload(downloadState.modelId)
                   }
                 }}
               >

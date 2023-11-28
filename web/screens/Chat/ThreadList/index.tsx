@@ -1,18 +1,24 @@
+import { useEffect } from 'react'
+
 import { Button } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 import { useAtomValue } from 'jotai'
 import { GalleryHorizontalEndIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
+
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+
+import useGetAllThreads from '@/hooks/useGetAllThreads'
+import useGetAssistants from '@/hooks/useGetAssistants'
+
+import useSetActiveThread from '@/hooks/useSetActiveThread'
+
 import { displayDate } from '@/utils/datetime'
+
 import {
   threadStatesAtom,
   threadsAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import useGetAssistants from '@/hooks/useGetAssistants'
-import useSetActiveThread from '@/hooks/useSetActiveThread'
-import useGetAllThreads from '@/hooks/useGetAllThreads'
-import { useEffect } from 'react'
 
 export default function ThreadList() {
   const threads = useAtomValue(threadsAtom)

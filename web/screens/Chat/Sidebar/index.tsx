@@ -1,12 +1,15 @@
+import { join } from 'path'
+
+import { getUserSpace, openFileExplorer } from '@janhq/core'
+import { atom, useAtomValue } from 'jotai'
+
 import CardSidebar from '@/containers/CardSidebar'
-import ItemCardSidebar from '@/containers/ItemCardSidebar'
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
-import { atom, useAtom, useAtomValue } from 'jotai'
+import ItemCardSidebar from '@/containers/ItemCardSidebar'
+
 import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
-import { fs } from '@janhq/core'
-import { join } from 'path'
 
 export const showRightSideBarAtom = atom<boolean>(false)
 
@@ -22,8 +25,9 @@ export default function Sidebar() {
       return
     }
 
-    const userSpace = await fs.getUserSpace()
+    const userSpace = await getUserSpace()
     let filePath = undefined
+    const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {
       case 'Thread':
         filePath = join('threads', activeThread.id)
@@ -33,7 +37,6 @@ export default function Sidebar() {
         filePath = join('models', selectedModel.id)
         break
       case 'Assistant':
-        const assistantId = activeThread.assistants[0]?.id
         if (!assistantId) return
         filePath = join('assistants', assistantId)
         break
@@ -45,7 +48,7 @@ export default function Sidebar() {
 
     const fullPath = join(userSpace, filePath)
     console.log(fullPath)
-    fs.openFileExplorer(fullPath)
+    openFileExplorer(fullPath)
   }
 
   const onViewJsonClick = async (type: string) => {
@@ -55,8 +58,9 @@ export default function Sidebar() {
       return
     }
 
-    const userSpace = await fs.getUserSpace()
+    const userSpace = await getUserSpace()
     let filePath = undefined
+    const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {
       case 'Thread':
         filePath = join('threads', activeThread.id, 'thread.json')
@@ -66,7 +70,6 @@ export default function Sidebar() {
         filePath = join('models', selectedModel.id, 'model.json')
         break
       case 'Assistant':
-        const assistantId = activeThread.assistants[0]?.id
         if (!assistantId) return
         filePath = join('assistants', assistantId, 'assistant.json')
         break
@@ -78,7 +81,7 @@ export default function Sidebar() {
 
     const fullPath = join(userSpace, filePath)
     console.log(fullPath)
-    fs.openFileExplorer(fullPath)
+    openFileExplorer(fullPath)
   }
 
   return (

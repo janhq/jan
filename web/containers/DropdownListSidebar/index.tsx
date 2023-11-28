@@ -1,13 +1,13 @@
 import { Fragment, useEffect, useState } from 'react'
+
 import { Listbox, Transition } from '@headlessui/react'
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid'
-import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
 import { Model } from '@janhq/core/lib/types'
 import { atom, useSetAtom } from 'jotai'
+import { twMerge } from 'tailwind-merge'
 
-function classNames(...classes: any) {
-  return classes.filter(Boolean).join(' ')
-}
+import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
 
@@ -62,7 +62,7 @@ export default function DropdownListSidebar() {
                   <Listbox.Option
                     key={model.id}
                     className={({ active }) =>
-                      classNames(
+                      twMerge(
                         active ? 'bg-indigo-600 text-white' : 'text-gray-900',
                         'relative cursor-default select-none py-2 pl-3 pr-9'
                       )
@@ -72,7 +72,7 @@ export default function DropdownListSidebar() {
                     {({ selected, active }) => (
                       <>
                         <span
-                          className={classNames(
+                          className={twMerge(
                             selected ? 'font-semibold' : 'font-normal',
                             'block truncate'
                           )}
@@ -82,7 +82,7 @@ export default function DropdownListSidebar() {
 
                         {selected ? (
                           <span
-                            className={classNames(
+                            className={twMerge(
                               active ? 'text-white' : 'text-indigo-600',
                               'absolute inset-y-0 right-0 flex items-center pr-4'
                             )}

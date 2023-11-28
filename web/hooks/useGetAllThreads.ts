@@ -1,6 +1,7 @@
 import { PluginType, ThreadState } from '@janhq/core'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 import { useSetAtom } from 'jotai'
+
 import {
   threadStatesAtom,
   threadsAtom,
@@ -19,7 +20,7 @@ const useGetAllThreads = () => {
       const threadStates: Record<string, ThreadState> = {}
       threads?.forEach((thread) => {
         if (thread.id != null) {
-          const lastMessage = thread.metadata?.lastMessage ?? ''
+          const lastMessage = (thread.metadata?.lastMessage as string) ?? ''
           threadStates[thread.id] = {
             hasMore: true,
             waitingForResponse: false,

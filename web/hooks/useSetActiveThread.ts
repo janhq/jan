@@ -1,12 +1,15 @@
+import { PluginType, Thread } from '@janhq/core'
+
+import { ConversationalPlugin } from '@janhq/core/lib/plugins'
+
+import { useAtomValue, useSetAtom } from 'jotai'
+
 import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   getActiveThreadIdAtom,
   setActiveThreadIdAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '@/plugin'
-import { PluginType, Thread } from '@janhq/core'
-import { ConversationalPlugin } from '@janhq/core/lib/plugins'
-import { useAtomValue, useSetAtom } from 'jotai'
 
 export default function useSetActiveThread() {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)

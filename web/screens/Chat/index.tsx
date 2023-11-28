@@ -1,4 +1,4 @@
-import { Fragment, useContext, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 
 import { Button, Badge, Textarea } from '@janhq/uikit'
 
@@ -10,10 +10,6 @@ import { twMerge } from 'tailwind-merge'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import ShortCut from '@/containers/Shortcut'
-
-import { toaster } from '@/containers/Toast'
-
-import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -29,6 +25,8 @@ import ChatBody from '@/screens/Chat/ChatBody'
 
 import ThreadList from '@/screens/Chat/ThreadList'
 
+import Sidebar from './Sidebar'
+
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
@@ -37,12 +35,11 @@ import {
 } from '@/helpers/atoms/Conversation.atom'
 
 import { activeThreadStateAtom } from '@/helpers/atoms/Conversation.atom'
-import Sidebar from './Sidebar'
 
 const ChatScreen = () => {
   const currentConvo = useAtomValue(activeThreadAtom)
   const { downloadedModels } = useGetDownloadedModels()
-  const { deleteThread, cleanConvo } = useDeleteThread()
+  const { deleteThread, cleanThread } = useDeleteThread()
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
 
@@ -71,12 +68,6 @@ const ChatScreen = () => {
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)
   }
-
-  // useEffect(() => {
-  //   setIsModelAvailable(
-  //     downloadedModels.some((x) => x.id === currentConvo?.modelId)
-  //   )
-  // }, [currentConvo, downloadedModels])
 
   useEffect(() => {
     if (isWaitingToSend && activeThreadId) {
@@ -141,13 +132,13 @@ const ChatScreen = () => {
                   <Paintbrush
                     size={16}
                     className="cursor-pointer text-muted-foreground"
-                    onClick={() => cleanConvo()}
+                    onClick={() => cleanThread()}
                   />
                   <Trash2Icon
                     size={16}
                     className="cursor-pointer text-muted-foreground"
-                      onClick={() => deleteThread()}
-                    />
+                    onClick={() => deleteThread()}
+                  />
                 </div>
               </div>
             </div>

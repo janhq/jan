@@ -1,4 +1,4 @@
-import { PluginType } from '@janhq/core'
+import { ChatCompletionRole, PluginType } from '@janhq/core'
 import { ConversationalPlugin } from '@janhq/core/lib/plugins'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -13,6 +13,7 @@ import { useActiveModel } from './useActiveModel'
 import {
   cleanConversationMessages,
   deleteConversationMessage,
+  getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   threadsAtom,
@@ -22,27 +23,26 @@ import {
 
 export default function useDeleteThread() {
   const { activeModel } = useActiveModel()
-  const [userConversations, setUserConversations] = useAtom(threadsAtom)
+  const [threads, setThreads] = useAtom(threadsAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const setActiveConvoId = useSetAtom(setActiveThreadIdAtom)
   const deleteMessages = useSetAtom(deleteConversationMessage)
   const cleanMessages = useSetAtom(cleanConversationMessages)
 
-  const cleanConvo = async () => {
+  const cleanThread = async () => {
     if (activeThreadId) {
-      const currentConversation = userConversations.filter(
-        (c) => c.id === activeThreadId
-      )[0]
+      const thread = threads.filter((c) => c.id === activeThreadId)[0]
       cleanMessages(activeThreadId)
-      if (currentConversation)
+      if (thread)
         await pluginManager
           .get<ConversationalPlugin>(PluginType.Conversational)
-          ?.saveThread({
-            ...currentConversation,
-            id: activeThreadId,
-          })
+          ?.writeMessages(
+            activeThreadId,
+            messages.filter((msg) => msg.role === ChatCompletionRole.System)
+          )
     }
   }
 
@@ -55,18 +55,16 @@ export default function useDeleteThread() {
       await pluginManager
         .get<ConversationalPlugin>(PluginType.Conversational)
         ?.deleteThread(activeThreadId)
-      const currentConversations = userConversations.filter(
-        (c) => c.id !== activeThreadId
-      )
-      setUserConversations(currentConversations)
+      const availableThreads = threads.filter((c) => c.id !== activeThreadId)
+      setThreads(availableThreads)
       deleteMessages(activeThreadId)
       setCurrentPrompt('')
       toaster({
         title: 'Chat successfully deleted.',
         description: `Chat with ${activeModel?.name} has been successfully deleted.`,
       })
-      if (currentConversations.length > 0) {
-        setActiveConvoId(currentConversations[0].id)
+      if (availableThreads.length > 0) {
+        setActiveConvoId(availableThreads[0].id)
       } else {
         setActiveConvoId(undefined)
       }
@@ -76,7 +74,7 @@ export default function useDeleteThread() {
   }
 
   return {
-    cleanConvo,
+    cleanThread,
     deleteThread,
   }
 }

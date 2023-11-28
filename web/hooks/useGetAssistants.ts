@@ -1,7 +1,10 @@
-import { pluginManager } from '@/plugin/PluginManager'
-import { Assistant, PluginType } from '@janhq/core'
-import { AssistantPlugin } from '@janhq/core/lib/plugins'
 import { useEffect, useState } from 'react'
+
+import { Assistant, PluginType } from '@janhq/core'
+
+import { AssistantPlugin } from '@janhq/core/lib/plugins'
+
+import { pluginManager } from '@/plugin/PluginManager'
 
 const getAssistants = async (): Promise<Assistant[]> => {
   return (

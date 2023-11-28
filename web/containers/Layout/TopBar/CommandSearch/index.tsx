@@ -11,6 +11,7 @@ import {
   CommandList,
 } from '@janhq/uikit'
 
+import { useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
@@ -26,7 +27,7 @@ import { FeatureToggleContext } from '@/context/FeatureToggle'
 import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
-import { useSetAtom } from 'jotai'
+
 import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 
 export default function CommandSearch() {

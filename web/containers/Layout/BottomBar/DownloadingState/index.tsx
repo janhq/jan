@@ -83,7 +83,7 @@ export default function DownloadingState() {
                           if (!model) return
                           pluginManager
                             .get<ModelPlugin>(PluginType.Model)
-                            ?.cancelModelDownload(model.name, item.fileName)
+                            ?.cancelModelDownload(item.modelId)
                         }
                       }}
                     >

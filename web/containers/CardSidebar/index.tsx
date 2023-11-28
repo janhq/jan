@@ -1,10 +1,12 @@
 import { ReactNode, useState } from 'react'
 import { Fragment } from 'react'
+
 import { Menu, Transition } from '@headlessui/react'
 import {
   ChevronDownIcon,
   EllipsisVerticalIcon,
 } from '@heroicons/react/20/solid'
+import { twMerge } from 'tailwind-merge'
 
 interface Props {
   children: ReactNode
@@ -12,11 +14,6 @@ interface Props {
   onRevealInFinderClick: (type: string) => void
   onViewJsonClick: (type: string) => void
 }
-
-function classNames(...classes: any) {
-  return classes.filter(Boolean).join(' ')
-}
-
 export default function CardSidebar({
   children,
   title,
@@ -58,7 +55,7 @@ export default function CardSidebar({
                 {({ active }) => (
                   <a
                     onClick={() => onRevealInFinderClick(title)}
-                    className={classNames(
+                    className={twMerge(
                       active ? 'bg-gray-50' : '',
                       'block cursor-pointer px-3 py-1 text-xs leading-6 text-gray-900'
                     )}
@@ -71,7 +68,7 @@ export default function CardSidebar({
                 {({ active }) => (
                   <a
                     onClick={() => onViewJsonClick(title)}
-                    className={classNames(
+                    className={twMerge(
                       active ? 'bg-gray-50' : '',
                       'block cursor-pointer px-3 py-1 text-xs leading-6 text-gray-900'
                     )}

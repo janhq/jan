@@ -16,7 +16,6 @@ import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import {
   addNewMessageAtom,
-  chatMessages,
   updateMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
@@ -35,15 +34,12 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
   const models = useAtomValue(downloadingModelsAtom)
-  const messages = useAtomValue(chatMessages)
-  const conversations = useAtomValue(threadsAtom)
-  const messagesRef = useRef(messages)
-  const convoRef = useRef(conversations)
+  const threads = useAtomValue(threadsAtom)
+  const threadsRef = useRef(threads)
 
   useEffect(() => {
-    messagesRef.current = messages
-    convoRef.current = conversations
-  }, [messages, conversations])
+    threadsRef.current = threads
+  }, [threads])
 
   async function handleNewMessageResponse(message: ThreadMessage) {
     addNewMessage(message)
@@ -59,7 +55,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   }
 
   async function handleMessageResponseFinished(message: ThreadMessage) {
-    if (!convoRef.current) return
     updateConvWaiting(message.thread_id, false)
 
     if (message.id && message.content) {
@@ -70,8 +65,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         MessageStatus.Ready
       )
     }
-
-    const thread = convoRef.current.find((e) => e.id == message.thread_id)
+    const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
     if (thread) {
       const messageContent = message.content[0]?.text.value ?? ''
       const metadata = {
@@ -93,6 +87,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   function handleDownloadUpdate(state: any) {
     if (!state) return
+    state.fileName = state.fileName.split('/').pop() ?? ''
     setDownloadState(state)
   }
 

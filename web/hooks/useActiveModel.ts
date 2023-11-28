@@ -3,8 +3,11 @@ import { PluginType } from '@janhq/core'
 import { InferencePlugin } from '@janhq/core/lib/plugins'
 import { Model, ModelSettingParams } from '@janhq/core/lib/types'
 import { atom, useAtom } from 'jotai'
+
 import { toaster } from '@/containers/Toast'
+
 import { useGetDownloadedModels } from './useGetDownloadedModels'
+
 import { pluginManager } from '@/plugin'
 
 const activeModelAtom = atom<Model | undefined>(undefined)

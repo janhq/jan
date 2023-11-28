@@ -16,8 +16,6 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import BubbleLoader from '@/containers/Loader/Bubble'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { displayDate } from '@/utils/datetime'
 
 import MessageToolbar from '../MessageToolbar'
@@ -99,7 +97,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         <div
           className={twMerge(
             'absolute right-0 cursor-pointer transition-all',
-            messages[0].id === props.id
+            messages[messages.length - 1]?.id === props.id
               ? 'absolute -bottom-10 left-4'
               : 'hidden group-hover:flex'
           )}

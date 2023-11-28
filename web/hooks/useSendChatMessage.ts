@@ -15,7 +15,10 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { ulid } from 'ulid'
 
+import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
+
+import { toaster } from '@/containers/Toast'
 
 import { useActiveModel } from './useActiveModel'
 
@@ -29,7 +32,6 @@ import {
   updateConversationWaitingForResponseAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '@/plugin/PluginManager'
-import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 
 export default function useSendChatMessage() {
   const activeThread = useAtomValue(activeThreadAtom)
@@ -41,6 +43,7 @@ export default function useSendChatMessage() {
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const { activeModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
+  const { startModel } = useActiveModel()
 
   function updateThreadTitle(newMessage: MessageRequest) {
     if (
@@ -95,7 +98,7 @@ export default function useSendChatMessage() {
 
     if (!activeThread.isFinishInit) {
       if (!selectedModel) {
-        alert('Please select a model')
+        toaster({ title: 'Please select a model' })
         return
       }
       const assistantId = activeThread.assistants[0].assistant_id ?? ''
@@ -169,12 +172,17 @@ export default function useSendChatMessage() {
     }
 
     addNewMessage(threadMessage)
+    updateThreadTitle(messageRequest)
+
     await pluginManager
       .get<ConversationalPlugin>(PluginType.Conversational)
       ?.addNewMessage(threadMessage)
 
+    const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
+    if (activeModel?.id !== modelId) {
+      await startModel(modelId)
+    }
     events.emit(EventName.OnNewMessageRequest, messageRequest)
-    updateThreadTitle(messageRequest)
   }
 
   return {

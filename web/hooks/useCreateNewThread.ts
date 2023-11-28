@@ -5,7 +5,9 @@ import {
   ThreadState,
 } from '@janhq/core/lib/types'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+
 import { generateThreadId } from '@/utils/conversation'
+
 import {
   threadsAtom,
   setActiveThreadIdAtom,
@@ -65,7 +67,7 @@ export const useCreateNewThread = () => {
     const thread: Thread = {
       id: threadId,
       object: 'thread',
-      title: '',
+      title: 'New Thread',
       assistants: [assistantInfo],
       created: createdAt,
       updated: createdAt,

@@ -1,8 +1,11 @@
 import { PluginType } from '@janhq/core'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { Model } from '@janhq/core/lib/types'
+
 import { toaster } from '@/containers/Toast'
+
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
 import { pluginManager } from '@/plugin/PluginManager'
 
 export default function useDeleteModel() {

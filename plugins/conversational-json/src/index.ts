@@ -106,6 +106,27 @@ export default class JSONConversationalPlugin implements ConversationalPlugin {
     }
   }
 
+  async writeMessages(
+    threadId: string,
+    messages: ThreadMessage[]
+  ): Promise<void> {
+    try {
+      const threadDirPath = join(JSONConversationalPlugin._homeDir, threadId)
+      const threadMessagePath = join(
+        threadDirPath,
+        JSONConversationalPlugin._threadMessagesFileName
+      )
+      await fs.mkdir(threadDirPath)
+      await fs.writeFile(
+        threadMessagePath,
+        messages.map((msg) => JSON.stringify(msg)).join('\n')
+      )
+      Promise.resolve()
+    } catch (err) {
+      Promise.reject(err)
+    }
+  }
+
   /**
    * A promise builder for reading a thread from a file.
    * @param threadDirName the thread dir we are reading from.

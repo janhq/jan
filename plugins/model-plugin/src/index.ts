@@ -57,10 +57,10 @@ export default class JanModelPlugin implements ModelPlugin {
    * @param {string} modelId - The ID of the model whose download is to be cancelled.
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
-  async cancelModelDownload(name: string, modelId: string): Promise<void> {
-    return abortDownload(join(JanModelPlugin._homeDir, name, modelId)).then(
+  async cancelModelDownload(modelId: string): Promise<void> {
+    return abortDownload(join(JanModelPlugin._homeDir, modelId, modelId)).then(
       () => {
-        fs.deleteFile(join(JanModelPlugin._homeDir, name, modelId))
+        fs.rmdir(join(JanModelPlugin._homeDir, modelId))
       }
     )
   }

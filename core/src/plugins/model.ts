@@ -18,11 +18,10 @@ export abstract class ModelPlugin extends JanPlugin {
 
   /**
    * Cancels the download of a specific model.
-   * @param {string} name - The name of the model to cancel the download for.
    * @param {string} modelId - The ID of the model to cancel the download for.
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
-  abstract cancelModelDownload(name: string, modelId: string): Promise<void>;
+  abstract cancelModelDownload(modelId: string): Promise<void>;
 
   /**
    * Deletes a model.
