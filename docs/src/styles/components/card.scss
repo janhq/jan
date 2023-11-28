@@ -14,7 +14,7 @@
       0px 1px 2px 0px #525154 inset;
   }
   .card {
-    @apply rounded-3xl border bg-gray-100 border-gray-100 dark:border-[#202231] dark:bg-[#111217];
+    @apply rounded-xl border bg-gray-50 border-gray-50 dark:border-[#202231] dark:bg-[#111217]/50;
 
     &-link {
       display: inline-flex;

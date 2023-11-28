@@ -11,7 +11,7 @@
   }
 
   &__inner {
-    @apply border border-gray-300 dark:border-gray-800 rounded-lg bg-[#E4E4E7]/20 dark:bg-[#09090B]/50 backdrop-blur-md flex items-center h-14 px-8 relative;
+    @apply border border-gray-200 dark:border-gray-800 rounded-lg bg-[#E4E4E7]/20 dark:bg-[#09090B]/50 backdrop-blur-md flex items-center h-14 px-8 relative;
   }
 
   &__logo {
