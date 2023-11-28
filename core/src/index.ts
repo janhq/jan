@@ -8,7 +8,13 @@ export { core, deleteFile, invokePluginFunc } from "./core";
  * Core module exports.
  * @module
  */
-export { downloadFile, executeOnMain, appDataPath, getUserSpace } from "./core";
+export {
+  downloadFile,
+  executeOnMain,
+  appDataPath,
+  getUserSpace,
+  abortDownload,
+} from "./core";
 
 /**
  * Events module exports.

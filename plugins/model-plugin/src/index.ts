@@ -1,4 +1,4 @@
-import { PluginType, fs, downloadFile } from '@janhq/core'
+import { PluginType, fs, downloadFile, abortDownload } from '@janhq/core'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { Model, ModelCatalog } from '@janhq/core/lib/types'
 import { parseToModel } from './helpers/modelParser'
@@ -48,6 +48,15 @@ export default class JanModelPlugin implements ModelPlugin {
     // path to model binary
     const path = join(directoryPath, model.id)
     downloadFile(model.downloadLink, path)
+  }
+
+  /**
+   * Cancels the download of a specific machine learning model.
+   * @param {string} modelId - The ID of the model whose download is to be cancelled.
+   * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
+   */
+  async cancelModelDownload(name: string, modelId: string): Promise<void> {
+    return abortDownload(join(JanModelPlugin._homeDir, name, modelId))
   }
 
   /**

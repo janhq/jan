@@ -1,5 +1,7 @@
 import { Fragment } from 'react'
 
+import { PluginType } from '@janhq/core'
+import { ModelPlugin } from '@janhq/core/lib/plugins'
 import {
   Progress,
   Modal,
@@ -10,12 +12,18 @@ import {
   ModalTrigger,
 } from '@janhq/uikit'
 
+import { useAtomValue } from 'jotai'
+
 import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
+import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { pluginManager } from '@/plugin'
+
 export default function DownloadingState() {
   const { downloadStates } = useDownloadState()
+  const models = useAtomValue(downloadingModelsAtom)
 
   const totalCurrentProgress = downloadStates
     .map((a) => a.size.transferred + a.size.transferred)
@@ -67,11 +75,17 @@ export default function DownloadingState() {
                     <Button
                       themes="outline"
                       size="sm"
-                      onClick={() =>
-                        window.coreAPI?.abortDownload(
-                          `models/${item?.fileName}`
-                        )
-                      }
+                      onClick={() => {
+                        if (item?.fileName) {
+                          const model = models.find(
+                            (e) => e.id === item?.fileName
+                          )
+                          if (!model) return
+                          pluginManager
+                            .get<ModelPlugin>(PluginType.Model)
+                            ?.cancelModelDownload(model.name, item.fileName)
+                        }
+                      }}
                     >
                       Cancel
                     </Button>
