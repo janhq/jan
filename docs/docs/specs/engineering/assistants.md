@@ -1,5 +1,6 @@
 ---
 title: "Assistants"
+slug: /specs/assistants
 ---
 
 :::caution
@@ -14,7 +15,7 @@ In Jan, assistants are `primary` entities with the following capabilities:
 
 - Assistants can use `models`, `tools`, handle and emit `events`, and invoke `custom code`.
 - Users can create custom assistants with saved `model` settings and parameters.
-- An [OpenAI Assistants API](https://platform.openai.com/docs/api-reference/assistants) compatible endpoint at `localhost:3000/v1/assistants`.
+- An [OpenAI Assistants API](https://platform.openai.com/docs/api-reference/assistants) compatible endpoint at `localhost:1337/v1/assistants`.
 - Jan ships with a default assistant called "Jan" that lets you use all models.
 
 ## Folder Structure
@@ -49,6 +50,7 @@ In Jan, assistants are `primary` entities with the following capabilities:
   "models": [                         // Defaults to "*" all models
       { ...model_0 }
   ],
+  "instructions": "Be concise",       // A system prompt for the assistant
   "events": [],                       // Defaults to "*"
   "metadata": {},                     // Defaults to {}
   // "tools": [],                     // Coming soon

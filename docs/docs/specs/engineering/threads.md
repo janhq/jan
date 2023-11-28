@@ -1,5 +1,6 @@
 ---
 title: Threads
+slug: /specs/threads
 ---
 
 :::caution
