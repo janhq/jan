@@ -149,7 +149,7 @@ const MyModelsScreen = () => {
             <div className="rounded-lg border border-border bg-background p-4 hover:border-primary/60">
               <div className="flex h-full flex-col justify-between">
                 <div>
-                  <h2 className="text-lg font-medium">Download more model?</h2>
+                  <h2 className="text-lg font-medium">Download more models?</h2>
                   <p className="mt-2 leading-relaxed">
                     You have <span>{downloadedModels.length}</span> model(s)
                     downloaded.&nbsp;

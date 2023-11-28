@@ -35,7 +35,7 @@ const WelcomeScreen = () => {
             >
               Welcome to Jan
             </h1>
-            <p className="mt-1">{`let’s download your first model`}</p>
+            <p className="mt-1">{`Let’s download your first model`}</p>
             <Button
               className="mt-4"
               onClick={() => setMainViewState(MainViewState.ExploreModels)}
@@ -47,7 +47,7 @@ const WelcomeScreen = () => {
         {downloadedModels.length >= 1 && !activeModel && (
           <Fragment>
             <h1 className="mt-2 text-lg font-medium">{`You don’t have any actively running models`}</h1>
-            <p className="mt-1">{`Please start a downloaded model in My Models page to use this feature.`}</p>
+            <p className="mt-1">{`Please start a downloaded model to use this feature.`}</p>
             <Badge className="mt-4" themes="outline">
               <ShortCut menu="E" />
               &nbsp; to show your model
@@ -57,7 +57,7 @@ const WelcomeScreen = () => {
         {downloadedModels.length >= 1 && activeModel && (
           <Fragment>
             <h1 className="mt-2 text-lg font-medium">{`Your Model is Active`}</h1>
-            <p className="mt-1">{`You are ready to start conversations.`}</p>
+            <p className="mt-1">{`You are ready to converse.`}</p>
             <Button
               className="mt-4"
               onClick={() => setMainViewState(MainViewState.Chat)}

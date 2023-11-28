@@ -197,8 +197,8 @@ const ChatScreen = () => {
             <div className="mx-auto mt-8 flex h-full w-3/4 flex-col items-center justify-center text-center">
               {downloadedModels.length === 0 && (
                 <Fragment>
-                  <h1 className="text-lg font-medium">{`Ups, you don't have a Model`}</h1>
-                  <p className="mt-1">{`let’s download your first model.`}</p>
+                  <h1 className="text-lg font-medium">{`Oops, you don't have a Model`}</h1>
+                  <p className="mt-1">{`Let’s download your first model.`}</p>
                   <Button
                     className="mt-4"
                     onClick={() =>
@@ -212,7 +212,7 @@ const ChatScreen = () => {
               {!activeModel && downloadedModels.length > 0 && (
                 <Fragment>
                   <h1 className="text-lg font-medium">{`You don’t have any actively running models`}</h1>
-                  <p className="mt-1">{`Please start a downloaded model in My Models page to use this feature.`}</p>
+                  <p className="mt-1">{`Please start a downloaded model to use this feature.`}</p>
                   <Badge className="mt-4" themes="outline">
                     <ShortCut menu="E" />
                     &nbsp; to show your model
