@@ -1,0 +1,34 @@
+.navbar {
+  @apply my-4 bg-transparent py-0 shadow-none top-4;
+  &:before {
+    width: 100%;
+    height: 16px;
+    top: -16px;
+    position: absolute;
+    content: "";
+    left: 0;
+    @apply dark:bg-[#09090B]/10 backdrop-blur-md;
+  }
+
+  &__inner {
+    @apply border border-gray-300 dark:border-gray-800 rounded-lg bg-[#E4E4E7]/50 dark:bg-[#09090B]/50 backdrop-blur-md flex items-center h-14 px-8 relative;
+  }
+
+  &__logo {
+    @apply flex items-center;
+  }
+
+  &__brand {
+    &:hover {
+      @apply dark:text-white text-black;
+    }
+  }
+
+  &__title {
+    font-size: 18px;
+  }
+
+  [class*="searchBox_"] {
+    display: none;
+  }
+}

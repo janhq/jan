@@ -1,7 +1,8 @@
 @layer base {
   
   html[data-theme="light"] {
-    --ifm-background-color: white;
+    --custom-radial-blur: #e1e7fd;
+    --ifm-background-color: #fafafa;
     --ifm-color-primary: #2563eb; /* New Primary Blue */
     --ifm-color-primary-dark: #204fcf; /* Darker Blue */
     --ifm-color-primary-darker: #1b45b7; /* Even Darker Blue */
@@ -13,8 +14,10 @@
     --ifm-navbar-link-hover-color: inherit;
     --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
   }
+
   html[data-theme="dark"] {
-    --ifm-background-color: black;
+    --custom-radial-blur: #1d1b48;
+    --ifm-background-color: #18181b;
     --ifm-color-primary: #ffffff; /* New Primary Blue */
     --ifm-color-primary-dark: #204fcf; /* Darker Blue */
     --ifm-color-primary-darker: #1b45b7; /* Even Darker Blue */
@@ -24,12 +27,18 @@
     --ifm-color-primary-lightest: #3a8bff; /* Lightest Blue */
     --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
   }
+
+  pre,
+  code {
+    @apply text-sm;
+  }
+
   body {
     @apply text-base;
     @apply antialiased;
-    @apply bg-white dark:bg-black;
-    @apply text-gray-800 dark:text-gray-300;
+    @apply bg-[#FAFAFA] dark:bg-[#18181B];
   }
+
   img {
     pointer-events: none;
   }
