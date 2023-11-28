@@ -57,7 +57,7 @@ paths:
       summary: Create chat completion
       description: |
         <a  href = "https://platform.openai.com/docs/api-reference/chat/create">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-        and <span style = "color: #fec928">  Jan specified </span>
+        and <span style = "color: #fec928">  Jan </span>
         
         Creates a model response for the given chat conversation.
       requestBody:
