@@ -39,7 +39,7 @@ const ChatInstruction = () => {
             className="w-32"
             onClick={() => setIsSettingInstruction(true)}
           >
-            Give Instructions
+            Set a Prompt
           </Button>
         </>
       )}
@@ -57,7 +57,7 @@ const ChatInstruction = () => {
             className="w-32"
             onClick={() => setSystemPrompt(instruction)}
           >
-            Give Instructions
+            Set a Prompt
           </Button>
         </div>
       )}
