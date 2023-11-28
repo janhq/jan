@@ -2,7 +2,7 @@
   
   html[data-theme="light"] {
     --custom-radial-blur: #e1e7fd;
-    --ifm-background-color: #fafafa;
+    --ifm-background-color: #fff;
     --ifm-color-primary: #2563eb; /* New Primary Blue */
     --ifm-color-primary-dark: #204fcf; /* Darker Blue */
     --ifm-color-primary-darker: #1b45b7; /* Even Darker Blue */
@@ -36,7 +36,7 @@
   body {
     @apply text-base;
     @apply antialiased;
-    @apply bg-[#FAFAFA] dark:bg-[#18181B];
+    @apply bg-white dark:bg-[#18181B];
   }
 
   img {
