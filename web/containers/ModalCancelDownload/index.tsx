@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
 
+import { PluginType } from '@janhq/core'
+import { ModelPlugin } from '@janhq/core/lib/plugins'
 import { ModelVersion } from '@janhq/core/lib/types'
 
 import {
@@ -19,6 +21,9 @@ import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
+import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { pluginManager } from '@/plugin'
+
 type Props = {
   suitableModel: ModelVersion
   isFromList?: boolean
@@ -34,6 +39,7 @@ export default function ModalCancelDownload({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [suitableModel.name]
   )
+  const models = useAtomValue(downloadingModelsAtom)
   const downloadState = useAtomValue(downloadAtom)
 
   return (
@@ -66,10 +72,15 @@ export default function ModalCancelDownload({
               <Button
                 themes="danger"
                 onClick={() => {
-                  if (downloadState?.fileName)
-                    window.coreAPI?.abortDownload(
-                      `models/${downloadState?.fileName}`
+                  if (downloadState?.fileName) {
+                    const model = models.find(
+                      (e) => e.id === downloadState?.fileName
                     )
+                    if (!model) return
+                    pluginManager
+                      .get<ModelPlugin>(PluginType.Model)
+                      ?.cancelModelDownload(model.name, downloadState.fileName)
+                  }
                 }}
               >
                 Yes

@@ -48,6 +48,14 @@ const deleteFile: (path: string) => Promise<any> = (path) =>
   window.coreAPI?.deleteFile(path) ?? window.electronAPI?.deleteFile(path);
 
 /**
+ * Aborts the download of a specific file.
+ * @param {string} fileName - The name of the file whose download is to be aborted.
+ * @returns {Promise<any>} A promise that resolves when the download has been aborted.
+ */
+const abortDownload: (fileName: string) => Promise<any> = (fileName) =>
+  window.coreAPI?.abortDownload(fileName);
+
+/**
  * Retrieves the path to the app data directory using the `coreAPI` object.
  * If the `coreAPI` object is not available, the function returns `undefined`.
  * @returns A Promise that resolves with the path to the app data directory, or `undefined` if the `coreAPI` object is not available.
@@ -79,6 +87,7 @@ export const core = {
   invokePluginFunc,
   executeOnMain,
   downloadFile,
+  abortDownload,
   deleteFile,
   appDataPath,
   getUserSpace,
@@ -91,6 +100,7 @@ export {
   invokePluginFunc,
   executeOnMain,
   downloadFile,
+  abortDownload,
   deleteFile,
   appDataPath,
   getUserSpace,
