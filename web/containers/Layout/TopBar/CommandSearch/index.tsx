@@ -28,7 +28,6 @@ import { MainViewState } from '@/constants/screens'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 export default function CommandSearch() {
-  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
   const { setMainViewState } = useMainViewState()
 
   const menus = [
@@ -44,8 +43,6 @@ export default function CommandSearch() {
       ),
       state: MainViewState.Chat,
     },
-    // Added experimental feature here
-    ...(experimentalFeatureEnabed ? [] : []),
     {
       name: 'Explore Models',
       icon: <CpuIcon size={16} className="mr-3 text-muted-foreground" />,

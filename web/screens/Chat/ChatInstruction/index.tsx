@@ -31,12 +31,12 @@ const ChatInstruction = () => {
   }
   return (
     <div className="mx-auto mb-20 flex flex-col space-y-2">
+      <p>
+        What does this Assistant do? How does it behave? What should it avoid
+        doing?
+      </p>
       {!isSettingInstruction && activeConvoId && (
         <>
-          <p>
-            What does this Assistant do? How does it behave? What should it
-            avoid doing?
-          </p>
           <Button
             themes={'outline'}
             className="w-32"
