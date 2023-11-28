@@ -64,8 +64,6 @@ const ChatScreen = () => {
   const [isModelAvailable, setIsModelAvailable] = useState(
     downloadedModels.some((x) => x.id === currentConvo?.modelId)
   )
-  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
-
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { startModel } = useActiveModel()
   const modelRef = useRef(activeModel)
@@ -176,20 +174,16 @@ const ChatScreen = () => {
                       Download Model
                     </Button>
                   )}
-                  {experimentalFeatureEnabed && (
-                    <Paintbrush
-                      size={16}
-                      className="cursor-pointer text-muted-foreground"
-                      onClick={() => cleanConvo()}
-                    />
-                  )}
-                  {
-                    <Trash2Icon
-                      size={16}
-                      className="cursor-pointer text-muted-foreground"
-                      onClick={() => deleteConvo()}
-                    />
-                  }
+                  <Paintbrush
+                    size={16}
+                    className="cursor-pointer text-muted-foreground"
+                    onClick={() => cleanConvo()}
+                  />
+                  <Trash2Icon
+                    size={16}
+                    className="cursor-pointer text-muted-foreground"
+                    onClick={() => deleteConvo()}
+                  />
                 </div>
               </div>
             </div>

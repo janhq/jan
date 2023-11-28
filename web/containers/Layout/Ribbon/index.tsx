@@ -20,15 +20,12 @@ import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 export default function RibbonNav() {
   const { mainViewState, setMainViewState } = useMainViewState()
-  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
@@ -49,8 +46,6 @@ export default function RibbonNav() {
   ]
 
   const secondaryMenus = [
-    // Add menu if experimental feature
-    ...(experimentalFeatureEnabed ? [] : []),
     {
       name: 'Explore Models',
       icon: <CpuIcon size={20} className="flex-shrink-0" />,
