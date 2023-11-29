@@ -4,21 +4,21 @@
     "object": "model",
     "name": "Orca 2 13B",
     "version": "1.0",
-    "description": "",
+    "description": "Orca 2 is a finetuned version of LLAMA-2, designed primarily for single-turn responses in reasoning, reading comprehension, math problem solving, and text summarization.",
     "format": "gguf",
     "settings": {
-      "ctx_len": "4096",
-      "ngl": "100"
+      "ctx_len": 4096,
+      "system_prompt": "<|im_start|>system\n",
+      "user_prompt": "<|im_end|>\n<|im_start|>user\n",
+      "ai_prompt": "<|im_end|>\n<|im_start|>assistant\n"
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "4096",
-      "stream": "true"
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "Microsoft, The Bloke",
-      "tags": ["Role-playing"],
-      "size": "9230000000"
+      "tags": ["General Use"],
+      "size": 9230000000
     }
   }
   
