@@ -3,7 +3,7 @@
     "id": "islm-3b",
     "object": "model",
     "name": "IS LM 3B",
-    "version": "1",
+    "version": 1.0,
     "description": "IS LM 3B, based on the StableLM 3B model is specifically finetuned for economic analysis using DataForge Economics and QLoRA over three epochs, enhancing its proficiency in economic forecasting and analysis.",
     "format": "gguf",
     "settings": {
