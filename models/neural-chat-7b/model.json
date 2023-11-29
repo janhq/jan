@@ -3,22 +3,22 @@
     "id": "neural-chat-7b-v3-1",
     "object": "model",
     "name": "Neural Chat 7B",
-    "version": "3.1",
+    "version": "1.0",
     "description": "The Neural Chat 7B model, developed on the foundation of mistralai/Mistral-7B-v0.1, has been fine-tuned using the Open-Orca/SlimOrca dataset and aligned with the Direct Preference Optimization (DPO) algorithm. It has demonstrated substantial improvements in various AI tasks and performance well on the open_llm_leaderboard.",
     "format": "gguf",
     "settings": {
-      "ctx_len": "2048",
-      "ngl": "100"
+      "ctx_len": 32768,
+      "system_prompt": "### System: ",
+      "user_prompt": "### User: ",
+      "ai_prompt": "### Assistant: "
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "2048",
-      "stream": "true"
+      "max_tokens": 32768
     },
     "metadata": {
       "author": "Intel, The Bloke",
-      "tags": ["General Use", "Role-playing"],
-      "size": "4370000000"
+      "tags": ["General Use", "Role-playing", "Big Context Length"],
+      "size": 4370000000
     }
   }
   

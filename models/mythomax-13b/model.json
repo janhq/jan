@@ -4,11 +4,11 @@
     "object": "model",
     "name": "Mythomax L2 13B",
     "version": "1.0",
-    "description": "",
+    "description": "Mythomax L2 13b, an advanced AI model derived from MythoMix, merges MythoLogic-L2's deep comprehension with Huginn's writing skills through a unique tensor merge technique, excelling in roleplaying and storytelling.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "system_prompt": "Mythomax L2 13b, an advanced AI model derived from MythoMix, merges MythoLogic-L2's deep comprehension with Huginn's writing skills through a unique tensor merge technique, excelling in roleplaying and storytelling.",
+      "system_prompt": "",
       "user_prompt": "### Instruction: ",
       "ai_prompt": "### Response: "
     },
