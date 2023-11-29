@@ -82,7 +82,7 @@ export default function RibbonNav() {
                         </div>
                         {isActive && (
                           <m.div
-                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-primary/50"
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200 dark:bg-primary/50"
                             layoutId="active-state-primary"
                           />
                         )}

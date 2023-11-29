@@ -7,6 +7,7 @@ import { Trash2Icon, Paintbrush } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import LogoMark from '@/containers/Brand/Logo/Mark'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import ShortCut from '@/containers/Shortcut'
@@ -150,13 +151,18 @@ const ChatScreen = () => {
             <div className="mx-auto mt-8 flex h-full w-3/4 flex-col items-center justify-center text-center">
               {downloadedModels.length === 0 && (
                 <Fragment>
-                  <h1 className="text-lg font-medium">{`Oops, you don't have a Model`}</h1>
-                  <p className="mt-1">{`Let’s download your first model.`}</p>
+                  <LogoMark
+                    className="mx-auto mb-4 animate-wave"
+                    width={56}
+                    height={56}
+                  />
+                  <h1 className="text-lg font-medium">Welcome!</h1>
+                  <p className="mt-1">You need to download your first model</p>
                   <Button
                     className="mt-4"
                     onClick={() => setMainViewState(MainViewState.Hub)}
                   >
-                    Explore Models
+                    Explore The Hub
                   </Button>
                 </Fragment>
               )}
