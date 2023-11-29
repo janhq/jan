@@ -87,7 +87,7 @@ Here's a standard example `model.json` for a GGUF model.
 
 The model settings in the example can be found at: [Nitro's model settings](https://nitro.jan.ai/features/load-unload#table-of-parameters)
 
-The model paramemters in the example can be found at: [Nitro's model parameters](https://nitro.jan.ai/api-reference#tag/Chat-Completion)
+The model parameters in the example can be found at: [Nitro's model parameters](https://nitro.jan.ai/api-reference#tag/Chat-Completion)
 
 ## API Reference
 
