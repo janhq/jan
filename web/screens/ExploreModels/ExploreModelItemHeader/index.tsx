@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
+import { Model, ModelCatalog } from '@janhq/core/lib/types'
 import { Badge, Button } from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
@@ -23,7 +23,7 @@ import { toGigabytes } from '@/utils/converter'
 import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
-  suitableModel: ModelVersion
+  suitableModel: Model
   exploreModel: ModelCatalog
 }
 
@@ -48,7 +48,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   const { setMainViewState } = useMainViewState()
 
   const calculatePerformance = useCallback(
-    (suitableModel: ModelVersion) => async () => {
+    (suitableModel: Model) => async () => {
       const { title, performanceTag } = await getPerformanceForModel(
         suitableModel,
         totalRam
@@ -64,9 +64,9 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   }, [suitableModel])
 
   const onDownloadClick = useCallback(() => {
-    downloadModel(exploreModel, suitableModel)
+    downloadModel(suitableModel)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exploreModel, suitableModel])
+  }, [suitableModel])
 
   // TODO: Comparing between Model Id and Version Name?
   const isDownloaded =
@@ -74,8 +74,8 @@ const ExploreModelItemHeader: React.FC<Props> = ({
 
   let downloadButton = (
     <Button onClick={() => onDownloadClick()}>
-      {suitableModel.size
-        ? `Download (${toGigabytes(suitableModel.size)})`
+      {suitableModel.metadata.size
+        ? `Download (${toGigabytes(suitableModel.metadata.size)})`
         : 'Download'}
     </Button>
   )

@@ -1,3 +1,5 @@
+import { useMemo } from 'react'
+
 import {
   ChatCompletionRole,
   ChatCompletionMessage,
@@ -9,22 +11,33 @@ import {
   events,
 } from '@janhq/core'
 import { ConversationalPlugin, InferencePlugin } from '@janhq/core/lib/plugins'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw, ClipboardCopy, Trash2Icon, StopCircle } from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
 
 import { toaster } from '@/containers/Toast'
 
 import {
-  deleteMessage,
+  deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import { currentConversationAtom } from '@/helpers/atoms/Conversation.atom'
+import {
+  activeThreadAtom,
+  threadStatesAtom,
+} from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '@/plugin'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
-  const deleteAMessage = useSetAtom(deleteMessage)
-  const thread = useAtomValue(currentConversationAtom)
+  const deleteMessage = useSetAtom(deleteMessageAtom)
+  const thread = useAtomValue(activeThreadAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
+  const threadStateAtom = useMemo(
+    () => atom((get) => get(threadStatesAtom)[thread?.id ?? '']),
+    [thread?.id]
+  )
+  const threadState = useAtomValue(threadStateAtom)
+
   const stopInference = async () => {
     await pluginManager
       .get<InferencePlugin>(PluginType.Inference)
@@ -33,8 +46,14 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
       events.emit(EventName.OnMessageResponseFinished, message)
     }, 300)
   }
+
   return (
-    <div className="flex flex-row items-center">
+    <div
+      className={twMerge(
+        'flex-row items-center',
+        threadState.waitingForResponse ? 'hidden' : 'flex'
+      )}
+    >
       <div className="flex overflow-hidden rounded-md border border-border bg-background/20">
         {message.status === MessageStatus.Pending && (
           <div
@@ -45,25 +64,20 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           </div>
         )}
         {message.status !== MessageStatus.Pending &&
-          message.id === messages[0]?.id && (
+          message.id === messages[messages.length - 1]?.id && (
             <div
               className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
               onClick={() => {
                 const messageRequest: MessageRequest = {
                   id: message.id ?? '',
-                  messages: messages
-                    .slice(1, messages.length)
-                    .reverse()
-                    .map((e) => {
-                      return {
-                        content: e.content,
-                        role: e.role,
-                      } as ChatCompletionMessage
-                    }),
-                  threadId: message.threadId ?? '',
-                }
-                if (message.role === ChatCompletionRole.Assistant) {
-                  deleteAMessage(message.id ?? '')
+                  messages: messages.slice(0, -1).map((e) => {
+                    const msg: ChatCompletionMessage = {
+                      role: e.role,
+                      content: e.content[0].text.value,
+                    }
+                    return msg
+                  }),
+                  threadId: message.thread_id ?? '',
                 }
                 events.emit(EventName.OnNewMessageRequest, messageRequest)
               }}
@@ -74,7 +88,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
         <div
           className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
           onClick={() => {
-            navigator.clipboard.writeText(message.content ?? '')
+            navigator.clipboard.writeText(message.content[0]?.text?.value ?? '')
             toaster({
               title: 'Copied to clipboard',
             })
@@ -85,14 +99,14 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
         <div
           className="cursor-pointer px-2 py-2 hover:bg-background/80"
           onClick={async () => {
-            deleteAMessage(message.id ?? '')
+            deleteMessage(message.id ?? '')
             if (thread)
               await pluginManager
                 .get<ConversationalPlugin>(PluginType.Conversational)
-                ?.saveConversation({
-                  ...thread,
-                  messages: messages.filter((e) => e.id !== message.id),
-                })
+                ?.writeMessages(
+                  thread.id,
+                  messages.filter((msg) => msg.id !== message.id)
+                )
           }}
         >
           <Trash2Icon size={14} />

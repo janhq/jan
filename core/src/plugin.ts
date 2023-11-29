@@ -4,6 +4,7 @@ export enum PluginType {
   Preference = "preference",
   SystemMonitoring = "systemMonitoring",
   Model = "model",
+  Assistant = "assistant",
 }
 
 export abstract class JanPlugin {

@@ -16,71 +16,65 @@ import {
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
-  userConversationsAtom,
-  getActiveConvoIdAtom,
-  setActiveConvoIdAtom,
+  threadsAtom,
+  getActiveThreadIdAtom,
+  setActiveThreadIdAtom,
 } from '@/helpers/atoms/Conversation.atom'
 
-export default function useDeleteConversation() {
+export default function useDeleteThread() {
   const { activeModel } = useActiveModel()
-  const [userConversations, setUserConversations] = useAtom(
-    userConversationsAtom
-  )
+  const [threads, setThreads] = useAtom(threadsAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
-  const activeConvoId = useAtomValue(getActiveConvoIdAtom)
+  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
-  const setActiveConvoId = useSetAtom(setActiveConvoIdAtom)
+  const setActiveConvoId = useSetAtom(setActiveThreadIdAtom)
   const deleteMessages = useSetAtom(deleteConversationMessage)
   const cleanMessages = useSetAtom(cleanConversationMessages)
-  const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
 
-  const cleanConvo = async () => {
-    if (activeConvoId) {
-      const currentConversation = userConversations.filter(
-        (c) => c.id === activeConvoId
-      )[0]
-      cleanMessages(activeConvoId)
-      if (currentConversation)
+  const cleanThread = async () => {
+    if (activeThreadId) {
+      const thread = threads.filter((c) => c.id === activeThreadId)[0]
+      cleanMessages(activeThreadId)
+      if (thread)
         await pluginManager
           .get<ConversationalPlugin>(PluginType.Conversational)
-          ?.saveConversation({
-            ...currentConversation,
-            id: activeConvoId,
-            messages: currentMessages.filter(
-              (e) => e.role === ChatCompletionRole.System
-            ),
-          })
+          ?.writeMessages(
+            activeThreadId,
+            messages.filter((msg) => msg.role === ChatCompletionRole.System)
+          )
     }
   }
-  const deleteConvo = async () => {
-    if (activeConvoId) {
-      try {
-        await pluginManager
-          .get<ConversationalPlugin>(PluginType.Conversational)
-          ?.deleteConversation(activeConvoId)
-        const currentConversations = userConversations.filter(
-          (c) => c.id !== activeConvoId
-        )
-        setUserConversations(currentConversations)
-        deleteMessages(activeConvoId)
-        setCurrentPrompt('')
-        toaster({
-          title: 'Chat successfully deleted.',
-          description: `Chat with ${activeModel?.name} has been successfully deleted.`,
-        })
-        if (currentConversations.length > 0) {
-          setActiveConvoId(currentConversations[0].id)
-        } else {
-          setActiveConvoId(undefined)
-        }
-      } catch (err) {
-        console.error(err)
+
+  const deleteThread = async () => {
+    if (!activeThreadId) {
+      alert('No active thread')
+      return
+    }
+    try {
+      await pluginManager
+        .get<ConversationalPlugin>(PluginType.Conversational)
+        ?.deleteThread(activeThreadId)
+      const availableThreads = threads.filter((c) => c.id !== activeThreadId)
+      setThreads(availableThreads)
+      deleteMessages(activeThreadId)
+      setCurrentPrompt('')
+      toaster({
+        title: 'Chat successfully deleted.',
+        description: `Chat with ${activeModel?.name} has been successfully deleted.`,
+      })
+      if (availableThreads.length > 0) {
+        setActiveConvoId(availableThreads[0].id)
+      } else {
+        setActiveConvoId(undefined)
       }
+    } catch (err) {
+      console.error(err)
     }
   }
 
   return {
-    cleanConvo,
-    deleteConvo,
+    cleanThread,
+    deleteThread,
   }
 }
