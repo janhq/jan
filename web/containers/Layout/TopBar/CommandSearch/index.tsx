@@ -17,7 +17,6 @@ import {
   SettingsIcon,
   DatabaseIcon,
   CpuIcon,
-  BookOpenIcon,
 } from 'lucide-react'
 
 import ShortCut from '@/containers/Shortcut'
@@ -38,21 +37,16 @@ export default function CommandSearch() {
 
   const menus = [
     {
-      name: 'Getting Started',
-      icon: <BookOpenIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.Welcome,
-    },
-    {
       name: 'Chat',
       icon: (
         <MessageCircleIcon size={16} className="mr-3 text-muted-foreground" />
       ),
-      state: MainViewState.Chat,
+      state: MainViewState.Thread,
     },
     {
       name: 'Explore Models',
       icon: <CpuIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.ExploreModels,
+      state: MainViewState.Hub,
     },
     {
       name: 'My Models',
@@ -85,7 +79,9 @@ export default function CommandSearch() {
 
   return (
     <Fragment>
-      <div className="relative">
+      {/* Temporary disable view search input until we have proper UI placement, but we keep function cmd + K for showing list page */}
+
+      {/* <div className="relative">
         <Button
           themes="outline"
           className="unset-drag h-8 w-[300px] justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
@@ -96,7 +92,7 @@ export default function CommandSearch() {
         <div className="absolute right-2 top-1/2 -translate-y-1/2">
           <ShortCut menu="K" />
         </div>
-      </div>
+      </div> */}
 
       <CommandModal open={open} onOpenChange={setOpen}>
         <CommandInput placeholder="Type a command or search..." />

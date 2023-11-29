@@ -10,18 +10,13 @@ import ChatScreen from '@/screens/Chat'
 import ExploreModelsScreen from '@/screens/ExploreModels'
 import MyModelsScreen from '@/screens/MyModels'
 import SettingsScreen from '@/screens/Settings'
-import WelcomeScreen from '@/screens/Welcome'
 
 export default function Page() {
   const { mainViewState } = useMainViewState()
 
   let children = null
   switch (mainViewState) {
-    case MainViewState.Welcome:
-      children = <WelcomeScreen />
-      break
-
-    case MainViewState.ExploreModels:
+    case MainViewState.Hub:
       children = <ExploreModelsScreen />
       break
 

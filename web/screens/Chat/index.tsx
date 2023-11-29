@@ -122,9 +122,7 @@ const ChatScreen = () => {
                       themes="secondary"
                       className="relative z-10"
                       size="sm"
-                      onClick={() =>
-                        setMainViewState(MainViewState.ExploreModels)
-                      }
+                      onClick={() => setMainViewState(MainViewState.Hub)}
                     >
                       Download Model
                     </Button>
@@ -156,9 +154,7 @@ const ChatScreen = () => {
                   <p className="mt-1">{`Let’s download your first model.`}</p>
                   <Button
                     className="mt-4"
-                    onClick={() =>
-                      setMainViewState(MainViewState.ExploreModels)
-                    }
+                    onClick={() => setMainViewState(MainViewState.Hub)}
                   >
                     Explore Models
                   </Button>
@@ -176,12 +172,12 @@ const ChatScreen = () => {
               )}
             </div>
           )}
-          <div className="mx-auto flex w-full flex-shrink-0 items-center justify-center space-x-4 p-4 lg:w-3/4">
+          <div className="mx-auto flex w-full flex-shrink-0 items-center justify-center space-x-4 px-8 py-4">
             <Textarea
               className="min-h-10 h-10 max-h-16 resize-none pr-20"
               ref={textareaRef}
               onKeyDown={(e) => onKeyDown(e)}
-              placeholder="Type your message ..."
+              placeholder="Enter your message..."
               disabled={stateModel.loading || !currentConvo}
               value={currentPrompt}
               onChange={(e) => onPromptChange(e)}

@@ -15,7 +15,6 @@ const TopBar = () => {
           </span>
         </div>
         <CommandSearch />
-        {/* Command without trigger interface */}
         <CommandListDownloadedModel />
       </div>
     </div>
