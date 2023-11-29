@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/Nous-Capybara-34B-GGUF/blob/main/nous-capybara-34b.Q5_K_M.gguf",
+    "id": "capybara-34b",
+    "object": "model",
+    "name": "Capybara 200k 34B",
+    "version": "1.0",
+    "description": "",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": "200000",
+      "ngl": "100"
+    },
+    "parameters": {
+      "temperature": "0.7",
+      "max_tokens": "200000",
+      "stream": "true"
+    },
+    "metadata": {
+      "author": "NousResearch, The Bloke",
+      "tags": ["General", "Big Context Length"],
+      "size": "24320000000"
+    }
+  }
+  

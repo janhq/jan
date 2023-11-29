@@ -1,0 +1,23 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/Marx-3B-v3-GGUF/blob/main/marx-3b-v3.Q4_K_M.gguf",
+    "id": "marx-3b",
+    "object": "model",
+    "name": "Marx 3B",
+    "version": "1",
+    "description": "",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": "2048",
+      "ngl": "100"
+    },
+    "parameters": {
+      "temperature": "0.7",
+      "max_tokens": "2048",
+      "stream": "true"
+    },
+    "metadata": {
+      "author": "acrastt, The Bloke",
+      "tags": ["General Use"],
+      "size": "1620000000"
+    }
+  }  

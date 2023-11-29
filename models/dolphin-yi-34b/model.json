@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/dolphin-2_2-yi-34b-GGUF/blob/main/dolphin-2_2-yi-34b.Q5_K_M.gguf",
+    "id": "dolphin-yi-34b",
+    "object": "model",
+    "name": "Dolphin Yi 34B",
+    "version": "1.0",
+    "description": "",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": "4096",
+      "ngl": "100"
+    },
+    "parameters": {
+      "temperature": "0.7",
+      "max_tokens": "4096",
+      "stream": "true"
+    },
+    "metadata": {
+      "author": "ehartford, The Bloke",
+      "tags": ["General Use", "Role-playing"],
+      "size": "24320000000"
+    }
+  }
+  

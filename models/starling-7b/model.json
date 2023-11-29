@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/Starling-LM-7B-alpha-GGUF/blob/main/starling-lm-7b-alpha.Q4_K_M.gguf",
+    "id": "strarling-7b",
+    "object": "model",
+    "name": "Strarling alpha 7B",
+    "version": "1.0",
+    "description": "",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": "8192",
+      "ngl": "100"
+    },
+    "parameters": {
+      "temperature": "0.7",
+      "max_tokens": "8192",
+      "stream": "true"
+    },
+    "metadata": {
+      "author": "Berkeley-nest, The Bloke",
+      "tags": ["General", "Code"],
+      "size": "4370000000"
+    }
+  }
+  

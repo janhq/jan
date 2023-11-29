@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/GOAT-70B-Storytelling-GGUF/blob/main/goat-70b-storytelling.Q5_K_M.gguf",
+    "id": "storytelling-70b",
+    "object": "model",
+    "name": "Storytelling 70B",
+    "version": "1",
+    "description": "",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": "4096",
+      "ngl": "100"
+    },
+    "parameters": {
+      "temperature": "0.7",
+      "max_tokens": "4096",
+      "stream": "true"
+    },
+    "metadata": {
+      "author": "GOAT-AI, The Bloke",
+      "tags": ["General Use", "Role-playing"],
+      "size": "48750000000"
+    }
+  }
+  

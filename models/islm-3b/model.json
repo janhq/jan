@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/UmbrellaCorp/IS-LM-3B_GGUF/blob/main/IS-LM-Q4_K_M.gguf",
+    "id": "islm-3b",
+    "object": "model",
+    "name": "IS LM 3B",
+    "version": "1",
+    "description": "",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": "2048",
+      "ngl": "100"
+    },
+    "parameters": {
+      "temperature": "0.7",
+      "max_tokens": "2048",
+      "stream": "true"
+    },
+    "metadata": {
+      "author": "UmbrellaCorp, The Bloke",
+      "tags": ["General Use", "Economics"],
+      "size": "1710000000"
+    }
+  }
+  

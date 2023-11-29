@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/OpenHermes-2.5-Mistral-7B-GGUF/blob/main/openhermes-2.5-mistral-7b.Q4_K_M.gguf",
+    "id": "openhermes-2.5-mistral-7b",
+    "object": "model",
+    "name": "Openhermes 2.5 Mistral 7B",
+    "version": "2.5",
+    "description": "The Teknium-developed OpenHermes 2.5 Mistral 7B incorporates additional code datasets, more than a million GPT-4 generated data examples, and other high-quality open datasets. This enhancement led to significant improvement in benchmarks, highlighting its improved skill in handling code-centric tasks.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": "4096",
+      "ngl": "100"
+    },
+    "parameters": {
+      "temperature": "0.7",
+      "max_tokens": "4096",
+      "stream": "true"
+    },
+    "metadata": {
+      "author": "Teknium, The Bloke",
+      "tags": ["General", "Roleplay"],
+      "size": "4370000000"
+    }
+  }
+  

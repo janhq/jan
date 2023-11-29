@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/Noromaid-20B-v0.1.1-GGUF/blob/main/noromaid-20b-v0.1.1.Q4_K_M.gguf",
+    "id": "noromaid-20b",
+    "object": "model",
+    "name": "Noromaid 20B",
+    "version": "1.0",
+    "description": "",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": "4096",
+      "ngl": "100"
+    },
+    "parameters": {
+      "temperature": "0.7",
+      "max_tokens": "4096",
+      "stream": "true"
+    },
+    "metadata": {
+      "author": "NeverSleep, The Bloke",
+      "tags": ["Role-playing"],
+      "size": "12040000000"
+    }
+  }
+  

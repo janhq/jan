@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/lzlv_70B-GGUF/blob/main/lzlv_70b_fp16_hf.Q5_K_M.gguf",
+    "id": "lzlv-70b",
+    "object": "model",
+    "name": "Lzlv 70B",
+    "version": "1",
+    "description": "",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": "4096",
+      "ngl": "100"
+    },
+    "parameters": {
+      "temperature": "0.7",
+      "max_tokens": "4096",
+      "stream": "true"
+    },
+    "metadata": {
+      "author": "lizpreciatior, The Bloke",
+      "tags": ["General Use", "Role-playing"],
+      "size": "48750000000"
+    }
+  }
+  
