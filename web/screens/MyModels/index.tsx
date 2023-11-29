@@ -161,9 +161,7 @@ const MyModelsScreen = () => {
                   <Button
                     themes="secondary"
                     block
-                    onClick={() =>
-                      setMainViewState(MainViewState.ExploreModels)
-                    }
+                    onClick={() => setMainViewState(MainViewState.Hub)}
                   >
                     Explore Models
                   </Button>

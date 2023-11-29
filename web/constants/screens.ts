@@ -1,7 +1,6 @@
 export enum MainViewState {
-  Welcome,
-  ExploreModels,
+  Hub,
   MyModels,
   Setting,
-  Chat,
+  Thread,
 }

@@ -38,7 +38,7 @@ const WelcomeScreen = () => {
             <p className="mt-1">{`Let’s download your first model`}</p>
             <Button
               className="mt-4"
-              onClick={() => setMainViewState(MainViewState.ExploreModels)}
+              onClick={() => setMainViewState(MainViewState.Hub)}
             >
               Explore Models
             </Button>
@@ -60,7 +60,7 @@ const WelcomeScreen = () => {
             <p className="mt-1">{`You are ready to converse.`}</p>
             <Button
               className="mt-4"
-              onClick={() => setMainViewState(MainViewState.Chat)}
+              onClick={() => setMainViewState(MainViewState.Thread)}
             >
               Start a conversation
             </Button>

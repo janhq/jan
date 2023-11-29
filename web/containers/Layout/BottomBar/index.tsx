@@ -63,7 +63,7 @@ const BottomBar = () => {
             <Button
               size="sm"
               themes="outline"
-              onClick={() => setMainViewState(MainViewState.ExploreModels)}
+              onClick={() => setMainViewState(MainViewState.Hub)}
             >
               Download your first model
             </Button>

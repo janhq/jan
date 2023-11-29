@@ -1,5 +1,3 @@
-import { useContext } from 'react'
-
 import {
   Tooltip,
   TooltipContent,
@@ -12,8 +10,7 @@ import {
   MessageCircleIcon,
   SettingsIcon,
   DatabaseIcon,
-  CpuIcon,
-  BookOpenIcon,
+  LayoutGridIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -34,23 +31,18 @@ export default function RibbonNav() {
 
   const primaryMenus = [
     {
-      name: 'Getting Started',
-      icon: <BookOpenIcon size={20} className="flex-shrink-0" />,
-      state: MainViewState.Welcome,
-    },
-    {
       name: 'Chat',
       icon: <MessageCircleIcon size={20} className="flex-shrink-0" />,
-      state: MainViewState.Chat,
+      state: MainViewState.Thread,
+    },
+    {
+      name: 'Hub',
+      icon: <LayoutGridIcon size={20} className="flex-shrink-0" />,
+      state: MainViewState.Hub,
     },
   ]
 
   const secondaryMenus = [
-    {
-      name: 'Explore Models',
-      icon: <CpuIcon size={20} className="flex-shrink-0" />,
-      state: MainViewState.ExploreModels,
-    },
     {
       name: 'My Models',
       icon: <DatabaseIcon size={20} className="flex-shrink-0" />,
