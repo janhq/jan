@@ -3,22 +3,22 @@
     "id": "storytelling-70b",
     "object": "model",
     "name": "Storytelling 70B",
-    "version": "1",
-    "description": "",
+    "version": "1.0",
+    "description": "The GOAT-70B-Storytelling model is designed for autonomous story-writing, including crafting books and movie scripts. Based on the LLaMA 2 70B architecture, this model excels in generating cohesive and engaging narratives using inputs like plot outlines and character profiles.",
     "format": "gguf",
     "settings": {
-      "ctx_len": "4096",
-      "ngl": "100"
+      "ctx_len": 4096,
+      "system_prompt": "",
+      "user_prompt": "### USER: ",
+      "ai_prompt": "\n### ASSISTANT: "
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "4096",
-      "stream": "true"
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "GOAT-AI, The Bloke",
-      "tags": ["General Use", "Role-playing"],
-      "size": "48750000000"
+      "tags": ["General Use", "Writing"],
+      "size": 48750000000
     }
   }
   
