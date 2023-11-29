@@ -7,18 +7,18 @@
     "description": "OpenChat represents a breakthrough in the realm of open-source language models. By implementing the C-RLFT fine-tuning strategy, inspired by offline reinforcement learning, this 7B model achieves results on par with ChatGPT (March).",
     "format": "gguf",
     "settings": {
-      "ctx_len": "2048",
-      "ngl": "100"
+      "ctx_len": 8192,
+      "system_prompt": "",
+      "user_prompt": "GPT4 User: ",
+      "ai_prompt": "<|end_of_turn|>\nGPT4 Assistant: " 
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "2048",
-      "stream": "true"
+      "max_tokens": 8192
     },
     "metadata": {
       "author": "OpenChat, The Bloke",
       "tags": ["General", "Code"],
-      "size": "4370000000"
+      "size": 4370000000
     }
   }
   
