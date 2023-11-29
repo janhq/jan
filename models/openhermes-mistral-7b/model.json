@@ -3,22 +3,22 @@
     "id": "openhermes-2.5-mistral-7b",
     "object": "model",
     "name": "Openhermes 2.5 Mistral 7B",
-    "version": "2.5",
-    "description": "The Teknium-developed OpenHermes 2.5 Mistral 7B incorporates additional code datasets, more than a million GPT-4 generated data examples, and other high-quality open datasets. This enhancement led to significant improvement in benchmarks, highlighting its improved skill in handling code-centric tasks.",
+    "version": "1.0",
+    "description": "The OpenHermes 2.5 Mistral 7B incorporates additional code datasets, more than a million GPT-4 generated data examples, and other high-quality open datasets. This enhancement led to significant improvement in benchmarks, highlighting its improved skill in handling code-centric tasks.",
     "format": "gguf",
     "settings": {
-      "ctx_len": "4096",
-      "ngl": "100"
+      "ctx_len": 4096,
+      "system_prompt": "<|im_start|>system\n",
+      "user_prompt": "<|im_end|>\n<|im_start|>user\n",
+      "ai_prompt": "<|im_end|>\n<|im_start|>assistant\n" 
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "4096",
-      "stream": "true"
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "Teknium, The Bloke",
       "tags": ["General", "Roleplay"],
-      "size": "4370000000"
+      "size": 4370000000
     }
   }
   
