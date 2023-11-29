@@ -4,21 +4,21 @@
     "object": "model",
     "name": "IS LM 3B",
     "version": "1",
-    "description": "",
+    "description": "IS LM 3B, based on the StableLM 3B model is specifically finetuned for economic analysis using DataForge Economics and QLoRA over three epochs, enhancing its proficiency in economic forecasting and analysis.",
     "format": "gguf",
     "settings": {
-      "ctx_len": "2048",
-      "ngl": "100"
+      "ctx_len": 2048,
+      "system_prompt": "",
+      "user_prompt": "USER: ",
+      "ai_prompt": "ASSISTANT: "
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "2048",
-      "stream": "true"
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "UmbrellaCorp, The Bloke",
       "tags": ["General Use", "Economics"],
-      "size": "1710000000"
+      "size": 1710000000
     }
   }
   
