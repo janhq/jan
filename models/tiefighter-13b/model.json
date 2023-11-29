@@ -4,21 +4,21 @@
     "object": "model",
     "name": "Tiefighter 13B",
     "version": "1.0",
-    "description": "",
+    "description": "Tiefighter-13B is a highly creative, merged AI model achieved by combining various 'LORAs' on top of an existing merge, particularly focusing on storytelling and improvisation. This model excels in story writing, chatbots, and adventuring, and is designed to perform better with less detailed inputs, leveraging its inherent creativity.",
     "format": "gguf",
     "settings": {
-      "ctx_len": "4096",
-      "ngl": "100"
+      "ctx_len": 4096,
+      "system_prompt": "",
+      "user_prompt": "### Instruction: ",
+      "ai_prompt": "\n### Response: "
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "4096",
-      "stream": "true"
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "KoboldAI, The Bloke",
       "tags": ["General Use", "Role-playing"],
-      "size": "9230000000"
+      "size": 9230000000
     }
   }
   
