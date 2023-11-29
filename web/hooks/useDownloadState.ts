@@ -10,7 +10,6 @@ const setDownloadStateAtom = atom(null, (get, set, state: DownloadState) => {
   console.debug(
     `current download state for ${state.fileName} is ${JSON.stringify(state)}`
   )
-  state.fileName = state.fileName.replace('models/', '')
   currentState[state.fileName] = state
   set(modelDownloadStateAtom, currentState)
 })
