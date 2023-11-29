@@ -4,7 +4,7 @@
     "object": "model",
     "name": "Wizard Coder Python 13B",
     "version": "1.0",
-    "description": "WizardCoder-Python-34B is a SOTA coding model major models like ChatGPT-3.5. This model based on the Llama2 architecture, demonstrate high proficiency in specific domains like coding and mathematics.",
+    "description": "WizardCoder-Python-13B is a Python coding model major models like ChatGPT-3.5. This model based on the Llama2 architecture, demonstrate high proficiency in specific domains like coding and mathematics.",
     "format": "gguf",
     "settings": {
       "ctx_len": 16384,
