@@ -1,5 +1,5 @@
 {
-  "name": "@janhq/inference-plugin",
+  "name": "@janhq/inference-plugin-nitro",
   "version": "1.0.21",
   "description": "Inference Plugin, powered by @janhq/nitro, bring a high-performance Llama model inference in pure C++.",
   "main": "dist/index.js",

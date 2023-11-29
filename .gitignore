@@ -18,7 +18,7 @@ plugin-core/lib
 core/lib/**
 
 # Nitro binary files
-plugins/inference-plugin/nitro/*/nitro
-plugins/inference-plugin/nitro/*/*.exe
-plugins/inference-plugin/nitro/*/*.dll
-plugins/inference-plugin/nitro/*/*.metal
+plugins/inference-engine/nitro/*/nitro
+plugins/inference-engine/nitro/*/*.exe
+plugins/inference-engine/nitro/*/*.dll
+plugins/inference-engine/nitro/*/*.metal
