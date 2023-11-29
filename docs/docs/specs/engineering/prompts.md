@@ -1,5 +1,6 @@
 ---
 title: Prompts
+slug: /specs/prompts
 ---
 
 - [ ] /prompts folder

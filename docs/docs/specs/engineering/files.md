@@ -1,5 +1,6 @@
 ---
 title: "Files"
+slug: /specs/files
 ---
 
 :::warning

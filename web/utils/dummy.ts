@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import { ModelCatalog } from '@janhq/core'
+import { ModelCatalog, ModelState } from '@janhq/core'
 
 export const dummyModel: ModelCatalog = {
   id: 'aladar/TinyLLama-v0-GGUF',
@@ -14,37 +14,106 @@ export const dummyModel: ModelCatalog = {
   tags: ['freeform', 'tags'],
   availableVersions: [
     {
-      name: 'TinyLLama-v0.Q8_0.gguf',
-      quantizationName: '',
-      bits: 2,
-      size: 5816320,
-      maxRamRequired: 256000000,
-      usecase:
-        'smallest, significant quality loss - not recommended for most purposes',
-      downloadLink:
+      object: 'model',
+      version: '1.0.0',
+      source_url:
         'https://huggingface.co/aladar/TinyLLama-v0-GGUF/resolve/main/TinyLLama-v0.Q8_0.gguf',
+      id: 'TinyLLama-v0.Q8_0.gguf',
+      name: 'TinyLLama-v0.Q8_0.gguf',
+      owned_by: 'you',
+      created: 0,
+      description: '',
+      state: ModelState.ToDownload,
+      settings: {
+        ctx_len: 2048,
+        ngl: 100,
+        embedding: true,
+        n_parallel: 4,
+      },
+      parameters: {
+        temperature: 0.7,
+        token_limit: 2048,
+        top_k: 0,
+        top_p: 1,
+        stream: true,
+      },
+      metadata: {
+        engine: '',
+        quantization: '',
+        size: 5816320,
+        binaries: [],
+        maxRamRequired: 256000000,
+        author: 'aladar',
+        avatarUrl: '',
+      },
     },
     {
-      name: 'TinyLLama-v0.f16.gguf',
-      quantizationName: '',
-      bits: 2,
-      size: 10240000,
-      maxRamRequired: 256000000,
-      usecase:
-        'smallest, significant quality loss - not recommended for most purposes',
-      downloadLink:
+      object: 'model',
+      version: '1.0.0',
+      source_url:
         'https://huggingface.co/aladar/TinyLLama-v0-GGUF/resolve/main/TinyLLama-v0.f16.gguf',
+      id: 'TinyLLama-v0.f16.gguf',
+      name: 'TinyLLama-v0.f16.gguf',
+      owned_by: 'you',
+      created: 0,
+      description: '',
+      state: ModelState.ToDownload,
+      settings: {
+        ctx_len: 2048,
+        ngl: 100,
+        embedding: true,
+        n_parallel: 4,
+      },
+      parameters: {
+        temperature: 0.7,
+        token_limit: 2048,
+        top_k: 0,
+        top_p: 1,
+        stream: true,
+      },
+      metadata: {
+        engine: '',
+        quantization: '',
+        size: 5816320,
+        binaries: [],
+        maxRamRequired: 256000000,
+        author: 'aladar',
+        avatarUrl: '',
+      },
     },
     {
-      name: 'TinyLLama-v0.f32.gguf',
-      quantizationName: '',
-      bits: 2,
-      size: 19660000,
-      maxRamRequired: 256000000,
-      usecase:
-        'smallest, significant quality loss - not recommended for most purposes',
-      downloadLink:
+      object: 'model',
+      version: '1.0.0',
+      source_url:
         'https://huggingface.co/aladar/TinyLLama-v0-GGUF/resolve/main/TinyLLama-v0.f32.gguf',
+      id: 'TinyLLama-v0.f32.gguf',
+      name: 'TinyLLama-v0.f32.gguf',
+      owned_by: 'you',
+      created: 0,
+      description: '',
+      state: ModelState.ToDownload,
+      settings: {
+        ctx_len: 2048,
+        ngl: 100,
+        embedding: true,
+        n_parallel: 4,
+      },
+      parameters: {
+        temperature: 0.7,
+        token_limit: 2048,
+        top_k: 0,
+        top_p: 1,
+        stream: true,
+      },
+      metadata: {
+        engine: '',
+        quantization: '',
+        size: 5816320,
+        binaries: [],
+        maxRamRequired: 256000000,
+        author: 'aladar',
+        avatarUrl: '',
+      },
     },
   ],
 }

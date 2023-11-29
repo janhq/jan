@@ -1,5 +1,6 @@
 ---
 title: Models
+slug: /specs/models
 ---
 
 :::caution
@@ -13,7 +14,7 @@ This is currently under development.
 In Jan, models are primary entities with the following capabilities:
 
 - Users can import, configure, and run models locally.
-- An [OpenAI Model API](https://platform.openai.com/docs/api-reference/models) compatible endpoint at `localhost:3000/v1/models`.
+- An [OpenAI Model API](https://platform.openai.com/docs/api-reference/models) compatible endpoint at `localhost:1337/v1/models`.
 - Supported model formats: `ggufv3`, and more.
 
 ## Folder Structure

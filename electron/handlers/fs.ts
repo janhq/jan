@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
+import readline from 'readline'
 
 /**
  * Handles file system operations.
@@ -97,7 +98,7 @@ export function handleFsIPCs() {
    */
   ipcMain.handle('rmdir', async (event, path: string): Promise<void> => {
     return new Promise((resolve, reject) => {
-      fs.rmdir(join(userSpacePath, path), { recursive: true }, (err) => {
+      fs.rm(join(userSpacePath, path), { recursive: true }, (err) => {
         if (err) {
           reject(err)
         } else {
@@ -152,5 +153,46 @@ export function handleFsIPCs() {
     })
 
     return result
+  })
+
+  /**
+   * Appends data to a file in the user data directory.
+   * @param event - The event object.
+   * @param path - The path of the file to append to.
+   * @param data - The data to append to the file.
+   * @returns A promise that resolves when the file has been written.
+   */
+  ipcMain.handle('appendFile', async (_event, path: string, data: string) => {
+    return new Promise((resolve, reject) => {
+      fs.appendFile(join(userSpacePath, path), data, 'utf8', (err) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve(data)
+        }
+      })
+    })
+  })
+
+  ipcMain.handle('readLineByLine', async (_event, path: string) => {
+    const fullPath = join(userSpacePath, path)
+
+    return new Promise((res, rej) => {
+      try {
+        const readInterface = readline.createInterface({
+          input: fs.createReadStream(fullPath),
+        })
+        const lines: any = []
+        readInterface
+          .on('line', function (line) {
+            lines.push(line)
+          })
+          .on('close', function () {
+            res(lines)
+          })
+      } catch (err) {
+        rej(err)
+      }
+    })
   })
 }
