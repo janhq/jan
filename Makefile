@@ -17,7 +17,7 @@ install-and-build: build-uikit
 ifeq ($(OS),Windows_NT)
 	powershell -Command "yarn config set network-timeout 300000; \
 	$$env:NITRO_VERSION = Get-Content .\\plugins\\inference-plugin\\nitro\\version.txt; \
-	Write-Output \"Nitro version: $$env:NITRO_VERSION\"; yarn build:core; yarn install; yarn build:plugins"
+	Write-Output \"Nitro version: $$env:NITRO_VERSION\"; yarn build:core; yarn install; yarn build:plugins" 
 else
 	yarn build:core
 	yarn install

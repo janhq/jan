@@ -1,32 +1,31 @@
-import { join } from 'path'
 import { setupMenu } from './utils/menu'
-import { handleFsIPCs } from './handlers/fs'
 import app from 'express'
-
+import bodyParser from 'body-parser'
+import fs from 'fs'
 /**
  * Managers
  **/
 import { ModuleManager } from './managers/module'
 import { PluginManager } from './managers/plugin'
 
-/**
- * IPC Handlers
- **/
-import { handleDownloaderIPCs } from './handlers/download'
-import { handlePluginIPCs } from './handlers/plugin'
 
-app().listen(6969, ()=>{
+const server = app()
+server.use(bodyParser)
+
+const USER_ROOT_DIR = '.data'
+server.post("fs", (req, res) => {
+  let op = req.body.op;
+  switch(op){
+    case 'readFile':
+      fs.readFile(req.body.path, ()=>{})
+    case 'writeFile':
+      fs.writeFile(req.body.path, Buffer.from(req.body.data, "base64"), ()=>{})
+  }
+})
+
+server.listen(1337, ()=>{
   PluginManager.instance.migratePlugins()
   PluginManager.instance.setupPlugins()
   setupMenu()
-  handleIPCs()
 })
 
-/**
- * Handles various IPC messages from the renderer process.
- */
-function handleIPCs() {
-  handleFsIPCs()
-  handleDownloaderIPCs()
-  handlePluginIPCs()
-}
