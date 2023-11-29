@@ -64,20 +64,19 @@ Here's a standard example `model.json` for a GGUF model.
 "state": enum[null, "downloading", "ready", "starting", "stopping", ...]
 "format": "ggufv3",                 // Defaults to "ggufv3"
 "settings": {                       // Models are initialized with settings
-    "ctx_len": "2048",
-    "ngl": "100",
-    "embedding": "true",
-    "n_parallel": "4",
+    "ctx_len": 2048,
+    "ngl": 100,
+    "embedding": true,
+    "n_parallel": 4,
 },
 "parameters": {                     // Models are called parameters
-    "stream": "true",
-    "model": "gpt-3.5-turbo",             
-    "max_tokens": "2048",
+    "stream": true,
+    "max_tokens": 2048,
     "stop": ["<endofstring>"],      // This usually can be left blank, only used with specific need from model author
-    "frequency_penalty": "0",
-    "presence_penalty": "0",
-    "temperature": "0.7",
-    "top_p": "0.95"
+    "frequency_penalty": 0,
+    "presence_penalty": 0,
+    "temperature": 0.7,
+    "top_p": 0.95
 },
 "metadata": {},                     // Defaults to {}
 "assets": [                         // Defaults to current dir
