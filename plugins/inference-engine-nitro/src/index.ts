@@ -130,6 +130,7 @@ export default class JanInferencePlugin implements InferencePlugin {
    * @param {MessageRequest} data - The data for the new message request.
    */
   private static async handleMessageRequest(
+    // TODO: handle engine selection
     data: MessageRequest,
     instance: JanInferencePlugin
   ) {
@@ -151,6 +152,7 @@ export default class JanInferencePlugin implements InferencePlugin {
     instance.isCancelled = false;
     instance.controller = new AbortController();
 
+    // TODO: Change endpoint for each services
     requestInference(data.messages, instance.controller).subscribe({
       next: (content) => {
         const messageContent: ThreadContent = {
