@@ -3,22 +3,22 @@
     "id": "xwin-70b",
     "object": "model",
     "name": "Xwin LM 70B",
-    "version": "1",
-    "description": "",
+    "version": "1.0",
+    "description": "Xwin-LM, based on Llama2 models, emphasizes alignment and exhibits advanced language understanding, text generation, and role-playing abilities.",
     "format": "gguf",
     "settings": {
-      "ctx_len": "4096",
-      "ngl": "100"
+      "ctx_len": 4096,
+      "system_prompt": "",
+      "user_prompt": "USER: ",
+      "ai_prompt": "ASSISTANT: "
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "4096",
-      "stream": "true"
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "Xwin-LM, The Bloke",
       "tags": ["General Use", "Role-playing"],
-      "size": "48750000000"
+      "size": 48750000000
     }
   }
   
