@@ -3,7 +3,7 @@
     "id": "dolphin-yi-34b",
     "object": "model",
     "name": "Dolphin Yi 34B",
-    "version": 1.0,
+    "version": "1.0",
     "description": "Dolphin, based on the Yi-34B model and enhanced with features like conversation and empathy, is trained on a unique dataset for advanced multi-turn conversations. Notably uncensored, it requires careful implementation of an alignment layer for ethical use.",
     "format": "gguf",
     "settings": {

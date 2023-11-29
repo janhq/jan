@@ -3,7 +3,7 @@
     "id": "deepseek-coder-1.3b",
     "object": "model",
     "name": "Deepseek Coder 1.3B",
-    "version": 1.0,
+    "version": "1.0",
     "description": "",
     "format": "gguf",
     "settings": {
