@@ -3,22 +3,19 @@
     "id": "yarn-70b",
     "object": "model",
     "name": "Yarn 32k 70B",
-    "version": "1",
-    "description": "",
+    "version": "1,0",
+    "description": "Yarn-Llama-2-70b-32k is designed specifically for handling long contexts. It represents an extension of the Llama-2-70b-hf model, now supporting a 32k token context window.",
     "format": "gguf",
     "settings": {
-      "ctx_len": "4096",
-      "ngl": "100"
+      "ctx_len": 32768
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "4096",
-      "stream": "true"
+      "max_tokens": 32768
     },
     "metadata": {
       "author": "NousResearch, The Bloke",
-      "tags": ["General Use", "Role-playing"],
-      "size": "48750000000"
+      "tags": ["General Use", "Big Context Length"],
+      "size": 48750000000
     }
   }
   
