@@ -7,18 +7,18 @@
     "description": "",
     "format": "gguf",
     "settings": {
-      "ctx_len": "4096",
-      "ngl": "100"
+      "ctx_len": 4096,
+      "system_prompt": "Mythomax L2 13b, an advanced AI model derived from MythoMix, merges MythoLogic-L2's deep comprehension with Huginn's writing skills through a unique tensor merge technique, excelling in roleplaying and storytelling.",
+      "user_prompt": "### Instruction: ",
+      "ai_prompt": "### Response: "
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "4096",
-      "stream": "true"
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "Gryphe, The Bloke",
       "tags": ["Role-playing"],
-      "size": "9230000000"
+      "size": 9230000000
     }
   }
   
