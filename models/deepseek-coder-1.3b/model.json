@@ -7,17 +7,17 @@
     "description": "",
     "format": "gguf",
     "settings": {
-      "ctx_len": 2048,
+      "ctx_len": 16384,
       "system_prompt": "",
       "user_prompt": "",
       "ai_prompt": ""
     },
     "parameters": {
-      "max_tokens": 2048
+      "max_tokens": 16384
     },
     "metadata": {
       "author": "deepseek, The Bloke",
       "tags": ["Code"],
-      "size": "870000000"
+      "size": 870000000
     }
   }
