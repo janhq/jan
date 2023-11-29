@@ -4,21 +4,21 @@
     "object": "model",
     "name": "Noromaid 20B",
     "version": "1.0",
-    "description": "",
+    "description": "The Noromaid 20b model is designed for role-playing and general use, featuring a unique touch with the no_robots dataset that enhances human-like behavior.",
     "format": "gguf",
     "settings": {
-      "ctx_len": "4096",
-      "ngl": "100"
+      "ctx_len": 4096,
+      "system_prompt": "",
+      "user_prompt": "### Instruction: ",
+      "ai_prompt": "### Response: "
     },
     "parameters": {
-      "temperature": "0.7",
-      "max_tokens": "4096",
-      "stream": "true"
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "NeverSleep, The Bloke",
       "tags": ["Role-playing"],
-      "size": "12040000000"
+      "size": 12040000000
     }
   }
   
