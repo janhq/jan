@@ -1,0 +1,190 @@
+name: Jan Build Electron App Nightly
+
+on:
+  schedule:
+    - cron: '0 16 * * *' # At 4 PM UTC, which is 11 AM UTC+7
+
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'main'
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+
+      - name: Update app version based on latest release tag with build number
+        id: version_update
+        run: |
+          # Get the latest release tag from GitHub API
+          LATEST_TAG=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+          
+          # Remove the 'v' and append the build number to the version
+          NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
+          echo "New version: $NEW_VERSION"
+          
+          # Update the version in electron/package.json
+          jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          echo "::set-output name=new_version::$NEW_VERSION"
+
+      - name: Get Cer for code signing
+        run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
+        shell: bash
+        env:
+          CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+
+      - uses: apple-actions/import-codesign-certs@v2
+        continue-on-error: true
+        with:
+          p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+
+      - name: Build and publish app
+        run: |
+          make build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: "/tmp/codesign.p12"
+          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APP_PATH: "."
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg.zip
+          path: ./electron/dist/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg.zip
+          path: ./electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg
+
+  build-windows-x64:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Update app version base on tag
+        id: version_update
+        shell: bash
+        run: |
+          # Get the latest release tag from GitHub API
+          LATEST_TAG=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+          
+          # Remove the 'v' and append the build number to the version
+          NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
+          echo "New version: $NEW_VERSION"
+          
+          # Update the version in electron/package.json
+          jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+
+          echo "::set-output name=new_version::$NEW_VERSION"
+
+      - name: Build app
+        shell: cmd
+        run: |
+          make build
+
+      - name: Windows Code Sign with AzureSignTool
+        run: |
+          dotnet tool install --global AzureSignTool
+          cd ./electron/dist
+          azuresigntool.exe sign -kvu "${{ secrets.AZURE_KEY_VAULT_URI }}" -kvi "${{ secrets.AZURE_CLIENT_ID }}" -kvt "${{ secrets.AZURE_TENANT_ID }}" -kvs "${{ secrets.AZURE_CLIENT_SECRET }}" -kvc ${{ secrets.AZURE_CERT_NAME }} -tr http://timestamp.globalsign.com/tsa/r6advanced1 -v "jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe.zip
+          path: ./electron/dist/*.exe
+          
+  build-linux-x64:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_TOKEN }}
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Update app version base on tag
+        id: version_update
+        run: |
+          # Get the latest release tag from GitHub API
+          LATEST_TAG=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+          
+          # Remove the 'v' and append the build number to the version
+          NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
+          echo "New version: $NEW_VERSION"
+          
+          # Update the version in electron/package.json
+          jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          echo "::set-output name=new_version::$NEW_VERSION"
+
+      - name: Build and publish app
+        run: |
+          make build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb.zip
+          path: ./electron/dist/*.deb
+
+  noti-discord:
+    needs: [build-macos, build-windows-x64, build-linux-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Discord
+        uses: Ilshidur/action-discord@master
+        with:
+          args: "Nightly build artifact: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}"
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
