@@ -256,7 +256,7 @@ paths:
       x-codeSamples:
         - lang: "cURL"
           source: |
-            curl -X POST {JAN_URL}/v1/threads \
+            curl -X POST http://localhost:1337/v1/threads \
               -H "Content-Type: application/json" \
               -d '{
                   "messages": [{
@@ -299,7 +299,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-              curl {JAN_URL}/v1/threads \
+              curl http://localhost:1337/v1/threads \
                 -H "Content-Type: application/json" \
   
   /threads/{thread_id}:
@@ -330,7 +330,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}
+            curl http://localhost:1337/v1/threads/{thread_id}
     post:
       operationId: modifyThread
       tags:
@@ -370,7 +370,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-                curl -X POST {JAN_URL}/v1/threads/{thread_id} \
+                curl -X POST http://localhost:1337/v1/threads/{thread_id} \
                   -H "Content-Type: application/json" \
                   -d '{
                       "messages": [{
@@ -382,7 +382,6 @@ paths:
                           "content": "How does AI work? Explain it in simple terms."
                       }]
                   }'
-      
     delete:
       operationId: deleteThread
       tags:
@@ -399,7 +398,6 @@ paths:
             example: thread_abc123
           description: |
             The ID of the thread to be deleted.
-
       responses:
         "200":
           description: Thread deleted successfully
@@ -410,8 +408,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl -X DELETE {JAN_URL}/v1/threads/{thread_id}
-
+            curl -X DELETE http://localhost:1337/v1/threads/{thread_id}
 
   /threads/{thread_id}/assistants:
     get:
@@ -420,8 +417,6 @@ paths:
         - Threads
       summary: Get Thread.Assistants
       description: |
-        
-
         Can achieve this goal by calling Get thread API
       parameters:
         - in: path
@@ -441,7 +436,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}/assistants
+            curl http://localhost:1337/v1/threads/{thread_id}/assistants
 
   /threads/{thread_id}/assistants/{assistants_id}:
     post:
@@ -461,8 +456,6 @@ paths:
         - Threads
       summary: List Thread.Messages
       description: | 
-        
-
         Can achieve this goal by calling Get Thread API
       parameters:
         - in: path
@@ -482,7 +475,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}
+            curl http://localhost:1337/v1/threads/{thread_id}
 
   ### MESSAGES
   /threads/{thread_id}/messages:
@@ -502,7 +495,6 @@ paths:
             example: thread_abc123
           description: |
             The ID of the thread from which to retrieve messages.
-
       responses:
         "200":
           description: List of messages retrieved successfully
@@ -513,7 +505,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}/messages \
+            curl http://localhost:1337/v1/threads/{thread_id}/messages \
               -H "Content-Type: application/json"
     post:
       operationId: createMessage
@@ -531,7 +523,6 @@ paths:
             example: thread_abc123
           description: |
             The ID of the thread to which the message will be posted.
-
       requestBody:
         required: true
         content:
@@ -567,7 +558,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-              curl -X POST {JAN_URL}/v1/threads/{thread_id}/messages \
+              curl -X POST http://localhost:1337/v1/threads/{thread_id}/messages \
                 -H "Content-Type: application/json" \
                 -d '{
                   "role": "user",
@@ -611,7 +602,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-                curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id} \
+                curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id} \
                   -H "Content-Type: application/json"
 
   /threads/{thread_id}/messages/{message_id}/files:
@@ -652,7 +643,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id}/files \
+            curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}/files \
               -H "Content-Type: application/json"
 
   /threads/{thread_id}/messages/{message_id}/files/{file_id}:
@@ -701,7 +692,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id}/files/{file_id} \
+            curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}/files/{file_id} \
               -H "Content-Type: application/json"
 
 x-webhooks:
