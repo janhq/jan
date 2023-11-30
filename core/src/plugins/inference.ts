@@ -1,4 +1,4 @@
-import { MessageRequest, ThreadMessage } from "../index";
+import { MessageRequest, ModelSettingParams, ThreadMessage } from "../index";
 import { JanPlugin } from "../plugin";
 
 /**
@@ -7,9 +7,9 @@ import { JanPlugin } from "../plugin";
 export abstract class InferencePlugin extends JanPlugin {
   /**
    * Initializes the model for the plugin.
-   * @param modelFileName - The name of the file containing the model.
+   * @param modelId - The ID of the model to initialize.
    */
-  abstract initModel(modelFileName: string): Promise<void>;
+  abstract initModel(modelId: string, settings?: ModelSettingParams): Promise<void>;
 
   /**
    * Stops the model for the plugin.

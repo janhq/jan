@@ -121,22 +121,10 @@ jobs:
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
 
-      - name: Build uikit
+      - name: Build app
+        shell: cmd
         run: |
-          cd uikit
-          yarn config set network-timeout 300000
-          yarn install
-          yarn build
-
-      - name: Install yarn dependencies
-        shell: powershell
-        run: |
-          yarn config set network-timeout 300000
-          yarn build:core
-          yarn install
-          $env:NITRO_VERSION = Get-Content .\plugins\inference-plugin\nitro\version.txt; echo $env:NITRO_VERSION
-          yarn build:plugins
-          yarn build
+          make build
 
       - name: Windows Code Sign with AzureSignTool
         run: |

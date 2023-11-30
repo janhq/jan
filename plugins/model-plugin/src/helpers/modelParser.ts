@@ -1,32 +1,46 @@
 import { ModelCatalog } from '@janhq/core'
 
-export function parseToModel(schema: ModelSchema): ModelCatalog {
+export const parseToModel = (modelGroup): ModelCatalog => {
   const modelVersions = []
-  schema.versions.forEach((v) => {
-    const version = {
+  modelGroup.versions.forEach((v) => {
+    const model = {
+      object: 'model',
+      version: modelGroup.version,
+      source_url: v.downloadLink,
+      id: v.name,
       name: v.name,
-      quantMethod: v.quantMethod,
-      bits: v.bits,
-      size: v.size,
-      maxRamRequired: v.maxRamRequired,
-      usecase: v.usecase,
-      downloadLink: v.downloadLink,
+      owned_by: 'you',
+      created: 0,
+      description: modelGroup.longDescription,
+      state: 'to_download',
+      settings: v.settings,
+      parameters: v.parameters,
+      metadata: {
+        engine: '',
+        quantization: v.quantMethod,
+        size: v.size,
+        binaries: [],
+        maxRamRequired: v.maxRamRequired,
+        author: modelGroup.author,
+        avatarUrl: modelGroup.avatarUrl,
+      },
     }
-    modelVersions.push(version)
+    modelVersions.push(model)
   })
 
-  const model: ModelCatalog = {
-    id: schema.id,
-    name: schema.name,
-    shortDescription: schema.shortDescription,
-    avatarUrl: schema.avatarUrl,
-    author: schema.author,
-    version: schema.version,
-    modelUrl: schema.modelUrl,
-    tags: schema.tags,
-    longDescription: schema.longDescription,
-    releaseDate: 0,
+  const modelCatalog: ModelCatalog = {
+    id: modelGroup.id,
+    name: modelGroup.name,
+    avatarUrl: modelGroup.avatarUrl,
+    shortDescription: modelGroup.shortDescription,
+    longDescription: modelGroup.longDescription,
+    author: modelGroup.author,
+    version: modelGroup.version,
+    modelUrl: modelGroup.modelUrl,
+    releaseDate: modelGroup.createdAt,
+    tags: modelGroup.tags,
     availableVersions: modelVersions,
   }
-  return model
+
+  return modelCatalog
 }

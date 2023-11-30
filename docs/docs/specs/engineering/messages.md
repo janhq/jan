@@ -1,5 +1,6 @@
 ---
 title: Messages
+slug: /specs/messages
 ---
 
 :::caution

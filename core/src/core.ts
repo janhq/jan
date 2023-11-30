@@ -12,20 +12,7 @@ const executeOnMain: (
   method: string,
   ...args: any[]
 ) => Promise<any> = (plugin, method, ...args) =>
-  window.coreAPI?.invokePluginFunc(plugin, method, ...args) ??
-  window.electronAPI?.invokePluginFunc(plugin, method, ...args);
-
-/**
- * @deprecated This object is deprecated and should not be used.
- * Use individual functions instead.
- */
-const invokePluginFunc: (
-  plugin: string,
-  method: string,
-  ...args: any[]
-) => Promise<any> = (plugin, method, ...args) =>
-  window.coreAPI?.invokePluginFunc(plugin, method, ...args) ??
-  window.electronAPI?.invokePluginFunc(plugin, method, ...args);
+  window.coreAPI?.invokePluginFunc(plugin, method, ...args)
 
 /**
  * Downloads a file from a URL and saves it to the local file system.
@@ -36,16 +23,15 @@ const invokePluginFunc: (
 const downloadFile: (url: string, fileName: string) => Promise<any> = (
   url,
   fileName
-) =>
-  window.coreAPI?.downloadFile(url, fileName) ??
-  window.electronAPI?.downloadFile(url, fileName);
+) => window.coreAPI?.downloadFile(url, fileName);
 
 /**
- * @deprecated This object is deprecated and should not be used.
- * Use fs module instead.
+ * Aborts the download of a specific file.
+ * @param {string} fileName - The name of the file whose download is to be aborted.
+ * @returns {Promise<any>} A promise that resolves when the download has been aborted.
  */
-const deleteFile: (path: string) => Promise<any> = (path) =>
-  window.coreAPI?.deleteFile(path) ?? window.electronAPI?.deleteFile(path);
+const abortDownload: (fileName: string) => Promise<any> = (fileName) =>
+  window.coreAPI?.abortDownload(fileName);
 
 /**
  * Retrieves the path to the app data directory using the `coreAPI` object.
@@ -58,11 +44,18 @@ const appDataPath: () => Promise<any> = () => window.coreAPI?.appDataPath();
  * Gets the user space path.
  * @returns {Promise<any>} A Promise that resolves with the user space path.
  */
-const getUserSpace = (): Promise<string> =>
-  window.coreAPI?.getUserSpace() ?? window.electronAPI?.getUserSpace();
+const getUserSpace = (): Promise<string> => window.coreAPI?.getUserSpace();
 
-/** Register extension point function type definition
- *
+/**
+ * Opens the file explorer at a specific path.
+ * @param {string} path - The path to open in the file explorer.
+ * @returns {Promise<any>} A promise that resolves when the file explorer is opened.
+ */
+const openFileExplorer: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.openFileExplorer(path);
+
+/**
+ * Register extension point function type definition
  */
 export type RegisterExtensionPoint = (
   extensionName: string,
@@ -72,26 +65,13 @@ export type RegisterExtensionPoint = (
 ) => void;
 
 /**
- * @deprecated This object is deprecated and should not be used.
- * Use individual functions instead.
- */
-export const core = {
-  invokePluginFunc,
-  executeOnMain,
-  downloadFile,
-  deleteFile,
-  appDataPath,
-  getUserSpace,
-};
-
-/**
  * Functions exports
  */
 export {
-  invokePluginFunc,
   executeOnMain,
   downloadFile,
-  deleteFile,
+  abortDownload,
   appDataPath,
   getUserSpace,
+  openFileExplorer,
 };
