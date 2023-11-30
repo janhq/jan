@@ -182,9 +182,6 @@ jobs:
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
-      - name: Install Snapcraft
-        uses: samuelmeuli/action-snapcraft@v2
-
       - name: Get tag
         id: tag
         uses: dawidd6/action-get-tag@v1
