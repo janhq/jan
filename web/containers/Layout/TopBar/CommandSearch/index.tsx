@@ -1,7 +1,6 @@
 import { Fragment, useState, useEffect } from 'react'
 
 import {
-  Button,
   CommandModal,
   CommandEmpty,
   CommandGroup,
@@ -9,6 +8,7 @@ import {
   CommandItem,
   CommandShortcut,
   CommandList,
+  Button,
 } from '@janhq/uikit'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -80,7 +80,6 @@ export default function CommandSearch() {
   return (
     <Fragment>
       {/* Temporary disable view search input until we have proper UI placement, but we keep function cmd + K for showing list page */}
-
       {/* <div className="relative">
         <Button
           themes="outline"
