@@ -13,8 +13,7 @@
       "renderer/**/*",
       "build/*.{js,map}",
       "build/**/*.{js,map}",
-      "core/pre-install",
-      "core/plugin-manager/facade"
+      "core/pre-install"
     ],
     "asarUnpack": [
       "core/pre-install"

@@ -1,4 +1,4 @@
-import * as cn from './cloudNativeService'
+import * as restAPI from './cloudNativeService'
 import { EventEmitter } from './eventsService'
 export const setupCoreServices = () => {
   if (typeof window === 'undefined') {
@@ -13,11 +13,7 @@ export const setupCoreServices = () => {
     }
     window.coreAPI = {}
     window.coreAPI = window.electronAPI ?? {
-      invokePluginFunc: cn.invokePluginFunc,
-      downloadFile: cn.downloadFile,
-      deleteFile: cn.deleteFile,
-      appVersion: cn.appVersion,
-      openExternalUrl: cn.openExternalUrl,
+      ...restAPI,
     }
   }
 }
