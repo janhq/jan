@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 
-import { PluginType } from '@janhq/core'
-import { MonitoringPlugin } from '@janhq/core/lib/plugins'
+import { ExtensionType } from '@janhq/core'
+import { MonitoringExtension } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
+import { extensionManager } from '@/extension/ExtensionManager'
 import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
-import { pluginManager } from '@/plugin/PluginManager'
 
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
@@ -14,11 +14,13 @@ export default function useGetSystemResources() {
   const setTotalRam = useSetAtom(totalRamAtom)
 
   const getSystemResources = async () => {
-    if (!pluginManager.get<MonitoringPlugin>(PluginType.SystemMonitoring)) {
+    if (
+      !extensionManager.get<MonitoringExtension>(ExtensionType.SystemMonitoring)
+    ) {
       return
     }
-    const monitoring = pluginManager.get<MonitoringPlugin>(
-      PluginType.SystemMonitoring
+    const monitoring = extensionManager.get<MonitoringExtension>(
+      ExtensionType.SystemMonitoring
     )
     const resourceInfor = await monitoring?.getResourcesInfo()
     const currentLoadInfor = await monitoring?.getCurrentLoad()

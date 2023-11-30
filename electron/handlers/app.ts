@@ -1,7 +1,7 @@
 import { app, ipcMain, shell } from "electron";
 import { ModuleManager } from "../managers/module";
 import { join } from "path";
-import { PluginManager } from "../managers/plugin";
+import { ExtensionManager } from "../managers/extension";
 import { WindowManager } from "../managers/window";
 
 export function handleAppIPCs() {
@@ -56,10 +56,10 @@ export function handleAppIPCs() {
     } else {
       for (const modulePath in ModuleManager.instance.requiredModules) {
         delete require.cache[
-          require.resolve(join(app.getPath("userData"), "plugins", modulePath))
+          require.resolve(join(app.getPath("userData"), "extensions", modulePath))
         ];
       }
-      PluginManager.instance.setupPlugins();
+      ExtensionManager.instance.setupExtensions();
       WindowManager.instance.currentWindow?.reload();
     }
   });

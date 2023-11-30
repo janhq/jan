@@ -10,12 +10,12 @@ export async function appVersion() {
   return Promise.resolve(VERSION)
 }
 
-export function invokePluginFunc(
+export function invokeExtensionFunc(
   modulePath: string,
-  pluginFunc: string,
+  extensionFunc: string,
   ...args: any
 ): Promise<any> {
-  return fetchApi(modulePath, pluginFunc, args).catch((err: Error) => {
+  return fetchApi(modulePath, extensionFunc, args).catch((err: Error) => {
     throw err
   })
 }
@@ -37,14 +37,14 @@ export async function deleteFile(fileName: string) {
 
 export async function fetchApi(
   modulePath: string,
-  pluginFunc: string,
+  extensionFunc: string,
   args: any
 ): Promise<any> {
   const response = await fetch(API_BASE_PATH + '/invokeFunction', {
     method: 'POST',
     body: JSON.stringify({
       modulePath: modulePath,
-      method: pluginFunc,
+      method: extensionFunc,
       args: args,
     }),
     headers: { contentType: 'application/json', Authorization: '' },

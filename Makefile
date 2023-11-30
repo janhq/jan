@@ -12,14 +12,14 @@ else
 	cd uikit && yarn install && yarn build
 endif
 
-# Installs yarn dependencies and builds core and plugins
+# Installs yarn dependencies and builds core and extensions
 install-and-build: build-uikit
 ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif
 	yarn build:core
 	yarn install
-	yarn build:plugins
+	yarn build:extensions
 
 dev: install-and-build
 	yarn dev

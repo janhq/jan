@@ -1,14 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PluginType } from '@janhq/core'
-import { InferencePlugin } from '@janhq/core/lib/plugins'
-import { Model, ModelSettingParams } from '@janhq/core/lib/types'
+import { ExtensionType, InferenceExtension } from '@janhq/core'
+import { Model, ModelSettingParams } from '@janhq/core'
 import { atom, useAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
 import { useGetDownloadedModels } from './useGetDownloadedModels'
 
-import { pluginManager } from '@/plugin'
+import { extensionManager } from '@/extension'
 
 const activeModelAtom = atom<Model | undefined>(undefined)
 
@@ -81,7 +80,9 @@ export function useActiveModel() {
   const stopModel = async (modelId: string) => {
     setStateModel({ state: 'stop', loading: true, model: modelId })
     setTimeout(async () => {
-      pluginManager.get<InferencePlugin>(PluginType.Inference)?.stopModel()
+      extensionManager
+        .get<InferenceExtension>(ExtensionType.Inference)
+        ?.stopModel()
 
       setActiveModel(undefined)
       setStateModel({ state: 'start', loading: false, model: '' })
@@ -99,7 +100,7 @@ const initModel = async (
   modelId: string,
   settings?: ModelSettingParams
 ): Promise<any> => {
-  return pluginManager
-    .get<InferencePlugin>(PluginType.Inference)
+  return extensionManager
+    .get<InferenceExtension>(ExtensionType.Inference)
     ?.initModel(modelId, settings)
 }

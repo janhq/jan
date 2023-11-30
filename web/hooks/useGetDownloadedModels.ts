@@ -1,12 +1,10 @@
 import { useEffect } from 'react'
 
-import { PluginType } from '@janhq/core'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
-import { Model } from '@janhq/core/lib/types'
+import { ExtensionType, ModelExtension, Model } from '@janhq/core'
 
 import { atom, useAtom } from 'jotai'
 
-import { pluginManager } from '@/plugin/PluginManager'
+import { extensionManager } from '@/extension/ExtensionManager'
 
 const downloadedModelsAtom = atom<Model[]>([])
 
@@ -23,8 +21,8 @@ export function useGetDownloadedModels() {
 }
 
 export async function getDownloadedModels(): Promise<Model[]> {
-  const models = await pluginManager
-    .get<ModelPlugin>(PluginType.Model)
+  const models = await extensionManager
+    .get<ModelExtension>(ExtensionType.Model)
     ?.getDownloadedModels()
 
   return models ?? []

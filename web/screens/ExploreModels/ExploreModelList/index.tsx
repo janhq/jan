@@ -1,4 +1,4 @@
-import { ModelCatalog } from '@janhq/core/lib/types'
+import { ModelCatalog } from '@janhq/core'
 
 import ExploreModelItem from '@/screens/ExploreModels/ExploreModelItem'
 

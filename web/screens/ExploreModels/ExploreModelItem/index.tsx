@@ -2,7 +2,7 @@
 
 import { forwardRef, useEffect, useState } from 'react'
 
-import { ModelCatalog } from '@janhq/core/lib/types'
+import { ModelCatalog } from '@janhq/core'
 import { Badge } from '@janhq/uikit'
 
 import useGetMostSuitableModelVersion from '@/hooks/useGetMostSuitableModelVersion'

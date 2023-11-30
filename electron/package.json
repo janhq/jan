@@ -13,10 +13,10 @@
       "renderer/**/*",
       "build/*.{js,map}",
       "build/**/*.{js,map}",
-      "core/pre-install"
+      "pre-install"
     ],
     "asarUnpack": [
-      "core/pre-install"
+      "pre-install"
     ],
     "publish": [
       {
