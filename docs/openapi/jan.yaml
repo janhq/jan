@@ -23,19 +23,7 @@ tags:
   - name: Messages
     description: |
       Messages capture a conversation's content. This can include the content from LLM responses and other metadata from [chat completions](/specs/chats).
-
-      - Users and assistants can send multimedia messages.
-
-      - An [OpenAI Message API](https://platform.openai.com/docs/api-reference/messages) compatible endpoint at `localhost:1337/v1/messages`.
-
-      - Jan's `messages` API is compatible with [OpenAI's Messages API](https://platform.openai.com/docs/api-reference/messages), with additional methods for managing messages locally.
-
   - name: Threads
-    description: |
-      Threads are conversations between an `assistant` and the user:
-        - Users can tweak `model` params and `assistant` behavior within each thread.
-        - Users can import and export threads.
-        - An [OpenAI Thread API](https://platform.openai.com/docs/api-reference/threads) compatible endpoint at `localhost:1337/v1/threads`. 
   - name: Assistants
     description: Configures and utilizes different AI assistants for varied tasks
 x-tagGroups:
@@ -54,12 +42,10 @@ paths:
       operationId: createChatCompletion
       tags:
         - Chat
-      summary: Create chat completion
+      summary: | 
+        Create chat completion
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/chat/create">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-        and <span style = "color: #fec928">  Jan </span>
-        
-        Creates a model response for the given chat conversation.
+        Creates a model response for the given chat conversation.  <a  href = "https://platform.openai.com/docs/api-reference/chat/create"> Equivalent to OpenAI's create chat completion. </a>
       requestBody:
         content:
           application/json:
@@ -93,12 +79,9 @@ paths:
       operationId: listModels
       tags:
         - Models
-
       summary: List models
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/models/list">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Lists the currently available models, and provides basic information about each one such as the owner and availability.
+        Lists the currently available models, and provides basic information about each one such as the owner and availability.  <a  href = "https://platform.openai.com/docs/api-reference/models/list"> Equivalent to OpenAI's list model. </a>
       responses:
         "200":
           description: OK
@@ -116,8 +99,6 @@ paths:
         - Models
       summary: Download model
       description: |
-        <span style = "color: #fec928"> Jan </span>
-
         Download a model.
       responses:
         "200":
@@ -137,9 +118,7 @@ paths:
         - Models
       summary: Retrieve model
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/models/retrieve">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-        
-        Get a model instance, providing basic information about the model such as the owner and permissioning.
+        Get a model instance, providing basic information about the model such as the owner and permissioning.  <a  href = "https://platform.openai.com/docs/api-reference/models/retrieve"> Equivalent to OpenAI's retrieve model. </a>
       parameters:
         - in: path
           name: model_id
@@ -150,8 +129,6 @@ paths:
             example: zephyr-7b
           description: |
             The ID of the model to use for this request
-
-            <span style="color:#0ca47c">OpenAI compatible</span>
       responses:
         "200":
           description: OK
@@ -169,9 +146,7 @@ paths:
         - Models
       summary: Delete model
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/models/delete">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-        
-        Delete a model.
+        Delete a model. <a  href = "https://platform.openai.com/docs/api-reference/models/delete"> Equivalent to OpenAI's delete model. </a>
       parameters:
         - in: path
           name: model
@@ -181,8 +156,6 @@ paths:
             example: zephyr-7b
           description: |
             The model to delete
-            
-            <span style="color:#0ca47c">OpenAI compatible</span>
       responses:
         "200":
           description: OK
@@ -201,8 +174,6 @@ paths:
         - Models
       summary: Start model
       description: |
-        <span style = "color: #fec928"> Jan </span>
-
         Starts an imported model. Loads the model into V/RAM.
       parameters:
         - in: path
@@ -232,8 +203,6 @@ paths:
         - Models
       summary: Stop model
       description: |
-        <span style = "color: #fec928"> Jan </span>
-
         Stop an imported model.
       parameters:
         - in: path
@@ -264,9 +233,7 @@ paths:
         - Threads
       summary: Create thread
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/threads/createThread">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Create a thread
+        Create a thread.  <a  href = "https://platform.openai.com/docs/api-reference/threads/createThread"> Equivalent to OpenAI's create thread. </a>
       requestBody:
         required: false
         content:
@@ -307,8 +274,6 @@ paths:
         - Threads
       summary: List threads
       description: |
-        <span style = "color: #fec928"> Jan </span>
-
         Retrieves a list of all threads available in the system.
       responses:
         "200":
@@ -344,9 +309,7 @@ paths:
         - Threads
       summary: Retrieve thread
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/threads/getThread">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-        
-        Retrieves detailed information about a specific thread using its thread_id.
+        Retrieves detailed information about a specific thread using its thread_id.  <a  href = "https://platform.openai.com/docs/api-reference/threads/getThread"> Equivalent to OpenAI's retrieve thread. </a>
       parameters:
         - in: path
           name: thread_id
@@ -357,7 +320,6 @@ paths:
           description: |
             The ID of the thread to retrieve.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
       responses:
         "200":
           description: Thread details retrieved successfully
@@ -375,9 +337,7 @@ paths:
         - Threads
       summary: Modify thread
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/threads/modifyThread">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Modifies a thread
+        Modifies a thread.  <a  href = "https://platform.openai.com/docs/api-reference/threads/modifyThread"> Equivalent to OpenAI's modify thread. </a>
       parameters:
         - in: path
           name: thread_id
@@ -388,7 +348,6 @@ paths:
           description: |
             The ID of the thread to be modified.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
       requestBody:
         required: false
         content:
@@ -430,9 +389,7 @@ paths:
         - Threads
       summary: Delete thread
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/threads/deleteThread">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Delete a thread
+        Delete a thread.  <a  href = "https://platform.openai.com/docs/api-reference/threads/deleteThread"> Equivalent to OpenAI's delete thread. </a>
       parameters:
         - in: path
           name: thread_id
@@ -443,7 +400,6 @@ paths:
           description: |
             The ID of the thread to be deleted.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
       responses:
         "200":
           description: Thread deleted successfully
@@ -464,7 +420,7 @@ paths:
         - Threads
       summary: Get Thread.Assistants
       description: |
-        <span style = "color: #fec928"> Jan </span>
+        
 
         Can achieve this goal by calling Get thread API
       parameters:
@@ -494,7 +450,7 @@ paths:
         - Threads
       summary: Modify Thread.Assistants
       description: |
-        <span style = "color: #fec928"> Jan </span>
+        
 
         Can achieve this goal by calling Modify Assistant API with thread.assistant[]
   
@@ -505,7 +461,7 @@ paths:
         - Threads
       summary: List Thread.Messages
       description: | 
-        <span style = "color: #fec928"> Jan </span>
+        
 
         Can achieve this goal by calling Get Thread API
       parameters:
@@ -536,9 +492,7 @@ paths:
         - Messages
       summary: List messages
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Retrieves all messages from the given thread.
+        Retrieves all messages from the given thread. <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages"> Equivalent to OpenAI's list messages. </a>
       parameters:
         - in: path
           name: thread_id
@@ -549,7 +503,6 @@ paths:
           description: |
             The ID of the thread from which to retrieve messages.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
       responses:
         "200":
           description: List of messages retrieved successfully
@@ -568,9 +521,7 @@ paths:
         - Messages
       summary: Create message
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/createMessage">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Create a message
+        Create a message. <a  href = "https://platform.openai.com/docs/api-reference/messages/createMessage"> Equivalent to OpenAI's list messages. </a>
       parameters:
         - in: path
           name: thread_id
@@ -581,7 +532,6 @@ paths:
           description: |
             The ID of the thread to which the message will be posted.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
       requestBody:
         required: true
         content:
@@ -594,7 +544,7 @@ paths:
                   description: |
                     "Role of the sender, either 'user' or 'assistant'."
 
-                    <span style="color:#0ca47c">OpenAI compatible</span>
+                    <span style="color:#228B22">OpenAI compatible</span>
                   example: "user"
                   enum: ["user", "assistant"]
                 content:
@@ -602,7 +552,7 @@ paths:
                   description: |
                     "Text content of the message."
 
-                    <span style="color:#0ca47c">OpenAI compatible</span>
+                    <span style="color:#228B22">OpenAI compatible</span>
                   example: "How does AI work? Explain it in simple terms."
               required:
                 - role
@@ -631,9 +581,7 @@ paths:
         - Messages
       summary: Retrieve message
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessage">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Retrieve a specific message from a thread using its thread_id and message_id.
+        Retrieve a specific message from a thread using its thread_id and message_id. <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessage"> Equivalent to OpenAI's retrieve messages. </a>
       parameters:
         - in: path
           name: thread_id
@@ -644,7 +592,6 @@ paths:
           description: |
             The ID of the thread containing the message.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
         - in: path
           name: message_id
           required: true
@@ -654,7 +601,6 @@ paths:
           description: |
             The ID of the message to retrieve.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
       responses:
         "200":
           description: OK
@@ -673,11 +619,10 @@ paths:
       operationId: listMessageFiles
       tags:
         - Messages
-      summary: List message files 
+      summary: |
+        List message files 
       description: | 
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessageFiles">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Returns a list of message files.
+        Returns a list of message files.  <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessageFiles"> Equivalent to OpenAI's list message files. </a>
       parameters:
         - in: path
           name: thread_id
@@ -688,7 +633,6 @@ paths:
           description: |
             The ID of the thread containing the message.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
         - in: path
           name: message_id
           required: true
@@ -698,7 +642,6 @@ paths:
           description: | 
             The ID of the message whose files are to be listed. 
             
-            <span style="color:#0ca47c">OpenAI compatible</span>
       responses:
         "200":
           description: List of files retrieved successfully
@@ -719,9 +662,7 @@ paths:
         - Messages
       summary: Retrieve message file
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessageFile">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Retrieves a file associated with a specific message in a thread.
+        Retrieves a file associated with a specific message in a thread.  <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessageFile"> Equivalent to OpenAI's retrieve message file. </a>
       parameters:
         - in: path
           name: thread_id
@@ -732,7 +673,6 @@ paths:
           description: |
             The ID of the thread containing the message.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
         - in: path
           name: message_id
           required: true
@@ -742,7 +682,6 @@ paths:
           description: |
             The ID of the message associated with the file.
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
         - in: path
           name: file_id
           required: true
@@ -752,7 +691,6 @@ paths:
           description: |
             The ID of the file to retrieve.
             
-            <span style="color:#0ca47c">OpenAI compatible</span>
       responses:
         "200":
           description: File retrieved successfully
@@ -771,11 +709,7 @@ x-webhooks:
     post:
       summary: The model object
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/models/object">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-        
-        Describe a model offering that can be used with the API.
-
-
+        Describe a model offering that can be used with the API. <a  href = "https://platform.openai.com/docs/api-reference/models/object"> Equivalent to OpenAI's model object. </a>
       operationId: ModelObject
       tags:
         - Models
@@ -784,14 +718,11 @@ x-webhooks:
           application/json:
             schema:
               $ref: 'specs/models.yaml#/components/schemas/ModelObject'
-
   MessageObject:
     post:
       summary: The message object
       description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/messages/object">  <button style = "color: #0ca47c"> OpenAI compatible </button></a>
-
-        Information about a message in the thread
+        Information about a message in the thread.  <a  href = "https://platform.openai.com/docs/api-reference/messages/object"> Equivalent to OpenAI's message object. </a>
       operationId: MessageObject
       tags:
         - Messages
@@ -800,19 +731,10 @@ x-webhooks:
           application/json:
             schema:
               $ref: 'specs/messages.yaml#/components/schemas/MessageObject'
-
   ThreadObject:
     post:
       summary: The thread object
-      description: |
-        <a  href = "https://platform.openai.com/docs/api-reference/threads/object">  <button style = "color: #0ca47c"> OpenAI compatible </button></a> and <span style = "color: #fec928"> Jan </span>
-       
-        Each `thread` folder contains a `thread.json` file, which is a representation of a thread.
-        
-        `thread.json` contains metadata and model parameter overrides.
-        
-        There are no required fields.
-
+      description: Represents a thread that contains messages. <a  href = "https://platform.openai.com/docs/api-reference/threads/object"> Equivalent to OpenAI's thread object. </a>
       operationId: ThreadObject
       tags:
         - Threads

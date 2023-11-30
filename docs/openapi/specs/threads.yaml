@@ -8,26 +8,24 @@ components:
           description: |
             "The identifier of the thread, defaults to foldername."
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
           example: thread_....
         object:
           type: string
           description: |
             "Type of the object, defaults to thread."
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
           example: thread
         title:
           type: string
           description: | 
             "A brief summary or description of the thread, defaults to an empty string."
 
-            <span style = "color: #fec928"> Jan </span>
+            
           example: "funny physics joke"
         assistants:
           type: array
           description: | 
-            <span style = "color: #fec928"> Jan </span>
+            
           items:
             properties:
               assistant_id:
@@ -35,7 +33,7 @@ components:
                 description: |
                   The identifier of assistant, defaults to "jan"
 
-                  <span style = "color: #fec928"> Jan </span>
+                  
                 example: jan
               model:
                 type: object
@@ -43,34 +41,32 @@ components:
                   id:
                     type: string
                     description: |
-                      <span style = "color: #fec928"> Jan </span>
+                      
                     example: ...
                   settings: 
                     type: object
                     description: |
                       Defaults to and overrides assistant.json's "settings" (and if none, then model.json "settings")
 
-                      <span style = "color: #fec928"> Jan </span>
+                      
                   parameters:
                     type: object
                     description: |
                       Defaults to and overrides assistant.json's "parameters" (and if none, then model.json "parameters")
 
-                      <span style = "color: #fec928"> Jan </span>
+                      
         created:
           type: integer
           format: int64
           description: |
             "Unix timestamp representing the creation time of the thread, defaults to file creation time."
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
           example: 1231231
         metadata:
           type: object
           description: |
             "Metadata associated with the thread, defaults to an empty object."
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
           example: {}
 
     GetThreadResponse:
@@ -135,14 +131,12 @@ components:
           description: |
             "Role of the sender, either 'user' or 'assistant'."
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
           enum: ["user", "assistant"]
         content:
           type: string
           description: |
             "Text content of the message."
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
         file_ids:
           type: array
           items:
@@ -150,7 +144,6 @@ components:
           description: |
             "Array of file IDs associated with the message, if any."
             
-            <span style="color:#0ca47c">OpenAI compatible</span>
 
     ModifyThreadResponse:
       type: object

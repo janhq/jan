@@ -7,36 +7,26 @@ components:
           type: string
           description: |
             "Sequential or UUID identifier of the message."
-            
-            <span style="color:#0ca47c">OpenAI compatible</span>
           example: 0
         object:
           type: string
           description: |
             "Type of the object, defaults to 'thread.message'."
-
-            <span style="color:#0ca47c">OpenAI compatible</span>
           example: thread.message
         created_at:
           type: integer
           format: int64
           description: |
             "Unix timestamp representing the creation time of the message."
-
-            <span style="color:#0ca47c">OpenAI compatible</span>
         thread_id:
           type: string
           description: |
             "Identifier of the thread to which this message belongs. Defaults to parent thread."
-
-            <span style="color:#0ca47c">OpenAI compatible</span>
           example: "thread_asdf"
         assistant_id:
           type: string
           description: |
             "Identifier of the assistant involved in the message. Defaults to parent thread."
-
-            <span style="color:#0ca47c">OpenAI compatible</span>
           example: jan
         role:
           type: string
@@ -44,7 +34,6 @@ components:
           description: |
             "Role of the sender, either 'user' or 'assistant'."
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
         content:
           type: array
           items:
@@ -55,7 +44,7 @@ components:
                 description: |
                   "Type of content, e.g., 'text'."
 
-                  <span style="color:#0ca47c">OpenAI compatible</span>
+                  
               text:
                 type: object
                 properties:
@@ -63,8 +52,6 @@ components:
                     type: string
                     description: |
                       "Text content of the message."
-
-                      <span style="color:#0ca47c">OpenAI compatible</span>
                     example: "Hi!?"
                   annotations:
                     type: array
@@ -72,15 +59,12 @@ components:
                       type: string
                     description: |
                       "Annotations for the text content, if any."
-
-                      <span style="color:#0ca47c">OpenAI compatible</span>
                     example: []
         metadata:
           type: object
           description: |
             "Metadata associated with the message, defaults to an empty object."
 
-            <span style="color:#0ca47c">OpenAI compatible</span>
           example: {}
 
     GetMessageResponse:
