@@ -5,11 +5,6 @@ on:
     - cron: '0 16 * * *' # At 4 PM UTC, which is 11 AM UTC+7
 
   workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Branch to build'
-        required: true
-        default: 'main'
 
 jobs:
   build-macos:
