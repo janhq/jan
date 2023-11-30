@@ -103,12 +103,12 @@ const ChatScreen = () => {
 
   return (
     <div className="flex h-full">
-      <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+      <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background">
         <ThreadList />
       </div>
-      <div className="relative flex h-full w-[calc(100%-256px)] flex-col bg-muted/10">
+      <div className="relative flex h-full w-[calc(100%-256px)] flex-col bg-background">
         <div className="flex h-full w-full flex-col justify-between">
-          {isEnableChat && currentConvo && (
+          {/* {isEnableChat && currentConvo && (
             <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
               <div className="flex items-center justify-between">
                 <span>{currentConvo.title}</span>
@@ -141,7 +141,7 @@ const ChatScreen = () => {
                 </div>
               </div>
             </div>
-          )}
+          )} */}
 
           {isEnableChat ? (
             <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
@@ -149,15 +149,17 @@ const ChatScreen = () => {
             </div>
           ) : (
             <div className="mx-auto mt-8 flex h-full w-3/4 flex-col items-center justify-center text-center">
-              {downloadedModels.length === 0 && (
+              {downloadedModels.length === 0 ? (
                 <Fragment>
                   <LogoMark
                     className="mx-auto mb-4 animate-wave"
                     width={56}
                     height={56}
                   />
-                  <h1 className="text-lg font-medium">Welcome!</h1>
-                  <p className="mt-1">You need to download your first model</p>
+                  <h1 className="text-2xl font-bold">Welcome!</h1>
+                  <p className="mt-1 text-base">
+                    You need to download your first model
+                  </p>
                   <Button
                     className="mt-4"
                     onClick={() => setMainViewState(MainViewState.Hub)}
@@ -165,8 +167,21 @@ const ChatScreen = () => {
                     Explore The Hub
                   </Button>
                 </Fragment>
+              ) : (
+                <Fragment>
+                  <LogoMark
+                    className="mx-auto mb-4 animate-wave"
+                    width={56}
+                    height={56}
+                  />
+
+                  <p className="mt-1 text-base">
+                    You have not started any model
+                  </p>
+                </Fragment>
               )}
-              {!activeModel && downloadedModels.length > 0 && (
+
+              {/* {!activeModel && downloadedModels.length > 0 && (
                 <Fragment>
                   <h1 className="text-lg font-medium">{`You don’t have any actively running models`}</h1>
                   <p className="mt-1">{`Please start a downloaded model to use this feature.`}</p>
@@ -175,9 +190,10 @@ const ChatScreen = () => {
                     &nbsp; to show your model
                   </Badge>
                 </Fragment>
-              )}
+              )} */}
             </div>
           )}
+
           <div className="mx-auto flex w-full flex-shrink-0 items-center justify-center space-x-4 px-8 py-4">
             <Textarea
               className="min-h-10 h-10 max-h-16 resize-none pr-20"

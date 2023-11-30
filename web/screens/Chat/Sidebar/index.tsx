@@ -3,6 +3,8 @@ import { join } from 'path'
 import { getUserSpace, openFileExplorer } from '@janhq/core'
 import { atom, useAtomValue } from 'jotai'
 
+import { twMerge } from 'tailwind-merge'
+
 import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar, {
   selectedModelAtom,
@@ -87,9 +89,10 @@ export default function Sidebar() {
 
   return (
     <div
-      className={`h-full overflow-x-hidden border-l border-border duration-300 ease-linear ${
+      className={twMerge(
+        'h-full overflow-x-hidden border-l border-border bg-background duration-300 ease-linear',
         showing ? 'w-80' : 'w-0'
-      }`}
+      )}
     >
       <div className="flex flex-col gap-1 p-2">
         <CardSidebar
