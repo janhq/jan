@@ -1,26 +1,23 @@
-import { ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
+import { Model } from '@janhq/core/lib/types'
 
 import ModelVersionItem from '../ModelVersionItem'
 
 type Props = {
-  model: ModelCatalog
-  versions: ModelVersion[]
+  models: Model[]
   recommendedVersion: string
 }
 
 export default function ModelVersionList({
-  model,
-  versions,
+  models,
   recommendedVersion,
 }: Props) {
   return (
     <div className="pt-4">
-      {versions.map((item) => (
+      {models.map((model) => (
         <ModelVersionItem
-          key={item.name}
+          key={model.name}
           model={model}
-          modelVersion={item}
-          isRecommended={item.name === recommendedVersion}
+          isRecommended={model.name === recommendedVersion}
         />
       ))}
     </div>

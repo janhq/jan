@@ -33,8 +33,6 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
     return null
   }
 
-  const { quantizationName, bits, maxRamRequired, usecase } = suitableModel
-
   return (
     <div
       ref={ref}
@@ -60,17 +58,13 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
             <div className="mt-1 flex gap-2">
               <Badge
                 themes="secondary"
-                className="line-clamp-1 max-w-[400px] lg:line-clamp-none lg:max-w-none"
-                title={usecase}
-              >
-                {usecase}
-              </Badge>
-              <Badge
-                themes="secondary"
                 className="line-clamp-1 lg:line-clamp-none"
-                title={`${toGigabytes(maxRamRequired)} RAM required`}
+                title={`${toGigabytes(
+                  suitableModel.metadata.maxRamRequired
+                )} RAM required`}
               >
-                {toGigabytes(maxRamRequired)} RAM required
+                {toGigabytes(suitableModel.metadata.maxRamRequired)} RAM
+                required
               </Badge>
             </div>
           </div>
@@ -81,10 +75,11 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
             <span className="font-semibold">Version</span>
             <div className="mt-2 flex space-x-2">
               <Badge themes="outline">v{model.version}</Badge>
-              {quantizationName && (
-                <Badge themes="outline">{quantizationName}</Badge>
+              {suitableModel.metadata.quantization && (
+                <Badge themes="outline">
+                  {suitableModel.metadata.quantization}
+                </Badge>
               )}
-              <Badge themes="outline">{`${bits} Bits`}</Badge>
             </div>
           </div>
           <div>
@@ -113,8 +108,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
 
             {show && (
               <ModelVersionList
-                model={model}
-                versions={model.availableVersions}
+                models={model.availableVersions}
                 recommendedVersion={suitableModel?.name ?? ''}
               />
             )}

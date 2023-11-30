@@ -65,23 +65,29 @@ Here's a standard example `model.json` for a GGUF model.
 "state": enum[null, "downloading", "ready", "starting", "stopping", ...]
 "format": "ggufv3",                 // Defaults to "ggufv3"
 "settings": {                       // Models are initialized with settings
-    "ctx_len": "2048",
-    "ngl": "100",
-    "embedding": "true",
-    "n_parallel": "4",
+    "ctx_len": 2048,
+    "ngl": 100,
+    "embedding": true,
+    "n_parallel": 4,
 },
 "parameters": {                     // Models are called parameters
-    "temperature": "0.7",
-    "token_limit": "2048",
-    "top_k": "0",
-    "top_p": "1",
-    "stream": "true"
+    "stream": true,
+    "max_tokens": 2048,
+    "stop": ["<endofstring>"],      // This usually can be left blank, only used with specific need from model author
+    "frequency_penalty": 0,
+    "presence_penalty": 0,
+    "temperature": 0.7,
+    "top_p": 0.95
 },
 "metadata": {},                     // Defaults to {}
 "assets": [                         // Defaults to current dir
     "file://.../zephyr-7b-q4_k_m.bin",
 ]
 ```
+
+The model settings in the example can be found at: [Nitro's model settings](https://nitro.jan.ai/features/load-unload#table-of-parameters)
+
+The model parameters in the example can be found at: [Nitro's model parameters](https://nitro.jan.ai/api-reference#tag/Chat-Completion)
 
 ## API Reference
 

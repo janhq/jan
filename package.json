@@ -35,7 +35,7 @@
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
-    "build:plugins": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm install && npm run build:publish\" \"cd ./plugins/inference-plugin && npm install && npm run build:publish\" \"cd ./plugins/model-plugin && npm install && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm install && npm run build:publish\"",
+    "build:plugins": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm install && npm run build:publish\" \"cd ./plugins/inference-plugin && npm install && npm run build:publish\" \"cd ./plugins/model-plugin && npm install && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm install && npm run build:publish\" \"cd ./plugins/assistant-plugin && npm install && npm run build:publish\"",
     "build:test": "yarn build:web && yarn workspace jan build:test",
     "build": "yarn build:web && yarn workspace jan build",
     "build:publish": "yarn build:web && yarn workspace jan build:publish"
