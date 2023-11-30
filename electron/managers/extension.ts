@@ -1,10 +1,10 @@
 import { app } from 'electron'
-import { init } from '../extension'
+import { init } from './../extension'
 import { join, resolve } from 'path'
 import { rmdir } from 'fs'
 import Store from 'electron-store'
 import { existsSync, mkdirSync, writeFileSync } from 'fs'
-import { userSpacePath } from '../utils/path'
+import { userSpacePath } from './../utils/path'
 /**
  * Manages extension installation and migration.
  */

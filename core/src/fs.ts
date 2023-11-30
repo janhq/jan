@@ -62,6 +62,9 @@ const deleteFile: (path: string) => Promise<any> = (path) =>
 const appendFile: (path: string, data: string) => Promise<any> = (path, data) =>
   window.core.api?.appendFile(path, data);
 
+const copyFile: (src: string, dest: string) => Promise<any> = (src, dest) =>
+  window.core.api?.copyFile(src, dest);
+
 /**
  * Reads a file line by line.
  * @param {string} path - The path of the file to read.
@@ -80,4 +83,5 @@ export const fs = {
   deleteFile,
   appendFile,
   readLineByLine,
+  copyFile,
 };

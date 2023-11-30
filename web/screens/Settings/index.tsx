@@ -30,7 +30,6 @@ const SettingsScreen = () => {
     setMenus(menu)
   }, [])
 
-
   const preferenceExtensions = preferenceItems
     .map((x) => x.extensionnName)
     .filter((x, i) => {

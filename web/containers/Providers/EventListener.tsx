@@ -36,11 +36,11 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
   useEffect(() => {
     if (window && window.electronAPI) {
       window.electronAPI.onFileDownloadUpdate(
-        (_event: string, state: DownloadState | undefined) => {
+        (_event: string, state: any | undefined) => {
           if (!state) return
           setDownloadState({
             ...state,
-            fileName: state.fileName.split('/').pop() ?? '',
+            modelId: state.fileName.split('/').pop() ?? '',
           })
         }
       )
@@ -48,18 +48,18 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       window.electronAPI.onFileDownloadError(
         (_event: string, callback: any) => {
           console.error('Download error', callback)
-          const fileName = callback.fileName.split('/').pop() ?? ''
-          setDownloadStateFailed(fileName)
+          const modelId = callback.fileName.split('/').pop() ?? ''
+          setDownloadStateFailed(modelId)
         }
       )
 
       window.electronAPI.onFileDownloadSuccess(
         (_event: string, callback: any) => {
           if (callback && callback.fileName) {
-            const fileName = callback.fileName.split('/').pop() ?? ''
-            setDownloadStateSuccess(fileName)
+            const modelId = callback.fileName.split('/').pop() ?? ''
+            setDownloadStateSuccess(modelId)
 
-            const model = modelsRef.current.find((e) => e.id === fileName)
+            const model = modelsRef.current.find((e) => e.id === modelId)
             if (model)
               extensionManager
                 .get<ModelExtension>(ExtensionType.Model)

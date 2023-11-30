@@ -8,39 +8,39 @@ const modelDownloadStateAtom = atom<Record<string, DownloadState>>({})
 const setDownloadStateAtom = atom(null, (get, set, state: DownloadState) => {
   const currentState = { ...get(modelDownloadStateAtom) }
   console.debug(
-    `current download state for ${state.fileName} is ${JSON.stringify(state)}`
+    `current download state for ${state.modelId} is ${JSON.stringify(state)}`
   )
-  currentState[state.fileName] = state
+  currentState[state.modelId] = state
   set(modelDownloadStateAtom, currentState)
 })
 
-const setDownloadStateSuccessAtom = atom(null, (get, set, fileName: string) => {
+const setDownloadStateSuccessAtom = atom(null, (get, set, modelId: string) => {
   const currentState = { ...get(modelDownloadStateAtom) }
-  const state = currentState[fileName]
+  const state = currentState[modelId]
   if (!state) {
-    console.error(`Cannot find download state for ${fileName}`)
+    console.error(`Cannot find download state for ${modelId}`)
     return
   }
-  delete currentState[fileName]
+  delete currentState[modelId]
   set(modelDownloadStateAtom, currentState)
   toaster({
     title: 'Download Completed',
-    description: `Download ${fileName} completed`,
+    description: `Download ${modelId} completed`,
   })
 })
 
-const setDownloadStateFailedAtom = atom(null, (get, set, fileName: string) => {
+const setDownloadStateFailedAtom = atom(null, (get, set, modelId: string) => {
   const currentState = { ...get(modelDownloadStateAtom) }
-  const state = currentState[fileName]
+  const state = currentState[modelId]
   if (!state) {
-    console.error(`Cannot find download state for ${fileName}`)
+    console.error(`Cannot find download state for ${modelId}`)
     toaster({
       title: 'Cancel Download',
-      description: `Model ${fileName} cancel download`,
+      description: `Model ${modelId} cancel download`,
     })
     return
   }
-  delete currentState[fileName]
+  delete currentState[modelId]
   set(modelDownloadStateAtom, currentState)
 })
 

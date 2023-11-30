@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { setupMenu } from './utils/menu'
-import { handleFsIPCs } from './handlers/fs'
+import { createUserSpace, getResourcePath } from './utils/path'
 
 /**
  * Managers
@@ -18,9 +18,11 @@ import { handleThemesIPCs } from './handlers/theme'
 import { handleExtensionIPCs } from './handlers/extension'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
+import { handleFsIPCs } from './handlers/fs'
 
 app
   .whenReady()
+  .then(createUserSpace)
   .then(ExtensionManager.instance.migrateExtensions)
   .then(ExtensionManager.instance.setupExtensions)
   .then(setupMenu)
@@ -56,7 +58,7 @@ function createMainWindow() {
   })
 
   const startURL = app.isPackaged
-    ? `file://${join(__dirname, '../renderer/index.html')}`
+    ? `file://${join(__dirname, '..', 'renderer', 'index.html')}`
     : 'http://localhost:3000'
 
   /* Load frontend app to the window */

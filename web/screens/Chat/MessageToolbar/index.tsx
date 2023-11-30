@@ -43,8 +43,10 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
       .get<InferenceExtension>(ExtensionType.Inference)
       ?.stopInference()
     setTimeout(() => {
-      message.status = MessageStatus.Ready
-      events.emit(EventName.OnMessageUpdate, message)
+      events.emit(EventName.OnMessageUpdate, {
+        ...message,
+        status: MessageStatus.Ready,
+      })
     }, 300)
   }
 

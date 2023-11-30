@@ -1,6 +1,6 @@
 import { Model, ExtensionType, ModelExtension } from '@janhq/core'
 
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 
 import { useDownloadState } from './useDownloadState'
 
@@ -27,7 +27,6 @@ export default function useDownloadModel() {
         total: 0,
         transferred: 0,
       },
-      fileName: model.id,
     })
 
     setDownloadingModels([...downloadingModels, model])
