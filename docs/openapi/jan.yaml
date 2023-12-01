@@ -709,6 +709,19 @@ x-webhooks:
           application/json:
             schema:
               $ref: 'specs/models.yaml#/components/schemas/ModelObject'
+  AssistantObject:
+    post:
+      summary: The assistant object
+      description: |
+        Build assistants that can call models and use tools to perform tasks. <a  href = "https://platform.openai.com/docs/api-reference/assistants"> Equivalent to OpenAI's assistants object. </a>
+      operationId: AssistantObject
+      tags:
+        - Assistants
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: 'specs/assistants.yaml#/components/schemas/AssistantObject'
   MessageObject:
     post:
       summary: The message object

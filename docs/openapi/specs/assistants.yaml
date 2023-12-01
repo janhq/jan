@@ -1,0 +1,61 @@
+components:
+  schemas:
+    AssistantObject:
+      type: object
+      properties:
+        avatar:
+          type: string
+          description: "URL of the assistant's avatar. Jan-specific property."
+          example: "https://lala.png"
+        id:
+          type: string
+          description: "The identifier of the assistant."
+          example: "asst_abc123"
+        object:
+          type: string
+          description: "Type of the object, indicating it's an assistant."
+          default: "assistant"
+        version:
+          type: integer
+          description: "Version number of the assistant."
+          example: 1
+        created_at:
+          type: integer
+          format: int64
+          description: "Unix timestamp representing the creation time of the assistant."
+        name:
+          type: string
+          description: "Name of the assistant."
+          example: "Math Tutor"
+        description:
+          type: string
+          description: "Description of the assistant. Can be null."
+        models:
+          type: array
+          description: "List of models associated with the assistant. Jan-specific property."
+          items:
+            type: object
+            properties:
+              model_id:
+                type: string
+              # Additional properties for models can be added here
+        events:
+          type: object
+          description: "Event subscription settings for the assistant."
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+            out:
+              type: array
+              items:
+                type: string
+          # If there are specific event types, they can be detailed here
+        metadata:
+          type: object
+          description: "Metadata associated with the assistant."
+      required:
+        - name
+        - models
+        - events
