@@ -485,6 +485,13 @@ paths:
       summary: List assistants
       description: |
         Return a list of assistants. <a href = "https://platform.openai.com/docs/api-reference/assistants/listAssistants"> Equivalent to OpenAI's list assistants. </a>
+      responses:
+        "200":
+          description: 
+          content:
+            application/json:
+              schema:
+                $ref: "specs/assistants.yaml#/components/schemas/ListAssistantsResponse"
     post:
       operationId: createAssistant
       tags:
@@ -492,6 +499,13 @@ paths:
       summary: Create assistant
       description: |
         Create an assistant with a model and instructions. <a href = "https://platform.openai.com/docs/api-reference/assistants/createAssistant"> Equivalent to OpenAI's create assistants. </a>
+      responses:
+        "200":
+          description:
+          content:
+            application/json:
+              schema:
+                $ref: "specs/assistants.yaml#/components/schemas/CreateAssistantResponse"
 
   /assistants/{assistant_id}:
     get:
@@ -501,6 +515,14 @@ paths:
       summary: Retrieve assistant
       description: |
         Retrieves an assistant. <a href = "https://platform.openai.com/docs/api-reference/assistants/getAssistant"> Equivalent to OpenAI's retrieve assistants. </a> 
+      responses:
+        "200":
+          description:
+          content:
+            application/json:
+              schema:
+                $ref: "specs/assistants.yaml#/components/schemas/RetrieveAssistantResponse"
+
     post:
       operationId: modifyAssistant
       tags:
@@ -515,7 +537,14 @@ paths:
       summary: Delete assistant
       description: |
         Delete an assistant. <a href = "https://platform.openai.com/docs/api-reference/assistants/deleteAssistant"> Equivalent to OpenAI's delete assistant. </a>
-        
+      responses:
+        "200":
+          description:
+          content:
+            application/json:
+              schema:
+                $ref: "specs/assistants.yaml#/components/schemas/ModifyAssistantResponse"
+
   ### MESSAGES
   /threads/{thread_id}/messages:
     get:
