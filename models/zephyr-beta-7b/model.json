@@ -1,6 +1,6 @@
 {
     "source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/resolve/main/zephyr-7b-beta.Q4_K_M.gguf",
-    "id": "zephyr-7b-beta",
+    "id": "zephyr-beta-7b",
     "object": "model",
     "name": "Zephyr Beta 7B",
     "version": "1.0",

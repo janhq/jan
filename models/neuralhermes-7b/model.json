@@ -1,6 +1,6 @@
 {
     "source_url": "https://huggingface.co/TheBloke/NeuralHermes-2.5-Mistral-7B-GGUF/resolve/main/neuralhermes-2.5-mistral-7b.Q4_K_M.gguf",
-    "id": "neural-hermes-7b",
+    "id": "neuralhermes-7b",
     "object": "model",
     "name": "NeuralHermes 7B",
     "version": "1.0",

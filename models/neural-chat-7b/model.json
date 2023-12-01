@@ -1,6 +1,6 @@
 {
     "source_url": "https://huggingface.co/TheBloke/neural-chat-7B-v3-1-GGUF/resolve/main/neural-chat-7b-v3-1.Q4_K_M.gguf",
-    "id": "neural-chat-7b-v3-1",
+    "id": "neural-chat-7b",
     "object": "model",
     "name": "Neural Chat 7B",
     "version": "1.0",
