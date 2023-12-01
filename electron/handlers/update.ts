@@ -1,5 +1,5 @@
 import { app, dialog } from "electron";
-import { WindowManager } from "../managers/window";
+import { WindowManager } from "./../managers/window";
 import { autoUpdater } from "electron-updater";
 
 export function handleAppUpdates() {

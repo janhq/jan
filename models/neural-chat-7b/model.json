@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/neural-chat-7B-v3-1-GGUF/resolve/main/neural-chat-7b-v3-1.Q4_K_M.gguf",
+    "id": "neural-chat-7b",
+    "object": "model",
+    "name": "Neural Chat 7B",
+    "version": "1.0",
+    "description": "The Neural Chat 7B model, developed on the foundation of mistralai/Mistral-7B-v0.1, has been fine-tuned using the Open-Orca/SlimOrca dataset and aligned with the Direct Preference Optimization (DPO) algorithm. It has demonstrated substantial improvements in various AI tasks and performance well on the open_llm_leaderboard.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "system_prompt": "### System: ",
+      "user_prompt": "### User: ",
+      "ai_prompt": "### Assistant: "
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "Intel, The Bloke",
+      "tags": ["General Use", "Role-playing", "Big Context Length"],
+      "size": 4370000000
+    }
+  }
+  

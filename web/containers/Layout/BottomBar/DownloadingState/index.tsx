@@ -69,18 +69,14 @@ export default function DownloadingState() {
                   />
                   <div className="flex items-center justify-between gap-x-2">
                     <div className="flex gap-x-2">
-                      <p className="line-clamp-1">{item?.fileName}</p>
+                      <p className="line-clamp-1">{item?.modelId}</p>
                       <span>{formatDownloadPercentage(item?.percent)}</span>
                     </div>
                     <Button
                       themes="outline"
                       size="sm"
                       onClick={() => {
-                        if (item?.fileName) {
-                          const model = models.find(
-                            (e) => e.id === item?.fileName
-                          )
-                          if (!model) return
+                        if (item?.modelId) {
                           extensionManager
                             .get<ModelExtension>(ExtensionType.Model)
                             ?.cancelModelDownload(item.modelId)

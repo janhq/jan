@@ -63,10 +63,7 @@ const MyModelsScreen = () => {
                     <div className="flex items-start gap-x-4">
                       <div className="inline-flex rounded-full border border-border p-1">
                         <Avatar className="h-8 w-8">
-                          <AvatarImage
-                            src={model.metadata.avatarUrl}
-                            alt={model.metadata.author}
-                          />
+                          <AvatarImage alt={model.metadata.author} />
                           <AvatarFallback>
                             {model.metadata.author.charAt(0)}
                           </AvatarFallback>

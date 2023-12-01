@@ -146,7 +146,6 @@ export default class JanInferenceExtension implements InferenceExtension {
       object: "thread.message",
     };
     events.emit(EventName.OnMessageResponse, message);
-    console.log(JSON.stringify(data, null, 2));
 
     instance.isCancelled = false;
     instance.controller = new AbortController();

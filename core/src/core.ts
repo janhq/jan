@@ -54,6 +54,9 @@ const getUserSpace = (): Promise<string> => window.core.api?.getUserSpace();
 const openFileExplorer: (path: string) => Promise<any> = (path) =>
   window.core.api?.openFileExplorer(path);
 
+const getResourcePath: () => Promise<string> = () =>
+  window.core.api?.getResourcePath();
+
 /**
  * Register extension point function type definition
  */
@@ -74,4 +77,5 @@ export {
   appDataPath,
   getUserSpace,
   openFileExplorer,
+  getResourcePath,
 };

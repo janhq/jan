@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
-import { Model, ModelCatalog } from '@janhq/core'
+import { Model } from '@janhq/core'
 import { Badge, Button } from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
@@ -15,67 +15,41 @@ import { ModelPerformance, TagType } from '@/constants/tagType'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-import useGetPerformanceTag from '@/hooks/useGetPerformanceTag'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGigabytes } from '@/utils/converter'
 
-import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
-
 type Props = {
-  suitableModel: Model
-  exploreModel: ModelCatalog
+  model: Model
 }
 
-const ExploreModelItemHeader: React.FC<Props> = ({
-  suitableModel,
-  exploreModel,
-}) => {
+const ExploreModelItemHeader: React.FC<Props> = ({ model }) => {
   const { downloadModel } = useDownloadModel()
   const { downloadedModels } = useGetDownloadedModels()
   const { modelDownloadStateAtom, downloadStates } = useDownloadState()
-  const { getPerformanceForModel } = useGetPerformanceTag()
   const [title, setTitle] = useState<string>('Recommended')
-  const totalRam = useAtomValue(totalRamAtom)
+
   const [performanceTag, setPerformanceTag] = useState<TagType>(
     ModelPerformance.PerformancePositive
   )
   const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[suitableModel.name]),
-    [suitableModel.name]
+    () => atom((get) => get(modelDownloadStateAtom)[model.id]),
+    [model.id]
   )
   const downloadState = useAtomValue(downloadAtom)
   const { setMainViewState } = useMainViewState()
 
-  const calculatePerformance = useCallback(
-    (suitableModel: Model) => async () => {
-      const { title, performanceTag } = await getPerformanceForModel(
-        suitableModel,
-        totalRam
-      )
-      setPerformanceTag(performanceTag)
-      setTitle(title)
-    },
-    [totalRam]
-  )
-
-  useEffect(() => {
-    calculatePerformance(suitableModel)
-  }, [suitableModel])
-
   const onDownloadClick = useCallback(() => {
-    downloadModel(suitableModel)
+    downloadModel(model)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suitableModel])
+  }, [model])
 
-  // TODO: Comparing between Model Id and Version Name?
-  const isDownloaded =
-    downloadedModels.find((model) => model.id === suitableModel.name) != null
+  const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
 
   let downloadButton = (
     <Button onClick={() => onDownloadClick()}>
-      {suitableModel.metadata.size
-        ? `Download (${toGigabytes(suitableModel.metadata.size)})`
+      {model.metadata.size
+        ? `Download (${toGigabytes(model.metadata.size)})`
         : 'Download'}
     </Button>
   )
@@ -93,7 +67,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   }
 
   if (downloadState != null && downloadStates.length > 0) {
-    downloadButton = <ModalCancelDownload suitableModel={suitableModel} />
+    downloadButton = <ModalCancelDownload model={model} />
   }
 
   const renderBadge = (performance: TagType) => {
@@ -115,7 +89,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({
   return (
     <div className="flex items-center justify-between rounded-t-md border-b border-border bg-background/50 px-4 py-2">
       <div className="flex items-center gap-2">
-        <span className="font-medium">{exploreModel.name}</span>
+        <span className="font-medium">{model.name}</span>
         {performanceTag && renderBadge(performanceTag)}
       </div>
       {downloadButton}

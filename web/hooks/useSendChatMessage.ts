@@ -45,48 +45,6 @@ export default function useSendChatMessage() {
   const selectedModel = useAtomValue(selectedModelAtom)
   const { startModel } = useActiveModel()
 
-  function updateThreadTitle(newMessage: MessageRequest) {
-    if (
-      activeThread &&
-      newMessage.messages &&
-      newMessage.messages.length > 2 &&
-      (activeThread.title === '' || activeThread.title === activeModel?.name)
-    ) {
-      const summaryMsg: ChatCompletionMessage = {
-        role: ChatCompletionRole.User,
-        content:
-          'Summarize this conversation in less than 5 words, the response should just include the summary',
-      }
-      // Request convo summary
-      setTimeout(async () => {
-        const result = await extensionManager
-          .get<InferenceExtension>(ExtensionType.Inference)
-          ?.inferenceRequest({
-            ...newMessage,
-            messages: newMessage.messages?.slice(0, -1).concat([summaryMsg]),
-          })
-          .catch(console.error)
-        const content = result?.content[0]?.text.value.trim()
-        if (
-          activeThread &&
-          activeThread.id === newMessage.threadId &&
-          content &&
-          content.length > 0 &&
-          content.split(' ').length <= 20
-        ) {
-          const updatedConv: Thread = {
-            ...activeThread,
-            title: content,
-          }
-          updateThread(updatedConv)
-          extensionManager
-            .get<ConversationalExtension>(ExtensionType.Conversational)
-            ?.saveThread(updatedConv)
-        }
-      }, 1000)
-    }
-  }
-
   const sendChatMessage = async () => {
     if (!currentPrompt || currentPrompt.trim().length === 0) {
       return
@@ -172,7 +130,6 @@ export default function useSendChatMessage() {
     }
 
     addNewMessage(threadMessage)
-    updateThreadTitle(messageRequest)
 
     await extensionManager
       .get<ConversationalExtension>(ExtensionType.Conversational)
@@ -180,6 +137,10 @@ export default function useSendChatMessage() {
 
     const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
     if (activeModel?.id !== modelId) {
+      toaster({
+        title: 'Message queued.',
+        description: 'It will be sent once the model is done loading',
+      })
       await startModel(modelId)
     }
     events.emit(EventName.OnMessageSent, messageRequest)
