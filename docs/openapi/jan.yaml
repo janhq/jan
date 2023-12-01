@@ -486,7 +486,7 @@ paths:
       description: |
         Return a list of assistants. <a href = "https://platform.openai.com/docs/api-reference/assistants/listAssistants"> Equivalent to OpenAI's list assistants. </a>
     post:
-      operationId: createAssistants
+      operationId: createAssistant
       tags:
         - Assistants
       summary: Create assistant
@@ -498,7 +498,7 @@ paths:
       operationId: getAssistant
       tags:
         - Assistants
-      summary: Retrieve assistants
+      summary: Retrieve assistant
       description: |
         Retrieves an assistant. <a href = "https://platform.openai.com/docs/api-reference/assistants/getAssistant"> Equivalent to OpenAI's retrieve assistants. </a> 
     post:
