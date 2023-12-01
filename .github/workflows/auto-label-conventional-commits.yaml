@@ -8,6 +8,7 @@ on:
     types:
       - reopened
       - opened
+      - edited
 jobs:
   label_issues:
     runs-on: ubuntu-latest
@@ -15,6 +16,8 @@ jobs:
       issues: write
       pull-requests: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Label issues
         run: |
           ISSUE_TITLE=$(gh issue view ${{ github.event.number }} --json title -q ".title")
