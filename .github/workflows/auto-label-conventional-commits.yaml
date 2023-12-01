@@ -8,7 +8,6 @@ on:
     types:
       - reopened
       - opened
-      - edited
 jobs:
   label_issues:
     runs-on: ubuntu-latest
