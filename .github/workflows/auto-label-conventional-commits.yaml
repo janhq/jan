@@ -1,23 +1,18 @@
 name: "Auto Label Conventional Commits"
 on:
-  issues:
-    types:
-      - reopened
-      - opened
   pull_request:
     types:
       - reopened
       - opened
 jobs:
-  label_issues:
+  label_prs:
     runs-on: ubuntu-latest
     permissions:
-      issues: write
       pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Label issues
+      - name: Label PRs
         run: |
           ISSUE_TITLE=$(gh issue view ${{ github.event.number }} --json title -q ".title")
           case "$ISSUE_TITLE" in
