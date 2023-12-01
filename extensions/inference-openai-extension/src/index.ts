@@ -3,7 +3,7 @@
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  * @version 1.0.0
- * @module inference-extension/src/index
+ * @module inference-openai-extension/src/index
  */
 
 import {
@@ -19,6 +19,7 @@ import {
   events,
   executeOnMain,
   getUserSpace,
+  fs
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
@@ -31,20 +32,26 @@ import { join } from "path";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceExtension implements InferenceExtension {
+  private static readonly _homeDir = 'engines'
+  private static readonly _engineMetadataFileName = 'openai.json'
+  
   controller = new AbortController();
   isCancelled = false;
   /**
    * Returns the type of the extension.
    * @returns {ExtensionType} The type of the extension.
    */
+  // TODO: To fix
   type(): ExtensionType {
-    return ExtensionType.Inference;
+    return undefined;
   }
-
+// janroot/engine/nitro.json
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
   onLoad(): void {
+    fs.mkdir(JanInferenceExtension._homeDir)
+    // TODO: Copy nitro.json to janroot/engine/nitro.json
     events.on(EventName.OnMessageSent, (data) =>
       JanInferenceExtension.handleMessageRequest(data, this)
     );
@@ -53,9 +60,7 @@ export default class JanInferenceExtension implements InferenceExtension {
   /**
    * Stops the model inference.
    */
-  onUnload(): void {
-    this.stopModel();
-  }
+  onUnload(): void {}
 
   /**
    * Initializes the model with the specified file name.
@@ -79,9 +84,7 @@ export default class JanInferenceExtension implements InferenceExtension {
    * Stops the model.
    * @returns {Promise<void>} A promise that resolves when the model is stopped.
    */
-  async stopModel(): Promise<void> {
-    return executeOnMain(MODULE, "killSubprocess");
-  }
+  async stopModel(): Promise<void> {}
 
   /**
    * Stops streaming inference.
@@ -92,35 +95,37 @@ export default class JanInferenceExtension implements InferenceExtension {
     this.controller?.abort();
   }
 
+  private async copyModelsToHomeDir() {
+    try {
+    // list all of the files under the home directory
+    const files = await fs.listFiles('')
+    
+    if (files.includes(JanInferenceExtension._homeDir)) {
+      // ignore if the model is already downloaded
+      console.debug('Model already downloaded')
+    return
+    }
+    
+    // copy models folder from resources to home directory
+    const resourePath = await getResourcePath()
+    const srcPath = join(resourePath, 'models')
+    
+    const userSpace = await getUserSpace()
+    const destPath = join(userSpace, JanInferenceExtension._homeDir)
+    
+    await fs.copyFile(srcPath, destPath)
+    } catch (err) {
+      console.error(err)
+    }
+    }
+
   /**
    * Makes a single response inference request.
    * @param {MessageRequest} data - The data for the inference request.
    * @returns {Promise<any>} A promise that resolves with the inference response.
    */
   async inferenceRequest(data: MessageRequest): Promise<ThreadMessage> {
-    const timestamp = Date.now();
-    const message: ThreadMessage = {
-      thread_id: data.threadId,
-      created: timestamp,
-      updated: timestamp,
-      status: MessageStatus.Ready,
-      id: "",
-      role: ChatCompletionRole.Assistant,
-      object: "thread.message",
-      content: [],
-    };
-
-    return new Promise(async (resolve, reject) => {
-      requestInference(data.messages ?? []).subscribe({
-        next: (_content) => {},
-        complete: async () => {
-          resolve(message);
-        },
-        error: async (err) => {
-          reject(err);
-        },
-      });
-    });
+    // TODO: @louis
   }
 
   /**
