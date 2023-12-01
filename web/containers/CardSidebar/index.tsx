@@ -2,10 +2,7 @@ import { ReactNode, useState } from 'react'
 import { Fragment } from 'react'
 
 import { Menu, Transition } from '@headlessui/react'
-import {
-  ChevronDownIcon,
-  EllipsisVerticalIcon,
-} from '@heroicons/react/20/solid'
+import { ChevronDownIcon, MoreVerticalIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 interface Props {
@@ -23,20 +20,30 @@ export default function CardSidebar({
   const [show, setShow] = useState(true)
 
   return (
-    <div className="flex w-full flex-col">
-      <div className="flex items-center rounded-lg border border-border">
+    <div
+      className={twMerge(
+        'flex w-full flex-col overflow-hidden rounded-lg',
+        show && 'border border-border'
+      )}
+    >
+      <div
+        className={twMerge(
+          'flex items-center bg-zinc-200',
+          show && 'border-b border-border '
+        )}
+      >
         <button
           onClick={() => setShow(!show)}
-          className="flex w-full flex-1 items-center py-2"
+          className="flex w-full flex-1 items-center space-x-2 px-3 py-2"
         >
           <ChevronDownIcon
             className={`h-5 w-5 flex-none text-gray-400 ${
               show && 'rotate-180'
             }`}
           />
-          <span className="text-xs uppercase">{title}</span>
+          <span className="font-bold">{title}</span>
         </button>
-        <Menu as="div" className="relative flex-none">
+        {/* <Menu as="div" className="relative flex-none">
           <Menu.Button className="-m-2.5 block p-2.5 text-gray-500 hover:text-gray-900">
             <span className="sr-only">Open options</span>
             <EllipsisVerticalIcon className="h-5 w-5" aria-hidden="true" />
@@ -79,7 +86,7 @@ export default function CardSidebar({
               </Menu.Item>
             </Menu.Items>
           </Transition>
-        </Menu>
+        </Menu> */}
       </div>
       {show && <div className="flex flex-col gap-2 p-2">{children}</div>}
     </div>

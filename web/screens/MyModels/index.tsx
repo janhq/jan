@@ -48,7 +48,7 @@ const MyModelsScreen = () => {
   }
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full bg-background">
       <ScrollArea className="h-full w-full">
         <div className="p-4" data-test-id="testid-my-models">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">

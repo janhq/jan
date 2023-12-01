@@ -53,7 +53,10 @@ const ChatScreen = () => {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const conversations = useAtomValue(threadsAtom)
-  const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
+  const isEnableChat = currentConvo && activeModel
+
+  // console.log(conversations)
+  // console.log(activeModel)
 
   const [isModelAvailable, setIsModelAvailable] = useState(
     true
@@ -102,11 +105,11 @@ const ChatScreen = () => {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full w-full">
       <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background">
         <ThreadList />
       </div>
-      <div className="relative flex h-full w-[calc(100%-256px)] flex-col bg-background">
+      <div className="relative flex h-full w-[calc(100%-240px)] flex-col bg-background">
         <div className="flex h-full w-full flex-col justify-between">
           {/* {isEnableChat && currentConvo && (
             <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
@@ -175,22 +178,9 @@ const ChatScreen = () => {
                     height={56}
                   />
 
-                  <p className="mt-1 text-base">
-                    You have not started any model
-                  </p>
+                  <p className="mt-1 text-base">You need to choose a model</p>
                 </Fragment>
               )}
-
-              {/* {!activeModel && downloadedModels.length > 0 && (
-                <Fragment>
-                  <h1 className="text-lg font-medium">{`You don’t have any actively running models`}</h1>
-                  <p className="mt-1">{`Please start a downloaded model to use this feature.`}</p>
-                  <Badge className="mt-4" themes="outline">
-                    <ShortCut menu="E" />
-                    &nbsp; to show your model
-                  </Badge>
-                </Fragment>
-              )} */}
             </div>
           )}
 
@@ -215,6 +205,7 @@ const ChatScreen = () => {
           </div>
         </div>
       </div>
+      {/* Sidebar */}
       <Sidebar />
     </div>
   )
