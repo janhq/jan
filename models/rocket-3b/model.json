@@ -1,0 +1,23 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/rocket-3B-GGUF/resolve/main/rocket-3b.Q4_K_M.gguf",
+    "id": "rocket-3b",
+    "object": "model",
+    "name": "Rocket 3B",
+    "version": "1.0",
+    "description": "Rocket-3B is a GPT-like model, primarily English, fine-tuned on diverse public datasets. It outperforms larger models in benchmarks, showcasing superior understanding and text generation, making it an effective chat model for its size.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "system_prompt": "<|im_start|>system\n",
+      "user_prompt": "<|im_end|>\n<|im_start|>user\n",
+      "ai_prompt": "<|im_end|>\n<|im_start|>assistant\n"
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "pansophic, The Bloke",
+      "tags": ["General Use"],
+      "size": 1710000000
+    }
+  }  

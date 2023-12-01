@@ -8,7 +8,7 @@ export function useGetAppVersion() {
   }, [])
 
   const getAppVersion = () => {
-    window.coreAPI?.appVersion().then((version: string | undefined) => {
+    window.core.api?.appVersion().then((version: string | undefined) => {
       setVersion(version ?? '')
     })
   }

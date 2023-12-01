@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 
-import { PluginType } from '@janhq/core'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
-import { Model } from '@janhq/core/lib/types'
+import { ModelExtension, ExtensionType } from '@janhq/core'
+import { Model } from '@janhq/core'
 
 import {
   Modal,
@@ -21,38 +20,34 @@ import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
+import { extensionManager } from '@/extension'
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-import { pluginManager } from '@/plugin'
 
 type Props = {
-  suitableModel: Model
+  model: Model
   isFromList?: boolean
 }
 
-export default function ModalCancelDownload({
-  suitableModel,
-  isFromList,
-}: Props) {
+export default function ModalCancelDownload({ model, isFromList }: Props) {
   const { modelDownloadStateAtom } = useDownloadState()
   const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[suitableModel.name]),
+    () => atom((get) => get(modelDownloadStateAtom)[model.id]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [suitableModel.name]
+    [model.id]
   )
   const models = useAtomValue(downloadingModelsAtom)
   const downloadState = useAtomValue(downloadAtom)
+  const cancelText = `Cancel ${formatDownloadPercentage(downloadState.percent)}`
 
   return (
     <Modal>
       <ModalTrigger asChild>
         {isFromList ? (
           <Button themes="outline" size="sm">
-            Cancel ({formatDownloadPercentage(downloadState.percent)})
+            {cancelText}
           </Button>
         ) : (
-          <Button>
-            Cancel ({formatDownloadPercentage(downloadState.percent)})
-          </Button>
+          <Button>{cancelText}</Button>
         )}
       </ModalTrigger>
       <ModalContent>
@@ -61,7 +56,7 @@ export default function ModalCancelDownload({
         </ModalHeader>
         <p>
           Are you sure you want to cancel the download of&nbsp;
-          {downloadState?.fileName}?
+          {downloadState?.modelId}?
         </p>
         <ModalFooter>
           <div className="flex gap-x-2">
@@ -72,13 +67,9 @@ export default function ModalCancelDownload({
               <Button
                 themes="danger"
                 onClick={() => {
-                  if (downloadState?.fileName) {
-                    const model = models.find(
-                      (e) => e.id === downloadState?.fileName
-                    )
-                    if (!model) return
-                    pluginManager
-                      .get<ModelPlugin>(PluginType.Model)
+                  if (downloadState?.modelId) {
+                    extensionManager
+                      .get<ModelExtension>(ExtensionType.Model)
                       ?.cancelModelDownload(downloadState.modelId)
                   }
                 }}

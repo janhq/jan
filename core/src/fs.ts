@@ -1,9 +1,5 @@
 const fetchRetry = require("fetch-retry")(global.fetch);
 
-const PORT = 1337;
-const LOCAL_HOST = "127.0.0.1";
-const JAN_HTTP_SERVER_URL = `http://${LOCAL_HOST}:${PORT}`;
-const JAN_FS_API = `${JAN_HTTP_SERVER_URL}/fs`;
 /**
  * Writes data to a file at the specified path.
  * @param {string} path - The path to the file.
@@ -11,7 +7,7 @@ const JAN_FS_API = `${JAN_HTTP_SERVER_URL}/fs`;
  * @returns {Promise<any>} A Promise that resolves when the file is written successfully.
  */
 const writeFile: (path: string, data: string) => Promise<any> = (path, data) =>
-  window.coreAPI?.writeFile(path, data);
+  window.core.api?.writeFile(path, data);
 
 /**
  * Checks whether the path is a directory.
@@ -19,8 +15,7 @@ const writeFile: (path: string, data: string) => Promise<any> = (path, data) =>
  * @returns {boolean} A boolean indicating whether the path is a directory.
  */
 const isDirectory = (path: string): Promise<boolean> =>
-  window.coreAPI?.isDirectory(path);
-
+  window.core.api?.isDirectory(path);
 
 /**
  * Reads the contents of a file at the specified path.
@@ -28,7 +23,7 @@ const isDirectory = (path: string): Promise<boolean> =>
  * @returns {Promise<any>} A Promise that resolves with the contents of the file.
  */
 const readFile: (path: string) => Promise<any> = (path) =>
-  window.coreAPI?.readFile(path);
+  window.core.api?.readFile(path);
 
 /**
  * List the directory files
@@ -36,8 +31,7 @@ const readFile: (path: string) => Promise<any> = (path) =>
  * @returns {Promise<any>} A Promise that resolves with the contents of the directory.
  */
 const listFiles: (path: string) => Promise<any> = (path) =>
-  window.coreAPI?.listFiles(path);
-
+  window.core.api?.listFiles(path);
 
 /**
  * Creates a directory at the specified path.
@@ -45,7 +39,7 @@ const listFiles: (path: string) => Promise<any> = (path) =>
  * @returns {Promise<any>} A Promise that resolves when the directory is created successfully.
  */
 const mkdir: (path: string) => Promise<any> = (path) =>
-  window.coreAPI?.mkdir(path);
+  window.core.api?.mkdir(path);
 
 /**
  * Removes a directory at the specified path.
@@ -53,15 +47,14 @@ const mkdir: (path: string) => Promise<any> = (path) =>
  * @returns {Promise<any>} A Promise that resolves when the directory is removed successfully.
  */
 const rmdir: (path: string) => Promise<any> = (path) =>
-  window.coreAPI?.rmdir(path);
-
+  window.core.api?.rmdir(path);
 /**
  * Deletes a file from the local file system.
  * @param {string} path - The path of the file to delete.
  * @returns {Promise<any>} A Promise that resolves when the file is deleted.
  */
 const deleteFile: (path: string) => Promise<any> = (path) =>
-  window.coreAPI?.deleteFile(path);
+  window.core.api?.deleteFile(path);
 
 /**
  * Appends data to a file at the specified path.
@@ -69,7 +62,10 @@ const deleteFile: (path: string) => Promise<any> = (path) =>
  * @param data data to append
  */
 const appendFile: (path: string, data: string) => Promise<any> = (path, data) =>
-  window.coreAPI?.appendFile(path, data);
+  window.core.api?.appendFile(path, data);
+
+const copyFile: (src: string, dest: string) => Promise<any> = (src, dest) =>
+  window.core.api?.copyFile(src, dest);
 
 /**
  * Reads a file line by line.
@@ -77,8 +73,7 @@ const appendFile: (path: string, data: string) => Promise<any> = (path, data) =>
  * @returns {Promise<any>} A promise that resolves to the lines of the file.
  */
 const readLineByLine: (path: string) => Promise<any> = (path) =>
-  window.coreAPI?.readLineByLine(path);
-
+  window.core.api?.readLineByLine(path);
 
 export const fs = {
   isDirectory,
@@ -90,4 +85,5 @@ export const fs = {
   deleteFile,
   appendFile,
   readLineByLine,
+  copyFile,
 };

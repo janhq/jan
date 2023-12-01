@@ -5,9 +5,7 @@ declare global {
   declare const PLUGIN_CATALOG: string
   declare const VERSION: string
   interface Window {
+    core?: any | undefined
     electronAPI?: any | undefined
-    corePlugin?: any | undefined
-    coreAPI?: any | undefined
-    pluggableElectronIpc?: any | undefined
   }
 }

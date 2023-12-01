@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/openchat_3.5-GGUF/resolve/main/openchat_3.5.Q4_K_M.gguf",
+    "id": "openchat-7b",
+    "object": "model",
+    "name": "Open Chat 3.5 7B",
+    "version": "1.0",
+    "description": "OpenChat represents a breakthrough in the realm of open-source language models. By implementing the C-RLFT fine-tuning strategy, inspired by offline reinforcement learning, this 7B model achieves results on par with ChatGPT (March).",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "system_prompt": "",
+      "user_prompt": "GPT4 User: ",
+      "ai_prompt": "<|end_of_turn|>\nGPT4 Assistant: " 
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "OpenChat, The Bloke",
+      "tags": ["General", "Code"],
+      "size": 4370000000
+    }
+  }
+  

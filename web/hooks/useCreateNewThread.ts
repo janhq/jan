@@ -1,17 +1,22 @@
 import {
   Assistant,
+  ConversationalExtension,
+  ExtensionType,
   Thread,
   ThreadAssistantInfo,
   ThreadState,
-} from '@janhq/core/lib/types'
+} from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { generateThreadId } from '@/utils/conversation'
 
+import { extensionManager } from '@/extension'
 import {
   threadsAtom,
   setActiveThreadIdAtom,
   threadStatesAtom,
+  activeThreadAtom,
+  updateThreadAtom,
 } from '@/helpers/atoms/Conversation.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -35,6 +40,8 @@ export const useCreateNewThread = () => {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const [threadStates, setThreadStates] = useAtom(threadStatesAtom)
   const threads = useAtomValue(threadsAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
+  const updateThread = useSetAtom(updateThreadAtom)
 
   const requestCreateNewThread = async (assistant: Assistant) => {
     const unfinishedThreads = threads.filter((t) => t.isFinishInit === false)
@@ -86,7 +93,20 @@ export const useCreateNewThread = () => {
     setActiveThreadId(thread.id)
   }
 
+  function updateThreadTitle(title: string) {
+    if (!activeThread) return
+    const updatedConv: Thread = {
+      ...activeThread,
+      title,
+    }
+    updateThread(updatedConv)
+    extensionManager
+      .get<ConversationalExtension>(ExtensionType.Conversational)
+      ?.saveThread(updatedConv)
+  }
+
   return {
     requestCreateNewThread,
+    updateThreadTitle,
   }
 }

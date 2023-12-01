@@ -1,14 +1,14 @@
-import { ChatCompletionRole, PluginType } from '@janhq/core'
-import { ConversationalPlugin } from '@janhq/core/lib/plugins'
+import { ChatCompletionRole, ExtensionType } from '@janhq/core'
+import { ConversationalExtension } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { pluginManager } from '../plugin/PluginManager'
-
 import { useActiveModel } from './useActiveModel'
+
+import { extensionManager } from '@/extension/ExtensionManager'
 
 import {
   cleanConversationMessages,
@@ -37,8 +37,8 @@ export default function useDeleteThread() {
       const thread = threads.filter((c) => c.id === activeThreadId)[0]
       cleanMessages(activeThreadId)
       if (thread)
-        await pluginManager
-          .get<ConversationalPlugin>(PluginType.Conversational)
+        await extensionManager
+          .get<ConversationalExtension>(ExtensionType.Conversational)
           ?.writeMessages(
             activeThreadId,
             messages.filter((msg) => msg.role === ChatCompletionRole.System)
@@ -52,8 +52,8 @@ export default function useDeleteThread() {
       return
     }
     try {
-      await pluginManager
-        .get<ConversationalPlugin>(PluginType.Conversational)
+      await extensionManager
+        .get<ConversationalExtension>(ExtensionType.Conversational)
         ?.deleteThread(activeThreadId)
       const availableThreads = threads.filter((c) => c.id !== activeThreadId)
       setThreads(availableThreads)

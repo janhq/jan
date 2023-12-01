@@ -1,15 +1,15 @@
-import { PluginType, Thread } from '@janhq/core'
+import { ExtensionType, Thread } from '@janhq/core'
 
-import { ConversationalPlugin } from '@janhq/core/lib/plugins'
+import { ConversationalExtension } from '@janhq/core'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import { extensionManager } from '@/extension'
 import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   getActiveThreadIdAtom,
   setActiveThreadIdAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import { pluginManager } from '@/plugin'
 
 export default function useSetActiveThread() {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
@@ -22,14 +22,9 @@ export default function useSetActiveThread() {
       return
     }
 
-    if (!thread.isFinishInit) {
-      console.debug('Thread not finish init')
-      return
-    }
-
     // load the corresponding messages
-    const messages = await pluginManager
-      .get<ConversationalPlugin>(PluginType.Conversational)
+    const messages = await extensionManager
+      .get<ConversationalExtension>(ExtensionType.Conversational)
       ?.getAllMessages(thread.id)
     setThreadMessage(thread.id, messages ?? [])
 

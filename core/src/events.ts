@@ -2,14 +2,12 @@
  * The `EventName` enumeration contains the names of all the available events in the Jan platform.
  */
 export enum EventName {
-  OnNewConversation = "onNewConversation",
-  OnNewMessageRequest = "onNewMessageRequest",
-  OnNewMessageResponse = "onNewMessageResponse",
-  OnMessageResponseUpdate = "onMessageResponseUpdate",
-  OnMessageResponseFinished = "onMessageResponseFinished",
-  OnDownloadUpdate = "onDownloadUpdate",
-  OnDownloadSuccess = "onDownloadSuccess",
-  OnDownloadError = "onDownloadError",
+  /** The `OnMessageSent` event is emitted when a message is sent. */
+  OnMessageSent = "OnMessageSent",
+  /** The `OnMessageResponse` event is emitted when a message is received. */
+  OnMessageResponse = "OnMessageResponse",
+  /** The `OnMessageUpdate` event is emitted when a message is updated. */
+  OnMessageUpdate = "OnMessageUpdate",
 }
 
 /**
@@ -22,7 +20,7 @@ const on: (eventName: string, handler: Function) => void = (
   eventName,
   handler
 ) => {
-  window.corePlugin?.events?.on(eventName, handler);
+  window.core?.events?.on(eventName, handler);
 };
 
 /**
@@ -35,7 +33,7 @@ const off: (eventName: string, handler: Function) => void = (
   eventName,
   handler
 ) => {
-  window.corePlugin?.events?.off(eventName, handler);
+  window.core?.events?.off(eventName, handler);
 };
 
 /**
@@ -45,7 +43,7 @@ const off: (eventName: string, handler: Function) => void = (
  * @param object The object to pass to the event callback.
  */
 const emit: (eventName: string, object: any) => void = (eventName, object) => {
-  window.corePlugin?.events?.emit(eventName, object);
+  window.core?.events?.emit(eventName, object);
 };
 
 export const events = {

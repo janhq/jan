@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 
-import { PluginType } from '@janhq/core'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { ExtensionType } from '@janhq/core'
+import { ModelExtension } from '@janhq/core'
 import {
   Progress,
   Modal,
@@ -18,8 +18,8 @@ import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
+import { extensionManager } from '@/extension'
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-import { pluginManager } from '@/plugin'
 
 export default function DownloadingState() {
   const { downloadStates } = useDownloadState()
@@ -69,20 +69,16 @@ export default function DownloadingState() {
                   />
                   <div className="flex items-center justify-between gap-x-2">
                     <div className="flex gap-x-2">
-                      <p className="line-clamp-1">{item?.fileName}</p>
+                      <p className="line-clamp-1">{item?.modelId}</p>
                       <span>{formatDownloadPercentage(item?.percent)}</span>
                     </div>
                     <Button
                       themes="outline"
                       size="sm"
                       onClick={() => {
-                        if (item?.fileName) {
-                          const model = models.find(
-                            (e) => e.id === item?.fileName
-                          )
-                          if (!model) return
-                          pluginManager
-                            .get<ModelPlugin>(PluginType.Model)
+                        if (item?.modelId) {
+                          extensionManager
+                            .get<ModelExtension>(ExtensionType.Model)
                             ?.cancelModelDownload(item.modelId)
                         }
                       }}

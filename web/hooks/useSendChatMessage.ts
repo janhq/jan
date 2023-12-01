@@ -5,12 +5,12 @@ import {
   EventName,
   MessageRequest,
   MessageStatus,
-  PluginType,
+  ExtensionType,
   Thread,
   ThreadMessage,
   events,
 } from '@janhq/core'
-import { ConversationalPlugin, InferencePlugin } from '@janhq/core/lib/plugins'
+import { ConversationalExtension, InferenceExtension } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { ulid } from 'ulid'
@@ -22,6 +22,7 @@ import { toaster } from '@/containers/Toast'
 
 import { useActiveModel } from './useActiveModel'
 
+import { extensionManager } from '@/extension/ExtensionManager'
 import {
   addNewMessageAtom,
   getCurrentChatMessagesAtom,
@@ -29,63 +30,20 @@ import {
 import {
   activeThreadAtom,
   updateThreadAtom,
-  updateConversationWaitingForResponseAtom,
+  updateThreadWaitingForResponseAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import { pluginManager } from '@/plugin/PluginManager'
 
 export default function useSendChatMessage() {
   const activeThread = useAtomValue(activeThreadAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateThread = useSetAtom(updateThreadAtom)
-  const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
+  const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
 
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const { activeModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
   const { startModel } = useActiveModel()
-
-  function updateThreadTitle(newMessage: MessageRequest) {
-    if (
-      activeThread &&
-      newMessage.messages &&
-      newMessage.messages.length > 2 &&
-      (activeThread.title === '' || activeThread.title === activeModel?.name)
-    ) {
-      const summaryMsg: ChatCompletionMessage = {
-        role: ChatCompletionRole.User,
-        content:
-          'Summarize this conversation in less than 5 words, the response should just include the summary',
-      }
-      // Request convo summary
-      setTimeout(async () => {
-        const result = await pluginManager
-          .get<InferencePlugin>(PluginType.Inference)
-          ?.inferenceRequest({
-            ...newMessage,
-            messages: newMessage.messages?.slice(0, -1).concat([summaryMsg]),
-          })
-          .catch(console.error)
-        const content = result?.content[0]?.text.value.trim()
-        if (
-          activeThread &&
-          activeThread.id === newMessage.threadId &&
-          content &&
-          content.length > 0 &&
-          content.split(' ').length <= 20
-        ) {
-          const updatedConv: Thread = {
-            ...activeThread,
-            title: content,
-          }
-          updateThread(updatedConv)
-          pluginManager
-            .get<ConversationalPlugin>(PluginType.Conversational)
-            ?.saveThread(updatedConv)
-        }
-      }, 1000)
-    }
-  }
 
   const sendChatMessage = async () => {
     if (!currentPrompt || currentPrompt.trim().length === 0) {
@@ -122,12 +80,12 @@ export default function useSendChatMessage() {
 
       updateThread(updatedThread)
 
-      pluginManager
-        .get<ConversationalPlugin>(PluginType.Conversational)
+      extensionManager
+        .get<ConversationalExtension>(ExtensionType.Conversational)
         ?.saveThread(updatedThread)
     }
 
-    updateConvWaiting(activeThread.id, true)
+    updateThreadWaiting(activeThread.id, true)
 
     const prompt = currentPrompt.trim()
     setCurrentPrompt('')
@@ -172,17 +130,20 @@ export default function useSendChatMessage() {
     }
 
     addNewMessage(threadMessage)
-    updateThreadTitle(messageRequest)
 
-    await pluginManager
-      .get<ConversationalPlugin>(PluginType.Conversational)
+    await extensionManager
+      .get<ConversationalExtension>(ExtensionType.Conversational)
       ?.addNewMessage(threadMessage)
 
     const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
     if (activeModel?.id !== modelId) {
+      toaster({
+        title: 'Message queued.',
+        description: 'It will be sent once the model is done loading',
+      })
       await startModel(modelId)
     }
-    events.emit(EventName.OnNewMessageRequest, messageRequest)
+    events.emit(EventName.OnMessageSent, messageRequest)
   }
 
   return {

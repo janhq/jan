@@ -13,10 +13,12 @@
       "renderer/**/*",
       "build/*.{js,map}",
       "build/**/*.{js,map}",
-      "core/pre-install"
+      "pre-install",
+      "models/**/*"
     ],
     "asarUnpack": [
-      "core/pre-install"
+      "pre-install",
+      "models"
     ],
     "publish": [
       {
@@ -70,6 +72,7 @@
     "@uiball/loaders": "^1.3.0",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
+    "fs-extra": "^11.2.0",
     "pacote": "^17.0.4",
     "request": "^2.88.2",
     "request-progress": "^3.0.0",

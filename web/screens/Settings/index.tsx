@@ -9,10 +9,10 @@ import { twMerge } from 'tailwind-merge'
 
 import Advanced from '@/screens/Settings/Advanced'
 import AppearanceOptions from '@/screens/Settings/Appearance'
-import PluginCatalog from '@/screens/Settings/CorePlugins/PluginsCatalog'
-import PreferencePlugins from '@/screens/Settings/CorePlugins/PreferencePlugins'
+import ExtensionCatalog from '@/screens/Settings/CoreExtensions/ExtensionsCatalog'
+import PreferenceExtensions from '@/screens/Settings/CoreExtensions/PreferenceExtensions'
 
-import { formatPluginsName } from '@/utils/converter'
+import { formatExtensionsName } from '@/utils/converter'
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')
@@ -24,48 +24,24 @@ const SettingsScreen = () => {
     const menu = ['Appearance']
 
     if (typeof window !== 'undefined' && window.electronAPI) {
-      menu.push('Core Plugins')
+      menu.push('Core Extensions')
     }
     menu.push('Advanced')
     setMenus(menu)
   }, [])
 
-  /**
-   * Fetches the active plugins and their preferences from the `plugins` and `preferences` modules.
-   * If the `experimentComponent` extension point is available, it executes the extension point and
-   * appends the returned components to the `experimentRef` element.
-   * If the `PluginPreferences` extension point is available, it executes the extension point and
-   * fetches the preferences for each plugin using the `preferences.get` function.
-   */
-  useEffect(() => {
-    const getActivePluginPreferences = async () => {
-      // setPreferenceItems(Array.isArray(data) ? data : [])
-      // TODO: Add back with new preferences mechanism
-      // Promise.all(
-      //   (Array.isArray(data) ? data : []).map((e) =>
-      //     preferences
-      //       .get(e.pluginName, e.preferenceKey)
-      //       .then((k) => ({ key: e.preferenceKey, value: k }))
-      //   )
-      // ).then((data) => {
-      //   setPreferenceValues(data)
-      // })
-    }
-    getActivePluginPreferences()
-  }, [])
-
-  const preferencePlugins = preferenceItems
-    .map((x) => x.pluginName)
+  const preferenceExtensions = preferenceItems
+    .map((x) => x.extensionnName)
     .filter((x, i) => {
-      //     return prefere/nceItems.map((x) => x.pluginName).indexOf(x) === i
+      //     return prefere/nceItems.map((x) => x.extensionName).indexOf(x) === i
     })
 
-  const [activePreferencePlugin, setActivePreferencePlugin] = useState('')
+  const [activePreferenceExtension, setActivePreferenceExtension] = useState('')
 
   const handleShowOptions = (menu: string) => {
     switch (menu) {
-      case 'Core Plugins':
-        return <PluginCatalog />
+      case 'Core Extensions':
+        return <ExtensionCatalog />
 
       case 'Appearance':
         return <AppearanceOptions />
@@ -75,8 +51,8 @@ const SettingsScreen = () => {
 
       default:
         return (
-          <PreferencePlugins
-            pluginName={menu}
+          <PreferenceExtensions
+            extensionName={menu}
             preferenceItems={preferenceItems}
             preferenceValues={preferenceValues}
           />
@@ -101,7 +77,7 @@ const SettingsScreen = () => {
                       <div
                         onClick={() => {
                           setActiveStaticMenu(menu)
-                          setActivePreferencePlugin('')
+                          setActivePreferenceExtension('')
                         }}
                         className="block w-full cursor-pointer"
                       >
@@ -122,19 +98,19 @@ const SettingsScreen = () => {
             </div>
 
             <div className="mt-5 flex-shrink-0">
-              {preferencePlugins.length > 0 && (
+              {preferenceExtensions.length > 0 && (
                 <label className="font-bold uppercase text-muted-foreground">
-                  Core plugins
+                  Core Extensions
                 </label>
               )}
               <div className="mt-2 font-medium">
-                {preferencePlugins.map((menu, i) => {
-                  const isActive = activePreferencePlugin === menu
+                {preferenceExtensions.map((menu, i) => {
+                  const isActive = activePreferenceExtension === menu
                   return (
                     <div key={i} className="relative my-0.5 block py-1.5">
                       <div
                         onClick={() => {
-                          setActivePreferencePlugin(menu)
+                          setActivePreferenceExtension(menu)
                           setActiveStaticMenu('')
                         }}
                         className="block w-full cursor-pointer"
@@ -145,7 +121,7 @@ const SettingsScreen = () => {
                             isActive && 'relative z-10'
                           )}
                         >
-                          {formatPluginsName(String(menu))}
+                          {formatExtensionsName(String(menu))}
                         </span>
                       </div>
                       {isActive ? (
@@ -166,7 +142,7 @@ const SettingsScreen = () => {
       <div className="h-full w-full bg-background/50">
         <ScrollArea className="h-full w-full">
           <div className="p-4">
-            {handleShowOptions(activeStaticMenu || activePreferencePlugin)}
+            {handleShowOptions(activeStaticMenu || activePreferenceExtension)}
           </div>
         </ScrollArea>
       </div>

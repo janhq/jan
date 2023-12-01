@@ -2,8 +2,8 @@
 
 import { PropsWithChildren, useEffect, useRef } from 'react'
 
-import { PluginType } from '@janhq/core'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { ExtensionType } from '@janhq/core'
+import { ModelExtension } from '@janhq/core'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -14,8 +14,8 @@ import EventHandler from './EventHandler'
 
 import { appDownloadProgress } from './Jotai'
 
+import { extensionManager } from '@/extension/ExtensionManager'
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-import { pluginManager } from '@/plugin/PluginManager'
 
 export default function EventListenerWrapper({ children }: PropsWithChildren) {
   const setProgress = useSetAtom(appDownloadProgress)
@@ -36,11 +36,11 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
   useEffect(() => {
     if (window && window.electronAPI) {
       window.electronAPI.onFileDownloadUpdate(
-        (_event: string, state: DownloadState | undefined) => {
+        (_event: string, state: any | undefined) => {
           if (!state) return
           setDownloadState({
             ...state,
-            fileName: state.fileName.split('/').pop() ?? '',
+            modelId: state.fileName.split('/').pop() ?? '',
           })
         }
       )
@@ -48,21 +48,21 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       window.electronAPI.onFileDownloadError(
         (_event: string, callback: any) => {
           console.error('Download error', callback)
-          const fileName = callback.fileName.split('/').pop() ?? ''
-          setDownloadStateFailed(fileName)
+          const modelId = callback.fileName.split('/').pop() ?? ''
+          setDownloadStateFailed(modelId)
         }
       )
 
       window.electronAPI.onFileDownloadSuccess(
         (_event: string, callback: any) => {
           if (callback && callback.fileName) {
-            const fileName = callback.fileName.split('/').pop() ?? ''
-            setDownloadStateSuccess(fileName)
+            const modelId = callback.fileName.split('/').pop() ?? ''
+            setDownloadStateSuccess(modelId)
 
-            const model = modelsRef.current.find((e) => e.id === fileName)
+            const model = modelsRef.current.find((e) => e.id === modelId)
             if (model)
-              pluginManager
-                .get<ModelPlugin>(PluginType.Model)
+              extensionManager
+                .get<ModelExtension>(ExtensionType.Model)
                 ?.saveModel(model)
                 .then(() => {
                   setDownloadedModels([...downloadedModelRef.current, model])

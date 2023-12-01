@@ -55,7 +55,7 @@ export default function BlankStateMyModel() {
                         }
                       />
                       <div className="flex items-center justify-between">
-                        <p>{item?.fileName}</p>
+                        <p>{item?.modelId}</p>
                         <span>{formatDownloadPercentage(item?.percent)}</span>
                       </div>
                     </div>

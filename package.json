@@ -6,8 +6,7 @@
       "uikit",
       "core",
       "electron",
-      "web",
-      "server"
+      "web"
     ],
     "nohoist": [
       "uikit",
@@ -17,15 +16,13 @@
       "electron",
       "electron/**",
       "web",
-      "web/**",
-      "server",
-      "server/**"
+      "web/**"
     ]
   },
   "scripts": {
     "lint": "yarn workspace jan lint && yarn workspace jan-web lint",
     "test": "yarn workspace jan test:e2e",
-    "dev:electron": "yarn workspace jan dev",
+    "dev:electron": "cpx \"models/**\" \"electron/models/\" && yarn workspace jan dev",
     "dev:web": "yarn workspace jan-web dev",
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "test-local": "yarn lint && yarn build:test && yarn test",
@@ -33,9 +30,9 @@
     "build:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build",
     "build:core": "cd core && yarn install && yarn run build",
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
-    "build:electron": "yarn workspace jan build",
+    "build:electron": "yarn workspace jan build && cpx \"models/**\" \"electron/models/\"",
     "build:electron:test": "yarn workspace jan build:test",
-    "build:plugins": "rimraf ./electron/core/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./plugins/conversational-json && npm install && npm run build:publish\" \"cd ./plugins/inference-plugin && npm install && npm run build:publish\" \"cd ./plugins/model-plugin && npm install && npm run build:publish\" \"cd ./plugins/monitoring-plugin && npm install && npm run build:publish\" \"cd ./plugins/assistant-plugin && npm install && npm run build:publish\"",
+    "build:extensions": "rimraf ./electron/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./extensions/conversational-extension && npm install && npm run build:publish\" \"cd ./extensions/inference-extension && npm install && npm run build:publish\" \"cd ./extensions/model-extension && npm install && npm run build:publish\" \"cd ./extensions/monitoring-extension && npm install && npm run build:publish\" \"cd ./extensions/assistant-extension && npm install && npm run build:publish\"",
     "build:test": "yarn build:web && yarn workspace jan build:test",
     "build": "yarn build:web && yarn workspace jan build",
     "build:publish": "yarn build:web && yarn workspace jan build:publish"

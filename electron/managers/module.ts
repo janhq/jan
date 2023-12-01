@@ -1,4 +1,4 @@
-import { dispose } from "../utils/disposable";
+import { dispose } from "./../utils/disposable";
 
 /**
  * Manages imported modules.

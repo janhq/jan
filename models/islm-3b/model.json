@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/UmbrellaCorp/IS-LM-3B_GGUF/resolve/main/IS-LM-Q4_K_M.gguf",
+    "id": "islm-3b",
+    "object": "model",
+    "name": "IS LM 3B",
+    "version": "1.0",
+    "description": "IS LM 3B, based on the StableLM 3B model is specifically finetuned for economic analysis using DataForge Economics and QLoRA over three epochs, enhancing its proficiency in economic forecasting and analysis.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "system_prompt": "",
+      "user_prompt": "USER: ",
+      "ai_prompt": "ASSISTANT: "
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "UmbrellaCorp, The Bloke",
+      "tags": ["General Use", "Economics"],
+      "size": 1710000000
+    }
+  }
+  

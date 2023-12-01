@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useContext } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 
 import {
   Button,
@@ -11,7 +11,7 @@ import {
   CommandList,
 } from '@janhq/uikit'
 
-import { useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
@@ -22,18 +22,19 @@ import {
 
 import ShortCut from '@/containers/Shortcut'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 
+import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
+
 export default function CommandSearch() {
   const { setMainViewState } = useMainViewState()
   const [open, setOpen] = useState(false)
   const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
 
   const menus = [
     {
@@ -123,13 +124,15 @@ export default function CommandSearch() {
           </CommandGroup>
         </CommandList>
       </CommandModal>
-      <Button
-        themes="outline"
-        className="unset-drag justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
-        onClick={() => setShowRightSideBar((show) => !show)}
-      >
-        Toggle right
-      </Button>
+      {activeThread && (
+        <Button
+          themes="outline"
+          className="unset-drag justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
+          onClick={() => setShowRightSideBar((show) => !show)}
+        >
+          Toggle right
+        </Button>
+      )}
     </Fragment>
   )
 }

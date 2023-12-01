@@ -29,7 +29,7 @@ export const activeThreadStateAtom = atom<ThreadState | undefined>((get) => {
   return get(threadStatesAtom)[activeConvoId]
 })
 
-export const updateConversationWaitingForResponseAtom = atom(
+export const updateThreadWaitingForResponseAtom = atom(
   null,
   (get, set, conversationId: string, waitingForResponse: boolean) => {
     const currentState = { ...get(threadStatesAtom) }

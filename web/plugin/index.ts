@@ -1,1 +1,0 @@
-export { pluginManager } from './PluginManager'
