@@ -11,7 +11,7 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/labeler@v4
+      - uses: actions/github-script@v5
         with:
           script: |
             const github = require('@actions/github');

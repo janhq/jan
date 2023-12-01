@@ -1,5 +1,5 @@
 # Auto assign author, tags, and reviewers to pull requests
-name: "Auto Author Assign"
+name: "Auto Assign Author"
 on:
   pull_request:
     types: [opened]
