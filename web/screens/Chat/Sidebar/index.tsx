@@ -1,11 +1,12 @@
 import { join } from 'path'
 
 import { getUserSpace, openFileExplorer } from '@janhq/core'
-import { FormLabel, Input } from '@janhq/uikit'
+import { Input, Textarea } from '@janhq/uikit'
 import { atom, useAtomValue } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
+import LogoMark from '@/containers/Brand/Logo/Mark'
 import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar, {
   selectedModelAtom,
@@ -131,8 +132,6 @@ export default function Sidebar() {
               <span className="text-xs">{activeThread?.id || '-'}</span>
             </div>
           </div>
-          {/* <ItemCardSidebar description={activeThread?.id} title="Thread ID" /> */}
-          {/* <ItemCardSidebar title="Thread title" /> */}
         </CardSidebar>
         <CardSidebar
           title="Assistant"
@@ -145,13 +144,32 @@ export default function Sidebar() {
             disabled
           />
           /> */}
+          <div className="flex flex-col space-y-4 p-2">
+            <div className="flex items-center space-x-2">
+              <LogoMark width={24} height={24} />
+              <span className="font-bold">Jan</span>
+            </div>
+            <div>
+              <label
+                id="thread-title"
+                className="mb-2 inline-block font-bold text-gray-600"
+              >
+                Instructions
+              </label>
+              <Textarea
+                id="assistant-instructions"
+                defaultValue={activeThread?.assistants[0].assistant_name ?? ''}
+                placeholder="You are a helpful assistant."
+              />
+            </div>
+          </div>
         </CardSidebar>
         <CardSidebar
           title="Model"
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
         >
-          {/* <DropdownListSidebar /> */}
+          <DropdownListSidebar />
         </CardSidebar>
       </div>
     </div>
