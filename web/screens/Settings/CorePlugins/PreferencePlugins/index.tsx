@@ -52,7 +52,7 @@ const PreferencePlugins = (props: Props) => {
     }
     toaster({
       title: formatPluginsName(pluginName),
-      description: 'Success update preferences',
+      description: 'Successfully updated preferences',
     })
   }
 

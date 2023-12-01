@@ -1,5 +1,6 @@
 ---
 title: Architecture
+slug: /specs
 ---
 
 :::warning
@@ -10,35 +11,28 @@ This page is still under construction, and should be read as a scratchpad
 
 ## Overview
 
-- Jan built a modular infrastructure on top of Electron, in order to support extensions and AI functionality.
-- Jan is largely built on top of its own modules.
+- Jan has a modular architecture and is largely built on top of its own modules.
 - Jan uses a local [file-based approach](/specs/file-based) for data persistence.
-
-## Modules
-
-Modules are low level, system services. It is similar to OS kernel modules, in that `modules` provide abstractions to device level, basic functionality like the filesystem, device system, databases, AI inference engines, etc.
-
-## Pluggable Modules
-
-Jan exports modules that mirror OpenAI’s, exposing similar APIs and objects:
-
-- Modules are modular, atomic implementations of a single OpenAI-compatible endpoint
-- Modules can be swapped out for alternate implementations
-  - The default `messages` module persists messages in thread-specific `.json`
-  - `messages-postgresql` uses Postgres for production-grade cloud-native environments
-
-| Jan Module | Description   | API Docs                     |
-| ---------- | ------------- | ---------------------------- |
-| Chat       | Inference     | [/chat](/api/chat)           |
-| Models     | Models        | [/model](/api/model)         |
-| Assistants | Apps          | [/assistant](/api/assistant) |
-| Threads    | Conversations | [/thread](/api/thread)       |
-| Messages   | Messages      | [/message](/api/message)     |
-
-<!-- TODO: link npm modules -->
+- Jan currently supports an Electron-based [Desktop UI](https://github.com/janhq/jan) and a C++ inference engine called [Nitro](https://nitro.jan.ai/docs/).
 
 ## Extensions
 
-Extensions are feature level services that include both UI and logic implementation.
+Jan has an Extensions API inspired by VSCode. In fact, most of Jan's core services are built as extensions.
 
-<!-- TODO[@linh]: add all of @linh's specs here -->
+Jan supports the following OpenAI compatible extensions:
+
+| Jan Module | Description   | API Docs                                      |
+| ---------- | ------------- | --------------------------------------------- |
+| Chat       | Inference     | [/chats](/api-reference/#tag/Chat-Completion) |
+| Models     | Models        | [/models](/api-reference/#tag/Models)         |
+| Assistants | Apps          | [/assistants](/api-reference/#tag/Assistants) |
+| Threads    | Conversations | [/threads](/api-reference/#tag/Threads)       |
+| Messages   | Messages      | [/messages](/api-reference/#tag/Messages)     |
+
+<!-- TODO: link npm modules -->
+
+## Modules
+
+Modules are low level, system services. It is similar to OS kernel modules. Modules provide abstractions to basic, device level functionality like working with the filesystem, device system, databases, AI inference engines, etc.
+
+Jan follows the [dependency inversion principle](https://en.wikipedia.org/wiki/Dependency_inversion_principle) such that `modules` expose the interfaces that `extensions` can then implement.

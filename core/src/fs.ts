@@ -10,161 +10,75 @@ const JAN_FS_API = `${JAN_HTTP_SERVER_URL}/fs`;
  * @param {string} data - The data to write to the file.
  * @returns {Promise<any>} A Promise that resolves when the file is written successfully.
  */
-const writeFile = (path: string, data: string): Promise<any> => {
-  return fetchRetry(JAN_FS_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      op: 'writeFile',
-      path,
-      data
-    }),
-    retries: 3,
-    retryDelay: 500,
-  }).catch((err: any) => {
-    console.error(err);
-    throw new Error(`writeFile: ${path} failed`);
-  })
-}
-  
+const writeFile: (path: string, data: string) => Promise<any> = (path, data) =>
+  window.coreAPI?.writeFile(path, data);
+
 /**
  * Checks whether the path is a directory.
  * @param path - The path to check.
  * @returns {boolean} A boolean indicating whether the path is a directory.
  */
-const isDirectory = (path: string): Promise<boolean> => {
-  return fetchRetry(JAN_FS_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      op: 'isDirectory',
-      path,
-    }),
-    retries: 3,
-    retryDelay: 500,
-  }).catch((err: any) => {
-    console.error(err);
-    throw new Error(`isDirectory: ${path} failed`);
-  })
-}
+const isDirectory = (path: string): Promise<boolean> =>
+  window.coreAPI?.isDirectory(path);
+
 
 /**
  * Reads the contents of a file at the specified path.
  * @param {string} path - The path of the file to read.
  * @returns {Promise<any>} A Promise that resolves with the contents of the file.
  */
-const readFile = (path: string): Promise<any> => {
-  return fetchRetry(JAN_FS_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      op: 'readFile',
-      path,
-    }),
-    retries: 3,
-    retryDelay: 500,
-  }).catch((err: any) => {
-    console.error(err);
-    throw new Error(`readFile: ${path} failed`);
-  })
-}
+const readFile: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.readFile(path);
 
 /**
  * List the directory files
  * @param {string} path - The path of the directory to list files.
  * @returns {Promise<any>} A Promise that resolves with the contents of the directory.
  */
-const listFiles = (path: string): Promise<any> => {
-  return fetchRetry(JAN_FS_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      op: 'listFiles',
-      path,
-    }),
-    retries: 3,
-    retryDelay: 500,
-  }).catch((err: any) => {
-    console.error(err);
-    throw new Error(`listFiles: ${path} failed`);
-  })
-}
+const listFiles: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.listFiles(path);
+
 
 /**
  * Creates a directory at the specified path.
  * @param {string} path - The path of the directory to create.
  * @returns {Promise<any>} A Promise that resolves when the directory is created successfully.
  */
-const mkdir = (path: string): Promise<any> => {
-  return fetchRetry(JAN_FS_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      op: 'mkdir',
-      path,
-    }),
-    retries: 3,
-    retryDelay: 500,
-  }).catch((err: any) => {
-    console.error(err);
-    throw new Error(`mkdir: ${path} failed`);
-  })
-}
+const mkdir: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.mkdir(path);
 
 /**
  * Removes a directory at the specified path.
  * @param {string} path - The path of the directory to remove.
  * @returns {Promise<any>} A Promise that resolves when the directory is removed successfully.
  */
-const rmdir = (path: string): Promise<any> => {
-  return fetchRetry(JAN_FS_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      op: 'rmdir',
-      path,
-    }),
-    retries: 3,
-    retryDelay: 500,
-  }).catch((err: any) => {
-    console.error(err);
-    throw new Error(`rmdir: ${path} failed`);
-  })
-}
+const rmdir: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.rmdir(path);
+
 /**
  * Deletes a file from the local file system.
  * @param {string} path - The path of the file to delete.
  * @returns {Promise<any>} A Promise that resolves when the file is deleted.
  */
-const deleteFile = (path: string): Promise<any> => {
-  return fetchRetry(JAN_FS_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      op: 'deleteFile',
-      path,
-    }),
-    retries: 3,
-    retryDelay: 500,
-  }).catch((err: any) => {
-    console.error(err);
-    throw new Error(`deleteFile: ${path} failed`);
-  })
-}
+const deleteFile: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.deleteFile(path);
+
+/**
+ * Appends data to a file at the specified path.
+ * @param path path to the file
+ * @param data data to append
+ */
+const appendFile: (path: string, data: string) => Promise<any> = (path, data) =>
+  window.coreAPI?.appendFile(path, data);
+
+/**
+ * Reads a file line by line.
+ * @param {string} path - The path of the file to read.
+ * @returns {Promise<any>} A promise that resolves to the lines of the file.
+ */
+const readLineByLine: (path: string) => Promise<any> = (path) =>
+  window.coreAPI?.readLineByLine(path);
+
 
 export const fs = {
   isDirectory,
@@ -174,4 +88,6 @@ export const fs = {
   mkdir,
   rmdir,
   deleteFile,
+  appendFile,
+  readLineByLine,
 };

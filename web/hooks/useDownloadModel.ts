@@ -1,6 +1,6 @@
 import { PluginType } from '@janhq/core'
 import { ModelPlugin } from '@janhq/core/lib/plugins'
-import { Model, ModelCatalog, ModelVersion } from '@janhq/core/lib/types'
+import { Model } from '@janhq/core/lib/types'
 
 import { useAtom } from 'jotai'
 
@@ -16,41 +16,10 @@ export default function useDownloadModel() {
     downloadingModelsAtom
   )
 
-  const assistanModel = (
-    model: ModelCatalog,
-    modelVersion: ModelVersion
-  ): Model => {
-    return {
-      /**
-       * Id will be used for the model file name
-       * Should be the version name
-       */
-      id: modelVersion.name,
-      name: model.name,
-      quantizationName: modelVersion.quantizationName,
-      bits: modelVersion.bits,
-      size: modelVersion.size,
-      maxRamRequired: modelVersion.maxRamRequired,
-      usecase: modelVersion.usecase,
-      downloadLink: modelVersion.downloadLink,
-      shortDescription: model.shortDescription,
-      longDescription: model.longDescription,
-      avatarUrl: model.avatarUrl,
-      author: model.author,
-      version: model.version,
-      modelUrl: model.modelUrl,
-      releaseDate: -1,
-      tags: model.tags,
-    }
-  }
-
-  const downloadModel = async (
-    model: ModelCatalog,
-    modelVersion: ModelVersion
-  ) => {
+  const downloadModel = async (model: Model) => {
     // set an initial download state
     setDownloadState({
-      modelId: modelVersion.name,
+      modelId: model.id,
       time: {
         elapsed: 0,
         remaining: 0,
@@ -61,16 +30,11 @@ export default function useDownloadModel() {
         total: 0,
         transferred: 0,
       },
-      fileName: modelVersion.name,
+      fileName: model.id,
     })
 
-    const assistantModel = assistanModel(model, modelVersion)
-
-    setDownloadingModels([...downloadingModels, assistantModel])
-
-    await pluginManager
-      .get<ModelPlugin>(PluginType.Model)
-      ?.downloadModel(assistantModel)
+    setDownloadingModels([...downloadingModels, model])
+    await pluginManager.get<ModelPlugin>(PluginType.Model)?.downloadModel(model)
   }
 
   return {

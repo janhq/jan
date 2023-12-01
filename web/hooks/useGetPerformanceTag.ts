@@ -1,4 +1,4 @@
-import { ModelVersion } from '@janhq/core/lib/types'
+import { Model } from '@janhq/core/lib/types'
 
 import { ModelPerformance, TagType } from '@/constants/tagType'
 
@@ -9,10 +9,10 @@ import { ModelPerformance, TagType } from '@/constants/tagType'
 
 export default function useGetPerformanceTag() {
   async function getPerformanceForModel(
-    modelVersion: ModelVersion,
+    model: Model,
     totalRam: number
   ): Promise<{ title: string; performanceTag: TagType }> {
-    const requiredRam = modelVersion.maxRamRequired
+    const requiredRam = model.metadata.maxRamRequired
     const performanceTag = calculateRamPerformance(requiredRam, totalRam)
 
     let title = ''

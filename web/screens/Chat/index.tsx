@@ -1,6 +1,5 @@
-import { Fragment, useContext, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 
-import { Model } from '@janhq/core/lib/types'
 import { Button, Badge, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
@@ -10,92 +9,73 @@ import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
 import ShortCut from '@/containers/Shortcut'
 
 import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-
-import { useCreateConversation } from '@/hooks/useCreateConversation'
-import useDeleteConversation from '@/hooks/useDeleteConversation'
+import useDeleteThread from '@/hooks/useDeleteConversation'
 
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-
-import useGetUserConversations from '@/hooks/useGetUserConversations'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import ChatBody from '@/screens/Chat/ChatBody'
 
-import HistoryList from '@/screens/Chat/HistoryList'
+import ThreadList from '@/screens/Chat/ThreadList'
+
+import Sidebar from './Sidebar'
 
 import {
-  currentConversationAtom,
-  getActiveConvoIdAtom,
-  userConversationsAtom,
+  activeThreadAtom,
+  getActiveThreadIdAtom,
+  threadsAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Conversation.atom'
 
-import { currentConvoStateAtom } from '@/helpers/atoms/Conversation.atom'
+import { activeThreadStateAtom } from '@/helpers/atoms/Conversation.atom'
 
 const ChatScreen = () => {
-  const currentConvo = useAtomValue(currentConversationAtom)
+  const currentConvo = useAtomValue(activeThreadAtom)
   const { downloadedModels } = useGetDownloadedModels()
-  const { deleteConvo, cleanConvo } = useDeleteConversation()
+  const { deleteThread, cleanThread } = useDeleteThread()
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
-  const currentConvoState = useAtomValue(currentConvoStateAtom)
+  const currentConvoState = useAtomValue(activeThreadStateAtom)
   const { sendChatMessage } = useSendChatMessage()
   const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
-  const activeConversationId = useAtomValue(getActiveConvoIdAtom)
-  const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
-  const { requestCreateConvo } = useCreateConversation()
-  const { getUserConversations } = useGetUserConversations()
-  const conversations = useAtomValue(userConversationsAtom)
-  const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
-  const [isModelAvailable, setIsModelAvailable] = useState(
-    downloadedModels.some((x) => x.id === currentConvo?.modelId)
-  )
-  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
+  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
+  const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
+  const conversations = useAtomValue(threadsAtom)
+  const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
+
+  const [isModelAvailable, setIsModelAvailable] = useState(
+    true
+    // downloadedModels.some((x) => x.id === currentConvo?.modelId)
+  )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const modelRef = useRef(activeModel)
 
   useEffect(() => {
-    getUserConversations()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    modelRef.current = activeModel
+  }, [activeModel])
 
-  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)
   }
 
   useEffect(() => {
-    setIsModelAvailable(
-      downloadedModels.some((x) => x.id === currentConvo?.modelId)
-    )
-  }, [currentConvo, downloadedModels])
-
-  const handleSendMessage = async () => {
-    if (activeConversationId) {
-      sendChatMessage()
-    } else {
-      setIsWaitingToSend(true)
-      await requestCreateConvo(activeModel as Model)
-    }
-  }
-
-  useEffect(() => {
-    if (isWaitingToSend && activeConversationId) {
+    if (isWaitingToSend && activeThreadId) {
       setIsWaitingToSend(false)
       sendChatMessage()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waitingToSendMessage, activeConversationId])
+  }, [waitingToSendMessage, activeThreadId])
 
   useEffect(() => {
     if (textareaRef.current !== null) {
@@ -111,11 +91,11 @@ const ChatScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPrompt])
 
-  const handleKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
       if (!e.shiftKey) {
         e.preventDefault()
-        handleSendMessage()
+        sendChatMessage()
       }
     }
   }
@@ -123,14 +103,14 @@ const ChatScreen = () => {
   return (
     <div className="flex h-full">
       <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
-        <HistoryList />
+        <ThreadList />
       </div>
       <div className="relative flex h-full w-[calc(100%-256px)] flex-col bg-muted/10">
         <div className="flex h-full w-full flex-col justify-between">
           {isEnableChat && currentConvo && (
             <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
               <div className="flex items-center justify-between">
-                <span>{currentConvo?.summary ?? ''}</span>
+                <span>{currentConvo.title}</span>
                 <div
                   className={twMerge(
                     'flex items-center space-x-3',
@@ -142,27 +122,23 @@ const ChatScreen = () => {
                       themes="secondary"
                       className="relative z-10"
                       size="sm"
-                      onClick={() => {
+                      onClick={() =>
                         setMainViewState(MainViewState.ExploreModels)
-                      }}
+                      }
                     >
                       Download Model
                     </Button>
                   )}
-                  {experimentalFeatureEnabed && (
-                    <Paintbrush
-                      size={16}
-                      className="cursor-pointer text-muted-foreground"
-                      onClick={() => cleanConvo()}
-                    />
-                  )}
-                  {
-                    <Trash2Icon
-                      size={16}
-                      className="cursor-pointer text-muted-foreground"
-                      onClick={() => deleteConvo()}
-                    />
-                  }
+                  <Paintbrush
+                    size={16}
+                    className="cursor-pointer text-muted-foreground"
+                    onClick={() => cleanThread()}
+                  />
+                  <Trash2Icon
+                    size={16}
+                    className="cursor-pointer text-muted-foreground"
+                    onClick={() => deleteThread()}
+                  />
                 </div>
               </div>
             </div>
@@ -176,8 +152,8 @@ const ChatScreen = () => {
             <div className="mx-auto mt-8 flex h-full w-3/4 flex-col items-center justify-center text-center">
               {downloadedModels.length === 0 && (
                 <Fragment>
-                  <h1 className="text-lg font-medium">{`Ups, you don't have a Model`}</h1>
-                  <p className="mt-1">{`let’s download your first model.`}</p>
+                  <h1 className="text-lg font-medium">{`Oops, you don't have a Model`}</h1>
+                  <p className="mt-1">{`Let’s download your first model.`}</p>
                   <Button
                     className="mt-4"
                     onClick={() =>
@@ -191,7 +167,7 @@ const ChatScreen = () => {
               {!activeModel && downloadedModels.length > 0 && (
                 <Fragment>
                   <h1 className="text-lg font-medium">{`You don’t have any actively running models`}</h1>
-                  <p className="mt-1">{`Please start a downloaded model in My Models page to use this feature.`}</p>
+                  <p className="mt-1">{`Please start a downloaded model to use this feature.`}</p>
                   <Badge className="mt-4" themes="outline">
                     <ShortCut menu="E" />
                     &nbsp; to show your model
@@ -204,29 +180,24 @@ const ChatScreen = () => {
             <Textarea
               className="min-h-10 h-10 max-h-16 resize-none pr-20"
               ref={textareaRef}
-              onKeyDown={(e) => handleKeyDown(e)}
+              onKeyDown={(e) => onKeyDown(e)}
               placeholder="Type your message ..."
-              disabled={
-                !activeModel ||
-                stateModel.loading ||
-                activeModel.id !== currentConvo?.modelId
-              }
+              disabled={stateModel.loading || !currentConvo}
               value={currentPrompt}
-              onChange={(e) => {
-                handleMessageChange(e)
-              }}
+              onChange={(e) => onPromptChange(e)}
             />
             <Button
               size="lg"
-              disabled={!activeModel || disabled || stateModel.loading}
-              themes={!activeModel ? 'secondary' : 'primary'}
-              onClick={handleSendMessage}
+              disabled={disabled || stateModel.loading || !currentConvo}
+              themes={'primary'}
+              onClick={sendChatMessage}
             >
               Send
             </Button>
           </div>
         </div>
       </div>
+      <Sidebar />
     </div>
   )
 }

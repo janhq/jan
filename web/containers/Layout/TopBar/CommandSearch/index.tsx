@@ -11,6 +11,7 @@ import {
   CommandList,
 } from '@janhq/uikit'
 
+import { useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
@@ -27,9 +28,12 @@ import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
+import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
+
 export default function CommandSearch() {
-  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
   const { setMainViewState } = useMainViewState()
+  const [open, setOpen] = useState(false)
+  const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
 
   const menus = [
     {
@@ -44,8 +48,6 @@ export default function CommandSearch() {
       ),
       state: MainViewState.Chat,
     },
-    // Added experimental feature here
-    ...(experimentalFeatureEnabed ? [] : []),
     {
       name: 'Explore Models',
       icon: <CpuIcon size={16} className="mr-3 text-muted-foreground" />,
@@ -63,8 +65,6 @@ export default function CommandSearch() {
       shortcut: <ShortCut menu="," />,
     },
   ]
-
-  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -123,6 +123,13 @@ export default function CommandSearch() {
           </CommandGroup>
         </CommandList>
       </CommandModal>
+      <Button
+        themes="outline"
+        className="unset-drag justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
+        onClick={() => setShowRightSideBar((show) => !show)}
+      >
+        Toggle right
+      </Button>
     </Fragment>
   )
 }

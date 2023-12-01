@@ -1,10 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { join } from 'path'
-
 import { PluginType } from '@janhq/core'
 import { InferencePlugin } from '@janhq/core/lib/plugins'
-import { Model } from '@janhq/core/lib/types'
-
+import { Model, ModelSettingParams } from '@janhq/core/lib/types'
 import { atom, useAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -13,12 +10,12 @@ import { useGetDownloadedModels } from './useGetDownloadedModels'
 
 import { pluginManager } from '@/plugin'
 
-const activeAssistantModelAtom = atom<Model | undefined>(undefined)
+const activeModelAtom = atom<Model | undefined>(undefined)
 
 const stateModelAtom = atom({ state: 'start', loading: false, model: '' })
 
 export function useActiveModel() {
-  const [activeModel, setActiveModel] = useAtom(activeAssistantModelAtom)
+  const [activeModel, setActiveModel] = useAtom(activeModelAtom)
   const [stateModel, setStateModel] = useAtom(stateModelAtom)
   const { downloadedModels } = useGetDownloadedModels()
 
@@ -27,9 +24,12 @@ export function useActiveModel() {
       (activeModel && activeModel.id === modelId) ||
       (stateModel.model === modelId && stateModel.loading)
     ) {
-      console.debug(`Model ${modelId} is already init. Ignore..`)
+      console.debug(`Model ${modelId} is already initialized. Ignore..`)
       return
     }
+    // TODO: incase we have multiple assistants, the configuration will be from assistant
+
+    setActiveModel(undefined)
 
     setStateModel({ state: 'start', loading: true, model: modelId })
 
@@ -50,9 +50,8 @@ export function useActiveModel() {
 
     const currentTime = Date.now()
     console.debug('Init model: ', modelId)
-    const path = join('models', model.name, modelId)
-    const res = await initModel(path)
-    if (res?.error && (!activeModel?.id || modelId === activeModel?.id)) {
+    const res = await initModel(modelId, model?.settings)
+    if (res && res.error && res.modelFile === stateModel.model) {
       const errorMessage = `${res.error}`
       alert(errorMessage)
       setStateModel(() => ({
@@ -60,16 +59,15 @@ export function useActiveModel() {
         loading: false,
         model: modelId,
       }))
-      setActiveModel(undefined)
     } else {
       console.debug(
-        `Init model ${modelId} successfully!, take ${
+        `Model ${modelId} successfully initialized! Took ${
           Date.now() - currentTime
         }ms`
       )
       setActiveModel(model)
       toaster({
-        title: 'Success start a Model',
+        title: 'Success!',
         description: `Model ${modelId} has been started.`,
       })
       setStateModel(() => ({
@@ -88,7 +86,7 @@ export function useActiveModel() {
       setActiveModel(undefined)
       setStateModel({ state: 'start', loading: false, model: '' })
       toaster({
-        title: 'Success stop a Model',
+        title: 'Success!',
         description: `Model ${modelId} has been stopped.`,
       })
     }, 500)
@@ -97,8 +95,11 @@ export function useActiveModel() {
   return { activeModel, startModel, stopModel, stateModel }
 }
 
-const initModel = async (modelId: string): Promise<any> => {
+const initModel = async (
+  modelId: string,
+  settings?: ModelSettingParams
+): Promise<any> => {
   return pluginManager
     .get<InferencePlugin>(PluginType.Inference)
-    ?.initModel(modelId)
+    ?.initModel(modelId, settings)
 }

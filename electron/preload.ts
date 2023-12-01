@@ -38,6 +38,7 @@
  * @property {Function} readFile - Reads the file at the given path.
  * @property {Function} writeFile - Writes the given data to the file at the given path.
  * @property {Function} listFiles - Lists the files in the directory at the given path.
+ * @property {Function} appendFile - Appends the given data to the file at the given path.
  * @property {Function} mkdir - Creates a directory at the given path.
  * @property {Function} rmdir - Removes a directory at the given path recursively.
  * @property {Function} installRemotePlugin - Installs the remote plugin with the given name.
@@ -58,7 +59,7 @@ import { useFacade } from './core/plugin/facade'
 
 useFacade()
 
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, shell } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
   invokePluginFunc: (plugin: any, method: any, ...args: any[]) =>
@@ -88,7 +89,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   deleteFile: (filePath: string) => ipcRenderer.invoke('deleteFile', filePath),
 
-  isDirectory: (filePath: string) => ipcRenderer.invoke('isDirectory', filePath),
+  isDirectory: (filePath: string) =>
+    ipcRenderer.invoke('isDirectory', filePath),
 
   getUserSpace: () => ipcRenderer.invoke('getUserSpace'),
 
@@ -99,9 +101,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   listFiles: (path: string) => ipcRenderer.invoke('listFiles', path),
 
+  appendFile: (path: string, data: string) =>
+    ipcRenderer.invoke('appendFile', path, data),
+
+  readLineByLine: (path: string) => ipcRenderer.invoke('readLineByLine', path),
+
   mkdir: (path: string) => ipcRenderer.invoke('mkdir', path),
 
   rmdir: (path: string) => ipcRenderer.invoke('rmdir', path),
+
+  openFileExplorer: (path: string) => shell.openPath(path),
 
   installRemotePlugin: (pluginName: string) =>
     ipcRenderer.invoke('installRemotePlugin', pluginName),

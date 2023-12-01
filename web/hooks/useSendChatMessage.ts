@@ -1,10 +1,12 @@
 import {
   ChatCompletionMessage,
   ChatCompletionRole,
+  ContentType,
   EventName,
   MessageRequest,
   MessageStatus,
   PluginType,
+  Thread,
   ThreadMessage,
   events,
 } from '@janhq/core'
@@ -13,7 +15,10 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { ulid } from 'ulid'
 
+import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
+
+import { toaster } from '@/containers/Toast'
 
 import { useActiveModel } from './useActiveModel'
 
@@ -22,34 +27,35 @@ import {
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
-  currentConversationAtom,
-  updateConversationAtom,
+  activeThreadAtom,
+  updateThreadAtom,
   updateConversationWaitingForResponseAtom,
 } from '@/helpers/atoms/Conversation.atom'
 import { pluginManager } from '@/plugin/PluginManager'
 
 export default function useSendChatMessage() {
-  const currentConvo = useAtomValue(currentConversationAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
-  const updateConversation = useSetAtom(updateConversationAtom)
+  const updateThread = useSetAtom(updateThreadAtom)
   const updateConvWaiting = useSetAtom(updateConversationWaitingForResponseAtom)
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
+
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const { activeModel } = useActiveModel()
+  const selectedModel = useAtomValue(selectedModelAtom)
+  const { startModel } = useActiveModel()
 
-  function updateConvSummary(newMessage: MessageRequest) {
+  function updateThreadTitle(newMessage: MessageRequest) {
     if (
-      currentConvo &&
+      activeThread &&
       newMessage.messages &&
-      newMessage.messages.length >= 2 &&
-      (!currentConvo.summary ||
-        currentConvo.summary === '' ||
-        currentConvo.summary === activeModel?.name)
+      newMessage.messages.length > 2 &&
+      (activeThread.title === '' || activeThread.title === activeModel?.name)
     ) {
       const summaryMsg: ChatCompletionMessage = {
         role: ChatCompletionRole.User,
         content:
-          'summary this conversation in less than 5 words, the response should just include the summary',
+          'Summarize this conversation in less than 5 words, the response should just include the summary',
       }
       // Request convo summary
       setTimeout(async () => {
@@ -59,70 +65,124 @@ export default function useSendChatMessage() {
             ...newMessage,
             messages: newMessage.messages?.slice(0, -1).concat([summaryMsg]),
           })
+          .catch(console.error)
+        const content = result?.content[0]?.text.value.trim()
         if (
-          currentConvo &&
-          currentConvo.id === newMessage.threadId &&
-          result?.content &&
-          result?.content?.trim().length > 0 &&
-          result.content.split(' ').length <= 20
+          activeThread &&
+          activeThread.id === newMessage.threadId &&
+          content &&
+          content.length > 0 &&
+          content.split(' ').length <= 20
         ) {
-          const updatedConv = {
-            ...currentConvo,
-            summary: result.content,
+          const updatedConv: Thread = {
+            ...activeThread,
+            title: content,
           }
-          updateConversation(updatedConv)
+          updateThread(updatedConv)
           pluginManager
             .get<ConversationalPlugin>(PluginType.Conversational)
-            ?.saveConversation({
-              ...updatedConv,
-              messages: currentMessages,
-            })
+            ?.saveThread(updatedConv)
         }
       }, 1000)
     }
   }
 
   const sendChatMessage = async () => {
-    const threadId = currentConvo?.id
-    if (!threadId) {
-      console.error('No conversation id')
+    if (!currentPrompt || currentPrompt.trim().length === 0) {
+      return
+    }
+    if (!activeThread) {
+      console.error('No active thread')
       return
     }
 
-    setCurrentPrompt('')
-    updateConvWaiting(threadId, true)
+    if (!activeThread.isFinishInit) {
+      if (!selectedModel) {
+        toaster({ title: 'Please select a model' })
+        return
+      }
+      const assistantId = activeThread.assistants[0].assistant_id ?? ''
+      const assistantName = activeThread.assistants[0].assistant_name ?? ''
+      const updatedThread: Thread = {
+        ...activeThread,
+        isFinishInit: true,
+        title: `${activeThread.assistants[0].assistant_name} with ${selectedModel.name}`,
+        assistants: [
+          {
+            assistant_id: assistantId,
+            assistant_name: assistantName,
+            model: {
+              id: selectedModel.id,
+              settings: selectedModel.settings,
+              parameters: selectedModel.parameters,
+            },
+          },
+        ],
+      }
+
+      updateThread(updatedThread)
+
+      pluginManager
+        .get<ConversationalPlugin>(PluginType.Conversational)
+        ?.saveThread(updatedThread)
+    }
+
+    updateConvWaiting(activeThread.id, true)
 
     const prompt = currentPrompt.trim()
+    setCurrentPrompt('')
+
     const messages: ChatCompletionMessage[] = currentMessages
       .map<ChatCompletionMessage>((msg) => ({
-        role: msg.role ?? ChatCompletionRole.User,
-        content: msg.content ?? '',
+        role: msg.role,
+        content: msg.content[0]?.text.value ?? '',
       }))
-      .reverse()
       .concat([
         {
           role: ChatCompletionRole.User,
           content: prompt,
         } as ChatCompletionMessage,
       ])
+    console.debug(`Sending messages: ${JSON.stringify(messages, null, 2)}`)
+    const msgId = ulid()
     const messageRequest: MessageRequest = {
-      id: ulid(),
-      threadId: threadId,
+      id: msgId,
+      threadId: activeThread.id,
       messages,
+      parameters: activeThread.assistants[0].model.parameters,
     }
-
+    const timestamp = Date.now()
     const threadMessage: ThreadMessage = {
-      id: messageRequest.id,
-      threadId: messageRequest.threadId,
-      content: prompt,
+      id: msgId,
+      thread_id: activeThread.id,
       role: ChatCompletionRole.User,
-      createdAt: new Date().toISOString(),
       status: MessageStatus.Ready,
+      created: timestamp,
+      updated: timestamp,
+      object: 'thread.message',
+      content: [
+        {
+          type: ContentType.Text,
+          text: {
+            value: prompt,
+            annotations: [],
+          },
+        },
+      ],
     }
-    addNewMessage(threadMessage)
 
+    addNewMessage(threadMessage)
+    updateThreadTitle(messageRequest)
+
+    await pluginManager
+      .get<ConversationalPlugin>(PluginType.Conversational)
+      ?.addNewMessage(threadMessage)
+
+    const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
+    if (activeModel?.id !== modelId) {
+      await startModel(modelId)
+    }
     events.emit(EventName.OnNewMessageRequest, messageRequest)
-    updateConvSummary(messageRequest)
   }
 
   return {
