@@ -38,6 +38,8 @@ const config = {
     mermaid: true,
   },
 
+  noIndex: false,
+
   // Plugins we added
   plugins: [
     "docusaurus-plugin-sass",
