@@ -33,6 +33,7 @@ const TopBar = () => {
       alert('No assistant available')
       return
     }
+    console.log(assistants[0])
     requestCreateNewThread(assistants[0])
   }
 
