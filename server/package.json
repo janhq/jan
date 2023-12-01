@@ -75,6 +75,7 @@
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
     "eslint-plugin-react": "^7.33.2",
+    "fastify": "^4.24.3",
     "nodemon": "^3.0.1",
     "run-script-os": "^1.1.6"
   },

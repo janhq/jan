@@ -1,5 +1,8 @@
-import { Request, Response } from 'express'
+import { FastifyInstance, FastifyPluginAsync, FastifyPluginOptions } from 'fastify'
 
-export default function route(req: Request, res: Response){
+const router: FastifyPluginAsync = async (app: FastifyInstance, opts: FastifyPluginOptions) => {
+    //TODO: Add controllers declaration here
     
+    // app.get()
 }
+export default router;
