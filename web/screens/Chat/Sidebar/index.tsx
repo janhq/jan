@@ -1,6 +1,7 @@
 import { join } from 'path'
 
 import { getUserSpace, openFileExplorer } from '@janhq/core'
+import { FormLabel, Input } from '@janhq/uikit'
 import { atom, useAtomValue } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
@@ -15,7 +16,7 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
 import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
 
-export const showRightSideBarAtom = atom<boolean>(false)
+export const showRightSideBarAtom = atom<boolean>(true)
 
 export default function Sidebar() {
   const showing = useAtomValue(showRightSideBarAtom)
@@ -90,11 +91,11 @@ export default function Sidebar() {
   return (
     <div
       className={twMerge(
-        'h-full overflow-x-hidden border-l border-border bg-background duration-300 ease-linear',
+        'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background duration-300 ease-linear',
         showing ? 'w-80' : 'w-0'
       )}
     >
-      <div className="flex flex-col gap-1 p-2">
+      <div className="flex flex-col gap-4 p-4">
         <CardSidebar
           title="Thread"
           onRevealInFinderClick={onReviewInFinderClick}
@@ -110,24 +111,47 @@ export default function Sidebar() {
             description={activeThread?.title}
             onChange={(title) => updateThreadTitle(title ?? '')}
           />
+          <div className="flex flex-col space-y-4 p-2">
+            <div>
+              <label
+                id="thread-title"
+                className="mb-2 inline-block font-bold text-gray-600"
+              >
+                Title
+              </label>
+              <Input id="thread-title" defaultValue="New Thread" />
+            </div>
+            <div className="flex flex-col">
+              <label
+                id="thread-title"
+                className="mb-2 inline-block font-bold text-gray-600"
+              >
+                Threads ID
+              </label>
+              <span className="text-xs">{activeThread?.id || '-'}</span>
+            </div>
+          </div>
+          {/* <ItemCardSidebar description={activeThread?.id} title="Thread ID" /> */}
+          {/* <ItemCardSidebar title="Thread title" /> */}
         </CardSidebar>
         <CardSidebar
           title="Assistant"
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
         >
-          <ItemCardSidebar
+          {/* <ItemCardSidebar
             description={activeThread?.assistants[0].assistant_name ?? ''}
             title="Assistant"
             disabled
           />
+          /> */}
         </CardSidebar>
         <CardSidebar
           title="Model"
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
         >
-          <DropdownListSidebar />
+          {/* <DropdownListSidebar /> */}
         </CardSidebar>
       </div>
     </div>

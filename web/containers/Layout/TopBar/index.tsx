@@ -37,19 +37,19 @@ const TopBar = () => {
   }
 
   return (
-    <div className="fixed left-0 top-0 z-50 flex h-12 w-full border-b border-border bg-background backdrop-blur-md">
+    <div className="fixed left-0 top-0 z-50 flex h-12 w-full border-b border-border bg-background/80 backdrop-blur-md">
       {mainViewState === MainViewState.Thread && (
         <div className="absolute left-16 h-full w-60 border-r border-border" />
       )}
       <div className="relative left-16 flex w-[calc(100%-64px)] items-center justify-between space-x-4 pl-6 pr-2">
         {mainViewState === MainViewState.Thread ? (
-          <div className="unset-drag flex space-x-12">
+          <div className="unset-drag flex space-x-8">
             <div className="flex w-52 justify-between">
               <div className="cursor-pointer">
                 <PanelLeftIcon size={20} />
               </div>
               <div
-                className="cursor-pointer"
+                className="cursor-pointer pr-2"
                 onClick={onCreateConversationClick}
               >
                 <PenSquareIcon size={20} />

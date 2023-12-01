@@ -61,7 +61,7 @@ const SettingsScreen = () => {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-background">
       <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <ScrollArea className="h-full w-full">
           <div className="p-4">

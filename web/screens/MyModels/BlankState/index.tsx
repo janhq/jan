@@ -21,7 +21,7 @@ export default function BlankStateMyModel() {
   const { downloadStates } = useDownloadState()
 
   return (
-    <div className="flex h-full items-center justify-center px-4">
+    <div className="flex h-full items-center justify-center bg-background px-4">
       <div className="text-center">
         <DatabaseIcon size={32} className="mx-auto text-muted-foreground" />
         <div className="mt-4">
