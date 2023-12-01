@@ -17,11 +17,11 @@ jobs:
     steps:
       - name: Label issues
         run: |
-          ISSUE_TITLE=$(gh issue view ${{ github.event.issue.number }} --json title -q ".title")
-          if [[ $ISSUE_TITLE == chore* ]]; then
-            gh issue edit ${{ github.event.issue.number }} --add-label "type: chore"
+          ISSUE_TITLE=$(gh issue view "$NUMBER" --json title -q ".title")
+          if [[ $ISSUE_TITLE == chore:* ]]; then
+            gh issue edit "$NUMBER" --add-label "type: chore"
           elif [[ $ISSUE_TITLE == feat* ]]; then
-            gh issue edit ${{ github.event.issue.number }} --add-label "type: feat"
+            gh issue edit "$NUMBER" --add-label "type: feat"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
