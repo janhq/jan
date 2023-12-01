@@ -1,4 +1,4 @@
-import { Model } from '@janhq/core/lib/types'
+import { Model } from '@janhq/core'
 import { atom } from 'jotai'
 
 export const stateModel = atom({ state: 'start', loading: false, model: '' })

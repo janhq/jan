@@ -6,11 +6,11 @@ import {
   EventName,
   MessageRequest,
   MessageStatus,
-  PluginType,
+  ExtensionType,
   ThreadMessage,
   events,
 } from '@janhq/core'
-import { ConversationalPlugin, InferencePlugin } from '@janhq/core/lib/plugins'
+import { ConversationalExtension, InferenceExtension } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw, ClipboardCopy, Trash2Icon, StopCircle } from 'lucide-react'
 
@@ -18,6 +18,7 @@ import { twMerge } from 'tailwind-merge'
 
 import { toaster } from '@/containers/Toast'
 
+import { extensionManager } from '@/extension'
 import {
   deleteMessageAtom,
   getCurrentChatMessagesAtom,
@@ -26,7 +27,6 @@ import {
   activeThreadAtom,
   threadStatesAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import { pluginManager } from '@/plugin'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
@@ -39,11 +39,12 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const threadState = useAtomValue(threadStateAtom)
 
   const stopInference = async () => {
-    await pluginManager
-      .get<InferencePlugin>(PluginType.Inference)
+    await extensionManager
+      .get<InferenceExtension>(ExtensionType.Inference)
       ?.stopInference()
     setTimeout(() => {
-      events.emit(EventName.OnMessageResponseFinished, message)
+      message.status = MessageStatus.Ready
+      events.emit(EventName.OnMessageUpdate, message)
     }, 300)
   }
 
@@ -79,7 +80,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
                   }),
                   threadId: message.thread_id ?? '',
                 }
-                events.emit(EventName.OnNewMessageRequest, messageRequest)
+                events.emit(EventName.OnMessageSent, messageRequest)
               }}
             >
               <RefreshCcw size={14} />
@@ -101,8 +102,8 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           onClick={async () => {
             deleteMessage(message.id ?? '')
             if (thread)
-              await pluginManager
-                .get<ConversationalPlugin>(PluginType.Conversational)
+              await extensionManager
+                .get<ConversationalExtension>(ExtensionType.Conversational)
                 ?.writeMessages(
                   thread.id,
                   messages.filter((msg) => msg.id !== message.id)

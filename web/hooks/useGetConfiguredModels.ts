@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 
-import { PluginType } from '@janhq/core'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
-import { ModelCatalog } from '@janhq/core/lib/types'
+import { ExtensionType, ModelExtension } from '@janhq/core'
+import { ModelCatalog } from '@janhq/core'
 
 import { dummyModel } from '@/utils/dummy'
 
-import { pluginManager } from '@/plugin/PluginManager'
+import { extensionManager } from '@/extension/ExtensionManager'
 
 export async function getConfiguredModels(): Promise<ModelCatalog[]> {
   return (
-    pluginManager.get<ModelPlugin>(PluginType.Model)?.getConfiguredModels() ??
-    []
+    extensionManager
+      .get<ModelExtension>(ExtensionType.Model)
+      ?.getConfiguredModels() ?? []
   )
 }
 
@@ -20,8 +20,8 @@ export function useGetConfiguredModels() {
   const [models, setModels] = useState<ModelCatalog[]>([])
 
   async function getConfiguredModels(): Promise<ModelCatalog[]> {
-    const models = await pluginManager
-      .get<ModelPlugin>(PluginType.Model)
+    const models = await extensionManager
+      .get<ModelExtension>(ExtensionType.Model)
       ?.getConfiguredModels()
     return models ?? []
   }

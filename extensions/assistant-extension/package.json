@@ -1,0 +1,28 @@
+{
+  "name": "@janhq/assistant-extension",
+  "version": "1.0.0",
+  "description": "Assistant extension",
+  "main": "dist/index.js",
+  "module": "dist/module.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "build": "tsc -b . && webpack --config webpack.config.js",
+    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install"
+  },
+  "devDependencies": {
+    "rimraf": "^3.0.2",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@janhq/core": "file:../../core",
+    "path-browserify": "^1.0.1",
+    "ts-loader": "^9.5.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ]
+}

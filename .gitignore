@@ -13,11 +13,10 @@ electron/renderer
 package-lock.json
 
 *.log
-plugin-core/lib
 core/lib/**
 
 # Nitro binary files
-plugins/inference-plugin/nitro/*/nitro
-plugins/inference-plugin/nitro/*/*.exe
-plugins/inference-plugin/nitro/*/*.dll
-plugins/inference-plugin/nitro/*/*.metal
+extensions/inference-extension/nitro/*/nitro
+extensions/inference-extension/nitro/*/*.exe
+extensions/inference-extension/nitro/*/*.dll
+extensions/inference-extension/nitro/*/*.metal

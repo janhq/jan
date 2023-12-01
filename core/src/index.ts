@@ -1,29 +1,35 @@
 /**
- * Core module exports.
- * @module
- */
-export * from "./core";
-
-/**
- * Events events exports.
- * @module
- */
-export * from "./events";
-
-/**
- * Events types exports.
+ * Export all types.
  * @module
  */
 export * from "./types/index";
 
 /**
- * Filesystem module exports.
+ * Export Core module
+ * @module
+ */
+export * from "./core";
+
+/**
+ * Export Event module.
+ * @module
+ */
+export * from "./events";
+
+/**
+ * Export Filesystem module.
  * @module
  */
 export * from "./fs";
 
 /**
- * Plugin base module export.
+ * Export Extension module.
  * @module
  */
-export * from "./plugin";
+export * from "./extension";
+
+/**
+ * Export all base extensions.
+ * @module
+ */
+export * from "./extensions/index";

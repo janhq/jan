@@ -117,26 +117,29 @@ components:
       properties:
         id:
           type: string
-          description: "The identifier of the model."
+          description: |
+            "The identifier of the model."
+
           example: "zephyr-7b"
         object:
           type: string
-          description: "The type of the object, indicating it's a model."
+          description: |
+            "The type of the object, indicating it's a model."
+
           default: "model"
         created:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the model."
+          description: | 
+            "Unix timestamp representing the creation time of the model."
+
           example: "1253935178"
         owned_by:
           type: string
-          description: "The entity that owns the model."
+          description: |
+            "The entity that owns the model."
+
           example: "_"
-      required:
-        - id
-        - object
-        - created
-        - owned_by
 
     GetModelResponse:
       type: object
@@ -253,10 +256,7 @@ components:
           type: boolean
           description: "Indicates whether the model was successfully deleted."
           example: true
-      required:
-        - id
-        - object
-        - deleted
+
 
     StartModelResponse:
       type: object
@@ -313,8 +313,4 @@ components:
           type: string
           description: "The current state of the model after the start operation."
           example: "downloaded"
-      required:
-        - id
-        - object
-        - state
 

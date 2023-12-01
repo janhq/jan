@@ -2,13 +2,12 @@ import { app, ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import readline from 'readline'
+import { userSpacePath } from '../utils/path'
 
 /**
  * Handles file system operations.
  */
 export function handleFsIPCs() {
-  const userSpacePath = join(app.getPath('home'), 'jan')
-
   /**
    * Gets the path to the user data directory.
    * @param event - The event object.
@@ -60,15 +59,11 @@ export function handleFsIPCs() {
   ipcMain.handle(
     'writeFile',
     async (event, path: string, data: string): Promise<void> => {
-      return new Promise((resolve, reject) => {
-        fs.writeFile(join(userSpacePath, path), data, 'utf8', (err) => {
-          if (err) {
-            reject(err)
-          } else {
-            resolve()
-          }
-        })
-      })
+      try {
+        await fs.writeFileSync(join(userSpacePath, path), data, 'utf8')
+      } catch (err) {
+        console.error(`writeFile ${path} result: ${err}`)
+      }
     }
   )
 
@@ -79,15 +74,11 @@ export function handleFsIPCs() {
    * @returns A promise that resolves when the directory has been created.
    */
   ipcMain.handle('mkdir', async (event, path: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      fs.mkdir(join(userSpacePath, path), { recursive: true }, (err) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve()
-        }
-      })
-    })
+    try {
+      fs.mkdirSync(join(userSpacePath, path), { recursive: true })
+    } catch (err) {
+      console.error(`mkdir ${path} result: ${err}`)
+    }
   })
 
   /**
@@ -97,15 +88,11 @@ export function handleFsIPCs() {
    * @returns A promise that resolves when the directory is removed successfully.
    */
   ipcMain.handle('rmdir', async (event, path: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      fs.rm(join(userSpacePath, path), { recursive: true }, (err) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve()
-        }
-      })
-    })
+    try {
+      await fs.rmSync(join(userSpacePath, path), { recursive: true })
+    } catch (err) {
+      console.error(`rmdir ${path} result: ${err}`)
+    }
   })
 
   /**
@@ -136,23 +123,11 @@ export function handleFsIPCs() {
    * @returns A string indicating the result of the operation.
    */
   ipcMain.handle('deleteFile', async (_event, filePath) => {
-    const fullPath = join(userSpacePath, filePath)
-
-    let result = 'NULL'
-    fs.unlink(fullPath, function (err) {
-      if (err && err.code == 'ENOENT') {
-        result = `File not exist: ${err}`
-      } else if (err) {
-        result = `File delete error: ${err}`
-      } else {
-        result = 'File deleted successfully'
-      }
-      console.debug(
-        `Delete file ${filePath} from ${fullPath} result: ${result}`
-      )
-    })
-
-    return result
+    try {
+      await fs.unlinkSync(join(userSpacePath, filePath))
+    } catch (err) {
+      console.error(`unlink ${filePath} result: ${err}`)
+    }
   })
 
   /**
@@ -163,17 +138,19 @@ export function handleFsIPCs() {
    * @returns A promise that resolves when the file has been written.
    */
   ipcMain.handle('appendFile', async (_event, path: string, data: string) => {
-    return new Promise((resolve, reject) => {
-      fs.appendFile(join(userSpacePath, path), data, 'utf8', (err) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve(data)
-        }
-      })
-    })
+    try {
+      await fs.appendFileSync(join(userSpacePath, path), data, 'utf8')
+    } catch (err) {
+      console.error(`appendFile ${path} result: ${err}`)
+    }
   })
 
+  /**
+   * Reads a file line by line.
+   * @param event - The event object.
+   * @param path - The path of the file to read.
+   * @returns A promise that resolves with the contents of the file.
+   */
   ipcMain.handle('readLineByLine', async (_event, path: string) => {
     const fullPath = join(userSpacePath, path)
 

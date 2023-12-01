@@ -1,4 +1,4 @@
-import { Model } from '@janhq/core/lib/types'
+import { Model } from '@janhq/core'
 
 import { ModelPerformance, TagType } from '@/constants/tagType'
 

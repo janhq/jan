@@ -1,14 +1,11 @@
-import { PluginType } from '@janhq/core'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
-import { Model } from '@janhq/core/lib/types'
+import { Model, ExtensionType, ModelExtension } from '@janhq/core'
 
 import { useAtom } from 'jotai'
 
 import { useDownloadState } from './useDownloadState'
 
+import { extensionManager } from '@/extension/ExtensionManager'
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-
-import { pluginManager } from '@/plugin/PluginManager'
 
 export default function useDownloadModel() {
   const { setDownloadState } = useDownloadState()
@@ -34,7 +31,9 @@ export default function useDownloadModel() {
     })
 
     setDownloadingModels([...downloadingModels, model])
-    await pluginManager.get<ModelPlugin>(PluginType.Model)?.downloadModel(model)
+    await extensionManager
+      .get<ModelExtension>(ExtensionType.Model)
+      ?.downloadModel(model)
   }
 
   return {
