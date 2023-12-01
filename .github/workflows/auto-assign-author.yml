@@ -3,11 +3,11 @@ name: "Auto Author Assign"
 on:
   pull_request:
     types: [opened]
-permissions:
-  pull-requests: write
 jobs:
   assign-author:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - uses: toshimaru/auto-author-assign@v1.1.0
         with:

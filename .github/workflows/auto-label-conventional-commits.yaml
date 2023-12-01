@@ -4,19 +4,21 @@ on:
     types: [opened]
   pull_request:
     types: [opened]
-
-permissions:
-  issues: write
-  pull-requests: write
-
 jobs:
   label_issues:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
-      - name: Label issue
-        uses: actions/github-script@v5
+      - uses: actions/labeler@v4
         with:
           script: |
+            const github = require('@actions/github');
+            const core = require('@actions/core');
+            const token = core.getInput('github-token', { required: true });
+            const octokit = github.getOctokit(token);
+
             const title = context.payload.issue ? context.payload.issue.title : context.payload.pull_request.title;
             const labelMapping = {
               'feat:': 'type: feature request',
@@ -33,7 +35,7 @@ jobs:
             for (const [prefix, label] of Object.entries(labelMapping)) {
               if (title.startsWith(prefix)) {
                 const issue_number = context.payload.issue ? context.issue.number : context.payload.pull_request.number;
-                github.issues.addLabels({
+                octokit.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: issue_number,
