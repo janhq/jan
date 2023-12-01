@@ -10,6 +10,7 @@ dist
 build
 .DS_Store
 electron/renderer
+electron/models
 package-lock.json
 
 *.log

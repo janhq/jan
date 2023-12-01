@@ -4,7 +4,6 @@ type DownloadState = {
   speed: number
   percent: number
   size: DownloadSize
-  fileName: string
   error?: string
 }
 

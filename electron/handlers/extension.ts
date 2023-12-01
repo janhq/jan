@@ -1,19 +1,16 @@
-import { app, ipcMain, webContents } from 'electron'
-import { readdirSync, rmdir, writeFileSync } from 'fs'
-import { ModuleManager } from '../managers/module'
+import { ipcMain, webContents } from 'electron'
+import { readdirSync } from 'fs'
+import { ModuleManager } from './../managers/module'
 import { join, extname } from 'path'
-import { ExtensionManager } from '../managers/extension'
-import { WindowManager } from '../managers/window'
-import { manifest, tarball } from 'pacote'
 import {
   getActiveExtensions,
   getAllExtensions,
   installExtensions,
-} from '../extension/store'
-import { getExtension } from '../extension/store'
-import { removeExtension } from '../extension/store'
-import Extension from '../extension/extension'
-import { userSpacePath } from '../utils/path'
+} from './../extension/store'
+import { getExtension } from './../extension/store'
+import { removeExtension } from './../extension/store'
+import Extension from './../extension/extension'
+import { getResourcePath, userSpacePath } from './../utils/path'
 
 export function handleExtensionIPCs() {
   /**MARK: General handlers */
@@ -48,11 +45,7 @@ export function handleExtensionIPCs() {
    * @returns An array of paths to the base extensions.
    */
   ipcMain.handle('extension:baseExtensions', async (_event) => {
-    const baseExtensionPath = join(
-      __dirname,
-      '../',
-      app.isPackaged ? '../../app.asar.unpacked/pre-install' : '../pre-install'
-    )
+    const baseExtensionPath = join(getResourcePath(), 'pre-install')
     return readdirSync(baseExtensionPath)
       .filter((file) => extname(file) === '.tgz')
       .map((file) => join(baseExtensionPath, file))

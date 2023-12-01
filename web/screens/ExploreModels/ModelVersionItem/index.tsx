@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react'
 
 import { Model } from '@janhq/core'
-import { Badge, Button } from '@janhq/uikit'
+import { Button } from '@janhq/uikit'
 import { atom, useAtomValue } from 'jotai'
 
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
@@ -63,7 +63,7 @@ const ModelVersionItem: React.FC<Props> = ({ model }) => {
   }
 
   if (downloadState != null && downloadStates.length > 0) {
-    downloadButton = <ModalCancelDownload suitableModel={model} isFromList />
+    downloadButton = <ModalCancelDownload model={model} isFromList />
   }
 
   return (
@@ -74,16 +74,7 @@ const ModelVersionItem: React.FC<Props> = ({ model }) => {
         </span>
       </div>
       <div className="flex items-center gap-4">
-        <div className="flex justify-end gap-2">
-          <Badge
-            themes="secondary"
-            className="line-clamp-1"
-            title={`${toGigabytes(model.metadata.maxRamRequired)} RAM required`}
-          >{`${toGigabytes(
-            model.metadata.maxRamRequired
-          )} RAM required`}</Badge>
-          <Badge themes="secondary">{toGigabytes(model.metadata.size)}</Badge>
-        </div>
+        <div className="flex justify-end gap-2"></div>
         {downloadButton}
       </div>
     </div>

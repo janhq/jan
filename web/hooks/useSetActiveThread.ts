@@ -22,11 +22,6 @@ export default function useSetActiveThread() {
       return
     }
 
-    if (!thread.isFinishInit) {
-      console.debug('Thread not finish init')
-      return
-    }
-
     // load the corresponding messages
     const messages = await extensionManager
       .get<ConversationalExtension>(ExtensionType.Conversational)

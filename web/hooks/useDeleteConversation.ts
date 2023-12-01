@@ -6,9 +6,9 @@ import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { extensionManager } from '../extension/ExtensionManager'
-
 import { useActiveModel } from './useActiveModel'
+
+import { extensionManager } from '@/extension/ExtensionManager'
 
 import {
   cleanConversationMessages,

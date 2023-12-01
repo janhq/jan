@@ -1,25 +1,15 @@
 import { useEffect, useState } from 'react'
 
 import { ExtensionType, ModelExtension } from '@janhq/core'
-import { ModelCatalog } from '@janhq/core'
-
-import { dummyModel } from '@/utils/dummy'
+import { Model } from '@janhq/core'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 
-export async function getConfiguredModels(): Promise<ModelCatalog[]> {
-  return (
-    extensionManager
-      .get<ModelExtension>(ExtensionType.Model)
-      ?.getConfiguredModels() ?? []
-  )
-}
-
 export function useGetConfiguredModels() {
   const [loading, setLoading] = useState<boolean>(false)
-  const [models, setModels] = useState<ModelCatalog[]>([])
+  const [models, setModels] = useState<Model[]>([])
 
-  async function getConfiguredModels(): Promise<ModelCatalog[]> {
+  const getConfiguredModels = async (): Promise<Model[]> => {
     const models = await extensionManager
       .get<ModelExtension>(ExtensionType.Model)
       ?.getConfiguredModels()
@@ -28,9 +18,9 @@ export function useGetConfiguredModels() {
 
   async function fetchModels() {
     setLoading(true)
-    let models = await getConfiguredModels()
+    const models = await getConfiguredModels()
     if (process.env.NODE_ENV === 'development') {
-      models = [dummyModel, ...models]
+      // models = [dummyModel, ...models] // TODO: NamH add back dummy model later
     }
     setLoading(false)
     setModels(models)

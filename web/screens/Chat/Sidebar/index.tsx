@@ -9,6 +9,8 @@ import DropdownListSidebar, {
 } from '@/containers/DropdownListSidebar'
 import ItemCardSidebar from '@/containers/ItemCardSidebar'
 
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+
 import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
 
 export const showRightSideBarAtom = atom<boolean>(false)
@@ -17,6 +19,7 @@ export default function Sidebar() {
   const showing = useAtomValue(showRightSideBarAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
+  const { updateThreadTitle } = useCreateNewThread()
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
@@ -47,7 +50,6 @@ export default function Sidebar() {
     if (!filePath) return
 
     const fullPath = join(userSpace, filePath)
-    console.log(fullPath)
     openFileExplorer(fullPath)
   }
 
@@ -80,7 +82,6 @@ export default function Sidebar() {
     if (!filePath) return
 
     const fullPath = join(userSpace, filePath)
-    console.log(fullPath)
     openFileExplorer(fullPath)
   }
 
@@ -96,8 +97,16 @@ export default function Sidebar() {
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
         >
-          <ItemCardSidebar description={activeThread?.id} title="Thread ID" />
-          <ItemCardSidebar title="Thread title" />
+          <ItemCardSidebar
+            description={activeThread?.id}
+            title="Thread ID"
+            disabled
+          />
+          <ItemCardSidebar
+            title="Thread title"
+            description={activeThread?.title}
+            onChange={(title) => updateThreadTitle(title ?? '')}
+          />
         </CardSidebar>
         <CardSidebar
           title="Assistant"
@@ -107,6 +116,7 @@ export default function Sidebar() {
           <ItemCardSidebar
             description={activeThread?.assistants[0].assistant_name ?? ''}
             title="Assistant"
+            disabled
           />
         </CardSidebar>
         <CardSidebar
