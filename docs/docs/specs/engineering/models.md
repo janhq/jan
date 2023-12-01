@@ -64,13 +64,13 @@ Here's a standard example `model.json` for a GGUF model.
 "description": null,                // Defaults to null
 "state": enum[null, "downloading", "ready", "starting", "stopping", ...]
 "format": "ggufv3",                 // Defaults to "ggufv3"
-"settings": {                       // Models are initialized with settings
+"engine_parameters": {              // Engine
     "ctx_len": 2048,
     "ngl": 100,
     "embedding": true,
     "n_parallel": 4,
 },
-"parameters": {                     // Models are called parameters
+"model_parameters": {                     // Models are called parameters
     "stream": true,
     "max_tokens": 2048,
     "stop": ["<endofstring>"],      // This usually can be left blank, only used with specific need from model author
