@@ -1,0 +1,44 @@
+name: "Auto Label Conventional Commits"
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  label_issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label issue
+        uses: actions/github-script@v5
+        with:
+          script: |
+            const title = context.payload.issue ? context.payload.issue.title : context.payload.pull_request.title;
+            const labelMapping = {
+              'feat:': 'type: feature request',
+              'perf:': 'type: enhancement',
+              'fix:': 'type: bug',
+              'docs:': 'type: documentation',
+              'ci:': 'type: ci',
+              'build:': 'type: ci',
+              'chore:': 'type: chore',
+              'test:': 'type: chore',
+              'style:': 'type: chore',
+              'refactor:': 'type: chore',
+            };
+            for (const [prefix, label] of Object.entries(labelMapping)) {
+              if (title.startsWith(prefix)) {
+                const issue_number = context.payload.issue ? context.issue.number : context.payload.pull_request.number;
+                github.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue_number,
+                  labels: [label],
+                });
+                break;
+              }
+            }
