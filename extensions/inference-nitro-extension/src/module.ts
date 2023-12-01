@@ -168,7 +168,7 @@ function checkAndUnloadNitro() {
  */
 async function spawnNitroProcess(): Promise<void> {
   return new Promise((resolve, reject) => {
-    let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
+    let binaryFolder = path.join(__dirname, "bin"); // Current directory by default
     let binaryName;
 
     if (process.platform === "win32") {

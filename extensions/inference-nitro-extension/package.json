@@ -1,0 +1,57 @@
+{
+  "name": "@janhq/inference-nitro-extension",
+  "version": "1.0.0",
+  "description": "Inference Engine for Nitro Extension, powered by @janhq/nitro, bring a high-performance Llama model inference in pure C++.",
+  "main": "dist/index.js",
+  "module": "dist/module.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "build": "tsc -b . && webpack --config webpack.config.js",
+    "downloadnitro:linux": "NITRO_VERSION=$(cat ./bin/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64.tar.gz -e --strip 1 -o ./bin/linux-cpu && chmod +x ./bin/linux-cpu/nitro && chmod +x ./bin/linux-start.sh && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda.tar.gz -e --strip 1 -o ./bin/linux-cuda && chmod +x ./bin/linux-cuda/nitro && chmod +x ./bin/linux-start.sh",
+    "downloadnitro:darwin": "NITRO_VERSION=$(cat ./bin/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-arm64.tar.gz -e --strip 1 -o ./bin/mac-arm64 && chmod +x ./bin/mac-arm64/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-amd64.tar.gz -e --strip 1 -o ./bin/mac-x64 && chmod +x ./bin/mac-x64/nitro",
+    "downloadnitro:win32": "download.bat",
+    "downloadnitro": "run-script-os",
+    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../electron/pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../electron/pre-install",
+    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" &&  npm pack && cpx *.tgz ../../electron/pre-install",
+    "build:publish": "run-script-os"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/module.js"
+  },
+  "devDependencies": {
+    "cpx": "^1.5.0",
+    "rimraf": "^3.0.2",
+    "run-script-os": "^1.1.6",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@janhq/core": "file:../../core",
+    "download-cli": "^1.1.1",
+    "electron-log": "^5.0.1",
+    "fetch-retry": "^5.0.6",
+    "kill-port": "^2.0.1",
+    "path-browserify": "^1.0.1",
+    "rxjs": "^7.8.1",
+    "tcp-port-used": "^1.0.2",
+    "ts-loader": "^9.5.0",
+    "ulid": "^2.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ],
+  "bundleDependencies": [
+    "tcp-port-used",
+    "kill-port",
+    "fetch-retry",
+    "electron-log"
+  ]
+}
