@@ -146,6 +146,7 @@ const config = {
       { property: 'og:title', content: 'Run your own AI | Jan' },
       { property: 'og:description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
       { property: 'og:image', content: 'https://jan.ai/img/jan-social-card.png' },
+      { property: 'og:type', content: 'website' },
       { property: 'twitter:card', content: 'summary_large_image' },
       { property: 'twitter:site', content: '@janhq_' }, 
       { property: 'twitter:title', content: 'Run your own AI | Jan' },
