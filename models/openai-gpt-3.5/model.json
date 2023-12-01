@@ -1,0 +1,19 @@
+{
+    "source_url": "https://api.openai.com/v1",
+    "id": "openai-gpt35",
+    "object": "model",
+    "name": "OpenAI GPT 3.5",
+    "version": 1.0,
+    "description": "OpenAI GPT 3.5 model is extremely good",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "OpenAI",
+      "tags": ["General", "Big Context Length"]
+    },
+    "engine": "openai"
+}
+  
