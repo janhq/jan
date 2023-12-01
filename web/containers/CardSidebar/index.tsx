@@ -22,14 +22,14 @@ export default function CardSidebar({
   return (
     <div
       className={twMerge(
-        'flex w-full flex-col overflow-hidden rounded-lg border border-border',
+        'flex w-full flex-col rounded-lg border border-border',
         show && 'border border-border'
       )}
     >
       <div
         className={twMerge(
-          'flex items-center bg-zinc-200 dark:bg-zinc-600/10',
-          show && 'border-b border-border '
+          'flex items-center overflow-hidden rounded-t-md bg-zinc-200 dark:bg-zinc-600/10',
+          show && 'border-b border-border'
         )}
       >
         <button

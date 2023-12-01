@@ -147,7 +147,9 @@ export default function Sidebar() {
           <div className="flex flex-col space-y-4 p-2">
             <div className="flex items-center space-x-2">
               <LogoMark width={24} height={24} />
-              <span className="font-bold">Jan</span>
+              <span className="font-bold capitalize">
+                {activeThread?.assistants[0].assistant_name ?? '-'}
+              </span>
             </div>
             <div>
               <label
@@ -158,8 +160,7 @@ export default function Sidebar() {
               </label>
               <Textarea
                 id="assistant-instructions"
-                defaultValue={activeThread?.assistants[0].assistant_name ?? ''}
-                placeholder="You are a helpful assistant."
+                placeholder="Eg. You are a helpful assistant."
               />
             </div>
           </div>

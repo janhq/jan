@@ -53,9 +53,8 @@ const ChatScreen = () => {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const conversations = useAtomValue(threadsAtom)
-  const isEnableChat = currentConvo && activeModel
 
-  // console.log(conversations)
+  console.log(conversations)
   // console.log(activeModel)
 
   const [isModelAvailable, setIsModelAvailable] = useState(
@@ -146,7 +145,7 @@ const ChatScreen = () => {
             </div>
           )} */}
 
-          {isEnableChat ? (
+          {currentConvo ? (
             <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
               <ChatBody />
             </div>

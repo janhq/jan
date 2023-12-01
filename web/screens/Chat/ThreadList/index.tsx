@@ -47,7 +47,6 @@ export default function ThreadList() {
               key={i}
               className={twMerge(
                 'relative mb-2 flex cursor-pointer flex-col rounded-lg bg-gray-100 p-4 dark:bg-secondary/50'
-                // activeThreadId === thread.id && 'bg-secondary-10'
               )}
               onClick={() => onThreadClick(thread)}
             >
