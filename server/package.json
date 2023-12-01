@@ -51,26 +51,15 @@
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "test:e2e": "playwright test --workers=1",
-    "dev": "tsc -p . && electron .",
-    "build": "run-script-os",
-    "build:test": "run-script-os",
-    "build:test:darwin": "tsc -p . && electron-builder -p never -m --dir",
-    "build:test:win32": "tsc -p . && electron-builder -p never -w --dir",
-    "build:test:linux": "tsc -p . && electron-builder -p never -l --dir",
-    "build:darwin": "tsc -p . && electron-builder -p never -m",
-    "build:win32": "tsc -p . && electron-builder -p never -w",
-    "build:linux": "tsc -p . && electron-builder -p never --linux deb",
-    "build:publish": "run-script-os",
-    "build:publish:darwin": "tsc -p . && electron-builder -p onTagOrDraft -m --x64 --arm64",
-    "build:publish:win32": "tsc -p . && electron-builder -p onTagOrDraft -w",
-    "build:publish:linux": "tsc -p . && electron-builder -p onTagOrDraft -l deb"
+    "dev": "nodemon .",
+    "build": "tsc",
+    "build:test": "",
+    "build:publish": ""
   },
   "dependencies": {
     "@npmcli/arborist": "^7.1.0",
     "@types/request": "^2.48.12",
     "@uiball/loaders": "^1.3.0",
-    "electron-store": "^8.1.0",
-    "electron-updater": "^6.1.4",
     "express": "^4.18.2",
     "pacote": "^17.0.4",
     "request": "^2.88.2",
@@ -78,7 +67,6 @@
     "use-debounce": "^9.0.4"
   },
   "devDependencies": {
-    "@electron/notarize": "^2.1.0",
     "@playwright/test": "^1.38.1",
     "@types/body-parser": "^1.19.5",
     "@types/express": "^4.17.21",
@@ -86,10 +74,8 @@
     "@types/pacote": "^11.1.7",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
-    "electron": "26.2.1",
-    "electron-builder": "^24.6.4",
-    "electron-playwright-helpers": "^1.6.0",
     "eslint-plugin-react": "^7.33.2",
+    "nodemon": "^3.0.1",
     "run-script-os": "^1.1.6"
   },
   "installConfig": {
