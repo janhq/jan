@@ -1,7 +1,9 @@
 openapi: 3.0.0
 info:
-  title: Jan API Reference
-  description: Please see https://jan.ai for documentation.
+  title: API Reference
+  description: |
+    # Introduction
+    Jan API is compatible with the [OpenAI API](https://platform.openai.com/docs/api-reference).
 version: "0.1.8"
 contact:
   name: Jan Discord
@@ -14,45 +16,72 @@ servers:
 tags:
   - name: Models
     description: List and describe the various models available in the API.
-  - name: Chat Completion
-    description: Given a list of messages comprising a conversation, the model will return a response.
+  - name: Chat 
+    description: |
+      Given a list of messages comprising a conversation, the model will return a response.
+
   - name: Messages
     description: |
       Messages capture a conversation's content. This can include the content from LLM responses and other metadata from [chat completions](/specs/chats).
-
-      - Users and assistants can send multimedia messages.
-
-      - An [OpenAI Message API](https://platform.openai.com/docs/api-reference/messages) compatible endpoint at `localhost:1337/v1/messages`.
-
-      - Jan's `messages` API is compatible with [OpenAI's Messages API](https://platform.openai.com/docs/api-reference/messages), with additional methods for managing messages locally.
-
   - name: Threads
-    description: |
-      Threads are conversations between an `assistant` and the user:
-        - Users can tweak `model` params and `assistant` behavior within each thread.
-        - Users can import and export threads.
-        - An [OpenAI Thread API](https://platform.openai.com/docs/api-reference/threads) compatible endpoint at `localhost:1337/v1/threads`. 
   - name: Assistants
     description: Configures and utilizes different AI assistants for varied tasks
 x-tagGroups:
   - name: Endpoints
     tags:
       - Models
-      - Chat Completion
+      - Chat
   - name: Chat
     tags:
       - Assistants
       - Messages
       - Threads
 paths:
+  /chat/completions:
+    post:
+      operationId: createChatCompletion
+      tags:
+        - Chat
+      summary: | 
+        Create chat completion
+      description: |
+        Creates a model response for the given chat conversation.  <a  href = "https://platform.openai.com/docs/api-reference/chat/create"> Equivalent to OpenAI's create chat completion. </a>
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "specs/chat.yaml#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "specs/chat.yaml#/components/schemas/ChatCompletionResponse"
+      x-codeSamples:
+        - lang: "curl"
+          source: |
+            curl -X POST 'http://localhost:3982/inferences/llamacpp/chat_completion' \
+                  -H "Content-Type: application/json" \
+                  -d '{
+                    "llama_model_path": "/path/to/your/model.gguf",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "hello"
+                      },
+                    ]
+                  }'
+      
   ### MODELS
   /models:
     get:
       operationId: listModels
       tags:
         - Models
-      summary: List Models
-      description: Lists the currently available models, and provides basic information about each one such as the owner and availability.
+      summary: List models
+      description: |
+        Lists the currently available models, and provides basic information about each one such as the owner and availability.  <a  href = "https://platform.openai.com/docs/api-reference/models/list"> Equivalent to OpenAI's list model. </a>
       responses:
         "200":
           description: OK
@@ -68,8 +97,9 @@ paths:
       operationId: downloadModel
       tags:
         - Models
-      summary: Download Model
-      description: Download a model.
+      summary: Download model
+      description: |
+        Download a model.
       responses:
         "200":
           description: OK
@@ -83,20 +113,22 @@ paths:
             curl -X POST https://localhost:1337/v1/models
   /models/{model_id}:          
     get:
-      operationId: getModel
+      operationId: retrieveModel
       tags:
         - Models
-      summary: Get Model
-      description: Get a model instance, providing basic information about the model such as the owner and permissioning.
+      summary: Retrieve model
+      description: |
+        Get a model instance, providing basic information about the model such as the owner and permissioning.  <a  href = "https://platform.openai.com/docs/api-reference/models/retrieve"> Equivalent to OpenAI's retrieve model. </a>
       parameters:
         - in: path
-          name: source_url
+          name: model_id
           required: true
           schema:
             type: string
             # ideally this will be an actual ID, so this will always work from browser
-            example: https://huggingface.com/thebloke/example.gguf
-          description: The ID of the model to use for this request
+            example: zephyr-7b
+          description: |
+            The ID of the model to use for this request
       responses:
         "200":
           description: OK
@@ -112,8 +144,9 @@ paths:
       operationId: deleteModel
       tags:
         - Models
-      summary: Delete Model
-      description: Delete a model.
+      summary: Delete model
+      description: |
+        Delete a model. <a  href = "https://platform.openai.com/docs/api-reference/models/delete"> Equivalent to OpenAI's delete model. </a>
       parameters:
         - in: path
           name: model
@@ -121,7 +154,8 @@ paths:
           schema:
             type: string
             example: zephyr-7b
-          description: The model to delete
+          description: |
+            The model to delete
       responses:
         "200":
           description: OK
@@ -138,8 +172,9 @@ paths:
       operationId: startModel
       tags:
         - Models
-      summary: Start Model
-      description: Starts an imported model. Loads the model into V/RAM.
+      summary: Start model
+      description: |
+        Starts an imported model. Loads the model into V/RAM.
       parameters:
         - in: path
           name: model
@@ -148,7 +183,8 @@ paths:
             type: string
             # ideally this will be an actual ID, so this will always work from browser
             example: zephyr-7b
-          description: The ID of the model to use for this request
+          description: |
+            The ID of the model to use for this request
       responses:
         "200":
           description: OK
@@ -165,8 +201,9 @@ paths:
       operationId: stopModel
       tags:
         - Models
-      summary: Stop Model
-      description: Stop an imported model.
+      summary: Stop model
+      description: |
+        Stop an imported model.
       parameters:
         - in: path
           name: model
@@ -195,7 +232,8 @@ paths:
       tags:
         - Threads
       summary: Create thread
-      description: Create a thread
+      description: |
+        Create a thread.  <a  href = "https://platform.openai.com/docs/api-reference/threads/createThread"> Equivalent to OpenAI's create thread. </a>
       requestBody:
         required: false
         content:
@@ -218,7 +256,7 @@ paths:
       x-codeSamples:
         - lang: "cURL"
           source: |
-            curl -X POST {JAN_URL}/v1/threads \
+            curl -X POST http://localhost:1337/v1/threads \
               -H "Content-Type: application/json" \
               -d '{
                   "messages": [{
@@ -235,7 +273,8 @@ paths:
       tags:
         - Threads
       summary: List threads
-      description: Retrieves a list of all threads available in the system.
+      description: |
+        Retrieves a list of all threads available in the system.
       responses:
         "200":
           description: List of threads retrieved successfully
@@ -260,7 +299,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-              curl {JAN_URL}/v1/threads \
+              curl http://localhost:1337/v1/threads \
                 -H "Content-Type: application/json" \
   
   /threads/{thread_id}:
@@ -268,8 +307,9 @@ paths:
       operationId: getThread
       tags:
         - Threads
-      summary: Get thread
-      description: Retrieves detailed information about a specific thread using its thread_id.
+      summary: Retrieve thread
+      description: |
+        Retrieves detailed information about a specific thread using its thread_id.  <a  href = "https://platform.openai.com/docs/api-reference/threads/getThread"> Equivalent to OpenAI's retrieve thread. </a>
       parameters:
         - in: path
           name: thread_id
@@ -277,7 +317,9 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread to retrieve.
+          description: |
+            The ID of the thread to retrieve.
+
       responses:
         "200":
           description: Thread details retrieved successfully
@@ -288,13 +330,14 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}
+            curl http://localhost:1337/v1/threads/{thread_id}
     post:
       operationId: modifyThread
       tags:
         - Threads
       summary: Modify thread
-      description: Modifies a thread
+      description: |
+        Modifies a thread.  <a  href = "https://platform.openai.com/docs/api-reference/threads/modifyThread"> Equivalent to OpenAI's modify thread. </a>
       parameters:
         - in: path
           name: thread_id
@@ -302,7 +345,9 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread to be modified.
+          description: |
+            The ID of the thread to be modified.
+
       requestBody:
         required: false
         content:
@@ -325,7 +370,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-                curl -X POST {JAN_URL}/v1/threads/{thread_id} \
+                curl -X POST http://localhost:1337/v1/threads/{thread_id} \
                   -H "Content-Type: application/json" \
                   -d '{
                       "messages": [{
@@ -337,13 +382,13 @@ paths:
                           "content": "How does AI work? Explain it in simple terms."
                       }]
                   }'
-      
     delete:
       operationId: deleteThread
       tags:
         - Threads
       summary: Delete thread
-      description: Delete a thread
+      description: |
+        Delete a thread.  <a  href = "https://platform.openai.com/docs/api-reference/threads/deleteThread"> Equivalent to OpenAI's delete thread. </a>
       parameters:
         - in: path
           name: thread_id
@@ -351,7 +396,8 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread to be deleted.
+          description: |
+            The ID of the thread to be deleted.
       responses:
         "200":
           description: Thread deleted successfully
@@ -362,8 +408,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl -X DELETE {JAN_URL}/v1/threads/{thread_id}
-
+            curl -X DELETE http://localhost:1337/v1/threads/{thread_id}
 
   /threads/{thread_id}/assistants:
     get:
@@ -371,8 +416,8 @@ paths:
       tags:
         - Threads
       summary: Get Thread.Assistants
-      description: 
-        - Can achieve this goal by calling Get thread API
+      description: |
+        Can achieve this goal by calling Get thread API
       parameters:
         - in: path
           name: thread_id
@@ -391,7 +436,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}/assistants
+            curl http://localhost:1337/v1/threads/{thread_id}/assistants
 
   /threads/{thread_id}/assistants/{assistants_id}:
     post:
@@ -399,8 +444,10 @@ paths:
       tags:
         - Threads
       summary: Modify Thread.Assistants
-      description: 
-        - Can achieve this goal by calling Modify Assistant API with thread.assistant[]
+      description: |
+        
+
+        Can achieve this goal by calling Modify Assistant API with thread.assistant[]
   
   /threads/{thread_id}/:
     get:
@@ -408,8 +455,8 @@ paths:
       tags:
         - Threads
       summary: List Thread.Messages
-      description: 
-        -  Can achieve this goal by calling Get Thread API
+      description: | 
+        Can achieve this goal by calling Get Thread API
       parameters:
         - in: path
           name: thread_id
@@ -428,7 +475,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}
+            curl http://localhost:1337/v1/threads/{thread_id}
 
   ### MESSAGES
   /threads/{thread_id}/messages:
@@ -436,8 +483,9 @@ paths:
       operationId: listMessages
       tags:
         - Messages
-      summary: List messaages
-      description: Retrieves all messages from the given thread.
+      summary: List messages
+      description: |
+        Retrieves all messages from the given thread. <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages"> Equivalent to OpenAI's list messages. </a>
       parameters:
         - in: path
           name: thread_id
@@ -445,7 +493,8 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread from which to retrieve messages.
+          description: |
+            The ID of the thread from which to retrieve messages.
       responses:
         "200":
           description: List of messages retrieved successfully
@@ -456,14 +505,15 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}/messages \
+            curl http://localhost:1337/v1/threads/{thread_id}/messages \
               -H "Content-Type: application/json"
     post:
       operationId: createMessage
       tags:
         - Messages
       summary: Create message
-      description: Create a message
+      description: |
+        Create a message. <a  href = "https://platform.openai.com/docs/api-reference/messages/createMessage"> Equivalent to OpenAI's list messages. </a>
       parameters:
         - in: path
           name: thread_id
@@ -471,7 +521,8 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread to which the message will be posted.
+          description: |
+            The ID of the thread to which the message will be posted.
       requestBody:
         required: true
         content:
@@ -481,12 +532,18 @@ paths:
               properties:
                 role:
                   type: string
-                  description: "Role of the sender, either 'user' or 'assistant'."
+                  description: |
+                    "Role of the sender, either 'user' or 'assistant'."
+
+                    <span style="color:#228B22">OpenAI compatible</span>
                   example: "user"
                   enum: ["user", "assistant"]
                 content:
                   type: string
-                  description: "Text content of the message."
+                  description: |
+                    "Text content of the message."
+
+                    <span style="color:#228B22">OpenAI compatible</span>
                   example: "How does AI work? Explain it in simple terms."
               required:
                 - role
@@ -501,7 +558,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-              curl -X POST {JAN_URL}/v1/threads/{thread_id}/messages \
+              curl -X POST http://localhost:1337/v1/threads/{thread_id}/messages \
                 -H "Content-Type: application/json" \
                 -d '{
                   "role": "user",
@@ -513,8 +570,9 @@ paths:
       operationId: retrieveMessage
       tags:
         - Messages
-      summary: Retrieve Message
-      description: Retrieve a specific message from a thread using its thread_id and message_id.
+      summary: Retrieve message
+      description: |
+        Retrieve a specific message from a thread using its thread_id and message_id. <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessage"> Equivalent to OpenAI's retrieve messages. </a>
       parameters:
         - in: path
           name: thread_id
@@ -522,14 +580,18 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread containing the message.
+          description: |
+            The ID of the thread containing the message.
+
         - in: path
           name: message_id
           required: true
           schema:
             type: string
             example: msg_abc123
-          description: The ID of the message to retrieve.
+          description: |
+            The ID of the message to retrieve.
+
       responses:
         "200":
           description: OK
@@ -540,7 +602,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-                curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id} \
+                curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id} \
                   -H "Content-Type: application/json"
 
   /threads/{thread_id}/messages/{message_id}/files:
@@ -548,8 +610,10 @@ paths:
       operationId: listMessageFiles
       tags:
         - Messages
-      summary: List message files
-      description: Returns a list of message files.
+      summary: |
+        List message files 
+      description: | 
+        Returns a list of message files.  <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessageFiles"> Equivalent to OpenAI's list message files. </a>
       parameters:
         - in: path
           name: thread_id
@@ -557,14 +621,18 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread containing the message.
+          description: |
+            The ID of the thread containing the message.
+
         - in: path
           name: message_id
           required: true
           schema:
             type: string
             example: msg_abc123
-          description: The ID of the message whose files are to be listed.
+          description: | 
+            The ID of the message whose files are to be listed. 
+            
       responses:
         "200":
           description: List of files retrieved successfully
@@ -575,7 +643,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id}/files \
+            curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}/files \
               -H "Content-Type: application/json"
 
   /threads/{thread_id}/messages/{message_id}/files/{file_id}:
@@ -584,7 +652,8 @@ paths:
       tags:
         - Messages
       summary: Retrieve message file
-      description: Retrieves a file associated with a specific message in a thread.
+      description: |
+        Retrieves a file associated with a specific message in a thread.  <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessageFile"> Equivalent to OpenAI's retrieve message file. </a>
       parameters:
         - in: path
           name: thread_id
@@ -592,21 +661,27 @@ paths:
           schema:
             type: string
             example: thread_abc123
-          description: The ID of the thread containing the message.
+          description: |
+            The ID of the thread containing the message.
+
         - in: path
           name: message_id
           required: true
           schema:
             type: string
             example: msg_abc123
-          description: The ID of the message associated with the file.
+          description: |
+            The ID of the message associated with the file.
+
         - in: path
           name: file_id
           required: true
           schema:
             type: string
             example: file-abc123
-          description: The ID of the file to retrieve.
+          description: |
+            The ID of the file to retrieve.
+            
       responses:
         "200":
           description: File retrieved successfully
@@ -617,14 +692,15 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl {JAN_URL}/v1/threads/{thread_id}/messages/{message_id}/files/{file_id} \
+            curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}/files/{file_id} \
               -H "Content-Type: application/json"
 
 x-webhooks:
   ModelObject:
     post:
       summary: The model object
-      description: Information about a model in the systems
+      description: |
+        Describe a model offering that can be used with the API. <a  href = "https://platform.openai.com/docs/api-reference/models/object"> Equivalent to OpenAI's model object. </a>
       operationId: ModelObject
       tags:
         - Models
@@ -633,11 +709,11 @@ x-webhooks:
           application/json:
             schema:
               $ref: 'specs/models.yaml#/components/schemas/ModelObject'
-
   MessageObject:
     post:
       summary: The message object
-      description: Information about a message in the thread
+      description: |
+        Information about a message in the thread.  <a  href = "https://platform.openai.com/docs/api-reference/messages/object"> Equivalent to OpenAI's message object. </a>
       operationId: MessageObject
       tags:
         - Messages
@@ -646,15 +722,10 @@ x-webhooks:
           application/json:
             schema:
               $ref: 'specs/messages.yaml#/components/schemas/MessageObject'
-
   ThreadObject:
     post:
       summary: The thread object
-      description: |
-        - Each `thread` folder contains a `thread.json` file, which is a representation of a thread.
-        - `thread.json` contains metadata and model parameter overrides.
-        - There are no required fields.
-
+      description: Represents a thread that contains messages. <a  href = "https://platform.openai.com/docs/api-reference/threads/object"> Equivalent to OpenAI's thread object. </a>
       operationId: ThreadObject
       tags:
         - Threads
