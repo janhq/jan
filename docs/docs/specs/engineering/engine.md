@@ -1,5 +1,5 @@
 ---
-title: Engine Specifications
+title: Engine
 slug: /specs/engine
 ---
 
