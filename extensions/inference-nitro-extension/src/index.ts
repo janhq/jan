@@ -19,6 +19,7 @@ import {
   events,
   executeOnMain,
   getUserSpace,
+  fs
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
@@ -31,6 +32,9 @@ import { join } from "path";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceExtension implements InferenceExtension {
+  private static readonly _homeDir = 'engines'
+  private static readonly _engineMetadataFileName = 'nitro.json'
+
   controller = new AbortController();
   isCancelled = false;
   /**
@@ -45,6 +49,8 @@ export default class JanInferenceExtension implements InferenceExtension {
    * Subscribes to events emitted by the @janhq/core package.
    */
   onLoad(): void {
+    fs.mkdir(JanInferenceExtension._homeDir)
+
     events.on(EventName.OnMessageSent, (data) =>
       JanInferenceExtension.handleMessageRequest(data, this)
     );
@@ -68,10 +74,14 @@ export default class JanInferenceExtension implements InferenceExtension {
   ): Promise<void> {
     const userSpacePath = await getUserSpace();
     const modelFullPath = join(userSpacePath, "models", modelId, modelId);
-
+    let engine_settings = JSON.parse(await fs.readFile(join(JanInferenceExtension._homeDir, JanInferenceExtension._engineMetadataFileName)))
+    engine_settings = {
+      engine_settings
+      ...settings,     
+    };
     return executeOnMain(MODULE, "initModel", {
       modelFullPath,
-      settings,
+      engine_settings,
     });
   }
 

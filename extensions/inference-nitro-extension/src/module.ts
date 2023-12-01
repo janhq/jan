@@ -42,12 +42,10 @@ function initModel(wrapper: any): Promise<InitModelResponse> {
 
   const settings = {
     llama_model_path: currentModelFile,
-    ctx_len: 2048,
-    ngl: 100,
-    cont_batching: false,
-    embedding: false, // Always enable embedding mode on
     ...wrapper.settings,
   };
+
+
   log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
 
   return (
