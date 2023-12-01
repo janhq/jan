@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useMemo } from 'react'
 
-import { Model } from '@janhq/core/lib/types'
+import { Model } from '@janhq/core'
 import { Badge, Button } from '@janhq/uikit'
 import { atom, useAtomValue } from 'jotai'
 

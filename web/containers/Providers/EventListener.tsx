@@ -2,8 +2,8 @@
 
 import { PropsWithChildren, useEffect, useRef } from 'react'
 
-import { PluginType } from '@janhq/core'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { ExtensionType } from '@janhq/core'
+import { ModelExtension } from '@janhq/core'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -14,8 +14,8 @@ import EventHandler from './EventHandler'
 
 import { appDownloadProgress } from './Jotai'
 
+import { extensionManager } from '@/extension/ExtensionManager'
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-import { pluginManager } from '@/plugin/PluginManager'
 
 export default function EventListenerWrapper({ children }: PropsWithChildren) {
   const setProgress = useSetAtom(appDownloadProgress)
@@ -61,8 +61,8 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
 
             const model = modelsRef.current.find((e) => e.id === fileName)
             if (model)
-              pluginManager
-                .get<ModelPlugin>(PluginType.Model)
+              extensionManager
+                .get<ModelExtension>(ExtensionType.Model)
                 ?.saveModel(model)
                 .then(() => {
                   setDownloadedModels([...downloadedModelRef.current, model])

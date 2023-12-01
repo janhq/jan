@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 
-import { PluginType } from '@janhq/core'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
+import { ExtensionType } from '@janhq/core'
+import { ModelExtension } from '@janhq/core'
 import {
   Progress,
   Modal,
@@ -18,8 +18,8 @@ import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
+import { extensionManager } from '@/extension'
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-import { pluginManager } from '@/plugin'
 
 export default function DownloadingState() {
   const { downloadStates } = useDownloadState()
@@ -81,8 +81,8 @@ export default function DownloadingState() {
                             (e) => e.id === item?.fileName
                           )
                           if (!model) return
-                          pluginManager
-                            .get<ModelPlugin>(PluginType.Model)
+                          extensionManager
+                            .get<ModelExtension>(ExtensionType.Model)
                             ?.cancelModelDownload(item.modelId)
                         }
                       }}

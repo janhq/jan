@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 
-import { PluginType } from '@janhq/core'
-import { ModelPlugin } from '@janhq/core/lib/plugins'
-import { Model } from '@janhq/core/lib/types'
+import { ModelExtension, ExtensionType } from '@janhq/core'
+import { Model } from '@janhq/core'
 
 import {
   Modal,
@@ -21,8 +20,8 @@ import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
+import { extensionManager } from '@/extension'
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-import { pluginManager } from '@/plugin'
 
 type Props = {
   suitableModel: Model
@@ -77,8 +76,8 @@ export default function ModalCancelDownload({
                       (e) => e.id === downloadState?.fileName
                     )
                     if (!model) return
-                    pluginManager
-                      .get<ModelPlugin>(PluginType.Model)
+                    extensionManager
+                      .get<ModelExtension>(ExtensionType.Model)
                       ?.cancelModelDownload(downloadState.modelId)
                   }
                 }}

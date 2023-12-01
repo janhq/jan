@@ -7,13 +7,12 @@ export const setupCoreServices = () => {
   } else {
     console.debug('Setting up core services')
   }
-  if (!window.corePlugin) {
-    window.corePlugin = {
+  if (!window.core) {
+    window.core = {
       events: new EventEmitter(),
-    }
-    window.coreAPI = {}
-    window.coreAPI = window.electronAPI ?? {
-      ...restAPI,
+      api: window.electronAPI ?? {
+        ...restAPI,
+      },
     }
   }
 }

@@ -14,11 +14,11 @@ import FeatureToggleWrapper from '@/context/FeatureToggle'
 
 import { setupCoreServices } from '@/services/coreService'
 import {
-  isCorePluginInstalled,
-  setupBasePlugins,
-} from '@/services/pluginService'
+  isCoreExtensionInstalled,
+  setupBaseExtensions,
+} from '@/services/extensionService'
 
-import { pluginManager } from '@/plugin'
+import { extensionManager } from '@/extension'
 
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
@@ -26,17 +26,17 @@ const Providers = (props: PropsWithChildren) => {
 
   const { children } = props
 
-  async function setupPE() {
-    // Register all active plugins with their activation points
-    await pluginManager.registerActive()
+  async function setupExtensions() {
+    // Register all active extensions
+    await extensionManager.registerActive()
 
     setTimeout(async () => {
-      if (!isCorePluginInstalled()) {
-        setupBasePlugins()
+      if (!isCoreExtensionInstalled()) {
+        setupBaseExtensions()
         return
       }
 
-      pluginManager.load()
+      extensionManager.load()
       setActivated(true)
     }, 500)
   }
@@ -46,15 +46,15 @@ const Providers = (props: PropsWithChildren) => {
     setupCoreServices()
     setSetupCore(true)
     return () => {
-      pluginManager.unload()
+      extensionManager.unload()
     }
   }, [])
 
   useEffect(() => {
     if (setupCore) {
       // Electron
-      if (window && window.coreAPI) {
-        setupPE()
+      if (window && window.core.api) {
+        setupExtensions()
       } else {
         // Host
         setActivated(true)

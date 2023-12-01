@@ -3,7 +3,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Listbox, Transition } from '@headlessui/react'
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid'
 
-import { Model } from '@janhq/core/lib/types'
+import { Model } from '@janhq/core'
 import { atom, useSetAtom } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 

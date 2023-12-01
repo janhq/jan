@@ -1,12 +1,12 @@
-import { PluginType, ThreadState } from '@janhq/core'
-import { ConversationalPlugin } from '@janhq/core/lib/plugins'
+import { ExtensionType, ThreadState } from '@janhq/core'
+import { ConversationalExtension } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
+import { extensionManager } from '@/extension/ExtensionManager'
 import {
   threadStatesAtom,
   threadsAtom,
 } from '@/helpers/atoms/Conversation.atom'
-import { pluginManager } from '@/plugin/PluginManager'
 
 const useGetAllThreads = () => {
   const setConversationStates = useSetAtom(threadStatesAtom)
@@ -14,8 +14,8 @@ const useGetAllThreads = () => {
 
   const getAllThreads = async () => {
     try {
-      const threads = await pluginManager
-        .get<ConversationalPlugin>(PluginType.Conversational)
+      const threads = await extensionManager
+        .get<ConversationalExtension>(ExtensionType.Conversational)
         ?.getThreads()
       const threadStates: Record<string, ThreadState> = {}
       threads?.forEach((thread) => {
