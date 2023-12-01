@@ -13,8 +13,9 @@ Currently Under Development
 
 In the Jan application, engines serve as primary entities with the following capabilities:
 
-- Ability to add or remove engines via the installation of extensions.
-- Dependence on engines for conducting [inference](https://en.wikipedia.org/wiki/Inference_engine).
+- Engine will be installed through `inference-extensions`.
+- Models will depend on engines to do [inference](https://en.wikipedia.org/wiki/Inference_engine).
+- Engine configuration and required metadata will be stored in a json file.
 
 ## Folder Structure
 
