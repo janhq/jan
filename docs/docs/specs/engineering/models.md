@@ -51,9 +51,9 @@ jan/                               # Jan root folder
 
 Here's a standard example `model.json` for a GGUF model.
 
-- `source_url`: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/.
 
 ```js
+{
 "id": "zephyr-7b",                  // Defaults to foldername
 "object": "model",                  // Defaults to "model"
 "source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
@@ -64,8 +64,8 @@ Here's a standard example `model.json` for a GGUF model.
 "description": null,                // Defaults to null
 "state": enum[null, "downloading", "ready", "starting", "stopping", ...]
 "format": "ggufv3",                 // Defaults to "ggufv3"
-"engine_parameters": {              // Engine parameters inside model.json can override the value inside the base engine.json
-    "ctx_len": 2048,
+"engine_parameters": {              // Engine parameters inside model.json can override 
+    "ctx_len": 2048,                // the value inside the base engine.json
     "ngl": 100,
     "embedding": true,
     "n_parallel": 4,
@@ -83,9 +83,10 @@ Here's a standard example `model.json` for a GGUF model.
 "assets": [                         // Defaults to current dir
     "file://.../zephyr-7b-q4_k_m.bin",
 ]
+}
 ```
 
-The model settings in the example can be found at: [Nitro's model settings](https://nitro.jan.ai/features/load-unload#table-of-parameters)
+The engine parameters in the example can be found at: [Nitro's model settings](https://nitro.jan.ai/features/load-unload#table-of-parameters)
 
 The model parameters in the example can be found at: [Nitro's model parameters](https://nitro.jan.ai/api-reference#tag/Chat-Completion)
 
