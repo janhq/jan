@@ -1,11 +1,13 @@
 name: "Auto Label Conventional Commits"
 on:
   issues:
-    - reopened
-    - opened
+    types:
+      - reopened
+      - opened
   pull_request:
-    - reopened
-    - opened
+    types:
+      - reopened
+      - opened
 jobs:
   label_issues:
     runs-on: ubuntu-latest
