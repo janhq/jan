@@ -18,7 +18,6 @@ export * from "./events";
 
 /**
  * Export Filesystem module.
- * TODO(@0xSage): refactor `fs` to `store` with generic CRUD operations.
  * @module
  */
 export * from "./fs";

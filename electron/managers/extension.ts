@@ -4,6 +4,7 @@ import { join, resolve } from 'path'
 import { rmdir } from 'fs'
 import Store from 'electron-store'
 import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { userSpacePath } from '../utils/path'
 /**
  * Manages extension installation and migration.
  */
@@ -30,7 +31,7 @@ export class ExtensionManager {
         return true
       },
       // Path to install extension to
-      extensionsPath: join(app.getPath('userData'), 'extensions'),
+      extensionsPath: join(userSpacePath, 'extensions'),
     })
   }
 
@@ -45,8 +46,7 @@ export class ExtensionManager {
       const store = new Store()
       if (store.get('migrated_version') !== app.getVersion()) {
         console.debug('start migration:', store.get('migrated_version'))
-        const userDataPath = app.getPath('userData')
-        const fullPath = join(userDataPath, 'extensions')
+        const fullPath = join(userSpacePath, 'extensions')
 
         rmdir(fullPath, { recursive: true }, function (err) {
           if (err) console.error(err)

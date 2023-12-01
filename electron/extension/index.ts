@@ -43,7 +43,6 @@ export function init(options: any) {
  */
 function registerExtensionProtocol() {
   return protocol.registerFileProtocol('extension', (request, callback) => {
-    console.log('handling ++--:', request)
     const entry = request.url.substr('extension://'.length - 1)
 
     const url = normalize(ExtensionManager.instance.extensionsPath + entry)

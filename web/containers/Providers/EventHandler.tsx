@@ -48,11 +48,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       // Mark the thread as not waiting for response
       updateThreadWaiting(message.thread_id, false)
 
-      // Append the message to the thread
-      extensionManager
-        .get<ConversationalExtension>(ExtensionType.Conversational)
-        ?.addNewMessage(message)
-
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
       if (thread) {
         const messageContent = message.content[0]?.text.value ?? ''

@@ -2,13 +2,12 @@ import { app, ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import readline from 'readline'
+import { userSpacePath } from '../utils/path'
 
 /**
  * Handles file system operations.
  */
 export function handleFsIPCs() {
-  const userSpacePath = join(app.getPath('home'), 'jan')
-
   /**
    * Gets the path to the user data directory.
    * @param event - The event object.

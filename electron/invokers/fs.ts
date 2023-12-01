@@ -1,5 +1,3 @@
-import { shell } from 'electron'
-
 const { ipcRenderer } = require('electron')
 
 export function fsInvokers() {

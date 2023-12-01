@@ -80,7 +80,6 @@ export class ExtensionManager {
    * @returns {void}
    */
   async activateExtension(extension: Extension) {
-    if (extension.url) console.log(extension.url)
     // Import class
     await import(/* webpackIgnore: true */ extension.url).then(
       (extensionClass) => {

@@ -13,6 +13,7 @@ import {
 import { getExtension } from '../extension/store'
 import { removeExtension } from '../extension/store'
 import Extension from '../extension/extension'
+import { userSpacePath } from '../utils/path'
 
 export function handleExtensionIPCs() {
   /**MARK: General handlers */
@@ -28,11 +29,7 @@ export function handleExtensionIPCs() {
     'extension:invokeExtensionFunc',
     async (_event, modulePath, method, ...args) => {
       const module = require(
-        /* webpackIgnore: true */ join(
-          app.getPath('userData'),
-          'extensions',
-          modulePath
-        )
+        /* webpackIgnore: true */ join(userSpacePath, 'extensions', modulePath)
       )
       ModuleManager.instance.setModule(modulePath, module)
 
@@ -67,9 +64,8 @@ export function handleExtensionIPCs() {
    * @returns The path to the user's extension directory.
    */
   ipcMain.handle('extension:extensionPath', async (_event) => {
-    return join(app.getPath('userData'), 'extensions')
+    return join(userSpacePath, 'extensions')
   })
-
 
   /**MARK: Extension Manager handlers */
   ipcMain.handle('extension:install', async (e, extensions) => {
