@@ -19,7 +19,7 @@ export default function Home() {
       <AnnoncementBanner />
       <Layout
         title={`${siteConfig.tagline}`}
-        description="Jan runs Large Language Models locally on Windows, Mac and Linux. Available on Desktop and Cloud-Native."
+        description="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server."
       >
         <main className="bg-gray-50 dark:bg-gray-950/95 relative">
           <div className="relative">
