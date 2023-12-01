@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/lzlv_70B-GGUF/blob/main/lzlv_70b_fp16_hf.Q5_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/lzlv_70B-GGUF/resolve/main/lzlv_70b_fp16_hf.Q5_K_M.gguf",
     "id": "lzlv-70b",
     "object": "model",
     "name": "Lzlv 70B",

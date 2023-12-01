@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/Xwin-LM-70B-V0.1-GGUF/blob/main/xwin-lm-70b-v0.1.Q5_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/Xwin-LM-70B-V0.1-GGUF/resolve/main/xwin-lm-70b-v0.1.Q5_K_M.gguf",
     "id": "xwin-70b",
     "object": "model",
     "name": "Xwin LM 70B",

@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/rocket-3B-GGUF/resolve/main/rocket-3b.Q4_K_M.gguf?download=true",
+    "source_url": "https://huggingface.co/TheBloke/rocket-3B-GGUF/resolve/main/rocket-3b.Q4_K_M.gguf",
     "id": "rocket-3b",
     "object": "model",
     "name": "Rocket 3B",

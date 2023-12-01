@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/Nous-Capybara-34B-GGUF/blob/main/nous-capybara-34b.Q5_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/Nous-Capybara-34B-GGUF/resolve/main/nous-capybara-34b.Q5_K_M.gguf",
     "id": "capybara-34b",
     "object": "model",
     "name": "Capybara 200k 34B",
@@ -7,13 +7,13 @@
     "description": "Nous Capybara 34B, a variant of the Yi-34B model, is the first Nous model with a 200K context length, trained for three epochs on the innovative Capybara dataset.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 200000,
+      "ctx_len": 4096,
       "system_prompt": "",
       "user_prompt": "USER: ",
       "ai_prompt": "ASSISTANT: "
     },
     "parameters": {
-      "max_tokens": 200000
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "NousResearch, The Bloke",

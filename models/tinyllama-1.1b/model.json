@@ -1,5 +1,5 @@
 {
-  "source_url": "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v0.6/blob/main/ggml-model-q4_0.gguf",
+  "source_url": "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v0.6/resolve/main/ggml-model-q4_0.gguf",
   "id": "tinyllama-1.1b",
   "object": "model",
   "name": "TinyLlama Chat 1.1B",

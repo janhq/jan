@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/LLaMA2-13B-Tiefighter-GGUF/blob/main/llama2-13b-tiefighter.Q5_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/LLaMA2-13B-Tiefighter-GGUF/resolve/main/llama2-13b-tiefighter.Q5_K_M.gguf",
     "id": "tiefighter-13b",
     "object": "model",
     "name": "Tiefighter 13B",

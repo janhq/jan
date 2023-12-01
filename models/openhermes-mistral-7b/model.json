@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/OpenHermes-2.5-Mistral-7B-GGUF/blob/main/openhermes-2.5-mistral-7b.Q4_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/OpenHermes-2.5-Mistral-7B-GGUF/resolve/main/openhermes-2.5-mistral-7b.Q4_K_M.gguf",
     "id": "openhermes-2.5-mistral-7b",
     "object": "model",
     "name": "Openhermes 2.5 Mistral 7B",

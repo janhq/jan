@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/Marx-3B-v3-GGUF/blob/main/marx-3b-v3.Q4_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/Marx-3B-v3-GGUF/resolve/main/marx-3b-v3.Q4_K_M.gguf",
     "id": "marx-3b",
     "object": "model",
     "name": "Marx 3B",

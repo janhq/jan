@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/Yi-34B-Chat-GGUF/blob/main/yi-34b-chat.Q5_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/Yi-34B-Chat-GGUF/resolve/main/yi-34b-chat.Q5_K_M.gguf",
     "id": "yi-34b",
     "object": "model",
     "name": "Yi 34B",

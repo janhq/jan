@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/UmbrellaCorp/IS-LM-3B_GGUF/blob/main/IS-LM-Q4_K_M.gguf",
+    "source_url": "https://huggingface.co/UmbrellaCorp/IS-LM-3B_GGUF/resolve/main/IS-LM-Q4_K_M.gguf",
     "id": "islm-3b",
     "object": "model",
     "name": "IS LM 3B",

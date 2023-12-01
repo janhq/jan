@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/GOAT-70B-Storytelling-GGUF/blob/main/goat-70b-storytelling.Q5_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/GOAT-70B-Storytelling-GGUF/resolve/main/goat-70b-storytelling.Q5_K_M.gguf",
     "id": "storytelling-70b",
     "object": "model",
     "name": "Storytelling 70B",
