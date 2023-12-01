@@ -149,6 +149,33 @@ const config = {
       { property: 'twitter:description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
       { property: 'twitter:image', content: 'https://jan.ai/img/jan-social-card.png' },
     ],
+    headTags: [
+      // Declare a <link> preconnect tag
+      {
+        tagName: 'link',
+        attributes: {
+          rel: 'preconnect',
+          href: 'https://jan.ai/',
+        },
+      },
+      // Declare some json-ld structured data
+      {
+        tagName: 'script',
+        attributes: {
+          type: 'application/ld+json',
+        },
+        innerHTML: JSON.stringify({
+          '@context': 'https://schema.org/',
+          '@type': 'LLMInference',
+          name: 'Jan',
+          description: "Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.",
+          keywords: "Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee",
+          applicationCategory: "BusinessApplication",
+          operatingSystem: "Multiple",
+          url: 'https://jan.ai/',
+        }),
+      },
+    ],
     navbar: {
       title: "Jan",
       logo: {
