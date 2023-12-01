@@ -2,7 +2,7 @@ name: Jan Build Electron App Nightly
 
 on:
   schedule:
-    - cron: '0 16 * * *' # At 4 PM UTC, which is 11 AM UTC+7
+    - cron: '0 20 * * *' # At 8 PM UTC, which is 3 AM UTC+7
 
   workflow_dispatch:
 
