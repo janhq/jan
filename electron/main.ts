@@ -8,21 +8,21 @@ import { handleFsIPCs } from './handlers/fs'
  **/
 import { WindowManager } from './managers/window'
 import { ModuleManager } from './managers/module'
-import { PluginManager } from './managers/plugin'
+import { ExtensionManager } from './managers/extension'
 
 /**
  * IPC Handlers
  **/
 import { handleDownloaderIPCs } from './handlers/download'
 import { handleThemesIPCs } from './handlers/theme'
-import { handlePluginIPCs } from './handlers/plugin'
+import { handleExtensionIPCs } from './handlers/extension'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 
 app
   .whenReady()
-  .then(PluginManager.instance.migratePlugins)
-  .then(PluginManager.instance.setupPlugins)
+  .then(ExtensionManager.instance.migrateExtensions)
+  .then(ExtensionManager.instance.setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
@@ -78,6 +78,6 @@ function handleIPCs() {
   handleFsIPCs()
   handleDownloaderIPCs()
   handleThemesIPCs()
-  handlePluginIPCs()
+  handleExtensionIPCs()
   handleAppIPCs()
 }

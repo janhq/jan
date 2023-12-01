@@ -3,7 +3,7 @@ import {
   Thread,
   ThreadAssistantInfo,
   ThreadState,
-} from '@janhq/core/lib/types'
+} from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { generateThreadId } from '@/utils/conversation'

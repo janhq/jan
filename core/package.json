@@ -1,14 +1,13 @@
 {
   "name": "@janhq/core",
   "version": "0.1.10",
-  "description": "Plugin core lib",
+  "description": "Jan app core lib",
   "keywords": [
     "jan",
-    "plugin",
     "core"
   ],
-  "homepage": "https://github.com/janhq",
-  "license": "MIT",
+  "homepage": "https://jan.ai",
+  "license": "AGPL-3.0",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "directories": {
@@ -16,8 +15,7 @@
     "test": "__tests__"
   },
   "exports": {
-    ".": "./lib/index.js",
-    "./plugin": "./lib/plugins/index.js"
+    ".": "./lib/index.js"
   },
   "files": [
     "lib",

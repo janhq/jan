@@ -110,7 +110,6 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
    ```
 
    This will start the development server and open the desktop app.
-   In this step, there are a few notification about installing base plugin, just click `OK` and `Next` to continue.
 
 ### For production build
 

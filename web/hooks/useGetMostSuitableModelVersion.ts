@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { Model } from '@janhq/core/lib/types'
+import { Model } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
