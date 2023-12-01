@@ -19,6 +19,7 @@
       "author": "HuggingFaceH4, The Bloke",
       "tags": ["7B", "Finetuned"],
       "size": 4370000000
-    }
+    },
+    "engine": "llama.cpp"
   }
   

@@ -19,5 +19,6 @@
       "author": "Pansophic, The Bloke",
       "tags": ["Tiny", "Finetuned"],
       "size": 1710000000
-    }
+    },
+    "engine": "llama.cpp"
   }  

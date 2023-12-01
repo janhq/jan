@@ -19,5 +19,6 @@
       "author": "TinyLlama",
       "tags": ["Tiny", "Foundation Model"],
       "size": 637000000
-  }
+  },
+  "engine": "llama.cpp"
 }

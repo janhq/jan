@@ -19,6 +19,7 @@
       "author": "Lizpreciatior, The Bloke",
       "tags": ["70B", "Finetuned"],
       "size": 48750000000
-    }
+    },
+    "engine": "llama.cpp"
   }
   
