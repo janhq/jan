@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/WizardCoder-Python-13B-V1.0-GGUF/resolve/main/wizardcoder-python-13b-v1.0.Q5_K_M.gguf",
+    "id": "wizardcoder-13b",
+    "object": "model",
+    "name": "Wizard Coder Python 13B",
+    "version": "1.0",
+    "description": "WizardCoder-Python-13B is a Python coding model major models like ChatGPT-3.5. This model based on the Llama2 architecture, demonstrate high proficiency in specific domains like coding and mathematics.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "system_prompt": "",
+      "user_prompt": "### Instruction:\n",
+      "ai_prompt": "### Response:\n"
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "WizardLM, The Bloke",
+      "tags": ["Code", "Big Context Length"],
+      "size": 9230000000
+    }
+  }
+  

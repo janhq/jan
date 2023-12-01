@@ -2,7 +2,6 @@
 .env
 
 # Jan inference
-models/**
 error.log
 node_modules
 *.tgz

@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/dolphin-2_2-yi-34b-GGUF/resolve/main/dolphin-2_2-yi-34b.Q5_K_M.gguf",
+    "id": "dolphin-yi-34b",
+    "object": "model",
+    "name": "Dolphin Yi 34B",
+    "version": "1.0",
+    "description": "Dolphin, based on the Yi-34B model and enhanced with features like conversation and empathy, is trained on a unique dataset for advanced multi-turn conversations. Notably uncensored, it requires careful implementation of an alignment layer for ethical use.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "system_prompt": "<|im_start|>system\n",
+      "user_prompt": "<|im_end|>\n<|im_start|>user\n",
+      "ai_prompt": "<|im_end|>\n<|im_start|>assistant\n"
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "ehartford, The Bloke",
+      "tags": ["General Use", "Role-playing"],
+      "size": 24320000000
+    }
+  }
+  
