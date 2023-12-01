@@ -476,7 +476,46 @@ paths:
         - lang: "curl"
           source: |
             curl http://localhost:1337/v1/threads/{thread_id}
+  ### ASSISTANTS
+  /assistants/:
+    get:
+      operationId: listAssistants
+      tags:
+        - Assistants
+      summary: List assistants
+      description: |
+        Return a list of assistants. <a href = "https://platform.openai.com/docs/api-reference/assistants/listAssistants"> Equivalent to OpenAI's list assistants. </a>
+    post:
+      operationId: createAssistants
+      tags:
+        - Assistants
+      summary: Create assistant
+      description: |
+        Create an assistant with a model and instructions. <a href = "https://platform.openai.com/docs/api-reference/assistants/createAssistant"> Equivalent to OpenAI's create assistants. </a>
 
+  /assistants/{assistant_id}:
+    get:
+      operationId: getAssistant
+      tags:
+        - Assistants
+      summary: Retrieve assistants
+      description: |
+        Retrieves an assistant. <a href = "https://platform.openai.com/docs/api-reference/assistants/getAssistant"> Equivalent to OpenAI's retrieve assistants. </a> 
+    post:
+      operationId: modifyAssistant
+      tags:
+        - Assistants
+      summary: Modify assistant
+      description: |
+        Modifies an assistant. <a href = "https://platform.openai.com/docs/api-reference/assistants/modifyAssistant"> Equivalent to OpenAI's modify assistant. </a>
+    delete:
+      operationId: deleteAssistant
+      tags:
+        - Assistants
+      summary: Delete assistant
+      description: |
+        Delete an assistant. <a href = "https://platform.openai.com/docs/api-reference/assistants/deleteAssistant"> Equivalent to OpenAI's delete assistant. </a>
+        
   ### MESSAGES
   /threads/{thread_id}/messages:
     get:
@@ -714,7 +753,7 @@ x-webhooks:
       summary: The assistant object
       description: |
         Build assistants that can call models and use tools to perform tasks. <a  href = "https://platform.openai.com/docs/api-reference/assistants"> Equivalent to OpenAI's assistants object. </a>
-      operationId: AssistantObject
+      operationId: AssistantObjects
       tags:
         - Assistants
       requestBody:
