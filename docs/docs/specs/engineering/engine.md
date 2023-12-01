@@ -48,6 +48,7 @@ Here is an example of an engine file for `engine_id` `nitro`:
     "embedding": false,
     "n_parallel": 1,
     "cont_batching": false
+    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
 }
 ```
 
