@@ -1,23 +1,11 @@
-import {
-  ChangeEvent,
-  Fragment,
-  KeyboardEvent,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import { ChangeEvent, Fragment, KeyboardEvent, useEffect, useRef } from 'react'
 
-import { Button, Badge, Textarea } from '@janhq/uikit'
+import { Button, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
-import { Trash2Icon, Paintbrush } from 'lucide-react'
-
-import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
-
-import ShortCut from '@/containers/Shortcut'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -61,13 +49,6 @@ const ChatScreen = () => {
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const conversations = useAtomValue(threadsAtom)
 
-  // console.log(conversations)
-  // console.log(activeModel)
-
-  const [isModelAvailable, setIsModelAvailable] = useState(
-    true
-    // downloadedModels.some((x) => x.id === currentConvo?.modelId)
-  )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelRef = useRef(activeModel)
 
@@ -117,41 +98,6 @@ const ChatScreen = () => {
       </div>
       <div className="relative flex h-full w-[calc(100%-240px)] flex-col bg-background">
         <div className="flex h-full w-full flex-col justify-between">
-          {/* {isEnableChat && currentConvo && (
-            <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
-              <div className="flex items-center justify-between">
-                <span>{currentConvo.title}</span>
-                <div
-                  className={twMerge(
-                    'flex items-center space-x-3',
-                    !isModelAvailable && '-mt-1'
-                  )}
-                >
-                  {!isModelAvailable && (
-                    <Button
-                      themes="secondary"
-                      className="relative z-10"
-                      size="sm"
-                      onClick={() => setMainViewState(MainViewState.Hub)}
-                    >
-                      Download Model
-                    </Button>
-                  )}
-                  <Paintbrush
-                    size={16}
-                    className="cursor-pointer text-muted-foreground"
-                    onClick={() => cleanThread()}
-                  />
-                  <Trash2Icon
-                    size={16}
-                    className="cursor-pointer text-muted-foreground"
-                    onClick={() => deleteThread()}
-                  />
-                </div>
-              </div>
-            </div>
-          )} */}
-
           {currentConvo ? (
             <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
               <ChatBody />
@@ -216,7 +162,7 @@ const ChatScreen = () => {
         </div>
       </div>
       {/* Sidebar */}
-      <Sidebar />
+      {activeThreadId && <Sidebar />}
     </div>
   )
 }

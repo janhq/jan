@@ -8,10 +8,8 @@ import {
   CommandItem,
   CommandShortcut,
   CommandList,
-  Button,
 } from '@janhq/uikit'
 
-import { useAtomValue, useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
@@ -25,15 +23,9 @@ import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
-import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
-
-import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
-
 export default function CommandSearch() {
   const { setMainViewState } = useMainViewState()
   const [open, setOpen] = useState(false)
-  const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
 
   const menus = [
     {
@@ -92,7 +84,6 @@ export default function CommandSearch() {
           <ShortCut menu="K" />
         </div>
       </div> */}
-
       <CommandModal open={open} onOpenChange={setOpen}>
         <CommandInput placeholder="Type a command or search..." />
         <CommandList>
