@@ -2,7 +2,7 @@ import { join } from 'path'
 
 import { getUserSpace, openFileExplorer } from '@janhq/core'
 import { Input, Textarea } from '@janhq/uikit'
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtomValue } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -23,7 +23,6 @@ export default function Sidebar() {
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
-  const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
@@ -102,20 +101,11 @@ export default function Sidebar() {
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
         >
-          {/* <ItemCardSidebar
-            description={activeThread?.id}
-            title="Thread ID"
-            disabled
-          />
-          <ItemCardSidebar
-            title="Thread title"
-            description={activeThread?.title}
-          /> */}
           <div className="flex flex-col space-y-4 p-2">
             <div>
               <label
                 id="thread-title"
-                className="mb-2 inline-block font-bold text-gray-600"
+                className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
               >
                 Title
               </label>
@@ -134,11 +124,13 @@ export default function Sidebar() {
             <div className="flex flex-col">
               <label
                 id="thread-title"
-                className="mb-2 inline-block font-bold text-gray-600"
+                className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
               >
                 Threads ID
               </label>
-              <span className="text-xs">{activeThread?.id || '-'}</span>
+              <span className="text-xs text-muted-foreground">
+                {activeThread?.id || '-'}
+              </span>
             </div>
           </div>
         </CardSidebar>
@@ -147,12 +139,6 @@ export default function Sidebar() {
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
         >
-          {/* <ItemCardSidebar
-            description={activeThread?.assistants[0].assistant_name ?? ''}
-            title="Assistant"
-            disabled
-          />
-          /> */}
           <div className="flex flex-col space-y-4 p-2">
             <div className="flex items-center space-x-2">
               <LogoMark width={24} height={24} />
@@ -163,7 +149,7 @@ export default function Sidebar() {
             <div>
               <label
                 id="thread-title"
-                className="mb-2 inline-block font-bold text-gray-600"
+                className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
               >
                 Instructions
               </label>

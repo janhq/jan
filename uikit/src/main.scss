@@ -104,7 +104,3 @@
     --secondary-foreground: 210 20% 98%;
   }
 }
-
-:is(p) {
-  @apply text-muted-foreground;
-}

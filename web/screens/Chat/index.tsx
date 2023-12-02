@@ -4,6 +4,8 @@ import { Button, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
 
+import { twMerge } from 'tailwind-merge'
+
 import LogoMark from '@/containers/Brand/Logo/Mark'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
@@ -21,7 +23,7 @@ import ChatBody from '@/screens/Chat/ChatBody'
 
 import ThreadList from '@/screens/Chat/ThreadList'
 
-import Sidebar from './Sidebar'
+import Sidebar, { showRightSideBarAtom } from './Sidebar'
 
 import {
   activeThreadAtom,
@@ -48,6 +50,8 @@ const ChatScreen = () => {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const conversations = useAtomValue(threadsAtom)
+
+  const showing = useAtomValue(showRightSideBarAtom)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelRef = useRef(activeModel)
@@ -96,7 +100,14 @@ const ChatScreen = () => {
       <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background">
         <ThreadList />
       </div>
-      <div className="relative flex h-full w-[calc(100%-240px)] flex-col bg-background">
+      <div
+        className={twMerge(
+          'relative flex h-full flex-col bg-background',
+          currentConvo && activeThreadId && showing
+            ? 'w-[calc(100%-560px)]'
+            : 'w-full'
+        )}
+      >
         <div className="flex h-full w-full flex-col justify-between">
           {currentConvo ? (
             <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
@@ -162,7 +173,7 @@ const ChatScreen = () => {
         </div>
       </div>
       {/* Sidebar */}
-      {activeThreadId && <Sidebar />}
+      {activeThreadId && currentConvo && <Sidebar />}
     </div>
   )
 }

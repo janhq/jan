@@ -49,7 +49,7 @@ const BottomBar = () => {
             name="Active model:"
             value={
               activeModel?.id || (
-                <Badge themes="outline">
+                <Badge themes="outline" className="pl-1">
                   <ShortCut menu="E" />
                   &nbsp; to show your model
                 </Badge>

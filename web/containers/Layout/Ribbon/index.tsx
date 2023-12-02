@@ -32,12 +32,22 @@ export default function RibbonNav() {
   const primaryMenus = [
     {
       name: 'Thread',
-      icon: <MessageCircleIcon size={20} className="flex-shrink-0" />,
+      icon: (
+        <MessageCircleIcon
+          size={20}
+          className="flex-shrink-0 text-muted-foreground"
+        />
+      ),
       state: MainViewState.Thread,
     },
     {
       name: 'Hub',
-      icon: <LayoutGridIcon size={20} className="flex-shrink-0" />,
+      icon: (
+        <LayoutGridIcon
+          size={20}
+          className="flex-shrink-0 text-muted-foreground"
+        />
+      ),
       state: MainViewState.Hub,
     },
   ]
@@ -45,12 +55,22 @@ export default function RibbonNav() {
   const secondaryMenus = [
     {
       name: 'My Models',
-      icon: <DatabaseIcon size={20} className="flex-shrink-0" />,
+      icon: (
+        <DatabaseIcon
+          size={20}
+          className="flex-shrink-0 text-muted-foreground"
+        />
+      ),
       state: MainViewState.MyModels,
     },
     {
       name: 'Settings',
-      icon: <SettingsIcon size={20} className="flex-shrink-0" />,
+      icon: (
+        <SettingsIcon
+          size={20}
+          className="flex-shrink-0 text-muted-foreground"
+        />
+      ),
       state: MainViewState.Setting,
     },
   ]
@@ -82,7 +102,7 @@ export default function RibbonNav() {
                         </div>
                         {isActive && (
                           <m.div
-                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200 dark:bg-primary/50"
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200 dark:bg-secondary"
                             layoutId="active-state-primary"
                           />
                         )}
@@ -118,7 +138,7 @@ export default function RibbonNav() {
                         </div>
                         {isActive && (
                           <m.div
-                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200 dark:bg-primary/50"
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200 dark:bg-secondary"
                             layoutId="active-state-secondary"
                           />
                         )}
