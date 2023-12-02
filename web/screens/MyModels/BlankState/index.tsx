@@ -68,7 +68,7 @@ export default function BlankStateMyModel() {
             className="mt-6"
             onClick={() => setMainViewState(MainViewState.Hub)}
           >
-            Explore Models
+            Hub
           </Button>
         </div>
       </div>
