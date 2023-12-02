@@ -1,4 +1,4 @@
-import { useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { PanelLeftIcon, PenSquareIcon, PanelRightIcon } from 'lucide-react'
 
 import CommandListDownloadedModel from '@/containers/Layout/TopBar/CommandListDownloadedModel'
@@ -12,7 +12,10 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 
+import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
+
 const TopBar = () => {
+  const activeThread = useAtomValue(activeThreadAtom)
   const { mainViewState } = useMainViewState()
   const { requestCreateNewThread } = useCreateNewThread()
   const { assistants } = useGetAssistants()
@@ -21,7 +24,7 @@ const TopBar = () => {
   const titleScreen = (viewStateName: MainViewState) => {
     switch (viewStateName) {
       case MainViewState.Thread:
-        return 'New Thread'
+        return activeThread && activeThread?.title
 
       default:
         return MainViewState[viewStateName].replace(/([A-Z])/g, ' $1').trim()
@@ -33,7 +36,6 @@ const TopBar = () => {
       alert('No assistant available')
       return
     }
-    console.log(assistants[0])
     requestCreateNewThread(assistants[0])
   }
 

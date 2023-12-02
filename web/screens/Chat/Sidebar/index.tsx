@@ -102,7 +102,7 @@ export default function Sidebar() {
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
         >
-          <ItemCardSidebar
+          {/* <ItemCardSidebar
             description={activeThread?.id}
             title="Thread ID"
             disabled
@@ -110,8 +110,7 @@ export default function Sidebar() {
           <ItemCardSidebar
             title="Thread title"
             description={activeThread?.title}
-            onChange={(title) => updateThreadTitle(title ?? '')}
-          />
+          /> */}
           <div className="flex flex-col space-y-4 p-2">
             <div>
               <label
@@ -120,7 +119,13 @@ export default function Sidebar() {
               >
                 Title
               </label>
-              <Input id="thread-title" defaultValue="New Thread" />
+              <Input
+                id="thread-title"
+                value={activeThread?.title}
+                onChange={(e) => {
+                  updateThreadTitle(e.target.value || '')
+                }}
+              />
             </div>
             <div className="flex flex-col">
               <label

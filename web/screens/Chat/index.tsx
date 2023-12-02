@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import {
+  ChangeEvent,
+  Fragment,
+  KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
 import { Button, Badge, Textarea } from '@janhq/uikit'
 
@@ -54,7 +61,7 @@ const ChatScreen = () => {
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const conversations = useAtomValue(threadsAtom)
 
-  console.log(conversations)
+  // console.log(conversations)
   // console.log(activeModel)
 
   const [isModelAvailable, setIsModelAvailable] = useState(
@@ -187,11 +194,15 @@ const ChatScreen = () => {
             <Textarea
               className="min-h-10 h-10 max-h-16 resize-none pr-20"
               ref={textareaRef}
-              onKeyDown={(e) => onKeyDown(e)}
+              onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) =>
+                onKeyDown(e)
+              }
               placeholder="Enter your message..."
               disabled={stateModel.loading || !currentConvo}
               value={currentPrompt}
-              onChange={(e) => onPromptChange(e)}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                onPromptChange(e)
+              }
             />
             <Button
               size="lg"
