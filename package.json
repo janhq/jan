@@ -30,11 +30,11 @@
     "build:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build",
     "build:core": "cd core && yarn install && yarn run build",
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
-    "build:electron": "yarn workspace jan build && cpx \"models/**\" \"electron/models/\"",
+    "build:electron": "cpx \"models/**\" \"electron/models/\" && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
     "build:extensions": "rimraf ./electron/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./extensions/conversational-extension && npm install && npm run build:publish\" \"cd ./extensions/inference-extension && npm install && npm run build:publish\" \"cd ./extensions/model-extension && npm install && npm run build:publish\" \"cd ./extensions/monitoring-extension && npm install && npm run build:publish\" \"cd ./extensions/assistant-extension && npm install && npm run build:publish\"",
     "build:test": "yarn build:web && yarn workspace jan build:test",
-    "build": "yarn build:web && yarn workspace jan build",
+    "build": "yarn build:web && yarn build:electron",
     "build:publish": "yarn build:web && yarn workspace jan build:publish"
   },
   "devDependencies": {
