@@ -1,7 +1,5 @@
 import { join } from 'path'
 
-import { useEffect } from 'react'
-
 import { getUserSpace, openFileExplorer } from '@janhq/core'
 import { Input, Textarea } from '@janhq/uikit'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
@@ -13,14 +11,10 @@ import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
-import ItemCardSidebar from '@/containers/ItemCardSidebar'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
-import {
-  activeThreadAtom,
-  threadsAtom,
-} from '@/helpers/atoms/Conversation.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
 
 export const showRightSideBarAtom = atom<boolean>(true)
 
@@ -28,8 +22,7 @@ export default function Sidebar() {
   const showing = useAtomValue(showRightSideBarAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
-  const { updateThreadTitle } = useCreateNewThread()
-  const threads = useAtomValue(threadsAtom)
+  const { updateThreadMetadata } = useCreateNewThread()
   const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
 
   const onReviewInFinderClick = async (type: string) => {
@@ -130,7 +123,11 @@ export default function Sidebar() {
                 id="thread-title"
                 value={activeThread?.title}
                 onChange={(e) => {
-                  updateThreadTitle(e.target.value || '')
+                  if (activeThread)
+                    updateThreadMetadata({
+                      ...activeThread,
+                      title: e.target.value || '',
+                    })
                 }}
               />
             </div>
@@ -173,6 +170,19 @@ export default function Sidebar() {
               <Textarea
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
+                value={activeThread?.assistants[0].instructions ?? ''}
+                onChange={(e) => {
+                  if (activeThread)
+                    updateThreadMetadata({
+                      ...activeThread,
+                      assistants: [
+                        {
+                          ...activeThread.assistants[0],
+                          instructions: e.target.value || '',
+                        },
+                      ],
+                    })
+                }}
               />
             </div>
           </div>
