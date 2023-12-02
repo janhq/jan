@@ -10,12 +10,7 @@ import {
   CommandList,
 } from '@janhq/uikit'
 
-import {
-  MessageCircleIcon,
-  SettingsIcon,
-  DatabaseIcon,
-  CpuIcon,
-} from 'lucide-react'
+import { MessageCircleIcon, SettingsIcon, LayoutGridIcon } from 'lucide-react'
 
 import ShortCut from '@/containers/Shortcut'
 
@@ -36,14 +31,9 @@ export default function CommandSearch() {
       state: MainViewState.Thread,
     },
     {
-      name: 'Explore Models',
-      icon: <CpuIcon size={16} className="mr-3 text-muted-foreground" />,
+      name: 'Hub',
+      icon: <LayoutGridIcon size={16} className="mr-3 text-muted-foreground" />,
       state: MainViewState.Hub,
-    },
-    {
-      name: 'My Models',
-      icon: <DatabaseIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.MyModels,
     },
     {
       name: 'Settings',
