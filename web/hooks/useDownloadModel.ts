@@ -1,6 +1,6 @@
 import { Model, ExtensionType, ModelExtension } from '@janhq/core'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
 
 import { useDownloadState } from './useDownloadState'
 

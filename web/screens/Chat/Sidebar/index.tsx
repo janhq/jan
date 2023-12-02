@@ -1,7 +1,9 @@
 import { join } from 'path'
 
 import { getUserSpace, openFileExplorer } from '@janhq/core'
+
 import { Input, Textarea } from '@janhq/uikit'
+
 import { atom, useAtomValue } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
@@ -178,7 +180,9 @@ export default function Sidebar() {
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
         >
-          <DropdownListSidebar />
+          <div className="p-2">
+            <DropdownListSidebar />
+          </div>
         </CardSidebar>
       </div>
     </div>

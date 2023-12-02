@@ -16,6 +16,7 @@ import useDeleteThread from '@/hooks/useDeleteConversation'
 import useGetAllThreads from '@/hooks/useGetAllThreads'
 
 import useGetAssistants from '@/hooks/useGetAssistants'
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useSetActiveThread from '@/hooks/useSetActiveThread'
 
 import { displayDate } from '@/utils/datetime'
@@ -36,6 +37,7 @@ export default function ThreadList() {
   const activeThread = useAtomValue(activeThreadAtom)
   const { deleteThread, cleanThread } = useDeleteThread()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
+  const { downloadedModels } = useGetDownloadedModels()
 
   const { activeThreadId, setActiveThread: onThreadClick } =
     useSetActiveThread()
@@ -46,7 +48,12 @@ export default function ThreadList() {
   }, [])
 
   useEffect(() => {
-    if (threads.length === 0 && assistants.length !== 0 && !activeThread) {
+    if (
+      downloadedModels.length !== 0 &&
+      threads.length === 0 &&
+      assistants.length !== 0 &&
+      !activeThread
+    ) {
       requestCreateNewThread(assistants[0])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -86,35 +93,35 @@ export default function ThreadList() {
                   {lastMessage || 'No new message'}
                 </p>
               </div>
-              {messages.length > 0 && (
-                <div
-                  className={twMerge(
-                    `group/icon invisible absolute bottom-2 right-2 z-20 rounded-lg p-1 text-muted-foreground hover:bg-gray-200 group-hover/message:visible hover:dark:bg-secondary`
-                  )}
-                >
-                  <MoreVerticalIcon />
-                  <div className="invisible absolute right-0 z-20 w-40 overflow-hidden rounded-lg border border-border bg-background shadow-lg group-hover/icon:visible">
-                    <div
-                      className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
-                      onClick={() => cleanThread(thread.id)}
-                    >
-                      <Paintbrush size={16} className="text-muted-foreground" />
-                      <span className="text-bold text-black dark:text-muted-foreground">
-                        Clean threads
-                      </span>
-                    </div>
-                    <div
-                      className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
-                      onClick={() => deleteThread(thread.id)}
-                    >
-                      <Trash2Icon size={16} className="text-muted-foreground" />
-                      <span className="text-bold text-black dark:text-muted-foreground">
-                        Delete threads
-                      </span>
-                    </div>
+              <div
+                className={twMerge(
+                  `group/icon invisible absolute bottom-2 right-2 z-20 rounded-lg p-1 text-muted-foreground hover:bg-gray-200 group-hover/message:visible hover:dark:bg-secondary`
+                )}
+              >
+                <MoreVerticalIcon />
+                <div className="invisible absolute right-0 z-20 w-40 overflow-hidden rounded-lg border border-border bg-background shadow-lg group-hover/icon:visible">
+                  <div
+                    className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
+                    onClick={() => cleanThread(thread.id)}
+                  >
+                    <Paintbrush size={16} className="text-muted-foreground" />
+                    <span className="text-bold text-black dark:text-muted-foreground">
+                      Clean threads
+                    </span>
+                  </div>
+                  <div
+                    className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
+                    onClick={() => deleteThread(thread.id)}
+                  >
+                    <Trash2Icon size={16} className="text-muted-foreground" />
+                    <span className="text-bold text-black dark:text-muted-foreground">
+                      Delete threads
+                    </span>
                   </div>
                 </div>
-              )}
+              </div>
+              {/* {messages.length > 0 && (
+              )} */}
 
               {activeThreadId === thread.id && (
                 <m.div
