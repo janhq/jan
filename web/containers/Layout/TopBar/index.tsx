@@ -61,12 +61,14 @@ const TopBar = () => {
             <span className="text-sm font-bold">
               {titleScreen(mainViewState)}
             </span>
-            <div
-              className="unset-drag absolute right-4 cursor-pointer"
-              onClick={() => setShowRightSideBar((show) => !show)}
-            >
-              <PanelRightIcon size={20} />
-            </div>
+            {activeThread && (
+              <div
+                className="unset-drag absolute right-4 cursor-pointer"
+                onClick={() => setShowRightSideBar((show) => !show)}
+              >
+                <PanelRightIcon size={20} />
+              </div>
+            )}
           </div>
         ) : (
           <div>
