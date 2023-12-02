@@ -8,8 +8,9 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import ChatScreen from '@/screens/Chat'
 import ExploreModelsScreen from '@/screens/ExploreModels'
-import MyModelsScreen from '@/screens/MyModels'
+
 import SettingsScreen from '@/screens/Settings'
+import SystemMonitorScreen from '@/screens/SystemMonitor'
 
 export default function Page() {
   const { mainViewState } = useMainViewState()
@@ -20,12 +21,12 @@ export default function Page() {
       children = <ExploreModelsScreen />
       break
 
-    case MainViewState.MyModels:
-      children = <MyModelsScreen />
-      break
-
     case MainViewState.Setting:
       children = <SettingsScreen />
+      break
+
+    case MainViewState.SystemMonitor:
+      children = <SystemMonitorScreen />
       break
 
     default:
