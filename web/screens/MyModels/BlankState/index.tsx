@@ -29,7 +29,7 @@ export default function BlankStateMyModel() {
           <p className="mt-1 text-base">
             {downloadStates.length > 0
               ? `Downloading model ... `
-              : `Let’s download your first model`}
+              : 'You need to download your first model'}
           </p>
           {downloadStates?.length > 0 && (
             <Modal>
@@ -68,7 +68,7 @@ export default function BlankStateMyModel() {
             className="mt-6"
             onClick={() => setMainViewState(MainViewState.Hub)}
           >
-            Hub
+            Explore The Hub
           </Button>
         </div>
       </div>

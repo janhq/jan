@@ -163,7 +163,7 @@ const MyModelsScreen = () => {
                     block
                     onClick={() => setMainViewState(MainViewState.Hub)}
                   >
-                    Hub
+                    Explore The Hub
                   </Button>
                 </div>
               </div>
