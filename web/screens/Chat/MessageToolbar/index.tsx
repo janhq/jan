@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 
 import {
-  ChatCompletionRole,
   ChatCompletionMessage,
   EventName,
   MessageRequest,
@@ -12,7 +11,7 @@ import {
 } from '@janhq/core'
 import { ConversationalExtension, InferenceExtension } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
-import { RefreshCcw, ClipboardCopy, Trash2Icon, StopCircle } from 'lucide-react'
+import { RefreshCcw, Copy, Trash2Icon, StopCircle } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -97,7 +96,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
             })
           }}
         >
-          <ClipboardCopy size={14} />
+          <Copy size={14} />
         </div>
         <div
           className="cursor-pointer px-2 py-2 hover:bg-background/80"
