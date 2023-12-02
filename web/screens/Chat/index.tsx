@@ -12,7 +12,7 @@ import { currentPromptAtom } from '@/containers/Providers/Jotai'
 import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-import useDeleteThread from '@/hooks/useDeleteConversation'
+// import useDeleteThread from '@/hooks/useDeleteConversation'
 
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
@@ -28,7 +28,7 @@ import Sidebar, { showRightSideBarAtom } from './Sidebar'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
-  threadsAtom,
+  // threadsAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Conversation.atom'
 
@@ -37,7 +37,7 @@ import { activeThreadStateAtom } from '@/helpers/atoms/Conversation.atom'
 const ChatScreen = () => {
   const currentConvo = useAtomValue(activeThreadAtom)
   const { downloadedModels } = useGetDownloadedModels()
-  const { deleteThread, cleanThread } = useDeleteThread()
+  // const { deleteThread, cleanThread } = useDeleteThread()
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
 
@@ -49,7 +49,7 @@ const ChatScreen = () => {
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
-  const conversations = useAtomValue(threadsAtom)
+  // const conversations = useAtomValue(threadsAtom)
 
   const showing = useAtomValue(showRightSideBarAtom)
 
