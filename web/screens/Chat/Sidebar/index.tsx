@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 
 import { getUserSpace, openFileExplorer } from '@janhq/core'
 import { Input, Textarea } from '@janhq/uikit'
-import { atom, useAtomValue } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -30,6 +30,7 @@ export default function Sidebar() {
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadTitle } = useCreateNewThread()
   const threads = useAtomValue(threadsAtom)
+  const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
@@ -94,11 +95,6 @@ export default function Sidebar() {
     const fullPath = join(userSpace, filePath)
     openFileExplorer(fullPath)
   }
-
-  // useEffect(() => {
-  //   if (threads.length > 0) {
-  //   }
-  // }, [])
 
   return (
     <div
