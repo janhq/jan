@@ -124,7 +124,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             'absolute right-0 cursor-pointer transition-all',
             messages[messages.length - 1]?.id === props.id
               ? 'absolute -bottom-10 right-8'
-              : 'group-hover:aboslute hidden group-hover:-top-2 group-hover:right-8 group-hover:flex'
+              : 'hidden group-hover:absolute group-hover:-top-2 group-hover:right-8 group-hover:flex'
           )}
         >
           <MessageToolbar message={props} />

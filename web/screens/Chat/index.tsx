@@ -7,12 +7,12 @@ import { useAtom, useAtomValue } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
+
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-// import useDeleteThread from '@/hooks/useDeleteConversation'
 
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
@@ -28,28 +28,26 @@ import Sidebar, { showRightSideBarAtom } from './Sidebar'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
-  // threadsAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Conversation.atom'
 
 import { activeThreadStateAtom } from '@/helpers/atoms/Conversation.atom'
 
 const ChatScreen = () => {
-  const currentConvo = useAtomValue(activeThreadAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
   const { downloadedModels } = useGetDownloadedModels()
-  // const { deleteThread, cleanThread } = useDeleteThread()
+
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
-  const currentConvoState = useAtomValue(activeThreadStateAtom)
-  const { sendChatMessage } = useSendChatMessage()
-  const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false
+  const activeThreadState = useAtomValue(activeThreadStateAtom)
+  const { sendChatMessage, queuedMessage } = useSendChatMessage()
+  const isWaitingForResponse = activeThreadState?.waitingForResponse ?? false
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
-  // const conversations = useAtomValue(threadsAtom)
 
   const showing = useAtomValue(showRightSideBarAtom)
 
@@ -97,19 +95,19 @@ const ChatScreen = () => {
 
   return (
     <div className="flex h-full w-full">
-      <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background">
+      <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background dark:bg-background/50">
         <ThreadList />
       </div>
       <div
         className={twMerge(
           'relative flex h-full flex-col bg-background',
-          currentConvo && activeThreadId && showing
+          activeThread && activeThreadId && showing
             ? 'w-[calc(100%-560px)]'
             : 'w-full'
         )}
       >
         <div className="flex h-full w-full flex-col justify-between">
-          {currentConvo ? (
+          {activeThread ? (
             <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
               <ChatBody />
             </div>
@@ -134,7 +132,7 @@ const ChatScreen = () => {
                   </Button>
                 </Fragment>
               ) : (
-                <Fragment>
+                <div className="mx-auto mt-8 flex h-full w-3/4 flex-col items-center justify-center text-center">
                   <LogoMark
                     className="mx-auto mb-4 animate-wave"
                     width={56}
@@ -142,20 +140,27 @@ const ChatScreen = () => {
                   />
 
                   <p className="mt-1 text-base">You need to choose a model</p>
-                </Fragment>
+                </div>
               )}
             </div>
           )}
 
-          <div className="mx-auto flex w-full flex-shrink-0 items-center justify-center space-x-4 px-8 py-4">
+          {queuedMessage && (
+            <div className="my-2 py-2 text-center">
+              <span className="rounded-lg border border-border px-4 py-2 shadow-lg">
+                Message queued. It can be sent once the model has started
+              </span>
+            </div>
+          )}
+          <div className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 px-8 py-4">
             <Textarea
-              className="min-h-10 h-10 max-h-16 resize-none pr-20"
+              className="min-h-10 h-10 max-h-[400px] resize-none pr-20"
               ref={textareaRef}
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) =>
                 onKeyDown(e)
               }
               placeholder="Enter your message..."
-              disabled={stateModel.loading || !currentConvo}
+              disabled={stateModel.loading || !activeThread}
               value={currentPrompt}
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
                 onPromptChange(e)
@@ -163,7 +168,7 @@ const ChatScreen = () => {
             />
             <Button
               size="lg"
-              disabled={disabled || stateModel.loading || !currentConvo}
+              disabled={disabled || stateModel.loading || !activeThread}
               themes={'primary'}
               onClick={sendChatMessage}
             >
@@ -173,7 +178,7 @@ const ChatScreen = () => {
         </div>
       </div>
       {/* Sidebar */}
-      {activeThreadId && currentConvo && <Sidebar />}
+      {activeThreadId && activeThread && <Sidebar />}
     </div>
   )
 }

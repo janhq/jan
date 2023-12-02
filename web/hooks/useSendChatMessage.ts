@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import {
   ChatCompletionMessage,
   ChatCompletionRole,
@@ -10,7 +12,7 @@ import {
   ThreadMessage,
   events,
 } from '@janhq/core'
-import { ConversationalExtension, InferenceExtension } from '@janhq/core'
+import { ConversationalExtension } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { ulid } from 'ulid'
@@ -44,6 +46,7 @@ export default function useSendChatMessage() {
   const { activeModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
   const { startModel } = useActiveModel()
+  const [queuedMessage, setQueuedMessage] = useState(false)
 
   const sendChatMessage = async () => {
     if (!currentPrompt || currentPrompt.trim().length === 0) {
@@ -148,17 +151,17 @@ export default function useSendChatMessage() {
       ?.addNewMessage(threadMessage)
 
     const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
+
     if (activeModel?.id !== modelId) {
-      toaster({
-        title: 'Message queued.',
-        description: 'It will be sent once the model is done loading',
-      })
+      setQueuedMessage(true)
       await startModel(modelId)
+      setQueuedMessage(false)
     }
     events.emit(EventName.OnMessageSent, messageRequest)
   }
 
   return {
     sendChatMessage,
+    queuedMessage,
   }
 }

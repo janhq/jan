@@ -1,9 +1,14 @@
 import { ReactNode, useState } from 'react'
-import { Fragment } from 'react'
 
-import { Menu, Transition } from '@headlessui/react'
-import { ChevronDownIcon, MoreVerticalIcon } from 'lucide-react'
+import {
+  ChevronDownIcon,
+  MoreVerticalIcon,
+  FolderOpenIcon,
+  Code2Icon,
+} from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
+
+import { useClickOutside } from '@/hooks/useClickOutside'
 
 interface Props {
   children: ReactNode
@@ -18,6 +23,8 @@ export default function CardSidebar({
   onViewJsonClick,
 }: Props) {
   const [show, setShow] = useState(true)
+  const [more, setMore] = useState(false)
+  const ref = useClickOutside(() => setMore(false))
 
   return (
     <div
@@ -28,7 +35,7 @@ export default function CardSidebar({
     >
       <div
         className={twMerge(
-          'flex items-center overflow-hidden rounded-t-md bg-zinc-200 dark:bg-zinc-600/10',
+          'relative flex items-center rounded-t-md bg-zinc-200 dark:bg-zinc-600/10',
           show && 'border-b border-border'
         )}
       >
@@ -43,50 +50,37 @@ export default function CardSidebar({
           />
           <span className="font-bold">{title}</span>
         </button>
-        {/* <Menu as="div" className="relative flex-none">
-          <Menu.Button className="-m-2.5 block p-2.5 text-gray-500 hover:text-gray-900">
-            <span className="sr-only">Open options</span>
-            <EllipsisVerticalIcon className="h-5 w-5" aria-hidden="true" />
-          </Menu.Button>
-          <Transition
-            as={Fragment}
-            enter="transition ease-out duration-100"
-            enterFrom="transform opacity-0 scale-95"
-            enterTo="transform opacity-100 scale-100"
-            leave="transition ease-in duration-75"
-            leaveFrom="transform opacity-100 scale-100"
-            leaveTo="transform opacity-0 scale-95"
+        <div
+          className="cursor-pointer bg-zinc-200 p-2 dark:bg-zinc-600/10"
+          onClick={() => setMore(!more)}
+        >
+          <MoreVerticalIcon className="h-5 w-5" />
+        </div>
+        {more && (
+          <div
+            className="absolute right-0 top-8 z-20 w-52 overflow-hidden rounded-lg border border-border bg-background shadow-lg"
+            ref={ref}
           >
-            <Menu.Items className="absolute right-0 z-10 mt-2 w-32 origin-top-right rounded-md bg-white py-2 shadow-lg ring-1 ring-gray-900/5 focus:outline-none">
-              <Menu.Item>
-                {({ active }) => (
-                  <a
-                    onClick={() => onRevealInFinderClick(title)}
-                    className={twMerge(
-                      active ? 'bg-gray-50' : '',
-                      'block cursor-pointer px-3 py-1 text-xs leading-6 text-gray-900'
-                    )}
-                  >
-                    Reveal in finder
-                  </a>
-                )}
-              </Menu.Item>
-              <Menu.Item>
-                {({ active }) => (
-                  <a
-                    onClick={() => onViewJsonClick(title)}
-                    className={twMerge(
-                      active ? 'bg-gray-50' : '',
-                      'block cursor-pointer px-3 py-1 text-xs leading-6 text-gray-900'
-                    )}
-                  >
-                    View a JSON
-                  </a>
-                )}
-              </Menu.Item>
-            </Menu.Items>
-          </Transition>
-        </Menu> */}
+            <div
+              className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
+              onClick={() => onRevealInFinderClick(title)}
+            >
+              <FolderOpenIcon size={16} className="text-muted-foreground" />
+              <span className="text-bold text-black dark:text-muted-foreground">
+                Reveal in Finder
+              </span>
+            </div>
+            <div
+              className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
+              onClick={() => onViewJsonClick(title)}
+            >
+              <Code2Icon size={16} className="text-muted-foreground" />
+              <span className="text-bold text-black dark:text-muted-foreground">
+                View as JSON
+              </span>
+            </div>
+          </div>
+        )}
       </div>
       {show && <div className="flex flex-col gap-2 p-2">{children}</div>}
     </div>
