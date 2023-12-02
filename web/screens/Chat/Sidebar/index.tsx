@@ -1,5 +1,7 @@
 import { join } from 'path'
 
+import { useEffect } from 'react'
+
 import { getUserSpace, openFileExplorer } from '@janhq/core'
 import { Input, Textarea } from '@janhq/uikit'
 import { atom, useAtomValue } from 'jotai'
@@ -15,7 +17,10 @@ import ItemCardSidebar from '@/containers/ItemCardSidebar'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
-import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
+import {
+  activeThreadAtom,
+  threadsAtom,
+} from '@/helpers/atoms/Conversation.atom'
 
 export const showRightSideBarAtom = atom<boolean>(true)
 
@@ -24,6 +29,7 @@ export default function Sidebar() {
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadTitle } = useCreateNewThread()
+  const threads = useAtomValue(threadsAtom)
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
@@ -88,6 +94,11 @@ export default function Sidebar() {
     const fullPath = join(userSpace, filePath)
     openFileExplorer(fullPath)
   }
+
+  // useEffect(() => {
+  //   if (threads.length > 0) {
+  //   }
+  // }, [])
 
   return (
     <div
