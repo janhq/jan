@@ -24,7 +24,7 @@ const TopBar = () => {
   const titleScreen = (viewStateName: MainViewState) => {
     switch (viewStateName) {
       case MainViewState.Thread:
-        return activeThread && activeThread?.title
+        return activeThread ? activeThread?.title : 'New Thread'
 
       default:
         return MainViewState[viewStateName].replace(/([A-Z])/g, ' $1').trim()
