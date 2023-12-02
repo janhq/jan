@@ -91,7 +91,7 @@ export default function Sidebar() {
   return (
     <div
       className={twMerge(
-        'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background duration-300 ease-linear',
+        'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background duration-300 ease-linear dark:bg-background/20',
         showing ? 'w-80' : 'w-0'
       )}
     >

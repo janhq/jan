@@ -1,5 +1,3 @@
-import { useMemo } from 'react'
-
 import {
   ChatCompletionMessage,
   EventName,
@@ -10,7 +8,7 @@ import {
   events,
 } from '@janhq/core'
 import { ConversationalExtension, InferenceExtension } from '@janhq/core'
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw, Copy, Trash2Icon, StopCircle } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -22,20 +20,17 @@ import {
   deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import {
-  activeThreadAtom,
-  threadStatesAtom,
-} from '@/helpers/atoms/Conversation.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const thread = useAtomValue(activeThreadAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const threadStateAtom = useMemo(
-    () => atom((get) => get(threadStatesAtom)[thread?.id ?? '']),
-    [thread?.id]
-  )
-  const threadState = useAtomValue(threadStateAtom)
+  // const threadStateAtom = useMemo(
+  //   () => atom((get) => get(threadStatesAtom)[thread?.id ?? '']),
+  //   [thread?.id]
+  // )
+  // const threadState = useAtomValue(threadStateAtom)
 
   const stopInference = async () => {
     await extensionManager
@@ -50,12 +45,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   }
 
   return (
-    <div
-      className={twMerge(
-        'flex-row items-center',
-        threadState.waitingForResponse ? 'hidden' : 'flex'
-      )}
-    >
+    <div className={twMerge('flex flex-row items-center')}>
       <div className="flex overflow-hidden rounded-md border border-border bg-background/20">
         {message.status === MessageStatus.Pending && (
           <div

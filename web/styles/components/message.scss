@@ -6,3 +6,7 @@
     padding-left: 24px;
   }
 }
+
+button[class*='react-scroll-to-bottom--'] {
+  display: none;
+}
