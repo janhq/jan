@@ -119,15 +119,6 @@ export default function CommandSearch() {
           </CommandGroup>
         </CommandList>
       </CommandModal>
-      {activeThread && (
-        <Button
-          themes="outline"
-          className="unset-drag justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
-          onClick={() => setShowRightSideBar((show) => !show)}
-        >
-          Toggle right
-        </Button>
-      )}
     </Fragment>
   )
 }
