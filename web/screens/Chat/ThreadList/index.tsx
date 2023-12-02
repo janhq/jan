@@ -21,7 +21,6 @@ import useSetActiveThread from '@/hooks/useSetActiveThread'
 
 import { displayDate } from '@/utils/datetime'
 
-import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
   threadStatesAtom,
@@ -36,7 +35,6 @@ export default function ThreadList() {
   const { requestCreateNewThread } = useCreateNewThread()
   const activeThread = useAtomValue(activeThreadAtom)
   const { deleteThread, cleanThread } = useDeleteThread()
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { downloadedModels } = useGetDownloadedModels()
 
   const { activeThreadId, setActiveThread: onThreadClick } =
@@ -57,7 +55,7 @@ export default function ThreadList() {
       requestCreateNewThread(assistants[0])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assistants, threads])
+  }, [assistants, threads, downloadedModels, activeThread])
 
   return (
     <div className="px-3 py-4">

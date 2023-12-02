@@ -45,6 +45,7 @@ export default function useGetSystemResources() {
 
     // clean up interval
     return () => clearInterval(intervalId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return {

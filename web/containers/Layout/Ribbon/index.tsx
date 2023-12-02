@@ -9,7 +9,7 @@ import { motion as m } from 'framer-motion'
 import {
   MessageCircleIcon,
   SettingsIcon,
-  DatabaseIcon,
+  MonitorIcon,
   LayoutGridIcon,
 } from 'lucide-react'
 
@@ -54,14 +54,14 @@ export default function RibbonNav() {
 
   const secondaryMenus = [
     {
-      name: 'My Models',
+      name: 'System Monitor',
       icon: (
-        <DatabaseIcon
+        <MonitorIcon
           size={20}
           className="flex-shrink-0 text-muted-foreground"
         />
       ),
-      state: MainViewState.MyModels,
+      state: MainViewState.SystemMonitor,
     },
     {
       name: 'Settings',
