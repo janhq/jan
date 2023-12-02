@@ -9,7 +9,7 @@ import ExploreModelList from './ExploreModelList'
 const ExploreModelsScreen = () => {
   const { loading, models } = useGetConfiguredModels()
   if (loading) return <Loader description="loading ..." />
-
+  console.log(models)
   return (
     <div className="flex h-full w-full overflow-y-auto bg-background">
       <div className="h-full w-full p-4">
