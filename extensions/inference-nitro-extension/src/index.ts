@@ -19,7 +19,7 @@ import {
   events,
   executeOnMain,
   getUserSpace,
-  fs
+  fs,
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
@@ -31,7 +31,7 @@ import { join } from "path";
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceExtension implements InferenceExtension {
+export default class JanInferenceNitroExtension implements InferenceExtension {
   private static readonly _homeDir = 'engines'
   private static readonly _engineMetadataFileName = 'nitro.json'
 
@@ -49,10 +49,10 @@ export default class JanInferenceExtension implements InferenceExtension {
    * Subscribes to events emitted by the @janhq/core package.
    */
   onLoad(): void {
-    fs.mkdir(JanInferenceExtension._homeDir)
-
+    fs.mkdir(JanInferenceNitroExtension._homeDir)
+    this.writeDefaultEngineSettings()
     events.on(EventName.OnMessageSent, (data) =>
-      JanInferenceExtension.handleMessageRequest(data, this)
+    JanInferenceNitroExtension.handleMessageRequest(data, this)
     );
   }
 
@@ -74,14 +74,10 @@ export default class JanInferenceExtension implements InferenceExtension {
   ): Promise<void> {
     const userSpacePath = await getUserSpace();
     const modelFullPath = join(userSpacePath, "models", modelId, modelId);
-    let engine_settings = JSON.parse(await fs.readFile(join(JanInferenceExtension._homeDir, JanInferenceExtension._engineMetadataFileName)))
-    engine_settings = {
-      engine_settings
-      ...settings,     
-    };
+    
     return executeOnMain(MODULE, "initModel", {
       modelFullPath,
-      engine_settings,
+      settings,
     });
   }
 
@@ -100,6 +96,28 @@ export default class JanInferenceExtension implements InferenceExtension {
   async stopInference(): Promise<void> {
     this.isCancelled = true;
     this.controller?.abort();
+  }
+
+  private async writeDefaultEngineSettings() {
+    try {
+      const destPath = join(JanInferenceNitroExtension._homeDir, JanInferenceNitroExtension._engineMetadataFileName)
+      // TODO: Check with @louis for adding new binding
+      // if (await fs.checkFileExists(destPath)) {
+        const default_engine_settings = {
+          "ctx_len": 2048,
+          "ngl": 100,
+          "cont_batching": false,
+          "embedding": false
+        }
+        console.log(`Writing nitro engine settings to ${destPath}`)
+        await fs.writeFile(destPath, JSON.stringify(default_engine_settings, null, 2))
+      // }
+      // else {
+      //   console.log(`Using existing nitro engine settings at ${destPath}`)
+      // }
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   /**
@@ -141,7 +159,7 @@ export default class JanInferenceExtension implements InferenceExtension {
    */
   private static async handleMessageRequest(
     data: MessageRequest,
-    instance: JanInferenceExtension
+    instance: JanInferenceNitroExtension
   ) {
     const timestamp = Date.now();
     const message: ThreadMessage = {
