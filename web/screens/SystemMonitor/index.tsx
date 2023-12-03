@@ -30,7 +30,7 @@ export default function SystemMonitorScreen() {
                 <h4 className="text-base font-bold uppercase">
                   ram ({Math.round((usedRam / totalRam) * 100)}%)
                 </h4>
-                <span className="text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {toGigabytes(usedRam)} GB of {toGigabytes(totalRam)} GB used
                 </span>
               </div>
@@ -46,7 +46,7 @@ export default function SystemMonitorScreen() {
                 <h4 className="text-base font-bold uppercase">
                   cpu ({cpuUsage}%)
                 </h4>
-                <span className="text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {cpuUsage}% of 100%
                 </span>
               </div>
@@ -79,15 +79,17 @@ export default function SystemMonitorScreen() {
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="px-6 py-2">{activeModel.name}</td>
-                      <td className="px-6 py-2">{activeModel.id}</td>
+                      <td className="px-6 py-2 font-bold">
+                        {activeModel.name}
+                      </td>
+                      <td className="px-6 py-2 font-bold">{activeModel.id}</td>
                       <td className="px-6 py-2">
                         <Badge themes="secondary">
                           {toGigabytes(activeModel.metadata.size)}
                         </Badge>
                       </td>
                       <td className="px-6 py-2">
-                        <Badge themes="secondary">{activeModel.version}</Badge>
+                        <Badge themes="secondary">v{activeModel.version}</Badge>
                       </td>
                       <td className="px-6 py-2 text-center">
                         <Button

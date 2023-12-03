@@ -38,7 +38,7 @@ export default function CommandSearch() {
     {
       name: 'Settings',
       icon: <SettingsIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.Setting,
+      state: MainViewState.Settings,
       shortcut: <ShortCut menu="," />,
     },
   ]
@@ -51,7 +51,7 @@ export default function CommandSearch() {
       }
       if (e.key === ',' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
-        setMainViewState(MainViewState.Setting)
+        setMainViewState(MainViewState.Settings)
       }
     }
     document.addEventListener('keydown', down)

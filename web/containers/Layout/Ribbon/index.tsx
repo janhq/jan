@@ -71,7 +71,7 @@ export default function RibbonNav() {
           className="flex-shrink-0 text-muted-foreground"
         />
       ),
-      state: MainViewState.Setting,
+      state: MainViewState.Settings,
     },
   ]
   return (
