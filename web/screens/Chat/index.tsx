@@ -93,6 +93,8 @@ const ChatScreen = () => {
     }
   }
 
+  console.log(stateModel, 'stateModel')
+
   return (
     <div className="flex h-full w-full">
       <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background dark:bg-background/50">
@@ -135,6 +137,13 @@ const ChatScreen = () => {
             </div>
           )}
 
+          {stateModel.loading && (
+            <div className="mb-1 mt-2 py-2 text-center">
+              <span className="rounded-lg border border-border px-4 py-2 shadow-lg">
+                Starting model {stateModel.model}
+              </span>
+            </div>
+          )}
           {queuedMessage && (
             <div className="my-2 py-2 text-center">
               <span className="rounded-lg border border-border px-4 py-2 shadow-lg">

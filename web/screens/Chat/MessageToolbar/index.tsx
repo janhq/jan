@@ -31,7 +31,6 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   //   [thread?.id]
   // )
   // const threadState = useAtomValue(threadStateAtom)
-
   const stopInference = async () => {
     await extensionManager
       .get<InferenceExtension>(ExtensionType.Inference)
