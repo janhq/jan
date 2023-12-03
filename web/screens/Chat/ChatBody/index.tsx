@@ -50,7 +50,7 @@ const ChatBody: React.FC = () => {
             width={56}
             height={56}
           />
-          <p className="mt-1 text-base font-medium">How can i help you?</p>
+          <p className="mt-1 text-base font-medium">How can I help you?</p>
         </div>
       ) : (
         <ScrollToBottom className="flex h-full w-full flex-col">

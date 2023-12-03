@@ -104,7 +104,7 @@ export default function ThreadList() {
                   >
                     <Paintbrush size={16} className="text-muted-foreground" />
                     <span className="text-bold text-black dark:text-muted-foreground">
-                      Clean threads
+                      Clean thread
                     </span>
                   </div>
                   <div
@@ -113,7 +113,7 @@ export default function ThreadList() {
                   >
                     <Trash2Icon size={16} className="text-muted-foreground" />
                     <span className="text-bold text-black dark:text-muted-foreground">
-                      Delete threads
+                      Delete thread
                     </span>
                   </div>
                 </div>
