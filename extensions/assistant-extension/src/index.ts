@@ -93,8 +93,8 @@ export default class JanAssistantExtension implements AssistantExtension {
       id: "jan",
       object: "assistant", // TODO: maybe we can set default value for this?
       created_at: Date.now(),
-      name: "Jan Assistant",
-      description: "Just Jan Assistant",
+      name: "Jan",
+      description: "A default assistant that can use all downloaded models",
       model: "*",
       instructions: "Your name is Jan.",
       tools: undefined,
