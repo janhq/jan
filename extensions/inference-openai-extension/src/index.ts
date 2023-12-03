@@ -19,7 +19,7 @@ import {
   events,
   executeOnMain,
   getUserSpace,
-  fs
+  fs,
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
@@ -31,7 +31,7 @@ import { join } from "path";
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceExtension implements InferenceExtension {
+export default class JanInferenceOpenAIExtension implements InferenceExtension {
   private static readonly _homeDir = 'engines'
   private static readonly _engineMetadataFileName = 'openai.json'
   
@@ -50,10 +50,10 @@ export default class JanInferenceExtension implements InferenceExtension {
    * Subscribes to events emitted by the @janhq/core package.
    */
   onLoad(): void {
-    fs.mkdir(JanInferenceExtension._homeDir)
-    // TODO: Copy nitro.json to janroot/engine/nitro.json
+    fs.mkdir(JanInferenceOpenAIExtension._homeDir)
+    this.writeDefaultEngineSettings()
     events.on(EventName.OnMessageSent, (data) =>
-      JanInferenceExtension.handleMessageRequest(data, this)
+    JanInferenceOpenAIExtension.handleMessageRequest(data, this)
     );
   }
 
@@ -80,6 +80,26 @@ export default class JanInferenceExtension implements InferenceExtension {
     });
   }
 
+  private async writeDefaultEngineSettings() {
+    try {
+      
+      const destPath = join(JanInferenceOpenAIExtension._homeDir, JanInferenceOpenAIExtension._engineMetadataFileName)
+      // TODO: Check with @louis for adding new binding
+      // if (await fs.checkFileExists(destPath)) {
+        const default_engine_settings = {
+          "base_url": "https://api.openai.com/v1",
+          "api_key": "sk-<your key here>"
+        }
+        console.log(`Writing OpenAI engine settings to ${destPath}`)
+        await fs.writeFile(destPath, JSON.stringify(default_engine_settings, null, 2))
+      // }
+      // else { 
+      //   console.log(`OpenAI engine settings already exist at ${destPath}`)
+      // }
+    } catch (err) {
+      console.error(err)
+    }
+  }
   /**
    * Stops the model.
    * @returns {Promise<void>} A promise that resolves when the model is stopped.
@@ -95,37 +115,35 @@ export default class JanInferenceExtension implements InferenceExtension {
     this.controller?.abort();
   }
 
-  private async copyModelsToHomeDir() {
-    try {
-    // list all of the files under the home directory
-    const files = await fs.listFiles('')
-    
-    if (files.includes(JanInferenceExtension._homeDir)) {
-      // ignore if the model is already downloaded
-      console.debug('Model already downloaded')
-    return
-    }
-    
-    // copy models folder from resources to home directory
-    const resourePath = await getResourcePath()
-    const srcPath = join(resourePath, 'models')
-    
-    const userSpace = await getUserSpace()
-    const destPath = join(userSpace, JanInferenceExtension._homeDir)
-    
-    await fs.copyFile(srcPath, destPath)
-    } catch (err) {
-      console.error(err)
-    }
-    }
-
   /**
    * Makes a single response inference request.
    * @param {MessageRequest} data - The data for the inference request.
    * @returns {Promise<any>} A promise that resolves with the inference response.
    */
   async inferenceRequest(data: MessageRequest): Promise<ThreadMessage> {
-    // TODO: @louis
+    const timestamp = Date.now();
+    const message: ThreadMessage = {
+      thread_id: data.threadId,
+      created: timestamp,
+      updated: timestamp,
+      status: MessageStatus.Ready,
+      id: "",
+      role: ChatCompletionRole.Assistant,
+      object: "thread.message",
+      content: [],
+    };
+
+    return new Promise(async (resolve, reject) => {
+      requestInference(data.messages ?? []).subscribe({
+        next: (_content) => {},
+        complete: async () => {
+          resolve(message);
+        },
+        error: async (err) => {
+          reject(err);
+        },
+      });
+    });
   }
 
   /**
@@ -136,7 +154,7 @@ export default class JanInferenceExtension implements InferenceExtension {
    */
   private static async handleMessageRequest(
     data: MessageRequest,
-    instance: JanInferenceExtension
+    instance: JanInferenceOpenAIExtension
   ) {
     const timestamp = Date.now();
     const message: ThreadMessage = {
