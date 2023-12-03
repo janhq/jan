@@ -49,7 +49,10 @@ const TopBar = () => {
           <div className="unset-drag flex space-x-8">
             <div className="flex w-52 justify-between">
               <div className="cursor-pointer">
-                <PanelLeftIcon size={20} className="text-muted-foreground" />
+                <PanelLeftIcon
+                  size={20}
+                  className="invisible text-muted-foreground"
+                />
               </div>
               <div
                 className="cursor-pointer pr-2"
