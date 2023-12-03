@@ -44,9 +44,10 @@ export default function CardSidebar({
           className="flex w-full flex-1 items-center space-x-2 px-3 py-2"
         >
           <ChevronDownIcon
-            className={`h-5 w-5 flex-none text-gray-400 ${
-              show && 'rotate-180'
-            }`}
+            className={twMerge(
+              'h-5 w-5 flex-none rotate-180 text-gray-400',
+              show && 'rotate-0'
+            )}
           />
           <span className="font-bold">{title}</span>
         </button>
