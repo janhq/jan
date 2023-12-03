@@ -1,15 +1,23 @@
 import { ScrollArea, Progress, Badge, Button } from '@janhq/uikit'
 
+import { useAtomValue } from 'jotai'
+
 import { useActiveModel } from '@/hooks/useActiveModel'
 
-import useGetSystemResources from '@/hooks/useGetSystemResources'
-
 import { toGigabytes } from '@/utils/converter'
+
+import {
+  cpuUsageAtom,
+  totalRamAtom,
+  usedRamAtom,
+} from '@/helpers/atoms/SystemBar.atom'
 
 const Column = ['Name', 'Model ID', 'Size', 'Version', 'Action']
 
 export default function SystemMonitorScreen() {
-  const { ram, cpu } = useGetSystemResources()
+  const totalRam = useAtomValue(totalRamAtom)
+  const usedRam = useAtomValue(usedRamAtom)
+  const cpuUsage = useAtomValue(cpuUsageAtom)
   const { activeModel, stateModel, stopModel } = useActiveModel()
 
   return (
@@ -19,24 +27,31 @@ export default function SystemMonitorScreen() {
           <div className="grid grid-cols-2 gap-8 lg:grid-cols-3">
             <div className="rounded-xl border border-border px-8 py-6">
               <div className="flex items-center justify-between">
-                <h4 className="text-base font-bold uppercase">ram ({ram}%)</h4>
+                <h4 className="text-base font-bold uppercase">
+                  ram ({Math.round((usedRam / totalRam) * 100)}%)
+                </h4>
                 <span className="text-muted-foreground">
-                  23 GB of 50 GB used
+                  {toGigabytes(usedRam)} GB of {toGigabytes(totalRam)} GB used
                 </span>
               </div>
               <div className="mt-2">
-                <Progress className="mb-2 h-10 rounded-md" value={ram} />
+                <Progress
+                  className="mb-2 h-10 rounded-md"
+                  value={Math.round((usedRam / totalRam) * 100)}
+                />
               </div>
             </div>
             <div className="rounded-xl border border-border px-8 py-6">
               <div className="flex items-center justify-between">
-                <h4 className="text-base font-bold uppercase">cpu ({cpu}%)</h4>
+                <h4 className="text-base font-bold uppercase">
+                  cpu ({cpuUsage}%)
+                </h4>
                 <span className="text-muted-foreground">
-                  23 GB of 50 GB used
+                  {cpuUsage}% of 100%
                 </span>
               </div>
               <div className="mt-2">
-                <Progress className="mb-2 h-10 rounded-md" value={cpu} />
+                <Progress className="mb-2 h-10 rounded-md" value={cpuUsage} />
               </div>
             </div>
           </div>
