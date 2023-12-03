@@ -93,11 +93,18 @@ export default function Sidebar() {
   return (
     <div
       className={twMerge(
-        'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background duration-300 ease-linear dark:bg-background/20',
-        showing ? 'w-80' : 'w-0'
+        'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background transition-all duration-100 dark:bg-background/20',
+        showing
+          ? 'w-80 translate-x-0 opacity-100'
+          : 'w-0 translate-x-full opacity-0'
       )}
     >
-      <div className="flex flex-col gap-4 p-4">
+      <div
+        className={twMerge(
+          'flex flex-col gap-4 p-4 delay-200',
+          showing ? 'animate-enter opacity-100' : 'opacity-0'
+        )}
+      >
         <CardSidebar
           title="Thread"
           onRevealInFinderClick={onReviewInFinderClick}

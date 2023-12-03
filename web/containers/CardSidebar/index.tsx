@@ -63,7 +63,10 @@ export default function CardSidebar({
           >
             <div
               className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
-              onClick={() => onRevealInFinderClick(title)}
+              onClick={() => {
+                onRevealInFinderClick(title)
+                setMore(false)
+              }}
             >
               <FolderOpenIcon size={16} className="text-muted-foreground" />
               <span className="text-bold text-black dark:text-muted-foreground">
@@ -72,7 +75,10 @@ export default function CardSidebar({
             </div>
             <div
               className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
-              onClick={() => onViewJsonClick(title)}
+              onClick={() => {
+                onViewJsonClick(title)
+                setMore(false)
+              }}
             >
               <Code2Icon size={16} className="text-muted-foreground" />
               <span className="text-bold text-black dark:text-muted-foreground">

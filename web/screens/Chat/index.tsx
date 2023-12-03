@@ -113,7 +113,7 @@ const ChatScreen = () => {
             </div>
           ) : (
             <div className="mx-auto mt-8 flex h-full w-3/4 flex-col items-center justify-center text-center">
-              {downloadedModels.length === 0 ? (
+              {downloadedModels.length === 0 && (
                 <Fragment>
                   <LogoMark
                     className="mx-auto mb-4 animate-wave"
@@ -131,16 +131,6 @@ const ChatScreen = () => {
                     Explore The Hub
                   </Button>
                 </Fragment>
-              ) : (
-                <div className="mx-auto mt-8 flex h-full w-3/4 flex-col items-center justify-center text-center">
-                  <LogoMark
-                    className="mx-auto mb-4 animate-wave"
-                    width={56}
-                    height={56}
-                  />
-
-                  <p className="mt-1 text-base">You need to choose a model</p>
-                </div>
               )}
             </div>
           )}
