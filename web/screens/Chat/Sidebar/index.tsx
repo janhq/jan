@@ -29,7 +29,7 @@ export default function Sidebar() {
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
     if (!activeThread.isFinishInit) {
-      alert('Thread is not ready')
+      alert('Thread is not started yet')
       return
     }
 
@@ -61,7 +61,7 @@ export default function Sidebar() {
   const onViewJsonClick = async (type: string) => {
     if (!activeThread) return
     if (!activeThread.isFinishInit) {
-      alert('Thread is not ready')
+      alert('Thread is not started yet')
       return
     }
 
