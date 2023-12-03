@@ -27,7 +27,7 @@ const TopBar = () => {
         return activeThread ? activeThread?.title : 'New Thread'
 
       default:
-        return MainViewState[viewStateName].replace(/([A-Z])/g, ' $1').trim()
+        return MainViewState[viewStateName]?.replace(/([A-Z])/g, ' $1').trim()
     }
   }
 

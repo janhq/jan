@@ -21,7 +21,7 @@ export default function Page() {
       children = <ExploreModelsScreen />
       break
 
-    case MainViewState.Setting:
+    case MainViewState.Settings:
       children = <SettingsScreen />
       break
 

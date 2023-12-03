@@ -1,7 +1,7 @@
 export enum MainViewState {
   Hub,
   MyModels,
-  Setting,
+  Settings,
   Thread,
   SystemMonitor,
 }

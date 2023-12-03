@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useState, useRef } from 'react'
 
 import {
   ChevronDownIcon,
@@ -24,7 +24,10 @@ export default function CardSidebar({
 }: Props) {
   const [show, setShow] = useState(true)
   const [more, setMore] = useState(false)
-  const ref = useClickOutside(() => setMore(false))
+  const [menu, setMenu] = useState<HTMLDivElement | null>(null)
+  const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
+
+  useClickOutside(() => setMore(false), null, [menu, toggle])
 
   return (
     <div
@@ -52,6 +55,7 @@ export default function CardSidebar({
           <span className="font-bold">{title}</span>
         </button>
         <div
+          ref={setToggle}
           className="cursor-pointer bg-zinc-200 p-2 dark:bg-zinc-600/10"
           onClick={() => setMore(!more)}
         >
@@ -60,7 +64,7 @@ export default function CardSidebar({
         {more && (
           <div
             className="absolute right-0 top-8 z-20 w-52 overflow-hidden rounded-lg border border-border bg-background shadow-lg"
-            ref={ref}
+            ref={setMenu}
           >
             <div
               className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
