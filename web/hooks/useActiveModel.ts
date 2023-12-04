@@ -48,9 +48,8 @@ export function useActiveModel() {
     }
 
     const currentTime = Date.now()
-    console.debug('Init model: ', modelId)
     const res = await initModel(modelId, model?.settings)
-    if (res && res.error && res.modelFile === stateModel.model) {
+    if (res && res.error) {
       const errorMessage = `${res.error}`
       alert(errorMessage)
       setStateModel(() => ({

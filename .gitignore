@@ -2,7 +2,6 @@
 .env
 
 # Jan inference
-models/**
 error.log
 node_modules
 *.tgz
@@ -11,6 +10,7 @@ dist
 build
 .DS_Store
 electron/renderer
+electron/models
 package-lock.json
 
 *.log

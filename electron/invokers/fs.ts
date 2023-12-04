@@ -67,6 +67,20 @@ export function fsInvokers() {
      * @param {string} path - The path of the directory to remove.
      */
     rmdir: (path: string) => ipcRenderer.invoke('rmdir', path),
+
+    /**
+     * Copies a file from the source path to the destination path.
+     * @param {string} src - The source path of the file to copy.
+     * @param {string} dest - The destination path where the file should be copied.
+     */
+    copyFile: (src: string, dest: string) => ipcRenderer.invoke('copyFile', src, dest),
+     
+    /**
+     * Retrieves the resource path.
+     * @returns {Promise<string>} A promise that resolves to the resource path.
+     */
+    getResourcePath: () => ipcRenderer.invoke('getResourcePath'),
+
   }
 
   return interfaces

@@ -27,7 +27,6 @@ export default function useDownloadModel() {
         total: 0,
         transferred: 0,
       },
-      fileName: model.id,
     })
 
     setDownloadingModels([...downloadingModels, model])

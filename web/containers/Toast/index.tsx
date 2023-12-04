@@ -16,7 +16,7 @@ export function toaster(props: Props) {
       return (
         <div
           className={twMerge(
-            'pointer-events-auto relative flex min-w-[200px] max-w-[350px] gap-x-4 rounded-lg border border-border bg-background px-4 py-3',
+            'unset-drag relative flex min-w-[200px] max-w-[350px] gap-x-4 rounded-lg border border-border bg-background px-4 py-3',
             t.visible ? 'animate-enter' : 'animate-leave',
             type === 'success' && 'bg-primary text-primary-foreground'
           )}

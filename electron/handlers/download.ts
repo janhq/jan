@@ -1,9 +1,10 @@
 import { app, ipcMain } from 'electron'
-import { DownloadManager } from '../managers/download'
+import { DownloadManager } from './../managers/download'
 import { resolve, join } from 'path'
-import { WindowManager } from '../managers/window'
+import { WindowManager } from './../managers/window'
 import request from 'request'
-import { createWriteStream, unlink } from 'fs'
+import { createWriteStream } from 'fs'
+import { getResourcePath } from './../utils/path'
 const progress = require('request-progress')
 
 export function handleDownloaderIPCs() {
@@ -35,6 +36,10 @@ export function handleDownloaderIPCs() {
     const rq = DownloadManager.instance.networkRequests[fileName]
     DownloadManager.instance.networkRequests[fileName] = undefined
     rq?.abort()
+  })
+
+  ipcMain.handle('getResourcePath', async (_event) => {
+    return getResourcePath()
   })
 
   /**

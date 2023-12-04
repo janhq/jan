@@ -1,8 +1,12 @@
 .message {
+  @apply text-black dark:text-gray-300;
   ul,
   ol {
     list-style: auto;
     padding-left: 24px;
   }
-  @apply text-muted-foreground;
+}
+
+button[class*='react-scroll-to-bottom--'] {
+  display: none;
 }

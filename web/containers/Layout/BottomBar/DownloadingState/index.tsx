@@ -12,18 +12,14 @@ import {
   ModalTrigger,
 } from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
-
 import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
-import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 export default function DownloadingState() {
   const { downloadStates } = useDownloadState()
-  const models = useAtomValue(downloadingModelsAtom)
 
   const totalCurrentProgress = downloadStates
     .map((a) => a.size.transferred + a.size.transferred)
@@ -69,18 +65,14 @@ export default function DownloadingState() {
                   />
                   <div className="flex items-center justify-between gap-x-2">
                     <div className="flex gap-x-2">
-                      <p className="line-clamp-1">{item?.fileName}</p>
+                      <p className="line-clamp-1">{item?.modelId}</p>
                       <span>{formatDownloadPercentage(item?.percent)}</span>
                     </div>
                     <Button
                       themes="outline"
                       size="sm"
                       onClick={() => {
-                        if (item?.fileName) {
-                          const model = models.find(
-                            (e) => e.id === item?.fileName
-                          )
-                          if (!model) return
+                        if (item?.modelId) {
                           extensionManager
                             .get<ModelExtension>(ExtensionType.Model)
                             ?.cancelModelDownload(item.modelId)

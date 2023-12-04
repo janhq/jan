@@ -1,9 +1,9 @@
 import { app, ipcMain, shell } from 'electron'
-import { ModuleManager } from '../managers/module'
+import { ModuleManager } from './../managers/module'
 import { join } from 'path'
-import { ExtensionManager } from '../managers/extension'
-import { WindowManager } from '../managers/window'
-import { userSpacePath } from '../utils/path'
+import { ExtensionManager } from './../managers/extension'
+import { WindowManager } from './../managers/window'
+import { userSpacePath } from './../utils/path'
 
 export function handleAppIPCs() {
   /**

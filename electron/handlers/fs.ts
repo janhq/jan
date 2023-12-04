@@ -1,8 +1,9 @@
-import { app, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import * as fs from 'fs'
+import fse from 'fs-extra'
 import { join } from 'path'
 import readline from 'readline'
-import { userSpacePath } from '../utils/path'
+import { userSpacePath } from './../utils/path'
 
 /**
  * Handles file system operations.
@@ -143,6 +144,12 @@ export function handleFsIPCs() {
     } catch (err) {
       console.error(`appendFile ${path} result: ${err}`)
     }
+  })
+
+  ipcMain.handle('copyFile', async (_event, src: string, dest: string) => {
+    console.debug(`Copying file from ${src} to ${dest}`)
+
+    return fse.copySync(src, dest, { overwrite: false })
   })
 
   /**

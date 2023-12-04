@@ -1,7 +1,6 @@
-import { Fragment, useState, useEffect, useContext } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 
 import {
-  Button,
   CommandModal,
   CommandEmpty,
   CommandGroup,
@@ -11,57 +10,35 @@ import {
   CommandList,
 } from '@janhq/uikit'
 
-import { useSetAtom } from 'jotai'
-import {
-  MessageCircleIcon,
-  SettingsIcon,
-  DatabaseIcon,
-  CpuIcon,
-  BookOpenIcon,
-} from 'lucide-react'
+import { MessageCircleIcon, SettingsIcon, LayoutGridIcon } from 'lucide-react'
 
 import ShortCut from '@/containers/Shortcut'
-
-import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
-import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
-
 export default function CommandSearch() {
   const { setMainViewState } = useMainViewState()
   const [open, setOpen] = useState(false)
-  const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
 
   const menus = [
-    {
-      name: 'Getting Started',
-      icon: <BookOpenIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.Welcome,
-    },
     {
       name: 'Chat',
       icon: (
         <MessageCircleIcon size={16} className="mr-3 text-muted-foreground" />
       ),
-      state: MainViewState.Chat,
+      state: MainViewState.Thread,
     },
     {
-      name: 'Explore Models',
-      icon: <CpuIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.ExploreModels,
-    },
-    {
-      name: 'My Models',
-      icon: <DatabaseIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.MyModels,
+      name: 'Hub',
+      icon: <LayoutGridIcon size={16} className="mr-3 text-muted-foreground" />,
+      state: MainViewState.Hub,
     },
     {
       name: 'Settings',
       icon: <SettingsIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.Setting,
+      state: MainViewState.Settings,
       shortcut: <ShortCut menu="," />,
     },
   ]
@@ -74,7 +51,7 @@ export default function CommandSearch() {
       }
       if (e.key === ',' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
-        setMainViewState(MainViewState.Setting)
+        setMainViewState(MainViewState.Settings)
       }
     }
     document.addEventListener('keydown', down)
@@ -84,7 +61,8 @@ export default function CommandSearch() {
 
   return (
     <Fragment>
-      <div className="relative">
+      {/* Temporary disable view search input until we have proper UI placement, but we keep function cmd + K for showing list page */}
+      {/* <div className="relative">
         <Button
           themes="outline"
           className="unset-drag h-8 w-[300px] justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
@@ -95,8 +73,7 @@ export default function CommandSearch() {
         <div className="absolute right-2 top-1/2 -translate-y-1/2">
           <ShortCut menu="K" />
         </div>
-      </div>
-
+      </div> */}
       <CommandModal open={open} onOpenChange={setOpen}>
         <CommandInput placeholder="Type a command or search..." />
         <CommandList>
@@ -123,13 +100,6 @@ export default function CommandSearch() {
           </CommandGroup>
         </CommandList>
       </CommandModal>
-      <Button
-        themes="outline"
-        className="unset-drag justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
-        onClick={() => setShowRightSideBar((show) => !show)}
-      >
-        Toggle right
-      </Button>
     </Fragment>
   )
 }

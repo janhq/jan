@@ -1,5 +1,5 @@
 import { BaseExtension } from "../extension";
-import { Model, ModelCatalog } from "../types/index";
+import { Model } from "../types/index";
 
 /**
  * Model extension for managing models.
@@ -43,5 +43,5 @@ export abstract class ModelExtension extends BaseExtension {
    * Gets a list of configured models.
    * @returns A Promise that resolves with an array of configured models.
    */
-  abstract getConfiguredModels(): Promise<ModelCatalog[]>;
+  abstract getConfiguredModels(): Promise<Model[]>;
 }

@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useRef, useContext } from 'react'
 
-import { Switch, Button } from '@janhq/uikit'
+import { Button } from '@janhq/uikit'
 
 import Loader from '@/containers/Loader'
 

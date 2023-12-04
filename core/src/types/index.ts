@@ -143,6 +143,7 @@ export type ThreadAssistantInfo = {
   assistant_id: string;
   assistant_name: string;
   model: ModelInfo;
+  instructions?: string;
 };
 
 /**
@@ -180,7 +181,7 @@ export interface Model {
   /**
    * The version of the model.
    */
-  version: string;
+  version: number;
 
   /**
    * The model download source. It can be an external url or a local filepath.
@@ -196,12 +197,6 @@ export interface Model {
    * Human-readable name that is used for UI.
    */
   name: string;
-
-  /**
-   * The organization that owns the model (you!)
-   * Default: "you"
-   */
-  owned_by: string;
 
   /**
    * The Unix timestamp (in seconds) for when the model was created
@@ -236,11 +231,16 @@ export interface Model {
   metadata: ModelMetadata;
 }
 
+export type ModelMetadata = {
+  author: string;
+  tags: string[];
+  size: number;
+};
+
 /**
  * The Model transition states.
  */
 export enum ModelState {
-  ToDownload = "to_download",
   Downloading = "downloading",
   Ready = "ready",
   Running = "running",
@@ -250,64 +250,26 @@ export enum ModelState {
  * The available model settings.
  */
 export type ModelSettingParams = {
-  ctx_len: number;
-  ngl: number;
-  embedding: boolean;
-  n_parallel: number;
+  ctx_len?: number;
+  ngl?: number;
+  embedding?: boolean;
+  n_parallel?: number;
+  system_prompt?: string;
+  user_prompt?: string;
+  ai_prompt?: string;
 };
 
 /**
  * The available model runtime parameters.
  */
 export type ModelRuntimeParam = {
-  temperature: number;
-  token_limit: number;
-  top_k: number;
-  top_p: number;
-  stream: boolean;
+  temperature?: number;
+  token_limit?: number;
+  top_k?: number;
+  top_p?: number;
+  stream?: boolean;
+  max_tokens?: number;
 };
-
-/**
- * The metadata of the model.
- */
-export type ModelMetadata = {
-  engine: string;
-  quantization: string;
-  size: number;
-  binaries: string[];
-  maxRamRequired: number;
-  author: string;
-  avatarUrl: string;
-};
-
-/**
- * Model type of the presentation object which will be presented to the user
- * @data_transfer_object
- */
-export interface ModelCatalog {
-  /** The unique id of the model.*/
-  id: string;
-  /** The name of the model.*/
-  name: string;
-  /** The avatar url of the model.*/
-  avatarUrl: string;
-  /** The short description of the model.*/
-  shortDescription: string;
-  /** The long description of the model.*/
-  longDescription: string;
-  /** The author name of the model.*/
-  author: string;
-  /** The version of the model.*/
-  version: string;
-  /** The origin url of the model repo.*/
-  modelUrl: string;
-  /** The timestamp indicating when this model was released.*/
-  releaseDate: number;
-  /** The tags attached to the model description **/
-  tags: string[];
-  /** The available versions of this model to download. */
-  availableVersions: Model[];
-}
 
 /**
  * Assistant type defines the shape of an assistant object.
@@ -327,13 +289,13 @@ export type Assistant = {
   /** Represents the name of the object. */
   name: string;
   /** Represents the description of the object. */
-  description: string;
+  description?: string;
   /** Represents the model of the object. */
   model: string;
   /** Represents the instructions for the object. */
-  instructions: string;
+  instructions?: string;
   /** Represents the tools associated with the object. */
-  tools: any;
+  tools?: any;
   /** Represents the file identifiers associated with the object. */
   file_ids: string[];
   /** Represents the metadata of the object. */
