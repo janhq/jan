@@ -42,7 +42,6 @@ Here is an example of an engine file for `engine_id` `nitro`:
 
 ```js
 {
-    "llama_model_path": "/model/llama-2-7b-model.gguf",
     "ctx_len": 512,
     "ngl": 100,
     "embedding": false,
