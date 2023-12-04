@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/Llama-2-70B-Chat-GGUF/resolve/main/llama-2-70b-chat.Q4_K_M.gguf",
+    "id": "llama2-chat-70b-q4",
+    "object": "model",
+    "name": "Llama 2 Chat 70B Q4",
+    "version": "1.0",
+    "description": "This is a 4-bit quantized version of Meta AI's Llama 2 Chat 70b model.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 2048,
+      "system_prompt": "[INST] <<SYS>>\n",
+      "user_prompt": "<</SYS>>\n",
+      "ai_prompt": "[/INST]"
+    },
+    "parameters": {
+      "max_tokens": 2048
+    },
+    "metadata": {
+      "author": "MetaAI, The Bloke",
+      "tags": ["Foundational Model", "General", "Code"],
+      "size": 4080000000
+    }
+  }
+  
