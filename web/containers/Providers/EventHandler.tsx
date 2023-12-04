@@ -51,17 +51,16 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     addNewMessage(message)
   }
 
-  async function handleModelReady(res: any) {
-    const model = modelsRef.current?.find((e) => e.id === res.modelId)
+  async function handleModelReady(model: Model) {
     setActiveModel(model)
     toaster({
       title: 'Success!',
-      description: `Model ${res.modelId} has been started.`,
+      description: `Model ${model.id} has been started.`,
     })
     setStateModel(() => ({
       state: 'stop',
       loading: false,
-      model: res.modelId,
+      model: model.id,
     }))
   }
 
