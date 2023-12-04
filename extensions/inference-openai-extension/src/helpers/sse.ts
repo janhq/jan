@@ -1,26 +1,32 @@
 import { Observable } from "rxjs";
+import { EngineSettings, OpenAIModel } from "../@types/global";
+
 /**
  * Sends a request to the inference server to generate a response based on the recent messages.
  * @param recentMessages - An array of recent messages to use as context for the inference.
+ * @param engine - The engine settings to use for the inference.
+ * @param model - The model to use for the inference.
  * @returns An Observable that emits the generated response as a string.
  */
 export function requestInference(
   recentMessages: any[],
+  engine: EngineSettings,
+  model: OpenAIModel,
   controller?: AbortController
 ): Observable<string> {
   return new Observable((subscriber) => {
     const requestBody = JSON.stringify({
       messages: recentMessages,
       stream: true,
-      model: "gpt-3.5-turbo",
-      max_tokens: 2048,
+      model: model.id,
     });
-    fetch(INFERENCE_URL, {
+    fetch(engine.base_url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
         "Access-Control-Allow-Origin": "*",
+        Authorization: `Bearer ${engine.api_key}`,
       },
       body: requestBody,
       signal: controller?.signal,
