@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { EventName, ExtensionType, InferenceExtension, events } from '@janhq/core'
+import {
+  EventName,
+  ExtensionType,
+  InferenceExtension,
+  events,
+} from '@janhq/core'
 import { Model, ModelSettingParams } from '@janhq/core'
 import { atom, useAtom } from 'jotai'
 
@@ -11,7 +16,11 @@ import { extensionManager } from '@/extension'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
 
-export const stateModelAtom = atom({ state: 'start', loading: false, model: '' })
+export const stateModelAtom = atom({
+  state: 'start',
+  loading: false,
+  model: '',
+})
 
 export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
