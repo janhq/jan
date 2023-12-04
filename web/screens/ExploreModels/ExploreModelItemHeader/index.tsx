@@ -2,7 +2,7 @@
 import { useCallback, useMemo } from 'react'
 
 import { Model } from '@janhq/core'
-import { Badge, Button } from '@janhq/uikit'
+import { Button } from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
 
@@ -101,7 +101,6 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
     >
       <div className="flex items-center gap-2">
         <span className="font-bold">{model.name}</span>
-        <Badge>{model.metadata.tags[0]}</Badge>
       </div>
       <div className="inline-flex items-center space-x-2">
         <span className="mr-4 font-semibold text-muted-foreground">

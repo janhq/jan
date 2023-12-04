@@ -75,12 +75,12 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
               </span>
               <p className="mt-2 font-medium uppercase">{model.format}</p>
             </div>
-            <div className="mt-4">
+            {/* <div className="mt-4">
               <span className="font-semibold text-muted-foreground">
                 Compatibility
               </span>
               <p className="mt-2 font-medium">-</p>
-            </div>
+            </div> */}
           </div>
         </div>
       )}
