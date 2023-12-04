@@ -20,11 +20,17 @@ import {
   executeOnMain,
   getUserSpace,
   fs,
+  Model,
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
 import { join } from "path";
+
+interface EngineSettings {
+  base_url?: string;
+  api_key?: string;
+}
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -35,6 +41,10 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   private static readonly _homeDir = 'engines'
   private static readonly _engineMetadataFileName = 'openai.json'
   
+  private _engineSettings: EngineSettings = {
+    "base_url": "https://api.openai.com/v1",
+    "api_key": "sk-<your key here>"
+  }
   controller = new AbortController();
   isCancelled = false;
   /**
@@ -52,9 +62,19 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   onLoad(): void {
     fs.mkdir(JanInferenceOpenAIExtension._homeDir)
     this.writeDefaultEngineSettings()
+
+    // Events subscription
     events.on(EventName.OnMessageSent, (data) =>
-    JanInferenceOpenAIExtension.handleMessageRequest(data, this)
+      JanInferenceOpenAIExtension.handleMessageRequest(data, this)
     );
+
+    events.on(EventName.OnModelInit, (data: Model) => {
+      JanInferenceOpenAIExtension.handleModelInit(data);
+    });
+
+    events.on(EventName.OnModelStop, (data: Model) => {
+      JanInferenceOpenAIExtension.handleModelStop(data);
+    });
   }
 
   /**
@@ -71,31 +91,18 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     modelId: string,
     settings?: ModelSettingParams
   ): Promise<void> {
-    const userSpacePath = await getUserSpace();
-    const modelFullPath = join(userSpacePath, "models", modelId, modelId);
-
-    return executeOnMain(MODULE, "initModel", {
-      modelFullPath,
-      settings,
-    });
+    return
   }
 
   private async writeDefaultEngineSettings() {
     try {
-      
-      const destPath = join(JanInferenceOpenAIExtension._homeDir, JanInferenceOpenAIExtension._engineMetadataFileName)
-      // TODO: Check with @louis for adding new binding
-      // if (await fs.checkFileExists(destPath)) {
-        const default_engine_settings = {
-          "base_url": "https://api.openai.com/v1",
-          "api_key": "sk-<your key here>"
-        }
-        console.log(`Writing OpenAI engine settings to ${destPath}`)
-        await fs.writeFile(destPath, JSON.stringify(default_engine_settings, null, 2))
-      // }
-      // else { 
-      //   console.log(`OpenAI engine settings already exist at ${destPath}`)
-      // }
+      const engine_json = join(JanInferenceOpenAIExtension._homeDir, JanInferenceOpenAIExtension._engineMetadataFileName)
+      if (await fs.checkFileExists(engine_json)) {
+        this._engineSettings = JSON.parse(await fs.readFile(engine_json))
+      }
+      else {
+        await fs.writeFile(engine_json, JSON.stringify(this._engineSettings, null, 2))
+      }
     } catch (err) {
       console.error(err)
     }
@@ -146,6 +153,22 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     });
   }
 
+  private static async handleModelInit(data: Model) {
+    console.log('Model init success', data)
+    // Add filter data engine = openai
+    if (data.engine !== 'openai') { return }
+    // If model success
+    events.emit(EventName.OnModelReady, {modelId: data.id})
+    // If model failed
+    // events.emit(EventName.OnModelFail, {modelId: data.id})
+  }
+
+  private static async handleModelStop(data: Model) {
+    // Add filter data engine = openai
+    if (data.engine !== 'openai') { return }
+    events.emit(EventName.OnModelStop, {modelId: data.id})
+  }
+
   /**
    * Handles a new message request by making an inference request and emitting events.
    * Function registered in event manager, should be static to avoid binding issues.
@@ -169,7 +192,6 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
       object: "thread.message",
     };
     events.emit(EventName.OnMessageResponse, message);
-    console.log(JSON.stringify(data, null, 2));
 
     instance.isCancelled = false;
     instance.controller = new AbortController();
