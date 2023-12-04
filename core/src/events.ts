@@ -14,8 +14,10 @@ export enum EventName {
   OnModelReady = "OnModelReady",
   /** The `OnModelFail` event is emitted when a model fails loading. */
   OnModelFail = "OnModelFail",
-  /** The `OnModelStop` event is emitted when a model fails loading. */
+  /** The `OnModelStop` event is emitted when a model start to stop. */
   OnModelStop = "OnModelStop",
+  /** The `OnModelStopped` event is emitted when a model stopped ok. */
+  OnModelStopped = "OnModelStopped",
 }
 
 /**

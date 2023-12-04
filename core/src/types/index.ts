@@ -43,6 +43,9 @@ export type MessageRequest = {
 
   /** Runtime parameters for constructing a chat completion request **/
   parameters?: ModelRuntimeParam;
+
+  /** Settings for constructing a chat completion request **/
+  model?: ModelInfo
 };
 
 /**
@@ -154,6 +157,7 @@ export type ModelInfo = {
   id: string;
   settings: ModelSettingParams;
   parameters: ModelRuntimeParam;
+  engine: InferenceEngine;
 };
 
 /**
@@ -172,7 +176,7 @@ export type ThreadState = {
  */
 
 enum InferenceEngine {
-  llama_cpp = "llama_cpp",
+  nitro = "nitro",
   openai = "openai",
   nvidia_triton = "nvidia_triton",
   hf_endpoint = "hf_endpoint",
@@ -246,7 +250,7 @@ export interface Model {
    */
   metadata: ModelMetadata;
   /**
-   * The model engine. Enum: "llamacpp" "openai"
+   * The model engine.
    */
   engine: InferenceEngine;
 }
