@@ -6,9 +6,7 @@
     "version": 1.0,
     "description": "OpenAI GPT 3.5 model is extremely good",
     "format": "api",
-    "settings": {
-      "base_url": "https://api.openai.com/v1"
-    },
+    "settings": {},
     "parameters": {
       "max_tokens": 4096
     },
