@@ -28,6 +28,12 @@ export function fsInvokers() {
     readFile: (path: string) => ipcRenderer.invoke('readFile', path),
 
     /**
+     * Reads a file at the specified path.
+     * @param {string} path - The path of the file to read.
+     */
+    checkFileExists: (path: string) => ipcRenderer.invoke('checkFileExists', path),
+    
+    /**
      * Writes data to a file at the specified path.
      * @param {string} path - The path of the file to write to.
      * @param {string} data - The data to write.
