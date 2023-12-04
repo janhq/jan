@@ -104,7 +104,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
         <Badge>{model.metadata.tags[0]}</Badge>
       </div>
       <div className="inline-flex items-center space-x-2">
-        <span className="font-semibold text-muted-foreground">
+        <span className="mr-4 font-semibold text-muted-foreground">
           {toGigabytes(model.metadata.size)}
         </span>
         {downloadButton}
