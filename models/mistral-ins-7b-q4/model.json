@@ -1,0 +1,24 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_K_M.gguf",
+    "id": "mistral-ins-7b-q4",
+    "object": "model",
+    "name": "Mistral Instruct 7B Q4",
+    "version": "1.0",
+    "description": "This is a 4-bit quantized version of MistralAI's Mistral Instruct 7B model.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 2048,
+      "system_prompt": "",
+      "user_prompt": "<s>[INST]",
+      "ai_prompt": "[/INST]"
+    },
+    "parameters": {
+      "max_tokens": 2048
+    },
+    "metadata": {
+      "author": "MistralAI, The Bloke",
+      "tags": ["Foundational Model", "General", "Code"],
+      "size": 4370000000
+    }
+  }
+  

@@ -7,13 +7,13 @@
     "description": "lzlv_70B is a sophisticated AI model designed for roleplaying and creative tasks. This merge aims to combine intelligence with creativity, seemingly outperforming its individual components in complex scenarios and creative outputs.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "",
       "user_prompt": "USER: ",
       "ai_prompt": "ASSISTANT: "
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "lizpreciatior, The Bloke",
