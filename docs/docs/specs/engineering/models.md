@@ -62,7 +62,7 @@ Here's a standard example `model.json` for a GGUF model.
 "version": "1",                     // Defaults to 1
 "created": 1231231,                 // Defaults to file creation time
 "description": null,                // Defaults to null
-"state": enum[null, "downloading", "ready", "starting", "stopping", ...]
+"state": enum[null, ready"]
 "format": "ggufv3",                 // Defaults to "ggufv3"
 "egine": "nitro",                // engine_id specified in jan/engine folder 
 "engine_parameters": {              // Engine parameters inside model.json can override 
