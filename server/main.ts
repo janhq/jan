@@ -14,6 +14,6 @@ server.listen({
   port: JAN_API_PORT, 
   host: JAN_API_HOST
 }).then(() => {
-  console.log(`JAN API listening at: http://0.0.0.0:${JAN_API_PORT}`);
+  console.log(`JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`);
 })
 
