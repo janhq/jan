@@ -132,6 +132,7 @@ export default function useSendChatMessage() {
               id: selectedModel.id,
               settings: selectedModel.settings,
               parameters: selectedModel.parameters,
+              engine: selectedModel.engine,
             },
           },
         ],
@@ -179,6 +180,7 @@ export default function useSendChatMessage() {
       threadId: activeThread.id,
       messages,
       parameters: activeThread.assistants[0].model.parameters,
+      model: activeThread.assistants[0].model,
     }
     const timestamp = Date.now()
     const threadMessage: ThreadMessage = {
