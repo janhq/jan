@@ -1,6 +1,6 @@
 {
     "source_url": "https://openai.com",
-    "id": "openai-gpt35",
+    "id": "gpt-3.5-turbo",
     "object": "model",
     "name": "OpenAI GPT 3.5",
     "version": 1.0,
