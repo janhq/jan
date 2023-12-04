@@ -36,6 +36,9 @@ interface InitModelResponse {
  * TODO: Should it be startModel instead?
  */
 function initModel(wrapper: any): Promise<InitModelResponse> {
+  if (wrapper.settings.engine !== "llamacpp") {
+    return
+  }
   // 1. Check if the model file exists
   currentModelFile = wrapper.modelFullPath;
   log.info("Started to load model " + wrapper.modelFullPath);
@@ -44,7 +47,6 @@ function initModel(wrapper: any): Promise<InitModelResponse> {
     llama_model_path: currentModelFile,
     ...wrapper.settings,
   };
-
 
   log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
 

@@ -26,6 +26,13 @@ import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
 import { join } from "path";
 
+interface EngineSettings {
+  ctx_len: number;
+  ngl: number;
+  cont_batching: boolean;
+  embedding: boolean;
+}
+
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -34,6 +41,13 @@ import { join } from "path";
 export default class JanInferenceNitroExtension implements InferenceExtension {
   private static readonly _homeDir = 'engines'
   private static readonly _engineMetadataFileName = 'nitro.json'
+
+  private _engineSettings: EngineSettings = {
+    "ctx_len": 2048,
+    "ngl": 100,
+    "cont_batching": false,
+    "embedding": false
+  }
 
   controller = new AbortController();
   isCancelled = false;
@@ -100,21 +114,13 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
 
   private async writeDefaultEngineSettings() {
     try {
-      const destPath = join(JanInferenceNitroExtension._homeDir, JanInferenceNitroExtension._engineMetadataFileName)
-      // TODO: Check with @louis for adding new binding
-      // if (await fs.checkFileExists(destPath)) {
-        const default_engine_settings = {
-          "ctx_len": 2048,
-          "ngl": 100,
-          "cont_batching": false,
-          "embedding": false
-        }
-        console.log(`Writing nitro engine settings to ${destPath}`)
-        await fs.writeFile(destPath, JSON.stringify(default_engine_settings, null, 2))
-      // }
-      // else {
-      //   console.log(`Using existing nitro engine settings at ${destPath}`)
-      // }
+      const engine_json = join(JanInferenceNitroExtension._homeDir, JanInferenceNitroExtension._engineMetadataFileName)
+      if (await fs.checkFileExists(engine_json)) {
+        this._engineSettings = JSON.parse(await fs.readFile(engine_json))
+      }
+      else {
+        await fs.writeFile(engine_json, JSON.stringify(this._engineSettings, null, 2))
+      }
     } catch (err) {
       console.error(err)
     }
