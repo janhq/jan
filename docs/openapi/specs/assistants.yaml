@@ -3,10 +3,6 @@ components:
     AssistantObject:
       type: object
       properties:
-        avatar:
-          type: string
-          description: "URL of the assistant's avatar. Jan-specific property."
-          example: "https://lala.png"
         id:
           type: string
           description: "The identifier of the assistant."
@@ -23,6 +19,7 @@ components:
           type: integer
           format: int64
           description: "Unix timestamp representing the creation time of the assistant."
+          example: 1698984975
         name:
           type: string
           description: "Name of the assistant."
@@ -30,6 +27,11 @@ components:
         description:
           type: string
           description: "Description of the assistant. Can be null."
+          example: null
+        avatar:
+          type: string
+          description: "URL of the assistant's avatar. Jan-specific property."
+          example: "https://pic.png"
         models:
           type: array
           description: "List of models associated with the assistant. Jan-specific property."
@@ -38,7 +40,11 @@ components:
             properties:
               model_id:
                 type: string
-              # Additional properties for models can be added here
+                example: model_0  
+        instructions:
+          type: string
+          description: "A system prompt for the assistant"
+          example: Be concise
         events:
           type: object
           description: "Event subscription settings for the assistant."
@@ -55,10 +61,6 @@ components:
         metadata:
           type: object
           description: "Metadata associated with the assistant."
-      required:
-        - name
-        - models
-        - events
     
     ListAssistantsResponse:
       type: object
