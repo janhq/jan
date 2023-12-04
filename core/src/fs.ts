@@ -1,5 +1,3 @@
-const fetchRetry = require("fetch-retry")(global.fetch);
-
 /**
  * Writes data to a file at the specified path.
  * @param {string} path - The path to the file.

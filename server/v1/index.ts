@@ -9,7 +9,7 @@ const router: FastifyPluginAsync = async (app: FastifyInstance, opts) => {
     app.register(
         assistantsAPI,
         {
-            prefix: "/assisstants"
+            prefix: "/assistants"
         }
     )
 

@@ -3,7 +3,7 @@
   "version": "0.1.3",
   "main": "./build/main.js",
   "author": "Jan <service@jan.ai>",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "homepage": "https://github.com/janhq/jan/tree/main/electron",
   "description": "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers.",
   "build": {
