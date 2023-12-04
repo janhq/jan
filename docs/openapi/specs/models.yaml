@@ -289,7 +289,7 @@ components:
             engine:
               type: string
               description: "The engine used by the model."
-              example: "llamacpp"
+              enum: [nitro, openai, hf_inference]
             quantization:
               type: string
               description: "Quantization parameter of the model."
