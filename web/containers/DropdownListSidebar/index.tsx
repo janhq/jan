@@ -19,6 +19,7 @@ import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
@@ -35,6 +36,7 @@ export default function DropdownListSidebar() {
   const activeThread = useAtomValue(activeThreadAtom)
   const [selected, setSelected] = useState<Model | undefined>()
   const { setMainViewState } = useMainViewState()
+  const { activeModel, stateModel } = useActiveModel()
 
   useEffect(() => {
     getDownloadedModels().then((downloadedModels) => {
@@ -42,18 +44,24 @@ export default function DropdownListSidebar() {
       if (downloadedModels.length > 0) {
         setSelected(
           downloadedModels.filter(
-            (x) => x.id === activeThread?.assistants[0].model.id
+            (x) =>
+              x.id === activeThread?.assistants[0].model.id ||
+              x.id === activeModel?.id
           )[0] || downloadedModels[0]
         )
         setSelectedModel(
           downloadedModels.filter(
-            (x) => x.id === activeThread?.assistants[0].model.id
+            (x) =>
+              x.id === activeThread?.assistants[0].model.id ||
+              x.id === activeModel?.id
           )[0] || downloadedModels[0]
         )
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeThread])
+  }, [activeThread, activeModel])
+
+  if (stateModel.loading) return null
 
   return (
     <Select

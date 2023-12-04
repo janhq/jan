@@ -16,6 +16,7 @@ import { MainViewState } from '@/constants/screens'
 
 // import { ModelPerformance, TagType } from '@/constants/tagType'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
@@ -33,6 +34,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const { downloadModel } = useDownloadModel()
   const { downloadedModels } = useGetDownloadedModels()
   const { modelDownloadStateAtom, downloadStates } = useDownloadState()
+  const { startModel } = useActiveModel()
   // const [title, setTitle] = useState<string>('Recommended')
 
   // const [performanceTag, setPerformanceTag] = useState<TagType>(
@@ -63,6 +65,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
         themes="success"
         className="min-w-[98px]"
         onClick={() => {
+          startModel(model.id)
           setMainViewState(MainViewState.MyModels)
         }}
       >
