@@ -7,13 +7,13 @@
     "description": "",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "",
       "user_prompt": "",
       "ai_prompt": ""
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "deepseek, The Bloke",
