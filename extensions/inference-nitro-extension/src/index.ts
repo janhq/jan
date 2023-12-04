@@ -134,17 +134,19 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
       model: model
     });
 
-    if (nitro_init_result.error) {
+    if (nitro_init_result.error === null) {
       events.emit(EventName.OnModelFail, model)
     }
     else{
+      JanInferenceNitroExtension._currentModel = model;
       events.emit(EventName.OnModelReady, model);
     }
   }
 
   private static async handleModelStop(model: Model) {
     if (model.engine !== 'nitro') { return }
-    else { 
+    else {
+      await executeOnMain(MODULE, "stopModel")
       events.emit(EventName.OnModelStopped, model)
     }
   }
@@ -168,9 +170,11 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     };
 
     return new Promise(async (resolve, reject) => {
-      requestInference(data.messages ?? [], 
+      requestInference(
+          data.messages ?? [], 
           JanInferenceNitroExtension._engineSettings, 
-          JanInferenceNitroExtension._currentModel)
+          JanInferenceNitroExtension._currentModel
+        )
         .subscribe({
         next: (_content) => {},
           complete: async () => {
@@ -212,11 +216,12 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     instance.isCancelled = false;
     instance.controller = new AbortController();
 
-    requestInference(data.messages ?? [], 
+    requestInference(
+        data.messages ?? [], 
         JanInferenceNitroExtension._engineSettings, 
         JanInferenceNitroExtension._currentModel, 
-        instance.controller)
-      .subscribe({
+        instance.controller
+      ).subscribe({
       next: (content) => {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
