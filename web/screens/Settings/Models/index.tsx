@@ -28,7 +28,7 @@ export default function Models() {
           />
           <Input
             placeholder="Search"
-            className="pl-8"
+            className="pl-9"
             onChange={(e) => {
               setsearchValue(e.target.value)
             }}

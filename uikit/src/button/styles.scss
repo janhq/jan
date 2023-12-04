@@ -19,6 +19,10 @@
     @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
   }
 
+  &-success {
+    @apply bg-green-500 text-white hover:bg-green-500/80;
+  }
+
   &-ghost {
     @apply hover:bg-primary hover:text-primary-foreground;
   }

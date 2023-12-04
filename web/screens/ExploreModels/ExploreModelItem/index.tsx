@@ -15,7 +15,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
   return (
     <div
       ref={ref}
-      className="mb-4 flex flex-col rounded-md border border-border bg-background/60"
+      className="mb-6 flex flex-col overflow-hidden rounded-xl border border-border bg-background/60"
     >
       <ExploreModelItemHeader model={model} />
       <div className="flex flex-col p-4">
