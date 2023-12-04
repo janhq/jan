@@ -1,6 +1,19 @@
 import { useState } from 'react'
 
-import { Input, ScrollArea } from '@janhq/uikit'
+import {
+  Input,
+  ScrollArea,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipArrow,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@janhq/uikit'
 
 import { SearchIcon } from 'lucide-react'
 
@@ -12,12 +25,29 @@ import Loader from '@/containers/Loader'
 
 import { useGetConfiguredModels } from '@/hooks/useGetConfiguredModels'
 
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
 import ExploreModelList from './ExploreModelList'
 
 const ExploreModelsScreen = () => {
   const { loading, models } = useGetConfiguredModels()
   const [searchValue, setsearchValue] = useState('')
   const [tabActive, setTabActive] = useState('Model')
+  const { downloadedModels } = useGetDownloadedModels()
+  const [sortSelected, setSortSelected] = useState('All Model')
+  const sortMenu = ['All Model', 'Downloaded']
+
+  const filteredModels = models.filter((x) => {
+    if (sortSelected === 'Downloaded') {
+      return (
+        x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
+        downloadedModels.some((y) => y.id === x.id)
+      )
+    } else {
+      return x.name.toLowerCase().includes(searchValue.toLowerCase())
+    }
+  })
+
   if (loading) return <Loader description="loading ..." />
 
   return (
@@ -52,23 +82,53 @@ const ExploreModelsScreen = () => {
                     onClick={() => setTabActive('Model')}
                   >
                     <Code2Icon size={20} className="text-muted-foreground" />
-                    <span>Model</span>
+                    <span className="font-semibold">Model</span>
                   </div>
-                  <div
-                    className={twMerge(
-                      'pointer-events-none flex cursor-pointer items-center space-x-2 px-3 py-2',
-                      tabActive === 'Assistant' && 'bg-secondary'
-                    )}
-                    onClick={() => setTabActive('Assistant')}
-                  >
-                    <UserIcon size={20} className="text-muted-foreground" />
-                    <span>Assistant</span>
-                  </div>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <div
+                        className={twMerge(
+                          'pointer-events-none flex cursor-pointer items-center space-x-2 px-3 py-2 text-muted-foreground',
+                          tabActive === 'Assistant' && 'bg-secondary'
+                        )}
+                        onClick={() => setTabActive('Assistant')}
+                      >
+                        <UserIcon size={20} className="text-muted-foreground" />
+                        <span className="font-semibold">Assistant</span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" sideOffset={10}>
+                      <span className="font-bold">Coming Soon</span>
+                      <TooltipArrow />
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
+
+                <Select
+                  value={sortSelected}
+                  onValueChange={(value) => {
+                    setSortSelected(value)
+                  }}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Sort By"></SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="right-0 block w-full min-w-[200px] pr-0">
+                    <SelectGroup>
+                      {sortMenu.map((x, i) => {
+                        return (
+                          <SelectItem key={i} value={x}>
+                            <span className="line-clamp-1 block">{x}</span>
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="mt-6">
-                <ExploreModelList models={models} />
+                <ExploreModelList models={filteredModels} />
               </div>
             </div>
           </ScrollArea>

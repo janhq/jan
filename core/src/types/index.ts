@@ -184,6 +184,11 @@ export interface Model {
   version: number;
 
   /**
+   * The format of the model.
+   */
+  format: string;
+
+  /**
    * The model download source. It can be an external url or a local filepath.
    */
   source_url: string;

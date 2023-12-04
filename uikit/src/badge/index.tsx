@@ -10,6 +10,7 @@ const badgeVariants = cva('badge', {
       secondary: 'badge-secondary',
       danger: 'badge-danger',
       outline: 'badge-outline',
+      pink: 'badge-pink',
     },
   },
   defaultVariants: {
