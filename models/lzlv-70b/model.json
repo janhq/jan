@@ -9,8 +9,8 @@
     "settings": {
       "ctx_len": 2048,
       "system_prompt": "",
-      "user_prompt": "USER: ",
-      "ai_prompt": "ASSISTANT: "
+      "user_prompt": "USER:\n",
+      "ai_prompt": "ASSISTANT:\n"
     },
     "parameters": {
       "max_tokens": 2048

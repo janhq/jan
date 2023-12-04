@@ -1,10 +1,10 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/NeuralHermes-2.5-Mistral-7B-GGUF/resolve/main/neuralhermes-2.5-mistral-7b.Q4_K_M.gguf",
-    "id": "neuralhermes-7b",
+    "source_url": "https://huggingface.co/TheBloke/OpenHermes-2.5-neural-chat-7B-v3-2-7B-GGUF/resolve/main/openhermes-2.5-neural-chat-7b-v3-2-7b.Q4_K_M.gguf",
+    "id": "openhermes-neural-7b",
     "object": "model",
-    "name": "NeuralHermes 7B",
+    "name": "OpenHermes Neural 7B",
     "version": "1.0",
-    "description": "NeuralHermes 2.5 has been enhanced using Direct Preference Optimization. This fine-tuning, inspired by the RLHF process of Neural-chat-7b and OpenHermes-2.5-Mistral-7B, has led to improved performance across several benchmarks.",
+    "description": "OpenHermes Neural is a merged model from OpenHermes-2.5-Mistral-7B and neural-chat-7b-v3-2 with the TIES method.",
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,
