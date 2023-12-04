@@ -32,7 +32,10 @@
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "cpx \"models/**\" \"electron/models/\" && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
-    "build:extensions": "rimraf ./electron/pre-install/*.tgz && concurrently --kill-others-on-fail \"cd ./extensions/conversational-extension && npm install && npm run build:publish\" \"cd ./extensions/inference-extension && npm install && npm run build:publish\" \"cd ./extensions/model-extension && npm install && npm run build:publish\" \"cd ./extensions/monitoring-extension && npm install && npm run build:publish\" \"cd ./extensions/assistant-extension && npm install && npm run build:publish\"",
+    "build:extensions:windows": "rimraf ./electron/pre-install/*.tgz && powershell -command \"Get-ChildItem -Path './extensions' -Directory | ForEach-Object {Write-Host 'Building in' $_.FullName; Set-Location $_.FullName; npm install; npm run build:publish; Set-Location -LiteralPath '..\\..';}\"",
+    "build:extensions:linux": "rimraf ./electron/pre-install/*.tgz && for dir in ./extensions/*; do if [ -d \"$dir\" ]; then (cd \"$dir\" && npm install && npm run build:publish); fi; done",
+    "build:extensions:darwin": "rimraf ./electron/pre-install/*.tgz && for dir in ./extensions/*; do if [ -d \"$dir\" ]; then (cd \"$dir\" && npm install && npm run build:publish); fi; done",
+    "build:extensions": "run-script-os",
     "build:test": "yarn build:web && yarn workspace jan build:test",
     "build": "yarn build:web && yarn build:electron",
     "build:publish": "yarn build:web && yarn workspace jan build:publish"
