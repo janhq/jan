@@ -7,13 +7,13 @@
     "description": "Phind-CodeLlama-34B-v2 is an AI model fine-tuned on 1.5B tokens of high-quality programming data. It's a SOTA open-source model in coding. This multi-lingual model excels in various programming languages, including Python, C/C++, TypeScript, Java, and is designed to be steerable and user-friendly.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "### System Prompt\n",
       "user_prompt": "### User Message\n",
       "ai_prompt": "### Assistant\n"
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "Phind, The Bloke",

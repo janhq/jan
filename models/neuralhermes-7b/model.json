@@ -7,13 +7,13 @@
     "description": "NeuralHermes 2.5 has been enhanced using Direct Preference Optimization. This fine-tuning, inspired by the RLHF process of Neural-chat-7b and OpenHermes-2.5-Mistral-7B, has led to improved performance across several benchmarks.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "<|im_start|>system\n",
       "user_prompt": "<|im_end|>\n<|im_start|>user\n",
       "ai_prompt": "<|im_end|>\n<|im_start|>assistant\n"
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "Intel, The Bloke",

@@ -7,13 +7,13 @@
     "description": "WizardCoder-Python-34B is a Python coding model major models like ChatGPT-3.5. This model based on the Llama2 architecture, demonstrate high proficiency in specific domains like coding and mathematics.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "",
       "user_prompt": "### Instruction:\n",
       "ai_prompt": "### Response:\n"
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "WizardLM, The Bloke",

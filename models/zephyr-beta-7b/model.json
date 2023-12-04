@@ -7,13 +7,13 @@
     "description": "The Zephyr-7B-β model marks the second iteration in the Zephyr series, designed to function as an effective assistant. It has been fine-tuned from the mistralai/Mistral-7B-v0.1 base model, utilizing a combination of public and synthetic datasets with the application of Direct Preference Optimization.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "<|system|>\n",
       "user_prompt": "</s>\n<|user|>\n",
       "ai_prompt": "</s>\n<|assistant|>\n"
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "HuggingFaceH4, The Bloke",
