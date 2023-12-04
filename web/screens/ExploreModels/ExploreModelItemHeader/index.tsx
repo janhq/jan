@@ -24,6 +24,7 @@ type Props = {
 }
 
 const ExploreModelItemHeader: React.FC<Props> = ({ model }) => {
+  console.log(model)
   const { downloadModel } = useDownloadModel()
   const { downloadedModels } = useGetDownloadedModels()
   const { modelDownloadStateAtom, downloadStates } = useDownloadState()
@@ -57,6 +58,8 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model }) => {
   if (isDownloaded) {
     downloadButton = (
       <Button
+        themes="success"
+        className="min-w-[80px]"
         onClick={() => {
           setMainViewState(MainViewState.MyModels)
         }}
@@ -90,9 +93,11 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model }) => {
     <div className="flex items-center justify-between rounded-t-md border-b border-border bg-background/50 px-4 py-2">
       <div className="flex items-center gap-2">
         <span className="font-medium">{model.name}</span>
-        {performanceTag && renderBadge(performanceTag)}
       </div>
-      {downloadButton}
+      <div className="space-x-2">
+        {performanceTag && renderBadge(performanceTag)}
+        {downloadButton}
+      </div>
     </div>
   )
 }
