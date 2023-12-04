@@ -10,8 +10,7 @@
       "ctx_len": 2048,
       "system_prompt": "<|system|>\n",
       "user_prompt": "<|user|>\n",
-      "ai_prompt": "<|assistant|>\n",
-      "engine": "nitro"
+      "ai_prompt": "<|assistant|>\n"
   },
   "parameters": {
       "max_tokens": 2048
@@ -20,5 +19,6 @@
       "author": "TinyLlama",
       "tags": ["Tiny", "Foundation Model"],
       "size": 637000000
-  }
+  },
+  "engine": "nitro"
 }
