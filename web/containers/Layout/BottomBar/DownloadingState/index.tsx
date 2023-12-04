@@ -12,18 +12,14 @@ import {
   ModalTrigger,
 } from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
-
 import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
-import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 export default function DownloadingState() {
   const { downloadStates } = useDownloadState()
-  const models = useAtomValue(downloadingModelsAtom)
 
   const totalCurrentProgress = downloadStates
     .map((a) => a.size.transferred + a.size.transferred)

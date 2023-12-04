@@ -61,7 +61,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model }) => {
           setMainViewState(MainViewState.MyModels)
         }}
       >
-        View Downloaded Model
+        Use
       </Button>
     )
   }

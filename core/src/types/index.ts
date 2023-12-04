@@ -143,6 +143,7 @@ export type ThreadAssistantInfo = {
   assistant_id: string;
   assistant_name: string;
   model: ModelInfo;
+  instructions?: string;
 };
 
 /**
@@ -288,13 +289,13 @@ export type Assistant = {
   /** Represents the name of the object. */
   name: string;
   /** Represents the description of the object. */
-  description: string;
+  description?: string;
   /** Represents the model of the object. */
   model: string;
   /** Represents the instructions for the object. */
-  instructions: string;
+  instructions?: string;
   /** Represents the tools associated with the object. */
-  tools: any;
+  tools?: any;
   /** Represents the file identifiers associated with the object. */
   file_ids: string[];
   /** Represents the metadata of the object. */

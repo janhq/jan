@@ -88,7 +88,7 @@ export const cleanConversationMessages = atom(null, (get, set, id: string) => {
   const newData: Record<string, ThreadMessage[]> = {
     ...get(chatMessages),
   }
-  newData[id] = newData[id].filter((e) => e.role === ChatCompletionRole.System)
+  newData[id] = newData[id]?.filter((e) => e.role === ChatCompletionRole.System)
   set(chatMessages, newData)
 })
 

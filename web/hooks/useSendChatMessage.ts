@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import {
   ChatCompletionMessage,
   ChatCompletionRole,
@@ -10,7 +12,7 @@ import {
   ThreadMessage,
   events,
 } from '@janhq/core'
-import { ConversationalExtension, InferenceExtension } from '@janhq/core'
+import { ConversationalExtension } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { ulid } from 'ulid'
@@ -44,6 +46,48 @@ export default function useSendChatMessage() {
   const { activeModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
   const { startModel } = useActiveModel()
+  const [queuedMessage, setQueuedMessage] = useState(false)
+
+  const resendChatMessage = async () => {
+    if (!activeThread) {
+      console.error('No active thread')
+      return
+    }
+
+    updateThreadWaiting(activeThread.id, true)
+
+    const messages: ChatCompletionMessage[] = [
+      activeThread.assistants[0]?.instructions,
+    ]
+      .map<ChatCompletionMessage>((instructions) => {
+        const systemMessage: ChatCompletionMessage = {
+          role: ChatCompletionRole.System,
+          content: instructions,
+        }
+        return systemMessage
+      })
+      .concat(
+        currentMessages.map<ChatCompletionMessage>((msg) => ({
+          role: msg.role,
+          content: msg.content[0]?.text.value ?? '',
+        }))
+      )
+
+    const messageRequest: MessageRequest = {
+      id: ulid(),
+      messages: messages,
+      threadId: activeThread.id,
+    }
+
+    const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
+
+    if (activeModel?.id !== modelId) {
+      setQueuedMessage(true)
+      await startModel(modelId)
+      setQueuedMessage(false)
+    }
+    events.emit(EventName.OnMessageSent, messageRequest)
+  }
 
   const sendChatMessage = async () => {
     if (!currentPrompt || currentPrompt.trim().length === 0) {
@@ -61,14 +105,15 @@ export default function useSendChatMessage() {
       }
       const assistantId = activeThread.assistants[0].assistant_id ?? ''
       const assistantName = activeThread.assistants[0].assistant_name ?? ''
+      const instructions = activeThread.assistants[0].instructions ?? ''
       const updatedThread: Thread = {
         ...activeThread,
         isFinishInit: true,
-        title: `${activeThread.assistants[0].assistant_name} with ${selectedModel.name}`,
         assistants: [
           {
             assistant_id: assistantId,
             assistant_name: assistantName,
+            instructions: instructions,
             model: {
               id: selectedModel.id,
               settings: selectedModel.settings,
@@ -90,18 +135,29 @@ export default function useSendChatMessage() {
     const prompt = currentPrompt.trim()
     setCurrentPrompt('')
 
-    const messages: ChatCompletionMessage[] = currentMessages
-      .map<ChatCompletionMessage>((msg) => ({
-        role: msg.role,
-        content: msg.content[0]?.text.value ?? '',
-      }))
-      .concat([
-        {
-          role: ChatCompletionRole.User,
-          content: prompt,
-        } as ChatCompletionMessage,
-      ])
-    console.debug(`Sending messages: ${JSON.stringify(messages, null, 2)}`)
+    const messages: ChatCompletionMessage[] = [
+      activeThread.assistants[0]?.instructions,
+    ]
+      .map<ChatCompletionMessage>((instructions) => {
+        const systemMessage: ChatCompletionMessage = {
+          role: ChatCompletionRole.System,
+          content: instructions,
+        }
+        return systemMessage
+      })
+      .concat(
+        currentMessages
+          .map<ChatCompletionMessage>((msg) => ({
+            role: msg.role,
+            content: msg.content[0]?.text.value ?? '',
+          }))
+          .concat([
+            {
+              role: ChatCompletionRole.User,
+              content: prompt,
+            } as ChatCompletionMessage,
+          ])
+      )
     const msgId = ulid()
     const messageRequest: MessageRequest = {
       id: msgId,
@@ -136,17 +192,18 @@ export default function useSendChatMessage() {
       ?.addNewMessage(threadMessage)
 
     const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
+
     if (activeModel?.id !== modelId) {
-      toaster({
-        title: 'Message queued.',
-        description: 'It will be sent once the model is done loading',
-      })
+      setQueuedMessage(true)
       await startModel(modelId)
+      setQueuedMessage(false)
     }
     events.emit(EventName.OnMessageSent, messageRequest)
   }
 
   return {
     sendChatMessage,
+    resendChatMessage,
+    queuedMessage,
   }
 }
