@@ -55,23 +55,17 @@ As Jan is development mode, you might get stuck on a broken build.
 
 To reset your installation:
 
-1. Delete Jan from your `/Applications` folder
+1. **Remove Jan from your Applications folder and Cache folder**
 
-1. Delete Application data:
-   ```sh
-   # Newer versions
-   rm -rf /Users/$(whoami)/Library/Application\ Support/jan
-
-   # Versions 0.2.0 and older
-   rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron
-   ```
-   
-1. Clear Application cache:
-   ```sh
-   rm -rf /Users/$(whoami)/Library/Caches/jan*
+   ```bash
+   make clean
    ```
 
-1. Use the following commands to remove any dangling backend processes:
+   This will remove all build artifacts and cached files:
+   - Delete Jan from your `/Applications` folder
+   - Clear Application cache in `/Users/$(whoami)/Library/Caches/jan`
+
+2. Use the following commands to remove any dangling backend processes:
 
     ```sh
     ps aux | grep nitro
@@ -123,6 +117,22 @@ make build
 ```
 
 This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
+
+## Nightly Build
+
+Nightly build is a process where the software is built automatically every night. This helps in detecting and fixing bugs early in the development cycle. The process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
+
+You can join our Discord server [here](https://discord.gg/FTk2MvZwJH) and go to channel [github-jan](https://discordapp.com/channels/1107178041848909847/1148534730359308298) to monitor the build process.
+
+The nightly build is triggered at 2:00 AM UTC every day.
+
+The nightly build can be downloaded from the url notified in the Discord channel. Please access the url from the browser and download the build artifacts from there.
+
+## Manual Build
+
+Manual build is a process where the software is built manually by the developers. This is usually done when a new feature is implemented or a bug is fixed. The process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
+
+It is similar to the nightly build process, except that it is triggered manually by the developers.
 
 ## Acknowledgements
 
