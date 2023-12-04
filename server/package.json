@@ -4,76 +4,23 @@
   "main": "./build/main.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
-  "homepage": "https://github.com/janhq/jan/tree/main/electron",
+  "homepage": "https://jan.ai",
   "description": "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers.",
-  "build": {
-    "appId": "jan.ai.app",
-    "productName": "Jan",
-    "files": [
-      "renderer/**/*",
-      "build/*.{js,map}",
-      "build/**/*.{js,map}",
-      "core/pre-install",
-      "core/plugin-manager/facade"
-    ],
-    "asarUnpack": [
-      "core/pre-install"
-    ],
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "janhq",
-        "repo": "jan"
-      }
-    ],
-    "extends": null,
-    "mac": {
-      "type": "distribution",
-      "entitlements": "./entitlements.mac.plist",
-      "entitlementsInherit": "./entitlements.mac.plist",
-      "notarize": {
-        "teamId": "YT49P7GXG4"
-      },
-      "icon": "icons/icon.png"
-    },
-    "linux": {
-      "target": [
-        "deb"
-      ],
-      "category": "Utility",
-      "icon": "icons/"
-    },
-    "win": {
-      "icon": "icons/icon.png"
-    },
-    "artifactName": "jan-${os}-${arch}-${version}.${ext}"
-  },
+  "build": "",
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "test:e2e": "playwright test --workers=1",
     "dev": "nodemon .",
-    "build": "tsc",
-    "build:test": "",
-    "build:publish": ""
+    "build": "tsc"
   },
   "dependencies": {
-    "@npmcli/arborist": "^7.1.0",
-    "@types/request": "^2.48.12",
-    "@uiball/loaders": "^1.3.0",
-    "express": "^4.18.2",
-    "pacote": "^17.0.4",
-    "request": "^2.88.2",
-    "request-progress": "^3.0.0",
-    "use-debounce": "^9.0.4"
   },
   "devDependencies": {
-    "@playwright/test": "^1.38.1",
     "@types/body-parser": "^1.19.5",
-    "@types/express": "^4.17.21",
     "@types/npmcli__arborist": "^5.6.4",
-    "@types/pacote": "^11.1.7",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
+    "dotenv": "^16.3.1",
     "eslint-plugin-react": "^7.33.2",
     "fastify": "^4.24.3",
     "nodemon": "^3.0.1",

@@ -1,17 +1,19 @@
 import fastify from 'fastify'
-
+import dotenv from 'dotenv'
 import v1API from './v1'
-const JAN_API_PORT = 1337;
 const server = fastify()
 
-const USER_ROOT_DIR = '.data'
+dotenv.config()
 server.register(v1API, {prefix: "/api/v1"})
 
 
+const JAN_API_PORT = Number.parseInt(process.env.JAN_API_PORT || '1337')
+const JAN_API_HOST = process.env.JAN_API_HOST || "0.0.0.0"
+
 server.listen({
   port: JAN_API_PORT, 
-  host: "0.0.0.0"
-}).then(()=>{
+  host: JAN_API_HOST
+}).then(() => {
   console.log(`JAN API listening at: http://0.0.0.0:${JAN_API_PORT}`);
 })
 
