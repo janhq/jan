@@ -7,6 +7,7 @@ import {
   ThreadMessage,
   ExtensionType,
   MessageStatus,
+  Model,
 } from '@janhq/core'
 import { ConversationalExtension } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -64,13 +65,13 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     }))
   }
 
-  async function handleModelStop(res: any) {
+  async function handleModelStopped(model: Model) {
     setTimeout(async () => {
       setActiveModel(undefined)
       setStateModel({ state: 'start', loading: false, model: '' })
       toaster({
         title: 'Success!',
-        description: `Model ${res.modelId} has been stopped.`,
+        description: `Model ${model.id} has been stopped.`,
       })
     }, 500)
   }
@@ -123,7 +124,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       events.on(EventName.OnMessageUpdate, handleMessageResponseUpdate)
       events.on(EventName.OnModelReady, handleModelReady)
       events.on(EventName.OnModelFail, handleModelFail)
-      events.on(EventName.OnModelStop, handleModelStop)
+      events.on(EventName.OnModelStopped, handleModelStopped)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
