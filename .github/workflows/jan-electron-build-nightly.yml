@@ -1,4 +1,4 @@
-name: Jan Build Electron App Nightly
+name: Jan Build Electron App Nightly or Manual
 
 on:
   schedule:
@@ -173,13 +173,26 @@ jobs:
           name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb
           path: ./electron/dist/*.deb
 
-  noti-discord:
+  noti-discord-nightly:
     needs: [build-macos, build-windows-x64, build-linux-x64]
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
         with:
           args: "Nightly build artifact: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}"
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+  noti-discord-manual:
+    needs: [build-macos, build-windows-x64, build-linux-x64]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Discord
+        uses: Ilshidur/action-discord@master
+        with:
+          args: "Manual build artifact: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}"
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
