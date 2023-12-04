@@ -46,13 +46,15 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
                 <span className="font-semibold text-muted-foreground">
                   Author
                 </span>
-                <p className="mt-2 font-medium">{model.metadata.author}</p>
+                <p className="mt-2 line-clamp-1 font-medium">
+                  {model.metadata.author}
+                </p>
               </div>
               <div>
                 <span className="mb-1 font-semibold text-muted-foreground">
                   Model ID
                 </span>
-                <p className="mt-2 font-medium">{model.id}</p>
+                <p className="mt-2 line-clamp-1 font-medium">{model.id}</p>
               </div>
               <div>
                 <span className="mb-1 font-semibold text-muted-foreground">
@@ -60,7 +62,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
                 </span>
                 <div className="mt-2 flex space-x-2">
                   {model.metadata.tags.map((tag, i) => (
-                    <Badge key={i} themes="primary">
+                    <Badge key={i} themes="primary" className="line-clamp-1">
                       {tag}
                     </Badge>
                   ))}
