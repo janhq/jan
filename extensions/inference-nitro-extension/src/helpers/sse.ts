@@ -15,8 +15,9 @@ export function requestInference(
     const requestBody = JSON.stringify({
       messages: recentMessages,
       model: model.id,
-      stream: model.parameters.stream || true,
-      max_tokens: model.parameters.max_tokens || 2048,
+      stream: true,
+      // Model parameters spreading
+      ...model.parameters,
     });
     fetch(INFERENCE_URL, {
       method: "POST",
