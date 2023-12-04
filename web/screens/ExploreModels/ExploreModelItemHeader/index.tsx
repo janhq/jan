@@ -57,7 +57,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 
   let downloadButton;
 
-  if (model.engine !== 'nitro') {
+  if (model.engine === 'openai') {
     downloadButton = (
       <Button onClick={() => onDownloadClick()}>
         Use
