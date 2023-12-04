@@ -1,5 +1,3 @@
-import { useContext } from 'react'
-
 import {
   Tooltip,
   TooltipContent,
@@ -11,9 +9,8 @@ import { motion as m } from 'framer-motion'
 import {
   MessageCircleIcon,
   SettingsIcon,
-  DatabaseIcon,
-  CpuIcon,
-  BookOpenIcon,
+  MonitorIcon,
+  LayoutGridIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -34,36 +31,51 @@ export default function RibbonNav() {
 
   const primaryMenus = [
     {
-      name: 'Getting Started',
-      icon: <BookOpenIcon size={20} className="flex-shrink-0" />,
-      state: MainViewState.Welcome,
+      name: 'Thread',
+      icon: (
+        <MessageCircleIcon
+          size={20}
+          className="flex-shrink-0 text-muted-foreground"
+        />
+      ),
+      state: MainViewState.Thread,
     },
     {
-      name: 'Chat',
-      icon: <MessageCircleIcon size={20} className="flex-shrink-0" />,
-      state: MainViewState.Chat,
+      name: 'Hub',
+      icon: (
+        <LayoutGridIcon
+          size={20}
+          className="flex-shrink-0 text-muted-foreground"
+        />
+      ),
+      state: MainViewState.Hub,
     },
   ]
 
   const secondaryMenus = [
     {
-      name: 'Explore Models',
-      icon: <CpuIcon size={20} className="flex-shrink-0" />,
-      state: MainViewState.ExploreModels,
-    },
-    {
-      name: 'My Models',
-      icon: <DatabaseIcon size={20} className="flex-shrink-0" />,
-      state: MainViewState.MyModels,
+      name: 'System Monitor',
+      icon: (
+        <MonitorIcon
+          size={20}
+          className="flex-shrink-0 text-muted-foreground"
+        />
+      ),
+      state: MainViewState.SystemMonitor,
     },
     {
       name: 'Settings',
-      icon: <SettingsIcon size={20} className="flex-shrink-0" />,
-      state: MainViewState.Setting,
+      icon: (
+        <SettingsIcon
+          size={20}
+          className="flex-shrink-0 text-muted-foreground"
+        />
+      ),
+      state: MainViewState.Settings,
     },
   ]
   return (
-    <div className="relative top-12 flex h-[calc(100%-48px)] w-16 flex-shrink-0 flex-col border-r border-border py-4">
+    <div className="relative top-12 flex h-[calc(100%-48px)] w-16 flex-shrink-0 flex-col border-r border-border bg-background py-4">
       <div className="mt-2 flex h-full w-full flex-col items-center justify-between">
         <div className="flex h-full w-full flex-col items-center justify-between">
           <div>
@@ -90,7 +102,7 @@ export default function RibbonNav() {
                         </div>
                         {isActive && (
                           <m.div
-                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-primary/50"
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200 dark:bg-secondary"
                             layoutId="active-state-primary"
                           />
                         )}
@@ -126,7 +138,7 @@ export default function RibbonNav() {
                         </div>
                         {isActive && (
                           <m.div
-                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-primary/50"
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200 dark:bg-secondary"
                             layoutId="active-state-secondary"
                           />
                         )}

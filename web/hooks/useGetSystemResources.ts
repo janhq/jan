@@ -6,12 +6,18 @@ import { MonitoringExtension } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import { extensionManager } from '@/extension/ExtensionManager'
-import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
+import {
+  cpuUsageAtom,
+  totalRamAtom,
+  usedRamAtom,
+} from '@/helpers/atoms/SystemBar.atom'
 
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
   const [cpu, setCPU] = useState<number>(0)
   const setTotalRam = useSetAtom(totalRamAtom)
+  const setUsedRam = useSetAtom(usedRamAtom)
+  const setCpuUsage = useSetAtom(cpuUsageAtom)
 
   const getSystemResources = async () => {
     if (
@@ -27,10 +33,12 @@ export default function useGetSystemResources() {
 
     const ram =
       (resourceInfor?.mem?.active ?? 0) / (resourceInfor?.mem?.total ?? 1)
+    if (resourceInfor?.mem?.active) setUsedRam(resourceInfor.mem.active)
     if (resourceInfor?.mem?.total) setTotalRam(resourceInfor.mem.total)
 
     setRam(Math.round(ram * 100))
     setCPU(Math.round(currentLoadInfor?.currentLoad ?? 0))
+    setCpuUsage(Math.round(currentLoadInfor?.currentLoad ?? 0))
   }
 
   useEffect(() => {
@@ -45,6 +53,7 @@ export default function useGetSystemResources() {
 
     // clean up interval
     return () => clearInterval(intervalId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return {

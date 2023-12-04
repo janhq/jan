@@ -35,7 +35,6 @@ export default function ModalCancelDownload({ model, isFromList }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [model.id]
   )
-  const models = useAtomValue(downloadingModelsAtom)
   const downloadState = useAtomValue(downloadAtom)
   const cancelText = `Cancel ${formatDownloadPercentage(downloadState.percent)}`
 
