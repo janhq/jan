@@ -32,7 +32,7 @@
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "cpx \"models/**\" \"electron/models/\" && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
-    "build:extensions:windows": "rimraf ./electron/pre-install/*.tgz && powershell -command \"$jobs = Get-ChildItem -Path './extensions' -Directory | ForEach-Object { Start-Job -ScriptBlock { param($_dir); Set-Location $_dir; npm install; npm run build:publish; } -ArgumentList $_.FullName }; $jobs | Wait-Job; $failed = $jobs | Where-Object { $_.State -ne 'Completed' -or $_.ChildJobs[0].JobStateInfo.State -ne 'Completed' }; if ($failed) { Exit 1 }\"",
+    "build:extensions:windows": "rimraf ./electron/pre-install/*.tgz && powershell -command \"$jobs = Get-ChildItem -Path './extensions' -Directory | ForEach-Object { Start-Job -Name ($_.Name) -ScriptBlock { param($_dir); Set-Location $_dir; npm install; npm run build:publish; } -ArgumentList $_.FullName }; $jobs | Wait-Job; $failed = $jobs | Where-Object { $_.State -ne 'Completed' -or $_.ChildJobs[0].JobStateInfo.State -ne 'Completed' }; if ($failed) { Exit 1 }\"",
     "build:extensions:linux": "rimraf ./electron/pre-install/*.tgz && find ./extensions -mindepth 1 -maxdepth 1 -type d -print0 | xargs -0 -n 1 -P 4 -I {} sh -c 'cd {} && npm install && npm run build:publish'",
     "build:extensions:darwin": "rimraf ./electron/pre-install/*.tgz && find ./extensions -mindepth 1 -maxdepth 1 -type d -print0 | xargs -0 -n 1 -P 4 -I {} sh -c 'cd {} && npm install && npm run build:publish'",
     "build:extensions": "run-script-os",
