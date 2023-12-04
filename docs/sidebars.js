@@ -81,6 +81,7 @@ const sidebars = {
       items: [
         "specs/engineering/chats",
         "specs/engineering/models",
+        "specs/engineering/engine",
         "specs/engineering/threads",
         "specs/engineering/messages",
         "specs/engineering/assistants",
