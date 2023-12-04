@@ -59,9 +59,7 @@ export default function DropdownListSidebar() {
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeThread, activeModel])
-
-  if (stateModel.loading) return null
+  }, [activeThread, activeModel, stateModel.loading])
 
   return (
     <Select
