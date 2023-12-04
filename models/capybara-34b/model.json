@@ -19,7 +19,7 @@
       "author": "NousResearch, The Bloke",
       "tags": ["34B", "Finetuned"],
       "size": 24320000000
-    },
-    "engine": "llama.cpp"
+    }, 
+    "engine": "nitro"
   }
   

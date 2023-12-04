@@ -20,6 +20,6 @@
       "tags": ["13B", "Finetuned"],
       "size": 9230000000
     },
-    "engine": "llama.cpp"
+    "engine": "nitro"
   }
   

@@ -19,6 +19,7 @@
       "author": "NeverSleep, The Bloke",
       "tags": ["34B", "Finetuned"],
       "size": 12040000000
-    }
+    },
+    "engine": "llama_cpp"
   }
   

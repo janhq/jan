@@ -20,5 +20,5 @@
       "tags": ["Tiny", "Finetuned"],
       "size": 1710000000
     },
-    "engine": "llama.cpp"
+    "engine": "llama_cpp"
   }  
