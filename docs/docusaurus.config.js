@@ -38,6 +38,8 @@ const config = {
     mermaid: true,
   },
 
+  noIndex: false,
+
   // Plugins we added
   plugins: [
     "docusaurus-plugin-sass",
@@ -140,14 +142,43 @@ const config = {
     metadata: [
       { name: 'description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
       { name: 'keywords', content: 'Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee' },
+      { name: 'robots', content: 'index, follow' },
       { property: 'og:title', content: 'Run your own AI | Jan' },
       { property: 'og:description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
       { property: 'og:image', content: 'https://jan.ai/img/jan-social-card.png' },
+      { property: 'og:type', content: 'website' },
       { property: 'twitter:card', content: 'summary_large_image' },
       { property: 'twitter:site', content: '@janhq_' }, 
       { property: 'twitter:title', content: 'Run your own AI | Jan' },
       { property: 'twitter:description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
       { property: 'twitter:image', content: 'https://jan.ai/img/jan-social-card.png' },
+    ],
+    headTags: [
+      // Declare a <link> preconnect tag
+      {
+        tagName: 'link',
+        attributes: {
+          rel: 'preconnect',
+          href: 'https://jan.ai/',
+        },
+      },
+      // Declare some json-ld structured data
+      {
+        tagName: 'script',
+        attributes: {
+          type: 'application/ld+json',
+        },
+        innerHTML: JSON.stringify({
+          '@context': 'https://schema.org/',
+          '@type': 'localAI',
+          name: 'Jan',
+          description: "Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.",
+          keywords: "Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee",
+          applicationCategory: "BusinessApplication",
+          operatingSystem: "Multiple",
+          url: 'https://jan.ai/',
+        }),
+      },
     ],
     navbar: {
       title: "Jan",
