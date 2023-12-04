@@ -9,8 +9,8 @@
     "settings": {
       "ctx_len": 2048,
       "system_prompt": "",
-      "user_prompt": "### Instruction: ",
-      "ai_prompt": "### Response: "
+      "user_prompt": "### Instruction:\n",
+      "ai_prompt": "### Response:\n"
     },
     "parameters": {
       "max_tokens": 2048
