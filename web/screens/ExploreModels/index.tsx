@@ -35,7 +35,7 @@ const ExploreModelsScreen = () => {
   const [tabActive, setTabActive] = useState('Model')
   const { downloadedModels } = useGetDownloadedModels()
   const [sortSelected, setSortSelected] = useState('All Model')
-  const sortMenu = ['All Model', 'Downloaded']
+  const sortMenu = ['All Model', 'Recommended', 'Downloaded']
 
   const filteredModels = models.filter((x) => {
     if (sortSelected === 'Downloaded') {
@@ -43,6 +43,8 @@ const ExploreModelsScreen = () => {
         x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
         downloadedModels.some((y) => y.id === x.id)
       )
+    } else if (sortSelected === 'Recommended') {
+      return x.metadata.tags.includes('Recommended')
     } else {
       return x.name.toLowerCase().includes(searchValue.toLowerCase())
     }
