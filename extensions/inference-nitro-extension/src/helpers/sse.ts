@@ -1,3 +1,4 @@
+import { Model } from "@janhq/core";
 import { Observable } from "rxjs";
 /**
  * Sends a request to the inference server to generate a response based on the recent messages.
@@ -6,21 +7,23 @@ import { Observable } from "rxjs";
  */
 export function requestInference(
   recentMessages: any[],
+  engine: EngineSettings,
+  model: Model,
   controller?: AbortController
 ): Observable<string> {
   return new Observable((subscriber) => {
     const requestBody = JSON.stringify({
       messages: recentMessages,
-      stream: true,
-      model: "gpt-3.5-turbo",
-      max_tokens: 2048,
+      model: model.id,
+      stream: model.parameters.stream || true,
+      max_tokens: model.parameters.max_tokens || 2048,
     });
     fetch(INFERENCE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Accept: "text/event-stream",
         "Access-Control-Allow-Origin": "*",
+        Accept: "text/event-stream",
       },
       body: requestBody,
       signal: controller?.signal,
