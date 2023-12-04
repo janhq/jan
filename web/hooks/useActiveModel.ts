@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   EventName,
-  ExtensionType,
-  InferenceExtension,
   events,
 } from '@janhq/core'
 import { Model, ModelSettingParams } from '@janhq/core'
@@ -60,8 +58,9 @@ export function useActiveModel() {
   }
 
   const stopModel = async (modelId: string) => {
+    const model = downloadedModels.find((e) => e.id === modelId)
     setStateModel({ state: 'stop', loading: true, model: modelId })
-    events.emit(EventName.OnModelStop, modelId)
+    events.emit(EventName.OnModelStop, model)
   }
 
   return { activeModel, startModel, stopModel, stateModel }
