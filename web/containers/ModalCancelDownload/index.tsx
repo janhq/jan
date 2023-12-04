@@ -12,6 +12,7 @@ import {
   ModalHeader,
   Button,
   ModalTitle,
+  Progress,
 } from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
@@ -21,7 +22,6 @@ import { useDownloadState } from '@/hooks/useDownloadState'
 import { formatDownloadPercentage } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
-import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   model: Model
@@ -46,7 +46,20 @@ export default function ModalCancelDownload({ model, isFromList }: Props) {
             {cancelText}
           </Button>
         ) : (
-          <Button>{cancelText}</Button>
+          <Button themes="secondaryBlue">
+            <div className="flex items-center space-x-2">
+              <span className="inline-block">Cancel</span>
+              <Progress
+                className="inline-block h-2 w-[80px] bg-blue-100"
+                value={
+                  formatDownloadPercentage(downloadState?.percent, {
+                    hidePercentage: true,
+                  }) as number
+                }
+              />
+              <span>{formatDownloadPercentage(downloadState.percent)}</span>
+            </div>
+          </Button>
         )}
       </ModalTrigger>
       <ModalContent>
