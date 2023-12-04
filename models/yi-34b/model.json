@@ -2,7 +2,7 @@
     "source_url": "https://huggingface.co/TheBloke/Yi-34B-Chat-GGUF/resolve/main/yi-34b-chat.Q5_K_M.gguf",
     "id": "yi-34b",
     "object": "model",
-    "name": "Yi 34B",
+    "name": "Yi 34B Q5",
     "version": "1.0",
     "description": "Yi-34B, a specialized chat model, is known for its diverse and creative responses and excels across various NLP tasks and benchmarks.",
     "format": "gguf",

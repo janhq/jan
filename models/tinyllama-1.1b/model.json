@@ -2,7 +2,7 @@
   "source_url": "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v0.6/resolve/main/ggml-model-q4_0.gguf",
   "id": "tinyllama-1.1b",
   "object": "model",
-  "name": "TinyLlama Chat 1.1B",
+  "name": "TinyLlama Chat 1.1B Q4",
   "version": "1.0",
   "description": "The TinyLlama project, featuring a 1.1B parameter Llama model, is pretrained on an expansive 3 trillion token dataset. Its design ensures easy integration with various Llama-based open-source projects. Despite its smaller size, it efficiently utilizes lower computational and memory resources, drawing on GPT-4's analytical prowess to enhance its conversational abilities and versatility.",
   "format": "gguf",

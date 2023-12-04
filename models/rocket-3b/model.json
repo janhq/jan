@@ -2,7 +2,7 @@
     "source_url": "https://huggingface.co/TheBloke/rocket-3B-GGUF/resolve/main/rocket-3b.Q4_K_M.gguf",
     "id": "rocket-3b",
     "object": "model",
-    "name": "Rocket 3B",
+    "name": "Rocket 3B Q4",
     "version": "1.0",
     "description": "Rocket-3B is a GPT-like model, primarily English, fine-tuned on diverse public datasets. It outperforms larger models in benchmarks, showcasing superior understanding and text generation, making it an effective chat model for its size.",
     "format": "gguf",

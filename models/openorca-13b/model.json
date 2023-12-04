@@ -2,7 +2,7 @@
     "source_url": "https://huggingface.co/TheBloke/Orca-2-13B-GGUF/resolve/main/orca-2-13b.Q5_K_M.gguf",
     "id": "openorca-13b",
     "object": "model",
-    "name": "Orca 2 13B",
+    "name": "Orca 2 13B Q5",
     "version": "1.0",
     "description": "Orca 2 is a finetuned version of LLAMA-2, designed primarily for single-turn responses in reasoning, reading comprehension, math problem solving, and text summarization.",
     "format": "gguf",

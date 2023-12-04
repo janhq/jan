@@ -4,7 +4,7 @@
     "object": "model",
     "name": "Mistral Instruct 7B Q5",
     "version": "1.0",
-    "description": "This is a 5-bit quantized version of MistralAI's Mistral Instruct 7B model.",
+    "description": "This is a 5-bit quantized iteration of MistralAI's Mistral Instruct 7b model, specifically designed for a comprehensive understanding through training on extensive internet data.",
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,

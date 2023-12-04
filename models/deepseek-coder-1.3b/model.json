@@ -2,7 +2,7 @@
     "source_url": "https://huggingface.co/TheBloke/deepseek-coder-1.3b-base-GGUF/resolve/main/deepseek-coder-1.3b-base.Q4_K_M.gguf",
     "id": "deepseek-coder-1.3b",
     "object": "model",
-    "name": "Deepseek Coder 1.3B",
+    "name": "Deepseek Coder 1.3B Q4",
     "version": "1.0",
     "description": "",
     "format": "gguf",
@@ -16,7 +16,7 @@
       "max_tokens": 2048
     },
     "metadata": {
-      "author": "deepseek, The Bloke",
+      "author": "Deepseek, The Bloke",
       "tags": ["Community Recommended", "Code", "Small size"],
       "size": 870000000
     }
