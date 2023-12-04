@@ -166,6 +166,17 @@ export type ThreadState = {
   error?: Error;
   lastMessage?: string;
 };
+/**
+ * Represents the inference engine.
+ * @stored
+ */
+
+enum InferenceEngine {
+  llama_cpp = "llama_cpp",
+  openai = "openai",
+  nvidia_triton = "nvidia_triton",
+  hf_endpoint = "hf_endpoint",
+}
 
 /**
  * Model type defines the shape of a model object.
@@ -234,6 +245,10 @@ export interface Model {
    * Metadata of the model.
    */
   metadata: ModelMetadata;
+  /**
+   * The model engine. Enum: "llamacpp" "openai"
+   */
+  engine: InferenceEngine;
 }
 
 export type ModelMetadata = {

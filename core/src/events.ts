@@ -8,6 +8,14 @@ export enum EventName {
   OnMessageResponse = "OnMessageResponse",
   /** The `OnMessageUpdate` event is emitted when a message is updated. */
   OnMessageUpdate = "OnMessageUpdate",
+  /** The `OnModelInit` event is emitted when a model inits. */
+  OnModelInit = "OnModelInit",
+  /** The `OnModelReady` event is emitted when a model ready. */
+  OnModelReady = "OnModelReady",
+  /** The `OnModelFail` event is emitted when a model fails loading. */
+  OnModelFail = "OnModelFail",
+  /** The `OnModelStop` event is emitted when a model fails loading. */
+  OnModelStop = "OnModelStop",
 }
 
 /**

@@ -7,9 +7,10 @@ import {
   ThreadMessage,
   ExtensionType,
   MessageStatus,
+  Model
 } from '@janhq/core'
 import { ConversationalExtension } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { extensionManager } from '@/extension'
 import {
@@ -21,9 +22,16 @@ import {
   threadsAtom,
 } from '@/helpers/atoms/Conversation.atom'
 
+import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+import { toaster } from '../Toast'
+
 export default function EventHandler({ children }: { children: ReactNode }) {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
+  const { downloadedModels } = useGetDownloadedModels()
+  const [activeModel, setActiveModel] = useAtom(activeModelAtom)
+  const [stateModel, setStateModel] = useAtom(stateModelAtom)
 
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const threads = useAtomValue(threadsAtom)
@@ -35,6 +43,42 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   async function handleNewMessageResponse(message: ThreadMessage) {
     addNewMessage(message)
+  }
+
+  async function handleModelReady(res: any) {
+      const model = downloadedModels.find((e) => e.id === res.modelId)
+      setActiveModel(model)
+      toaster({
+        title: 'Success!',
+        description: `Model ${res.modelId} has been started.`,
+      })
+      setStateModel(() => ({
+        state: 'stop',
+        loading: false,
+        model: res.modelId,
+      }))
+    }
+
+  async function handleModelStop(res: any) {
+    const model = downloadedModels.find((e) => e.id === res.modelId)
+    setTimeout(async () => {
+      setActiveModel(undefined)
+      setStateModel({ state: 'start', loading: false, model: '' })
+      toaster({
+        title: 'Success!',
+        description: `Model ${res.modelId} has been stopped.`,
+      })
+    }, 500)
+  }
+
+  async function handleModelFail(res: any) {
+      const errorMessage = `${res.error}`
+      alert(errorMessage)
+      setStateModel(() => ({
+        state: 'start',
+        loading: false,
+        model: res.modelId,
+      }))
   }
 
   async function handleMessageResponseUpdate(message: ThreadMessage) {
@@ -73,6 +117,9 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     if (window.core.events) {
       events.on(EventName.OnMessageResponse, handleNewMessageResponse)
       events.on(EventName.OnMessageUpdate, handleMessageResponseUpdate)
+      events.on(EventName.OnModelReady, handleModelReady)
+      events.on(EventName.OnModelFail, handleModelFail)
+      events.on(EventName.OnModelStop, handleModelStop)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

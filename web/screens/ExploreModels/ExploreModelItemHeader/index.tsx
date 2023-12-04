@@ -55,9 +55,23 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 
   const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
 
-  let downloadButton = (
-    <Button onClick={() => onDownloadClick()}>Download</Button>
-  )
+  let downloadButton;
+
+  if (model.engine !== 'nitro') {
+    downloadButton = (
+      <Button onClick={() => onDownloadClick()}>
+        Use
+      </Button>
+    );
+  } else if (model.engine === 'nitro') {
+    downloadButton = (
+      <Button onClick={() => onDownloadClick()}>
+        {model.metadata.size
+          ? `Download (${toGigabytes(model.metadata.size)})`
+          : 'Download'}
+      </Button>
+    );
+  }
 
   const onUseModelClick = () => {
     startModel(model.id)
