@@ -64,80 +64,15 @@ components:
     
     ListAssistantsResponse:
       type: object
-      properties:
-        id:
-          type: string
-          description: "The identifier of the model that was deleted."
-          example: "model-zephyr-7B"
-        object:
-          type: string
-          description: "Type of the object, indicating it's a model."
-          default: "model"
-        deleted:
-          type: boolean
-          description: "Indicates whether the model was successfully deleted."
-          example: true
 
     CreateAssistantResponse:
       type: object
-      properties:
-        id:
-          type: string
-          description: "The identifier of the model that was deleted."
-          example: "model-zephyr-7B"
-        object:
-          type: string
-          description: "Type of the object, indicating it's a model."
-          default: "model"
-        deleted:
-          type: boolean
-          description: "Indicates whether the model was successfully deleted."
-          example: true
       
     RetrieveAssistantResponse:
       type: object
-      properties:
-        id:
-          type: string
-          description: "The identifier of the model that was deleted."
-          example: "model-zephyr-7B"
-        object:
-          type: string
-          description: "Type of the object, indicating it's a model."
-          default: "model"
-        deleted:
-          type: boolean
-          description: "Indicates whether the model was successfully deleted."
-          example: true
-
+      
     ModifyAssistantResponse:
       type: object
-      properties:
-        id:
-          type: string
-          description: "The identifier of the model that was deleted."
-          example: "model-zephyr-7B"
-        object:
-          type: string
-          description: "Type of the object, indicating it's a model."
-          default: "model"
-        deleted:
-          type: boolean
-          description: "Indicates whether the model was successfully deleted."
-          example: true
       
     DeleteAssistantResponse:
       type: object
-      properties:
-        id:
-          type: string
-          description: "The identifier of the model that was deleted."
-          example: "model-zephyr-7B"
-        object:
-          type: string
-          description: "Type of the object, indicating it's a model."
-          default: "model"
-        deleted:
-          type: boolean
-          description: "Indicates whether the model was successfully deleted."
-          example: true
