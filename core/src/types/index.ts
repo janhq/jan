@@ -42,7 +42,7 @@ export type MessageRequest = {
   messages?: ChatCompletionMessage[];
 
   /** Runtime parameters for constructing a chat completion request **/
-  parameters?: ModelRuntimeParam;
+  parameters?: ModelRuntimeParams;
 
   /** Settings for constructing a chat completion request **/
   model?: ModelInfo
@@ -156,7 +156,7 @@ export type ThreadAssistantInfo = {
 export type ModelInfo = {
   id: string;
   settings: ModelSettingParams;
-  parameters: ModelRuntimeParam;
+  parameters: ModelRuntimeParams;
   engine: InferenceEngine;
 };
 
@@ -243,7 +243,7 @@ export interface Model {
   /**
    * The model runtime parameters.
    */
-  parameters: ModelRuntimeParam;
+  parameters: ModelRuntimeParams;
 
   /**
    * Metadata of the model.
@@ -287,7 +287,7 @@ export type ModelSettingParams = {
 /**
  * The available model runtime parameters.
  */
-export type ModelRuntimeParam = {
+export type ModelRuntimeParams = {
   temperature?: number;
   token_limit?: number;
   top_k?: number;
