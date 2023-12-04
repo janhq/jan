@@ -19,8 +19,10 @@ export function requestInference(
       messages: recentMessages,
       stream: true,
       model: model.id,
+      // Model parameters spreading
+      ...model.parameters,
     });
-    fetch(engine.base_url, {
+    fetch(`${engine.base_url}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
