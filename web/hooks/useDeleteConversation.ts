@@ -17,7 +17,6 @@ import {
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   threadsAtom,
-  getActiveThreadIdAtom,
   setActiveThreadIdAtom,
 } from '@/helpers/atoms/Conversation.atom'
 
@@ -25,14 +24,13 @@ export default function useDeleteThread() {
   const { activeModel } = useActiveModel()
   const [threads, setThreads] = useAtom(threadsAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
-  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const setActiveConvoId = useSetAtom(setActiveThreadIdAtom)
   const deleteMessages = useSetAtom(deleteConversationMessage)
   const cleanMessages = useSetAtom(cleanConversationMessages)
 
-  const cleanThread = async () => {
+  const cleanThread = async (activeThreadId: string) => {
     if (activeThreadId) {
       const thread = threads.filter((c) => c.id === activeThreadId)[0]
       cleanMessages(activeThreadId)
@@ -46,7 +44,7 @@ export default function useDeleteThread() {
     }
   }
 
-  const deleteThread = async () => {
+  const deleteThread = async (activeThreadId: string) => {
     if (!activeThreadId) {
       alert('No active thread')
       return
@@ -60,8 +58,8 @@ export default function useDeleteThread() {
       deleteMessages(activeThreadId)
       setCurrentPrompt('')
       toaster({
-        title: 'Chat successfully deleted.',
-        description: `Chat with ${activeModel?.name} has been successfully deleted.`,
+        title: 'Thread successfully deleted.',
+        description: `Thread with ${activeModel?.name} has been successfully deleted.`,
       })
       if (availableThreads.length > 0) {
         setActiveConvoId(availableThreads[0].id)

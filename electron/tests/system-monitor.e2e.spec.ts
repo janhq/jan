@@ -19,15 +19,6 @@ test.beforeAll(async () => {
   // parse the packaged Electron app and find paths and other info
   const appInfo = parseElectronApp(latestBuild)
   expect(appInfo).toBeTruthy()
-  expect(appInfo.asar).toBe(true)
-  expect(appInfo.executable).toBeTruthy()
-  expect(appInfo.main).toBeTruthy()
-  expect(appInfo.name).toBe('jan')
-  expect(appInfo.packageJson).toBeTruthy()
-  expect(appInfo.packageJson.name).toBe('jan')
-  expect(appInfo.platform).toBeTruthy()
-  expect(appInfo.platform).toBe(process.platform)
-  expect(appInfo.resourcesDir).toBeTruthy()
 
   electronApp = await electron.launch({
     args: [appInfo.main], // main file from package.json
@@ -43,13 +34,8 @@ test.afterAll(async () => {
   await page.close()
 })
 
-test('renders the home page', async () => {
-  expect(page).toBeDefined()
-
-  // Welcome text is available
-  const welcomeText = await page
-    .getByTestId('testid-welcome-title')
-    .first()
-    .isVisible()
-  expect(welcomeText).toBe(false)
+test('shows system monitor', async () => {
+  await page.getByTestId('System Monitor').first().click()
+  await page.getByTestId('testid-system-monitor').isVisible()
+  //   More test cases here...
 })

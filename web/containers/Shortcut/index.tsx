@@ -14,7 +14,7 @@ export default function ShortCut(props: { menu: string }) {
   }
 
   return (
-    <div className="inline-flex items-center justify-center rounded-md bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
+    <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
       <p>{getSymbol(os) + ' + ' + menu}</p>
     </div>
   )
