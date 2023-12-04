@@ -36,35 +36,33 @@ interface InitModelResponse {
  * TODO: Should it be startModel instead?
  */
 function initModel(wrapper: any): Promise<InitModelResponse> {
-  if (wrapper.settings.engine !== "llamacpp") {
-    return
-  }
-  // 1. Check if the model file exists
-  currentModelFile = wrapper.modelFullPath;
-  log.info("Started to load model " + wrapper.modelFullPath);
-
-  const settings = {
-    llama_model_path: currentModelFile,
-    ...wrapper.settings,
-  };
-
-  log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
-
-  return (
-    // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
-    validateModelVersion()
-      .then(checkAndUnloadNitro)
-      // 2. Spawn the Nitro subprocess
-      .then(spawnNitroProcess)
-      // 4. Load the model into the Nitro subprocess (HTTP POST request)
-      .then(() => loadLLMModel(settings))
-      // 5. Check if the model is loaded successfully
-      .then(validateModelStatus)
-      .catch((err) => {
-        log.error("error: " + JSON.stringify(err));
-        return { error: err, currentModelFile };
-      })
-  );
+    currentModelFile = wrapper.modelFullPath;
+    if (wrapper.model.engine !== "nitro") {
+      return Promise.resolve({ error: "Not a nitro model" })
+    }
+    else {
+      log.info("Started to load model " + wrapper.model.modelFullPath);
+      const settings = {
+        llama_model_path: currentModelFile,
+        ...wrapper.model.settings,
+      };
+      log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
+      return (
+        // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
+        validateModelVersion()
+          .then(checkAndUnloadNitro)
+          // 2. Spawn the Nitro subprocess
+          .then(spawnNitroProcess)
+          // 4. Load the model into the Nitro subprocess (HTTP POST request)
+          .then(() => loadLLMModel(settings))
+          // 5. Check if the model is loaded successfully
+          .then(validateModelStatus)
+          .catch((err) => {
+            log.error("error: " + JSON.stringify(err));
+            return { error: err, currentModelFile };
+          })
+        );
+    }
 }
 
 /**
