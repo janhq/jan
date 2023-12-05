@@ -33,7 +33,6 @@ export function handleAppUpdates() {
 
   /* App Update Error */
   autoUpdater.on("error", (info: any) => {
-    dialog.showMessageBox({ message: info.message });
     WindowManager.instance.currentWindow?.webContents.send(
       "APP_UPDATE_ERROR",
       {}
