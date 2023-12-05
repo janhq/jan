@@ -59,15 +59,17 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
     <Button onClick={() => onDownloadClick()}>Download</Button>
   )
 
+  const onUseModelClick = () => {
+    startModel(model.id)
+    setMainViewState(MainViewState.Thread)
+  }
+
   if (isDownloaded) {
     downloadButton = (
       <Button
         themes="success"
         className="min-w-[98px]"
-        onClick={() => {
-          startModel(model.id)
-          setMainViewState(MainViewState.MyModels)
-        }}
+        onClick={onUseModelClick}
       >
         Use
       </Button>
