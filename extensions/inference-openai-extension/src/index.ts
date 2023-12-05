@@ -57,7 +57,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
    */
   onLoad(): void {
     fs.mkdir(JanInferenceOpenAIExtension._homeDir)
-    this.writeDefaultEngineSettings()
+    JanInferenceOpenAIExtension.writeDefaultEngineSettings()
 
     // Events subscription
     events.on(EventName.OnMessageSent, (data) =>
@@ -90,7 +90,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     return
   }
 
-  private async writeDefaultEngineSettings() {
+  static async writeDefaultEngineSettings() {
     try {
       const engine_json = join(JanInferenceOpenAIExtension._homeDir, JanInferenceOpenAIExtension._engineMetadataFileName)
       if (await fs.checkFileExists(engine_json)) {
@@ -156,6 +156,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     if (model.engine !== 'openai') { return }
     else {
       JanInferenceOpenAIExtension._currentModel = model
+      JanInferenceOpenAIExtension.writeDefaultEngineSettings()
       // Todo: Check model list with API key
       events.emit(EventName.OnModelReady, model)
       // events.emit(EventName.OnModelFail, model)
