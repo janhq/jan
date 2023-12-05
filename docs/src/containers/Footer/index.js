@@ -71,11 +71,15 @@ export default function Footer() {
       <div className="container">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-2 lg:grid-cols-6">
           <div className="lg:col-span-3 col-span-2">
-            <h6 className="mb-3">Jan</h6>
+            <div className="flex items-center space-x-2 mb-3">
+              <img alt="Jan Logo" src="img/logo.svg" />
+              <h6 className="">Jan</h6>
+            </div>
             <div className="w-full lg:w-1/2">
               <p className="dark:text-gray-400 text-gray-600">
-                Run Large Language Models locally on Windows, Mac and Linux.
-                Available on Desktop and Cloud-Native.
+                Jan is the open-source, self-hosted&nbsp;
+                <br className="hidden lg:block" />
+                &nbsp;alternative to ChatGPT.
               </p>
             </div>
           </div>
@@ -103,7 +107,7 @@ export default function Footer() {
           })}
         </div>
       </div>
-      <div className="container mt-8">
+      <div className="container mt-6">
         <span className="dark:text-gray-300 text-gray-700">
           &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd.
         </span>
