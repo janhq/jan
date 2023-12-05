@@ -1,5 +1,23 @@
 import React from "react";
 
+import { AiOutlineGithub, AiOutlineTwitter } from "react-icons/ai";
+import { BiLogoDiscordAlt } from "react-icons/bi";
+
+const socials = [
+  {
+    icon: <AiOutlineTwitter className="text-xl text-black dark:text-white" />,
+    href: "https://twitter.com/janhq_",
+  },
+  {
+    icon: <BiLogoDiscordAlt className="text-xl text-black dark:text-white" />,
+    href: "https://discord.com/invite/FTk2MvZwJH",
+  },
+  {
+    icon: <AiOutlineGithub className="text-lg text-black dark:text-white" />,
+    href: "https://github.com/janhq/jan",
+  },
+];
+
 const menus = [
   {
     name: "For Developers",
@@ -72,7 +90,7 @@ export default function Footer() {
         <div className="grid grid-cols-2 gap-8 md:grid-cols-2 lg:grid-cols-6">
           <div className="lg:col-span-3 col-span-2">
             <div className="flex items-center space-x-2 mb-3">
-              <img alt="Jan Logo" src="img/logo.svg" />
+              <img alt="Jan Logo" src="/img/logo.svg" />
               <h6 className="">Jan</h6>
             </div>
             <div className="w-full lg:w-1/2">
@@ -81,6 +99,18 @@ export default function Footer() {
                 <br className="hidden lg:block" />
                 &nbsp;alternative to ChatGPT.
               </p>
+
+              <div className="mt-4">
+                <div className="flex items-center gap-x-3">
+                  {socials.map((social, i) => {
+                    return (
+                      <a key={i} href={social.href} target="_blank">
+                        {social.icon}
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
           {menus.map((menu, i) => {

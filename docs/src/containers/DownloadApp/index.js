@@ -4,22 +4,22 @@ import { FaWindows, FaApple, FaLinux } from "react-icons/fa";
 
 const systemsTemplate = [
   {
-    name: "Download for Mac (M1/M2)",
+    name: "Mac Silicon",
     logo: FaApple,
     fileFormat: "{appname}-mac-arm64-{tag}.dmg",
   },
   {
-    name: "Download for Mac (Intel)",
+    name: "Mac (Intel)",
     logo: FaApple,
     fileFormat: "{appname}-mac-x64-{tag}.dmg",
   },
   {
-    name: "Download for Windows",
+    name: "Windows",
     logo: FaWindows,
     fileFormat: "{appname}-win-x64-{tag}.exe",
   },
   {
-    name: "Download for Linux",
+    name: "Linux",
     logo: FaLinux,
     fileFormat: "{appname}-linux-amd64-{tag}.deb",
   },
@@ -90,66 +90,29 @@ export default function DownloadApp() {
 
   return (
     <div>
-      <div className="flex flex-col gap-y-4">
-        <div className="flex items-center space-x-4">
-          <h6 className="w-[100px]">Windows</h6>
-          {systems
-            .filter((x) => x.name.includes("Windows"))
-            .map((system) => (
-              <a
-                href={system.href}
-                className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-gray-400 dark:border-gray-700 text-gray-600 dark:text-white"
-              >
-                <system.logo />
-                <span>{system.name}</span>
-              </a>
-            ))}
-        </div>
-        <div className="flex items-start lg:items-center space-x-4">
-          <h6 className="w-[100px]">Mac</h6>
-          <div className="flex flex-col lg:flex-row gap-4">
-            {systems
-              .filter((x) => x.name.includes("Mac"))
-              .map((system) => (
-                <a
-                  href={system.href}
-                  className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-gray-400 dark:border-gray-700 text-gray-600 dark:text-white"
-                >
-                  <system.logo />
-                  <span>{system.name}</span>
-                </a>
-              ))}
-          </div>
-        </div>
-        <div className="flex items-center space-x-4">
-          <h6 className="w-[100px]">Linux</h6>
-          {systems
-            .filter((x) => x.name.includes("Linux"))
-            .map((system) => (
-              <a
-                href={system.href}
-                className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-gray-400 dark:border-gray-700 text-gray-600 dark:text-white"
-              >
-                <system.logo />
-                <span>{system.name}</span>
-              </a>
-            ))}
+      <div className="flex flex-col lg:flex-row items-center justify-center gap-4 mb-4">
+        <span className="text-zinc-500 text-lg font-medium  inline-block">
+          Download for PC
+        </span>
+        <div className="bg-yellow-50 text-yellow-700 space-x-2 px-4 py-2 border border-yellow-400 rounded-lg font-semibold">
+          <span>🚧</span>
+          <span>
+            Warning: Jan is in the process of being built. Expect bugs!
+          </span>
         </div>
       </div>
-
-      {/* {systems.map((system) => (
-        <a
-          href={system.href}
-          className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-gray-400 dark:border-gray-700 text-gray-600 dark:text-white"
-        >
-          <img
-            src={system.logo}
-            alt="Logo"
-            className="w-3 mr-3 -mt-1 flex-shrink-0"
-          />
-          <span>{system.name}</span>
-        </a>
-      ))} */}
+      <div className="mx-auto text-center">
+        {systems.map((system, i) => (
+          <a
+            key={i}
+            href={system.href}
+            className="inline-flex m-2 px-4 py-2 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-gray-400 dark:border-gray-700 text-black dark:text-white bg-neutral-50 min-w-[200px] dark:bg-[#18181B]"
+          >
+            <system.logo />
+            <span>{system.name}</span>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }

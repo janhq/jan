@@ -1,17 +1,33 @@
 @layer components {
+  .card-gradient {
+    background: radial-gradient(
+        58.83% 95.12% at 62.37% 97.91%,
+        rgba(238, 203, 255, 0.59) 0%,
+        rgba(255, 255, 255, 0) 100%
+      ),
+      linear-gradient(
+        155deg,
+        rgba(50, 107, 255, 0.8) 68.16%,
+        rgba(194, 226, 255, 0.8) 94.33%
+      );
+
+    backdrop-filter: blur(7.174633026123047px);
+  }
+
   .card-link-bg {
-    background: linear-gradient(180deg, #fff 0%, #fff 100%);
+    background: linear-gradient(180deg, #fafafa 0%, #ededed 100%);
     box-shadow:
-      0px 10px 10px -5px rgba(0, 0, 0, 0.1),
-      0px 20px 25px -5px rgba(0, 0, 0, 0.1),
-      0px 1px 2px 0px #f1f1f1 inset;
+      0px 4px 12px 0px rgba(0, 0, 0, 0.12),
+      0px -1px 1px 0px rgba(0, 0, 0, 0.1) inset,
+      0px 1px 1px 0px #fff inset;
   }
 
   .card-link-bg-dark {
-    background: linear-gradient(180deg, #101118 0%, #101118 100%);
+    background: var(--color-bg-elevated, #27272a);
     box-shadow:
-      0px 10px 10px -5px rgba(0, 0, 0, 0.3),
-      0px 1px 2px 0px #525154 inset;
+      0px 4px 12px 0px rgba(0, 0, 0, 0.12),
+      0px -1px 1px 0px rgba(0, 0, 0, 0.1) inset,
+      0px 1px 1px 0px #4c4c4c inset;
   }
   .card {
     @apply rounded-xl border bg-gray-50 border-gray-50 dark:border-[#202231] dark:bg-[#111217]/50;

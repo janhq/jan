@@ -1,5 +1,4 @@
 @layer base {
-  
   html[data-theme="light"] {
     --custom-radial-blur: #e1e7fd;
     --ifm-background-color: #fff;
@@ -53,12 +52,12 @@
     display: inline-block;
     padding: 2px 8px;
     margin: 0;
-    background-color: #228B22;
+    background-color: #228b22;
     color: #000;
     font-size: 13px;
     vertical-align: middle;
     line-height: 1.6;
     border-radius: 4px;
     font-weight: var(--ifm-font-weight-bold);
-}
+  }
 }

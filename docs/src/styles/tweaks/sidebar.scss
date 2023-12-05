@@ -7,7 +7,11 @@
 }
 
 [class*="sidebar_"] {
-  padding-top: 0 !important;
+  padding-top: 0px !important;
+}
+
+.navbar-sidebar__back {
+  padding-top: 20px !important;
 }
 
 [class*="sidebarViewport_"] {

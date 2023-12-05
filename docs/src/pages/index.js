@@ -10,8 +10,17 @@ import ThemedImage from "@theme/ThemedImage";
 
 import SocialButton from "@site/src/containers/SocialButton";
 
+import { IoArrowDown } from "react-icons/io5";
+
 export default function Home() {
   const { siteConfig } = useDocusaurusContext();
+
+  const handleAnchorLink = () => {
+    document
+      .getElementById("download-section")
+      .scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
     <>
       <Banner />
@@ -20,24 +29,58 @@ export default function Home() {
         description="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server."
       >
         <main>
-          <div className="grid grid-cols-1 lg:grid-cols-12 -mt-1 gap-8 items-center relative">
-            <div className="col-span-full lg:col-start-2 lg:col-span-5 lg:text-left text-center relative z-10">
-              <h1 className="text-7xl font-semibold leading-tight lg:leading-tight">
-                Bringing AI to <br /> your Desktop
+          <div className="grid grid-cols-1 lg:grid-cols-12 -mt-1 gap-8 items-center relative min-h-[calc(100vh-96px)] ">
+            <div className="col-span-full lg:col-start-2 lg:col-span-5 text-left relative z-10 px-4 py-6">
+              <img
+                src="/img/homepage/element-hero-blur.png"
+                alt="Element blur"
+                className="hidden lg:block absolute blur-3xl opacity-30 right-32 -bottom-32"
+              />
+              <div className="flex items-center space-x-2 mb-3">
+                <img alt="Jan Logo" src="img/logo.svg" width={36} height={36} />
+                <span className="text-zinc-500 text-4xl font-medium">
+                  Meet Jan
+                </span>
+              </div>
+              <h1 className="text-5xl lg:text-7xl font-semibold leading-tight lg:leading-tight mt-2">
+                Bringing AI to <br /> your Desktop{" "}
+                <span>
+                  <img
+                    src="/img/homepage/element-hero-heading.png"
+                    alt="Element hero heading"
+                    className="w-16 inline-block"
+                  />
+                </span>
               </h1>
-              <p className="text-2xl mt-3">
-                Open-source ChatGPT alternative that runs 100% offline on your
+              <p className="text-2xl mt-3 leading-relaxed text-zinc-500">
+                Open-source ChatGPT alternative that runs{" "}
+                <br className="hidden lg:block" /> 100% offline on your
                 computer.
               </p>
               <div className="mt-8">
-                <SocialButton />
+                <div
+                  onClick={() => handleAnchorLink()}
+                  className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
+                >
+                  <span>Download Jan for PC</span>
+                </div>
+              </div>
+
+              <div
+                onClick={() => handleAnchorLink()}
+                className="hidden lg:inline-block cursor-pointer"
+              >
+                <div className="mt-16 flex items-center space-x-2">
+                  <p>Find out more</p>
+                  <IoArrowDown size={24} className="animate-bounce-down" />
+                </div>
               </div>
             </div>
 
-            <div className="col-span-full lg:col-span-6">
-              <div className="relative text-center">
+            <div className="col-span-full lg:col-span-6 h-full">
+              <div className="relative text-center h-full">
                 <ThemedImage
-                  className="w-full object-cover mr-auto"
+                  className="w-full object-cover mr-auto h-full"
                   alt="App screenshots"
                   sources={{
                     light: useBaseUrl(
@@ -49,138 +92,226 @@ export default function Home() {
               </div>
             </div>
           </div>
-          {/* <div className="container">
-          </div> */}
 
-          {/* <div className="bg-gray-50 dark:bg-[#09090B]/20 border-y border-gray-00 dark:border-gray-800 mt-10 py-10">
+          <div
+            className="dark:bg-[#09090B]/20 border-t border-zinc-200 dark:border-gray-800 py-16"
+            id="download-section"
+          >
             <div className="container">
               <div className="w-full lg:w-3/4 mx-auto">
                 <DownloadApp />
               </div>
             </div>
-          </div> */}
+          </div>
 
-          {/* <div className="container py-14">
-            <div className="mb-10">
-              <h2 className="h1 text-center lg:text-left">Explore Jan</h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              <div className="card relative">
-                <div className="p-8 mb-8">
-                  <h4>Take Control</h4>
-                  <p className="mt-2">
-                    Jan runs 100% on your own machine, privately, predictably
-                    and even in offline, with no surprise bills
-                  </p>
-                </div>
+          <div className="dark:bg-[#09090B]/20 pb-36">
+            <div className="container h-full ">
+              <div className="w-full lg:w-3/4 mx-auto relative rounded-xl py-10">
                 <img
-                  src="img/homepage/full-control.svg"
-                  alt="Full Control Illustration"
-                  className="relative -bottom-2 left-0"
+                  src="/img/homepage/element-bg-open-source.png"
+                  alt="Element Open Source BG"
+                  className="absolute w-full h-full object-cover rounded-xl top-0"
                 />
-              </div>
-
-              <div className="card relative">
-                <div className="p-8 mb-8">
-                  <h4>100% Open Source</h4>
-                  <p className="mt-2">
-                    Say goodbye to black boxes. Jan has well-documented code and
-                    stores data in open-format files that you can inspect,
-                    verify and tinker with.
-                  </p>
-                </div>
-                <img
-                  src="img/homepage/open-source.svg"
-                  alt="Full Control Illustration"
-                  className="relative -bottom-2 left-0"
-                />
-              </div>
-
-              <div className="card relative">
-                <div className="p-8 mb-8">
-                  <h4>Extensions</h4>
-                  <p className="mt-2">
-                    Jan has a powerful Extensions API inspired by VSCode. In
-                    fact, most of Jan's core services are built as extensions.
-                  </p>
-                </div>
-                <img
-                  src="img/homepage/extentions.svg"
-                  alt="Extentions Illustration"
-                  className="relative -bottom-2 left-0"
-                />
-              </div>
-            </div>
-          </div> */}
-
-          {/* <div className="container mt-8 pb-16 relative">
-            <div className="text-center">
-              <h2 className="h1">No-fuss Compatibility</h2>
-              <p className="mt-2 leading-relaxed">
-                Jan's API aims to be a drop-in replacement for OpenAI's REST
-                API, <br /> with a local server that runs at port{" "}
-                <span className="bg-indigo-600 py-1 px-2 text-white font-bold rounded-full">
-                  1337
-                </span>
-              </p>
-            </div>
-            <div className="w-full lg:w-1/2 mx-auto mt-10">
-              <h4 className="mb-4">Endpoints</h4>
-              <div className="flex flex-col gap-y-4">
-                <div className="dark:bg-[#27272A]/50 bg-[#F4F4F5]/50 border border-gray-300 dark:border-none py-2 px-4 rounded-md relative">
-                  <div className="flex gap-x-2 items-center">
-                    <p>/chat/completions</p>
-                  </div>
-                  <div className="absolute bg-yellow-500 py-1 px-2 rounded-lg top-1 right-1">
-                    <span className="text-sm text-yellow-800 font-semibold">
-                      Partial
-                    </span>
-                  </div>
-                </div>
-                <div className="dark:bg-[#27272A]/50 bg-[#F4F4F5]/50 border border-gray-300 dark:border-none py-2 px-4 rounded-md relative">
-                  <div className="flex gap-x-2 items-center">
-                    <p>/models</p>
-                    <div className="absolute bg-green-500 py-1 px-2 rounded-lg top-1 right-1">
-                      <span className="text-sm text-green-800 font-semibold">
-                        Complete
-                      </span>
+                <div className="grid grid-cols-12 gap-4 px-4 items-center relative z-20">
+                  <div className="col-span-full lg:col-span-7 order-2 lg:order-1 relative">
+                    <div className="relative lg:-left-14 overflow-hidden rounded-lg group">
+                      <div className="hidden group-hover:flex absolute top-0 left-3 rounded-xl bg-black/30 w-[calc(100%-23px)] h-[calc(100%-20px)] items-center justify-center transition-all">
+                        <a
+                          href="https://github.com/orgs/janhq/projects/5/views/12"
+                          target="_blank"
+                          className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 text-black bg-white"
+                        >
+                          <span>View Roadmap</span>
+                        </a>
+                      </div>
+                      <img
+                        src="/img/homepage/roadmap.png"
+                        alt="Element Roadmap"
+                        className="h-full w-full object-cover"
+                      />
                     </div>
                   </div>
-                </div>
-                <div className="dark:bg-[#27272A]/50 bg-[#F4F4F5]/50 border border-gray-300 dark:border-none py-2 px-4 rounded-md relative">
-                  <div className="flex gap-x-2 items-center">
-                    <p>/threads</p>
-                    <div className="absolute bg-yellow-500 py-1 px-2 rounded-lg top-1 right-1">
-                      <span className="text-sm text-yellow-800 font-semibold">
-                        Partial
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="dark:bg-[#27272A]/50 bg-[#F4F4F5]/50 border border-gray-300 dark:border-none py-2 px-4 rounded-md relative">
-                  <div className="flex gap-x-2 items-center">
-                    <p>/messages</p>
-                    <div className="absolute bg-yellow-500 py-1 px-2 rounded-lg top-1 right-1">
-                      <span className="text-sm text-yellow-800 font-semibold">
-                        Partial
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="dark:bg-[#27272A]/50 bg-[#F4F4F5]/50 border border-gray-300 dark:border-none py-2 px-4 rounded-md relative">
-                  <div className="flex gap-x-2 items-center">
-                    <p>/runs</p>
-                    <div className="absolute bg-yellow-500 py-1 px-2 rounded-lg top-1 right-1">
-                      <span className="text-sm text-yellow-800 font-semibold">
-                        Partial
-                      </span>
+                  <div className="col-span-full lg:col-span-5 order-1 lg:order-2 text-black">
+                    <p className="text-4xl font-semibold">100% open source</p>
+                    <p className="leading-relaxed w-full lg:w-3/4 mt-4">
+                      Our core team believes that AI should be open source, and
+                      Jan is built in public.
+                    </p>
+                    <div className="mt-6">
+                      <SocialButton />
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div> */}
+          </div>
+
+          <div className="dark:bg-[#27272A] bg-zinc-100 pt-20 pb-10">
+            <div className="container">
+              <div className="w-full lg:w-3/4 mx-auto relative">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                  <div className="col-span-5">
+                    <p className="text-4xl font-semibold">Desktop App</p>
+                    <p className="text-zinc-600 dark:text-zinc-400 mt-4 text-lg leading-relaxed">
+                      <b className="text-bold text-black dark:text-white">
+                        10x productivity
+                      </b>{" "}
+                      with customizable AI <br className="hidden lg:block" />{" "}
+                      assistants, global hotkeys, and in-line AI.
+                    </p>
+                  </div>
+                  <div className="col-span-7">
+                    <div className="bg-white dark:bg-[#09090B]/50 h-[375px] border border-zinc-200 dark:border-gray-800 rounded-xl overflow-hidden">
+                      <ThemedImage
+                        className="object-cover w-full object-center mx-auto h-full lg:-left-4 relative"
+                        alt="App screenshots"
+                        sources={{
+                          light: useBaseUrl(
+                            "/img/homepage/desktop-app-light.png"
+                          ),
+                          dark: useBaseUrl(
+                            "/img/homepage/desktop-app-dark.png"
+                          ),
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="dark:bg-[#27272A] bg-zinc-100 pb-20 pt-10">
+            <div className="container">
+              <div className="w-full lg:w-3/4 mx-auto relative ">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                  <div className="col-span-5">
+                    <div className="flex items-center">
+                      <p className="text-4xl font-semibold">Mobile App</p>
+                      <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block ml-2 rounded-md text-sm mt-1">
+                        Coming Soon
+                      </span>
+                    </div>
+                    <p className="text-zinc-600 dark:text-zinc-400 mt-4 text-lg leading-relaxed">
+                      Take your AI assistants on the go.{" "}
+                      <br className="hidden lg:block" /> Seamless integration
+                      into your&nbsp;
+                      <b className="text-bold text-black dark:text-white">
+                        mobile <br className="hidden lg:block" /> workflows
+                      </b>
+                      &nbsp; with elegant features.
+                    </p>
+                  </div>
+                  <div className="col-span-7">
+                    <div className="bg-white dark:bg-[#09090B]/50 h-[375px] border border-zinc-200 dark:border-gray-800 rounded-xl">
+                      <ThemedImage
+                        className="object-cover w-full object-center mx-auto h-full"
+                        alt="App screenshots"
+                        sources={{
+                          light: useBaseUrl(
+                            "/img/homepage/mobile-app-light.png"
+                          ),
+                          dark: useBaseUrl("/img/homepage/mobile-app-dark.png"),
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="dark:bg-[#09090B]/20">
+            <div className="container py-32">
+              <div className="w-full xl:w-10/12 mx-auto relative">
+                <div className="text-center">
+                  <div className="card-link-bg dark:card-link-bg-dark px-4 py-2 inline-flex rounded-xl items-center space-x-4">
+                    <img
+                      src="/img/homepage/ic-offline.png"
+                      alt="Icon Offline"
+                      className="w-9"
+                    />
+                    <img
+                      src="/img/homepage/ic-private.png"
+                      alt="Icon Offline"
+                      className="w-9"
+                    />
+                    <img
+                      src="/img/homepage/ic-folder.png"
+                      alt="Icon Offline"
+                      className="w-9"
+                    />
+                  </div>
+                  <div className="mt-8">
+                    <h6 className="text-4xl font-semibold">
+                      Offline and Local First
+                    </h6>
+                    <p className="mt-2 leading-relaxed text-zinc-600 dark:text-zinc-400">
+                      Conversations, preferences, and model usage stay on{" "}
+                      <br className="hidden lg:block" /> your computer—secure,
+                      exportable, and can be deleted at any time.
+                    </p>
+
+                    <div className="grid grid-cols-12 mt-20 text-left gap-8">
+                      <div className="col-span-full lg:col-span-4">
+                        <div className="dark:bg-[#27272A] bg-zinc-100 rounded-xl p-8 min-h-[450px]">
+                          <h6 className="text-4xl font-semibold">
+                            OpenAI Compatible
+                          </h6>
+                          <p className="mt-4 leading-relaxed text-zinc-600 dark:text-zinc-400">
+                            Jan provides an OpenAI-equivalent API{" "}
+                            <br className="hidden lg:block" /> server at&nbsp;
+                            <b>localhost:</b>&nbsp;
+                            <span className="bg-blue-600 text-white font-bold py-0.5 px-2 rounded-lg">
+                              1337
+                            </span>{" "}
+                            that can be used as a drop-in replacement with
+                            compatible apps.
+                          </p>
+
+                          <div className="mt-6">
+                            <div className="mb-4">
+                              <div className="bg-white dark:bg-[#18181B] shadow-lg py-2 px-4 inline-flex rounded-xl">
+                                <p className="font-medium">
+                                  /chats/completions
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mb-4">
+                              <div className="bg-white dark:bg-[#18181B] shadow-lg py-2 px-4 inline-flex rounded-xl">
+                                <p className="font-medium">
+                                  Local server and API
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mb-4">
+                              <div className="bg-white dark:bg-[#18181B] shadow-lg py-2 px-4 inline-flex rounded-xl">
+                                <p className="font-medium">
+                                  Assistants framework
+                                  <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block ml-2 rounded-md text-sm">
+                                    Coming Soon
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-span-full lg:col-span-8 items-center">
+                        <div className="card-gradient rounded-xl h-full relative text-center min-h-[450px]">
+                          <img
+                            src="/img/homepage/status.png"
+                            alt="Element status"
+                            className="w-3/4 lg:p-20 object-cover absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </main>
       </Layout>
     </>
