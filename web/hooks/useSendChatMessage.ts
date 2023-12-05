@@ -59,6 +59,7 @@ export default function useSendChatMessage() {
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
     ]
+      .filter((e) => e && e.trim() !== '')
       .map<ChatCompletionMessage>((instructions) => {
         const systemMessage: ChatCompletionMessage = {
           role: ChatCompletionRole.System,
@@ -138,6 +139,7 @@ export default function useSendChatMessage() {
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
     ]
+      .filter((e) => e && e.trim() !== '')
       .map<ChatCompletionMessage>((instructions) => {
         const systemMessage: ChatCompletionMessage = {
           role: ChatCompletionRole.System,

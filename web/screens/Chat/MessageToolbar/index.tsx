@@ -13,13 +13,14 @@ import { twMerge } from 'tailwind-merge'
 
 import { toaster } from '@/containers/Toast'
 
+import useSendChatMessage from '@/hooks/useSendChatMessage'
+
 import { extensionManager } from '@/extension'
 import {
   deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
-import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
@@ -82,12 +83,14 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
         >
           <Copy size={14} />
         </div>
-        <div
-          className="cursor-pointer px-2 py-2 hover:bg-background/80"
-          onClick={onDeleteClick}
-        >
-          <Trash2Icon size={14} />
-        </div>
+        {message.status === MessageStatus.Ready && (
+          <div
+            className="cursor-pointer px-2 py-2 hover:bg-background/80"
+            onClick={onDeleteClick}
+          >
+            <Trash2Icon size={14} />
+          </div>
+        )}
       </div>
     </div>
   )

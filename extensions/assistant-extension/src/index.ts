@@ -96,7 +96,7 @@ export default class JanAssistantExtension implements AssistantExtension {
       name: "Jan",
       description: "A default assistant that can use all downloaded models",
       model: "*",
-      instructions: "Your name is Jan.",
+      instructions: "",
       tools: undefined,
       file_ids: [],
       metadata: undefined,
