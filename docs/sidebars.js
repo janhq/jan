@@ -17,10 +17,10 @@ const sidebars = {
     {
       type: "category",
       label: "Introduction",
-      link: { type: "doc", id: "intro/introduction" },
+      link: { type: "doc", id: "guides/introduction" },
       collapsible: true,
       collapsed: true,
-      items: ["intro/quickstart", "intro/how-jan-works"],
+      items: ["guides/quickstart", "guides/how-jan-works"],
     },
     {
       type: "category",
@@ -40,7 +40,7 @@ const sidebars = {
       label: "Using Jan",
       collapsible: true,
       collapsed: true,
-      items: ["docs/models", "docs/server"],
+      items: ["guides/models", "guides/server"],
     },
   ],
 
