@@ -58,7 +58,11 @@ const ExploreModelsScreen = () => {
         <div className="h-full" data-test-id="testid-explore-models">
           <ScrollArea>
             <div className="relative">
-              <img src="./images/hub-banner.png" alt="Hub Banner" />
+              <img
+                src="./images/hub-banner.png"
+                alt="Hub Banner"
+                className="w-full object-cover"
+              />
               <div className="absolute left-1/2 top-1/2 w-1/3 -translate-x-1/2 -translate-y-1/2">
                 <SearchIcon
                   size={20}
