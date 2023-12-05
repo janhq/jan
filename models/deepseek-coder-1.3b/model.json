@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/deepseek-coder-1.3b-base-GGUF/resolve/main/deepseek-coder-1.3b-base.Q4_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/deepseek-coder-1.3b-instruct-GGUF/resolve/main/deepseek-coder-1.3b-instruct.Q8_0.gguf",
     "id": "deepseek-coder-1.3b",
     "object": "model",
     "name": "Deepseek Coder 1.3B Q4",
