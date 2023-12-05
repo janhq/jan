@@ -91,6 +91,7 @@ export default function useSendChatMessage() {
       id: ulid(),
       messages: messages,
       threadId: activeThread.id,
+      model: activeThread.assistants[0].model??selectedModel,
     }
 
     const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
