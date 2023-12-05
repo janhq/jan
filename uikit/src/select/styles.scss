@@ -1,5 +1,5 @@
 .select {
-  @apply ring-offset-background placeholder:text-muted-foreground border-border flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1;
+  @apply placeholder:text-muted-foreground border-border flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1;
 
   &-caret {
     @apply h-4 w-4 opacity-50;
@@ -18,7 +18,7 @@
   }
 
   &-item {
-    @apply hover:bg-secondary relative my-1 block w-full cursor-pointer select-none items-center rounded-sm px-4 py-2 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50;
+    @apply hover:bg-secondary relative my-1 block w-full cursor-pointer select-none items-center rounded-sm px-4 py-2 text-sm data-[disabled]:pointer-events-none data-[disabled]:opacity-50;
   }
 
   &-trigger-viewport {

@@ -1,10 +1,14 @@
 .btn {
-  @apply inline-flex items-center justify-center whitespace-nowrap rounded-md font-semibold transition-colors;
+  @apply inline-flex items-center justify-center whitespace-nowrap rounded-lg font-semibold transition-colors;
   @apply focus-visible:ring-ring cursor-pointer focus-visible:outline-none focus-visible:ring-1;
   @apply disabled:pointer-events-none disabled:opacity-50;
 
   &-primary {
     @apply bg-primary hover:bg-primary/90 text-white;
+  }
+
+  &-secondary-blue {
+    @apply bg-blue-200 text-blue-900 hover:bg-blue-500/80;
   }
 
   &-danger {
@@ -17,6 +21,10 @@
 
   &-secondary {
     @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+
+  &-success {
+    @apply bg-green-500 text-white hover:bg-green-500/80;
   }
 
   &-ghost {
@@ -57,6 +65,9 @@
   }
   &.btn-secondary {
     @apply bg-secondary hover:bg-secondary/80;
+  }
+  &.btn-secondary-blue {
+    @apply bg-blue-200 text-blue-900 hover:bg-blue-200/80;
   }
   &.btn-danger {
     @apply bg-danger hover:bg-danger/90;

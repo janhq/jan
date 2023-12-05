@@ -48,6 +48,48 @@ export default function useSendChatMessage() {
   const { startModel } = useActiveModel()
   const [queuedMessage, setQueuedMessage] = useState(false)
 
+  const resendChatMessage = async () => {
+    if (!activeThread) {
+      console.error('No active thread')
+      return
+    }
+
+    updateThreadWaiting(activeThread.id, true)
+
+    const messages: ChatCompletionMessage[] = [
+      activeThread.assistants[0]?.instructions,
+    ]
+      .filter((e) => e && e.trim() !== '')
+      .map<ChatCompletionMessage>((instructions) => {
+        const systemMessage: ChatCompletionMessage = {
+          role: ChatCompletionRole.System,
+          content: instructions,
+        }
+        return systemMessage
+      })
+      .concat(
+        currentMessages.map<ChatCompletionMessage>((msg) => ({
+          role: msg.role,
+          content: msg.content[0]?.text.value ?? '',
+        }))
+      )
+
+    const messageRequest: MessageRequest = {
+      id: ulid(),
+      messages: messages,
+      threadId: activeThread.id,
+    }
+
+    const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
+
+    if (activeModel?.id !== modelId) {
+      setQueuedMessage(true)
+      await startModel(modelId)
+      setQueuedMessage(false)
+    }
+    events.emit(EventName.OnMessageSent, messageRequest)
+  }
+
   const sendChatMessage = async () => {
     if (!currentPrompt || currentPrompt.trim().length === 0) {
       return
@@ -97,6 +139,7 @@ export default function useSendChatMessage() {
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
     ]
+      .filter((e) => e && e.trim() !== '')
       .map<ChatCompletionMessage>((instructions) => {
         const systemMessage: ChatCompletionMessage = {
           role: ChatCompletionRole.System,
@@ -162,6 +205,7 @@ export default function useSendChatMessage() {
 
   return {
     sendChatMessage,
+    resendChatMessage,
     queuedMessage,
   }
 }

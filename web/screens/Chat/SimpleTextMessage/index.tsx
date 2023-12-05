@@ -29,7 +29,11 @@ const marked = new Marked(
       if (lang === undefined || lang === '') {
         return hljs.highlightAuto(code).value
       }
-      return hljs.highlight(code, { language: lang }).value
+      try {
+        return hljs.highlight(code, { language: lang }).value
+      } catch (err) {
+        return hljs.highlight(code, { language: 'javascript' }).value
+      }
     },
   }),
   {
