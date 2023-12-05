@@ -3,7 +3,7 @@ import { FaGithub, FaDiscord } from "react-icons/fa";
 
 export default function SocialButton() {
   return (
-    <div className="flex items-center space-x-2 justify-center lg:justify-start">
+    <div className="flex items-center space-x-2 justify-start">
       <a
         href="https://discord.gg/FTk2MvZwJH"
         target="_blank"
@@ -12,7 +12,7 @@ export default function SocialButton() {
         <span>
           <FaDiscord className="text-xl" />
         </span>
-        <span>Join our Discord</span>
+        <span>Discord</span>
       </a>
       <a
         href="https://github.com/janhq/jan"
@@ -22,7 +22,7 @@ export default function SocialButton() {
         <span>
           <FaGithub className="text-lg" />
         </span>
-        <span>View on Github</span>
+        <span>Github</span>
       </a>
     </div>
   );

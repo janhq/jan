@@ -115,11 +115,11 @@ export default function Home() {
                 <div className="grid grid-cols-12 gap-4 px-4 items-center relative z-20">
                   <div className="col-span-full lg:col-span-7 order-2 lg:order-1 relative">
                     <div className="relative lg:-left-14 overflow-hidden rounded-lg group">
-                      <div className="hidden group-hover:flex absolute top-0 left-3 rounded-xl bg-black/30 w-[calc(100%-23px)] h-[calc(100%-20px)] items-center justify-center transition-all">
+                      <div className="hidden group-hover:flex absolute top-0 left-0 rounded-lg bg-black/30 w-full h-full items-center justify-center transition-all">
                         <a
                           href="https://github.com/orgs/janhq/projects/5/views/12"
                           target="_blank"
-                          className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 text-black bg-white"
+                          className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 text-black bg-white hover:text-black"
                         >
                           <span>View Roadmap</span>
                         </a>
@@ -151,7 +151,9 @@ export default function Home() {
               <div className="w-full lg:w-3/4 mx-auto relative">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
                   <div className="col-span-5">
-                    <p className="text-4xl font-semibold">Desktop App</p>
+                    <p className="text-3xl xl:text-4xl font-semibold">
+                      Desktop App
+                    </p>
                     <p className="text-zinc-600 dark:text-zinc-400 mt-4 text-lg leading-relaxed">
                       <b className="text-bold text-black dark:text-white">
                         10x productivity
@@ -187,7 +189,9 @@ export default function Home() {
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
                   <div className="col-span-5">
                     <div className="flex items-center">
-                      <p className="text-4xl font-semibold">Mobile App</p>
+                      <p className="text-3xl xl:text-4xl font-semibold">
+                        Mobile App
+                      </p>
                       <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block ml-2 rounded-md text-sm mt-1">
                         Coming Soon
                       </span>
@@ -287,8 +291,10 @@ export default function Home() {
                             <div className="mb-4">
                               <div className="bg-white dark:bg-[#18181B] shadow-lg py-2 px-4 inline-flex rounded-xl">
                                 <p className="font-medium">
-                                  Assistants framework
-                                  <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block ml-2 rounded-md text-sm">
+                                  <span className="inline-block mr-2">
+                                    Assistants framework
+                                  </span>
+                                  <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block rounded-md text-sm">
                                     Coming Soon
                                   </span>
                                 </p>
@@ -302,7 +308,7 @@ export default function Home() {
                           <img
                             src="/img/homepage/status.png"
                             alt="Element status"
-                            className="w-3/4 lg:p-20 object-cover absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+                            className="w-10/12 lg:p-20 object-cover absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
                           />
                         </div>
                       </div>
