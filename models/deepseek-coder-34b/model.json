@@ -19,6 +19,7 @@
       "author": "Deepseek, The Bloke",
       "tags": ["34B", "Foundational Model"],
       "size": 26040000000
-    }
+    },
+    "engine": "nitro"
   }
   

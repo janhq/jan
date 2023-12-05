@@ -180,7 +180,7 @@ export default function useSendChatMessage() {
       threadId: activeThread.id,
       messages,
       parameters: activeThread.assistants[0].model.parameters,
-      model: activeThread.assistants[0].model,
+      model: selectedModel??activeThread.assistants[0].model,
     }
     const timestamp = Date.now()
     const threadMessage: ThreadMessage = {
@@ -215,6 +215,7 @@ export default function useSendChatMessage() {
       await startModel(modelId)
       setQueuedMessage(false)
     }
+    console.log('messageRequest', messageRequest)
     events.emit(EventName.OnMessageSent, messageRequest)
   }
 
