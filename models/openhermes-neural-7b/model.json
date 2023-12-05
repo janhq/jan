@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/OpenHermes-2.5-neural-chat-7B-v3-2-7B-GGUF/resolve/main/openhermes-2.5-neural-chat-7b-v3-2-7b.Q4_K_M.gguf",
+    "source_url": "https://huggingface.co/TheBloke/OpenHermes-2.5-neural-chat-7B-v3-1-7B-GGUF/resolve/main/openhermes-2.5-neural-chat-7b-v3-1-7b.Q4_K_M.gguf",
     "id": "openhermes-neural-7b",
     "object": "model",
     "name": "OpenHermes Neural 7B Q4",
