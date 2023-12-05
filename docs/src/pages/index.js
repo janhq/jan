@@ -20,38 +20,37 @@ export default function Home() {
         description="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server."
       >
         <main>
-          <div className="container">
-            <div className="grid grid-cols-1 lg:grid-cols-12 mt-4 gap-8 items-center relative">
-              <div className="col-span-full lg:col-span-5 lg:text-left text-center relative z-10">
-                <h1 className="bg-gradient-to-b dark:from-white from-black to-gray-700 dark:to-gray-400 bg-clip-text text-6xl font-black leading-tight text-transparent dark:text-transparent lg:leading-tight">
-                  Own your AI
-                </h1>
-                <p className="text-2xl mt-1">
-                  Jan is an open-source alternative to ChatGPT that runs on your
-                  own computer.
-                </p>
-                <div className="mt-8">
-                  <SocialButton />
-                </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 -mt-1 gap-8 items-center relative">
+            <div className="col-span-full lg:col-start-2 lg:col-span-5 lg:text-left text-center relative z-10">
+              <h1 className="text-7xl font-semibold leading-tight lg:leading-tight">
+                Bringing AI to <br /> your Desktop
+              </h1>
+              <p className="text-2xl mt-3">
+                Open-source ChatGPT alternative that runs 100% offline on your
+                computer.
+              </p>
+              <div className="mt-8">
+                <SocialButton />
               </div>
-              <div className="col-span-full lg:col-span-7">
-                <div className="relative text-center">
-                  <ThemedImage
-                    className="rounded-xl w-full lg:w-10/12 border border-gray-200 dark:border-gray-800"
-                    alt="App screenshots"
-                    sources={{
-                      light: useBaseUrl(
-                        "/img/homepage/app-base-screen-light.png"
-                      ),
-                      dark: useBaseUrl(
-                        "/img/homepage/app-base-screen-dark.png"
-                      ),
-                    }}
-                  />
-                </div>
+            </div>
+
+            <div className="col-span-full lg:col-span-6">
+              <div className="relative text-center">
+                <ThemedImage
+                  className="w-full object-cover mr-auto"
+                  alt="App screenshots"
+                  sources={{
+                    light: useBaseUrl(
+                      "/img/homepage/app-base-screen-light.png"
+                    ),
+                    dark: useBaseUrl("/img/homepage/app-base-screen-dark.png"),
+                  }}
+                />
               </div>
             </div>
           </div>
+          {/* <div className="container">
+          </div> */}
 
           {/* <div className="bg-gray-50 dark:bg-[#09090B]/20 border-y border-gray-00 dark:border-gray-800 mt-10 py-10">
             <div className="container">
