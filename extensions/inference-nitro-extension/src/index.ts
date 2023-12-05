@@ -198,7 +198,6 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     instance: JanInferenceNitroExtension
   ) {
     if (data.model.engine !== 'nitro') { return }
-
     const timestamp = Date.now();
     const message: ThreadMessage = {
       id: ulid(),

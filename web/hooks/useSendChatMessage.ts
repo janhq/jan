@@ -50,7 +50,6 @@ export default function useSendChatMessage() {
   const [queuedMessage, setQueuedMessage] = useState(false)
 
   const modelRef = useRef<Model | undefined>()
-
   useEffect(() => {
     modelRef.current = activeModel
   }, [activeModel])
@@ -91,17 +90,33 @@ export default function useSendChatMessage() {
       id: ulid(),
       messages: messages,
       threadId: activeThread.id,
-      model: activeThread.assistants[0].model??selectedModel,
+      model: activeThread.assistants[0].model ?? selectedModel,
     }
 
     const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
 
     if (activeModel?.id !== modelId) {
       setQueuedMessage(true)
-      await startModel(modelId)
+      startModel(modelId)
+      await WaitForModelStarting(modelId)
       setQueuedMessage(false)
     }
     events.emit(EventName.OnMessageSent, messageRequest)
+  }
+
+  // TODO: Refactor @louis
+  const WaitForModelStarting = async (modelId: string) => {
+    return new Promise<void>((resolve) => {
+      setTimeout(async () => {
+        if (modelRef.current?.id !== modelId) {
+          console.log('waiting for model to start')
+          await WaitForModelStarting(modelId)
+          resolve()
+        } else {
+          resolve()
+        }
+      }, 200)
+    })
   }
 
   const sendChatMessage = async () => {
@@ -180,8 +195,7 @@ export default function useSendChatMessage() {
       id: msgId,
       threadId: activeThread.id,
       messages,
-      parameters: activeThread.assistants[0].model.parameters,
-      model: selectedModel??activeThread.assistants[0].model,
+      model: selectedModel ?? activeThread.assistants[0].model,
     }
     const timestamp = Date.now()
     const threadMessage: ThreadMessage = {
@@ -213,9 +227,11 @@ export default function useSendChatMessage() {
 
     if (activeModel?.id !== modelId) {
       setQueuedMessage(true)
-      await startModel(modelId)
+      startModel(modelId)
+      await WaitForModelStarting(modelId)
       setQueuedMessage(false)
     }
+    console.log('messageRequest', messageRequest)
     events.emit(EventName.OnMessageSent, messageRequest)
   }
 
