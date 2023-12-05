@@ -1,13 +1,15 @@
 {
     "source_url": "https://openai.com",
-    "id": "gpt-3.5-turbo",
+    "id": "gpt-4",
     "object": "model",
     "name": "OpenAI GPT 3.5",
     "version": 1.0,
     "description": "OpenAI GPT 3.5 model is extremely good",
     "format": "api",
     "settings": {},
-    "parameters": {},
+    "parameters": {
+      "max_tokens": 4096
+    },
     "metadata": {
       "author": "OpenAI",
       "tags": ["General", "Big Context Length"]
