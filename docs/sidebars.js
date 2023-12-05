@@ -82,7 +82,6 @@ const sidebars = {
         "specs/engineering/chats",
         "specs/engineering/models",
         "specs/engineering/engine",
-        "specs/engineering/inference-parameters",
         "specs/engineering/threads",
         "specs/engineering/messages",
         "specs/engineering/assistants",
