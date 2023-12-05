@@ -53,15 +53,15 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="bg-gray-50 dark:bg-[#09090B]/20 border-y border-gray-00 dark:border-gray-800 mt-10 py-10">
+          {/* <div className="bg-gray-50 dark:bg-[#09090B]/20 border-y border-gray-00 dark:border-gray-800 mt-10 py-10">
             <div className="container">
               <div className="w-full lg:w-3/4 mx-auto">
                 <DownloadApp />
               </div>
             </div>
-          </div>
+          </div> */}
 
-          <div className="container py-14">
+          {/* <div className="container py-14">
             <div className="mb-10">
               <h2 className="h1 text-center lg:text-left">Explore Jan</h2>
             </div>
@@ -113,9 +113,9 @@ export default function Home() {
                 />
               </div>
             </div>
-          </div>
+          </div> */}
 
-          <div className="container mt-8 pb-16 relative">
+          {/* <div className="container mt-8 pb-16 relative">
             <div className="text-center">
               <h2 className="h1">No-fuss Compatibility</h2>
               <p className="mt-2 leading-relaxed">
@@ -181,7 +181,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
         </main>
       </Layout>
     </>
