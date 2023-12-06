@@ -7,7 +7,9 @@ import { join } from 'path'
  * JSONConversationalExtension is a ConversationalExtension implementation that provides
  * functionality for managing threads.
  */
-export default class JSONConversationalExtension implements ConversationalExtension {
+export default class JSONConversationalExtension
+  implements ConversationalExtension
+{
   private static readonly _homeDir = 'threads'
   private static readonly _threadInfoFileName = 'thread.json'
   private static readonly _threadMessagesFileName = 'messages.jsonl'
@@ -67,7 +69,10 @@ export default class JSONConversationalExtension implements ConversationalExtens
    */
   async saveThread(thread: Thread): Promise<void> {
     try {
-      const threadDirPath = join(JSONConversationalExtension._homeDir, thread.id)
+      const threadDirPath = join(
+        JSONConversationalExtension._homeDir,
+        thread.id
+      )
       const threadJsonPath = join(
         threadDirPath,
         JSONConversationalExtension._threadInfoFileName
@@ -119,7 +124,7 @@ export default class JSONConversationalExtension implements ConversationalExtens
       await fs.mkdir(threadDirPath)
       await fs.writeFile(
         threadMessagePath,
-        messages.map((msg) => JSON.stringify(msg)).join('\n')
+        messages.map((msg) => JSON.stringify(msg)).join('\n') + '\n'
       )
       Promise.resolve()
     } catch (err) {
@@ -153,7 +158,10 @@ export default class JSONConversationalExtension implements ConversationalExtens
 
     const threadDirs: string[] = []
     for (let i = 0; i < fileInsideThread.length; i++) {
-      const path = join(JSONConversationalExtension._homeDir, fileInsideThread[i])
+      const path = join(
+        JSONConversationalExtension._homeDir,
+        fileInsideThread[i]
+      )
       const isDirectory = await fs.isDirectory(path)
       if (!isDirectory) {
         console.debug(`Ignore ${path} because it is not a directory`)
@@ -182,7 +190,9 @@ export default class JSONConversationalExtension implements ConversationalExtens
       }
 
       const files: string[] = await fs.listFiles(threadDirPath)
-      if (!files.includes(JSONConversationalExtension._threadMessagesFileName)) {
+      if (
+        !files.includes(JSONConversationalExtension._threadMessagesFileName)
+      ) {
         throw Error(`${threadDirPath} not contains message file`)
       }
 

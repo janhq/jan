@@ -4,6 +4,7 @@ import {
   ExtensionType,
   ThreadMessage,
   events,
+  ChatCompletionRole,
 } from '@janhq/core'
 import { ConversationalExtension, InferenceExtension } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -52,6 +53,14 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
     }
   }
 
+  const onRegenerateClick = async () => {
+    if (message.role !== ChatCompletionRole.User) {
+      // Delete last response before regenerating
+      await onDeleteClick()
+    }
+    resendChatMessage(message)
+  }
+
   return (
     <div className={twMerge('flex flex-row items-center')}>
       <div className="flex overflow-hidden rounded-md border border-border bg-background/20">
@@ -67,7 +76,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           message.id === messages[messages.length - 1]?.id && (
             <div
               className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
-              onClick={resendChatMessage}
+              onClick={onRegenerateClick}
             >
               <RefreshCcw size={14} />
             </div>
