@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   ChatCompletionMessage,
@@ -11,6 +11,7 @@ import {
   Thread,
   ThreadMessage,
   events,
+  Model,
 } from '@janhq/core'
 import { ConversationalExtension } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -47,6 +48,12 @@ export default function useSendChatMessage() {
   const selectedModel = useAtomValue(selectedModelAtom)
   const { startModel } = useActiveModel()
   const [queuedMessage, setQueuedMessage] = useState(false)
+
+  const modelRef = useRef<Model | undefined>()
+
+  useEffect(() => {
+    modelRef.current = activeModel
+  }, [activeModel])
 
   const resendChatMessage = async (currentMessage: ThreadMessage) => {
     if (!activeThread) {
