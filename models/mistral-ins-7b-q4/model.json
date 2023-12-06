@@ -17,8 +17,9 @@
     },
     "metadata": {
       "author": "MistralAI, The Bloke",
-      "tags": ["Small", "Foundational Model"],
-      "size": 4370000000
+      "tags": ["Featured", "7B", "Foundational Model"],
+      "size": 4370000000,
+      "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/mistral-ins-7b-q4/cover.png"
     }
   }
   

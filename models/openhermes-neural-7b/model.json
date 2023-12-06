@@ -17,8 +17,8 @@
     },
     "metadata": {
       "author": "Intel, The Bloke",
-      "tags": ["Recommended", "Small", "Merged"],
-      "size": 4370000000
+      "tags": ["Featured", "7B", "Merged"],
+      "size": 4370000000,
+      "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/openhermes-neural-7b/cover.png"
     }
   }
-  
