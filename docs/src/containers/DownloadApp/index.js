@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { FaWindows, FaApple, FaLinux } from "react-icons/fa";
+import { useDiscordHook } from "../../hooks/useDiscordHook";
 
 const systemsTemplate = [
   {
@@ -31,6 +32,7 @@ const systemsTemplate = [
 
 export default function DownloadApp() {
   const [systems, setSystems] = useState(systemsTemplate);
+  const { sendDiscordMessage } = useDiscordHook();
 
   const getLatestReleaseInfo = async (repoOwner, repoName) => {
     const url = `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`;
@@ -107,9 +109,12 @@ export default function DownloadApp() {
       </div>
       <div className="mx-auto text-center">
         {systems.map((system, i) => (
-          <a
+          <button
             key={i}
-            href={system.href}
+            onClick={() => {
+              window.open(system.href);
+              sendDiscordMessage(system.name);
+            }}
             className={`inline-flex m-2 px-4 py-2 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-gray-400 dark:border-gray-700 text-black dark:text-black bg-neutral-50 min-w-[150px] dark:bg-[#18181B], ${
               system.comingSoon && "pointer-events-none	"
             }`}
@@ -121,7 +126,7 @@ export default function DownloadApp() {
                 Coming Soon
               </span>
             )}
-          </a>
+          </button>
         ))}
       </div>
     </div>
