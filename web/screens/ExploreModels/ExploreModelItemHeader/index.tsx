@@ -102,8 +102,12 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
       onClick={onClick}
     >
       {model.metadata.cover && (
-        <div className="relative h-full w-full">
-          <img src={model.metadata.cover} alt={`Cover - ${model.id}`} />
+        <div className="relative h-full w-full ">
+          <img
+            src={model.metadata.cover}
+            className="h-[250px] w-full object-cover"
+            alt={`Cover - ${model.id}`}
+          />
         </div>
       )}
       <div className="flex items-center justify-between p-4">
