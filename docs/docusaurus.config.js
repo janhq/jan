@@ -126,7 +126,7 @@ const config = {
 
   // Docs: https://docusaurus.io/docs/api/themes/configuration
   themeConfig: {
-    image: "img/jan-social-card.png",
+    image: "img/og-image.png",
     // Only for react live
     liveCodeBlock: {
       playgroundPosition: "bottom",
@@ -158,7 +158,7 @@ const config = {
       },
       {
         property: "og:image",
-        content: "https://jan.ai/img/jan-social-card.png",
+        content: "https://jan.ai/img/og-image.png",
       },
       { property: "og:type", content: "website" },
       { property: "twitter:card", content: "summary_large_image" },
@@ -171,7 +171,7 @@ const config = {
       },
       {
         property: "twitter:image",
-        content: "https://jan.ai/img/jan-social-card.png",
+        content: "https://jan.ai/img/og-image.png",
       },
     ],
     headTags: [

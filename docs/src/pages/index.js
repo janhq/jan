@@ -25,8 +25,8 @@ export default function Home() {
     <>
       <Banner />
       <Layout
-        title={`${siteConfig.tagline}`}
-        description="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server."
+        title="Jan | Open-source ChatGPT Alternative"
+        description="Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable."
       >
         <main>
           <div className="grid grid-cols-1 lg:grid-cols-12 -mt-1 gap-8 items-center relative min-h-[calc(100vh-96px)] ">
