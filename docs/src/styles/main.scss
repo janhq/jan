@@ -2,8 +2,12 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
-@import "./typography.scss";
-@import "./tweaks.scss";
-@import "./base.scss";
-@import "./components.scss";
-@import "./card.scss";
+@import "./components/base.scss";
+@import "./components/typography.scss";
+@import "./components/card.scss";
+
+@import "./tweaks/navbar.scss";
+@import "./tweaks/breadcrumb.scss";
+@import "./tweaks/markdown.scss";
+@import "./tweaks/redocusaurus.scss";
+@import "./tweaks/sidebar.scss";

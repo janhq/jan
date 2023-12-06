@@ -1,19 +1,37 @@
 import React from "react";
 
+import { AiOutlineGithub, AiOutlineTwitter } from "react-icons/ai";
+import { BiLogoDiscordAlt } from "react-icons/bi";
+
+const socials = [
+  {
+    icon: <AiOutlineTwitter className="text-xl text-black dark:text-white" />,
+    href: "https://twitter.com/janhq_",
+  },
+  {
+    icon: <BiLogoDiscordAlt className="text-xl text-black dark:text-white" />,
+    href: "https://discord.com/invite/FTk2MvZwJH",
+  },
+  {
+    icon: <AiOutlineGithub className="text-lg text-black dark:text-white" />,
+    href: "https://github.com/janhq/jan",
+  },
+];
+
 const menus = [
   {
     name: "For Developers",
     child: [
       {
-        menu: "Documentation (WIP)",
+        menu: "Documentation",
         path: "/intro",
       },
       {
-        menu: "Hardware (WIP)",
+        menu: "Hardware",
         path: "/hardware",
       },
       {
-        menu: "API Reference (WIP)",
+        menu: "API Reference",
         path: "/api-reference",
       },
       {
@@ -67,16 +85,32 @@ const getCurrentYear = new Date().getFullYear();
 
 export default function Footer() {
   return (
-    <footer className="flex-shrink-0 border-t dark:border-gray-800 border-gray-200 py-10">
+    <footer className="flex-shrink-0 dark:bg-[#09090B]/10 bg-[#D4D4D8]/10 relative overflow-hidden py-10">
       <div className="container">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-2 lg:grid-cols-6">
           <div className="lg:col-span-3 col-span-2">
-            <h6 className="mb-3">Jan</h6>
+            <div className="flex items-center space-x-2 mb-3">
+              <img alt="Jan Logo" src="/img/logo.svg" />
+              <h6 className="">Jan</h6>
+            </div>
             <div className="w-full lg:w-1/2">
               <p className="dark:text-gray-400 text-gray-600">
-                Run Large Language Models locally on Windows, Mac and Linux.
-                Available on Desktop and Cloud-Native.
+                Jan is the open-source, self-hosted&nbsp;
+                <br className="hidden lg:block" />
+                &nbsp;alternative to ChatGPT.
               </p>
+
+              <div className="mt-4">
+                <div className="flex items-center gap-x-3">
+                  {socials.map((social, i) => {
+                    return (
+                      <a key={i} href={social.href} target="_blank">
+                        {social.icon}
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
           {menus.map((menu, i) => {
@@ -103,7 +137,7 @@ export default function Footer() {
           })}
         </div>
       </div>
-      <div className="container mt-8">
+      <div className="container mt-6">
         <span className="dark:text-gray-300 text-gray-700">
           &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd.
         </span>

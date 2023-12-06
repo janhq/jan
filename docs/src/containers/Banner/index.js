@@ -27,7 +27,7 @@ export default function AnnoncementBanner() {
 
   return (
     <div className="h-10 w-full flex-shrink-0 bg-blue-600">
-      <div className="container flex h-full items-center justify-between py-0.5">
+      <div className="px-4 lg:px-10 flex h-full items-center justify-between py-0.5">
         <div className="flex h-6 items-center shadow-sm">
           <a
             href="https://github.com/janhq/jan"
