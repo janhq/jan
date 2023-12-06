@@ -32,13 +32,12 @@ export default function CardSidebar({
   return (
     <div
       className={twMerge(
-        'flex w-full flex-col rounded-lg border border-border',
-        show && 'border border-border'
+        'flex w-full flex-col rounded-md border border-border bg-zinc-200 dark:bg-zinc-600/10'
       )}
     >
       <div
         className={twMerge(
-          'relative flex items-center rounded-t-md bg-zinc-200 dark:bg-zinc-600/10',
+          'relative flex items-center rounded-t-md ',
           show && 'border-b border-border'
         )}
       >
@@ -93,7 +92,11 @@ export default function CardSidebar({
           </div>
         )}
       </div>
-      {show && <div className="flex flex-col gap-2 p-2">{children}</div>}
+      {show && (
+        <div className="flex flex-col gap-2 bg-white p-2 dark:bg-background">
+          {children}
+        </div>
+      )}
     </div>
   )
 }
