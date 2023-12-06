@@ -98,23 +98,30 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 
   return (
     <div
-      className="flex cursor-pointer items-center justify-between rounded-t-md bg-background/50 px-4 py-4"
+      className="cursor-pointer rounded-t-md bg-background/50"
       onClick={onClick}
     >
-      <div className="flex items-center gap-2">
-        <span className="font-bold">{model.name}</span>
-      </div>
-      <div className="inline-flex items-center space-x-2">
-        <span className="mr-4 font-semibold text-muted-foreground">
-          {toGigabytes(model.metadata.size)}
-        </span>
-        {downloadButton}
-        <ChevronDownIcon
-          className={twMerge(
-            'h-5 w-5 flex-none text-gray-400',
-            open === model.id && 'rotate-180'
-          )}
-        />
+      {model.metadata.cover && (
+        <div className="relative h-full w-full">
+          <img src={model.metadata.cover} alt={`Cover - ${model.id}`} />
+        </div>
+      )}
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-2">
+          <span className="font-bold">{model.name}</span>
+        </div>
+        <div className="inline-flex items-center space-x-2">
+          <span className="mr-4 font-semibold text-muted-foreground">
+            {toGigabytes(model.metadata.size)}
+          </span>
+          {downloadButton}
+          <ChevronDownIcon
+            className={twMerge(
+              'h-5 w-5 flex-none text-gray-400',
+              open === model.id && 'rotate-180'
+            )}
+          />
+        </div>
       </div>
     </div>
   )

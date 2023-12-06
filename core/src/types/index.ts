@@ -240,6 +240,7 @@ export type ModelMetadata = {
   author: string;
   tags: string[];
   size: number;
+  cover?: string;
 };
 
 /**
