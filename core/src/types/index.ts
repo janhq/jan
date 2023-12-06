@@ -157,7 +157,7 @@ export type ModelInfo = {
   id: string;
   settings: ModelSettingParams;
   parameters: ModelRuntimeParams;
-  engine: InferenceEngine;
+  engine?: InferenceEngine;
 };
 
 /**
