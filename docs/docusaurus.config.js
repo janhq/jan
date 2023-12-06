@@ -260,7 +260,7 @@ const config = {
       additionalLanguages: ["python", "powershell", "bash"],
     },
     colorMode: {
-      defaultMode: "dark",
+      defaultMode: "light",
       disableSwitch: false,
       respectPrefersColorScheme: false,
     },
