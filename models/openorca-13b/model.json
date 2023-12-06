@@ -2,22 +2,22 @@
     "source_url": "https://huggingface.co/TheBloke/Orca-2-13B-GGUF/resolve/main/orca-2-13b.Q5_K_M.gguf",
     "id": "openorca-13b",
     "object": "model",
-    "name": "Orca 2 13B",
+    "name": "Orca 2 13B Q5",
     "version": "1.0",
     "description": "Orca 2 is a finetuned version of LLAMA-2, designed primarily for single-turn responses in reasoning, reading comprehension, math problem solving, and text summarization.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "<|im_start|>system\n",
       "user_prompt": "<|im_end|>\n<|im_start|>user\n",
       "ai_prompt": "<|im_end|>\n<|im_start|>assistant\n"
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "Microsoft, The Bloke",
-      "tags": ["General Use"],
+      "tags": ["13B", "Finetuned"],
       "size": 9230000000
     }
   }

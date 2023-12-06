@@ -191,7 +191,7 @@ async function spawnNitroProcess(): Promise<void> {
     const binaryPath = path.join(binaryFolder, binaryName);
 
     // Execute the binary
-    subprocess = spawn(binaryPath, [1, "0.0.0.0", PORT], {
+    subprocess = spawn(binaryPath, [1, "127.0.0.1", PORT], {
       cwd: binaryFolder,
     });
 

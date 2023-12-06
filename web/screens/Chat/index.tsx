@@ -1,20 +1,18 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { ChangeEvent, Fragment, KeyboardEvent, useEffect, useRef } from 'react'
 
-import { Button, Badge, Textarea } from '@janhq/uikit'
+import { Button, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
-import { Trash2Icon, Paintbrush } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
-import { currentPromptAtom } from '@/containers/Providers/Jotai'
+import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import ShortCut from '@/containers/Shortcut'
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-import useDeleteThread from '@/hooks/useDeleteConversation'
 
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
@@ -25,39 +23,34 @@ import ChatBody from '@/screens/Chat/ChatBody'
 
 import ThreadList from '@/screens/Chat/ThreadList'
 
-import Sidebar from './Sidebar'
+import Sidebar, { showRightSideBarAtom } from './Sidebar'
 
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
-  threadsAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Conversation.atom'
 
 import { activeThreadStateAtom } from '@/helpers/atoms/Conversation.atom'
 
 const ChatScreen = () => {
-  const currentConvo = useAtomValue(activeThreadAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
   const { downloadedModels } = useGetDownloadedModels()
-  const { deleteThread, cleanThread } = useDeleteThread()
+
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
-  const currentConvoState = useAtomValue(activeThreadStateAtom)
-  const { sendChatMessage } = useSendChatMessage()
-  const isWaitingForResponse = currentConvoState?.waitingForResponse ?? false
+  const activeThreadState = useAtomValue(activeThreadStateAtom)
+  const { sendChatMessage, queuedMessage } = useSendChatMessage()
+  const isWaitingForResponse = activeThreadState?.waitingForResponse ?? false
   const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
-  const conversations = useAtomValue(threadsAtom)
-  const isEnableChat = (currentConvo && activeModel) || conversations.length > 0
 
-  const [isModelAvailable, setIsModelAvailable] = useState(
-    true
-    // downloadedModels.some((x) => x.id === currentConvo?.modelId)
-  )
+  const showing = useAtomValue(showRightSideBarAtom)
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelRef = useRef(activeModel)
 
@@ -101,50 +94,20 @@ const ChatScreen = () => {
   }
 
   return (
-    <div className="flex h-full">
-      <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+    <div className="flex h-full w-full">
+      <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background dark:bg-background/50">
         <ThreadList />
       </div>
-      <div className="relative flex h-full w-[calc(100%-256px)] flex-col bg-muted/10">
+      <div
+        className={twMerge(
+          'relative flex h-full flex-col bg-background',
+          activeThread && activeThreadId && showing
+            ? 'w-[calc(100%-560px)]'
+            : 'w-full'
+        )}
+      >
         <div className="flex h-full w-full flex-col justify-between">
-          {isEnableChat && currentConvo && (
-            <div className="h-[53px] flex-shrink-0 border-b border-border bg-background p-4">
-              <div className="flex items-center justify-between">
-                <span>{currentConvo.title}</span>
-                <div
-                  className={twMerge(
-                    'flex items-center space-x-3',
-                    !isModelAvailable && '-mt-1'
-                  )}
-                >
-                  {!isModelAvailable && (
-                    <Button
-                      themes="secondary"
-                      className="relative z-10"
-                      size="sm"
-                      onClick={() =>
-                        setMainViewState(MainViewState.ExploreModels)
-                      }
-                    >
-                      Download Model
-                    </Button>
-                  )}
-                  <Paintbrush
-                    size={16}
-                    className="cursor-pointer text-muted-foreground"
-                    onClick={() => cleanThread()}
-                  />
-                  <Trash2Icon
-                    size={16}
-                    className="cursor-pointer text-muted-foreground"
-                    onClick={() => deleteThread()}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isEnableChat ? (
+          {activeThread ? (
             <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
               <ChatBody />
             </div>
@@ -152,43 +115,57 @@ const ChatScreen = () => {
             <div className="mx-auto mt-8 flex h-full w-3/4 flex-col items-center justify-center text-center">
               {downloadedModels.length === 0 && (
                 <Fragment>
-                  <h1 className="text-lg font-medium">{`Oops, you don't have a Model`}</h1>
-                  <p className="mt-1">{`Let’s download your first model.`}</p>
+                  <LogoMark
+                    className="mx-auto mb-4 animate-wave"
+                    width={56}
+                    height={56}
+                  />
+                  <h1 className="text-2xl font-bold">Welcome!</h1>
+                  <p className="mt-1 text-base">
+                    You need to download your first model
+                  </p>
                   <Button
                     className="mt-4"
-                    onClick={() =>
-                      setMainViewState(MainViewState.ExploreModels)
-                    }
+                    onClick={() => setMainViewState(MainViewState.Hub)}
                   >
-                    Explore Models
+                    Explore The Hub
                   </Button>
-                </Fragment>
-              )}
-              {!activeModel && downloadedModels.length > 0 && (
-                <Fragment>
-                  <h1 className="text-lg font-medium">{`You don’t have any actively running models`}</h1>
-                  <p className="mt-1">{`Please start a downloaded model to use this feature.`}</p>
-                  <Badge className="mt-4" themes="outline">
-                    <ShortCut menu="E" />
-                    &nbsp; to show your model
-                  </Badge>
                 </Fragment>
               )}
             </div>
           )}
-          <div className="mx-auto flex w-full flex-shrink-0 items-center justify-center space-x-4 p-4 lg:w-3/4">
+
+          {stateModel.loading && (
+            <div className="mb-1 mt-2 py-2 text-center">
+              <span className="rounded-lg border border-border bg-blue-200 px-4 py-2 font-semibold text-blue-600 shadow-lg">
+                Starting model {stateModel.model}
+              </span>
+            </div>
+          )}
+          {queuedMessage && (
+            <div className="my-2 py-2 text-center">
+              <span className="rounded-lg border border-border px-4 py-2 shadow-lg">
+                Message queued. It can be sent once the model has started
+              </span>
+            </div>
+          )}
+          <div className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 px-8 py-4">
             <Textarea
-              className="min-h-10 h-10 max-h-16 resize-none pr-20"
+              className="min-h-10 h-10 max-h-[400px] resize-none pr-20"
               ref={textareaRef}
-              onKeyDown={(e) => onKeyDown(e)}
-              placeholder="Type your message ..."
-              disabled={stateModel.loading || !currentConvo}
+              onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) =>
+                onKeyDown(e)
+              }
+              placeholder="Enter your message..."
+              disabled={stateModel.loading || !activeThread}
               value={currentPrompt}
-              onChange={(e) => onPromptChange(e)}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                onPromptChange(e)
+              }
             />
             <Button
               size="lg"
-              disabled={disabled || stateModel.loading || !currentConvo}
+              disabled={disabled || stateModel.loading || !activeThread}
               themes={'primary'}
               onClick={sendChatMessage}
             >
@@ -197,7 +174,8 @@ const ChatScreen = () => {
           </div>
         </div>
       </div>
-      <Sidebar />
+      {/* Sidebar */}
+      {activeThreadId && activeThread && <Sidebar />}
     </div>
   )
 }

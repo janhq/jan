@@ -2,22 +2,22 @@
     "source_url": "https://huggingface.co/TheBloke/Phind-CodeLlama-34B-v2-GGUF/resolve/main/phind-codellama-34b-v2.Q5_K_M.gguf",
     "id": "phind-34b",
     "object": "model",
-    "name": "Phind 34B",
+    "name": "Phind 34B Q5",
     "version": "1.0",
     "description": "Phind-CodeLlama-34B-v2 is an AI model fine-tuned on 1.5B tokens of high-quality programming data. It's a SOTA open-source model in coding. This multi-lingual model excels in various programming languages, including Python, C/C++, TypeScript, Java, and is designed to be steerable and user-friendly.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "### System Prompt\n",
       "user_prompt": "### User Message\n",
       "ai_prompt": "### Assistant\n"
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "Phind, The Bloke",
-      "tags": ["Code", "Big Context Length"],
+      "tags": ["34B", "Finetuned"],
       "size": 24320000000
     }
   }

@@ -2,11 +2,15 @@
   @apply focus:ring-ring border-border inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
 
   &-primary {
-    @apply bg-primary text-primary-foreground hover:bg-primary/80 border-transparent;
+    @apply border-transparent bg-blue-100 text-blue-600;
+  }
+
+  &-pink {
+    @apply border-transparent bg-pink-100 text-pink-700;
   }
 
   &-success {
-    @apply border-transparent bg-green-500 text-green-900 hover:bg-green-500/80;
+    @apply border-transparent bg-green-100 text-green-600;
   }
 
   &-secondary {
@@ -14,7 +18,7 @@
   }
 
   &-danger {
-    @apply bg-danger text-danger-foreground hover:bg-danger/80 border-transparent;
+    @apply border-transparent bg-red-100 text-red-700;
   }
 
   &-outline {

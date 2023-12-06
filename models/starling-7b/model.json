@@ -2,22 +2,22 @@
     "source_url": "https://huggingface.co/TheBloke/Starling-LM-7B-alpha-GGUF/resolve/main/starling-lm-7b-alpha.Q4_K_M.gguf",
     "id": "starling-7b",
     "object": "model",
-    "name": "Strarling alpha 7B",
+    "name": "Starling alpha 7B Q4",
     "version": "1.0",
     "description": "Starling-RM-7B-alpha is a language model finetuned with Reinforcement Learning from AI Feedback from Openchat 3.5. It stands out for its impressive performance using GPT-4 as a judge, making it one of the top-performing models in its category.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "",
       "user_prompt": "GPT4 User: ",
       "ai_prompt": "<|end_of_turn|>\nGPT4 Assistant: "
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "Berkeley-nest, The Bloke",
-      "tags": ["General", "Code"],
+      "tags": ["Recommended", "7B","Finetuned"],
       "size": 4370000000
     }
   }

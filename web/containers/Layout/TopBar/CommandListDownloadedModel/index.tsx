@@ -85,12 +85,12 @@ export default function CommandListDownloadedModel() {
           <CommandGroup heading="Find another model">
             <CommandItem
               onSelect={() => {
-                setMainViewState(MainViewState.ExploreModels)
+                setMainViewState(MainViewState.Hub)
                 setOpen(false)
               }}
             >
               <CpuIcon size={16} className="mr-3 text-muted-foreground" />
-              <span>Explore Models</span>
+              <span>Explore The Hub</span>
             </CommandItem>
           </CommandGroup>
         </CommandList>

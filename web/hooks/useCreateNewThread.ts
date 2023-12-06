@@ -40,7 +40,6 @@ export const useCreateNewThread = () => {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const [threadStates, setThreadStates] = useAtom(threadStatesAtom)
   const threads = useAtomValue(threadsAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
   const updateThread = useSetAtom(updateThreadAtom)
 
   const requestCreateNewThread = async (assistant: Assistant) => {
@@ -69,6 +68,7 @@ export const useCreateNewThread = () => {
           stream: false,
         },
       },
+      instructions: assistant.instructions,
     }
     const threadId = generateThreadId(assistant.id)
     const thread: Thread = {
@@ -93,20 +93,18 @@ export const useCreateNewThread = () => {
     setActiveThreadId(thread.id)
   }
 
-  function updateThreadTitle(title: string) {
-    if (!activeThread) return
-    const updatedConv: Thread = {
-      ...activeThread,
-      title,
+  function updateThreadMetadata(thread: Thread) {
+    const updatedThread: Thread = {
+      ...thread,
     }
-    updateThread(updatedConv)
+    updateThread(updatedThread)
     extensionManager
       .get<ConversationalExtension>(ExtensionType.Conversational)
-      ?.saveThread(updatedConv)
+      ?.saveThread(updatedThread)
   }
 
   return {
     requestCreateNewThread,
-    updateThreadTitle,
+    updateThreadMetadata,
   }
 }
