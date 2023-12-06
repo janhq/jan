@@ -44,7 +44,10 @@ const ExploreModelsScreen = () => {
         downloadedModels.some((y) => y.id === x.id)
       )
     } else if (sortSelected === 'Recommended') {
-      return x.metadata.tags.includes('Recommended')
+      return (
+        x.metadata.tags.includes('Featured') ||
+        x.metadata.tags.includes('Recommended')
+      )
     } else {
       return x.name.toLowerCase().includes(searchValue.toLowerCase())
     }
