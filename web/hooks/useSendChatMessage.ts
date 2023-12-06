@@ -12,8 +12,9 @@ import {
   ThreadMessage,
   events,
   Model,
+  ConversationalExtension,
+  ModelRuntimeParams,
 } from '@janhq/core'
-import { ConversationalExtension } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { ulid } from 'ulid'
@@ -32,9 +33,12 @@ import {
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
+  getActiveThreadModelRuntimeParamsAtom,
+  threadStatesAtom,
   updateThreadAtom,
+  updateThreadInitSuccessAtom,
   updateThreadWaitingForResponseAtom,
-} from '@/helpers/atoms/Conversation.atom'
+} from '@/helpers/atoms/Thread.atom'
 
 export default function useSendChatMessage() {
   const activeThread = useAtomValue(activeThreadAtom)
@@ -50,6 +54,10 @@ export default function useSendChatMessage() {
   const [queuedMessage, setQueuedMessage] = useState(false)
 
   const modelRef = useRef<Model | undefined>()
+  const threadStates = useAtomValue(threadStatesAtom)
+  const updateThreadInitSuccess = useSetAtom(updateThreadInitSuccessAtom)
+  const activeModelParams = useAtomValue(getActiveThreadModelRuntimeParamsAtom)
+
   useEffect(() => {
     modelRef.current = activeModel
   }, [activeModel])
@@ -109,7 +117,7 @@ export default function useSendChatMessage() {
     return new Promise<void>((resolve) => {
       setTimeout(async () => {
         if (modelRef.current?.id !== modelId) {
-          console.log('waiting for model to start')
+          console.debug('waiting for model to start')
           await WaitForModelStarting(modelId)
           resolve()
         } else {
@@ -127,8 +135,10 @@ export default function useSendChatMessage() {
       console.error('No active thread')
       return
     }
+    const activeThreadState = threadStates[activeThread.id]
 
-    if (!activeThread.isFinishInit) {
+    // if the thread is not initialized, we need to initialize it first
+    if (!activeThreadState.isFinishInit) {
       if (!selectedModel) {
         toaster({ title: 'Please select a model' })
         return
@@ -136,9 +146,14 @@ export default function useSendChatMessage() {
       const assistantId = activeThread.assistants[0].assistant_id ?? ''
       const assistantName = activeThread.assistants[0].assistant_name ?? ''
       const instructions = activeThread.assistants[0].instructions ?? ''
+
+      const modelParams: ModelRuntimeParams = {
+        ...selectedModel.parameters,
+        ...activeModelParams,
+      }
+
       const updatedThread: Thread = {
         ...activeThread,
-        isFinishInit: true,
         assistants: [
           {
             assistant_id: assistantId,
@@ -147,13 +162,13 @@ export default function useSendChatMessage() {
             model: {
               id: selectedModel.id,
               settings: selectedModel.settings,
-              parameters: selectedModel.parameters,
+              parameters: modelParams,
               engine: selectedModel.engine,
             },
           },
         ],
       }
-
+      updateThreadInitSuccess(activeThread.id)
       updateThread(updatedThread)
 
       extensionManager

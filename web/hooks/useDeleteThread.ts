@@ -11,14 +11,15 @@ import { useActiveModel } from './useActiveModel'
 import { extensionManager } from '@/extension/ExtensionManager'
 
 import {
-  cleanConversationMessages,
-  deleteConversationMessage,
+  cleanChatMessageAtom as cleanChatMessagesAtom,
+  deleteChatMessageAtom as deleteChatMessagesAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   threadsAtom,
   setActiveThreadIdAtom,
-} from '@/helpers/atoms/Conversation.atom'
+  deleteThreadStateAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 export default function useDeleteThread() {
   const { activeModel } = useActiveModel()
@@ -26,45 +27,51 @@ export default function useDeleteThread() {
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
-  const setActiveConvoId = useSetAtom(setActiveThreadIdAtom)
-  const deleteMessages = useSetAtom(deleteConversationMessage)
-  const cleanMessages = useSetAtom(cleanConversationMessages)
+  const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
+  const deleteMessages = useSetAtom(deleteChatMessagesAtom)
+  const cleanMessages = useSetAtom(cleanChatMessagesAtom)
+  const deleteThreadState = useSetAtom(deleteThreadStateAtom)
 
-  const cleanThread = async (activeThreadId: string) => {
-    if (activeThreadId) {
-      const thread = threads.filter((c) => c.id === activeThreadId)[0]
-      cleanMessages(activeThreadId)
+  const cleanThread = async (threadId: string) => {
+    if (threadId) {
+      const thread = threads.filter((c) => c.id === threadId)[0]
+      cleanMessages(threadId)
+
       if (thread)
         await extensionManager
           .get<ConversationalExtension>(ExtensionType.Conversational)
           ?.writeMessages(
-            activeThreadId,
+            threadId,
             messages.filter((msg) => msg.role === ChatCompletionRole.System)
           )
     }
   }
 
-  const deleteThread = async (activeThreadId: string) => {
-    if (!activeThreadId) {
+  const deleteThread = async (threadId: string) => {
+    if (!threadId) {
       alert('No active thread')
       return
     }
     try {
       await extensionManager
         .get<ConversationalExtension>(ExtensionType.Conversational)
-        ?.deleteThread(activeThreadId)
-      const availableThreads = threads.filter((c) => c.id !== activeThreadId)
+        ?.deleteThread(threadId)
+      const availableThreads = threads.filter((c) => c.id !== threadId)
       setThreads(availableThreads)
-      deleteMessages(activeThreadId)
+
+      // delete the thread state
+      deleteThreadState(threadId)
+
+      deleteMessages(threadId)
       setCurrentPrompt('')
       toaster({
         title: 'Thread successfully deleted.',
         description: `Thread with ${activeModel?.name} has been successfully deleted.`,
       })
       if (availableThreads.length > 0) {
-        setActiveConvoId(availableThreads[0].id)
+        setActiveThreadId(availableThreads[0].id)
       } else {
-        setActiveConvoId(undefined)
+        setActiveThreadId(undefined)
       }
     } catch (err) {
       console.error(err)

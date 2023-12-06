@@ -26,7 +26,7 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGigabytes } from '@/utils/converter'
 
-import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
+import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
 
@@ -36,6 +36,7 @@ export default function DropdownListSidebar() {
   const activeThread = useAtomValue(activeThreadAtom)
   const [selected, setSelected] = useState<Model | undefined>()
   const { setMainViewState } = useMainViewState()
+
   const { activeModel, stateModel } = useActiveModel()
 
   useEffect(() => {
@@ -61,13 +62,22 @@ export default function DropdownListSidebar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThread, activeModel, stateModel.loading])
 
+  const threadStates = useAtomValue(threadStatesAtom)
+  if (!activeThread) {
+    return null
+  }
+  const finishInit = threadStates[activeThread.id].isFinishInit ?? true
+
+  const onValueSelected = (value: string) => {
+    setSelected(downloadedModels.filter((x) => x.id === value)[0])
+    setSelectedModel(downloadedModels.filter((x) => x.id === value)[0])
+  }
+
   return (
     <Select
+      disabled={finishInit}
       value={selected?.id}
-      onValueChange={(value) => {
-        setSelected(downloadedModels.filter((x) => x.id === value)[0])
-        setSelectedModel(downloadedModels.filter((x) => x.id === value)[0])
-      }}
+      onValueChange={finishInit ? undefined : onValueSelected}
     >
       <SelectTrigger className="w-full">
         <SelectValue placeholder="Choose model to start">
@@ -82,26 +92,24 @@ export default function DropdownListSidebar() {
         <div className="border-b border-border" />
         {downloadedModels.length === 0 ? (
           <div className="px-4 py-2">
-            <p>{`Oops, you don't have a model yet.`}</p>
+            <p>Oops, you don't have a model yet.</p>
           </div>
         ) : (
           <SelectGroup>
-            {downloadedModels.map((x, i) => {
-              return (
-                <SelectItem
-                  key={i}
-                  value={x.id}
-                  className={twMerge(x.id === selected?.id && 'bg-secondary')}
-                >
-                  <div className="flex w-full justify-between">
-                    <span className="line-clamp-1 block">{x.name}</span>
-                    <span className="font-bold text-muted-foreground">
-                      {toGigabytes(x.metadata.size)}
-                    </span>
-                  </div>
-                </SelectItem>
-              )
-            })}
+            {downloadedModels.map((x, i) => (
+              <SelectItem
+                key={i}
+                value={x.id}
+                className={twMerge(x.id === selected?.id && 'bg-secondary')}
+              >
+                <div className="flex w-full justify-between">
+                  <span className="line-clamp-1 block">{x.name}</span>
+                  <span className="font-bold text-muted-foreground">
+                    {toGigabytes(x.metadata.size)}
+                  </span>
+                </div>
+              </SelectItem>
+            ))}
           </SelectGroup>
         )}
         <div className="border-b border-border" />

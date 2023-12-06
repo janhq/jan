@@ -12,7 +12,7 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 
-import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const TopBar = () => {
   const activeThread = useAtomValue(activeThreadAtom)
