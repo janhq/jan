@@ -48,7 +48,7 @@ export default function useSendChatMessage() {
   const { startModel } = useActiveModel()
   const [queuedMessage, setQueuedMessage] = useState(false)
 
-  const resendChatMessage = async () => {
+  const resendChatMessage = async (currentMessage: ThreadMessage) => {
     if (!activeThread) {
       console.error('No active thread')
       return
@@ -68,10 +68,16 @@ export default function useSendChatMessage() {
         return systemMessage
       })
       .concat(
-        currentMessages.map<ChatCompletionMessage>((msg) => ({
-          role: msg.role,
-          content: msg.content[0]?.text.value ?? '',
-        }))
+        currentMessages
+          .filter(
+            (e) =>
+              currentMessage.role === ChatCompletionRole.User ||
+              e.id !== currentMessage.id
+          )
+          .map<ChatCompletionMessage>((msg) => ({
+            role: msg.role,
+            content: msg.content[0]?.text.value ?? '',
+          }))
       )
 
     const messageRequest: MessageRequest = {
