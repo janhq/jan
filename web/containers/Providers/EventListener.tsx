@@ -57,9 +57,11 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
         (_event: string, callback: any) => {
           if (callback && callback.fileName) {
             const modelId = callback.fileName.split('/').pop() ?? ''
-            setDownloadStateSuccess(modelId)
 
             const model = modelsRef.current.find((e) => e.id === modelId)
+
+            setDownloadStateSuccess(modelId)
+
             if (model)
               extensionManager
                 .get<ModelExtension>(ExtensionType.Model)
