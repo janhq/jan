@@ -26,9 +26,9 @@ let currentModelFile = null;
  */
 function stopModel(): Promise<ModelOperationResponse> {
   return new Promise((resolve, reject) => {
-    checkAndUnloadNitro()
-    resolve({ error: undefined})
-  })
+    checkAndUnloadNitro();
+    resolve({ error: undefined });
+  });
 }
 
 /**
@@ -39,33 +39,32 @@ function stopModel(): Promise<ModelOperationResponse> {
  * TODO: Should it be startModel instead?
  */
 function initModel(wrapper: any): Promise<ModelOperationResponse> {
-    currentModelFile = wrapper.modelFullPath;
-    if (wrapper.model.engine !== "nitro") {
-      return Promise.resolve({ error: "Not a nitro model" })
-    }
-    else {
-      log.info("Started to load model " + wrapper.model.modelFullPath);
-      const settings = {
-        llama_model_path: currentModelFile,
-        ...wrapper.model.settings,
-      };
-      log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
-      return (
-        // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
-        validateModelVersion()
-          .then(checkAndUnloadNitro)
-          // 2. Spawn the Nitro subprocess
-          .then(spawnNitroProcess)
-          // 4. Load the model into the Nitro subprocess (HTTP POST request)
-          .then(() => loadLLMModel(settings))
-          // 5. Check if the model is loaded successfully
-          .then(validateModelStatus)
-          .catch((err) => {
-            log.error("error: " + JSON.stringify(err));
-            return { error: err, currentModelFile };
-          })
-        );
-    }
+  currentModelFile = wrapper.modelFullPath;
+  if (wrapper.model.engine !== "nitro") {
+    return Promise.resolve({ error: "Not a nitro model" });
+  } else {
+    log.info("Started to load model " + wrapper.model.modelFullPath);
+    const settings = {
+      llama_model_path: currentModelFile,
+      ...wrapper.model.settings,
+    };
+    log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
+    return (
+      // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
+      validateModelVersion()
+        .then(checkAndUnloadNitro)
+        // 2. Spawn the Nitro subprocess
+        .then(spawnNitroProcess)
+        // 4. Load the model into the Nitro subprocess (HTTP POST request)
+        .then(() => loadLLMModel(settings))
+        // 5. Check if the model is loaded successfully
+        .then(validateModelStatus)
+        .catch((err) => {
+          log.error("error: " + JSON.stringify(err));
+          return { error: err, currentModelFile };
+        })
+    );
+  }
 }
 
 /**
@@ -148,13 +147,12 @@ async function checkAndUnloadNitro() {
     // If inUse - try unload or kill process, otherwise do nothing
     if (inUse) {
       // Attempt to unload model
-      return await fetch(NITRO_HTTP_UNLOAD_MODEL_URL, {
+      return fetch(NITRO_HTTP_UNLOAD_MODEL_URL, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
         },
-      })
-      .catch((err) => {
+      }).catch((err) => {
         console.error(err);
         // Fallback to kill the port
         return killSubprocess();

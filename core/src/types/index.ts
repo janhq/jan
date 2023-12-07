@@ -41,11 +41,8 @@ export type MessageRequest = {
   /** Messages for constructing a chat completion request **/
   messages?: ChatCompletionMessage[];
 
-  /** Runtime parameters for constructing a chat completion request **/
-  parameters?: ModelRuntimeParams;
-
   /** Settings for constructing a chat completion request **/
-  model?: ModelInfo
+  model?: ModelInfo;
 };
 
 /**

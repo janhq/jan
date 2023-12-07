@@ -56,7 +56,7 @@ export function handleFsIPCs() {
    * @param path - The path of the file to check.
    * @returns A promise that resolves with a boolean indicating whether the file exists.
    */
-  ipcMain.handle('checkFileExists', async (_event, path: string) => {
+  ipcMain.handle('exists', async (_event, path: string) => {
     return new Promise((resolve, reject) => {
       const fullPath = join(userSpacePath, path)
       fs.existsSync(fullPath) ? resolve(true) : resolve(false)

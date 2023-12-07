@@ -25,7 +25,7 @@ const readFile: (path: string) => Promise<any> = (path) => global.core.api?.read
  * @param {string} path
  * @returns {boolean} A boolean indicating whether the path is a file.
  */
-const checkFileExists = (path: string): Promise<boolean> => global.core.api?.checkFileExists(path)
+const exists = (path: string): Promise<boolean> => global.core.api?.exists(path)
 /**
  * List the directory files
  * @param {string} path - The path of the directory to list files.
@@ -75,7 +75,7 @@ export const fs = {
   isDirectory,
   writeFile,
   readFile,
-  checkFileExists,
+  exists,
   listFiles,
   mkdir,
   rmdir,

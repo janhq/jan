@@ -231,7 +231,6 @@ export default function useSendChatMessage() {
       await WaitForModelStarting(modelId)
       setQueuedMessage(false)
     }
-    console.log('messageRequest', messageRequest)
     events.emit(EventName.OnMessageSent, messageRequest)
   }
 

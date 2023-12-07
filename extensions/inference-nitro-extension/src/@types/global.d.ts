@@ -10,10 +10,10 @@ declare const INFERENCE_URL: string;
  * @property settings.embedding - Whether to use embedding.
  */
 interface EngineSettings {
-    ctx_len: number;
-    ngl: number;
-    cont_batching: boolean;
-    embedding: boolean;
+  ctx_len: number;
+  ngl: number;
+  cont_batching: boolean;
+  embedding: boolean;
 }
 
 /**
@@ -21,7 +21,6 @@ interface EngineSettings {
  * @property error - An error message if the model fails to load.
  */
 interface ModelOperationResponse {
-    error?: any;
-    modelFile?: string;
-  }
-  
+  error?: any;
+  modelFile?: string;
+}

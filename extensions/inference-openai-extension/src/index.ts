@@ -31,14 +31,14 @@ import { EngineSettings, OpenAIModel } from "./@types/global";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceOpenAIExtension implements InferenceExtension {
-  private static readonly _homeDir = 'engines'
-  private static readonly _engineMetadataFileName = 'openai.json'
-  
-  static _currentModel: OpenAIModel;
+  private static readonly _homeDir = "engines";
+  private static readonly _engineMetadataFileName = "openai.json";
 
-  static _engineSettings: EngineSettings = {
-    "base_url": "https://api.openai.com/v1",
-    "api_key": "sk-<your key here>"
+  private static _currentModel: OpenAIModel;
+
+  private static _engineSettings: EngineSettings = {
+    base_url: "https://api.openai.com/v1",
+    api_key: "sk-<your key here>",
   };
 
   controller = new AbortController();
@@ -56,8 +56,8 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
    * Subscribes to events emitted by the @janhq/core package.
    */
   onLoad(): void {
-    fs.mkdir(JanInferenceOpenAIExtension._homeDir)
-    JanInferenceOpenAIExtension.writeDefaultEngineSettings()
+    fs.mkdir(JanInferenceOpenAIExtension._homeDir);
+    JanInferenceOpenAIExtension.writeDefaultEngineSettings();
 
     // Events subscription
     events.on(EventName.OnMessageSent, (data) =>
@@ -87,20 +87,27 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     modelId: string,
     settings?: ModelSettingParams
   ): Promise<void> {
-    return
+    return;
   }
 
   static async writeDefaultEngineSettings() {
     try {
-      const engine_json = join(JanInferenceOpenAIExtension._homeDir, JanInferenceOpenAIExtension._engineMetadataFileName)
-      if (await fs.checkFileExists(engine_json)) {
-        JanInferenceOpenAIExtension._engineSettings = JSON.parse(await fs.readFile(engine_json))
-      }
-      else {
-        await fs.writeFile(engine_json, JSON.stringify(JanInferenceOpenAIExtension._engineSettings, null, 2))
+      const engineFile = join(
+        JanInferenceOpenAIExtension._homeDir,
+        JanInferenceOpenAIExtension._engineMetadataFileName
+      );
+      if (await fs.exists(engineFile)) {
+        JanInferenceOpenAIExtension._engineSettings = JSON.parse(
+          await fs.readFile(engineFile)
+        );
+      } else {
+        await fs.writeFile(
+          engineFile,
+          JSON.stringify(JanInferenceOpenAIExtension._engineSettings, null, 2)
+        );
       }
     } catch (err) {
-      console.error(err)
+      console.error(err);
     }
   }
   /**
@@ -137,35 +144,39 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     };
 
     return new Promise(async (resolve, reject) => {
-      requestInference(data.messages ?? [], 
-          JanInferenceOpenAIExtension._engineSettings, 
-          JanInferenceOpenAIExtension._currentModel)
-        .subscribe({
-          next: (_content) => {},
-          complete: async () => {
-            resolve(message);
-          },
-          error: async (err) => {
-            reject(err);
-          },
+      requestInference(
+        data.messages ?? [],
+        JanInferenceOpenAIExtension._engineSettings,
+        JanInferenceOpenAIExtension._currentModel
+      ).subscribe({
+        next: (_content) => {},
+        complete: async () => {
+          resolve(message);
+        },
+        error: async (err) => {
+          reject(err);
+        },
       });
     });
   }
 
   private static async handleModelInit(model: OpenAIModel) {
-    if (model.engine !== 'openai') { return }
-    else {
-      JanInferenceOpenAIExtension._currentModel = model
-      JanInferenceOpenAIExtension.writeDefaultEngineSettings()
+    if (model.engine !== "openai") {
+      return;
+    } else {
+      JanInferenceOpenAIExtension._currentModel = model;
+      JanInferenceOpenAIExtension.writeDefaultEngineSettings();
       // Todo: Check model list with API key
-      events.emit(EventName.OnModelReady, model)
+      events.emit(EventName.OnModelReady, model);
       // events.emit(EventName.OnModelFail, model)
     }
   }
 
   private static async handleModelStop(model: OpenAIModel) {
-    if (model.engine !== 'openai') { return }
-    events.emit(EventName.OnModelStopped, model)
+    if (model.engine !== "openai") {
+      return;
+    }
+    events.emit(EventName.OnModelStopped, model);
   }
 
   /**
@@ -178,8 +189,10 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     data: MessageRequest,
     instance: JanInferenceOpenAIExtension
   ) {
-    if (data.model.engine !== 'openai') { return }
-    
+    if (data.model.engine !== "openai") {
+      return;
+    }
+
     const timestamp = Date.now();
     const message: ThreadMessage = {
       id: ulid(),

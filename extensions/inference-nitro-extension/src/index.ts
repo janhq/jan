@@ -33,17 +33,17 @@ import { join } from "path";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceNitroExtension implements InferenceExtension {
-  private static readonly _homeDir = 'engines'
-  private static readonly _engineMetadataFileName = 'nitro.json'
+  private static readonly _homeDir = "engines";
+  private static readonly _engineMetadataFileName = "nitro.json";
 
-  static _currentModel: Model;
+  private static _currentModel: Model;
 
-  static _engineSettings: EngineSettings = {
-    "ctx_len": 2048,
-    "ngl": 100,
-    "cont_batching": false,
-    "embedding": false
-  }
+  private static _engineSettings: EngineSettings = {
+    ctx_len: 2048,
+    ngl: 100,
+    cont_batching: false,
+    embedding: false,
+  };
 
   controller = new AbortController();
   isCancelled = false;
@@ -59,12 +59,12 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    * Subscribes to events emitted by the @janhq/core package.
    */
   onLoad(): void {
-    fs.mkdir(JanInferenceNitroExtension._homeDir)
-    this.writeDefaultEngineSettings()
+    fs.mkdir(JanInferenceNitroExtension._homeDir);
+    this.writeDefaultEngineSettings();
 
     // Events subscription
     events.on(EventName.OnMessageSent, (data) =>
-    JanInferenceNitroExtension.handleMessageRequest(data, this)
+      JanInferenceNitroExtension.handleMessageRequest(data, this)
     );
 
     events.on(EventName.OnModelInit, (model: Model) => {
@@ -112,42 +112,51 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
 
   private async writeDefaultEngineSettings() {
     try {
-      const engine_json = join(JanInferenceNitroExtension._homeDir, JanInferenceNitroExtension._engineMetadataFileName)
-      if (await fs.checkFileExists(engine_json)) {
-        JanInferenceNitroExtension._engineSettings = JSON.parse(await fs.readFile(engine_json))
-      }
-      else {
-        await fs.writeFile(engine_json, JSON.stringify(JanInferenceNitroExtension._engineSettings, null, 2))
+      const engineFile = join(
+        JanInferenceNitroExtension._homeDir,
+        JanInferenceNitroExtension._engineMetadataFileName
+      );
+      if (await fs.exists(engineFile)) {
+        JanInferenceNitroExtension._engineSettings = JSON.parse(
+          await fs.readFile(engineFile)
+        );
+      } else {
+        await fs.writeFile(
+          engineFile,
+          JSON.stringify(JanInferenceNitroExtension._engineSettings, null, 2)
+        );
       }
     } catch (err) {
-      console.error(err)
+      console.error(err);
     }
   }
 
   private static async handleModelInit(model: Model) {
-    if (model.engine !== "nitro") { return }
+    if (model.engine !== "nitro") {
+      return;
+    }
     const userSpacePath = await getUserSpace();
     const modelFullPath = join(userSpacePath, "models", model.id, model.id);
 
-    const nitro_init_result = await executeOnMain(MODULE, "initModel", {
+    const nitroInitResult = await executeOnMain(MODULE, "initModel", {
       modelFullPath: modelFullPath,
-      model: model
+      model: model,
     });
 
-    if (nitro_init_result.error === null) {
-      events.emit(EventName.OnModelFail, model)
-    }
-    else{
+    if (nitroInitResult.error === null) {
+      events.emit(EventName.OnModelFail, model);
+    } else {
       JanInferenceNitroExtension._currentModel = model;
       events.emit(EventName.OnModelReady, model);
     }
   }
 
   private static async handleModelStop(model: Model) {
-    if (model.engine !== 'nitro') { return }
-    else {
-      await executeOnMain(MODULE, "stopModel")
-      events.emit(EventName.OnModelStopped, model)
+    if (model.engine !== "nitro") {
+      return;
+    } else {
+      await executeOnMain(MODULE, "stopModel");
+      events.emit(EventName.OnModelStopped, model);
     }
   }
 
@@ -171,18 +180,17 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
 
     return new Promise(async (resolve, reject) => {
       requestInference(
-          data.messages ?? [], 
-          JanInferenceNitroExtension._engineSettings, 
-          JanInferenceNitroExtension._currentModel
-        )
-        .subscribe({
+        data.messages ?? [],
+        JanInferenceNitroExtension._engineSettings,
+        JanInferenceNitroExtension._currentModel
+      ).subscribe({
         next: (_content) => {},
-          complete: async () => {
-            resolve(message);
-          },
-          error: async (err) => {
-            reject(err);
-          },
+        complete: async () => {
+          resolve(message);
+        },
+        error: async (err) => {
+          reject(err);
+        },
       });
     });
   }
@@ -197,7 +205,9 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     data: MessageRequest,
     instance: JanInferenceNitroExtension
   ) {
-    if (data.model.engine !== 'nitro') { return }
+    if (data.model.engine !== "nitro") {
+      return;
+    }
     const timestamp = Date.now();
     const message: ThreadMessage = {
       id: ulid(),
@@ -216,11 +226,11 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     instance.controller = new AbortController();
 
     requestInference(
-        data.messages ?? [], 
-        JanInferenceNitroExtension._engineSettings, 
-        JanInferenceNitroExtension._currentModel, 
-        instance.controller
-      ).subscribe({
+      data.messages ?? [],
+      JanInferenceNitroExtension._engineSettings,
+      JanInferenceNitroExtension._currentModel,
+      instance.controller
+    ).subscribe({
       next: (content) => {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
