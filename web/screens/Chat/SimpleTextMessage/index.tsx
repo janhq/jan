@@ -42,8 +42,8 @@ const marked = new Marked(
         // Make a copy paste
         return `
         <pre class="hljs">
-          <code class="language-${encodeURIComponent(lang ?? '')}">${
-            escaped ? code : encodeURIComponent(code)
+          <code class="language-${lang ?? ''}">${
+            escaped ? code : decodeURIComponent(code)
           }</code>
           </pre>`
       },
@@ -56,6 +56,9 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   if (props.content && props.content.length > 0) {
     text = props.content[0]?.text?.value ?? ''
   }
+
+  const a = '```bash\nnpm init -y\n```'
+  console.log(marked.parse(a))
 
   const parsedText = marked.parse(text)
   const isUser = props.role === ChatCompletionRole.User
