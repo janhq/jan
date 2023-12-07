@@ -130,7 +130,7 @@ components:
         created:
           type: integer
           format: int64
-          description: | 
+          description: |
             "Unix timestamp representing the creation time of the model."
 
           example: "1253935178"
@@ -240,7 +240,7 @@ components:
         - source_url
         - parameters
         - metadata
-        
+
     DeleteModelResponse:
       type: object
       properties:
@@ -256,7 +256,6 @@ components:
           type: boolean
           description: "Indicates whether the model was successfully deleted."
           example: true
-
 
     StartModelResponse:
       type: object
@@ -313,4 +312,3 @@ components:
           type: string
           description: "The current state of the model after the start operation."
           example: "downloaded"
-

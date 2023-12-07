@@ -109,8 +109,6 @@ components:
           description: |
             Set probability threshold for more relevant outputs
 
-            
-
     ChatCompletionResponse:
       type: object
       description: Description of the response structure
