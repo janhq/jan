@@ -139,7 +139,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl https://localhost:1337/v1/models/zephyr-7b
+            curl https://localhost:1337/v1/models/{model_id}
     delete:
       operationId: deleteModel
       tags:
@@ -166,7 +166,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl -X DELETE https://localhost:1337/v1/models/zephyr-7b
+            curl -X DELETE https://localhost:1337/v1/models/{model_id}
   /models/{model_id}/start:
     put:
       operationId: startModel
@@ -195,7 +195,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl -X PUT https://localhost:1337/v1/models/zephyr-7b/start
+            curl -X PUT https://localhost:1337/v1/models/{model_id}/start
   /models/{model_id}/stop:
     put:
       operationId: stopModel
@@ -223,7 +223,7 @@ paths:
       x-codeSamples:
         - lang: "curl"
           source: |
-            curl -X PUT https://localhost:1337/v1/models/zephyr-7b/stop
+            curl -X PUT https://localhost:1337/v1/models/{model_id}/stop
 
   ### THREADS
   /threads:
