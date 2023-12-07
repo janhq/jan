@@ -57,9 +57,6 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     text = props.content[0]?.text?.value ?? ''
   }
 
-  const a = '```bash\nnpm init -y\n```'
-  console.log(marked.parse(a))
-
   const parsedText = marked.parse(text)
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
