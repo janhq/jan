@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { FaWindows, FaApple, FaLinux } from "react-icons/fa";
+import { twMerge } from "tailwind-merge";
 
 const systemsTemplate = [
   {
-    name: "Mac Silicon",
+    name: "Mac M1, M2, M3",
     logo: FaApple,
     fileFormat: "{appname}-mac-arm64-{tag}.dmg",
     comingSoon: false,
@@ -110,14 +111,15 @@ export default function DownloadApp() {
           <a
             key={i}
             href={system.href}
-            className={`inline-flex m-2 px-4 py-2 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-gray-400 dark:border-gray-700 text-black dark:text-white bg-neutral-50 min-w-[150px] dark:bg-[#18181B], ${
-              system.comingSoon && "pointer-events-none	"
-            }`}
+            className={twMerge(
+              "inline-flex m-2 px-4 py-2 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-gray-400 dark:border-gray-700 text-black dark:text-black bg-neutral-50 min-w-[150px] dark:bg-[#18181B]",
+              system.comingSoon && "pointer-events-none"
+            )}
           >
             <system.logo />
             <span>{system.name}</span>
             {system.comingSoon && (
-              <span className="bg-gray-300 dark:bg-gray-700 py-0.5 px-2 inline-block ml-2 rounded-md text-sm mt-1">
+              <span className="bg-gray-300 py-0.5 px-2 inline-block ml-2 rounded-md text-sm mt-1">
                 Coming Soon
               </span>
             )}

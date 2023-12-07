@@ -42,8 +42,8 @@ const marked = new Marked(
         // Make a copy paste
         return `
         <pre class="hljs">
-          <code class="language-${encodeURIComponent(lang ?? '')}">${
-            escaped ? code : encodeURIComponent(code)
+          <code class="language-${lang ?? ''}">${
+            escaped ? code : decodeURIComponent(code)
           }</code>
           </pre>`
       },
