@@ -142,7 +142,7 @@ const config = {
       {
         name: "description",
         content:
-          "Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.",
+          "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
       },
       {
         name: "keywords",
@@ -150,11 +150,14 @@ const config = {
           "Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee",
       },
       { name: "robots", content: "index, follow" },
-      { property: "og:title", content: "Run your own AI | Jan" },
+      {
+        property: "og:title",
+        content: "Jan | Open-source ChatGPT Alternative",
+      },
       {
         property: "og:description",
         content:
-          "Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.",
+          "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
       },
       {
         property: "og:image",
@@ -163,11 +166,14 @@ const config = {
       { property: "og:type", content: "website" },
       { property: "twitter:card", content: "summary_large_image" },
       { property: "twitter:site", content: "@janhq_" },
-      { property: "twitter:title", content: "Run your own AI | Jan" },
+      {
+        property: "twitter:title",
+        content: "Jan | Open-source ChatGPT Alternative",
+      },
       {
         property: "twitter:description",
         content:
-          "Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.",
+          "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
       },
       {
         property: "twitter:image",
@@ -194,7 +200,7 @@ const config = {
           "@type": "localAI",
           name: "Jan",
           description:
-            "Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.",
+            "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
           keywords:
             "Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee",
           applicationCategory: "BusinessApplication",

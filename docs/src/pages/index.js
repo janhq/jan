@@ -25,7 +25,7 @@ export default function Home() {
     <>
       <Banner />
       <Layout
-        title="Jan | Open-source ChatGPT Alternative"
+        title="Open-source ChatGPT Alternative"
         description="Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable."
       >
         <main>
@@ -94,7 +94,7 @@ export default function Home() {
           </div>
 
           <div
-            className="dark:bg-[#09090B]/20 border-t border-zinc-200 dark:border-gray-800 py-16"
+            className="dark:bg-[#09090B]/20 border-t border-zinc-200 dark:border-gray-800 py-10 lg:py-16"
             id="download-section"
           >
             <div className="container">
@@ -104,7 +104,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="dark:bg-[#09090B]/20 pb-36">
+          <div className="dark:bg-[#09090B]/20 pb-10 lg:pb-36">
             <div className="container h-full ">
               <div className="w-full lg:w-3/4 mx-auto relative rounded-xl py-10">
                 <img
@@ -146,7 +146,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="dark:bg-[#27272A] bg-zinc-100 pt-20 pb-10">
+          <div className="dark:bg-[#27272A] bg-zinc-100 pt-10 lg:pt-20 pb-10">
             <div className="container">
               <div className="w-full lg:w-3/4 mx-auto relative">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
@@ -183,7 +183,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="dark:bg-[#27272A] bg-zinc-100 pb-20 pt-10">
+          <div className="dark:bg-[#27272A] bg-zinc-100 lg:pb-20 pb-10 pt-10">
             <div className="container">
               <div className="w-full lg:w-3/4 mx-auto relative ">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
@@ -226,7 +226,7 @@ export default function Home() {
           </div>
 
           <div className="dark:bg-[#09090B]/20">
-            <div className="container py-32">
+            <div className="container py-12 lg:py-32">
               <div className="w-full xl:w-10/12 mx-auto relative">
                 <div className="text-center">
                   <div className="card-link-bg dark:card-link-bg-dark px-4 py-2 inline-flex rounded-xl items-center space-x-4">
@@ -247,7 +247,7 @@ export default function Home() {
                     />
                   </div>
                   <div className="mt-8">
-                    <h6 className="text-4xl font-semibold">
+                    <h6 className="text-3xl lg:text-4xl font-semibold">
                       Offline and Local First
                     </h6>
                     <p className="mt-2 leading-relaxed text-zinc-600 dark:text-zinc-400">
@@ -256,10 +256,10 @@ export default function Home() {
                       exportable, and can be deleted at any time.
                     </p>
 
-                    <div className="grid grid-cols-12 mt-20 text-left gap-8">
+                    <div className="grid grid-cols-12 mt-10 lg:mt-20 text-left gap-8">
                       <div className="col-span-full lg:col-span-4">
                         <div className="dark:bg-[#27272A] bg-zinc-100 rounded-xl p-8 min-h-[450px]">
-                          <h6 className="text-4xl font-semibold">
+                          <h6 className="text-3xl lg:text-4xl font-semibold">
                             OpenAI Compatible
                           </h6>
                           <p className="mt-4 leading-relaxed text-zinc-600 dark:text-zinc-400">
