@@ -1,15 +1,19 @@
 {
   "compilerOptions": {
-    "target": "es2016",
-    "module": "ES6",
-    "outDir": "./lib",
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "target": "es5",
+    "module": "es2015",
+    "lib": ["es2015", "es2016", "es2017", "dom"],
     "strict": true,
-    "skipLibCheck": true,
+    "sourceMap": true,
     "declaration": true,
-    "rootDir": "./src"
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "declarationDir": "dist/types",
+    "outDir": "dist/lib",
+    "importHelpers": true,
+    "typeRoots": ["node_modules/@types"]
   },
-  "include": ["./src"],
-  "exclude": ["lib", "node_modules", "**/*.test.ts", "**/__mocks__/*"]
+  "include": ["src"]
 }
