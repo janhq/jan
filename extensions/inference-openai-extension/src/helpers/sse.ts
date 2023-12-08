@@ -22,7 +22,7 @@ export function requestInference(
       // Model parameters spreading
       ...model.parameters,
     });
-    fetch(`${engine.base_url}/chat/completions`, {
+    fetch(`${engine.full_url}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
