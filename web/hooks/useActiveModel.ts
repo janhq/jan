@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ExtensionType, InferenceExtension } from '@janhq/core'
+import {
+  EventName,
+  events,
+} from '@janhq/core'
 import { Model, ModelSettingParams } from '@janhq/core'
 import { atom, useAtom } from 'jotai'
 
@@ -9,9 +12,13 @@ import { useGetDownloadedModels } from './useGetDownloadedModels'
 
 import { extensionManager } from '@/extension'
 
-const activeModelAtom = atom<Model | undefined>(undefined)
+export const activeModelAtom = atom<Model | undefined>(undefined)
 
-const stateModelAtom = atom({ state: 'start', loading: false, model: '' })
+export const stateModelAtom = atom({
+  state: 'start',
+  loading: false,
+  model: '',
+})
 
 export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
@@ -47,59 +54,14 @@ export function useActiveModel() {
       return
     }
 
-    const currentTime = Date.now()
-    const res = await initModel(modelId, model?.settings)
-    if (res && res.error) {
-      const errorMessage = `${res.error}`
-      alert(errorMessage)
-      setStateModel(() => ({
-        state: 'start',
-        loading: false,
-        model: modelId,
-      }))
-    } else {
-      console.debug(
-        `Model ${modelId} successfully initialized! Took ${
-          Date.now() - currentTime
-        }ms`
-      )
-      setActiveModel(model)
-      toaster({
-        title: 'Success!',
-        description: `Model ${modelId} has been started.`,
-      })
-      setStateModel(() => ({
-        state: 'stop',
-        loading: false,
-        model: modelId,
-      }))
-    }
+    events.emit(EventName.OnModelInit, model)
   }
 
   const stopModel = async (modelId: string) => {
+    const model = downloadedModels.find((e) => e.id === modelId)
     setStateModel({ state: 'stop', loading: true, model: modelId })
-    setTimeout(async () => {
-      extensionManager
-        .get<InferenceExtension>(ExtensionType.Inference)
-        ?.stopModel()
-
-      setActiveModel(undefined)
-      setStateModel({ state: 'start', loading: false, model: '' })
-      toaster({
-        title: 'Success!',
-        description: `Model ${modelId} has been stopped.`,
-      })
-    }, 500)
+    events.emit(EventName.OnModelStop, model)
   }
 
   return { activeModel, startModel, stopModel, stateModel }
-}
-
-const initModel = async (
-  modelId: string,
-  settings?: ModelSettingParams
-): Promise<any> => {
-  return extensionManager
-    .get<InferenceExtension>(ExtensionType.Inference)
-    ?.initModel(modelId, settings)
 }

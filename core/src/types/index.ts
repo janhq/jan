@@ -41,8 +41,8 @@ export type MessageRequest = {
   /** Messages for constructing a chat completion request **/
   messages?: ChatCompletionMessage[];
 
-  /** Runtime parameters for constructing a chat completion request **/
-  parameters?: ModelRuntimeParam;
+  /** Settings for constructing a chat completion request **/
+  model?: ModelInfo;
 };
 
 /**
@@ -153,7 +153,8 @@ export type ThreadAssistantInfo = {
 export type ModelInfo = {
   id: string;
   settings: ModelSettingParams;
-  parameters: ModelRuntimeParam;
+  parameters: ModelRuntimeParams;
+  engine?: InferenceEngine;
 };
 
 /**
@@ -166,6 +167,17 @@ export type ThreadState = {
   error?: Error;
   lastMessage?: string;
 };
+/**
+ * Represents the inference engine.
+ * @stored
+ */
+
+enum InferenceEngine {
+  nitro = "nitro",
+  openai = "openai",
+  nvidia_triton = "nvidia_triton",
+  hf_endpoint = "hf_endpoint",
+}
 
 /**
  * Model type defines the shape of a model object.
@@ -228,12 +240,16 @@ export interface Model {
   /**
    * The model runtime parameters.
    */
-  parameters: ModelRuntimeParam;
+  parameters: ModelRuntimeParams;
 
   /**
    * Metadata of the model.
    */
   metadata: ModelMetadata;
+  /**
+   * The model engine.
+   */
+  engine: InferenceEngine;
 }
 
 export type ModelMetadata = {
@@ -268,7 +284,7 @@ export type ModelSettingParams = {
 /**
  * The available model runtime parameters.
  */
-export type ModelRuntimeParam = {
+export type ModelRuntimeParams = {
   temperature?: number;
   token_limit?: number;
   top_k?: number;

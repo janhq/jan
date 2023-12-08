@@ -20,51 +20,51 @@ let subprocess = null;
 let currentModelFile = null;
 
 /**
- * The response from the initModel function.
- * @property error - An error message if the model fails to load.
+ * Stops a Nitro subprocess.
+ * @param wrapper - The model wrapper.
+ * @returns A Promise that resolves when the subprocess is terminated successfully, or rejects with an error message if the subprocess fails to terminate.
  */
-interface InitModelResponse {
-  error?: any;
-  modelFile?: string;
+function stopModel(): Promise<ModelOperationResponse> {
+  return new Promise((resolve, reject) => {
+    checkAndUnloadNitro();
+    resolve({ error: undefined });
+  });
 }
 
 /**
  * Initializes a Nitro subprocess to load a machine learning model.
- * @param modelFile - The name of the machine learning model file.
+ * @param wrapper - The model wrapper.
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  * TODO: Should it be startModel instead?
  */
-function initModel(wrapper: any): Promise<InitModelResponse> {
-  // 1. Check if the model file exists
+function initModel(wrapper: any): Promise<ModelOperationResponse> {
   currentModelFile = wrapper.modelFullPath;
-  log.info("Started to load model " + wrapper.modelFullPath);
-
-  const settings = {
-    llama_model_path: currentModelFile,
-    ctx_len: 2048,
-    ngl: 100,
-    cont_batching: false,
-    embedding: false, // Always enable embedding mode on
-    ...wrapper.settings,
-  };
-  log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
-
-  return (
-    // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
-    validateModelVersion()
-      .then(checkAndUnloadNitro)
-      // 2. Spawn the Nitro subprocess
-      .then(spawnNitroProcess)
-      // 4. Load the model into the Nitro subprocess (HTTP POST request)
-      .then(() => loadLLMModel(settings))
-      // 5. Check if the model is loaded successfully
-      .then(validateModelStatus)
-      .catch((err) => {
-        log.error("error: " + JSON.stringify(err));
-        return { error: err, currentModelFile };
-      })
-  );
+  if (wrapper.model.engine !== "nitro") {
+    return Promise.resolve({ error: "Not a nitro model" });
+  } else {
+    log.info("Started to load model " + wrapper.model.modelFullPath);
+    const settings = {
+      llama_model_path: currentModelFile,
+      ...wrapper.model.settings,
+    };
+    log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
+    return (
+      // 1. Check if the port is used, if used, attempt to unload model / kill nitro process
+      validateModelVersion()
+        .then(checkAndUnloadNitro)
+        // 2. Spawn the Nitro subprocess
+        .then(spawnNitroProcess)
+        // 4. Load the model into the Nitro subprocess (HTTP POST request)
+        .then(() => loadLLMModel(settings))
+        // 5. Check if the model is loaded successfully
+        .then(validateModelStatus)
+        .catch((err) => {
+          log.error("error: " + JSON.stringify(err));
+          return { error: err, currentModelFile };
+        })
+    );
+  }
 }
 
 /**
@@ -91,11 +91,11 @@ function loadLLMModel(settings): Promise<Response> {
 
 /**
  * Validates the status of a model.
- * @returns {Promise<InitModelResponse>} A promise that resolves to an object.
+ * @returns {Promise<ModelOperationResponse>} A promise that resolves to an object.
  * If the model is loaded successfully, the object is empty.
  * If the model is not loaded successfully, the object contains an error message.
  */
-async function validateModelStatus(): Promise<InitModelResponse> {
+async function validateModelStatus(): Promise<ModelOperationResponse> {
   // Send a GET request to the validation URL.
   // Retry the request up to 3 times if it fails, with a delay of 500 milliseconds between retries.
   return fetchRetry(NITRO_HTTP_VALIDATE_MODEL_URL, {
@@ -142,8 +142,8 @@ function killSubprocess(): Promise<void> {
  * Check port is used or not, if used, attempt to unload model
  * If unload failed, kill the port
  */
-function checkAndUnloadNitro() {
-  return tcpPortUsed.check(PORT, LOCAL_HOST).then((inUse) => {
+async function checkAndUnloadNitro() {
+  return tcpPortUsed.check(PORT, LOCAL_HOST).then(async (inUse) => {
     // If inUse - try unload or kill process, otherwise do nothing
     if (inUse) {
       // Attempt to unload model
@@ -168,7 +168,7 @@ function checkAndUnloadNitro() {
  */
 async function spawnNitroProcess(): Promise<void> {
   return new Promise((resolve, reject) => {
-    let binaryFolder = path.join(__dirname, "nitro"); // Current directory by default
+    let binaryFolder = path.join(__dirname, "bin"); // Current directory by default
     let binaryName;
 
     if (process.platform === "win32") {

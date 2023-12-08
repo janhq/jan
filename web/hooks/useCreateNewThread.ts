@@ -67,6 +67,7 @@ export const useCreateNewThread = () => {
           top_p: 0,
           stream: false,
         },
+        engine: undefined
       },
       instructions: assistant.instructions,
     }

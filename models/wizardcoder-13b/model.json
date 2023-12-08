@@ -19,6 +19,7 @@
       "author": "WizardLM, The Bloke",
       "tags": ["Recommended", "13B", "Finetuned"],
       "size": 9230000000
-    }
+    },
+    "engine": "nitro"
   }
   

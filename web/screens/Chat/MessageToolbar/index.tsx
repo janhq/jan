@@ -30,9 +30,8 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const { resendChatMessage } = useSendChatMessage()
 
   const onStopInferenceClick = async () => {
-    await extensionManager
-      .get<InferenceExtension>(ExtensionType.Inference)
-      ?.stopInference()
+    events.emit(EventName.OnInferenceStopped, {})
+
     setTimeout(() => {
       events.emit(EventName.OnMessageUpdate, {
         ...message,
