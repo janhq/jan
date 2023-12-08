@@ -40,6 +40,10 @@ In Jan, assistants are `primary` entities with the following capabilities:
 
 ## `assistant.json`
 
+- Each `assistant` folder contains an `assistant.json` file, which is a representation of an assistant.
+- `assistant.json` contains metadata and model parameter overrides
+- There are no required fields.
+
 ```js
 {
   "id": "asst_abc123",                // Defaults to foldername

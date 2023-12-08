@@ -17,15 +17,14 @@ components:
           example: thread
         title:
           type: string
-          description: | 
+          description: |
             "A brief summary or description of the thread, defaults to an empty string."
 
-            
           example: "funny physics joke"
         assistants:
           type: array
-          description: | 
-            
+          description: |
+
           items:
             properties:
               assistant_id:
@@ -33,7 +32,6 @@ components:
                 description: |
                   The identifier of assistant, defaults to "jan"
 
-                  
                 example: jan
               model:
                 type: object
@@ -41,20 +39,17 @@ components:
                   id:
                     type: string
                     description: |
-                      
+
                     example: ...
-                  settings: 
+                  settings:
                     type: object
                     description: |
                       Defaults to and overrides assistant.json's "settings" (and if none, then model.json "settings")
-
-                      
                   parameters:
                     type: object
                     description: |
                       Defaults to and overrides assistant.json's "parameters" (and if none, then model.json "parameters")
 
-                      
         created:
           type: integer
           format: int64
@@ -143,7 +138,6 @@ components:
             type: string
           description: |
             "Array of file IDs associated with the message, if any."
-            
 
     ModifyThreadResponse:
       type: object
