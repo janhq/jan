@@ -218,7 +218,7 @@ export interface Model {
    * Default: "to_download"
    * Enum: "to_download" "downloading" "ready" "running"
    */
-  state: ModelState;
+  state?: ModelState;
 
   /**
    * The model settings.

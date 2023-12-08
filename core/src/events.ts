@@ -20,7 +20,7 @@ const on: (eventName: string, handler: Function) => void = (
   eventName,
   handler
 ) => {
-  window.core?.events?.on(eventName, handler);
+  global.core?.events?.on(eventName, handler);
 };
 
 /**
@@ -33,7 +33,7 @@ const off: (eventName: string, handler: Function) => void = (
   eventName,
   handler
 ) => {
-  window.core?.events?.off(eventName, handler);
+  global.core?.events?.off(eventName, handler);
 };
 
 /**
@@ -43,7 +43,7 @@ const off: (eventName: string, handler: Function) => void = (
  * @param object The object to pass to the event callback.
  */
 const emit: (eventName: string, object: any) => void = (eventName, object) => {
-  window.core?.events?.emit(eventName, object);
+  global.core?.events?.emit(eventName, object);
 };
 
 export const events = {

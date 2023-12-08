@@ -1,7 +1,10 @@
-export {};
+export {}
 
 declare global {
-  interface Window {
-    core?: any;
+  namespace NodeJS {
+    interface Global {
+      core: any
+    }
   }
+  var core: any | undefined
 }
