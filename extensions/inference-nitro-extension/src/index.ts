@@ -74,41 +74,17 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     events.on(EventName.OnModelStop, (model: Model) => {
       JanInferenceNitroExtension.handleModelStop(model);
     });
+
+    events.on(EventName.OnInferenceStopped, () => {
+      JanInferenceNitroExtension.handleInferenceStopped(this);
+    });
   }
 
   /**
    * Stops the model inference.
    */
-  onUnload(): void {
-    this.stopModel();
-  }
+  onUnload(): void {}
 
-  /**
-   * Initializes the model with the specified file name.
-   * @param {string} modelId - The ID of the model to initialize.
-   * @returns {Promise<void>} A promise that resolves when the model is initialized.
-   */
-  async initModel(
-    modelId: string,
-    settings?: ModelSettingParams
-  ): Promise<void> {}
-
-  /**
-   * Stops the model.
-   * @returns {Promise<void>} A promise that resolves when the model is stopped.
-   */
-  async stopModel(): Promise<void> {
-    return executeOnMain(MODULE, "killSubprocess");
-  }
-
-  /**
-   * Stops streaming inference.
-   * @returns {Promise<void>} A promise that resolves when the streaming is stopped.
-   */
-  async stopInference(): Promise<void> {
-    this.isCancelled = true;
-    this.controller?.abort();
-  }
 
   private async writeDefaultEngineSettings() {
     try {
@@ -160,12 +136,19 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     }
   }
 
+  private static async handleInferenceStopped(
+    instance: JanInferenceNitroExtension
+  ) {
+    instance.isCancelled = true;
+    instance.controller?.abort();
+  }
+
   /**
    * Makes a single response inference request.
    * @param {MessageRequest} data - The data for the inference request.
    * @returns {Promise<any>} A promise that resolves with the inference response.
    */
-  async inferenceRequest(data: MessageRequest): Promise<ThreadMessage> {
+  async inference(data: MessageRequest): Promise<ThreadMessage> {
     const timestamp = Date.now();
     const message: ThreadMessage = {
       thread_id: data.threadId,

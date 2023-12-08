@@ -71,24 +71,15 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     events.on(EventName.OnModelStop, (model: OpenAIModel) => {
       JanInferenceOpenAIExtension.handleModelStop(model);
     });
+    events.on(EventName.OnInferenceStopped, () => {
+      JanInferenceOpenAIExtension.handleInferenceStopped(this);
+    });
   }
 
   /**
    * Stops the model inference.
    */
   onUnload(): void {}
-
-  /**
-   * Initializes the model with the specified file name.
-   * @param {string} modelId - The ID of the model to initialize.
-   * @returns {Promise<void>} A promise that resolves when the model is initialized.
-   */
-  async initModel(
-    modelId: string,
-    settings?: ModelSettingParams
-  ): Promise<void> {
-    return;
-  }
 
   static async writeDefaultEngineSettings() {
     try {
@@ -110,27 +101,13 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
       console.error(err);
     }
   }
-  /**
-   * Stops the model.
-   * @returns {Promise<void>} A promise that resolves when the model is stopped.
-   */
-  async stopModel(): Promise<void> {}
-
-  /**
-   * Stops streaming inference.
-   * @returns {Promise<void>} A promise that resolves when the streaming is stopped.
-   */
-  async stopInference(): Promise<void> {
-    this.isCancelled = true;
-    this.controller?.abort();
-  }
 
   /**
    * Makes a single response inference request.
    * @param {MessageRequest} data - The data for the inference request.
    * @returns {Promise<any>} A promise that resolves with the inference response.
    */
-  async inferenceRequest(data: MessageRequest): Promise<ThreadMessage> {
+  async inference(data: MessageRequest): Promise<ThreadMessage> {
     const timestamp = Date.now();
     const message: ThreadMessage = {
       thread_id: data.threadId,
@@ -168,7 +145,6 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
       JanInferenceOpenAIExtension.writeDefaultEngineSettings();
       // Todo: Check model list with API key
       events.emit(EventName.OnModelReady, model);
-      // events.emit(EventName.OnModelFail, model)
     }
   }
 
@@ -177,6 +153,13 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
       return;
     }
     events.emit(EventName.OnModelStopped, model);
+  }
+
+  private static async handleInferenceStopped(
+    instance: JanInferenceOpenAIExtension
+  ) {
+    instance.isCancelled = true;
+    instance.controller?.abort();
   }
 
   /**

@@ -18,6 +18,8 @@ export enum EventName {
   OnModelStop = "OnModelStop",
   /** The `OnModelStopped` event is emitted when a model stopped ok. */
   OnModelStopped = "OnModelStopped",
+  /** The `OnInferenceStopped` event is emitted when a inference is stopped. */
+  OnInferenceStopped = "OnInferenceStopped",
 }
 
 /**
