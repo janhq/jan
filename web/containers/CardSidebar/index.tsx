@@ -1,4 +1,4 @@
-import { ReactNode, useState, useRef } from 'react'
+import { ReactNode, useState } from 'react'
 
 import {
   ChevronDownIcon,
@@ -55,7 +55,7 @@ export default function CardSidebar({
         </button>
         <div
           ref={setToggle}
-          className="cursor-pointer bg-zinc-200 p-2 dark:bg-zinc-600/10"
+          className="cursor-pointer rounded-md bg-zinc-200 p-2 dark:bg-zinc-600/10"
           onClick={() => setMore(!more)}
         >
           <MoreVerticalIcon className="h-5 w-5" />
