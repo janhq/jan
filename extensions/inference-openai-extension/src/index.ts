@@ -37,7 +37,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   private static _currentModel: OpenAIModel;
 
   private static _engineSettings: EngineSettings = {
-    full_url: "https://api.openai.com/v1/chat/completion",
+    full_url: "https://api.openai.com/v1/chat/completions",
     api_key: "sk-<your key here>",
   };
 
