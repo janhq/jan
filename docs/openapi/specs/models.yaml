@@ -169,53 +169,120 @@ components:
           format: uri
           description: "URL to the source of the model."
           example: "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf"
-        parameters:
+        engine_parameters:
+          type: object
+          properties:
+            pre_prompt:
+              type: string
+              description: "Predefined prompt used for setting up internal configurations."
+              default: ""
+              example: "Initial setup complete."
+            system_prompt:
+              type: string
+              description: "Prefix used for system-level prompts."
+              default: "SYSTEM: "
+            user_prompt:
+              type: string
+              description: "Prefix used for user prompts."
+              default:  "USER: "
+            ai_prompt:
+              type: string
+              description: "Prefix used for assistant prompts."
+              default: "ASSISTANT: "
+            ngl:
+              type: integer
+              description: "Number of neural network layers loaded onto the GPU for acceleration."
+              minimum: 0
+              maximum: 100
+              default: 100
+              example: 100
+            ctx_len:
+              type: integer
+              description: "Context length for model operations, varies based on the specific model."
+              minimum: 128
+              maximum: 4096
+              default: 2048
+              example: 2048
+            n_parallel:
+              type: integer
+              description: "Number of parallel operations, relevant when continuous batching is enabled."
+              minimum: 1
+              maximum: 10
+              default: 1
+              example: 4
+            cont_batching:
+              type: boolean
+              description: "Indicates if continuous batching is used for processing."
+              default: false
+              example: false
+            cpu_threads:
+              type: integer
+              description: "Number of threads allocated for CPU-based inference."
+              minimum: 1
+              example: 8
+            embedding:
+              type: boolean
+              description: "Indicates if embedding layers are enabled in the model."
+              default: true
+              example: true
+        model_parameters:
           type: object
           properties:
             ctx_len:
               type: integer
-              description: "Context length."
+              description: "Maximum context length the model can handle."
+              minimum: 0
+              maximum: 4096
+              default: 2048
               example: 2048
             ngl:
               type: integer
-              description: "Number of layers."
+              description: "Number of layers in the neural network."
+              minimum: 1
+              maximum: 100
+              default: 100
               example: 100
             embedding:
               type: boolean
-              description: "Indicates if embedding is enabled."
+              description: "Indicates if embedding layers are used."
+              default: true
               example: true
             n_parallel:
               type: integer
-              description: "Number of parallel processes."
+              description: "Number of parallel processes the model can run."
+              minimum: 1
+              maximum: 10
+              default: 1
               example: 4
-            # pre_prompt:
-            #   type: string
-            #   description: "Predefined prompt for initiating the chat."
-            #   example: "A chat between a curious user and an artificial intelligence"
-            # user_prompt:
-            #   type: string
-            #   description: "Format of user's prompt."
-            #   example: "USER: "
-            # ai_prompt:
-            #   type: string
-            #   description: "Format of AI's response."
-            #   example: "ASSISTANT: "
             temperature:
-              type: string
-              description: "Temperature setting for the model."
-              example: "0.7"
+              type: number
+              description: "Controls randomness in model's responses. Higher values lead to more random responses."
+              minimum: 0.0
+              maximum: 2.0
+              default: 0.7
+              example: 0.7
             token_limit:
-              type: string
-              description: "Token limit for the model."
-              example: "2048"
+              type: integer
+              description: "Maximum number of tokens the model can generate in a single response."
+              minimum: 1
+              maximum: 4096
+              default: 2048
+              example: 2048
             top_k:
-              type: string
-              description: "Top-k setting for the model."
-              example: "0"
+              type: integer
+              description: "Limits the model to consider only the top k most likely next tokens at each step."
+              minimum: 0
+              maximum: 100
+              default: 0
+              example: 0
             top_p:
-              type: string
-              description: "Top-p setting for the model."
-              example: "1"
+              type: number
+              description: "Nucleus sampling parameter. The model considers the smallest set of tokens whose cumulative probability exceeds the top_p value."
+              minimum: 0.0
+              maximum: 1.0
+              default: 1.0
+              example: 1.0
+
         metadata:
           type: object
           properties:
