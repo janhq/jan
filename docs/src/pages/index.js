@@ -1,281 +1,320 @@
 import React from "react";
-import Dropdown from "@site/src/components/Elements/dropdown";
+import DownloadApp from "@site/src/containers/DownloadApp";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 
 import useBaseUrl from "@docusaurus/useBaseUrl";
 import Layout from "@theme/Layout";
-import AnnoncementBanner from "@site/src/components/Announcement";
-
-import { AiOutlineGithub } from "react-icons/ai";
+import Banner from "@site/src/containers/Banner";
 
 import ThemedImage from "@theme/ThemedImage";
 
-import DownloadLink from "@site/src/components/Elements/downloadLink";
+import SocialButton from "@site/src/containers/SocialButton";
+
+import { IoArrowDown } from "react-icons/io5";
 
 export default function Home() {
   const { siteConfig } = useDocusaurusContext();
+
+  const handleAnchorLink = () => {
+    document
+      .getElementById("download-section")
+      .scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
     <>
-      <AnnoncementBanner />
+      <Banner />
       <Layout
-        title={`${siteConfig.tagline}`}
-        description="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server."
+        title="Open-source ChatGPT Alternative"
+        description="Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable."
       >
-        <main className="bg-gray-50 dark:bg-gray-950/95 relative">
-          <div className="relative">
-            <ThemedImage
-              alt="App screenshot"
-              sources={{
-                light: useBaseUrl("/img/bg-hero-light.svg"),
-                dark: useBaseUrl("/img/bg-hero-dark.svg"),
-              }}
-              className="absolute w-full h-full opacity-10 dark:opacity-20 top-0 object-cover blur-3xl"
-            />
-            <div className="container pt-16">
-              <div className="grid grid-cols-1 items-center gap-4">
-                <div className="relative z-10 text-center ">
-                  {/* TODO: Add upcoming events here */}
-                  {/* <div className="bg-red-50 mb-4 inline-flex items-center py-1 rounded-full px-4 gap-x-2">
-                    <span className="font-bold uppercase text-blue-600">
-                      Event
-                    </span>
-                    <a href="/events/nvidia-llm-day-nov-23">
-                      <p className="font-bold">
-                        8 Nov 2023: Nvidia LLM Day (Hanoi)
-                      </p>
-                    </a>
-                  </div> */}
-                  <h1 className="bg-gradient-to-r dark:from-white from-black to-gray-500 dark:to-gray-400 bg-clip-text text-4xl lg:text-6xl font-bold leading-tight text-transparent dark:text-transparent lg:leading-tight">
-                    Own your AI
-                  </h1>
-                  <p className="text-xl leading-relaxed lg:text-2xl lg:leading-relaxed text-gray-500 dark:text-gray-400">
-                    A &nbsp;
-                    <span className="dark:text-white text-black">
-                      free, open-source
-                    </span>
-                    &nbsp;alternative to OpenAI
-                    <br />
-                    &nbsp;that runs on your&nbsp;
-                    <span className="dark:text-white text-black">
-                      personal computer
-                    </span>
-                  </p>
-
-                  <div className="my-6 flex flex-col-reverse md:flex-row items-center justify-center gap-4 relative z-20">
-                    <button
-                      type="button"
-                      className="cursor-pointer relative hidden md:inline-flex items-center px-4 py-2.5  text-base font-semibold rounded-lg border border-gray-400 dark:border-gray-700 text-gray-600 dark:text-white"
-                      onClick={() =>
-                        window.open(
-                          "https://github.com/janhq/jan",
-                          "_blank",
-                          "noreferrer"
-                        )
-                      }
-                    >
-                      View Github
-                    </button>
-                    <Dropdown />
-                  </div>
-                </div>
-
-                <div className="text-center relative ">
-                  <div className="p-3 border dark:border-gray-500 border-gray-400 inline-block rounded-lg">
-                    <ThemedImage
-                      alt="App screenshot"
-                      sources={{
-                        light: useBaseUrl("/img/desktop-llm-chat-light.png"),
-                        dark: useBaseUrl("/img/desktop-llm-chat-dark.png"),
-                      }}
-                      width={1000}
-                      className="rounded-md mx-auto"
-                    />
-                  </div>
-                </div>
+        <main>
+          <div className="grid grid-cols-1 lg:grid-cols-12 -mt-1 gap-8 items-center relative min-h-[calc(100vh-96px)] ">
+            <div className="col-span-full lg:col-start-2 lg:col-span-5 text-left relative z-10 px-4 py-6">
+              <img
+                src="/img/homepage/element-hero-blur.png"
+                alt="Element blur"
+                className="hidden lg:block absolute blur-3xl opacity-30 right-32 -bottom-32"
+              />
+              <div className="flex items-center space-x-2 mb-3">
+                <img alt="Jan Logo" src="img/logo.svg" width={36} height={36} />
+                <span className="text-zinc-500 text-4xl font-medium">
+                  Meet Jan
+                </span>
               </div>
-            </div>
-          </div>
-          <div className="container mt-40 text-center">
-            <h2>AI that you control</h2>
-            <p className="text-base mt-2 w-full lg:w-2/5 mx-auto leading-relaxed">
-              Private. Local. Infinitely Customizable.
-            </p>
-            <div className="grid text-left lg:grid-cols-2 mt-16 gap-4">
-              <div className="card relative min-h-[380px] lg:min-h-[460px]">
-                <img
-                  src="/img/card-element.png"
-                  alt="Element"
-                  className="absolute w-full bottom-0 left-0"
-                />
-                <div className="p-8 relative z-40">
-                  <h5>Personal AI that runs on your computer</h5>
-                  <p className="mt-2">
-                    Jan runs directly on your local machine, offering privacy,
-                    convenience and customizability.
-                  </p>
-                  <ThemedImage
-                    alt="Group Chat"
-                    sources={{
-                      light: useBaseUrl("/img/group-chat-light.png"),
-                      dark: useBaseUrl("/img/group-chat-dark.png"),
-                    }}
-                    className="mt-10"
+              <h1 className="text-5xl lg:text-7xl font-semibold leading-tight lg:leading-tight mt-2">
+                Bringing AI to <br /> your Desktop{" "}
+                <span>
+                  <img
+                    src="/img/homepage/element-hero-heading.png"
+                    alt="Element hero heading"
+                    className="w-16 inline-block"
                   />
+                </span>
+              </h1>
+              <p className="text-2xl mt-3 leading-relaxed text-zinc-500">
+                Open-source ChatGPT alternative that runs{" "}
+                <br className="hidden lg:block" /> 100% offline on your
+                computer.
+              </p>
+              <div className="mt-8">
+                <div
+                  onClick={() => handleAnchorLink()}
+                  className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
+                >
+                  <span>Download Jan for PC</span>
                 </div>
               </div>
-              <div className="card relative min-h-[380px] lg:min-h-[460px]">
-                <div className="p-8">
-                  <h5>Extendable via App and Plugin framework</h5>
-                  <p className="mt-2">
-                    Jan has a versatile app and plugin framework, allowing you
-                    to customize it to your needs.
-                  </p>
+
+              <div
+                onClick={() => handleAnchorLink()}
+                className="hidden lg:inline-block cursor-pointer"
+              >
+                <div className="mt-16 flex items-center space-x-2">
+                  <p>Find out more</p>
+                  <IoArrowDown size={24} className="animate-bounce-down" />
                 </div>
-                <ThemedImage
-                  alt="Framework"
-                  sources={{
-                    light: useBaseUrl("/img/card-framework-light.png"),
-                    dark: useBaseUrl("/img/card-framework-dark.png"),
-                  }}
-                  className="w-11/12 ml-auto mt-auto"
-                />
               </div>
-              <div className="card relative min-h-[380px] lg:min-h-[460px]">
-                <div className="p-8">
-                  <h5>
-                    Private and offline, your data never leaves your machine
-                  </h5>
-                  <p className="mt-2">
-                    Your conversations and data are with an AI that runs on your
-                    computer, where only you have access.
-                  </p>
-                </div>
+            </div>
+
+            <div className="col-span-full lg:col-span-6 h-full">
+              <div className="relative text-center h-full">
                 <ThemedImage
-                  alt="Group Chat"
+                  className="w-full object-cover mr-auto h-full"
+                  alt="App screenshots"
                   sources={{
-                    light: useBaseUrl("/img/card-nitro-light.png"),
-                    dark: useBaseUrl("/img/card-nitro-dark.png"),
+                    light: useBaseUrl(
+                      "/img/homepage/app-base-screen-light.png"
+                    ),
+                    dark: useBaseUrl("/img/homepage/app-base-screen-dark.png"),
                   }}
-                  className="w-3/4 mx-auto mt-auto"
-                />
-              </div>
-              <div className="card relative min-h-[380px] lg:min-h-[460px]">
-                <div className="p-8">
-                  <h5>No subscription fees, the AI runs on your computer</h5>
-                  <p className="mt-2">
-                    Say goodbye to monthly subscriptions or usage-based APIs.
-                    Jan runs 100% free on your own hardware.
-                  </p>
-                </div>
-                <ThemedImage
-                  alt="Group Chat"
-                  sources={{
-                    light: useBaseUrl("/img/card-free-light.png"),
-                    dark: useBaseUrl("/img/card-free-dark.png"),
-                  }}
-                  className="w-full mt-auto mx-auto"
                 />
               </div>
             </div>
           </div>
 
-          <div className="container lg:px-20 py-40 lg:py-[200px] text-center lg:text-left">
-            <div className="flex  flex-col lg:flex-row space-y-20 lg:space-y-0">
-              <div>
-                <h1 className="bg-gradient-to-r dark:from-white from-black to-gray-500 dark:to-gray-400 bg-clip-text text-4xl lg:text-6xl font-bold leading-tight text-transparent dark:text-transparent lg:leading-tight">
-                  Your AI, forever.
-                </h1>
-                <p className="text-lg lg:text-2xl mt-2">
-                  Apps come and go, but your AI and data should last.{" "}
-                </p>
-                <div className="w-full lg:w-3/4 mt-8">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-24">
-                    <div>
-                      <img
-                        src="/img/ic-park-solid-unlock.svg"
-                        alt="Icon - Lock"
-                        className="w-8 mb-4 mx-auto lg:mx-0"
-                      />
-                      <p>
-                        Jan uses open, standard and non-proprietary files stored
-                        locally on your device.
-                      </p>
-                    </div>
-                    <div>
-                      <img
-                        src="img/ic-baseline-control-camera.svg"
-                        alt="Icon - Camera"
-                        className="w-8 mb-4 mx-auto lg:mx-0"
-                      />
-                      <p>
-                        You have total control over your AI, which means you can
-                        use Jan offline and switch to another app easily if you
-                        want.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="w-full lg:w-80 text-center">
-                <ThemedImage
-                  alt="App screenshot"
-                  sources={{
-                    light: useBaseUrl("/img/jan-icon-light.png"),
-                    dark: useBaseUrl("/img/jan-icon-dark.png"),
-                  }}
-                  className="w-40 lg:w-full mx-auto"
-                />
-                <p className="mt-1 font-bold">100% free on your own hardware</p>
-                <DownloadLink />
+          <div
+            className="dark:bg-[#09090B]/20 border-t border-zinc-200 dark:border-gray-800 py-10 lg:py-16"
+            id="download-section"
+          >
+            <div className="container">
+              <div className="w-full lg:w-3/4 mx-auto">
+                <DownloadApp />
               </div>
             </div>
           </div>
 
-          <div className="container pb-40 text-center">
-            <h2>
-              We are open-source. <br /> Join Jan community.
-            </h2>
-            <div className="mt-14">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <a href="https://discord.com/invite/FTk2MvZwJH" target="_blank">
-                  <div className="card h-52 relative flex items-center justify-center">
-                    <div className="relative z-50">
+          <div className="dark:bg-[#09090B]/20 pb-10 lg:pb-36">
+            <div className="container h-full ">
+              <div className="w-full lg:w-3/4 mx-auto relative rounded-xl py-10">
+                <img
+                  src="/img/homepage/element-bg-open-source.png"
+                  alt="Element Open Source BG"
+                  className="absolute w-full h-full object-cover rounded-xl top-0"
+                />
+                <div className="grid grid-cols-12 gap-4 px-4 items-center relative z-20">
+                  <div className="col-span-full lg:col-span-7 order-2 lg:order-1 relative">
+                    <div className="relative lg:-left-14 overflow-hidden rounded-lg group">
+                      <div className="hidden group-hover:flex absolute top-0 left-0 rounded-lg bg-black/30 w-full h-full items-center justify-center transition-all">
+                        <a
+                          href="https://github.com/orgs/janhq/projects/5/views/12"
+                          target="_blank"
+                          className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 text-black bg-white hover:text-black"
+                        >
+                          <span>View Roadmap</span>
+                        </a>
+                      </div>
                       <img
-                        src="/img/discord-logo.png"
-                        alt="Discord logo"
-                        className="w-28"
+                        src="/img/homepage/roadmap.png"
+                        alt="Element Roadmap"
+                        className="h-full w-full object-cover"
                       />
                     </div>
-
-                    <div className="card-link card-link-bg dark:card-link-bg-dark absolute right-4 top-5">
-                      Join our Discord
-                    </div>
-                    <ThemedImage
-                      alt="Discord Element"
-                      sources={{
-                        light: useBaseUrl("/img/discord-element-light.png"),
-                        dark: useBaseUrl("/img/discord-element-dark.png"),
-                      }}
-                      className="absolute"
-                    />
                   </div>
-                </a>
-                <a href="https://github.com/janhq/jan" target="_blank">
-                  <div className="card h-52 relative flex items-center justify-center">
-                    <div className="relative z-50">
-                      <AiOutlineGithub className="text-8xl dark:text-white text-black" />
+                  <div className="col-span-full lg:col-span-5 order-1 lg:order-2 text-black">
+                    <p className="text-4xl font-semibold">100% open source</p>
+                    <p className="leading-relaxed w-full lg:w-3/4 mt-4">
+                      Our core team believes that AI should be open source, and
+                      Jan is built in public.
+                    </p>
+                    <div className="mt-6">
+                      <SocialButton />
                     </div>
-                    <div className="card-link card-link-bg dark:card-link-bg-dark absolute right-4 top-5">
-                      View Github
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="dark:bg-[#27272A] bg-zinc-100 pt-10 lg:pt-20 pb-10">
+            <div className="container">
+              <div className="w-full lg:w-3/4 mx-auto relative">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                  <div className="col-span-5">
+                    <p className="text-3xl xl:text-4xl font-semibold">
+                      Desktop App
+                    </p>
+                    <p className="text-zinc-600 dark:text-zinc-400 mt-4 text-lg leading-relaxed">
+                      <b className="text-bold text-black dark:text-white">
+                        10x productivity
+                      </b>{" "}
+                      with customizable AI <br className="hidden lg:block" />{" "}
+                      assistants, global hotkeys, and in-line AI.
+                    </p>
+                  </div>
+                  <div className="col-span-7">
+                    <div className="bg-white dark:bg-[#09090B]/50 h-[375px] border border-zinc-200 dark:border-gray-800 rounded-xl overflow-hidden">
+                      <ThemedImage
+                        className="object-cover w-full object-center mx-auto h-full lg:-left-4 relative"
+                        alt="App screenshots"
+                        sources={{
+                          light: useBaseUrl(
+                            "/img/homepage/desktop-app-light.png"
+                          ),
+                          dark: useBaseUrl(
+                            "/img/homepage/desktop-app-dark.png"
+                          ),
+                        }}
+                      />
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="dark:bg-[#27272A] bg-zinc-100 lg:pb-20 pb-10 pt-10">
+            <div className="container">
+              <div className="w-full lg:w-3/4 mx-auto relative ">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                  <div className="col-span-5">
+                    <div className="flex items-center">
+                      <p className="text-3xl xl:text-4xl font-semibold">
+                        Mobile App
+                      </p>
+                      <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block ml-2 rounded-md text-sm mt-1">
+                        Coming Soon
+                      </span>
+                    </div>
+                    <p className="text-zinc-600 dark:text-zinc-400 mt-4 text-lg leading-relaxed">
+                      Take your AI assistants on the go.{" "}
+                      <br className="hidden lg:block" /> Seamless integration
+                      into your&nbsp;
+                      <b className="text-bold text-black dark:text-white">
+                        mobile <br className="hidden lg:block" /> workflows
+                      </b>
+                      &nbsp; with elegant features.
+                    </p>
+                  </div>
+                  <div className="col-span-7">
+                    <div className="bg-white dark:bg-[#09090B]/50 h-[375px] border border-zinc-200 dark:border-gray-800 rounded-xl">
+                      <ThemedImage
+                        className="object-cover w-full object-center mx-auto h-full"
+                        alt="App screenshots"
+                        sources={{
+                          light: useBaseUrl(
+                            "/img/homepage/mobile-app-light.png"
+                          ),
+                          dark: useBaseUrl("/img/homepage/mobile-app-dark.png"),
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="dark:bg-[#09090B]/20">
+            <div className="container py-12 lg:py-32">
+              <div className="w-full xl:w-10/12 mx-auto relative">
+                <div className="text-center">
+                  <div className="card-link-bg dark:card-link-bg-dark px-4 py-2 inline-flex rounded-xl items-center space-x-4">
                     <img
-                      alt="Github Element"
-                      src="/img/github-element-dark.png"
-                      className="absolute left-8"
+                      src="/img/homepage/ic-offline.png"
+                      alt="Icon Offline"
+                      className="w-9"
+                    />
+                    <img
+                      src="/img/homepage/ic-private.png"
+                      alt="Icon Offline"
+                      className="w-9"
+                    />
+                    <img
+                      src="/img/homepage/ic-folder.png"
+                      alt="Icon Offline"
+                      className="w-9"
                     />
                   </div>
-                </a>
+                  <div className="mt-8">
+                    <h6 className="text-3xl lg:text-4xl font-semibold">
+                      Offline and Local First
+                    </h6>
+                    <p className="mt-2 leading-relaxed text-zinc-600 dark:text-zinc-400">
+                      Conversations, preferences, and model usage stay on{" "}
+                      <br className="hidden lg:block" /> your computer—secure,
+                      exportable, and can be deleted at any time.
+                    </p>
+
+                    <div className="grid grid-cols-12 mt-10 lg:mt-20 text-left gap-8">
+                      <div className="col-span-full lg:col-span-4">
+                        <div className="dark:bg-[#27272A] bg-zinc-100 rounded-xl p-8 min-h-[450px]">
+                          <h6 className="text-3xl lg:text-4xl font-semibold">
+                            OpenAI Compatible
+                          </h6>
+                          <p className="mt-4 leading-relaxed text-zinc-600 dark:text-zinc-400">
+                            Jan provides an OpenAI-equivalent API{" "}
+                            <br className="hidden lg:block" /> server at&nbsp;
+                            <b>localhost:</b>&nbsp;
+                            <span className="bg-blue-600 text-white font-bold py-0.5 px-2 rounded-lg">
+                              1337
+                            </span>{" "}
+                            that can be used as a drop-in replacement with
+                            compatible apps.
+                          </p>
+
+                          <div className="mt-6">
+                            <div className="mb-4">
+                              <div className="bg-white dark:bg-[#18181B] shadow-lg py-2 px-4 inline-flex rounded-xl">
+                                <p className="font-medium">
+                                  /chats/completions
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mb-4">
+                              <div className="bg-white dark:bg-[#18181B] shadow-lg py-2 px-4 inline-flex rounded-xl">
+                                <p className="font-medium">
+                                  Local server and API
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mb-4">
+                              <div className="bg-white dark:bg-[#18181B] shadow-lg py-2 px-4 inline-flex rounded-xl">
+                                <p className="font-medium">
+                                  <span className="inline-block mr-2">
+                                    Assistants framework
+                                  </span>
+                                  <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block rounded-md text-sm">
+                                    Coming Soon
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-span-full lg:col-span-8 items-center">
+                        <div className="card-gradient rounded-xl h-full relative text-center min-h-[450px]">
+                          <img
+                            src="/img/homepage/status.png"
+                            alt="Element status"
+                            className="w-10/12 lg:p-20 object-cover absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

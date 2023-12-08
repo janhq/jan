@@ -18,7 +18,7 @@ const setDownloadStateSuccessAtom = atom(null, (get, set, modelId: string) => {
   const currentState = { ...get(modelDownloadStateAtom) }
   const state = currentState[modelId]
   if (!state) {
-    console.error(`Cannot find download state for ${modelId}`)
+    console.debug(`Cannot find download state for ${modelId}`)
     return
   }
   delete currentState[modelId]

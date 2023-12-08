@@ -62,7 +62,12 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
                 </span>
                 <div className="mt-2 flex space-x-2">
                   {model.metadata.tags.map((tag, i) => (
-                    <Badge key={i} themes="primary" className="line-clamp-1">
+                    <Badge
+                      key={i}
+                      themes="primary"
+                      className="line-clamp-1"
+                      title={tag}
+                    >
                       {tag}
                     </Badge>
                   ))}

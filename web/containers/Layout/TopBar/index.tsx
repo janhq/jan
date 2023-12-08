@@ -7,7 +7,7 @@ import CommandSearch from '@/containers/Layout/TopBar/CommandSearch'
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
-import useGetAssistants from '@/hooks/useGetAssistants'
+import useGetAssistants, { getAssistants } from '@/hooks/useGetAssistants'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
@@ -33,10 +33,18 @@ const TopBar = () => {
 
   const onCreateConversationClick = async () => {
     if (assistants.length === 0) {
-      alert('No assistant available')
-      return
+      await getAssistants().then((res) => {
+        if (res) {
+          if (res.length === 0) {
+            alert('No assistant available')
+            return
+          }
+          requestCreateNewThread(res[0])
+        }
+      })
+    } else {
+      requestCreateNewThread(assistants[0])
     }
-    requestCreateNewThread(assistants[0])
   }
 
   return (
