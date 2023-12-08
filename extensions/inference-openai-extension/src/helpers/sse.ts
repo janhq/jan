@@ -15,12 +15,15 @@ export function requestInference(
   controller?: AbortController
 ): Observable<string> {
   return new Observable((subscriber) => {
+    let model_id: string = model.id
+    if (engine.full_url.includes("openai.azure.com")){
+      model_id = engine.full_url.split("/")[5]
+    }
     const requestBody = JSON.stringify({
       messages: recentMessages,
       stream: true,
-      model: model.id,
-      // Model parameters spreading
-      ...model.parameters,
+      model: model_id
+      // ...model.parameters,
     });
     fetch(`${engine.full_url}`, {
       method: "POST",
@@ -29,6 +32,7 @@ export function requestInference(
         Accept: "text/event-stream",
         "Access-Control-Allow-Origin": "*",
         Authorization: `Bearer ${engine.api_key}`,
+        "api-key": `${engine.api_key}`,
       },
       body: requestBody,
       signal: controller?.signal,
