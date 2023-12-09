@@ -24,3 +24,8 @@ interface ModelOperationResponse {
   error?: any;
   modelFile?: string;
 }
+
+interface ResourcesInfo {
+  numCpuPhysicalCore: number;
+  memAvailable: number;
+}

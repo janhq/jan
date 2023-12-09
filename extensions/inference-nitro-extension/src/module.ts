@@ -4,6 +4,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const tcpPortUsed = require("tcp-port-used");
 const fetchRetry = require("fetch-retry")(global.fetch);
+const si = require("systeminformation");
 
 const log = require("electron-log");
 
@@ -167,7 +168,7 @@ async function checkAndUnloadNitro() {
  * Should run exactly platform specified Nitro binary version
  */
 async function spawnNitroProcess(): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     let binaryFolder = path.join(__dirname, "bin"); // Current directory by default
     let binaryName;
 
@@ -190,10 +191,20 @@ async function spawnNitroProcess(): Promise<void> {
 
     const binaryPath = path.join(binaryFolder, binaryName);
 
+    // Gather system information for CPU physical cores and memory
+    const nitroResourceProbe = await getResourcesInfo();
+    console.log(
+      "Nitro with physical core: " + nitroResourceProbe.numCpuPhysicalCore
+    );
+
     // Execute the binary
-    subprocess = spawn(binaryPath, [1, "127.0.0.1", PORT], {
-      cwd: binaryFolder,
-    });
+    subprocess = spawn(
+      binaryPath,
+      [nitroResourceProbe.numCpuPhysicalCore, "127.0.0.1", PORT],
+      {
+        cwd: binaryFolder,
+      }
+    );
 
     // Handle subprocess output
     subprocess.stdout.on("data", (data) => {
@@ -263,13 +274,26 @@ function validateModelVersion(): Promise<void> {
   });
 }
 
-/**
- * Cleans up any registered resources.
- * Its module specific function, should be called when application is closed
- */
+
 function dispose() {
   // clean other registered resources here
   killSubprocess();
+}
+
+/**
+ * Get the system resources information
+ */
+async function getResourcesInfo(): Promise<ResourcesInfo> {
+  return new Promise(async (resolve) => {
+    const cpu = await si.cpu();
+    const mem = await si.mem();
+
+    const response = {
+      numCpuPhysicalCore: cpu.physicalCores,
+      memAvailable: mem.available,
+    };
+    resolve(response);
+  });
 }
 
 module.exports = {
