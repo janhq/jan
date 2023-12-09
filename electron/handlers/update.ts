@@ -1,6 +1,7 @@
 import { app, dialog } from 'electron'
 import { WindowManager } from './../managers/window'
 import { autoUpdater } from 'electron-updater'
+import { AppEvent } from '@janhq/core'
 
 export function handleAppUpdates() {
   /* Should not check for update during development */
@@ -19,7 +20,7 @@ export function handleAppUpdates() {
   /* App Update Completion Message */
   autoUpdater.on('update-downloaded', async (_info: any) => {
     WindowManager.instance.currentWindow?.webContents.send(
-      'onAppUpdateDownloadSuccess',
+      AppEvent.onAppUpdateDownloadSuccess,
       {}
     )
     const action = await dialog.showMessageBox({
@@ -34,7 +35,7 @@ export function handleAppUpdates() {
   /* App Update Error */
   autoUpdater.on('error', (info: any) => {
     WindowManager.instance.currentWindow?.webContents.send(
-      'onAppUpdateDownloadError',
+      AppEvent.onAppUpdateDownloadError,
       {}
     )
   })
@@ -43,7 +44,7 @@ export function handleAppUpdates() {
   autoUpdater.on('download-progress', (progress: any) => {
     console.debug('app update progress: ', progress.percent)
     WindowManager.instance.currentWindow?.webContents.send(
-      'onAppUpdateDownloadUpdate',
+      AppEvent.onAppUpdateDownloadUpdate,
       {
         percent: progress.percent,
       }

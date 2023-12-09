@@ -2,64 +2,26 @@
  * Exposes a set of APIs to the renderer process via the contextBridge object.
  * @module preload
  */
+
+import {
+  AppEvent,
+  AppRoute,
+  DownloadEvent,
+  DownloadRoute,
+  ExtensionRoute,
+  FileSystemRoute,
+} from '@janhq/core'
 const { contextBridge } = require('electron')
 
 const { ipcRenderer } = require('electron')
-
-// TODO: Add types / class definition instead of keys
 const ipcMethods = [
-  // App
-  'setNativeThemeLight',
-  'setNativeThemeDark',
-  'setNativeThemeSystem',
-  'appDataPath',
-  'appVersion',
-  'openExternalUrl',
-  'relaunch',
-  'openAppDirectory',
-  'openFileExplorer',
-
-  // Downloader
-  'downloadFile',
-  'pauseDownload',
-  'resumeDownload',
-  'abortDownload',
-
-  // Extension
-  'installExtension',
-  'uninstallExtension',
-  'getActiveExtensions',
-  'updateExtension',
-  'invokeExtensionFunc',
-  'baseExtensions',
-  'extensionPath',
-
-  // Filesystem
-  'deleteFile',
-  'isDirectory',
-  'getUserSpace',
-  'readFile',
-  'writeFile',
-  'listFiles',
-  'appendFile',
-  'readLineByLine',
-  'mkdir',
-  'rmdir',
-  'copyFile',
-  'getResourcePath',
-  'exists',
+  ...Object.values(AppRoute),
+  ...Object.values(DownloadRoute),
+  ...Object.values(ExtensionRoute),
+  ...Object.values(FileSystemRoute),
 ]
 
-const ipcEvents = [
-  // Downloader
-  'onFileDownloadUpdate',
-  'onFileDownloadError',
-  'onFileDownloadSuccess',
-  // App Update
-  'onAppUpdateDownloadUpdate',
-  'onAppUpdateDownloadError',
-  'onAppUpdateDownloadSuccess',
-]
+const ipcEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]
 
 const interfaces: { [key: string]: (...args: any[]) => any } = {}
 

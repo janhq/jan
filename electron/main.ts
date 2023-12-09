@@ -14,7 +14,6 @@ import { ExtensionManager } from './managers/extension'
  * IPC Handlers
  **/
 import { handleDownloaderIPCs } from './handlers/download'
-import { handleThemesIPCs } from './handlers/theme'
 import { handleExtensionIPCs } from './handlers/extension'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
@@ -79,7 +78,6 @@ function createMainWindow() {
 function handleIPCs() {
   handleFsIPCs()
   handleDownloaderIPCs()
-  handleThemesIPCs()
   handleExtensionIPCs()
   handleAppIPCs()
 }
