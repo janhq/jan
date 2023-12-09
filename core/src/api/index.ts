@@ -85,9 +85,17 @@ export type FileSystemRouteFunctions = {
   [K in FileSystemRoute]: ApiFunction
 }
 
-export type APIRoutes = AppRouteFunctions &
+export type APIFunctions = AppRouteFunctions &
   AppEventFunctions &
   DownloadRouteFunctions &
   DownloadEventFunctions &
   ExtensionRouteFunctions &
   FileSystemRouteFunctions
+
+export const APIRoutes = [
+  ...Object.values(AppRoute),
+  ...Object.values(DownloadRoute),
+  ...Object.values(ExtensionRoute),
+  ...Object.values(FileSystemRoute),
+]
+export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]

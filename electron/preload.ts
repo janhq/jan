@@ -3,36 +3,27 @@
  * @module preload
  */
 
-import {
-  AppEvent,
-  AppRoute,
-  DownloadEvent,
-  DownloadRoute,
-  ExtensionRoute,
-  FileSystemRoute,
-} from '@janhq/core'
-const { contextBridge } = require('electron')
-
-const { ipcRenderer } = require('electron')
-const ipcMethods = [
-  ...Object.values(AppRoute),
-  ...Object.values(DownloadRoute),
-  ...Object.values(ExtensionRoute),
-  ...Object.values(FileSystemRoute),
-]
-
-const ipcEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]
+import { APIEvents, APIRoutes } from '@janhq/core'
+import { contextBridge, ipcRenderer } from 'electron'
 
 const interfaces: { [key: string]: (...args: any[]) => any } = {}
 
-ipcMethods.forEach((method) => {
+// Loop over each route in APIRoutes
+APIRoutes.forEach((method) => {
+  // For each method, create a function on the interfaces object
+  // This function invokes the method on the ipcRenderer with any provided arguments
   interfaces[method] = (...args: any[]) => ipcRenderer.invoke(method, ...args)
 })
 
-ipcEvents.forEach((method) => {
+// Loop over each method in APIEvents
+APIEvents.forEach((method) => {
+  // For each method, create a function on the interfaces object
+  // This function sets up an event listener on the ipcRenderer for the method
+  // The handler for the event is provided as an argument to the function
   interfaces[method] = (handler: any) => ipcRenderer.on(method, handler)
 })
-
+// Expose the 'interfaces' object in the main world under the name 'electronAPI'
+// This allows the renderer process to access these methods directly
 contextBridge.exposeInMainWorld('electronAPI', {
   ...interfaces,
 })
