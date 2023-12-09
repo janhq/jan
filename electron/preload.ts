@@ -2,20 +2,75 @@
  * Exposes a set of APIs to the renderer process via the contextBridge object.
  * @module preload
  */
-
-// TODO: Refactor this file for less dependencies and more modularity
-// TODO: Most of the APIs should be done using RestAPIs from extensions
-
-import { fsInvokers } from './invokers/fs'
-import { appInvokers } from './invokers/app'
-import { downloadInvokers } from './invokers/download'
-import { extensionInvokers } from './invokers/extension'
-
 const { contextBridge } = require('electron')
 
+const { ipcRenderer } = require('electron')
+
+// TODO: Add types / class definition instead of keys
+const ipcMethods = [
+  // App
+  'setNativeThemeLight',
+  'setNativeThemeDark',
+  'setNativeThemeSystem',
+  'appDataPath',
+  'appVersion',
+  'openExternalUrl',
+  'relaunch',
+  'openAppDirectory',
+  'openFileExplorer',
+
+  // Downloader
+  'downloadFile',
+  'pauseDownload',
+  'resumeDownload',
+  'abortDownload',
+
+  // Extension
+  'installExtension',
+  'uninstallExtension',
+  'getActiveExtensions',
+  'updateExtension',
+  'invokeExtensionFunc',
+  'baseExtensions',
+  'extensionPath',
+
+  // Filesystem
+  'deleteFile',
+  'isDirectory',
+  'getUserSpace',
+  'readFile',
+  'writeFile',
+  'listFiles',
+  'appendFile',
+  'readLineByLine',
+  'mkdir',
+  'rmdir',
+  'copyFile',
+  'getResourcePath',
+  'exists',
+]
+
+const ipcEvents = [
+  // Downloader
+  'onFileDownloadUpdate',
+  'onFileDownloadError',
+  'onFileDownloadSuccess',
+  // App Update
+  'onAppUpdateDownloadUpdate',
+  'onAppUpdateDownloadError',
+  'onAppUpdateDownloadSuccess',
+]
+
+const interfaces: { [key: string]: (...args: any[]) => any } = {}
+
+ipcMethods.forEach((method) => {
+  interfaces[method] = (...args: any[]) => ipcRenderer.invoke(method, ...args)
+})
+
+ipcEvents.forEach((method) => {
+  interfaces[method] = (handler: any) => ipcRenderer.on(method, handler)
+})
+
 contextBridge.exposeInMainWorld('electronAPI', {
-  ...extensionInvokers(),
-  ...downloadInvokers(),
-  ...fsInvokers(),
-  ...appInvokers(),
+  ...interfaces,
 })

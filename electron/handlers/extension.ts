@@ -23,7 +23,7 @@ export function handleExtensionIPCs() {
    * @returns The result of the invoked function.
    */
   ipcMain.handle(
-    'extension:invokeExtensionFunc',
+    'invokeExtensionFunc',
     async (_event, modulePath, method, ...args) => {
       const module = require(
         /* webpackIgnore: true */ join(userSpacePath, 'extensions', modulePath)
@@ -44,7 +44,7 @@ export function handleExtensionIPCs() {
    * @param _event - The IPC event object.
    * @returns An array of paths to the base extensions.
    */
-  ipcMain.handle('extension:baseExtensions', async (_event) => {
+  ipcMain.handle('baseExtensions', async (_event) => {
     const baseExtensionPath = join(getResourcePath(), 'pre-install')
     return readdirSync(baseExtensionPath)
       .filter((file) => extname(file) === '.tgz')
@@ -56,19 +56,19 @@ export function handleExtensionIPCs() {
    * @param _event - The IPC event extension.
    * @returns The path to the user's extension directory.
    */
-  ipcMain.handle('extension:extensionPath', async (_event) => {
+  ipcMain.handle('extensionPath', async (_event) => {
     return join(userSpacePath, 'extensions')
   })
 
   /**MARK: Extension Manager handlers */
-  ipcMain.handle('extension:install', async (e, extensions) => {
+  ipcMain.handle('installExtension', async (e, extensions) => {
     // Install and activate all provided extensions
     const installed = await installExtensions(extensions)
     return JSON.parse(JSON.stringify(installed))
   })
 
   // Register IPC route to uninstall a extension
-  ipcMain.handle('extension:uninstall', async (e, extensions, reload) => {
+  ipcMain.handle('uninstallExtension', async (e, extensions, reload) => {
     // Uninstall all provided extensions
     for (const ext of extensions) {
       const extension = getExtension(ext)
@@ -82,7 +82,7 @@ export function handleExtensionIPCs() {
   })
 
   // Register IPC route to update a extension
-  ipcMain.handle('extension:update', async (e, extensions, reload) => {
+  ipcMain.handle('updateExtension', async (e, extensions, reload) => {
     // Update all provided extensions
     const updated: Extension[] = []
     for (const ext of extensions) {
@@ -98,27 +98,8 @@ export function handleExtensionIPCs() {
     return JSON.parse(JSON.stringify(updated))
   })
 
-  // Register IPC route to check if updates are available for a extension
-  ipcMain.handle('extension:updatesAvailable', (e, names) => {
-    const extensions = names
-      ? names.map((name: string) => getExtension(name))
-      : getAllExtensions()
-
-    const updates: Record<string, Extension> = {}
-    for (const extension of extensions) {
-      updates[extension.name] = extension.isUpdateAvailable()
-    }
-    return updates
-  })
-
   // Register IPC route to get the list of active extensions
-  ipcMain.handle('extension:getActiveExtensions', () => {
+  ipcMain.handle('getActiveExtensions', () => {
     return JSON.parse(JSON.stringify(getActiveExtensions()))
-  })
-
-  // Register IPC route to toggle the active state of a extension
-  ipcMain.handle('extension:toggleExtensionActive', (e, plg, active) => {
-    const extension = getExtension(plg)
-    return JSON.parse(JSON.stringify(extension.setActive(active)))
   })
 }

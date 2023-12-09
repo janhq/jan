@@ -56,7 +56,7 @@ export function handleDownloaderIPCs() {
     progress(rq, {})
       .on('progress', function (state: any) {
         WindowManager?.instance.currentWindow?.webContents.send(
-          'FILE_DOWNLOAD_UPDATE',
+          'onFileDownloadUpdate',
           {
             ...state,
             fileName,
@@ -65,7 +65,7 @@ export function handleDownloaderIPCs() {
       })
       .on('error', function (err: Error) {
         WindowManager?.instance.currentWindow?.webContents.send(
-          'FILE_DOWNLOAD_ERROR',
+          'onFileDownloadError',
           {
             fileName,
             err,
@@ -75,7 +75,7 @@ export function handleDownloaderIPCs() {
       .on('end', function () {
         if (DownloadManager.instance.networkRequests[fileName]) {
           WindowManager?.instance.currentWindow?.webContents.send(
-            'FILE_DOWNLOAD_COMPLETE',
+            'onFileDownloadSuccess',
             {
               fileName,
             }
@@ -83,7 +83,7 @@ export function handleDownloaderIPCs() {
           DownloadManager.instance.setRequest(fileName, undefined)
         } else {
           WindowManager?.instance.currentWindow?.webContents.send(
-            'FILE_DOWNLOAD_ERROR',
+            'onFileDownloadError',
             {
               fileName,
               err: 'Download cancelled',

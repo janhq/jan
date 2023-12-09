@@ -58,7 +58,7 @@ export class ExtensionManager {
    * @returns An array of extensions.
    */
   async getActive(): Promise<Extension[]> {
-    const res = await window.core.api?.getActive()
+    const res = await window.core.api?.getActiveExtensions()
     if (!res || !Array.isArray(res)) return []
 
     const extensions: Extension[] = res.map(
@@ -119,7 +119,7 @@ export class ExtensionManager {
     if (typeof window === 'undefined') {
       return
     }
-    const res = await window.core.api?.install(extensions)
+    const res = await window.core.api?.installExtension(extensions)
     if (res.cancelled) return false
     return res.map(async (ext: any) => {
       const extension = new Extension(ext.name, ext.url, ext.active)
@@ -138,7 +138,7 @@ export class ExtensionManager {
     if (typeof window === 'undefined') {
       return
     }
-    return window.core.api?.uninstall(extensions, reload)
+    return window.core.api?.uninstallExtension(extensions, reload)
   }
 }
 
