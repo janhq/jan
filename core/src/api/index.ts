@@ -58,3 +58,36 @@ export enum FileSystemRoute {
   getResourcePath = 'getResourcePath',
   exists = 'exists',
 }
+
+export type ApiFunction = (...args: any[]) => any
+
+export type AppRouteFunctions = {
+  [K in AppRoute]: ApiFunction
+}
+
+export type AppEventFunctions = {
+  [K in AppEvent]: ApiFunction
+}
+
+export type DownloadRouteFunctions = {
+  [K in DownloadRoute]: ApiFunction
+}
+
+export type DownloadEventFunctions = {
+  [K in DownloadEvent]: ApiFunction
+}
+
+export type ExtensionRouteFunctions = {
+  [K in ExtensionRoute]: ApiFunction
+}
+
+export type FileSystemRouteFunctions = {
+  [K in FileSystemRoute]: ApiFunction
+}
+
+export type APIRoutes = AppRouteFunctions &
+  AppEventFunctions &
+  DownloadRouteFunctions &
+  DownloadEventFunctions &
+  ExtensionRouteFunctions &
+  FileSystemRouteFunctions

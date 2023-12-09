@@ -118,7 +118,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (window.core.events) {
+    if (window.core?.events) {
       events.on(EventName.OnMessageResponse, handleNewMessageResponse)
       events.on(EventName.OnMessageUpdate, handleMessageResponseUpdate)
       events.on(EventName.OnModelReady, handleModelReady)
