@@ -8,11 +8,11 @@ export enum AppRoute {
   setNativeThemeSystem = 'setNativeThemeSystem',
   appDataPath = 'appDataPath',
   appVersion = 'appVersion',
+  getResourcePath = 'getResourcePath',
   openExternalUrl = 'openExternalUrl',
-  relaunch = 'relaunch',
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
-  getResourcePath = 'getResourcePath',
+  relaunch = 'relaunch',
 }
 
 export enum AppEvent {
@@ -22,10 +22,10 @@ export enum AppEvent {
 }
 
 export enum DownloadRoute {
+  abortDownload = 'abortDownload',
   downloadFile = 'downloadFile',
   pauseDownload = 'pauseDownload',
   resumeDownload = 'resumeDownload',
-  abortDownload = 'abortDownload',
 }
 
 export enum DownloadEvent {
@@ -35,28 +35,27 @@ export enum DownloadEvent {
 }
 
 export enum ExtensionRoute {
-  installExtension = 'installExtension',
-  uninstallExtension = 'uninstallExtension',
-  getActiveExtensions = 'getActiveExtensions',
-  updateExtension = 'updateExtension',
-  invokeExtensionFunc = 'invokeExtensionFunc',
   baseExtensions = 'baseExtensions',
-  extensionPath = 'extensionPath',
+  getActiveExtensions = 'getActiveExtensions',
+  installExtension = 'installExtension',
+  invokeExtensionFunc = 'invokeExtensionFunc',
+  updateExtension = 'updateExtension',
+  uninstallExtension = 'uninstallExtension',
 }
 export enum FileSystemRoute {
-  deleteFile = 'deleteFile',
-  isDirectory = 'isDirectory',
-  getUserSpace = 'getUserSpace',
-  readFile = 'readFile',
-  writeFile = 'writeFile',
-  listFiles = 'listFiles',
   appendFile = 'appendFile',
-  readLineByLine = 'readLineByLine',
-  mkdir = 'mkdir',
-  rmdir = 'rmdir',
   copyFile = 'copyFile',
-  getResourcePath = 'getResourcePath',
+  deleteFile = 'deleteFile',
   exists = 'exists',
+  getResourcePath = 'getResourcePath',
+  getUserSpace = 'getUserSpace',
+  isDirectory = 'isDirectory',
+  listFiles = 'listFiles',
+  mkdir = 'mkdir',
+  readFile = 'readFile',
+  readLineByLine = 'readLineByLine',
+  rmdir = 'rmdir',
+  writeFile = 'writeFile',
 }
 
 export type ApiFunction = (...args: any[]) => any

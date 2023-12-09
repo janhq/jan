@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { setupMenu } from './utils/menu'
-import { createUserSpace, getResourcePath } from './utils/path'
+import { createUserSpace } from './utils/path'
 
 /**
  * Managers

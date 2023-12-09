@@ -52,15 +52,6 @@ export function handleExtensionIPCs() {
       .map((file) => join(baseExtensionPath, file))
   })
 
-  /**
-   * Returns the path to the user's extension directory.
-   * @param _event - The IPC event extension.
-   * @returns The path to the user's extension directory.
-   */
-  ipcMain.handle(ExtensionRoute.extensionPath, async (_event) => {
-    return join(userSpacePath, 'extensions')
-  })
-
   /**MARK: Extension Manager handlers */
   ipcMain.handle(ExtensionRoute.installExtension, async (e, extensions) => {
     // Install and activate all provided extensions

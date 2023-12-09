@@ -31,13 +31,6 @@ const abortDownload: (fileName: string) => Promise<any> = (fileName) =>
   global.core.api?.abortDownload(fileName)
 
 /**
- * Retrieves the path to the app data directory using the `coreAPI` object.
- * If the `coreAPI` object is not available, the function returns `undefined`.
- * @returns A Promise that resolves with the path to the app data directory, or `undefined` if the `coreAPI` object is not available.
- */
-const appDataPath: () => Promise<any> = () => global.core.api?.appDataPath()
-
-/**
  * Gets the user space path.
  * @returns {Promise<any>} A Promise that resolves with the user space path.
  */
@@ -70,7 +63,6 @@ export {
   executeOnMain,
   downloadFile,
   abortDownload,
-  appDataPath,
   getUserSpace,
   openFileExplorer,
   getResourcePath,

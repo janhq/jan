@@ -31,14 +31,6 @@ export function handleAppIPCs() {
   ipcMain.handle(AppRoute.setNativeThemeSystem, () => {
     nativeTheme.themeSource = 'system'
   })
-  /**
-   * Retrieves the path to the app data directory using the `coreAPI` object.
-   * If the `coreAPI` object is not available, the function returns `undefined`.
-   * @returns A Promise that resolves with the path to the app data directory, or `undefined` if the `coreAPI` object is not available.
-   */
-  ipcMain.handle(AppRoute.appDataPath, async (_event) => {
-    return app.getPath('userData')
-  })
 
   /**
    * Returns the version of the app.
