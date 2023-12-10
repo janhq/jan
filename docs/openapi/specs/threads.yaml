@@ -6,18 +6,18 @@ components:
         id:
           type: string
           description: |
-            "The identifier of the thread, defaults to foldername."
+            The identifier of the thread, defaults to foldername.
           example: thread_....
         object:
           type: string
           description: |
-            "Type of the object, defaults to thread."
+            Type of the object, defaults to thread.
           example: thread
         title:
           type: string
           description: >
-            "A brief summary or description of the thread, defaults to an empty
-            string."
+            A brief summary or description of the thread, defaults to an empty
+            string.
           example: funny physics joke
         assistants:
           type: array
@@ -50,13 +50,13 @@ components:
           type: integer
           format: int64
           description: >
-            "Unix timestamp representing the creation time of the thread,
-            defaults to file creation time."
+            Unix timestamp representing the creation time of the thread,
+            defaults to file creation time.
           example: 1231231
         metadata:
           type: object
           description: |
-            "Metadata associated with the thread, defaults to an empty object."
+            Metadata associated with the thread, defaults to an empty object.
           example: {}
     GetThreadResponse:
       type: object
@@ -100,7 +100,7 @@ components:
           example: thread_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's a thread."
+          description: Type of the object, indicating it's a thread.
           example: thread
         created_at:
           type: integer
