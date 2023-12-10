@@ -12,6 +12,8 @@ import SocialButton from "@site/src/containers/SocialButton";
 
 import { IoArrowDown } from "react-icons/io5";
 
+import Dropdown from "@site/src/containers/Elements/dropdown";
+
 export default function Home() {
   const { siteConfig } = useDocusaurusContext();
 
@@ -20,6 +22,11 @@ export default function Home() {
       .getElementById("download-section")
       .scrollIntoView({ behavior: "smooth" });
   };
+
+  const userAgent = navigator.userAgent;
+
+  console.log(userAgent);
+  const isBrowserChrome = userAgent.includes("Chrome");
 
   return (
     <>
@@ -57,13 +64,18 @@ export default function Home() {
                 <br className="hidden lg:block" /> 100% offline on your
                 computer.
               </p>
+              <div className="mt-8"></div>
               <div className="mt-8">
-                <div
-                  onClick={() => handleAnchorLink()}
-                  className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
-                >
-                  <span>Download Jan for PC</span>
-                </div>
+                {!isBrowserChrome ? (
+                  <div
+                    onClick={() => handleAnchorLink()}
+                    className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
+                  >
+                    <span>Download Jan for PC</span>
+                  </div>
+                ) : (
+                  <Dropdown />
+                )}
               </div>
 
               <div
@@ -192,7 +204,7 @@ export default function Home() {
                       <p className="text-3xl xl:text-4xl font-semibold">
                         Mobile App
                       </p>
-                      <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block ml-2 rounded-md text-sm mt-1">
+                      <span className="bg-gray-300 dark:bg-gray-700 py-0.5 px-2 inline-block ml-2 rounded-lg text-sm mt-1 font-medium">
                         Coming Soon
                       </span>
                     </div>
@@ -229,28 +241,28 @@ export default function Home() {
             <div className="container py-12 lg:py-32">
               <div className="w-full xl:w-10/12 mx-auto relative">
                 <div className="text-center">
-                  <div className="card-link-bg dark:card-link-bg-dark px-4 py-2 inline-flex rounded-xl items-center space-x-4">
+                  <div className="card-link-bg dark:card-link-bg-dark px-4 py-2 inline-flex rounded-xl items-center space-x-6 h-[60px]">
                     <img
                       src="/img/homepage/ic-offline.png"
                       alt="Icon Offline"
-                      className="w-9"
+                      className="w-9 flex-shrink-0"
                     />
                     <img
                       src="/img/homepage/ic-private.png"
                       alt="Icon Offline"
-                      className="w-9"
+                      className="w-12 flex-shrink-0"
                     />
                     <img
                       src="/img/homepage/ic-folder.png"
                       alt="Icon Offline"
-                      className="w-9"
+                      className="w-9 flex-shrink-0"
                     />
                   </div>
                   <div className="mt-8">
                     <h6 className="text-3xl lg:text-4xl font-semibold">
                       Offline and Local First
                     </h6>
-                    <p className="mt-2 leading-relaxed text-zinc-600 dark:text-zinc-400">
+                    <p className="mt-2 text-zinc-600 dark:text-zinc-400 text-lg leading-relaxed">
                       Conversations, preferences, and model usage stay on{" "}
                       <br className="hidden lg:block" /> your computer—secure,
                       exportable, and can be deleted at any time.
@@ -262,7 +274,7 @@ export default function Home() {
                           <h6 className="text-3xl lg:text-4xl font-semibold">
                             OpenAI Compatible
                           </h6>
-                          <p className="mt-4 leading-relaxed text-zinc-600 dark:text-zinc-400">
+                          <p className="mt-4 leading-relaxed text-zinc-600 dark:text-zinc-400 text-lg">
                             Jan provides an OpenAI-equivalent API{" "}
                             <br className="hidden lg:block" /> server at&nbsp;
                             <b>localhost:</b>&nbsp;
@@ -294,7 +306,7 @@ export default function Home() {
                                   <span className="inline-block mr-2">
                                     Assistants framework
                                   </span>
-                                  <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block rounded-md text-sm">
+                                  <span className="bg-gray-300 dark:bg-gray-700 py-0.5 px-2 inline-block rounded-lg text-sm">
                                     Coming Soon
                                   </span>
                                 </p>
