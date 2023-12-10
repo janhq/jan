@@ -5,7 +5,8 @@ components:
       properties:
         object:
           type: string
-          enum: [list]
+          enum:
+            - list
         data:
           type: array
           items:
@@ -13,68 +14,75 @@ components:
       required:
         - object
         - data
-
     Model:
       type: object
       properties:
         type:
           type: string
-          default: "model"
-          description: "The type of the object."
+          default: model
+          description: The type of the object.
         version:
           type: string
           default: "1"
-          description: "The version number of the model."
+          description: The version number of the model.
         id:
           type: string
-          description: "Unique identifier used in chat-completions model_name, matches folder name."
-          example: "zephyr-7b"
+          description: >-
+            Unique identifier used in chat-completions model_name, matches
+            folder name.
+          example: zephyr-7b
         name:
           type: string
-          description: "Name of the model."
-          example: "Zephyr 7B"
+          description: Name of the model.
+          example: Zephyr 7B
         owned_by:
           type: string
-          description: "Compatibility field for OpenAI."
+          description: Compatibility field for OpenAI.
           default: ""
         created:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time."
+          description: Unix timestamp representing the creation time.
         description:
           type: string
-          description: "Description of the model."
+          description: Description of the model.
         state:
           type: string
-          enum: [null, "downloading", "ready", "starting", "stopping"]
-          description: "Current state of the model."
+          enum:
+            - null
+            - downloading
+            - ready
+            - starting
+            - stopping
+          description: Current state of the model.
         format:
           type: string
           description: "State format of the model, distinct from the engine."
-          example: "ggufv3"
+          example: ggufv3
         source_url:
           type: string
           format: uri
-          description: "URL to the source of the model."
-          example: "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf"
+          description: URL to the source of the model.
+          example: >-
+            https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
         settings:
           type: object
           properties:
             ctx_len:
               type: string
-              description: "Context length."
+              description: Context length.
               example: "2048"
             ngl:
               type: string
-              description: "Number of layers."
+              description: Number of layers.
               example: "100"
             embedding:
               type: string
-              description: "Indicates if embedding is enabled."
+              description: Indicates if embedding is enabled.
               example: "true"
             n_parallel:
               type: string
-              description: "Number of parallel processes."
+              description: Number of parallel processes.
               example: "4"
           additionalProperties: false
         parameters:
@@ -82,147 +90,152 @@ components:
           properties:
             temperature:
               type: string
-              description: "Temperature setting for the model."
+              description: Temperature setting for the model.
               example: "0.7"
             token_limit:
               type: string
-              description: "Token limit for the model."
+              description: Token limit for the model.
               example: "2048"
             top_k:
               type: string
-              description: "Top-k setting for the model."
+              description: Top-k setting for the model.
               example: "0"
             top_p:
               type: string
-              description: "Top-p setting for the model."
+              description: Top-p setting for the model.
               example: "1"
             stream:
               type: string
-              description: "Indicates if streaming is enabled."
+              description: Indicates if streaming is enabled.
               example: "true"
           additionalProperties: false
         metadata:
           type: object
-          description: "Additional metadata."
+          description: Additional metadata.
         assets:
           type: array
           items:
             type: string
-          description: "List of assets related to the model."
+          description: List of assets related to the model.
       required:
         - source_url
-
     ModelObject:
       type: object
       properties:
         id:
           type: string
           description: |
-            "The identifier of the model."
-
-          example: "zephyr-7b"
+            The identifier of the model.
+          example: zephyr-7b
         object:
           type: string
           description: |
-            "The type of the object, indicating it's a model."
-
-          default: "model"
+            The type of the object, indicating it's a model.
+          default: model
         created:
           type: integer
           format: int64
           description: |
-            "Unix timestamp representing the creation time of the model."
-
-          example: "1253935178"
+            Unix timestamp representing the creation time of the model.
+          example: 1253935178
         owned_by:
           type: string
           description: |
-            "The entity that owns the model."
-
-          example: "_"
-
+            The entity that owns the model.
+          example: _
     GetModelResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the model."
-          example: "zephyr-7b"
+          description: The identifier of the model.
+          example: zephyr-7b
         object:
           type: string
           description: "Type of the object, indicating it's a model."
-          default: "model"
+          default: model
         created:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the model."
+          description: Unix timestamp representing the creation time of the model.
         owned_by:
           type: string
-          description: "The entity that owns the model."
-          example: "_"
+          description: The entity that owns the model.
+          example: _
         state:
           type: string
-          enum: [not_downloaded, downloaded, running, stopped]
-          description: "The current state of the model."
+          enum:
+            - not_downloaded
+            - downloaded
+            - running
+            - stopped
+          description: The current state of the model.
         source_url:
           type: string
           format: uri
-          description: "URL to the source of the model."
-          example: "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf"
+          description: URL to the source of the model.
+          example: >-
+            https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
         engine_parameters:
           type: object
           properties:
             pre_prompt:
               type: string
-              description: "Predefined prompt used for setting up internal configurations."
+              description: Predefined prompt used for setting up internal configurations.
               default: ""
-              example: "Initial setup complete."
+              example: Initial setup complete.
             system_prompt:
               type: string
-              description: "Prefix used for system-level prompts."
+              description: Prefix used for system-level prompts.
               default: "SYSTEM: "
             user_prompt:
               type: string
-              description: "Prefix used for user prompts."
-              default:  "USER: "
+              description: Prefix used for user prompts.
+              default: "USER: "
             ai_prompt:
               type: string
-              description: "Prefix used for assistant prompts."
+              description: Prefix used for assistant prompts.
               default: "ASSISTANT: "
             ngl:
               type: integer
-              description: "Number of neural network layers loaded onto the GPU for acceleration."
+              description: >-
+                Number of neural network layers loaded onto the GPU for
+                acceleration.
               minimum: 0
               maximum: 100
               default: 100
               example: 100
             ctx_len:
               type: integer
-              description: "Context length for model operations, varies based on the specific model."
+              description: >-
+                Context length for model operations, varies based on the
+                specific model.
               minimum: 128
               maximum: 4096
               default: 2048
               example: 2048
             n_parallel:
               type: integer
-              description: "Number of parallel operations, relevant when continuous batching is enabled."
+              description: >-
+                Number of parallel operations, relevant when continuous batching
+                is enabled.
               minimum: 1
               maximum: 10
               default: 1
               example: 4
             cont_batching:
               type: boolean
-              description: "Indicates if continuous batching is used for processing."
+              description: Indicates if continuous batching is used for processing.
               default: false
               example: false
             cpu_threads:
               type: integer
-              description: "Number of threads allocated for CPU-based inference."
+              description: Number of threads allocated for CPU-based inference.
               minimum: 1
               example: 8
             embedding:
               type: boolean
-              description: "Indicates if embedding layers are enabled in the model."
+              description: Indicates if embedding layers are enabled in the model.
               default: true
               example: true
         model_parameters:
@@ -230,74 +243,84 @@ components:
           properties:
             ctx_len:
               type: integer
-              description: "Maximum context length the model can handle."
+              description: Maximum context length the model can handle.
               minimum: 0
               maximum: 4096
               default: 2048
               example: 2048
             ngl:
               type: integer
-              description: "Number of layers in the neural network."
+              description: Number of layers in the neural network.
               minimum: 1
               maximum: 100
               default: 100
               example: 100
             embedding:
               type: boolean
-              description: "Indicates if embedding layers are used."
+              description: Indicates if embedding layers are used.
               default: true
               example: true
             n_parallel:
               type: integer
-              description: "Number of parallel processes the model can run."
+              description: Number of parallel processes the model can run.
               minimum: 1
               maximum: 10
               default: 1
               example: 4
             temperature:
               type: number
-              description: "Controls randomness in model's responses. Higher values lead to more random responses."
-              minimum: 0.0
-              maximum: 2.0
+              description: >-
+                Controls randomness in model's responses. Higher values lead to
+                more random responses.
+              minimum: 0
+              maximum: 2
               default: 0.7
               example: 0.7
             token_limit:
               type: integer
-              description: "Maximum number of tokens the model can generate in a single response."
+              description: >-
+                Maximum number of tokens the model can generate in a single
+                response.
               minimum: 1
               maximum: 4096
               default: 2048
               example: 2048
             top_k:
               type: integer
-              description: "Limits the model to consider only the top k most likely next tokens at each step."
+              description: >-
+                Limits the model to consider only the top k most likely next
+                tokens at each step.
               minimum: 0
               maximum: 100
               default: 0
               example: 0
             top_p:
               type: number
-              description: "Nucleus sampling parameter. The model considers the smallest set of tokens whose cumulative probability exceeds the top_p value."
-              minimum: 0.0
-              maximum: 1.0
-              default: 1.0
-              example: 1.0
-
+              description: >-
+                Nucleus sampling parameter. The model considers the smallest set
+                of tokens whose cumulative probability exceeds the top_p value.
+              minimum: 0
+              maximum: 1
+              default: 1
+              example: 1
         metadata:
           type: object
           properties:
             engine:
               type: string
-              description: "The engine used by the model."
-              enum: [nitro, openai, hf_inference]
+              description: The engine used by the model.
+              enum:
+                - nitro
+                - openai
+                - hf_inference
             quantization:
               type: string
-              description: "Quantization parameter of the model."
-              example: "Q3_K_L"
+              description: Quantization parameter of the model.
+              example: Q3_K_L
             size:
               type: string
-              description: "Size of the model."
-              example: "7B"
+              description: Size of the model.
+              example: 7B
       required:
         - id
         - object
@@ -307,75 +330,71 @@ components:
         - source_url
         - parameters
         - metadata
-
     DeleteModelResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the model that was deleted."
-          example: "model-zephyr-7B"
+          description: The identifier of the model that was deleted.
+          example: model-zephyr-7B
         object:
           type: string
-          description: "Type of the object, indicating it's a model."
-          default: "model"
+          description: Type of the object, indicating it's a model.
+          default: model
         deleted:
           type: boolean
-          description: "Indicates whether the model was successfully deleted."
+          description: Indicates whether the model was successfully deleted.
           example: true
-
     StartModelResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the model that was started."
-          example: "model-zephyr-7B"
+          description: The identifier of the model that was started.
+          example: model-zephyr-7B
         object:
           type: string
-          description: "Type of the object, indicating it's a model."
-          default: "model"
+          description: Type of the object, indicating it's a model.
+          default: model
         state:
           type: string
-          description: "The current state of the model after the start operation."
-          example: "running"
+          description: The current state of the model after the start operation.
+          example: running
       required:
         - id
         - object
         - state
-
     StopModelResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the model that was started."
-          example: "model-zephyr-7B"
+          description: The identifier of the model that was started.
+          example: model-zephyr-7B
         object:
           type: string
-          description: "Type of the object, indicating it's a model."
-          default: "model"
+          description: Type of the object, indicating it's a model.
+          default: model
         state:
           type: string
-          description: "The current state of the model after the start operation."
-          example: "stopped"
+          description: The current state of the model after the start operation.
+          example: stopped
       required:
         - id
         - object
         - state
-
     DownloadModelResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the model that was started."
-          example: "model-zephyr-7B"
+          description: The identifier of the model that was started.
+          example: model-zephyr-7B
         object:
           type: string
-          description: "Type of the object, indicating it's a model."
-          default: "model"
+          description: Type of the object, indicating it's a model.
+          default: model
         state:
           type: string
-          description: "The current state of the model after the start operation."
-          example: "downloaded"
+          description: The current state of the model after the start operation.
+          example: downloaded
