@@ -99,10 +99,11 @@ export default function DownloadApp() {
         <span className="text-zinc-500 text-lg font-medium  inline-block">
           Download for PC
         </span>
-        <div className="bg-yellow-50 text-yellow-700 space-x-2 px-4 py-2 border border-yellow-400 rounded-lg font-semibold">
+        <div className="bg-yellow-50 text-yellow-700 space-x-2 px-4 py-2 border border-yellow-400 rounded-lg text-base">
           <span>🚧</span>
-          <span>
-            Warning: Jan is in the process of being built. Expect bugs!
+          <span className="font-semibold">Warning:</span>
+          <span className="font-medium">
+            Jan is in the process of being built. Expect bugs!
           </span>
         </div>
       </div>
@@ -112,14 +113,14 @@ export default function DownloadApp() {
             key={i}
             href={system.href}
             className={twMerge(
-              "inline-flex m-2 px-4 py-2 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-gray-400 dark:border-gray-700 text-black dark:text-black bg-neutral-50 min-w-[150px] dark:bg-[#18181B]",
+              "btn-shadow inline-flex m-2 px-4 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-zinc-200 dark:border-gray-700 text-black dark:text-white bg-zinc-50 min-w-[150px] dark:bg-[#18181B] h-[36px]",
               system.comingSoon && "pointer-events-none"
             )}
           >
             <system.logo />
-            <span>{system.name}</span>
+            <span className="text-sm">{system.name}</span>
             {system.comingSoon && (
-              <span className="bg-gray-300 py-0.5 px-2 inline-block ml-2 rounded-md text-sm mt-1">
+              <span className="bg-zinc-200 py-0.5 px-2 inline-block ml-2 rounded-md text-xs h-[20px] dark:text-black">
                 Coming Soon
               </span>
             )}
