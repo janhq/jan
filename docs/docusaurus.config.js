@@ -117,7 +117,6 @@ const config = {
             requiredPropsFirst: true,
             noAutoAuth: true,
             hideDownloadButton: true,
-            disableSearch: true,
           },
         },
       },
