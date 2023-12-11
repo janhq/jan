@@ -33,3 +33,27 @@ export * from './extension'
  * @module
  */
 export * from './assistant'
+
+/**
+ * Export Inference module.
+ * @module
+ */
+export * from './inference'
+
+/**
+ * Export Monitoring module.
+ * @module
+ */
+export * from './monitoring'
+
+/**
+ * Export thread module.
+ * @module
+ */
+export * from './thread'
+
+/**
+ * Export model module.
+ * @module
+ */
+export * from './model'
