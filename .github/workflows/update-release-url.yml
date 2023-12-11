@@ -5,6 +5,8 @@ on:
     types:
       - published
 
+  workflow_dispatch:
+
 jobs:
   update-readme:
     runs-on: ubuntu-latest
@@ -19,6 +21,7 @@ jobs:
 
       - name: Update Download URLs in README.md
         run: |
+          echo "Latest Release: ${{ steps.get-latest-release.outputs.release }}"
           release=$(/bin/echo -n "${{ steps.get-latest-release.outputs.release }}")
           sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-win-x64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-win-x64-${release}.exe'>|" README.md
           sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-mac-x64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-mac-x64-${release}.dmg'>|" README.md

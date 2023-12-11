@@ -209,14 +209,3 @@ jobs:
           args: "Manual build artifact: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}"
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-
-      - name: Update README.md with artifact URL
-        run: |
-          sed -i "s|<a href='https://github.com/janhq/jan/actions/runs/.*'>|<a href='https://github.com/janhq/jan/actions/runs/${GITHUB_RUN_ID}'>|" README.md
-          git config --global user.email "service@jan.ai"
-          git config --global user.name "Service Account"
-          git add README.md
-          git commit -m "${GITHUB_REPOSITORY}: Update README.md with nightly build artifact URL"
-          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:main
-        env:
-          GITHUB_RUN_ID: ${{ github.run_id }}

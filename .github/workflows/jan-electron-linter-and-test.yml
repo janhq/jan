@@ -46,6 +46,11 @@ jobs:
         with:
           node-version: 20
 
+      - name: "Cleanup cache"
+        continue-on-error: true
+        run: |
+          make clean
+
       - name: Linter and test
         run: |
           make test
@@ -72,6 +77,13 @@ jobs:
         with:
           node-version: 20
 
+      # Clean cache, continue on error
+      - name: "Cleanup cache"
+        shell: powershell
+        continue-on-error: true
+        run: |
+          make clean
+
       - name: Linter and test
         shell: powershell
         run: |
@@ -94,6 +106,11 @@ jobs:
         uses: actions/setup-node@v1
         with:
           node-version: 20
+
+      - name: "Cleanup cache"
+        continue-on-error: true
+        run: |
+          make clean
 
       - name: Linter and test
         run: |
