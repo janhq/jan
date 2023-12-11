@@ -111,7 +111,7 @@ export default function DownloadApp() {
         {systems.map((system, i) => (
           <a
             key={i}
-            href={system.href}
+            href={system.href || ""}
             className={twMerge(
               "btn-shadow inline-flex m-2 px-4 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-zinc-200 dark:border-gray-700 text-black dark:text-white bg-zinc-50 min-w-[150px] dark:bg-[#18181B] h-[36px]",
               system.comingSoon && "pointer-events-none"
