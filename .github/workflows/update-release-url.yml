@@ -1,0 +1,34 @@
+name: Update Download URLs
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Get Latest Release
+        uses: pozetroninc/github-action-get-latest-release@v0.7.0
+        id: get-latest-release
+
+      - name: Update Download URLs in README.md
+        run: |
+          release=$(/bin/echo -n "${{ steps.get-latest-release.outputs.release }}")
+          sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-win-x64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-win-x64-${release}.exe'>|" README.md
+          sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-mac-x64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-mac-x64-${release}.dmg'>|" README.md
+          sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-mac-arm64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-mac-arm64-${release}.dmg'>|" README.md
+          sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-linux-amd64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-linux-amd64-${release}.deb'>|" README.md
+
+      - name: Commit and Push changes
+        run: |
+          git config --global user.email "service@jan.ai"
+          git config --global user.name "Service Account"
+          git add README.md
+          git commit -m "Update README.md with Stable Download URLs"
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:main
