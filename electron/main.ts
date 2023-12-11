@@ -8,7 +8,7 @@ import { createUserSpace } from './utils/path'
  **/
 import { WindowManager } from './managers/window'
 import { ModuleManager } from './managers/module'
-import { ExtensionManager } from './managers/extension'
+import { ExtensionManager } from '../common/extension'
 
 /**
  * IPC Handlers

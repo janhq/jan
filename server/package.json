@@ -14,6 +14,9 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@fastify/cors": "^8.4.2",
+    "@fastify/static": "^6.12.0",
+    "core": "link:./core"
   },
   "devDependencies": {
     "@types/body-parser": "^1.19.5",

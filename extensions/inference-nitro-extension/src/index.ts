@@ -58,8 +58,9 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  onLoad(): void {
-    fs.mkdir(JanInferenceNitroExtension._homeDir);
+  async onLoad() {
+    if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir)))
+      fs.mkdirSync(JanInferenceNitroExtension._homeDir);
     this.writeDefaultEngineSettings();
 
     // Events subscription
@@ -91,12 +92,12 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
         JanInferenceNitroExtension._homeDir,
         JanInferenceNitroExtension._engineMetadataFileName
       );
-      if (await fs.exists(engineFile)) {
+      if (await fs.existsSync(engineFile)) {
         JanInferenceNitroExtension._engineSettings = JSON.parse(
-          await fs.readFile(engineFile)
+          await fs.readFileSync(engineFile)
         );
       } else {
-        await fs.writeFile(
+        await fs.writeFileSync(
           engineFile,
           JSON.stringify(JanInferenceNitroExtension._engineSettings, null, 2)
         );

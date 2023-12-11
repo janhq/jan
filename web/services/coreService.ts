@@ -1,5 +1,5 @@
-import * as restAPI from './cloudNativeService'
 import { EventEmitter } from './eventsService'
+import { restAPI } from './restService'
 export const setupCoreServices = () => {
   if (typeof window === 'undefined') {
     console.debug('undefine', window)
@@ -10,9 +10,7 @@ export const setupCoreServices = () => {
   if (!window.core) {
     window.core = {
       events: new EventEmitter(),
-      api: window.electronAPI ?? {
-        ...restAPI,
-      },
+      api: window.electronAPI ?? restAPI,
     }
   }
 }

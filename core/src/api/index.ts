@@ -40,20 +40,17 @@ export enum ExtensionRoute {
   uninstallExtension = 'uninstallExtension',
 }
 export enum FileSystemRoute {
-  appendFile = 'appendFile',
-  copyFile = 'copyFile',
-  syncFile = 'syncFile',
-  deleteFile = 'deleteFile',
-  exists = 'exists',
+  appendFileSync = 'appendFileSync',
+  copyFileSync = 'copyFileSync',
+  unlinkSync = 'unlinkSync',
+  existsSync = 'existsSync',
+  readdirSync = 'readdirSync',
+  mkdirSync = 'mkdirSync',
+  readFileSync = 'readFileSync',
+  rmdirSync = 'rmdirSync',
+  writeFileSync = 'writeFileSync',
   getResourcePath = 'getResourcePath',
   getUserSpace = 'getUserSpace',
-  isDirectory = 'isDirectory',
-  listFiles = 'listFiles',
-  mkdir = 'mkdir',
-  readFile = 'readFile',
-  readLineByLine = 'readLineByLine',
-  rmdir = 'rmdir',
-  writeFile = 'writeFile',
 }
 
 export type ApiFunction = (...args: any[]) => any
