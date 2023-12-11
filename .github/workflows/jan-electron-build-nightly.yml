@@ -68,13 +68,13 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg
+          name: jan-mac-x64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg
+          name: jan-mac-arm64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg
 
   build-windows-x64:
@@ -124,7 +124,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe
+          name: jan-win-x64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/*.exe
           
   build-linux-x64:
@@ -170,7 +170,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb
+          name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/*.deb
 
   noti-discord-nightly:

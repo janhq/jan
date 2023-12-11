@@ -11,6 +11,9 @@ on:
       - "package.json"
       - "node_modules/**"
       - "yarn.lock"
+      - "core/**"
+      - "extensions/**"
+      - "!README.md"
 
   pull_request:
     branches:
