@@ -31,7 +31,53 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
 - [x] Linux Debian
 - [x] Windows x64
 
-> Download Jan at https://jan.ai/
+## Download
+
+<table>
+  <tr>
+    <td style="text-align:center"><b>Version Type</b></td>
+    <td style="text-align:center"><b>Windows</b></td>
+    <td colspan="2" style="text-align:center"><b>MacOS</b></td>
+    <td style="text-align:center"><b>Linux</b></td>
+  </tr>
+  <tr style="text-align: center">
+    <td style="text-align:center"><b>Stable (Recommended)</b></td>
+    <td style="text-align:center">
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.0/jan-win-x64-0.4.0.exe'>
+        <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
+        <b>jan.exe</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.0/jan-mac-x64-0.4.0.dmg'>
+        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+        <b>Intel</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.0/jan-mac-arm64-0.4.0.dmg'>
+        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+        <b>M1/M2</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.0/jan-linux-amd64-0.4.0.deb'>
+        <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
+        <b>jan.deb</b>
+      </a>
+    </td>
+  </tr>
+  <tr style="text-align: center">
+    <td style="text-align:center"><b>Experimental (Nighlty Build)</b></td>
+    <td style="text-align:center" colspan="4">
+      <a href='https://github.com/janhq/jan/actions/runs/7160001076'>
+        <b>Github action artifactory</b>
+      </a>
+    </td>
+  </tr>
+</table>
+
+Download the latest version of Jan at https://jan.ai/ or visit the **[GitHub Releases](https://github.com/janhq/jan/releases)** to download any previous release.
 
 ## Demo
 

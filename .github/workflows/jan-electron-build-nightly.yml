@@ -68,13 +68,13 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg
+          name: jan-mac-x64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg
+          name: jan-mac-arm64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg
 
   build-windows-x64:
@@ -124,7 +124,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe
+          name: jan-win-x64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/*.exe
           
   build-linux-x64:
@@ -170,11 +170,12 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb
+          name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/*.deb
 
   noti-discord-nightly:
     needs: [build-macos, build-windows-x64, build-linux-x64]
+    environment: production
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
@@ -185,8 +186,20 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
 
+      - name: Update README.md with artifact URL
+        run: |
+          sed -i "s|<a href='https://github.com/janhq/jan/actions/runs/.*'>|<a href='https://github.com/janhq/jan/actions/runs/${GITHUB_RUN_ID}'>|" README.md
+          git config --global user.email "service@jan.ai"
+          git config --global user.name "Service Account"
+          git add README.md
+          git commit -m "${GITHUB_REPOSITORY}: Update README.md with nightly build artifact URL"
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:main
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+
   noti-discord-manual:
     needs: [build-macos, build-windows-x64, build-linux-x64]
+    environment: production
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -196,3 +209,16 @@ jobs:
           args: "Manual build artifact: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}"
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+      # Update README.md with artifact URL if manual build from main branch
+      - name: Update README.md with artifact URL
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sed -i "s|<a href='https://github.com/janhq/jan/actions/runs/.*'>|<a href='https://github.com/janhq/jan/actions/runs/${GITHUB_RUN_ID}'>|" README.md
+          git config --global user.email "service@jan.ai"
+          git config --global user.name "Service Account"
+          git add README.md
+          git commit -m "${GITHUB_REPOSITORY}: Update README.md with nightly build artifact URL"
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:main
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
