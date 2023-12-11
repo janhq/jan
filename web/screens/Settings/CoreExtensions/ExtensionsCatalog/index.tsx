@@ -67,7 +67,7 @@ const ExtensionCatalog = () => {
     // Send the filename of the to be installed extension
     // to the main process for installation
     const installed = await extensionManager.install([extensionFile])
-    if (installed) window.core.api?.relaunch()
+    if (installed) window.core?.api?.relaunch()
   }
 
   /**
@@ -80,7 +80,7 @@ const ExtensionCatalog = () => {
     // Send the filename of the to be uninstalled extension
     // to the main process for removal
     const res = await extensionManager.uninstall([name])
-    if (res) window.core.api?.relaunch()
+    if (res) window.core?.api?.relaunch()
   }
 
   /**

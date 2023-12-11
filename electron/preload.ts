@@ -3,19 +3,27 @@
  * @module preload
  */
 
-// TODO: Refactor this file for less dependencies and more modularity
-// TODO: Most of the APIs should be done using RestAPIs from extensions
+import { APIEvents, APIRoutes } from '@janhq/core'
+import { contextBridge, ipcRenderer } from 'electron'
 
-import { fsInvokers } from './invokers/fs'
-import { appInvokers } from './invokers/app'
-import { downloadInvokers } from './invokers/download'
-import { extensionInvokers } from './invokers/extension'
+const interfaces: { [key: string]: (...args: any[]) => any } = {}
 
-const { contextBridge } = require('electron')
+// Loop over each route in APIRoutes
+APIRoutes.forEach((method) => {
+  // For each method, create a function on the interfaces object
+  // This function invokes the method on the ipcRenderer with any provided arguments
+  interfaces[method] = (...args: any[]) => ipcRenderer.invoke(method, ...args)
+})
 
+// Loop over each method in APIEvents
+APIEvents.forEach((method) => {
+  // For each method, create a function on the interfaces object
+  // This function sets up an event listener on the ipcRenderer for the method
+  // The handler for the event is provided as an argument to the function
+  interfaces[method] = (handler: any) => ipcRenderer.on(method, handler)
+})
+// Expose the 'interfaces' object in the main world under the name 'electronAPI'
+// This allows the renderer process to access these methods directly
 contextBridge.exposeInMainWorld('electronAPI', {
-  ...extensionInvokers(),
-  ...downloadInvokers(),
-  ...fsInvokers(),
-  ...appInvokers(),
+  ...interfaces,
 })
