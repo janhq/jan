@@ -3,26 +3,27 @@ import { Fragment } from "react";
 import { Menu, Transition } from "@headlessui/react";
 import { ChevronDownIcon } from "@heroicons/react/20/solid";
 import axios from "axios";
+import { FaWindows, FaApple, FaLinux } from "react-icons/fa";
 
 const systemsTemplate = [
   {
-    name: "Download for Mac (M1/M2)",
-    logo: require("@site/static/img/apple-logo-white.png").default,
+    name: "Download for Mac (M1/M2/M3)",
+    logo: FaApple,
     fileFormat: "{appname}-mac-arm64-{tag}.dmg",
   },
   {
     name: "Download for Mac (Intel)",
-    logo: require("@site/static/img/apple-logo-white.png").default,
+    logo: FaApple,
     fileFormat: "{appname}-mac-x64-{tag}.dmg",
   },
   {
     name: "Download for Windows",
-    logo: require("@site/static/img/windows-logo-white.png").default,
+    logo: FaWindows,
     fileFormat: "{appname}-win-x64-{tag}.exe",
   },
   {
     name: "Download for Linux",
-    logo: require("@site/static/img/linux-logo-white.png").default,
+    logo: FaLinux,
     fileFormat: "{appname}-linux-amd64-{tag}.deb",
   },
 ];
@@ -56,21 +57,13 @@ export default function Dropdown() {
   const changeDefaultSystem = async (systems) => {
     const userAgent = navigator.userAgent;
 
-    const arc = await navigator?.userAgentData?.getHighEntropyValues([
-      "architecture",
-    ]);
-
     if (userAgent.includes("Windows")) {
       // windows user
       setDefaultSystem(systems[2]);
     } else if (userAgent.includes("Linux")) {
       // linux user
       setDefaultSystem(systems[3]);
-    } else if (
-      userAgent.includes("Mac OS") &&
-      arc &&
-      arc.architecture === "arm"
-    ) {
+    } else if (userAgent.includes("Mac OS")) {
       setDefaultSystem(systems[0]);
     } else {
       setDefaultSystem(systems[1]);
@@ -123,14 +116,14 @@ export default function Dropdown() {
   return (
     <div className="inline-flex align-items-stretch">
       <a
-        className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-3.5 py-2.5 text-base font-semibold text-white bg-blue-600 hover:bg-blue-500 hover:text-white"
-        href={defaultSystem.href}
+        href={defaultSystem.href || ""}
+        className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-4 py-3 text-base font-semibold dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white"
       >
-        <img src={defaultSystem.logo} alt="Logo" className="h-5 mr-3 -mt-1" />
+        <defaultSystem.logo className="h-5 mr-3 -mt-1" />
         {defaultSystem.name}
       </a>
       <Menu as="div" className="relative -ml-px block">
-        <Menu.Button className="cursor-pointer relative inline-flex items-center rounded-r-md border-l border-blue-500 h-full text-white bg-blue-600 w-8 justify-center">
+        <Menu.Button className="cursor-pointer relative inline-flex items-center rounded-r-md border-l border-gray-600 h-full dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white w-8 justify-center">
           <span className="sr-only">Open OS options</span>
           <ChevronDownIcon className="h-6 w-6" aria-hidden="true" />
         </Menu.Button>
@@ -143,7 +136,7 @@ export default function Dropdown() {
           leaveFrom="transform opacity-100 scale-100"
           leaveTo="transform opacity-0 scale-95"
         >
-          <Menu.Items className="absolute right-0 z-10 mt-1 w-72 text-left origin-top-right rounded-md bg-blue-600 shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none overflow-hidden">
+          <Menu.Items className="absolute right-0 z-10 mt-1 w-80 text-left origin-top-right rounded-md dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none overflow-hidden">
             <div className="overflow-hidden">
               {systems.map((system) => (
                 <Menu.Item
@@ -152,18 +145,18 @@ export default function Dropdown() {
                 >
                   {({ active }) => (
                     <a
-                      href={system.href}
+                      href={system.href || ""}
                       className={classNames(
-                        active ? "bg-blue-500 hover:text-white" : "text-white",
-                        "flex px-4 py-3 items-center text-white hover:text-white"
+                        active
+                          ? "dark:bg-blue-100 bg-gray-900 hover:text-white dark:text-black"
+                          : "text-white dark:text-black",
+                        "flex px-4 py-3 items-center text-white hover:text-white dark:text-black"
                       )}
                     >
-                      <img
-                        src={system.logo}
-                        alt="Logo"
-                        className="w-3 mr-3 -mt-1 flex-shrink-0"
-                      />
-                      <span className="text-white">{system.name}</span>
+                      <system.logo className="w-3 mr-3 -mt-1 flex-shrink-0" />
+                      <span className="text-white dark:text-black font-medium">
+                        {system.name}
+                      </span>
                     </a>
                   )}
                 </Menu.Item>

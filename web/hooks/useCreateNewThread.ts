@@ -15,7 +15,6 @@ import {
   threadsAtom,
   setActiveThreadIdAtom,
   threadStatesAtom,
-  activeThreadAtom,
   updateThreadAtom,
 } from '@/helpers/atoms/Conversation.atom'
 
@@ -67,7 +66,7 @@ export const useCreateNewThread = () => {
           top_p: 0,
           stream: false,
         },
-        engine: undefined
+        engine: undefined,
       },
       instructions: assistant.instructions,
     }

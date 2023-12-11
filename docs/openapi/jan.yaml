@@ -1,28 +1,32 @@
 openapi: 3.0.0
 info:
   title: API Reference
-  description: |
+  description: >
     # Introduction
-    Jan API is compatible with the [OpenAI API](https://platform.openai.com/docs/api-reference).
-version: "0.1.8"
+
+    Jan API is compatible with the [OpenAI
+    API](https://platform.openai.com/docs/api-reference).
+version: 0.1.8
 contact:
   name: Jan Discord
-  url: https://discord.gg/7EcEz7MrvA
+  url: "https://discord.gg/7EcEz7MrvA"
 license:
   name: AGPLv3
-  url: https://github.com/janhq/nitro/blob/main/LICENSE
+  url: "https://github.com/janhq/nitro/blob/main/LICENSE"
 servers:
-  - url: https://localhost:1337/v1/
+  - url: "https://localhost:1337/v1/"
 tags:
   - name: Models
     description: List and describe the various models available in the API.
   - name: Chat
-    description: |
-      Given a list of messages comprising a conversation, the model will return a response.
-
+    description: >
+      Given a list of messages comprising a conversation, the model will return
+      a response.
   - name: Messages
-    description: |
-      Messages capture a conversation's content. This can include the content from LLM responses and other metadata from [chat completions](/specs/chats).
+    description: >
+      Messages capture a conversation's content. This can include the content
+      from LLM responses and other metadata from [chat
+      completions](/specs/chats).
   - name: Threads
   - name: Assistants
     description: Configures and utilizes different AI assistants for varied tasks
@@ -44,8 +48,10 @@ paths:
         - Chat
       summary: |
         Create chat completion
-      description: |
-        Creates a model response for the given chat conversation.  <a  href = "https://platform.openai.com/docs/api-reference/chat/create"> Equivalent to OpenAI's create chat completion. </a>
+      description: >
+        Creates a model response for the given chat conversation.  <a  href =
+        "https://platform.openai.com/docs/api-reference/chat/create"> Equivalent
+        to OpenAI's create chat completion. </a>
       requestBody:
         content:
           application/json:
@@ -59,9 +65,10 @@ paths:
               schema:
                 $ref: "specs/chat.yaml#/components/schemas/ChatCompletionResponse"
       x-codeSamples:
-        - lang: "curl"
-          source: |
-            curl -X POST 'http://localhost:3982/inferences/llamacpp/chat_completion' \
+        - lang: cURL
+          source: >
+            curl -X POST
+            'http://localhost:3982/inferences/llamacpp/chat_completion' \
                   -H "Content-Type: application/json" \
                   -d '{
                     "llama_model_path": "/path/to/your/model.gguf",
@@ -72,16 +79,17 @@ paths:
                       },
                     ]
                   }'
-
-  ### MODELS
   /models:
     get:
       operationId: listModels
       tags:
         - Models
       summary: List models
-      description: |
-        Lists the currently available models, and provides basic information about each one such as the owner and availability.  <a  href = "https://platform.openai.com/docs/api-reference/models/list"> Equivalent to OpenAI's list model. </a>
+      description: >
+        Lists the currently available models, and provides basic information
+        about each one such as the owner and availability.  <a  href =
+        "https://platform.openai.com/docs/api-reference/models/list"> Equivalent
+        to OpenAI's list model. </a>
       responses:
         "200":
           description: OK
@@ -90,7 +98,7 @@ paths:
               schema:
                 $ref: "specs/models.yaml#/components/schemas/ListModelsResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl https://localhost:1337/v1/models
     post:
@@ -108,27 +116,29 @@ paths:
               schema:
                 $ref: "specs/models.yaml#/components/schemas/DownloadModelResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl -X POST https://localhost:1337/v1/models
-  /models/{model_id}:
+  "/models/{model_id}":
     get:
       operationId: retrieveModel
       tags:
         - Models
       summary: Retrieve model
-      description: |
-        Get a model instance, providing basic information about the model such as the owner and permissioning.  <a  href = "https://platform.openai.com/docs/api-reference/models/retrieve"> Equivalent to OpenAI's retrieve model. </a>
+      description: >
+        Get a model instance, providing basic information about the model such
+        as the owner and permissioning.  <a  href =
+        "https://platform.openai.com/docs/api-reference/models/retrieve">
+        Equivalent to OpenAI's retrieve model. </a>
       parameters:
         - in: path
           name: model_id
           required: true
           schema:
             type: string
-            # ideally this will be an actual ID, so this will always work from browser
             example: zephyr-7b
           description: |
-            The ID of the model to use for this request
+            The ID of the model to use for this request.
       responses:
         "200":
           description: OK
@@ -137,7 +147,7 @@ paths:
               schema:
                 $ref: "specs/models.yaml#/components/schemas/GetModelResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl https://localhost:1337/v1/models/{model_id}
     delete:
@@ -145,8 +155,10 @@ paths:
       tags:
         - Models
       summary: Delete model
-      description: |
-        Delete a model. <a  href = "https://platform.openai.com/docs/api-reference/models/delete"> Equivalent to OpenAI's delete model. </a>
+      description: >
+        Delete a model. <a  href =
+        "https://platform.openai.com/docs/api-reference/models/delete">
+        Equivalent to OpenAI's delete model. </a>
       parameters:
         - in: path
           name: model
@@ -164,10 +176,10 @@ paths:
               schema:
                 $ref: "specs/models.yaml#/components/schemas/DeleteModelResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl -X DELETE https://localhost:1337/v1/models/{model_id}
-  /models/{model_id}/start:
+  "/models/{model_id}/start":
     put:
       operationId: startModel
       tags:
@@ -181,7 +193,6 @@ paths:
           required: true
           schema:
             type: string
-            # ideally this will be an actual ID, so this will always work from browser
             example: zephyr-7b
           description: |
             The ID of the model to use for this request
@@ -193,10 +204,10 @@ paths:
               schema:
                 $ref: "specs/models.yaml#/components/schemas/StartModelResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl -X PUT https://localhost:1337/v1/models/{model_id}/start
-  /models/{model_id}/stop:
+  "/models/{model_id}/stop":
     put:
       operationId: stopModel
       tags:
@@ -210,7 +221,6 @@ paths:
           required: true
           schema:
             type: string
-            # ideally this will be an actual ID, so this will always work from browser
             example: zephyr-7b
           description: The ID of the model to use for this request
       responses:
@@ -221,19 +231,19 @@ paths:
               schema:
                 $ref: "specs/models.yaml#/components/schemas/StopModelResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl -X PUT https://localhost:1337/v1/models/{model_id}/stop
-
-  ### THREADS
   /threads:
     post:
       operationId: createThread
       tags:
         - Threads
       summary: Create thread
-      description: |
-        Create a thread.  <a  href = "https://platform.openai.com/docs/api-reference/threads/createThread"> Equivalent to OpenAI's create thread. </a>
+      description: >
+        Create a thread.  <a  href =
+        "https://platform.openai.com/docs/api-reference/threads/createThread">
+        Equivalent to OpenAI's create thread. </a>
       requestBody:
         required: false
         content:
@@ -243,7 +253,7 @@ paths:
               properties:
                 messages:
                   type: array
-                  description: "Initial set of messages for the thread."
+                  description: Initial set of messages for the thread.
                   items:
                     $ref: "specs/threads.yaml#/components/schemas/ThreadMessageObject"
       responses:
@@ -254,7 +264,7 @@ paths:
               schema:
                 $ref: "specs/threads.yaml#/components/schemas/CreateThreadResponse"
       x-codeSamples:
-        - lang: "cURL"
+        - lang: cURL
           source: |
             curl -X POST http://localhost:1337/v1/threads \
               -H "Content-Type: application/json" \
@@ -285,31 +295,36 @@ paths:
                 items:
                   $ref: "specs/threads.yaml#/components/schemas/ThreadObject"
                 example:
-                  - id: "thread_abc123"
-                    object: "thread"
+                  - id: thread_abc123
+                    object: thread
                     created_at: 1699014083
-                    assistants: ["assistant-001"]
+                    assistants:
+                      - assistant-001
                     metadata: {}
                     messages: []
-                  - id: "thread_abc456"
-                    object: "thread"
+                  - id: thread_abc456
+                    object: thread
                     created_at: 1699014083
-                    assistants: ["assistant-002", "assistant-003"]
+                    assistants:
+                      - assistant-002
+                      - assistant-003
                     metadata: {}
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl http://localhost:1337/v1/threads \
               -H "Content-Type: application/json" \
-
-  /threads/{thread_id}:
+  "/threads/{thread_id}":
     get:
       operationId: getThread
       tags:
         - Threads
       summary: Retrieve thread
-      description: |
-        Retrieves detailed information about a specific thread using its thread_id.  <a  href = "https://platform.openai.com/docs/api-reference/threads/getThread"> Equivalent to OpenAI's retrieve thread. </a>
+      description: >
+        Retrieves detailed information about a specific thread using its
+        thread_id.  <a  href =
+        "https://platform.openai.com/docs/api-reference/threads/getThread">
+        Equivalent to OpenAI's retrieve thread. </a>
       parameters:
         - in: path
           name: thread_id
@@ -319,7 +334,6 @@ paths:
             example: thread_abc123
           description: |
             The ID of the thread to retrieve.
-
       responses:
         "200":
           description: Thread details retrieved successfully
@@ -328,7 +342,7 @@ paths:
               schema:
                 $ref: "specs/threads.yaml#/components/schemas/GetThreadResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl http://localhost:1337/v1/threads/{thread_id}
     post:
@@ -336,8 +350,10 @@ paths:
       tags:
         - Threads
       summary: Modify thread
-      description: |
-        Modifies a thread.  <a  href = "https://platform.openai.com/docs/api-reference/threads/modifyThread"> Equivalent to OpenAI's modify thread. </a>
+      description: >
+        Modifies a thread.  <a  href =
+        "https://platform.openai.com/docs/api-reference/threads/modifyThread">
+        Equivalent to OpenAI's modify thread. </a>
       parameters:
         - in: path
           name: thread_id
@@ -347,7 +363,6 @@ paths:
             example: thread_abc123
           description: |
             The ID of the thread to be modified.
-
       requestBody:
         required: false
         content:
@@ -357,7 +372,7 @@ paths:
               properties:
                 messages:
                   type: array
-                  description: "Set of messages to update in the thread."
+                  description: Set of messages to update in the thread.
                   items:
                     $ref: "specs/threads.yaml#/components/schemas/ThreadMessageObject"
       responses:
@@ -368,7 +383,7 @@ paths:
               schema:
                 $ref: "specs/threads.yaml#/components/schemas/ModifyThreadResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl -X POST http://localhost:1337/v1/threads/{thread_id} \
               -H "Content-Type: application/json" \
@@ -387,8 +402,10 @@ paths:
       tags:
         - Threads
       summary: Delete thread
-      description: |
-        Delete a thread.  <a  href = "https://platform.openai.com/docs/api-reference/threads/deleteThread"> Equivalent to OpenAI's delete thread. </a>
+      description: >
+        Delete a thread.  <a  href =
+        "https://platform.openai.com/docs/api-reference/threads/deleteThread">
+        Equivalent to OpenAI's delete thread. </a>
       parameters:
         - in: path
           name: thread_id
@@ -406,18 +423,17 @@ paths:
               schema:
                 $ref: "specs/threads.yaml#/components/schemas/DeleteThreadResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl -X DELETE http://localhost:1337/v1/threads/{thread_id}
-
-  /threads/{thread_id}/assistants:
+  "/threads/{thread_id}/assistants":
     get:
       operationId: getThreadAssistants
       tags:
         - Threads
       summary: Get Thread.Assistants
       description: |
-        Can achieve this goal by calling Get thread API
+        Can achieve this goal by calling Get thread API.
       parameters:
         - in: path
           name: thread_id
@@ -434,29 +450,26 @@ paths:
               schema:
                 $ref: "specs/threads.yaml#/components/schemas/GetThreadResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl http://localhost:1337/v1/threads/{thread_id}/assistants
-
-  /threads/{thread_id}/assistants/{assistants_id}:
+  "/threads/{thread_id}/assistants/{assistants_id}":
     post:
       operationId: postThreadAssistants
       tags:
         - Threads
       summary: Modify Thread.Assistants
-      description: |
-
-
-        Can achieve this goal by calling Modify Assistant API with thread.assistant[]
-
-  /threads/{thread_id}/:
+      description: >
+        Can achieve this goal by calling Modify Assistant API with
+        thread.assistant[].
+  "/threads/{thread_id}/":
     get:
       operationId: listThreadMessage
       tags:
         - Threads
       summary: List Thread.Messages
       description: |
-        Can achieve this goal by calling Get Thread API
+        Can achieve this goal by calling Get Thread API.
       parameters:
         - in: path
           name: thread_id
@@ -473,20 +486,20 @@ paths:
               schema:
                 $ref: "specs/threads.yaml#/components/schemas/GetThreadResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl http://localhost:1337/v1/threads/{thread_id}
-  ### ASSISTANTS
   /assistants/:
     get:
       operationId: listAssistants
       tags:
         - Assistants
       summary: List assistants
-      description: |
-        Return a list of assistants. <a href = "https://platform.openai.com/docs/api-reference/assistants/listAssistants"> Equivalent to OpenAI's list assistants. </a>
+      description: >
+        Return a list of assistants. <a href =
+        "https://platform.openai.com/docs/api-reference/assistants/listAssistants">
+        Equivalent to OpenAI's list assistants. </a>
       responses:
-        responses:
         "200":
           description: List of threads retrieved successfully
           content:
@@ -494,37 +507,37 @@ paths:
               schema:
                 type: array
                 example:
-                  - id: "asst_abc123"
-                    object: "assistant"
+                  - id: asst_abc123
+                    object: assistant
                     version: 1
                     created_at: 1698984975
-                    name: "Math Tutor"
+                    name: Math Tutor
                     description: null
                     avatar: "https://pic.png"
                     models:
-                      - model_id: "model_0"
-                    instructions: "Be concise"
+                      - model_id: model_0
+                    instructions: Be concise
                     events:
                       in: []
                       out: []
                     metadata: {}
-
-                  - id: "asst_abc456"
-                    object: "assistant"
+                  - id: asst_abc456
+                    object: assistant
                     version: 1
                     created_at: 1698984975
-                    name: "Physics Tutor"
+                    name: Physics Tutor
                     description: null
                     avatar: "https://pic.png"
                     models:
-                      - model_id: "model_1"
-                    instructions: "Be concise!"
+                      - model_id: model_1
+                    instructions: Be concise!
                     events:
                       in: []
                       out: []
                     metadata: {}
+        responses: null
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl http://localhost:1337/v1/assistants \
               -H "Content-Type: application/json" \
@@ -533,8 +546,10 @@ paths:
       tags:
         - Assistants
       summary: Create assistant
-      description: |
-        Create an assistant with a model and instructions. <a href = "https://platform.openai.com/docs/api-reference/assistants/createAssistant"> Equivalent to OpenAI's create assistants. </a>
+      description: >
+        Create an assistant with a model and instructions. <a href =
+        "https://platform.openai.com/docs/api-reference/assistants/createAssistant">
+        Equivalent to OpenAI's create assistants. </a>
       requestBody:
         required: true
         content:
@@ -544,7 +559,9 @@ paths:
               properties:
                 models:
                   type: array
-                  description: "List of models associated with the assistant. Jan-specific property."
+                  description: >-
+                    List of models associated with the assistant. Jan-specific
+                    property.
                   items:
                     type: object
                     properties:
@@ -553,13 +570,14 @@ paths:
                         example: model_0
       responses:
         "200":
-          description:
+          description: null
           content:
             application/json:
               schema:
-                $ref: "specs/assistants.yaml#/components/schemas/CreateAssistantResponse"
+                $ref: >-
+                  specs/assistants.yaml#/components/schemas/CreateAssistantResponse
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl http://localhost:1337/v1/assistants \
               -H "Content-Type: application/json" \
@@ -570,14 +588,16 @@ paths:
                       }
                   ]
               }'
-  /assistants/{assistant_id}:
+  "/assistants/{assistant_id}":
     get:
       operationId: getAssistant
       tags:
         - Assistants
       summary: Retrieve assistant
-      description: |
-        Retrieves an assistant. <a href = "https://platform.openai.com/docs/api-reference/assistants/getAssistant"> Equivalent to OpenAI's retrieve assistants. </a>
+      description: >
+        Retrieves an assistant. <a href =
+        "https://platform.openai.com/docs/api-reference/assistants/getAssistant">
+        Equivalent to OpenAI's retrieve assistants. </a>
       parameters:
         - in: path
           name: assistant_id
@@ -589,13 +609,14 @@ paths:
             The ID of the assistant to retrieve.
       responses:
         "200":
-          description:
+          description: null
           content:
             application/json:
               schema:
-                $ref: "specs/assistants.yaml#/components/schemas/RetrieveAssistantResponse"
+                $ref: >-
+                  specs/assistants.yaml#/components/schemas/RetrieveAssistantResponse
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl http://localhost:1337/v1/assistants/{assistant_id} \
               -H "Content-Type: application/json" \
@@ -604,8 +625,10 @@ paths:
       tags:
         - Assistants
       summary: Modify assistant
-      description: |
-        Modifies an assistant. <a href = "https://platform.openai.com/docs/api-reference/assistants/modifyAssistant"> Equivalent to OpenAI's modify assistant. </a>
+      description: >
+        Modifies an assistant. <a href =
+        "https://platform.openai.com/docs/api-reference/assistants/modifyAssistant">
+        Equivalent to OpenAI's modify assistant. </a>
       parameters:
         - in: path
           name: assistant_id
@@ -624,7 +647,9 @@ paths:
               properties:
                 models:
                   type: array
-                  description: "List of models associated with the assistant. Jan-specific property."
+                  description: >-
+                    List of models associated with the assistant. Jan-specific
+                    property.
                   items:
                     type: object
                     properties:
@@ -633,21 +658,22 @@ paths:
                         example: model_0
                 name:
                   type: string
-                  description: "Name of the assistant."
-                  example: "Physics Tutor"
+                  description: Name of the assistant.
+                  example: Physics Tutor
                 instructions:
                   type: string
-                  description: "A system prompt for the assistant."
+                  description: A system prompt for the assistant.
                   example: Be concise!
       responses:
         "200":
-          description:
+          description: null
           content:
             application/json:
               schema:
-                $ref: "specs/assistants.yaml#/components/schemas/ModifyAssistantResponse"
+                $ref: >-
+                  specs/assistants.yaml#/components/schemas/ModifyAssistantResponse
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl http://localhost:1337/v1/assistants/{assistant_id} \
               -H "Content-Type: application/json" \
@@ -660,14 +686,15 @@ paths:
                   "name": "Physics Tutor",
                   "instructions": "Be concise!",
                 }'
-
     delete:
       operationId: deleteAssistant
       tags:
         - Assistants
       summary: Delete assistant
-      description: |
-        Delete an assistant. <a href = "https://platform.openai.com/docs/api-reference/assistants/deleteAssistant"> Equivalent to OpenAI's delete assistant. </a>
+      description: >
+        Delete an assistant. <a href =
+        "https://platform.openai.com/docs/api-reference/assistants/deleteAssistant">
+        Equivalent to OpenAI's delete assistant. </a>
       parameters:
         - in: path
           name: assistant_id
@@ -683,21 +710,22 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "specs/assistants.yaml#/components/schemas/DeleteAssistantResponse"
+                $ref: >-
+                  specs/assistants.yaml#/components/schemas/DeleteAssistantResponse
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl -X DELETE http://localhost:1337/v1/assistants/{assistant_id}
-
-  ### MESSAGES
-  /threads/{thread_id}/messages:
+  "/threads/{thread_id}/messages":
     get:
       operationId: listMessages
       tags:
         - Messages
       summary: List messages
-      description: |
-        Retrieves all messages from the given thread. <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessages"> Equivalent to OpenAI's list messages. </a>
+      description: >
+        Retrieves all messages from the given thread. <a  href =
+        "https://platform.openai.com/docs/api-reference/messages/listMessages">
+        Equivalent to OpenAI's list messages. </a>
       parameters:
         - in: path
           name: thread_id
@@ -715,7 +743,7 @@ paths:
               schema:
                 $ref: "specs/messages.yaml#/components/schemas/ListMessagesResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl http://localhost:1337/v1/threads/{thread_id}/messages \
               -H "Content-Type: application/json"
@@ -724,8 +752,10 @@ paths:
       tags:
         - Messages
       summary: Create message
-      description: |
-        Create a message. <a  href = "https://platform.openai.com/docs/api-reference/messages/createMessage"> Equivalent to OpenAI's list messages. </a>
+      description: >
+        Create a message. <a  href =
+        "https://platform.openai.com/docs/api-reference/messages/createMessage">
+        Equivalent to OpenAI's list messages. </a>
       parameters:
         - in: path
           name: thread_id
@@ -746,8 +776,10 @@ paths:
                   type: string
                   description: |
                     Role of the sender, either 'user' or 'assistant'.
-                  example: "user"
-                  enum: ["user", "assistant"]
+                  example: user
+                  enum:
+                    - user
+                    - assistant
                 content:
                   type: string
                   description: |
@@ -764,7 +796,7 @@ paths:
               schema:
                 $ref: "specs/messages.yaml#/components/schemas/CreateMessageResponse"
       x-codeSamples:
-        - lang: "curl"
+        - lang: cURL
           source: |
             curl -X POST http://localhost:1337/v1/threads/{thread_id}/messages \
               -H "Content-Type: application/json" \
@@ -772,15 +804,17 @@ paths:
                 "role": "user",
                 "content": "How does AI work? Explain it in simple terms."
               }'
-
-  /threads/{thread_id}/messages/{message_id}:
+  "/threads/{thread_id}/messages/{message_id}":
     get:
       operationId: retrieveMessage
       tags:
         - Messages
       summary: Retrieve message
-      description: |
-        Retrieve a specific message from a thread using its thread_id and message_id. <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessage"> Equivalent to OpenAI's retrieve messages. </a>
+      description: >
+        Retrieve a specific message from a thread using its thread_id and
+        message_id. <a  href =
+        "https://platform.openai.com/docs/api-reference/messages/getMessage">
+        Equivalent to OpenAI's retrieve messages. </a>
       parameters:
         - in: path
           name: thread_id
@@ -798,7 +832,6 @@ paths:
             example: msg_abc123
           description: |
             The ID of the message to retrieve.
-
       responses:
         "200":
           description: OK
@@ -807,20 +840,22 @@ paths:
               schema:
                 $ref: "specs/messages.yaml#/components/schemas/GetMessageResponse"
       x-codeSamples:
-        - lang: "curl"
-          source: |
-            curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id} \
+        - lang: cURL
+          source: >
+            curl
+            http://localhost:1337/v1/threads/{thread_id}/messages/{message_id} \
               -H "Content-Type: application/json"
-
-  /threads/{thread_id}/messages/{message_id}/files:
+  "/threads/{thread_id}/messages/{message_id}/files":
     get:
       operationId: listMessageFiles
       tags:
         - Messages
       summary: |
         List message files
-      description: |
-        Returns a list of message files.  <a  href = "https://platform.openai.com/docs/api-reference/messages/listMessageFiles"> Equivalent to OpenAI's list message files. </a>
+      description: >
+        Returns a list of message files.  <a  href =
+        "https://platform.openai.com/docs/api-reference/messages/listMessageFiles">
+        Equivalent to OpenAI's list message files. </a>
       parameters:
         - in: path
           name: thread_id
@@ -830,7 +865,6 @@ paths:
             example: thread_abc123
           description: |
             The ID of the thread containing the message.
-
         - in: path
           name: message_id
           required: true
@@ -839,28 +873,32 @@ paths:
             example: msg_abc123
           description: |
             The ID of the message whose files are to be listed.
-
       responses:
         "200":
           description: List of files retrieved successfully
           content:
             application/json:
               schema:
-                $ref: "specs/messages.yaml#/components/schemas/ListMessageFilesResponse"
+                $ref: >-
+                  specs/messages.yaml#/components/schemas/ListMessageFilesResponse
       x-codeSamples:
-        - lang: "curl"
-          source: |
-            curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}/files \
+        - lang: cURL
+          source: >
+            curl
+            http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}/files
+            \
               -H "Content-Type: application/json"
-
-  /threads/{thread_id}/messages/{message_id}/files/{file_id}:
+  "/threads/{thread_id}/messages/{message_id}/files/{file_id}":
     get:
       operationId: retrieveMessageFile
       tags:
         - Messages
       summary: Retrieve message file
-      description: |
-        Retrieves a file associated with a specific message in a thread.  <a  href = "https://platform.openai.com/docs/api-reference/messages/getMessageFile"> Equivalent to OpenAI's retrieve message file. </a>
+      description: >
+        Retrieves a file associated with a specific message in a thread.  <a 
+        href =
+        "https://platform.openai.com/docs/api-reference/messages/getMessageFile">
+        Equivalent to OpenAI's retrieve message file. </a>
       parameters:
         - in: path
           name: thread_id
@@ -870,7 +908,6 @@ paths:
             example: thread_abc123
           description: |
             The ID of the thread containing the message.
-
         - in: path
           name: message_id
           required: true
@@ -879,7 +916,6 @@ paths:
             example: msg_abc123
           description: |
             The ID of the message associated with the file.
-
         - in: path
           name: file_id
           required: true
@@ -888,7 +924,6 @@ paths:
             example: file-abc123
           description: |
             The ID of the file to retrieve.
-
       responses:
         "200":
           description: File retrieved successfully
@@ -897,17 +932,20 @@ paths:
               schema:
                 $ref: "specs/messages.yaml#/components/schemas/MessageFileObject"
       x-codeSamples:
-        - lang: "curl"
-          source: |
-            curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}/files/{file_id} \
+        - lang: cURL
+          source: >
+            curl
+            http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}/files/{file_id}
+            \
               -H "Content-Type: application/json"
-
 x-webhooks:
   ModelObject:
     post:
       summary: The model object
-      description: |
-        Describe a model offering that can be used with the API. <a  href = "https://platform.openai.com/docs/api-reference/models/object"> Equivalent to OpenAI's model object. </a>
+      description: >
+        Describe a model offering that can be used with the API. <a  href =
+        "https://platform.openai.com/docs/api-reference/models/object">
+        Equivalent to OpenAI's model object. </a>
       operationId: ModelObject
       tags:
         - Models
@@ -919,8 +957,10 @@ x-webhooks:
   AssistantObject:
     post:
       summary: The assistant object
-      description: |
-        Build assistants that can call models and use tools to perform tasks. <a  href = "https://platform.openai.com/docs/api-reference/assistants"> Equivalent to OpenAI's assistants object. </a>
+      description: >
+        Build assistants that can call models and use tools to perform tasks.
+        <a  href = "https://platform.openai.com/docs/api-reference/assistants">
+        Equivalent to OpenAI's assistants object. </a>
       operationId: AssistantObjects
       tags:
         - Assistants
@@ -932,8 +972,10 @@ x-webhooks:
   MessageObject:
     post:
       summary: The message object
-      description: |
-        Information about a message in the thread.  <a  href = "https://platform.openai.com/docs/api-reference/messages/object"> Equivalent to OpenAI's message object. </a>
+      description: >
+        Information about a message in the thread.  <a  href =
+        "https://platform.openai.com/docs/api-reference/messages/object">
+        Equivalent to OpenAI's message object. </a>
       operationId: MessageObject
       tags:
         - Messages
@@ -945,7 +987,10 @@ x-webhooks:
   ThreadObject:
     post:
       summary: The thread object
-      description: Represents a thread that contains messages. <a  href = "https://platform.openai.com/docs/api-reference/threads/object"> Equivalent to OpenAI's thread object. </a>
+      description: >-
+        Represents a thread that contains messages. <a  href =
+        "https://platform.openai.com/docs/api-reference/threads/object">
+        Equivalent to OpenAI's thread object. </a>
       operationId: ThreadObject
       tags:
         - Threads
