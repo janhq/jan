@@ -275,7 +275,7 @@ export type ModelSettingParams = {
   ngl?: number;
   embedding?: boolean;
   n_parallel?: number;
-  cpu_threads: number;
+  cpu_threads?: number;
   system_prompt?: string;
   user_prompt?: string;
   ai_prompt?: string;
