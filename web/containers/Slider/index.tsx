@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 
 import { Slider, Input } from '@janhq/uikit'
 import { useAtomValue } from 'jotai'
-import { twMerge } from 'tailwind-merge'
 
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
