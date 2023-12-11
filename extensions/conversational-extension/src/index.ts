@@ -1,5 +1,5 @@
 import { ExtensionType, fs } from '@janhq/core'
-import { ConversationalExtension } from '@janhq/core'
+import { ThreadExtension, MessageExtension } from '@janhq/core'
 import { Thread, ThreadMessage } from '@janhq/core'
 import { join } from 'path'
 
@@ -8,7 +8,7 @@ import { join } from 'path'
  * functionality for managing threads.
  */
 export default class JSONConversationalExtension
-  implements ConversationalExtension
+  implements ThreadExtension, MessageExtension
 {
   private static readonly _homeDir = 'threads'
   private static readonly _threadInfoFileName = 'thread.json'

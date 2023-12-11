@@ -1,1 +1,2 @@
-export * from './model'
+export * from './modelEntity'
+export * from './modelInterface'

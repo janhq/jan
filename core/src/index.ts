@@ -1,10 +1,4 @@
 /**
- * Export all types.
- * @module
- */
-export * from './types/index'
-
-/**
  * Export Core module
  * @module
  */
@@ -51,6 +45,12 @@ export * from './monitoring'
  * @module
  */
 export * from './thread'
+
+/**
+ * Export message module.
+ * @module
+ */
+export * from './message'
 
 /**
  * Export model module.

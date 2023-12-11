@@ -1,1 +1,2 @@
-export * from './conversational'
+export * from './threadEntity'
+export * from './threadInterface'
