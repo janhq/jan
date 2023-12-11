@@ -6,6 +6,7 @@ export {}
 declare global {
   declare const PLUGIN_CATALOG: string
   declare const VERSION: string
+  declare const API_BASE_URL: string
   interface Core {
     api: APIFunctions
     events: EventEmitter

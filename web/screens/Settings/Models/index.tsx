@@ -15,7 +15,7 @@ export default function Models() {
   const [searchValue, setsearchValue] = useState('')
 
   const filteredDownloadedModels = downloadedModels.filter((x) => {
-    return x.name.toLowerCase().includes(searchValue.toLowerCase())
+    return x.name?.toLowerCase().includes(searchValue.toLowerCase())
   })
 
   return (

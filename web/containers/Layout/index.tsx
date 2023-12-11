@@ -22,11 +22,11 @@ const BaseLayout = (props: PropsWithChildren) => {
     async function setTheme() {
       switch (theme) {
         case 'light':
-          return await window?.electronAPI.setNativeThemeLight()
+          return await window?.electronAPI?.setNativeThemeLight()
         case 'dark':
-          return await window?.electronAPI.setNativeThemeDark()
+          return await window?.electronAPI?.setNativeThemeDark()
         default:
-          return await window?.electronAPI.setNativeThemeSystem()
+          return await window?.electronAPI?.setNativeThemeSystem()
       }
     }
     setTheme()

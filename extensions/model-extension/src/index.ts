@@ -13,7 +13,7 @@ import { join } from 'path'
  * A extension for models
  */
 export default class JanModelExtension implements ModelExtension {
-  private static readonly _homeDir = 'models'
+  private static readonly _homeDir = 'file://models'
   private static readonly _modelMetadataFileName = 'model.json'
 
   /**
@@ -42,11 +42,10 @@ export default class JanModelExtension implements ModelExtension {
   private async copyModelsToHomeDir() {
     try {
       // list all of the files under the home directory
-      const files = await fs.listFiles('')
 
-      if (files.includes(JanModelExtension._homeDir)) {
+      if (fs.existsSync(JanModelExtension._homeDir)) {
         // ignore if the model is already downloaded
-        console.debug('Model already downloaded')
+        console.debug('Models already persisted.')
         return
       }
 
@@ -57,7 +56,7 @@ export default class JanModelExtension implements ModelExtension {
       const userSpace = await getUserSpace()
       const destPath = join(userSpace, JanModelExtension._homeDir)
 
-      await fs.copyFile(srcPath, destPath)
+      await fs.copyFileSync(srcPath, destPath)
     } catch (err) {
       console.error(err)
     }
@@ -71,7 +70,7 @@ export default class JanModelExtension implements ModelExtension {
   async downloadModel(model: Model): Promise<void> {
     // create corresponding directory
     const directoryPath = join(JanModelExtension._homeDir, model.id)
-    await fs.mkdir(directoryPath)
+    if (!(await fs.existsSync(directoryPath))) await fs.mkdirSync(directoryPath)
 
     // path to model binary
     const path = join(directoryPath, model.id)
@@ -87,7 +86,7 @@ export default class JanModelExtension implements ModelExtension {
     return abortDownload(
       join(JanModelExtension._homeDir, modelId, modelId)
     ).then(() => {
-      fs.deleteFile(join(JanModelExtension._homeDir, modelId, modelId))
+      fs.unlinkSync(join(JanModelExtension._homeDir, modelId, modelId))
     })
   }
 
@@ -101,10 +100,10 @@ export default class JanModelExtension implements ModelExtension {
       const dirPath = join(JanModelExtension._homeDir, modelId)
 
       // remove all files under dirPath except model.json
-      const files = await fs.listFiles(dirPath)
+      const files = await fs.readdirSync(dirPath)
       const deletePromises = files.map((fileName: string) => {
         if (fileName !== JanModelExtension._modelMetadataFileName) {
-          return fs.deleteFile(join(dirPath, fileName))
+          return fs.unlinkSync(join(dirPath, fileName))
         }
       })
       await Promise.allSettled(deletePromises)
@@ -114,11 +113,11 @@ export default class JanModelExtension implements ModelExtension {
         dirPath,
         JanModelExtension._modelMetadataFileName
       )
-      const json = await fs.readFile(jsonFilePath)
+      const json = await fs.readFileSync(jsonFilePath)
       const model = JSON.parse(json) as Model
       delete model.state
 
-      await fs.writeFile(jsonFilePath, JSON.stringify(model, null, 2))
+      await fs.writeFileSync(jsonFilePath, JSON.stringify(model, null, 2))
     } catch (err) {
       console.error(err)
     }
@@ -137,7 +136,7 @@ export default class JanModelExtension implements ModelExtension {
     )
 
     try {
-      await fs.writeFile(
+      await fs.writeFileSync(
         jsonFilePath,
         JSON.stringify(
           {
@@ -164,22 +163,17 @@ export default class JanModelExtension implements ModelExtension {
 
   private async getModelsMetadata(): Promise<Model[]> {
     try {
-      const filesUnderJanRoot = await fs.listFiles('')
-      if (!filesUnderJanRoot.includes(JanModelExtension._homeDir)) {
+      if (!(await fs.existsSync(JanModelExtension._homeDir))) {
         console.debug('model folder not found')
         return []
       }
 
-      const files: string[] = await fs.listFiles(JanModelExtension._homeDir)
+      const files: string[] = await fs.readdirSync(JanModelExtension._homeDir)
 
       const allDirectories: string[] = []
       for (const file of files) {
-        const isDirectory = await fs.isDirectory(
-          join(JanModelExtension._homeDir, file)
-        )
-        if (isDirectory) {
-          allDirectories.push(file)
-        }
+        //TODO: add back directory check
+        if (!file.includes('.')) allDirectories.push(file)
       }
 
       const readJsonPromises = allDirectories.map((dirName) => {
@@ -191,13 +185,21 @@ export default class JanModelExtension implements ModelExtension {
         return this.readModelMetadata(jsonPath)
       })
       const results = await Promise.allSettled(readJsonPromises)
-      const modelData = results.map((result) => {
-        if (result.status === 'fulfilled') {
-          return JSON.parse(result.value) as Model
-        } else {
-          console.error(result.reason)
-        }
-      })
+      const modelData = results
+        .map((result) => {
+          if (result.status === 'fulfilled') {
+            try {
+              return JSON.parse(result.value)
+            } catch {
+              return result.value
+            }
+          } else {
+            console.error(result.reason)
+            return undefined
+          }
+        })
+        .filter((e) => !!e)
+
       return modelData
     } catch (err) {
       console.error(err)
@@ -206,7 +208,7 @@ export default class JanModelExtension implements ModelExtension {
   }
 
   private readModelMetadata(path: string) {
-    return fs.readFile(join(path))
+    return fs.readFileSync(join(path))
   }
 
   /**

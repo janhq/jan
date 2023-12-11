@@ -28,6 +28,7 @@ const nextConfig = {
           'https://cdn.jsdelivr.net/npm/@janhq/plugin-catalog@latest/dist/index.js'
         ),
         VERSION: JSON.stringify(packageJson.version),
+        API_BASE_URL: JSON.stringify('http://localhost:1337'),
       }),
     ]
     return config

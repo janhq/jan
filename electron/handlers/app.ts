@@ -1,7 +1,7 @@
 import { app, ipcMain, shell, nativeTheme } from 'electron'
 import { ModuleManager } from './../managers/module'
 import { join } from 'path'
-import { ExtensionManager } from './../managers/extension'
+import { ExtensionManager } from '../../common/extension'
 import { WindowManager } from './../managers/window'
 import { userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'

@@ -12,7 +12,6 @@ import {
   EventName,
   MessageRequest,
   MessageStatus,
-  ModelSettingParams,
   ExtensionType,
   ThreadContent,
   ThreadMessage,
@@ -31,7 +30,7 @@ import { EngineSettings, OpenAIModel } from "./@types/global";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceOpenAIExtension implements InferenceExtension {
-  private static readonly _homeDir = "engines";
+  private static readonly _homeDir = "file://engines";
   private static readonly _engineMetadataFileName = "openai.json";
 
   private static _currentModel: OpenAIModel;
@@ -55,8 +54,9 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  onLoad(): void {
-    fs.mkdir(JanInferenceOpenAIExtension._homeDir);
+  async onLoad() {
+    if (!(await fs.existsSync(JanInferenceOpenAIExtension._homeDir)))
+      fs.mkdirSync(JanInferenceOpenAIExtension._homeDir);
     JanInferenceOpenAIExtension.writeDefaultEngineSettings();
 
     // Events subscription
@@ -87,12 +87,17 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
         JanInferenceOpenAIExtension._homeDir,
         JanInferenceOpenAIExtension._engineMetadataFileName
       );
-      if (await fs.exists(engineFile)) {
-        JanInferenceOpenAIExtension._engineSettings = JSON.parse(
-          await fs.readFile(engineFile)
-        );
+      if (await fs.existsSync(engineFile)) {
+        try {
+          JanInferenceOpenAIExtension._engineSettings = JSON.parse(
+            await fs.readFileSync(engineFile)
+          );
+        } catch {
+          JanInferenceOpenAIExtension._engineSettings =
+            await fs.readFileSync(engineFile);
+        }
       } else {
-        await fs.writeFile(
+        await fs.writeFileSync(
           engineFile,
           JSON.stringify(JanInferenceOpenAIExtension._engineSettings, null, 2)
         );
