@@ -40,7 +40,7 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
     <td colspan="2" style="text-align:center"><b>MacOS</b></td>
     <td style="text-align:center"><b>Linux</b></td>
   </tr>
-  <tr style="text-align: center">
+  <tr>
     <td style="text-align:center"><b>Stable (Recommended)</b></td>
     <td style="text-align:center">
       <a href='https://github.com/janhq/jan/releases/download/v0.4.0/jan-win-x64-0.4.0.exe'>
