@@ -298,6 +298,7 @@ async function getResourcesInfo(): Promise<ResourcesInfo> {
 
 module.exports = {
   initModel,
+  stopModel,
   killSubprocess,
   dispose,
 };
