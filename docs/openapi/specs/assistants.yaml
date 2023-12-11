@@ -5,36 +5,36 @@ components:
       properties:
         id:
           type: string
-          description: "The identifier of the assistant."
-          example: "asst_abc123"
+          description: The identifier of the assistant.
+          example: asst_abc123
         object:
           type: string
           description: "Type of the object, indicating it's an assistant."
-          default: "assistant"
+          default: assistant
         version:
           type: integer
-          description: "Version number of the assistant."
+          description: Version number of the assistant.
           example: 1
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the assistant."
+          description: Unix timestamp representing the creation time of the assistant.
           example: 1698984975
         name:
           type: string
-          description: "Name of the assistant."
-          example: "Math Tutor"
+          description: Name of the assistant.
+          example: Math Tutor
         description:
           type: string
-          description: "Description of the assistant. Can be null."
+          description: Description of the assistant. Can be null.
           example: null
         avatar:
           type: string
-          description: "URL of the assistant's avatar. Jan-specific property."
+          description: URL of the assistant's avatar. Jan-specific property.
           example: "https://pic.png"
         models:
           type: array
-          description: "List of models associated with the assistant. Jan-specific property."
+          description: List of models associated with the assistant. Jan-specific property.
           items:
             type: object
             properties:
@@ -43,11 +43,11 @@ components:
                 example: model_0
         instructions:
           type: string
-          description: "A system prompt for the assistant."
+          description: A system prompt for the assistant.
           example: Be concise
         events:
           type: object
-          description: "Event subscription settings for the assistant."
+          description: Event subscription settings for the assistant.
           properties:
             in:
               type: array
@@ -57,48 +57,45 @@ components:
               type: array
               items:
                 type: string
-          # If there are specific event types, they can be detailed here
         metadata:
           type: object
-          description: "Metadata associated with the assistant."
-
-    ListAssistantsResponse:
-
+          description: Metadata associated with the assistant.
+    ListAssistantsResponse: null
     CreateAssistantResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the assistant."
-          example: "asst_abc123"
+          description: The identifier of the assistant.
+          example: asst_abc123
         object:
           type: string
           description: "Type of the object, indicating it's an assistant."
-          default: "assistant"
+          default: assistant
         version:
           type: integer
-          description: "Version number of the assistant."
+          description: Version number of the assistant.
           example: 1
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the assistant."
+          description: Unix timestamp representing the creation time of the assistant.
           example: 1698984975
         name:
           type: string
-          description: "Name of the assistant."
-          example: "Math Tutor"
+          description: Name of the assistant.
+          example: Math Tutor
         description:
           type: string
-          description: "Description of the assistant. Can be null."
+          description: Description of the assistant. Can be null.
           example: null
         avatar:
           type: string
-          description: "URL of the assistant's avatar. Jan-specific property."
+          description: URL of the assistant's avatar. Jan-specific property.
           example: "https://pic.png"
         models:
           type: array
-          description: "List of models associated with the assistant. Jan-specific property."
+          description: List of models associated with the assistant. Jan-specific property.
           items:
             type: object
             properties:
@@ -107,11 +104,11 @@ components:
                 example: model_0
         instructions:
           type: string
-          description: "A system prompt for the assistant."
+          description: A system prompt for the assistant.
           example: Be concise
         events:
           type: object
-          description: "Event subscription settings for the assistant."
+          description: Event subscription settings for the assistant.
           properties:
             in:
               type: array
@@ -121,46 +118,44 @@ components:
               type: array
               items:
                 type: string
-          # If there are specific event types, they can be detailed here
         metadata:
           type: object
-          description: "Metadata associated with the assistant."
-
+          description: Metadata associated with the assistant.
     RetrieveAssistantResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the assistant."
-          example: "asst_abc123"
+          description: The identifier of the assistant.
+          example: asst_abc123
         object:
           type: string
           description: "Type of the object, indicating it's an assistant."
-          default: "assistant"
+          default: assistant
         version:
           type: integer
-          description: "Version number of the assistant."
+          description: Version number of the assistant.
           example: 1
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the assistant."
+          description: Unix timestamp representing the creation time of the assistant.
           example: 1698984975
         name:
           type: string
-          description: "Name of the assistant."
-          example: "Math Tutor"
+          description: Name of the assistant.
+          example: Math Tutor
         description:
           type: string
-          description: "Description of the assistant. Can be null."
+          description: Description of the assistant. Can be null.
           example: null
         avatar:
           type: string
-          description: "URL of the assistant's avatar. Jan-specific property."
+          description: URL of the assistant's avatar. Jan-specific property.
           example: "https://pic.png"
         models:
           type: array
-          description: "List of models associated with the assistant. Jan-specific property."
+          description: List of models associated with the assistant. Jan-specific property.
           items:
             type: object
             properties:
@@ -169,11 +164,11 @@ components:
                 example: model_0
         instructions:
           type: string
-          description: "A system prompt for the assistant."
+          description: A system prompt for the assistant.
           example: Be concise
         events:
           type: object
-          description: "Event subscription settings for the assistant."
+          description: Event subscription settings for the assistant.
           properties:
             in:
               type: array
@@ -183,46 +178,44 @@ components:
               type: array
               items:
                 type: string
-          # If there are specific event types, they can be detailed here
         metadata:
           type: object
-          description: "Metadata associated with the assistant."
-
+          description: Metadata associated with the assistant.
     ModifyAssistantObject:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the assistant."
-          example: "asst_abc123"
+          description: The identifier of the assistant.
+          example: asst_abc123
         object:
           type: string
           description: "Type of the object, indicating it's an assistant."
-          default: "assistant"
+          default: assistant
         version:
           type: integer
-          description: "Version number of the assistant."
+          description: Version number of the assistant.
           example: 1
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the assistant."
+          description: Unix timestamp representing the creation time of the assistant.
           example: 1698984975
         name:
           type: string
-          description: "Name of the assistant."
-          example: "Math Tutor"
+          description: Name of the assistant.
+          example: Math Tutor
         description:
           type: string
-          description: "Description of the assistant. Can be null."
+          description: Description of the assistant. Can be null.
           example: null
         avatar:
           type: string
-          description: "URL of the assistant's avatar. Jan-specific property."
+          description: URL of the assistant's avatar. Jan-specific property.
           example: "https://pic.png"
         models:
           type: array
-          description: "List of models associated with the assistant. Jan-specific property."
+          description: List of models associated with the assistant. Jan-specific property.
           items:
             type: object
             properties:
@@ -231,11 +224,11 @@ components:
                 example: model_0
         instructions:
           type: string
-          description: "A system prompt for the assistant."
+          description: A system prompt for the assistant.
           example: Be concise
         events:
           type: object
-          description: "Event subscription settings for the assistant."
+          description: Event subscription settings for the assistant.
           properties:
             in:
               type: array
@@ -245,46 +238,44 @@ components:
               type: array
               items:
                 type: string
-          # If there are specific event types, they can be detailed here
         metadata:
           type: object
-          description: "Metadata associated with the assistant."
-
+          description: Metadata associated with the assistant.
     ModifyAssistantResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the assistant."
-          example: "asst_abc123"
+          description: The identifier of the assistant.
+          example: asst_abc123
         object:
           type: string
           description: "Type of the object, indicating it's an assistant."
-          default: "assistant"
+          default: assistant
         version:
           type: integer
-          description: "Version number of the assistant."
+          description: Version number of the assistant.
           example: 1
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the assistant."
+          description: Unix timestamp representing the creation time of the assistant.
           example: 1698984975
         name:
           type: string
-          description: "Name of the assistant."
-          example: "Physics Tutor"
+          description: Name of the assistant.
+          example: Physics Tutor
         description:
           type: string
-          description: "Description of the assistant. Can be null."
+          description: Description of the assistant. Can be null.
           example: null
         avatar:
           type: string
-          description: "URL of the assistant's avatar. Jan-specific property."
+          description: URL of the assistant's avatar. Jan-specific property.
           example: "https://pic.png"
         models:
           type: array
-          description: "List of models associated with the assistant. Jan-specific property."
+          description: List of models associated with the assistant. Jan-specific property.
           items:
             type: object
             properties:
@@ -293,11 +284,11 @@ components:
                 example: model_0
         instructions:
           type: string
-          description: "A system prompt for the assistant."
+          description: A system prompt for the assistant.
           example: Be concise!
         events:
           type: object
-          description: "Event subscription settings for the assistant."
+          description: Event subscription settings for the assistant.
           properties:
             in:
               type: array
@@ -307,17 +298,15 @@ components:
               type: array
               items:
                 type: string
-          # If there are specific event types, they can be detailed here
         metadata:
           type: object
-          description: "Metadata associated with the assistant."
-
+          description: Metadata associated with the assistant.
     DeleteAssistantResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the deleted assistant."
+          description: The identifier of the deleted assistant.
           example: asst_abc123
         object:
           type: string
@@ -325,5 +314,5 @@ components:
           example: assistant.deleted
         deleted:
           type: boolean
-          description: "Indicates whether the assistant was successfully deleted."
+          description: Indicates whether the assistant was successfully deleted.
           example: true

@@ -6,34 +6,37 @@ components:
         id:
           type: string
           description: |
-            "Sequential or UUID identifier of the message."
+            Sequential or UUID identifier of the message.
           example: 0
         object:
           type: string
           description: |
-            "Type of the object, defaults to 'thread.message'."
+            Type of the object, defaults to 'thread.message'.
           example: thread.message
         created_at:
           type: integer
           format: int64
           description: |
-            "Unix timestamp representing the creation time of the message."
+            Unix timestamp representing the creation time of the message.
         thread_id:
           type: string
-          description: |
-            "Identifier of the thread to which this message belongs. Defaults to parent thread."
-          example: "thread_asdf"
+          description: >
+            Identifier of the thread to which this message belongs. Defaults to
+            parent thread.
+          example: thread_asdf
         assistant_id:
           type: string
-          description: |
-            "Identifier of the assistant involved in the message. Defaults to parent thread."
+          description: >
+            Identifier of the assistant involved in the message. Defaults to
+            parent thread.
           example: jan
         role:
           type: string
-          enum: ["user", "assistant"]
+          enum:
+            - user
+            - assistant
           description: |
-            "Role of the sender, either 'user' or 'assistant'."
-
+            Role of the sender, either 'user' or 'assistant'.
         content:
           type: array
           items:
@@ -42,36 +45,33 @@ components:
               type:
                 type: string
                 description: |
-                  "Type of content, e.g., 'text'."
-
+                  Type of content, e.g., 'text'.
               text:
                 type: object
                 properties:
                   value:
                     type: string
                     description: |
-                      "Text content of the message."
-                    example: "Hi!?"
+                      Text content of the message.
+                    example: Hi!?
                   annotations:
                     type: array
                     items:
                       type: string
                     description: |
-                      "Annotations for the text content, if any."
+                      Annotations for the text content, if any.
                     example: []
         metadata:
           type: object
           description: |
-            "Metadata associated with the message, defaults to an empty object."
-
+            Metadata associated with the message, defaults to an empty object.
           example: {}
-
     GetMessageResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the message."
+          description: The identifier of the message.
           example: msg_abc123
         object:
           type: string
@@ -80,11 +80,11 @@ components:
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the message."
+          description: Unix timestamp representing the creation time of the message.
           example: 1699017614
         thread_id:
           type: string
-          description: "Identifier of the thread to which this message belongs."
+          description: Identifier of the thread to which this message belongs.
           example: thread_abc123
         role:
           type: string
@@ -104,8 +104,8 @@ components:
                 properties:
                   value:
                     type: string
-                    description: "Text content of the message."
-                    example: "How does AI work? Explain it in simple terms."
+                    description: Text content of the message.
+                    example: How does AI work? Explain it in simple terms.
                   annotations:
                     type: array
                     items:
@@ -128,15 +128,14 @@ components:
           example: null
         metadata:
           type: object
-          description: "Metadata associated with the message."
+          description: Metadata associated with the message.
           example: {}
-
     CreateMessageResponse:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the created message."
+          description: The identifier of the created message.
           example: msg_abc123
         object:
           type: string
@@ -145,11 +144,11 @@ components:
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the message."
+          description: Unix timestamp representing the creation time of the message.
           example: 1699017614
         thread_id:
           type: string
-          description: "Identifier of the thread to which this message belongs."
+          description: Identifier of the thread to which this message belongs.
           example: thread_abc123
         role:
           type: string
@@ -169,8 +168,8 @@ components:
                 properties:
                   value:
                     type: string
-                    description: "Text content of the message."
-                    example: "How does AI work? Explain it in simple terms."
+                    description: Text content of the message.
+                    example: How does AI work? Explain it in simple terms.
                   annotations:
                     type: array
                     items:
@@ -193,39 +192,37 @@ components:
           example: null
         metadata:
           type: object
-          description: "Metadata associated with the message."
+          description: Metadata associated with the message.
           example: {}
-
     ListMessagesResponse:
       type: object
       properties:
         object:
           type: string
           description: "Type of the object, indicating it's a list."
-          default: "list"
+          default: list
         data:
           type: array
           items:
             $ref: "#/components/schemas/ListMessageObject"
         first_id:
           type: string
-          description: "Identifier of the first message in the list."
-          example: "msg_abc123"
+          description: Identifier of the first message in the list.
+          example: msg_abc123
         last_id:
           type: string
-          description: "Identifier of the last message in the list."
-          example: "msg_abc456"
+          description: Identifier of the last message in the list.
+          example: msg_abc456
         has_more:
           type: boolean
-          description: "Indicates whether there are more messages to retrieve."
+          description: Indicates whether there are more messages to retrieve.
           example: false
-
     ListMessageObject:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the message."
+          description: The identifier of the message.
           example: msg_abc123
         object:
           type: string
@@ -234,11 +231,11 @@ components:
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the message."
+          description: Unix timestamp representing the creation time of the message.
           example: 1699017614
         thread_id:
           type: string
-          description: "Identifier of the thread to which this message belongs."
+          description: Identifier of the thread to which this message belongs.
           example: thread_abc123
         role:
           type: string
@@ -257,8 +254,8 @@ components:
                 properties:
                   value:
                     type: string
-                    description: "Text content of the message."
-                    example: "How does AI work? Explain it in simple terms."
+                    description: Text content of the message.
+                    example: How does AI work? Explain it in simple terms.
                   annotations:
                     type: array
                     items:
@@ -280,37 +277,35 @@ components:
           example: null
         metadata:
           type: object
-          description: "Metadata associated with the message."
+          description: Metadata associated with the message.
           example: {}
-
     MessageFileObject:
       type: object
       properties:
         id:
           type: string
-          description: "The identifier of the file."
+          description: The identifier of the file.
           example: file-abc123
         object:
           type: string
-          description: "Type of the object, indicating it's a thread message file."
+          description: Type of the object, indicating it's a thread message file.
           example: thread.message.file
         created_at:
           type: integer
           format: int64
-          description: "Unix timestamp representing the creation time of the file."
+          description: Unix timestamp representing the creation time of the file.
           example: 1699061776
         message_id:
           type: string
-          description: "Identifier of the message to which this file is associated."
+          description: Identifier of the message to which this file is associated.
           example: msg_abc123
-
     ListMessageFilesResponse:
       type: object
       properties:
         object:
           type: string
-          description: "Type of the object, indicating it's a list."
-          default: "list"
+          description: Type of the object, indicating it's a list.
+          default: list
         data:
           type: array
           items:
