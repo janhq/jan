@@ -9,7 +9,7 @@ export const presetConfiguration: Record<string, SettingComponentData> = {
     controllerData: {
       min: 0,
       max: 4096,
-      step: 1,
+      step: 128,
       value: 2048,
     },
   },

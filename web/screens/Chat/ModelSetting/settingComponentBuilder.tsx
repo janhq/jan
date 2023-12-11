@@ -1,6 +1,7 @@
+import { Fragment } from 'react'
+
 import Checkbox from '@/containers/Checkbox'
 import Slider from '@/containers/Slider'
-import { Fragment } from 'react'
 
 export type ControllerType = 'slider' | 'checkbox'
 

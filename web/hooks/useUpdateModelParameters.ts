@@ -1,3 +1,12 @@
+import {
+  ConversationalExtension,
+  ExtensionType,
+  ModelRuntimeParams,
+  Thread,
+} from '@janhq/core'
+
+import { useAtomValue, useSetAtom } from 'jotai'
+
 import { extensionManager } from '@/extension'
 import {
   activeThreadStateAtom,
@@ -6,13 +15,6 @@ import {
   threadsAtom,
   updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
-import {
-  ConversationalExtension,
-  ExtensionType,
-  ModelRuntimeParams,
-  Thread,
-} from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
 
 export default function useUpdateModelParameters() {
   const threads = useAtomValue(threadsAtom)

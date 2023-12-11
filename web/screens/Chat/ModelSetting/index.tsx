@@ -1,19 +1,23 @@
+import { useEffect, useState } from 'react'
+
+import { useForm } from 'react-hook-form'
+
+import { ModelRuntimeParams } from '@janhq/core'
+import { Button } from '@janhq/uikit'
+
+import { useAtomValue } from 'jotai'
+
+import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
+
+import { presetConfiguration } from './predefinedComponent'
+import settingComponentBuilder, {
+  SettingComponentData,
+} from './settingComponentBuilder'
+
 import {
   getActiveThreadIdAtom,
   getActiveThreadModelRuntimeParamsAtom,
-  threadStatesAtom,
 } from '@/helpers/atoms/Thread.atom'
-import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
-import { ModelRuntimeParams } from '@janhq/core'
-import { Button } from '@janhq/uikit'
-import { useAtomValue } from 'jotai'
-import { useEffect, useState } from 'react'
-import settingComponentBuilder, {
-  SettingComponentData,
-  SliderData,
-} from './settingComponentBuilder'
-import { useForm } from 'react-hook-form'
-import { presetConfiguration } from './predefinedComponent'
 
 export default function ModelSetting() {
   const threadId = useAtomValue(getActiveThreadIdAtom)
@@ -37,10 +41,14 @@ export default function ModelSetting() {
   Object.keys(modelParams).forEach((key) => {
     const componentSetting = presetConfiguration[key]
     if (componentSetting) {
-      if (componentSetting.controllerType === 'slider') {
-        componentSetting.controllerData.value = Number(modelParams[key])
-      } else if (componentSetting.controllerType === 'checkbox') {
-        componentSetting.controllerData.checked = modelParams[key]
+      if ('value' in componentSetting.controllerData) {
+        componentSetting.controllerData.value = Number(
+          modelParams[key as keyof ModelRuntimeParams]
+        )
+      } else if ('checked' in componentSetting.controllerData) {
+        componentSetting.controllerData.checked = modelParams[
+          key as keyof ModelRuntimeParams
+        ] as boolean
       }
       componentData.push(componentSetting)
     }
@@ -48,6 +56,7 @@ export default function ModelSetting() {
 
   const onSubmit = (data: ModelRuntimeParams) => {
     if (!threadId) return
+    console.log(data)
     updateModelParameter(threadId, data)
   }
 

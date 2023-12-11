@@ -206,11 +206,16 @@ export default function useSendChatMessage() {
           ])
       )
     const msgId = ulid()
+
+    const modelRequest = selectedModel ?? activeThread.assistants[0].model
     const messageRequest: MessageRequest = {
       id: msgId,
       threadId: activeThread.id,
       messages,
-      model: selectedModel ?? activeThread.assistants[0].model,
+      model: {
+        ...modelRequest,
+        ...(activeModelParams ? { parameters: activeModelParams } : {}),
+      },
     }
     const timestamp = Date.now()
     const threadMessage: ThreadMessage = {

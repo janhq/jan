@@ -16,8 +16,9 @@ import DropdownListSidebar, {
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
-import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
 import ModelSetting from '../ModelSetting'
+
+import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
 
 export const showRightSideBarAtom = atom<boolean>(true)
 

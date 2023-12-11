@@ -85,7 +85,6 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    */
   onUnload(): void {}
 
-
   private async writeDefaultEngineSettings() {
     try {
       const engineFile = join(
@@ -164,7 +163,6 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     return new Promise(async (resolve, reject) => {
       requestInference(
         data.messages ?? [],
-        JanInferenceNitroExtension._engineSettings,
         JanInferenceNitroExtension._currentModel
       ).subscribe({
         next: (_content) => {},
@@ -210,8 +208,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
 
     requestInference(
       data.messages ?? [],
-      JanInferenceNitroExtension._engineSettings,
-      JanInferenceNitroExtension._currentModel,
+      { ...JanInferenceNitroExtension._currentModel, ...data.model },
       instance.controller
     ).subscribe({
       next: (content) => {
