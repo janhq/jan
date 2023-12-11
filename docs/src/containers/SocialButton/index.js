@@ -2,9 +2,11 @@ import React from "react";
 import { FaGithub, FaDiscord } from "react-icons/fa";
 import { RiStarSFill } from "react-icons/ri";
 import { useAppStars } from "@site/src/hooks/useAppStars";
+import { useDiscordWidget } from "@site/src/hooks/useDiscordWidget";
 
 export default function SocialButton() {
   const { stargazers } = useAppStars();
+  const { data } = useDiscordWidget();
 
   return (
     <div className="flex items-center space-x-2 justify-start">
@@ -36,7 +38,7 @@ export default function SocialButton() {
           <p className="text-base">Discord</p>
           <div className="text-sm text-white flex items-center space-x-1">
             <div className="w-2 h-2 bg-green-500 rounded-full" />
-            <span>{stargazers.count} online</span>
+            <span>{data.presence_count} online</span>
           </div>
         </div>
       </a>
