@@ -9,7 +9,7 @@ import { atom } from 'jotai'
 import {
   getActiveThreadIdAtom,
   updateThreadStateLastMessageAtom,
-} from './Conversation.atom'
+} from './Thread.atom'
 
 /**
  * Stores all chat messages for all threads
@@ -76,15 +76,18 @@ export const addNewMessageAtom = atom(
   }
 )
 
-export const deleteConversationMessage = atom(null, (get, set, id: string) => {
-  const newData: Record<string, ThreadMessage[]> = {
-    ...get(chatMessages),
+export const deleteChatMessageAtom = atom(
+  null,
+  (get, set, threadId: string) => {
+    const newData: Record<string, ThreadMessage[]> = {
+      ...get(chatMessages),
+    }
+    newData[threadId] = []
+    set(chatMessages, newData)
   }
-  newData[id] = []
-  set(chatMessages, newData)
-})
+)
 
-export const cleanConversationMessages = atom(null, (get, set, id: string) => {
+export const cleanChatMessageAtom = atom(null, (get, set, id: string) => {
   const newData: Record<string, ThreadMessage[]> = {
     ...get(chatMessages),
   }

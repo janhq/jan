@@ -25,7 +25,7 @@ import {
 import {
   updateThreadWaitingForResponseAtom,
   threadsAtom,
-} from '@/helpers/atoms/Conversation.atom'
+} from '@/helpers/atoms/Thread.atom'
 
 export default function EventHandler({ children }: { children: ReactNode }) {
   const addNewMessage = useSetAtom(addNewMessageAtom)

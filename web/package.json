@@ -38,7 +38,6 @@
     "sass": "^1.69.4",
     "tailwind-merge": "^2.0.0",
     "tailwindcss": "3.3.5",
-    "typescript": "5.2.2",
     "ulid": "^2.3.0",
     "uuid": "^9.0.1",
     "zod": "^3.22.4"

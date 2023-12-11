@@ -29,9 +29,9 @@ import {
   activeThreadAtom,
   getActiveThreadIdAtom,
   waitingToSendMessage,
-} from '@/helpers/atoms/Conversation.atom'
+} from '@/helpers/atoms/Thread.atom'
 
-import { activeThreadStateAtom } from '@/helpers/atoms/Conversation.atom'
+import { activeThreadStateAtom } from '@/helpers/atoms/Thread.atom'
 
 const ChatScreen = () => {
   const activeThread = useAtomValue(activeThreadAtom)

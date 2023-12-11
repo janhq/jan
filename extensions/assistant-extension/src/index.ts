@@ -22,10 +22,6 @@ export default class JanAssistantExtension implements AssistantExtension {
   onUnload(): void {}
 
   async createAssistant(assistant: Assistant): Promise<void> {
-    // assuming that assistants/ directory is already created in the onLoad above
-
-    // TODO: check if the directory already exists, then ignore creation for now
-
     const assistantDir = join(JanAssistantExtension._homeDir, assistant.id);
     await fs.mkdir(assistantDir);
 
@@ -91,7 +87,7 @@ export default class JanAssistantExtension implements AssistantExtension {
       avatar: "",
       thread_location: undefined,
       id: "jan",
-      object: "assistant", // TODO: maybe we can set default value for this?
+      object: "assistant",
       created_at: Date.now(),
       name: "Jan",
       description: "A default assistant that can use all downloaded models",
