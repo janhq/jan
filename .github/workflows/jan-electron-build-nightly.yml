@@ -173,12 +173,14 @@ jobs:
           name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/*.deb
 
-  noti-discord-nightly:
+  noti-discord-nightly-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64]
     environment: production
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
         with:
@@ -197,12 +199,14 @@ jobs:
         env:
           GITHUB_RUN_ID: ${{ github.run_id }}
 
-  noti-discord-manual:
+  noti-discord-manual-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64]
     environment: production
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
         with:
