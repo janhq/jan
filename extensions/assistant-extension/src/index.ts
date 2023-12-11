@@ -3,17 +3,18 @@ import { AssistantExtension } from "@janhq/core";
 import { join } from "path";
 
 export default class JanAssistantExtension implements AssistantExtension {
-  private static readonly _homeDir = "assistants";
+  private static readonly _homeDir = "file://assistants";
 
   type(): ExtensionType {
     return ExtensionType.Assistant;
   }
 
-  onLoad(): void {
+  async onLoad() {
     // making the assistant directory
-    fs.mkdir(JanAssistantExtension._homeDir).then(() => {
-      this.createJanAssistant();
-    });
+    if (!(await fs.existsSync(JanAssistantExtension._homeDir)))
+      fs.mkdirSync(JanAssistantExtension._homeDir).then(() => {
+        this.createJanAssistant();
+      });
   }
 
   /**
@@ -23,12 +24,12 @@ export default class JanAssistantExtension implements AssistantExtension {
 
   async createAssistant(assistant: Assistant): Promise<void> {
     const assistantDir = join(JanAssistantExtension._homeDir, assistant.id);
-    await fs.mkdir(assistantDir);
+    if (!(await fs.existsSync(assistantDir))) await fs.mkdirSync(assistantDir);
 
     // store the assistant metadata json
     const assistantMetadataPath = join(assistantDir, "assistant.json");
     try {
-      await fs.writeFile(
+      await fs.writeFileSync(
         assistantMetadataPath,
         JSON.stringify(assistant, null, 2)
       );
@@ -41,18 +42,13 @@ export default class JanAssistantExtension implements AssistantExtension {
     // get all the assistant directories
     // get all the assistant metadata json
     const results: Assistant[] = [];
-    const allFileName: string[] = await fs.listFiles(
+    const allFileName: string[] = await fs.readdirSync(
       JanAssistantExtension._homeDir
     );
     for (const fileName of allFileName) {
       const filePath = join(JanAssistantExtension._homeDir, fileName);
-      const isDirectory = await fs.isDirectory(filePath);
-      if (!isDirectory) {
-        // if not a directory, ignore
-        continue;
-      }
 
-      const jsonFiles: string[] = (await fs.listFiles(filePath)).filter(
+      const jsonFiles: string[] = (await fs.readdirSync(filePath)).filter(
         (file: string) => file === "assistant.json"
       );
 
@@ -61,9 +57,9 @@ export default class JanAssistantExtension implements AssistantExtension {
         continue;
       }
 
-      const assistant: Assistant = JSON.parse(
-        await fs.readFile(join(filePath, jsonFiles[0]))
-      );
+      const content = await fs.readFileSync(join(filePath, jsonFiles[0]));
+      const assistant: Assistant =
+        typeof content === "object" ? content : JSON.parse(content);
 
       results.push(assistant);
     }
@@ -78,7 +74,7 @@ export default class JanAssistantExtension implements AssistantExtension {
 
     // remove the directory
     const assistantDir = join(JanAssistantExtension._homeDir, assistant.id);
-    await fs.rmdir(assistantDir);
+    await fs.rmdirSync(assistantDir);
     return Promise.resolve();
   }
 

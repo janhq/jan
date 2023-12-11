@@ -15,7 +15,7 @@ import { ModelExtension, Model } from '@janhq/core'
  * A extension for models
  */
 export default class JanModelExtension implements ModelExtension {
-  private static readonly _homeDir = 'models'
+  private static readonly _homeDir = 'file://models'
   private static readonly _modelMetadataFileName = 'model.json'
   private static readonly _supportedModelFormat = '.gguf'
   private static readonly _incompletedModelFileName = '.download'
@@ -46,11 +46,11 @@ export default class JanModelExtension implements ModelExtension {
 
   private async copyModelsToHomeDir() {
     try {
-      if (
-        localStorage.getItem(`${EXTENSION_NAME}-version`) === VERSION &&
-        (await fs.exists(JanModelExtension._homeDir))
-      ) {
-        console.debug('Model already migrated')
+      // list all of the files under the home directory
+
+      if (fs.existsSync(JanModelExtension._homeDir)) {
+        // ignore if the model is already downloaded
+        console.debug('Models already persisted.')
         return
       }
 
@@ -94,7 +94,7 @@ export default class JanModelExtension implements ModelExtension {
   async downloadModel(model: Model): Promise<void> {
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
-    await fs.mkdir(modelDirPath)
+    if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
 
     // try to retrieve the download file name from the source url
     // if it fails, use the model ID as the file name
@@ -116,11 +116,8 @@ export default class JanModelExtension implements ModelExtension {
   async cancelModelDownload(modelId: string): Promise<void> {
     return abortDownload(
       await joinPath([JanModelExtension._homeDir, modelId, modelId])
-    ).then(async () =>
-      fs.deleteFile(
-        await joinPath([JanModelExtension._homeDir, modelId, modelId])
-      )
-    )
+    ).then(async () => {
+      fs.unlinkSync(await joinPath([JanModelExtension._homeDir, modelId, modelId]))
   }
 
   /**
@@ -133,10 +130,10 @@ export default class JanModelExtension implements ModelExtension {
       const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
 
       // remove all files under dirPath except model.json
-      const files = await fs.listFiles(dirPath)
+      const files = await fs.listFilesSync(dirPath)
       const deletePromises = files.map(async (fileName: string) => {
         if (fileName !== JanModelExtension._modelMetadataFileName) {
-          return fs.deleteFile(await joinPath([dirPath, fileName]))
+          return fs.deleteFileSync(await joinPath([dirPath, fileName]))
         }
       })
       await Promise.allSettled(deletePromises)
@@ -158,7 +155,10 @@ export default class JanModelExtension implements ModelExtension {
     ])
 
     try {
-      await fs.writeFile(jsonFilePath, JSON.stringify(model, null, 2))
+      await fs.writeFileSync(
+        jsonFilePath,
+        JSON.stringify(model, null, 2)
+      )
     } catch (err) {
       console.error(err)
     }
@@ -198,13 +198,12 @@ export default class JanModelExtension implements ModelExtension {
     selector?: (path: string, model: Model) => Promise<boolean>
   ): Promise<Model[]> {
     try {
-      const filesUnderJanRoot = await fs.listFiles('')
-      if (!filesUnderJanRoot.includes(JanModelExtension._homeDir)) {
+      if (!(await fs.existsSync(JanModelExtension._homeDir))) {
         console.debug('model folder not found')
         return []
       }
 
-      const files: string[] = await fs.listFiles(JanModelExtension._homeDir)
+      const files: string[] = await fs.readdirSync(JanModelExtension._homeDir)
 
       const allDirectories: string[] = []
       for (const file of files) {
@@ -242,12 +241,10 @@ export default class JanModelExtension implements ModelExtension {
             console.debug(`Unable to parse model metadata: ${result.value}`)
             return undefined
           }
-        } else {
-          console.error(result.reason)
-          return undefined
-        }
-      })
-      return modelData.filter((e) => !!e)
+        })
+        .filter((e) => !!e)
+
+      return modelData
     } catch (err) {
       console.error(err)
       return []
@@ -255,7 +252,7 @@ export default class JanModelExtension implements ModelExtension {
   }
 
   private readModelMetadata(path: string) {
-    return fs.readFile(path)
+    return fs.readFileSync(path)
   }
 
   /**

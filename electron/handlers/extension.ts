@@ -6,10 +6,10 @@ import {
   getActiveExtensions,
   getAllExtensions,
   installExtensions,
-} from './../extension/store'
-import { getExtension } from './../extension/store'
-import { removeExtension } from './../extension/store'
-import Extension from './../extension/extension'
+} from '../../common/extension/store'
+import { getExtension } from '../../common/extension/store'
+import { removeExtension } from '../../common/extension/store'
+import Extension from '../../common/extension/extension'
 import { getResourcePath, userSpacePath } from './../utils/path'
 import { ExtensionRoute } from '@janhq/core'
 

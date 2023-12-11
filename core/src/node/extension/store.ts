@@ -1,16 +1,6 @@
-/**
- * Provides access to the extensions stored by Extension Store
- * @typedef {Object} extensionManager
- * @prop {getExtension} getExtension
- * @prop {getAllExtensions} getAllExtensions
- * @prop {getActiveExtensions} getActiveExtensions
- * @prop {installExtensions} installExtensions
- * @prop {removeExtension} removeExtension
- */
-
-import { writeFileSync } from 'fs'
-import Extension from './extension'
-import { ExtensionManager } from './../managers/extension'
+import { writeFileSync } from "fs";
+import Extension from "./extension";
+import { ExtensionManager } from "./manager";
 
 /**
  * @module store
@@ -21,7 +11,7 @@ import { ExtensionManager } from './../managers/extension'
  * Register of installed extensions
  * @type {Object.<string, Extension>} extension - List of installed extensions
  */
-const extensions: Record<string, Extension> = {}
+const extensions: Record<string, Extension> = {};
 
 /**
  * Get a extension from the stored extensions.
@@ -31,10 +21,10 @@ const extensions: Record<string, Extension> = {}
  */
 export function getExtension(name: string) {
   if (!Object.prototype.hasOwnProperty.call(extensions, name)) {
-    throw new Error(`Extension ${name} does not exist`)
+    throw new Error(`Extension ${name} does not exist`);
   }
 
-  return extensions[name]
+  return extensions[name];
 }
 
 /**
@@ -43,7 +33,7 @@ export function getExtension(name: string) {
  * @alias extensionManager.getAllExtensions
  */
 export function getAllExtensions() {
-  return Object.values(extensions)
+  return Object.values(extensions);
 }
 
 /**
@@ -52,7 +42,7 @@ export function getAllExtensions() {
  * @alias extensionManager.getActiveExtensions
  */
 export function getActiveExtensions() {
-  return Object.values(extensions).filter((extension) => extension.active)
+  return Object.values(extensions).filter((extension) => extension.active);
 }
 
 /**
@@ -63,9 +53,9 @@ export function getActiveExtensions() {
  * @alias extensionManager.removeExtension
  */
 export function removeExtension(name: string, persist = true) {
-  const del = delete extensions[name]
-  if (persist) persistExtensions()
-  return del
+  const del = delete extensions[name];
+  if (persist) persistExtensions();
+  return del;
 }
 
 /**
@@ -75,10 +65,10 @@ export function removeExtension(name: string, persist = true) {
  * @returns {void}
  */
 export function addExtension(extension: Extension, persist = true) {
-  if (extension.name) extensions[extension.name] = extension
+  if (extension.name) extensions[extension.name] = extension;
   if (persist) {
-    persistExtensions()
-    extension.subscribe('pe-persist', persistExtensions)
+    persistExtensions();
+    extension.subscribe("pe-persist", persistExtensions);
   }
 }
 
@@ -87,15 +77,15 @@ export function addExtension(extension: Extension, persist = true) {
  * @returns {void}
  */
 export function persistExtensions() {
-  const persistData: Record<string, Extension> = {}
+  const persistData: Record<string, Extension> = {};
   for (const name in extensions) {
-    persistData[name] = extensions[name]
+    persistData[name] = extensions[name];
   }
   writeFileSync(
     ExtensionManager.instance.getExtensionsFile(),
     JSON.stringify(persistData),
-    'utf8'
-  )
+    "utf8"
+  );
 }
 
 /**
@@ -106,25 +96,25 @@ export function persistExtensions() {
  * @alias extensionManager.installExtensions
  */
 export async function installExtensions(extensions: any, store = true) {
-  const installed: Extension[] = []
+  const installed: Extension[] = [];
   for (const ext of extensions) {
     // Set install options and activation based on input type
-    const isObject = typeof ext === 'object'
-    const spec = isObject ? [ext.specifier, ext] : [ext]
-    const activate = isObject ? ext.activate !== false : true
+    const isObject = typeof ext === "object";
+    const spec = isObject ? [ext.specifier, ext] : [ext];
+    const activate = isObject ? ext.activate !== false : true;
 
     // Install and possibly activate extension
-    const extension = new Extension(...spec)
-    await extension._install()
-    if (activate) extension.setActive(true)
+    const extension = new Extension(...spec);
+    await extension._install();
+    if (activate) extension.setActive(true);
 
     // Add extension to store if needed
-    if (store) addExtension(extension)
-    installed.push(extension)
+    if (store) addExtension(extension);
+    installed.push(extension);
   }
 
   // Return list of all installed extensions
-  return installed
+  return installed;
 }
 
 /**
