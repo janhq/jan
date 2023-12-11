@@ -194,14 +194,10 @@ export default function Sidebar() {
         >
           <div className="p-2">
             <DropdownListSidebar />
+            <div className="mt-4">
+              <ModelSetting />
+            </div>
           </div>
-        </CardSidebar>
-        <CardSidebar
-          title="Model parameter"
-          onRevealInFinderClick={() => {}}
-          onViewJsonClick={() => {}}
-        >
-          <ModelSetting />
         </CardSidebar>
       </div>
     </div>

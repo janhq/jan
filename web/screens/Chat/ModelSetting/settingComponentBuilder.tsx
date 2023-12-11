@@ -1,4 +1,5 @@
-import { Fragment } from 'react'
+/* eslint-disable no-case-declarations */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import Checkbox from '@/containers/Checkbox'
 import Slider from '@/containers/Slider'
@@ -60,7 +61,7 @@ const settingComponentBuilder = (
     }
   })
 
-  return <Fragment>{components}</Fragment>
+  return <div className="flex flex-col gap-y-4">{components}</div>
 }
 
 export default settingComponentBuilder

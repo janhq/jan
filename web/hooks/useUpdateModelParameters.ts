@@ -11,7 +11,6 @@ import { extensionManager } from '@/extension'
 import {
   activeThreadStateAtom,
   setThreadModelRuntimeParamsAtom,
-  threadStatesAtom,
   threadsAtom,
   updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'

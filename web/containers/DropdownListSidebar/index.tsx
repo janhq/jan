@@ -92,7 +92,7 @@ export default function DropdownListSidebar() {
         <div className="border-b border-border" />
         {downloadedModels.length === 0 ? (
           <div className="px-4 py-2">
-            <p>Oops, you don't have a model yet.</p>
+            <p>{`Oops, you don't have a model yet.`}</p>
           </div>
         ) : (
           <SelectGroup>

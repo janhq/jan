@@ -3,11 +3,8 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { ModelRuntimeParams } from '@janhq/core'
-import { Button } from '@janhq/uikit'
 
 import { useAtomValue } from 'jotai'
-
-import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { presetConfiguration } from './predefinedComponent'
 import settingComponentBuilder, {
@@ -25,12 +22,12 @@ export default function ModelSetting() {
   const [modelParams, setModelParams] = useState<
     ModelRuntimeParams | undefined
   >(activeModelParams)
-  const { updateModelParameter } = useUpdateModelParameters()
-  const { register, handleSubmit } = useForm()
+
+  const { register } = useForm()
 
   useEffect(() => {
-    console.log('activeModelParams', activeModelParams)
     setModelParams(activeModelParams)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId])
 
   if (!modelParams) {
@@ -40,6 +37,7 @@ export default function ModelSetting() {
   const componentData: SettingComponentData[] = []
   Object.keys(modelParams).forEach((key) => {
     const componentSetting = presetConfiguration[key]
+
     if (componentSetting) {
       if ('value' in componentSetting.controllerData) {
         componentSetting.controllerData.value = Number(
@@ -54,22 +52,9 @@ export default function ModelSetting() {
     }
   })
 
-  const onSubmit = (data: ModelRuntimeParams) => {
-    if (!threadId) return
-    console.log(data)
-    updateModelParameter(threadId, data)
-  }
-
   return (
-    <form className="flex flex-col" onSubmit={handleSubmit(onSubmit)}>
+    <form className="flex flex-col">
       {settingComponentBuilder(componentData, register)}
-      <Button
-        type="submit"
-        block
-        className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
-      >
-        Save
-      </Button>
     </form>
   )
 }
