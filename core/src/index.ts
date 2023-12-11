@@ -8,7 +8,7 @@ export * from './core'
  * Export Event module.
  * @module
  */
-export * from './common/events'
+export * from './runtime'
 
 /**
  * Export Filesystem module.
@@ -20,7 +20,7 @@ export * from './fs'
  * Export Extension module.
  * @module
  */
-export * from './common/extension'
+export * from './runtime/extension'
 
 /**
  * Export Assistant module.
@@ -57,10 +57,3 @@ export * from './message'
  * @module
  */
 export * from './model'
-
-/**
- * Export common module.
- * Heck it why not.
- * @module
- */
-export * from './common'

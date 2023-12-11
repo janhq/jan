@@ -1,10 +1,8 @@
-import { BaseExtension } from '../common'
-
 /**
  * Monitoring extension for system monitoring.
  * @extends BaseExtension
  */
-export interface MonitoringExtension extends BaseExtension {
+export interface MonitoringInterface {
   /**
    * Returns information about the system resources.
    * @returns {Promise<any>} A promise that resolves with the system resources information.

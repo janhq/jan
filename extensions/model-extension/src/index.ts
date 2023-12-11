@@ -5,14 +5,16 @@ import {
   abortDownload,
   getResourcePath,
   getUserSpace,
+  BaseExtension,
+  ModelInterface,
 } from '@janhq/core'
-import { ModelExtension, Model, ModelState } from '@janhq/core'
+import { Model, ModelState } from '@janhq/core'
 import { join } from 'path'
 
 /**
  * A extension for models
  */
-export default class JanModelExtension implements ModelExtension {
+export default class JanModelExtension extends BaseExtension implements ModelInterface {
   private static readonly _homeDir = 'models'
   private static readonly _modelMetadataFileName = 'model.json'
 

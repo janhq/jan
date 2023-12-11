@@ -1,10 +1,9 @@
-import { BaseExtension } from '../common'
 import { Assistant } from './assistantEntity'
 /**
  * Assistant extension for managing assistants.
  * @extends BaseExtension
  */
-export interface AssistantExtension extends BaseExtension {
+export interface AssistantInterface {
   /**
    * Creates a new assistant.
    * @param {Assistant} assistant - The assistant object to be created.

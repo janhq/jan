@@ -1,10 +1,9 @@
 import { MessageRequest, ThreadMessage } from '../message'
-import { BaseExtension } from '../common'
 
 /**
  * Inference extension. Start, stop and inference models.
  */
-export interface InferenceExtension extends BaseExtension {
+export interface InferenceInterface {
   /**
    * Processes an inference request.
    * @param data - The data for the inference request.

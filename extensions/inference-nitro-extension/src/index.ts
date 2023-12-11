@@ -9,20 +9,23 @@
 import {
   ChatCompletionRole,
   ContentType,
-  EventName,
   MessageRequest,
   MessageStatus,
   ModelSettingParams,
   ExtensionType,
   ThreadContent,
   ThreadMessage,
-  events,
   executeOnMain,
   getUserSpace,
   fs,
   Model,
+  BaseExtension,
+  InferenceInterface,
+  MessageEvent,
+  ModelEvent,
+  InferenceEngine,
+  InferenceEvent,
 } from "@janhq/core";
-import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
 import { join } from "path";
@@ -32,7 +35,10 @@ import { join } from "path";
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceNitroExtension implements InferenceExtension {
+export default class JanInferenceNitroExtension
+  extends BaseExtension
+  implements InferenceInterface
+{
   private static readonly _homeDir = "engines";
   private static readonly _engineMetadataFileName = "nitro.json";
 
@@ -63,20 +69,20 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     this.writeDefaultEngineSettings();
 
     // Events subscription
-    events.on(EventName.OnMessageSent, (data) =>
-      JanInferenceNitroExtension.handleMessageRequest(data, this)
+    this.on(MessageEvent.OnMessageSent, (data) =>
+      this.handleMessageRequest(data)
     );
 
-    events.on(EventName.OnModelInit, (model: Model) => {
-      JanInferenceNitroExtension.handleModelInit(model);
+    this.on(ModelEvent.OnModelInit, (model: Model) => {
+      this.handleModelInit(model);
     });
 
-    events.on(EventName.OnModelStop, (model: Model) => {
-      JanInferenceNitroExtension.handleModelStop(model);
+    this.on(ModelEvent.OnModelStop, (model: Model) => {
+      this.handleModelStop(model);
     });
 
-    events.on(EventName.OnInferenceStopped, () => {
-      JanInferenceNitroExtension.handleInferenceStopped(this);
+    this.on(InferenceEvent.OnInferenceStopped, () => {
+      this.handleInferenceStopped();
     });
   }
 
@@ -84,7 +90,6 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    * Stops the model inference.
    */
   onUnload(): void {}
-
 
   private async writeDefaultEngineSettings() {
     try {
@@ -107,7 +112,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     }
   }
 
-  private static async handleModelInit(model: Model) {
+  private async handleModelInit(model: Model) {
     if (model.engine !== "nitro") {
       return;
     }
@@ -120,27 +125,25 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     });
 
     if (nitroInitResult.error === null) {
-      events.emit(EventName.OnModelFail, model);
+      this.emit(ModelEvent.OnModelFail, model);
     } else {
       JanInferenceNitroExtension._currentModel = model;
-      events.emit(EventName.OnModelReady, model);
+      this.emit(ModelEvent.OnModelReady, model);
     }
   }
 
-  private static async handleModelStop(model: Model) {
+  private async handleModelStop(model: Model) {
     if (model.engine !== "nitro") {
       return;
     } else {
       await executeOnMain(MODULE, "stopModel");
-      events.emit(EventName.OnModelStopped, model);
+      this.emit(ModelEvent.OnModelStopped, model);
     }
   }
 
-  private static async handleInferenceStopped(
-    instance: JanInferenceNitroExtension
-  ) {
-    instance.isCancelled = true;
-    instance.controller?.abort();
+  private async handleInferenceStopped() {
+    this.isCancelled = true;
+    this.controller?.abort();
   }
 
   /**
@@ -184,10 +187,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    * Pass instance as a reference.
    * @param {MessageRequest} data - The data for the new message request.
    */
-  private static async handleMessageRequest(
-    data: MessageRequest,
-    instance: JanInferenceNitroExtension
-  ) {
+  private async handleMessageRequest(data: MessageRequest) {
     if (data.model.engine !== "nitro") {
       return;
     }
@@ -203,16 +203,16 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
       updated: timestamp,
       object: "thread.message",
     };
-    events.emit(EventName.OnMessageResponse, message);
+    this.emit(MessageEvent.OnMessageResponse, message);
 
-    instance.isCancelled = false;
-    instance.controller = new AbortController();
+    this.isCancelled = false;
+    this.controller = new AbortController();
 
     requestInference(
       data.messages ?? [],
       JanInferenceNitroExtension._engineSettings,
       JanInferenceNitroExtension._currentModel,
-      instance.controller
+      this.controller
     ).subscribe({
       next: (content) => {
         const messageContent: ThreadContent = {
@@ -223,11 +223,11 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
           },
         };
         message.content = [messageContent];
-        events.emit(EventName.OnMessageUpdate, message);
+        this.emit(MessageEvent.OnMessageUpdate, message);
       },
       complete: async () => {
         message.status = MessageStatus.Ready;
-        events.emit(EventName.OnMessageUpdate, message);
+        this.emit(MessageEvent.OnMessageUpdate, message);
       },
       error: async (err) => {
         const messageContent: ThreadContent = {
@@ -239,7 +239,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
         };
         message.content = [messageContent];
         message.status = MessageStatus.Ready;
-        events.emit(EventName.OnMessageUpdate, message);
+        this.emit(MessageEvent.OnMessageUpdate, message);
       },
     });
   }

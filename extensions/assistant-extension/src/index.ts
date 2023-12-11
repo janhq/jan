@@ -1,8 +1,11 @@
-import { ExtensionType, fs, Assistant } from "@janhq/core";
-import { AssistantExtension } from "@janhq/core";
+import { ExtensionType, fs, Assistant, BaseExtension } from "@janhq/core";
+import { AssistantInterface } from "@janhq/core";
 import { join } from "path";
 
-export default class JanAssistantExtension implements AssistantExtension {
+export default class JanAssistantExtension
+  extends BaseExtension
+  implements AssistantInterface
+{
   private static readonly _homeDir = "assistants";
 
   type(): ExtensionType {

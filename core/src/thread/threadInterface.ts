@@ -1,12 +1,12 @@
 import { Thread } from './threadEntity'
-import { BaseExtension } from '../common'
+import { BaseExtension } from '../runtime'
 
 /**
  * Conversational extension. Persists and retrieves conversations.
  * @abstract
  * @extends BaseExtension
  */
-export interface ThreadExtension extends BaseExtension {
+export interface ThreadInterface {
   /**
    * Returns a list of thread.
    * @abstract
