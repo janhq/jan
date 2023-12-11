@@ -2,7 +2,7 @@
   @apply relative flex w-full touch-none select-none items-center;
 
   &-track {
-    @apply relative h-1.5 w-full grow overflow-hidden rounded-full bg-gray-200;
+    @apply relative h-1.5 w-full grow overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800;
   }
 
   &-range {
