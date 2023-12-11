@@ -57,10 +57,6 @@ export default function Dropdown() {
   const changeDefaultSystem = async (systems) => {
     const userAgent = navigator.userAgent;
 
-    const arc = await navigator?.userAgentData?.getHighEntropyValues([
-      "architecture",
-    ]);
-
     if (userAgent.includes("Windows")) {
       // windows user
       setDefaultSystem(systems[2]);
@@ -120,8 +116,8 @@ export default function Dropdown() {
   return (
     <div className="inline-flex align-items-stretch">
       <a
+        href={defaultSystem.href || ""}
         className="cursor-pointer relative inline-flex items-center rounded-l-md border-0 px-4 py-3 text-base font-semibold dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white"
-        href={defaultSystem.href}
       >
         <defaultSystem.logo className="h-5 mr-3 -mt-1" />
         {defaultSystem.name}
@@ -149,7 +145,7 @@ export default function Dropdown() {
                 >
                   {({ active }) => (
                     <a
-                      href={system.href}
+                      href={system.href || ""}
                       className={classNames(
                         active
                           ? "dark:bg-blue-100 bg-gray-900 hover:text-white dark:text-black"

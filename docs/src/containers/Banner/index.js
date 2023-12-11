@@ -66,7 +66,12 @@ export default function AnnoncementBanner() {
         <div className="flex items-center gap-x-3">
           {socials.map((social, i) => {
             return (
-              <a key={i} href={social.href} target="_blank">
+              <a
+                aria-label={`social-${i}`}
+                key={i}
+                href={social.href}
+                target="_blank"
+              >
                 {social.icon}
               </a>
             );

@@ -91,7 +91,7 @@ export default function Footer() {
           <div className="lg:col-span-3 col-span-2">
             <div className="flex items-center space-x-2 mb-3">
               <img alt="Jan Logo" src="/img/logo.svg" />
-              <h6 className="">Jan</h6>
+              <h2 className="h6">Jan</h2>
             </div>
             <div className="w-full lg:w-1/2">
               <p className="dark:text-gray-400 text-gray-600">
@@ -104,7 +104,12 @@ export default function Footer() {
                 <div className="flex items-center gap-x-3">
                   {socials.map((social, i) => {
                     return (
-                      <a key={i} href={social.href} target="_blank">
+                      <a
+                        aria-label={`social-${i}`}
+                        key={i}
+                        href={social.href}
+                        target="_blank"
+                      >
                         {social.icon}
                       </a>
                     );
@@ -116,7 +121,7 @@ export default function Footer() {
           {menus.map((menu, i) => {
             return (
               <div key={i} className="lg:text-right">
-                <h6 className="mb-3">{menu.name}</h6>
+                <h2 className="mb-3 h6">{menu.name}</h2>
                 <ul>
                   {menu.child.map((child, i) => {
                     return (
