@@ -1,25 +1,31 @@
 import { ThreadMessage } from './messageEntity'
-import { BaseExtension } from '../extension'
+import { BaseEvent, BaseExtension } from '../common'
 
 /**
  * Conversational extension. Persists and retrieves conversations.
  * @abstract
  * @extends BaseExtension
  */
-export interface MessageExtension extends BaseExtension {
+export abstract class MessageExtension extends BaseEvent implements BaseExtension {
   /**
-   * Adds a new message to the thread.
-   * @param {ThreadMessage} message - The message to be added.
-   * @returns {Promise<void>} A promise that resolves when the message has been added.
+   * Implements type from BaseExtension.
+   * @override
+   * @returns The type of the extension.
    */
-  addNewMessage(message: ThreadMessage): Promise<void>
+  type(): string | undefined {
+    return 'message'
+  }
+
+  onLoad(): void {}
+
+  onUnload(): void {}
 
   /**
    * Adds a new message to the thread.
    * @param {ThreadMessage} message - The message to be added.
    * @returns {Promise<void>} A promise that resolves when the message has been added.
    */
-  addNewMessage(message: ThreadMessage): Promise<void>
+  abstract addNewMessage(message: ThreadMessage): Promise<void>
 
   /**
    * Writes an array of messages to a specific thread.
@@ -27,12 +33,12 @@ export interface MessageExtension extends BaseExtension {
    * @param {ThreadMessage[]} messages - The array of messages to be written.
    * @returns {Promise<void>} A promise that resolves when the messages have been written.
    */
-  writeMessages(threadId: string, messages: ThreadMessage[]): Promise<void>
+  abstract writeMessages(threadId: string, messages: ThreadMessage[]): Promise<void>
 
   /**
    * Retrieves all messages from a specific thread.
    * @param {string} threadId - The ID of the thread to retrieve the messages from.
    * @returns {Promise<ThreadMessage[]>} A promise that resolves to an array of messages from the thread.
    */
-  getAllMessages(threadId: string): Promise<ThreadMessage[]>
+  abstract getAllMessages(threadId: string): Promise<ThreadMessage[]>
 }

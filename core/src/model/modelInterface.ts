@@ -1,47 +1,60 @@
-import { BaseExtension } from '../extension'
+import { BaseEvent, BaseExtension } from '../common'
 import { Model } from './modelEntity'
 
 /**
  * Model extension for managing models.
  */
-export interface ModelExtension extends BaseExtension {
+export abstract class ModelExtension extends BaseEvent implements BaseExtension {
+  /**
+   * Implements type from BaseExtension.
+   * @override
+   * @returns The type of the extension.
+   */
+  type(): string {
+    return 'model'
+  }
+
   /**
    * Downloads a model.
    * @param model - The model to download.
    * @returns A Promise that resolves when the model has been downloaded.
    */
-  downloadModel(model: Model): Promise<void>
+  abstract downloadModel(model: Model): Promise<void>
 
   /**
    * Cancels the download of a specific model.
    * @param {string} modelId - The ID of the model to cancel the download for.
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
-  cancelModelDownload(modelId: string): Promise<void>
+  abstract cancelModelDownload(modelId: string): Promise<void>
 
   /**
    * Deletes a model.
    * @param modelId - The ID of the model to delete.
    * @returns A Promise that resolves when the model has been deleted.
    */
-  deleteModel(modelId: string): Promise<void>
+  abstract deleteModel(modelId: string): Promise<void>
 
   /**
    * Saves a model.
    * @param model - The model to save.
    * @returns A Promise that resolves when the model has been saved.
    */
-  saveModel(model: Model): Promise<void>
+  abstract saveModel(model: Model): Promise<void>
 
   /**
    * Gets a list of downloaded models.
    * @returns A Promise that resolves with an array of downloaded models.
    */
-  getDownloadedModels(): Promise<Model[]>
+  abstract getDownloadedModels(): Promise<Model[]>
 
   /**
    * Gets a list of configured models.
    * @returns A Promise that resolves with an array of configured models.
    */
-  getConfiguredModels(): Promise<Model[]>
+  abstract getConfiguredModels(): Promise<Model[]>
+
+  onLoad(): void {}
+
+  onUnload(): void {}
 }

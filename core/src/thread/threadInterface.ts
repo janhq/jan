@@ -1,5 +1,5 @@
 import { Thread } from './threadEntity'
-import { BaseExtension } from '../extension'
+import { BaseExtension } from '../common'
 
 /**
  * Conversational extension. Persists and retrieves conversations.

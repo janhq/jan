@@ -1,10 +1,10 @@
-export enum ExtensionType {
-  Assistant = 'assistant',
-  Conversational = 'conversational',
-  Inference = 'inference',
-  Model = 'model',
-  SystemMonitoring = 'systemMonitoring',
-}
+// export enum ExtensionType {
+//   Assistant = 'assistant',
+//   Conversational = 'conversational',
+//   Inference = 'inference',
+//   Model = 'model',
+//   SystemMonitoring = 'systemMonitoring',
+// }
 
 /**
  * Represents a base extension.
@@ -16,7 +16,7 @@ export interface BaseExtension {
    * @returns {ExtensionType} The type of the extension
    * Undefined means its not extending any known extension by the application.
    */
-  type(): ExtensionType | undefined
+  type(): string | undefined
   /**
    * Called when the extension is loaded.
    * Any initialization logic for the extension should be put here.

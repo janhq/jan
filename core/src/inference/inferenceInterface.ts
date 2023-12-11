@@ -1,5 +1,5 @@
 import { MessageRequest, ThreadMessage } from '../message'
-import { BaseExtension } from '../extension'
+import { BaseExtension } from '../common'
 
 /**
  * Inference extension. Start, stop and inference models.

@@ -1,4 +1,4 @@
-import { BaseExtension } from '../extension'
+import { BaseExtension } from '../common'
 import { Assistant } from './assistantEntity'
 /**
  * Assistant extension for managing assistants.

@@ -1,4 +1,4 @@
-import { BaseExtension } from '../extension'
+import { BaseExtension } from '../common'
 
 /**
  * Monitoring extension for system monitoring.
