@@ -53,7 +53,7 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
       llama_model_path: currentModelFile,
       ...wrapper.model.settings,
       // This is critical and requires real system information
-      n_threads: nitroResourceProbe.numCpuPhysicalCore,
+      cpu_threads: nitroResourceProbe.numCpuPhysicalCore,
     };
     log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
     return (

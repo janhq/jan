@@ -12,7 +12,6 @@ import {
   EventName,
   MessageRequest,
   MessageStatus,
-  ModelSettingParams,
   ExtensionType,
   ThreadContent,
   ThreadMessage,
@@ -41,6 +40,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   private static _engineSettings: EngineSettings = {
     ctx_len: 2048,
     ngl: 100,
+    cpu_threads: 1,
     cont_batching: false,
     embedding: false,
   };
