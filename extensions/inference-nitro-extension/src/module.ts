@@ -39,15 +39,21 @@ function stopModel(): Promise<ModelOperationResponse> {
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  * TODO: Should it be startModel instead?
  */
-function initModel(wrapper: any): Promise<ModelOperationResponse> {
+async function initModel(wrapper: any): Promise<ModelOperationResponse> {
   currentModelFile = wrapper.modelFullPath;
   if (wrapper.model.engine !== "nitro") {
     return Promise.resolve({ error: "Not a nitro model" });
   } else {
-    log.info("Started to load model " + wrapper.model.modelFullPath);
+    // Gather system information for CPU physical cores and memory
+    const nitroResourceProbe = await getResourcesInfo();
+    console.log(
+      "Nitro with physical core: " + nitroResourceProbe.numCpuPhysicalCore
+    );
     const settings = {
       llama_model_path: currentModelFile,
       ...wrapper.model.settings,
+      // This is critical and requires real system information
+      n_threads: nitroResourceProbe.numCpuPhysicalCore,
     };
     log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
     return (
@@ -55,7 +61,7 @@ function initModel(wrapper: any): Promise<ModelOperationResponse> {
       validateModelVersion()
         .then(checkAndUnloadNitro)
         // 2. Spawn the Nitro subprocess
-        .then(spawnNitroProcess)
+        .then(await spawnNitroProcess(nitroResourceProbe))
         // 4. Load the model into the Nitro subprocess (HTTP POST request)
         .then(() => loadLLMModel(settings))
         // 5. Check if the model is loaded successfully
@@ -167,7 +173,7 @@ async function checkAndUnloadNitro() {
  * Using child-process to spawn the process
  * Should run exactly platform specified Nitro binary version
  */
-async function spawnNitroProcess(): Promise<void> {
+async function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
   return new Promise(async (resolve, reject) => {
     let binaryFolder = path.join(__dirname, "bin"); // Current directory by default
     let binaryName;
@@ -190,12 +196,6 @@ async function spawnNitroProcess(): Promise<void> {
     }
 
     const binaryPath = path.join(binaryFolder, binaryName);
-
-    // Gather system information for CPU physical cores and memory
-    const nitroResourceProbe = await getResourcesInfo();
-    console.log(
-      "Nitro with physical core: " + nitroResourceProbe.numCpuPhysicalCore
-    );
 
     // Execute the binary
     subprocess = spawn(
@@ -222,7 +222,7 @@ async function spawnNitroProcess(): Promise<void> {
       reject(`Nitro process exited. ${code ?? ""}`);
     });
     tcpPortUsed.waitUntilUsed(PORT, 300, 30000).then(() => {
-      resolve();
+      resolve(nitroResourceProbe);
     });
   });
 }
