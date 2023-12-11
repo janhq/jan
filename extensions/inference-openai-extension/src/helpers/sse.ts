@@ -22,8 +22,8 @@ export function requestInference(
     const requestBody = JSON.stringify({
       messages: recentMessages,
       stream: true,
-      model: model_id
-      // ...model.parameters,
+      model: model_id,
+      ...model.parameters,
     });
     fetch(`${engine.full_url}`, {
       method: "POST",

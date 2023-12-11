@@ -16,7 +16,7 @@ export function requestInference(
       messages: recentMessages,
       model: model.id,
       stream: true,
-      // ...model.parameters,
+      ...model.parameters,
     });
     fetch(INFERENCE_URL, {
       method: "POST",

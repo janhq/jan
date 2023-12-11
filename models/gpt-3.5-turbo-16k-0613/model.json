@@ -7,9 +7,7 @@
     "description": "OpenAI GPT 3.5 Turbo 16k 0613 model is extremely good",
     "format": "api",
     "settings": {},
-    "parameters": {
-      "max_tokens": 4096
-    },
+    "parameters": {},
     "metadata": {
       "author": "OpenAI",
       "tags": ["General", "Big Context Length"]
