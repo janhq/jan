@@ -181,6 +181,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: "0"
+          token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
         with:
@@ -207,6 +211,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: "0"
+          token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+  
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
         with:
