@@ -15,30 +15,28 @@ keywords: [Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversation
 - **Step 2: Open the App**: 
   *Behold the magical portal (chat window)! This is where you'll converse with Jan.*
 
-  ![StartAppUI](/img/docs/StartAppUI.png)
-
+  ![StartAppUI](/img/docs/StartAppUI.webp)
 
 - **Step 3: Model Selection**: 
   *Without a model, Jan is like a wizard without a wand. Journey to the enchanted library (Model) to choose your magical artifact.*
   
-  ![ExploreUI](/img/docs/ExploreHubUI.png)
+  ![ExploreUI](/img/docs/ExploreHubUI.webp)
 
 - **Step 4: Explore the Hub**: 
   *In the hub, you'll find various scrolls (models) sorted into sections - All Models, Recommended, Downloaded. Each scroll reveals its secrets (model details) to help you decide.*
   
-  ![HubUI](/img/docs/HubUI.png)
+  ![HubUI](/img/docs/HubUI.webp)
 
 - **Step 5: Download and Start**: 
   *Select your scroll (model), let the magic (download) happen, and begin your dialogues with Jan!*
 
- ![DownloadUI](/img/docs/DownloadUI.png)
+ ![DownloadUI](/img/docs/DownloadUI.webp)
 
 - **Step 6: Start Your First Message with Jan**: 
   *Now, with the model downloaded, it's time to cast your first spell (send your first message)! Watch as Jan comes to life, ready to chat and assist.*
 
-  ![FirstMessageUI](/img/docs/FirstMessageUI.png)
+  ![FirstMessageUI](/img/docs/FirstMessageUI.webp)
 
   *You're all set! Explore, extend, and enjoy your journey with Jan.*
-
 ---
 
