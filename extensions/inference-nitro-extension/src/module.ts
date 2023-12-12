@@ -4,6 +4,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const tcpPortUsed = require("tcp-port-used");
 const fetchRetry = require("fetch-retry")(global.fetch);
+const si = require("systeminformation");
 
 const log = require("electron-log");
 
@@ -38,15 +39,21 @@ function stopModel(): Promise<ModelOperationResponse> {
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  * TODO: Should it be startModel instead?
  */
-function initModel(wrapper: any): Promise<ModelOperationResponse> {
+async function initModel(wrapper: any): Promise<ModelOperationResponse> {
   currentModelFile = wrapper.modelFullPath;
   if (wrapper.model.engine !== "nitro") {
     return Promise.resolve({ error: "Not a nitro model" });
   } else {
-    log.info("Started to load model " + wrapper.model.modelFullPath);
+    // Gather system information for CPU physical cores and memory
+    const nitroResourceProbe = await getResourcesInfo();
+    console.log(
+      "Nitro with physical core: " + nitroResourceProbe.numCpuPhysicalCore
+    );
     const settings = {
       llama_model_path: currentModelFile,
       ...wrapper.model.settings,
+      // This is critical and requires real system information
+      cpu_threads: nitroResourceProbe.numCpuPhysicalCore,
     };
     log.info(`Load model settings: ${JSON.stringify(settings, null, 2)}`);
     return (
@@ -54,7 +61,7 @@ function initModel(wrapper: any): Promise<ModelOperationResponse> {
       validateModelVersion()
         .then(checkAndUnloadNitro)
         // 2. Spawn the Nitro subprocess
-        .then(spawnNitroProcess)
+        .then(await spawnNitroProcess(nitroResourceProbe))
         // 4. Load the model into the Nitro subprocess (HTTP POST request)
         .then(() => loadLLMModel(settings))
         // 5. Check if the model is loaded successfully
@@ -166,16 +173,14 @@ async function checkAndUnloadNitro() {
  * Using child-process to spawn the process
  * Should run exactly platform specified Nitro binary version
  */
-async function spawnNitroProcess(): Promise<void> {
-  return new Promise((resolve, reject) => {
+async function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
+  return new Promise(async (resolve, reject) => {
     let binaryFolder = path.join(__dirname, "bin"); // Current directory by default
     let binaryName;
 
     if (process.platform === "win32") {
-      // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
       binaryName = "win-start.bat";
     } else if (process.platform === "darwin") {
-      // Mac OS platform
       if (process.arch === "arm64") {
         binaryFolder = path.join(binaryFolder, "mac-arm64");
       } else {
@@ -183,15 +188,13 @@ async function spawnNitroProcess(): Promise<void> {
       }
       binaryName = "nitro";
     } else {
-      // Linux
-      // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-      binaryName = "linux-start.sh"; // For other platforms
+      binaryName = "linux-start.sh";
     }
 
     const binaryPath = path.join(binaryFolder, binaryName);
 
     // Execute the binary
-    subprocess = spawn(binaryPath, [1, "127.0.0.1", PORT], {
+    subprocess = spawn(binaryPath, [1, LOCAL_HOST, PORT], {
       cwd: binaryFolder,
     });
 
@@ -211,7 +214,7 @@ async function spawnNitroProcess(): Promise<void> {
       reject(`Nitro process exited. ${code ?? ""}`);
     });
     tcpPortUsed.waitUntilUsed(PORT, 300, 30000).then(() => {
-      resolve();
+      resolve(nitroResourceProbe);
     });
   });
 }
@@ -263,17 +266,30 @@ function validateModelVersion(): Promise<void> {
   });
 }
 
-/**
- * Cleans up any registered resources.
- * Its module specific function, should be called when application is closed
- */
 function dispose() {
   // clean other registered resources here
   killSubprocess();
 }
 
+/**
+ * Get the system resources information
+ */
+async function getResourcesInfo(): Promise<ResourcesInfo> {
+  return new Promise(async (resolve) => {
+    const cpu = await si.cpu();
+    const mem = await si.mem();
+
+    const response = {
+      numCpuPhysicalCore: cpu.physicalCores,
+      memAvailable: mem.available,
+    };
+    resolve(response);
+  });
+}
+
 module.exports = {
   initModel,
+  stopModel,
   killSubprocess,
   dispose,
 };

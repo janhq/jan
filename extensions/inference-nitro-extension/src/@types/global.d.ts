@@ -12,6 +12,7 @@ declare const INFERENCE_URL: string;
 interface EngineSettings {
   ctx_len: number;
   ngl: number;
+  cpu_threads: number;
   cont_batching: boolean;
   embedding: boolean;
 }
@@ -23,4 +24,9 @@ interface EngineSettings {
 interface ModelOperationResponse {
   error?: any;
   modelFile?: string;
+}
+
+interface ResourcesInfo {
+  numCpuPhysicalCore: number;
+  memAvailable: number;
 }
