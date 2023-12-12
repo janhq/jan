@@ -1,0 +1,11 @@
+{
+  "appId": "ai.jan.mobile",
+  "appName": "jan-mobile",
+  "bundledWebRuntime": false,
+  "webDir": "dist",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    }
+  }
+}
