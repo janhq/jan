@@ -179,10 +179,8 @@ async function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
     let binaryName;
 
     if (process.platform === "win32") {
-      // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
       binaryName = "win-start.bat";
     } else if (process.platform === "darwin") {
-      // Mac OS platform
       if (process.arch === "arm64") {
         binaryFolder = path.join(binaryFolder, "mac-arm64");
       } else {
@@ -190,21 +188,15 @@ async function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
       }
       binaryName = "nitro";
     } else {
-      // Linux
-      // Todo: Need to check for CUDA support to switch between CUDA and non-CUDA binaries
-      binaryName = "linux-start.sh"; // For other platforms
+      binaryName = "linux-start.sh";
     }
 
     const binaryPath = path.join(binaryFolder, binaryName);
 
     // Execute the binary
-    subprocess = spawn(
-      binaryPath,
-      [nitroResourceProbe.numCpuPhysicalCore, "127.0.0.1", PORT],
-      {
-        cwd: binaryFolder,
-      }
-    );
+    subprocess = spawn(binaryPath, [1, LOCAL_HOST, PORT], {
+      cwd: binaryFolder,
+    });
 
     // Handle subprocess output
     subprocess.stdout.on("data", (data) => {
@@ -273,7 +265,6 @@ function validateModelVersion(): Promise<void> {
     });
   });
 }
-
 
 function dispose() {
   // clean other registered resources here
