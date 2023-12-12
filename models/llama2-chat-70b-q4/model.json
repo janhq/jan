@@ -8,9 +8,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,
-      "system_prompt": "[INST] <<SYS>>\n",
-      "user_prompt": "<</SYS>>\n",
-      "ai_prompt": "[/INST]"
+      "prompt_template": "[INST] <<SYS>>\n{system_message}<</SYS>>\n{prompt}[/INST]"
     },
     "parameters": {
       "max_tokens": 2048
