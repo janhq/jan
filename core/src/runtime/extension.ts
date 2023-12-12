@@ -1,4 +1,6 @@
-// TODO(Nicole): do we need this explicitly?
+// TODO(Nicole): Figure how to move this to the right place
+// Should we do extension names or ids?
+// Are extension names reserved? It is currently used by web/ExtensionManager as the key...
 export enum ExtensionType {
   Assistant = 'assistant',
   Conversational = 'conversational',
