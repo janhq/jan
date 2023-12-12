@@ -16,7 +16,9 @@ import DropdownListSidebar, {
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
-import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
+import ModelSetting from '../ModelSetting'
+
+import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
 
 export const showRightSideBarAtom = atom<boolean>(true)
 
@@ -25,10 +27,12 @@ export default function Sidebar() {
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
+  const threadStates = useAtomValue(threadStatesAtom)
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
-    if (!activeThread.isFinishInit) {
+    const activeThreadState = threadStates[activeThread.id]
+    if (!activeThreadState.isFinishInit) {
       alert('Thread is not started yet')
       return
     }
@@ -60,7 +64,8 @@ export default function Sidebar() {
 
   const onViewJsonClick = async (type: string) => {
     if (!activeThread) return
-    if (!activeThread.isFinishInit) {
+    const activeThreadState = threadStates[activeThread.id]
+    if (!activeThreadState.isFinishInit) {
       alert('Thread is not started yet')
       return
     }
@@ -189,6 +194,9 @@ export default function Sidebar() {
         >
           <div className="p-2">
             <DropdownListSidebar />
+            <div className="mt-4">
+              <ModelSetting />
+            </div>
           </div>
         </CardSidebar>
       </div>

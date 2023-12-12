@@ -12,7 +12,6 @@ import {
   EventName,
   MessageRequest,
   MessageStatus,
-  ModelSettingParams,
   ExtensionType,
   ThreadContent,
   ThreadMessage,
@@ -41,6 +40,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   private static _engineSettings: EngineSettings = {
     ctx_len: 2048,
     ngl: 100,
+    cpu_threads: 1,
     cont_batching: false,
     embedding: false,
   };
@@ -84,7 +84,6 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    * Stops the model inference.
    */
   onUnload(): void {}
-
 
   private async writeDefaultEngineSettings() {
     try {
@@ -164,7 +163,6 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     return new Promise(async (resolve, reject) => {
       requestInference(
         data.messages ?? [],
-        JanInferenceNitroExtension._engineSettings,
         JanInferenceNitroExtension._currentModel
       ).subscribe({
         next: (_content) => {},
@@ -210,8 +208,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
 
     requestInference(
       data.messages ?? [],
-      JanInferenceNitroExtension._engineSettings,
-      JanInferenceNitroExtension._currentModel,
+      { ...JanInferenceNitroExtension._currentModel, ...data.model },
       instance.controller
     ).subscribe({
       next: (content) => {

@@ -32,7 +32,7 @@ export default function CardSidebar({
   return (
     <div
       className={twMerge(
-        'flex w-full flex-col rounded-md border border-border bg-zinc-200 dark:bg-zinc-600/10'
+        'flex w-full flex-col overflow-hidden rounded-md border border-border bg-zinc-200 dark:bg-zinc-600/10'
       )}
     >
       <div
@@ -43,7 +43,7 @@ export default function CardSidebar({
       >
         <button
           onClick={() => setShow(!show)}
-          className="flex w-full flex-1 items-center space-x-2 px-3 py-2"
+          className="flex w-full flex-1 items-center space-x-2 bg-zinc-200 px-3 py-2 dark:bg-zinc-600/10"
         >
           <ChevronDownIcon
             className={twMerge(

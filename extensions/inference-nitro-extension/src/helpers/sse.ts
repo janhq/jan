@@ -7,7 +7,6 @@ import { Observable } from "rxjs";
  */
 export function requestInference(
   recentMessages: any[],
-  engine: EngineSettings,
   model: Model,
   controller?: AbortController
 ): Observable<string> {
@@ -23,34 +22,41 @@ export function requestInference(
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
-        Accept: "text/event-stream",
+        Accept: model.parameters.stream
+          ? "text/event-stream"
+          : "application/json",
       },
       body: requestBody,
       signal: controller?.signal,
     })
       .then(async (response) => {
-        const stream = response.body;
-        const decoder = new TextDecoder("utf-8");
-        const reader = stream?.getReader();
-        let content = "";
+        if (model.parameters.stream) {
+          const stream = response.body;
+          const decoder = new TextDecoder("utf-8");
+          const reader = stream?.getReader();
+          let content = "";
 
-        while (true && reader) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-          const text = decoder.decode(value);
-          const lines = text.trim().split("\n");
-          for (const line of lines) {
-            if (line.startsWith("data: ") && !line.includes("data: [DONE]")) {
-              const data = JSON.parse(line.replace("data: ", ""));
-              content += data.choices[0]?.delta?.content ?? "";
-              if (content.startsWith("assistant: ")) {
-                content = content.replace("assistant: ", "");
+          while (true && reader) {
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+            const text = decoder.decode(value);
+            const lines = text.trim().split("\n");
+            for (const line of lines) {
+              if (line.startsWith("data: ") && !line.includes("data: [DONE]")) {
+                const data = JSON.parse(line.replace("data: ", ""));
+                content += data.choices[0]?.delta?.content ?? "";
+                if (content.startsWith("assistant: ")) {
+                  content = content.replace("assistant: ", "");
+                }
+                subscriber.next(content);
               }
-              subscriber.next(content);
             }
           }
+        } else {
+          const data = await response.json();
+          subscriber.next(data.choices[0]?.message?.content ?? "");
         }
         subscriber.complete();
       })

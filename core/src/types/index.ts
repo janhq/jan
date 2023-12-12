@@ -71,9 +71,9 @@ export type ThreadMessage = {
   object: string;
   /** Thread id, default is a ulid. **/
   thread_id: string;
-  /** The role of the author of this message. **/
+  /** The assistant id of this thread. **/
   assistant_id?: string;
-  // TODO: comment
+  /** The role of the author of this message. **/
   role: ChatCompletionRole;
   /** The content of this message. **/
   content: ThreadContent[];
@@ -125,8 +125,6 @@ export interface Thread {
   title: string;
   /** Assistants in this thread. **/
   assistants: ThreadAssistantInfo[];
-  // if the thread has been init will full assistant info
-  isFinishInit: boolean;
   /** The timestamp indicating when this thread was created, represented in ISO 8601 format. **/
   created: number;
   /** The timestamp indicating when this thread was updated, represented in ISO 8601 format. **/
@@ -166,6 +164,7 @@ export type ThreadState = {
   waitingForResponse: boolean;
   error?: Error;
   lastMessage?: string;
+  isFinishInit?: boolean;
 };
 /**
  * Represents the inference engine.
@@ -276,6 +275,7 @@ export type ModelSettingParams = {
   ngl?: number;
   embedding?: boolean;
   n_parallel?: number;
+  cpu_threads?: number;
   system_prompt?: string;
   user_prompt?: string;
   ai_prompt?: string;
@@ -291,6 +291,9 @@ export type ModelRuntimeParams = {
   top_p?: number;
   stream?: boolean;
   max_tokens?: number;
+  stop?: string[];
+  frequency_penalty?: number;
+  presence_penalty?: number;
 };
 
 /**

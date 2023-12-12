@@ -12,7 +12,7 @@ import {
 import { twMerge } from 'tailwind-merge'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
-import useDeleteThread from '@/hooks/useDeleteConversation'
+import useDeleteThread from '@/hooks/useDeleteThread'
 import useGetAllThreads from '@/hooks/useGetAllThreads'
 
 import useGetAssistants from '@/hooks/useGetAssistants'
@@ -25,7 +25,7 @@ import {
   activeThreadAtom,
   threadStatesAtom,
   threadsAtom,
-} from '@/helpers/atoms/Conversation.atom'
+} from '@/helpers/atoms/Thread.atom'
 
 export default function ThreadList() {
   const threads = useAtomValue(threadsAtom)
