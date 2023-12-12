@@ -1,0 +1,11 @@
+{
+  "avatar": "",
+  "id": "jan",
+  "object": "assistant",
+  "created_at": 1702340894030,
+  "name": "Jan",
+  "description": "A default assistant that can use all downloaded models",
+  "model": "*",
+  "instructions": "",
+  "file_ids": []
+}
