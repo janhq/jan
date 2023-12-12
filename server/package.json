@@ -16,7 +16,9 @@
   "dependencies": {
     "@fastify/cors": "^8.4.2",
     "@fastify/static": "^6.12.0",
-    "core": "link:./core"
+    "core": "link:./core",
+    "request": "^2.88.2",
+    "request-progress": "^3.0.0"
   },
   "devDependencies": {
     "@types/body-parser": "^1.19.5",
@@ -27,7 +29,8 @@
     "eslint-plugin-react": "^7.33.2",
     "fastify": "^4.24.3",
     "nodemon": "^3.0.1",
-    "run-script-os": "^1.1.6"
+    "run-script-os": "^1.1.6",
+    "typescript": "^5.2.2"
   },
   "installConfig": {
     "hoistingLimits": "workspaces"

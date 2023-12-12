@@ -1,5 +1,5 @@
 import { app, ipcMain } from 'electron'
-import { DownloadManager } from './../managers/download'
+import { DownloadManager } from '@janhq/core/src/node/download'
 import { resolve, join } from 'path'
 import { WindowManager } from './../managers/window'
 import request from 'request'
