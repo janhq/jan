@@ -174,7 +174,7 @@ export type ThreadState = {
 enum InferenceEngine {
   nitro = "nitro",
   openai = "openai",
-  nvidia_triton = "nvidia_triton",
+  triton_trtllm = "triton_trtllm",
   hf_endpoint = "hf_endpoint",
 }
 
