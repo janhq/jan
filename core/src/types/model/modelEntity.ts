@@ -119,9 +119,7 @@ export type ModelSettingParams = {
   embedding?: boolean
   n_parallel?: number
   cpu_threads?: number
-  system_prompt?: string
-  user_prompt?: string
-  ai_prompt?: string
+  prompt_template?: string
 }
 
 /**
