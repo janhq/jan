@@ -1,0 +1,12 @@
+node_modules
+coverage
+.nyc_output
+.DS_Store
+*.log
+.vscode
+.idea
+dist
+compiled
+.awcache
+.rpt2_cache
+docs

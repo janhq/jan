@@ -19,6 +19,7 @@
       "author": "01-ai, The Bloke",
       "tags": ["34B", "Foundational Model"],
       "size": 24320000000
-    }
+    },
+    "engine": "nitro"
   }
   

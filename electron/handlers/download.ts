@@ -4,7 +4,7 @@ import { resolve, join } from 'path'
 import { WindowManager } from './../managers/window'
 import request from 'request'
 import { createWriteStream } from 'fs'
-import { getResourcePath } from './../utils/path'
+import { DownloadEvent, DownloadRoute } from '@janhq/core'
 const progress = require('request-progress')
 
 export function handleDownloaderIPCs() {
@@ -13,7 +13,7 @@ export function handleDownloaderIPCs() {
    * @param _event - The IPC event object.
    * @param fileName - The name of the file being downloaded.
    */
-  ipcMain.handle('pauseDownload', async (_event, fileName) => {
+  ipcMain.handle(DownloadRoute.pauseDownload, async (_event, fileName) => {
     DownloadManager.instance.networkRequests[fileName]?.pause()
   })
 
@@ -22,7 +22,7 @@ export function handleDownloaderIPCs() {
    * @param _event - The IPC event object.
    * @param fileName - The name of the file being downloaded.
    */
-  ipcMain.handle('resumeDownload', async (_event, fileName) => {
+  ipcMain.handle(DownloadRoute.resumeDownload, async (_event, fileName) => {
     DownloadManager.instance.networkRequests[fileName]?.resume()
   })
 
@@ -32,14 +32,10 @@ export function handleDownloaderIPCs() {
    * @param _event - The IPC event object.
    * @param fileName - The name of the file being downloaded.
    */
-  ipcMain.handle('abortDownload', async (_event, fileName) => {
+  ipcMain.handle(DownloadRoute.abortDownload, async (_event, fileName) => {
     const rq = DownloadManager.instance.networkRequests[fileName]
     DownloadManager.instance.networkRequests[fileName] = undefined
     rq?.abort()
-  })
-
-  ipcMain.handle('getResourcePath', async (_event) => {
-    return getResourcePath()
   })
 
   /**
@@ -48,7 +44,7 @@ export function handleDownloaderIPCs() {
    * @param url - The URL to download the file from.
    * @param fileName - The name to give the downloaded file.
    */
-  ipcMain.handle('downloadFile', async (_event, url, fileName) => {
+  ipcMain.handle(DownloadRoute.downloadFile, async (_event, url, fileName) => {
     const userDataPath = join(app.getPath('home'), 'jan')
     const destination = resolve(userDataPath, fileName)
     const rq = request(url)
@@ -56,7 +52,7 @@ export function handleDownloaderIPCs() {
     progress(rq, {})
       .on('progress', function (state: any) {
         WindowManager?.instance.currentWindow?.webContents.send(
-          'FILE_DOWNLOAD_UPDATE',
+          DownloadEvent.onFileDownloadUpdate,
           {
             ...state,
             fileName,
@@ -65,7 +61,7 @@ export function handleDownloaderIPCs() {
       })
       .on('error', function (err: Error) {
         WindowManager?.instance.currentWindow?.webContents.send(
-          'FILE_DOWNLOAD_ERROR',
+          DownloadEvent.onFileDownloadError,
           {
             fileName,
             err,
@@ -75,7 +71,7 @@ export function handleDownloaderIPCs() {
       .on('end', function () {
         if (DownloadManager.instance.networkRequests[fileName]) {
           WindowManager?.instance.currentWindow?.webContents.send(
-            'FILE_DOWNLOAD_COMPLETE',
+            DownloadEvent.onFileDownloadSuccess,
             {
               fileName,
             }
@@ -83,7 +79,7 @@ export function handleDownloaderIPCs() {
           DownloadManager.instance.setRequest(fileName, undefined)
         } else {
           WindowManager?.instance.currentWindow?.webContents.send(
-            'FILE_DOWNLOAD_ERROR',
+            DownloadEvent.onFileDownloadError,
             {
               fileName,
               err: 'Download cancelled',

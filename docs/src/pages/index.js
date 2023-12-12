@@ -1,6 +1,5 @@
 import React from "react";
 import DownloadApp from "@site/src/containers/DownloadApp";
-import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 
 import useBaseUrl from "@docusaurus/useBaseUrl";
 import Layout from "@theme/Layout";
@@ -12,14 +11,21 @@ import SocialButton from "@site/src/containers/SocialButton";
 
 import { IoArrowDown } from "react-icons/io5";
 
+import Dropdown from "@site/src/containers/Elements/dropdown";
+
+import useIsBrowser from "@docusaurus/useIsBrowser";
+
 export default function Home() {
-  const { siteConfig } = useDocusaurusContext();
+  const isBrowser = useIsBrowser();
 
   const handleAnchorLink = () => {
     document
       .getElementById("download-section")
       .scrollIntoView({ behavior: "smooth" });
   };
+
+  const userAgent = isBrowser && navigator.userAgent;
+  const isBrowserChrome = isBrowser && userAgent.includes("Chrome");
 
   return (
     <>
@@ -32,7 +38,7 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-12 -mt-1 gap-8 items-center relative min-h-[calc(100vh-96px)] ">
             <div className="col-span-full lg:col-start-2 lg:col-span-5 text-left relative z-10 px-4 py-6">
               <img
-                src="/img/homepage/element-hero-blur.png"
+                src="/img/homepage/element-hero-blur.webp"
                 alt="Element blur"
                 className="hidden lg:block absolute blur-3xl opacity-30 right-32 -bottom-32"
               />
@@ -44,11 +50,13 @@ export default function Home() {
               </div>
               <h1 className="text-5xl lg:text-7xl font-semibold leading-tight lg:leading-tight mt-2">
                 Bringing AI to <br /> your Desktop{" "}
-                <span>
+                <span className="relative w-16 h-16 inline-block">
                   <img
                     src="/img/homepage/element-hero-heading.png"
                     alt="Element hero heading"
-                    className="w-16 inline-block"
+                    className="object-contain inline-block"
+                    width={64}
+                    height={64}
                   />
                 </span>
               </h1>
@@ -57,13 +65,18 @@ export default function Home() {
                 <br className="hidden lg:block" /> 100% offline on your
                 computer.
               </p>
+              <div className="mt-8"></div>
               <div className="mt-8">
-                <div
-                  onClick={() => handleAnchorLink()}
-                  className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
-                >
-                  <span>Download Jan for PC</span>
-                </div>
+                {!isBrowserChrome ? (
+                  <div
+                    onClick={() => handleAnchorLink()}
+                    className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
+                  >
+                    <span>Download Jan for PC</span>
+                  </div>
+                ) : (
+                  <Dropdown />
+                )}
               </div>
 
               <div
@@ -84,9 +97,9 @@ export default function Home() {
                   alt="App screenshots"
                   sources={{
                     light: useBaseUrl(
-                      "/img/homepage/app-base-screen-light.png"
+                      "/img/homepage/app-base-screen-light.webp"
                     ),
-                    dark: useBaseUrl("/img/homepage/app-base-screen-dark.png"),
+                    dark: useBaseUrl("/img/homepage/app-base-screen-dark.webp"),
                   }}
                 />
               </div>
@@ -108,7 +121,7 @@ export default function Home() {
             <div className="container h-full ">
               <div className="w-full lg:w-3/4 mx-auto relative rounded-xl py-10">
                 <img
-                  src="/img/homepage/element-bg-open-source.png"
+                  src="/img/homepage/element-bg-open-source.webp"
                   alt="Element Open Source BG"
                   className="absolute w-full h-full object-cover rounded-xl top-0"
                 />
@@ -125,7 +138,7 @@ export default function Home() {
                         </a>
                       </div>
                       <img
-                        src="/img/homepage/roadmap.png"
+                        src="/img/homepage/roadmap.webp"
                         alt="Element Roadmap"
                         className="h-full w-full object-cover"
                       />
@@ -169,10 +182,10 @@ export default function Home() {
                         alt="App screenshots"
                         sources={{
                           light: useBaseUrl(
-                            "/img/homepage/desktop-app-light.png"
+                            "/img/homepage/desktop-app-light.webp"
                           ),
                           dark: useBaseUrl(
-                            "/img/homepage/desktop-app-dark.png"
+                            "/img/homepage/desktop-app-dark.webp"
                           ),
                         }}
                       />
@@ -192,7 +205,7 @@ export default function Home() {
                       <p className="text-3xl xl:text-4xl font-semibold">
                         Mobile App
                       </p>
-                      <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block ml-2 rounded-md text-sm mt-1">
+                      <span className="bg-gray-300 dark:bg-gray-700 py-0.5 px-2 inline-block ml-2 rounded-lg text-sm mt-1 font-medium">
                         Coming Soon
                       </span>
                     </div>
@@ -213,9 +226,11 @@ export default function Home() {
                         alt="App screenshots"
                         sources={{
                           light: useBaseUrl(
-                            "/img/homepage/mobile-app-light.png"
+                            "/img/homepage/mobile-app-light.webp"
                           ),
-                          dark: useBaseUrl("/img/homepage/mobile-app-dark.png"),
+                          dark: useBaseUrl(
+                            "/img/homepage/mobile-app-dark.webp"
+                          ),
                         }}
                       />
                     </div>
@@ -229,28 +244,28 @@ export default function Home() {
             <div className="container py-12 lg:py-32">
               <div className="w-full xl:w-10/12 mx-auto relative">
                 <div className="text-center">
-                  <div className="card-link-bg dark:card-link-bg-dark px-4 py-2 inline-flex rounded-xl items-center space-x-4">
+                  <div className="card-link-bg dark:card-link-bg-dark px-4 py-2 inline-flex rounded-xl items-center space-x-6 h-[60px]">
                     <img
-                      src="/img/homepage/ic-offline.png"
+                      src="/img/homepage/ic-offline.webp"
                       alt="Icon Offline"
-                      className="w-9"
+                      className="w-9 flex-shrink-0"
                     />
                     <img
-                      src="/img/homepage/ic-private.png"
+                      src="/img/homepage/ic-private.webp"
                       alt="Icon Offline"
-                      className="w-9"
+                      className="w-12 flex-shrink-0"
                     />
                     <img
-                      src="/img/homepage/ic-folder.png"
+                      src="/img/homepage/ic-folder.webp"
                       alt="Icon Offline"
-                      className="w-9"
+                      className="w-9 flex-shrink-0"
                     />
                   </div>
                   <div className="mt-8">
-                    <h6 className="text-3xl lg:text-4xl font-semibold">
+                    <h2 className="text-3xl lg:text-4xl font-semibold">
                       Offline and Local First
-                    </h6>
-                    <p className="mt-2 leading-relaxed text-zinc-600 dark:text-zinc-400">
+                    </h2>
+                    <p className="mt-2 text-zinc-600 dark:text-zinc-400 text-lg leading-relaxed">
                       Conversations, preferences, and model usage stay on{" "}
                       <br className="hidden lg:block" /> your computer—secure,
                       exportable, and can be deleted at any time.
@@ -259,10 +274,10 @@ export default function Home() {
                     <div className="grid grid-cols-12 mt-10 lg:mt-20 text-left gap-8">
                       <div className="col-span-full lg:col-span-4">
                         <div className="dark:bg-[#27272A] bg-zinc-100 rounded-xl p-8 min-h-[450px]">
-                          <h6 className="text-3xl lg:text-4xl font-semibold">
+                          <h2 className="text-3xl lg:text-4xl font-semibold">
                             OpenAI Compatible
-                          </h6>
-                          <p className="mt-4 leading-relaxed text-zinc-600 dark:text-zinc-400">
+                          </h2>
+                          <p className="mt-4 leading-relaxed text-zinc-600 dark:text-zinc-400 text-lg">
                             Jan provides an OpenAI-equivalent API{" "}
                             <br className="hidden lg:block" /> server at&nbsp;
                             <b>localhost:</b>&nbsp;
@@ -294,7 +309,7 @@ export default function Home() {
                                   <span className="inline-block mr-2">
                                     Assistants framework
                                   </span>
-                                  <span className="bg-gray-300 dark:bg-gray-700 py-1 px-2 inline-block rounded-md text-sm">
+                                  <span className="bg-gray-300 dark:bg-gray-700 py-0.5 px-2 inline-block rounded-lg text-sm">
                                     Coming Soon
                                   </span>
                                 </p>
@@ -306,7 +321,7 @@ export default function Home() {
                       <div className="col-span-full lg:col-span-8 items-center">
                         <div className="card-gradient rounded-xl h-full relative text-center min-h-[450px]">
                           <img
-                            src="/img/homepage/status.png"
+                            src="/img/homepage/status.webp"
                             alt="Element status"
                             className="w-10/12 lg:p-20 object-cover absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
                           />

@@ -21,7 +21,7 @@ import {
   deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
@@ -30,9 +30,8 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const { resendChatMessage } = useSendChatMessage()
 
   const onStopInferenceClick = async () => {
-    await extensionManager
-      .get<InferenceExtension>(ExtensionType.Inference)
-      ?.stopInference()
+    events.emit(EventName.OnInferenceStopped, {})
+
     setTimeout(() => {
       events.emit(EventName.OnMessageUpdate, {
         ...message,

@@ -1,4 +1,4 @@
-# Jan - Own Your AI
+# Jan - Bring AI to your Desktop
 
 ![Jan banner](https://github.com/janhq/jan/assets/89722390/35daac7d-b895-487c-a6ac-6663daaad78e)
 
@@ -21,7 +21,7 @@
 
 > ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
 
-Jan is a free, open-source alternative to OpenAI's platform that runs on a local folder of open-format files.
+Jan is an open-source ChatGPT alternative that runs 100% offline on your computer.
 
 **Jan runs on any hardware.** From PCs to multi-GPU clusters, Jan supports universal architectures:
 
@@ -31,27 +31,83 @@ Jan is a free, open-source alternative to OpenAI's platform that runs on a local
 - [x] Linux Debian
 - [x] Windows x64
 
-> Download Jan at https://jan.ai/
+## Download
+
+<table>
+  <tr>
+    <td style="text-align:center"><b>Version Type</b></td>
+    <td style="text-align:center"><b>Windows</b></td>
+    <td colspan="2" style="text-align:center"><b>MacOS</b></td>
+    <td style="text-align:center"><b>Linux</b></td>
+  </tr>
+  <tr>
+    <td style="text-align:center"><b>Stable (Recommended)</b></td>
+    <td style="text-align:center">
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.0/jan-win-x64-0.4.0.exe'>
+        <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
+        <b>jan.exe</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.0/jan-mac-x64-0.4.0.dmg'>
+        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+        <b>Intel</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.0/jan-mac-arm64-0.4.0.dmg'>
+        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+        <b>M1/M2</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.0/jan-linux-amd64-0.4.0.deb'>
+        <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
+        <b>jan.deb</b>
+      </a>
+    </td>
+  </tr>
+  <tr style="text-align: center">
+    <td style="text-align:center"><b>Experimental (Nighlty Build)</b></td>
+    <td style="text-align:center" colspan="4">
+      <a href='https://github.com/janhq/jan/actions/runs/7186681494'>
+        <b>Github action artifactory</b>
+      </a>
+    </td>
+  </tr>
+</table>
+
+Download the latest version of Jan at https://jan.ai/ or visit the **[GitHub Releases](https://github.com/janhq/jan/releases)** to download any previous release.
 
 ## Demo
 
 <p align="center">
-  <video src="https://github.com/janhq/jan/assets/89722390/47988dcc-13ed-4ca0-87f7-74d00f4d47d8"> 
+  <video src="https://github.com/janhq/jan/assets/89722390/43adfddc-7980-4ae6-b544-719f04660dd7"> 
   </video>
 </p>
 
-_Video: Jan v0.3.0 on Mac Air M2, 16GB Ventura_
+
+_Video: Jan v0.4.0 on Mac Air M2, 16GB Ventura_
 
 ## Quicklinks
-
+#### Jan
+- [Jan website](https://jan.ai/)
+- [Jan Github](https://github.com/janhq/jan)
 - [User Guides](https://jan.ai/docs)
-- [Developer docs](https://jan.ai/docs)
-- [API reference](https://jan.ai/api/overview)
-- [Nitro Github](https://nitro.jan.ai): Nitro is a C++ inference engine
+- [Developer docs](https://jan.ai/docs/extensions/)
+- [API reference](https://jan.ai/api-reference/)
+- [Specs](https://jan.ai/specs/)
+
+#### Nitro:
+Nitro is a high-efficiency C++ inference engine for edge computing, powering Jan. It is lightweight and embeddable, ideal for product integration.
+- [Nitro Website](https://nitro.jan.ai)
+- [Nitro Github](https://github.com/janhq/nitro)
+- [Documentation](https://nitro.jan.ai/docs)
+- [API Reference](https://nitro.jan.ai/api-reference)
 
 ## Troubleshooting
 
-As Jan is development mode, you might get stuck on a broken build.
+As Jan is in development mode, you might get stuck on a broken build.
 
 To reset your installation:
 

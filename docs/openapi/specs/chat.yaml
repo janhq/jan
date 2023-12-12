@@ -6,48 +6,59 @@ components:
         messages:
           type: arrays
           description: |
-            Contains input data or prompts for the model to process
+            Contains input data or prompts for the model to process.
           example:
-            [
-              { "content": "Hello there :wave:", "role": "assistant" },
-              { "content": "Can you write a long story", "role": "user" },
-            ]
+            - content: "Hello there :wave:"
+              role: assistant
+            - content: Can you write a long story
+              role: user
         stream:
           type: boolean
           default: true
-          description: Enables continuous output generation, allowing for streaming of model responses
+          description: >-
+            Enables continuous output generation, allowing for streaming of
+            model responses.
         model:
           type: string
-          example: "gpt-3.5-turbo"
-          description: Specifies the model being used for inference or processing tasks
+          example: gpt-3.5-turbo
+          description: Specifies the model being used for inference or processing tasks.
         max_tokens:
           type: number
           default: 2048
-          description: The maximum number of tokens the model will generate in a single response
+          description: >-
+            The maximum number of tokens the model will generate in a single
+            response.
         stop:
           type: arrays
-          example: ["hello"]
-          description: Defines specific tokens or phrases at which the model will stop generating further output
+          example:
+            - hello
+          description: >-
+            Defines specific tokens or phrases at which the model will stop
+            generating further output/
         frequency_penalty:
           type: number
           default: 0
-          description: Adjusts the likelihood of the model repeating words or phrases in its output
+          description: >-
+            Adjusts the likelihood of the model repeating words or phrases in
+            its output.
         presence_penalty:
           type: number
           default: 0
-          description: Influences the generation of new and varied concepts in the model's output
+          description: >-
+            Influences the generation of new and varied concepts in the model's
+            output.
         temperature:
           type: number
           default: 0.7
           min: 0
           max: 1
-          description: Controls the randomness of the model's output
+          description: Controls the randomness of the model's output.
         top_p:
           type: number
           default: 0.95
           min: 0
           max: 1
-          description: Set probability threshold for more relevant outputs
+          description: Set probability threshold for more relevant outputs.
         cache_prompt:
           type: boolean
           default: true
@@ -58,59 +69,62 @@ components:
         messages:
           type: arrays
           description: |
-            Contains input data or prompts for the model to process
+            Contains input data or prompts for the model to process.
           example:
-            [
-              { "content": "Hello there :wave:", "role": "assistant" },
-              { "content": "Can you write a long story", "role": "user" },
-            ]
+            - content: "Hello there :wave:"
+              role: assistant
+            - content: Can you write a long story
+              role: user
         model:
           type: string
           example: model-zephyr-7B
           description: |
-            Specifies the model being used for inference or processing tasks
+            Specifies the model being used for inference or processing tasks.
         stream:
           type: boolean
           default: true
-          description: |
-            Enables continuous output generation, allowing for streaming of model responses
+          description: >
+            Enables continuous output generation, allowing for streaming of
+            model responses.
         max_tokens:
           type: number
           default: 2048
-          description: |
-            The maximum number of tokens the model will generate in a single response
+          description: >
+            The maximum number of tokens the model will generate in a single
+            response.
         stop:
           type: arrays
-          example: ["hello"]
-          description: |
-            Defines specific tokens or phrases at which the model will stop generating further output
+          example:
+            - hello
+          description: >
+            Defines specific tokens or phrases at which the model will stop
+            generating further output.
         frequency_penalty:
           type: number
           default: 0
-          description: |
-            Adjusts the likelihood of the model repeating words or phrases in its output
+          description: >
+            Adjusts the likelihood of the model repeating words or phrases in
+            its output.
         presence_penalty:
           type: number
           default: 0
-          description: |
-            Influences the generation of new and varied concepts in the model's output
+          description: >
+            Influences the generation of new and varied concepts in the model's
+            output.
         temperature:
           type: number
           default: 0.7
           min: 0
           max: 1
           description: |
-            Controls the randomness of the model's output
+            Controls the randomness of the model's output.
         top_p:
           type: number
           default: 0.95
           min: 0
           max: 1
           description: |
-            Set probability threshold for more relevant outputs
-
-            
-
+            Set probability threshold for more relevant outputs.
     ChatCompletionResponse:
       type: object
       description: Description of the response structure
@@ -125,7 +139,7 @@ components:
                 type: string
                 nullable: true
                 example: null
-                description: Reason for finishing the response, if applicable
+                description: "Reason for finishing the response, if applicable"
               index:
                 type: integer
                 example: 0
@@ -135,7 +149,7 @@ components:
                 properties:
                   content:
                     type: string
-                    example: "Hello user. What can I help you with?"
+                    example: Hello user. What can I help you with?
                     description: Content of the message
                   role:
                     type: string

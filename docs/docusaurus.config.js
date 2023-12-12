@@ -117,7 +117,6 @@ const config = {
             requiredPropsFirst: true,
             noAutoAuth: true,
             hideDownloadButton: true,
-            disableSearch: true,
           },
         },
       },
@@ -147,7 +146,7 @@ const config = {
       {
         name: "keywords",
         content:
-          "Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee",
+          "Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
       },
       { name: "robots", content: "index, follow" },
       {
@@ -202,7 +201,7 @@ const config = {
           description:
             "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
           keywords:
-            "Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee",
+            "Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
           applicationCategory: "BusinessApplication",
           operatingSystem: "Multiple",
           url: "https://jan.ai/",

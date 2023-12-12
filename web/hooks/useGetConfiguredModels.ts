@@ -19,9 +19,6 @@ export function useGetConfiguredModels() {
   async function fetchModels() {
     setLoading(true)
     const models = await getConfiguredModels()
-    if (process.env.NODE_ENV === 'development') {
-      // models = [dummyModel, ...models] // TODO: NamH add back dummy model later
-    }
     setLoading(false)
     setModels(models)
   }

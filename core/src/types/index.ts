@@ -41,8 +41,8 @@ export type MessageRequest = {
   /** Messages for constructing a chat completion request **/
   messages?: ChatCompletionMessage[];
 
-  /** Runtime parameters for constructing a chat completion request **/
-  parameters?: ModelRuntimeParam;
+  /** Settings for constructing a chat completion request **/
+  model?: ModelInfo;
 };
 
 /**
@@ -71,9 +71,9 @@ export type ThreadMessage = {
   object: string;
   /** Thread id, default is a ulid. **/
   thread_id: string;
-  /** The role of the author of this message. **/
+  /** The assistant id of this thread. **/
   assistant_id?: string;
-  // TODO: comment
+  /** The role of the author of this message. **/
   role: ChatCompletionRole;
   /** The content of this message. **/
   content: ThreadContent[];
@@ -125,8 +125,6 @@ export interface Thread {
   title: string;
   /** Assistants in this thread. **/
   assistants: ThreadAssistantInfo[];
-  // if the thread has been init will full assistant info
-  isFinishInit: boolean;
   /** The timestamp indicating when this thread was created, represented in ISO 8601 format. **/
   created: number;
   /** The timestamp indicating when this thread was updated, represented in ISO 8601 format. **/
@@ -153,7 +151,8 @@ export type ThreadAssistantInfo = {
 export type ModelInfo = {
   id: string;
   settings: ModelSettingParams;
-  parameters: ModelRuntimeParam;
+  parameters: ModelRuntimeParams;
+  engine?: InferenceEngine;
 };
 
 /**
@@ -165,7 +164,19 @@ export type ThreadState = {
   waitingForResponse: boolean;
   error?: Error;
   lastMessage?: string;
+  isFinishInit?: boolean;
 };
+/**
+ * Represents the inference engine.
+ * @stored
+ */
+
+enum InferenceEngine {
+  nitro = "nitro",
+  openai = "openai",
+  triton_trtllm = "triton_trtllm",
+  hf_endpoint = "hf_endpoint",
+}
 
 /**
  * Model type defines the shape of a model object.
@@ -218,7 +229,7 @@ export interface Model {
    * Default: "to_download"
    * Enum: "to_download" "downloading" "ready" "running"
    */
-  state: ModelState;
+  state?: ModelState;
 
   /**
    * The model settings.
@@ -228,12 +239,16 @@ export interface Model {
   /**
    * The model runtime parameters.
    */
-  parameters: ModelRuntimeParam;
+  parameters: ModelRuntimeParams;
 
   /**
    * Metadata of the model.
    */
   metadata: ModelMetadata;
+  /**
+   * The model engine.
+   */
+  engine: InferenceEngine;
 }
 
 export type ModelMetadata = {
@@ -260,6 +275,7 @@ export type ModelSettingParams = {
   ngl?: number;
   embedding?: boolean;
   n_parallel?: number;
+  cpu_threads?: number;
   system_prompt?: string;
   user_prompt?: string;
   ai_prompt?: string;
@@ -268,13 +284,16 @@ export type ModelSettingParams = {
 /**
  * The available model runtime parameters.
  */
-export type ModelRuntimeParam = {
+export type ModelRuntimeParams = {
   temperature?: number;
   token_limit?: number;
   top_k?: number;
   top_p?: number;
   stream?: boolean;
   max_tokens?: number;
+  stop?: string[];
+  frequency_penalty?: number;
+  presence_penalty?: number;
 };
 
 /**

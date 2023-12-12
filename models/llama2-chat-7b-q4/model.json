@@ -19,6 +19,7 @@
       "author": "MetaAI, The Bloke",
       "tags": ["7B", "Foundational Model"],
       "size": 4080000000
-    }
+    },
+    "engine": "nitro"
   }
   

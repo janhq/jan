@@ -6,18 +6,18 @@ import {
   ThreadAssistantInfo,
   ThreadState,
 } from '@janhq/core'
-import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 
-import { generateThreadId } from '@/utils/conversation'
+import { generateThreadId } from '@/utils/thread'
 
 import { extensionManager } from '@/extension'
 import {
   threadsAtom,
   setActiveThreadIdAtom,
   threadStatesAtom,
-  activeThreadAtom,
   updateThreadAtom,
-} from '@/helpers/atoms/Conversation.atom'
+  setThreadModelRuntimeParamsAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
   // create thread state for this new thread
@@ -26,6 +26,8 @@ const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
   const threadState: ThreadState = {
     hasMore: false,
     waitingForResponse: false,
+    lastMessage: undefined,
+    isFinishInit: false,
   }
   currentState[newThread.id] = threadState
   set(threadStatesAtom, currentState)
@@ -36,15 +38,26 @@ const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
 })
 
 export const useCreateNewThread = () => {
+  const threadStates = useAtomValue(threadStatesAtom)
   const createNewThread = useSetAtom(createNewThreadAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
-  const [threadStates, setThreadStates] = useAtom(threadStatesAtom)
-  const threads = useAtomValue(threadsAtom)
   const updateThread = useSetAtom(updateThreadAtom)
+  const setThreadModelRuntimeParams = useSetAtom(
+    setThreadModelRuntimeParamsAtom
+  )
 
   const requestCreateNewThread = async (assistant: Assistant) => {
-    const unfinishedThreads = threads.filter((t) => t.isFinishInit === false)
-    if (unfinishedThreads.length > 0) {
+    // loop through threads state and filter if there's any thread that is not finish init
+    let hasUnfinishedInitThread = false
+    for (const key in threadStates) {
+      const isFinishInit = threadStates[key].isFinishInit ?? true
+      if (!isFinishInit) {
+        hasUnfinishedInitThread = true
+        break
+      }
+    }
+
+    if (hasUnfinishedInitThread) {
       return
     }
 
@@ -54,19 +67,12 @@ export const useCreateNewThread = () => {
       assistant_name: assistant.name,
       model: {
         id: '*',
-        settings: {
-          ctx_len: 0,
-          ngl: 0,
-          embedding: false,
-          n_parallel: 0,
-        },
+        settings: {},
         parameters: {
-          temperature: 0,
-          token_limit: 0,
-          top_k: 0,
-          top_p: 0,
-          stream: false,
+          stream: true,
+          max_tokens: 1024,
         },
+        engine: undefined,
       },
       instructions: assistant.instructions,
     }
@@ -78,29 +84,20 @@ export const useCreateNewThread = () => {
       assistants: [assistantInfo],
       created: createdAt,
       updated: createdAt,
-      isFinishInit: false,
     }
 
-    // TODO: move isFinishInit here
-    const threadState: ThreadState = {
-      hasMore: false,
-      waitingForResponse: false,
-      lastMessage: undefined,
-    }
-    setThreadStates({ ...threadStates, [threadId]: threadState })
+    setThreadModelRuntimeParams(thread.id, assistantInfo.model.parameters)
+
     // add the new thread on top of the thread list to the state
     createNewThread(thread)
     setActiveThreadId(thread.id)
   }
 
   function updateThreadMetadata(thread: Thread) {
-    const updatedThread: Thread = {
-      ...thread,
-    }
-    updateThread(updatedThread)
+    updateThread(thread)
     extensionManager
       .get<ConversationalExtension>(ExtensionType.Conversational)
-      ?.saveThread(updatedThread)
+      ?.saveThread(thread)
   }
 
   return {

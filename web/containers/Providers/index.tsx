@@ -53,7 +53,7 @@ const Providers = (props: PropsWithChildren) => {
   useEffect(() => {
     if (setupCore) {
       // Electron
-      if (window && window.core.api) {
+      if (window && window.core?.api) {
         setupExtensions()
       } else {
         // Host

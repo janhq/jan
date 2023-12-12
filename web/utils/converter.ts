@@ -1,4 +1,5 @@
 export const toGigabytes = (input: number) => {
+  if (!input) return ''
   if (input > 1024 ** 3) {
     return (input / 1000 ** 3).toFixed(2) + 'GB'
   } else if (input > 1024 ** 2) {
