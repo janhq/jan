@@ -1,4 +1,8 @@
-{
+/// <reference types="@capacitor/splash-screen" />
+
+import { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
   "appId": "ai.jan.mobile",
   "appName": "jan-mobile",
   "bundledWebRuntime": false,
@@ -9,3 +13,5 @@
     }
   }
 }
+
+export default config;
