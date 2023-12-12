@@ -1,11 +1,11 @@
 import { app, ipcMain, shell, nativeTheme } from 'electron'
 import { ModuleManager } from './../managers/module'
 import { join } from 'path'
-import { ExtensionManager } from '../../common/extension'
 import { WindowManager } from './../managers/window'
 import { userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
 import { getResourcePath } from './../utils/path'
+const { ExtensionManager } = require('@janhq/core/dist/node/index.cjs')
 
 export function handleAppIPCs() {
   /**
