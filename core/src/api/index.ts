@@ -51,6 +51,8 @@ export enum FileSystemRoute {
   rmdirSync = 'rmdirSync',
   writeFileSync = 'writeFileSync',
   getResourcePath = 'getResourcePath',
+  
+  isDirectory = 'isDirectory',
   getUserSpace = 'getUserSpace',
 }
 
