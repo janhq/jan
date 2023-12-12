@@ -3,7 +3,7 @@ title: Quickstart
 description: Jan QuickStart Guide - A Gateway to Self-Hosted AI
 keywords: [Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ]
 ---
-# QuickStart Guide: A Gateway to Self-Hosted AI
+# Quickstart Guide: A Gateway to Self-Hosted AI
 Join us on an adventure to explore the world of Jan, your new self-hosted AI companion!
 
 ## Getting Started with Jan
