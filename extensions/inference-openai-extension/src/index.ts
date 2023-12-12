@@ -12,7 +12,6 @@ import {
   EventName,
   MessageRequest,
   MessageStatus,
-  ModelSettingParams,
   ExtensionType,
   ThreadContent,
   ThreadMessage,

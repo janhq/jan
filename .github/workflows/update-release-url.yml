@@ -14,6 +14,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: "0"
+          token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
 
       - name: Get Latest Release
         uses: pozetroninc/github-action-get-latest-release@v0.7.0
