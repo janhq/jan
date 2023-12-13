@@ -15,6 +15,7 @@ const NITRO_HTTP_SERVER_URL = `http://${LOCAL_HOST}:${PORT}`;
 const NITRO_HTTP_LOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/loadmodel`;
 const NITRO_HTTP_UNLOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/unloadModel`;
 const NITRO_HTTP_VALIDATE_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/modelstatus`;
+const NITRO_HTTP_KILL_URL = `${NITRO_HTTP_SERVER_URL}/processmanager/destroy`;
 
 // The subprocess instance for Nitro
 let subprocess = null;
@@ -188,9 +189,14 @@ async function validateModelStatus(): Promise<ModelOperationResponse> {
  */
 function killSubprocess(): Promise<void> {
   if (subprocess) {
-    subprocess.kill();
-    subprocess = null;
-    console.debug("Subprocess terminated.");
+    fetch(NITRO_HTTP_KILL_URL, {
+      method: "DELETE",
+    }).catch((err) => {
+      console.error(err);
+      subprocess.kill();
+      subprocess = null;
+      return killSubprocess();
+    });
   } else {
     return kill(PORT, "tcp").then(console.log).catch(console.log);
   }
@@ -207,9 +213,6 @@ async function checkAndUnloadNitro() {
       // Attempt to unload model
       return fetch(NITRO_HTTP_UNLOAD_MODEL_URL, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
       }).catch((err) => {
         console.error(err);
         // Fallback to kill the port
