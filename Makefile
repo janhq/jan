@@ -1,7 +1,5 @@
 # Makefile for Jan Electron App - Build, Lint, Test, and Clean
 
-.SHELLFLAGS := -eu -o pipefail -c
-
 # Default target, does nothing
 all:
 	@echo "Specify a target to run"
