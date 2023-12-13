@@ -13,10 +13,11 @@ jobs:
     environment: production
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: "0"
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+          ref: main
 
       - name: Get Latest Release
         uses: pozetroninc/github-action-get-latest-release@v0.7.0
