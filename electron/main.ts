@@ -7,7 +7,10 @@ import { createUserSpace } from './utils/path'
  * Managers
  **/
 import { WindowManager } from './managers/window'
-import { ModuleManager } from '@janhq/core/src/node/module'
+const {
+  ExtensionManager,
+  ModuleManager,
+} = require('@janhq/core/dist/node/index.cjs')
 
 /**
  * IPC Handlers
@@ -17,8 +20,6 @@ import { handleExtensionIPCs } from './handlers/extension'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
-
-const { ExtensionManager } = require('@janhq/core/dist/node/index.cjs')
 
 app
   .whenReady()

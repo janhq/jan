@@ -1,11 +1,11 @@
 import { app, ipcMain } from 'electron'
-import { DownloadManager } from '@janhq/core/src/node/download'
 import { resolve, join } from 'path'
 import { WindowManager } from './../managers/window'
 import request from 'request'
 import { createWriteStream, renameSync } from 'fs'
 import { DownloadEvent, DownloadRoute } from '@janhq/core'
 const progress = require('request-progress')
+const { DownloadManager } = require('@janhq/core/dist/node/index.cjs')
 
 export function handleDownloaderIPCs() {
   /**
