@@ -8,9 +8,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,
-      "system_prompt": "",
-      "user_prompt": "GPT4 User: ",
-      "ai_prompt": "<|end_of_turn|>\nGPT4 Assistant: "
+      "prompt_template": "GPT4 User: {prompt}<|end_of_turn|>GPT4 Assistant:"
     },
     "parameters": {
       "max_tokens": 2048

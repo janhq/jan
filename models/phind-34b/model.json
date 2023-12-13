@@ -8,9 +8,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,
-      "system_prompt": "### System Prompt\n",
-      "user_prompt": "### User Message\n",
-      "ai_prompt": "### Assistant\n"
+      "prompt_template": "### System Prompt\n{system_message}\n### User Message\n{prompt}\n### Assistant"
     },
     "parameters": {
       "max_tokens": 2048
