@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { EventName, events } from '@janhq/core'
-import { Model, ModelSettingParams } from '@janhq/core'
+import { Model } from '@janhq/core'
 import { atom, useAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'

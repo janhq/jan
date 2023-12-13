@@ -8,9 +8,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "system_prompt": "<|im_start|>system\n",
-      "user_prompt": "<|im_end|>\n<|im_start|>user\n",
-      "ai_prompt": "<|im_end|>\n<|im_start|>assistant\n"
+      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
     },
     "parameters": {
       "max_tokens": 2048

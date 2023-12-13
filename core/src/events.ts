@@ -1,25 +1,26 @@
+// TODO: refactor EventName to use the events defined in /types
 /**
  * The `EventName` enumeration contains the names of all the available events in the Jan platform.
  */
 export enum EventName {
   /** The `OnMessageSent` event is emitted when a message is sent. */
-  OnMessageSent = "OnMessageSent",
+  OnMessageSent = 'OnMessageSent',
   /** The `OnMessageResponse` event is emitted when a message is received. */
-  OnMessageResponse = "OnMessageResponse",
+  OnMessageResponse = 'OnMessageResponse',
   /** The `OnMessageUpdate` event is emitted when a message is updated. */
-  OnMessageUpdate = "OnMessageUpdate",
+  OnMessageUpdate = 'OnMessageUpdate',
   /** The `OnModelInit` event is emitted when a model inits. */
-  OnModelInit = "OnModelInit",
+  OnModelInit = 'OnModelInit',
   /** The `OnModelReady` event is emitted when a model ready. */
-  OnModelReady = "OnModelReady",
+  OnModelReady = 'OnModelReady',
   /** The `OnModelFail` event is emitted when a model fails loading. */
-  OnModelFail = "OnModelFail",
+  OnModelFail = 'OnModelFail',
   /** The `OnModelStop` event is emitted when a model start to stop. */
-  OnModelStop = "OnModelStop",
+  OnModelStop = 'OnModelStop',
   /** The `OnModelStopped` event is emitted when a model stopped ok. */
-  OnModelStopped = "OnModelStopped",
+  OnModelStopped = 'OnModelStopped',
   /** The `OnInferenceStopped` event is emitted when a inference is stopped. */
-  OnInferenceStopped = "OnInferenceStopped",
+  OnInferenceStopped = 'OnInferenceStopped',
 }
 
 /**
@@ -28,12 +29,9 @@ export enum EventName {
  * @param eventName The name of the event to observe.
  * @param handler The handler function to call when the event is observed.
  */
-const on: (eventName: string, handler: Function) => void = (
-  eventName,
-  handler
-) => {
-  global.core?.events?.on(eventName, handler);
-};
+const on: (eventName: string, handler: Function) => void = (eventName, handler) => {
+  global.core?.events?.on(eventName, handler)
+}
 
 /**
  * Removes an observer for an event.
@@ -41,12 +39,9 @@ const on: (eventName: string, handler: Function) => void = (
  * @param eventName The name of the event to stop observing.
  * @param handler The handler function to call when the event is observed.
  */
-const off: (eventName: string, handler: Function) => void = (
-  eventName,
-  handler
-) => {
-  global.core?.events?.off(eventName, handler);
-};
+const off: (eventName: string, handler: Function) => void = (eventName, handler) => {
+  global.core?.events?.off(eventName, handler)
+}
 
 /**
  * Emits an event.
@@ -55,11 +50,11 @@ const off: (eventName: string, handler: Function) => void = (
  * @param object The object to pass to the event callback.
  */
 const emit: (eventName: string, object: any) => void = (eventName, object) => {
-  global.core?.events?.emit(eventName, object);
-};
+  global.core?.events?.emit(eventName, object)
+}
 
 export const events = {
   on,
   off,
   emit,
-};
+}
