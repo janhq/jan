@@ -46,9 +46,19 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
   } else {
     // Gather system information for CPU physical cores and memory
     const nitroResourceProbe = await getResourcesInfo();
-    console.log(
-      "Nitro with physical core: " + nitroResourceProbe.numCpuPhysicalCore
-    );
+
+    // Convert settings.prompt_template to system_prompt, user_prompt, ai_prompt
+    if (wrapper.model.settings.prompt_template) {
+      const promptTemplate = wrapper.model.settings.prompt_template;
+      const prompt = promptTemplateConverter(promptTemplate);
+      if (prompt.error) {
+        return Promise.resolve({ error: prompt.error });
+      }
+      wrapper.model.settings.system_prompt = prompt.system_prompt;
+      wrapper.model.settings.user_prompt = prompt.user_prompt;
+      wrapper.model.settings.ai_prompt = prompt.ai_prompt;
+    }
+
     const settings = {
       llama_model_path: currentModelFile,
       ...wrapper.model.settings,
@@ -74,12 +84,53 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
   }
 }
 
+function promptTemplateConverter(promptTemplate) {
+  // Split the string using the markers
+  const systemMarker = "{system_message}";
+  const promptMarker = "{prompt}";
+
+  if (
+    promptTemplate.includes(systemMarker) &&
+    promptTemplate.includes(promptMarker)
+  ) {
+    // Find the indices of the markers
+    const systemIndex = promptTemplate.indexOf(systemMarker);
+    const promptIndex = promptTemplate.indexOf(promptMarker);
+
+    // Extract the parts of the string
+    const system_prompt = promptTemplate.substring(0, systemIndex);
+    const user_prompt = promptTemplate.substring(
+      systemIndex + systemMarker.length,
+      promptIndex
+    );
+    const ai_prompt = promptTemplate.substring(
+      promptIndex + promptMarker.length
+    );
+
+    // Return the split parts
+    return { system_prompt, user_prompt, ai_prompt };
+  } else if (promptTemplate.includes(promptMarker)) {
+    // Extract the parts of the string for the case where only promptMarker is present
+    const promptIndex = promptTemplate.indexOf(promptMarker);
+    const user_prompt = promptTemplate.substring(0, promptIndex);
+    const ai_prompt = promptTemplate.substring(
+      promptIndex + promptMarker.length
+    );
+    const system_prompt = "";
+
+    // Return the split parts
+    return { system_prompt, user_prompt, ai_prompt };
+  }
+
+  // Return an error if none of the conditions are met
+  return { error: "Cannot split prompt template" };
+}
+
 /**
  * Loads a LLM model into the Nitro subprocess by sending a HTTP POST request.
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
 function loadLLMModel(settings): Promise<Response> {
-  // Load model config
   return fetchRetry(NITRO_HTTP_LOAD_MODEL_URL, {
     method: "POST",
     headers: {
