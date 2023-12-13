@@ -55,5 +55,4 @@ export const restAPI = {
   }, {}),
   openExternalUrl,
   appVersion,
-  invokeExtensionFunc: () => {},
 }

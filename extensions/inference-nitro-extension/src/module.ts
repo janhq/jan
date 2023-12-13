@@ -1,4 +1,5 @@
 const fs = require("fs");
+const { join } = require("path");
 const kill = require("kill-port");
 const path = require("path");
 const { spawn } = require("child_process");
@@ -39,7 +40,9 @@ function stopModel(): Promise<ModelOperationResponse> {
  * TODO: Should it be startModel instead?
  */
 function initModel(wrapper: any): Promise<ModelOperationResponse> {
-  currentModelFile = wrapper.modelFullPath;
+  const userSpacePath = join(require("os").homedir(), "jan");
+  currentModelFile = join(userSpacePath, wrapper.modelFullPath);
+
   if (wrapper.model.engine !== "nitro") {
     return Promise.resolve({ error: "Not a nitro model" });
   } else {

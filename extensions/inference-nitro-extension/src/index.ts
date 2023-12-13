@@ -110,8 +110,8 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     if (model.engine !== "nitro") {
       return;
     }
-    const userSpacePath = await getUserSpace();
-    const modelFullPath = join(userSpacePath, "models", model.id, model.id);
+
+    const modelFullPath = join("models", model.id, model.id);
 
     const nitroInitResult = await executeOnMain(MODULE, "initModel", {
       modelFullPath: modelFullPath,
