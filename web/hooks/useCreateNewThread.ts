@@ -85,7 +85,6 @@ export const useCreateNewThread = () => {
       created: createdAt,
       updated: createdAt,
     }
-
     setThreadModelRuntimeParams(thread.id, assistantInfo.model.parameters)
 
     // add the new thread on top of the thread list to the state
