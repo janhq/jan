@@ -189,14 +189,14 @@ async function validateModelStatus(): Promise<ModelOperationResponse> {
  */
 function killSubprocess(): Promise<void> {
   if (subprocess) {
-    fetch(NITRO_HTTP_KILL_URL, {
+    return fetch(NITRO_HTTP_KILL_URL, {
       method: "DELETE",
     }).catch((err) => {
       console.error(err);
       subprocess.kill();
       subprocess = null;
-      return killSubprocess();
-    });
+      return kill(PORT, "tcp").then(console.log).catch(console.log);
+});
   } else {
     return kill(PORT, "tcp").then(console.log).catch(console.log);
   }
