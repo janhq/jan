@@ -38,7 +38,7 @@
     "build:extensions": "run-script-os",
     "build:test": "yarn build:web && yarn workspace jan build:test",
     "build": "yarn build:web && yarn build:electron",
-    "build:publish": "yarn build:web && yarn workspace jan build:publish"
+    "build:publish": "cpx \"models/**\" \"electron/models/\" && yarn build:web && yarn workspace jan build:publish"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",

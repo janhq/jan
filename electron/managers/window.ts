@@ -23,12 +23,12 @@ export class WindowManager {
       width: 1200,
       minWidth: 1200,
       height: 800,
-      show: false,
+      show: true,
       trafficLightPosition: {
         x: 10,
         y: 15,
       },
-      titleBarStyle: 'hidden',
+      titleBarStyle: 'hiddenInset',
       vibrancy: 'sidebar',
       ...options,
     })

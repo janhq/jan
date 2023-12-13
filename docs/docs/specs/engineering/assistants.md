@@ -2,7 +2,7 @@
 title: "Assistants"
 slug: /specs/assistants
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
-keywords: [Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee]
+keywords: [Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ]
 ---
 
 :::caution
@@ -39,6 +39,10 @@ In Jan, assistants are `primary` entities with the following capabilities:
 ```
 
 ## `assistant.json`
+
+- Each `assistant` folder contains an `assistant.json` file, which is a representation of an assistant.
+- `assistant.json` contains metadata and model parameter overrides
+- There are no required fields.
 
 ```js
 {

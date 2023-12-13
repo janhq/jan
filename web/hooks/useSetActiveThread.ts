@@ -9,7 +9,7 @@ import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   getActiveThreadIdAtom,
   setActiveThreadIdAtom,
-} from '@/helpers/atoms/Conversation.atom'
+} from '@/helpers/atoms/Thread.atom'
 
 export default function useSetActiveThread() {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)

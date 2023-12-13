@@ -29,7 +29,11 @@ const marked = new Marked(
       if (lang === undefined || lang === '') {
         return hljs.highlightAuto(code).value
       }
-      return hljs.highlight(code, { language: lang }).value
+      try {
+        return hljs.highlight(code, { language: lang }).value
+      } catch (err) {
+        return hljs.highlight(code, { language: 'javascript' }).value
+      }
     },
   }),
   {
@@ -38,8 +42,8 @@ const marked = new Marked(
         // Make a copy paste
         return `
         <pre class="hljs">
-          <code class="language-${encodeURIComponent(lang ?? '')}">${
-            escaped ? code : encodeURIComponent(code)
+          <code class="language-${lang ?? ''}">${
+            escaped ? code : decodeURIComponent(code)
           }</code>
           </pre>`
       },

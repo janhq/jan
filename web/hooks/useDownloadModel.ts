@@ -1,17 +1,15 @@
 import { Model, ExtensionType, ModelExtension } from '@janhq/core'
 
-import { useAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 
 import { useDownloadState } from './useDownloadState'
 
 import { extensionManager } from '@/extension/ExtensionManager'
-import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { addNewDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useDownloadModel() {
   const { setDownloadState } = useDownloadState()
-  const [downloadingModels, setDownloadingModels] = useAtom(
-    downloadingModelsAtom
-  )
+  const addNewDownloadingModel = useSetAtom(addNewDownloadingModelAtom)
 
   const downloadModel = async (model: Model) => {
     // set an initial download state
@@ -29,7 +27,8 @@ export default function useDownloadModel() {
       },
     })
 
-    setDownloadingModels([...downloadingModels, model])
+    addNewDownloadingModel(model)
+
     await extensionManager
       .get<ModelExtension>(ExtensionType.Model)
       ?.downloadModel(model)

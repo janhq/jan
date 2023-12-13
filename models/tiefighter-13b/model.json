@@ -2,23 +2,24 @@
     "source_url": "https://huggingface.co/TheBloke/LLaMA2-13B-Tiefighter-GGUF/resolve/main/llama2-13b-tiefighter.Q5_K_M.gguf",
     "id": "tiefighter-13b",
     "object": "model",
-    "name": "Tiefighter 13B",
+    "name": "Tiefighter 13B Q5",
     "version": "1.0",
     "description": "Tiefighter-13B is a highly creative, merged AI model achieved by combining various 'LORAs' on top of an existing merge, particularly focusing on storytelling and improvisation. This model excels in story writing, chatbots, and adventuring, and is designed to perform better with less detailed inputs, leveraging its inherent creativity.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "",
       "user_prompt": "### Instruction: ",
       "ai_prompt": "\n### Response: "
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "KoboldAI, The Bloke",
-      "tags": ["General Use", "Role-playing", "Writing"],
+      "tags": ["13B", "Finetuned"],
       "size": 9230000000
-    }
+    },
+    "engine": "nitro"
   }
   

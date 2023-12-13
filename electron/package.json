@@ -67,6 +67,7 @@
     "build:publish:linux": "tsc -p . && electron-builder -p onTagOrDraft -l deb"
   },
   "dependencies": {
+    "@janhq/core": "link:./core",
     "@npmcli/arborist": "^7.1.0",
     "@types/request": "^2.48.12",
     "@uiball/loaders": "^1.3.0",
@@ -85,7 +86,7 @@
     "@types/pacote": "^11.1.7",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
-    "electron": "26.2.1",
+    "electron": "28.0.0",
     "electron-builder": "^24.6.4",
     "electron-playwright-helpers": "^1.6.0",
     "eslint-plugin-react": "^7.33.2",

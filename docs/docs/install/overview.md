@@ -1,7 +1,7 @@
 ---
 title: Overview
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
-keywords: [Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee]
+keywords: [Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ]
 ---
 
 Getting up and running open-source AI models on your own computer with Jan is quick and easy. Jan is lightweight and can run on a variety of hardware and platform versions. Specific requirements tailored to your platform are outlined below.

@@ -1,0 +1,25 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/deepseek-coder-33B-instruct-GGUF/resolve/main/deepseek-coder-33b-instruct.Q5_K_M.gguf",
+    "id": "deepseek-coder-34b",
+    "object": "model",
+    "name": "Deepseek Coder 33B Q5",
+    "version": "1.0",
+    "description": "Deepseek Coder trained on 2T tokens (87% code, 13% English/Chinese), excelling in project-level code completion with advanced capabilities across multiple programming languages.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 2048,
+      "system_prompt": "",
+      "user_prompt": "### Instruction:\n",
+      "ai_prompt": "### Response:\n"
+    },
+    "parameters": {
+      "max_tokens": 2048
+    },
+    "metadata": {
+      "author": "Deepseek, The Bloke",
+      "tags": ["34B", "Foundational Model"],
+      "size": 26040000000
+    },
+    "engine": "nitro"
+  }
+  

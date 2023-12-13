@@ -4,18 +4,18 @@ slug: /guides
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
 keywords:
   [
+    Jan AI,
     Jan,
     ChatGPT alternative,
-    on-premises AI,
-    local API server,
     local AI,
-    llm,
+    private AI,
     conversational AI,
     no-subscription fee,
+    large language model,
   ]
 ---
 
-Jan is a ChatGPT-alternative that runs on your own computer, with a [local API server](/api).
+Jan is a ChatGPT-alternative that runs on your own computer, with a [local API server](/api-reference/).
 
 Jan uses [open-source AI models](/docs/models), stores data in [open file formats](/specs/data-structures), is highly customizable via [extensions](/docs/extensions).
 

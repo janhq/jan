@@ -29,9 +29,9 @@ import {
   activeThreadAtom,
   getActiveThreadIdAtom,
   waitingToSendMessage,
-} from '@/helpers/atoms/Conversation.atom'
+} from '@/helpers/atoms/Thread.atom'
 
-import { activeThreadStateAtom } from '@/helpers/atoms/Conversation.atom'
+import { activeThreadStateAtom } from '@/helpers/atoms/Thread.atom'
 
 const ChatScreen = () => {
   const activeThread = useAtomValue(activeThreadAtom)
@@ -137,7 +137,7 @@ const ChatScreen = () => {
 
           {stateModel.loading && (
             <div className="mb-1 mt-2 py-2 text-center">
-              <span className="rounded-lg border border-border px-4 py-2 shadow-lg">
+              <span className="rounded-lg border border-border bg-blue-200 px-4 py-2 font-semibold text-blue-600 shadow-lg">
                 Starting model {stateModel.model}
               </span>
             </div>

@@ -2,23 +2,24 @@
     "source_url": "https://huggingface.co/TheBloke/Yi-34B-Chat-GGUF/resolve/main/yi-34b-chat.Q5_K_M.gguf",
     "id": "yi-34b",
     "object": "model",
-    "name": "Yi 34B",
+    "name": "Yi 34B Q5",
     "version": "1.0",
     "description": "Yi-34B, a specialized chat model, is known for its diverse and creative responses and excels across various NLP tasks and benchmarks.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "system_prompt": "<|im_start|>system\n",
       "user_prompt": "<|im_end|>\n<|im_start|>user\n",
       "ai_prompt": "<|im_end|>\n<|im_start|>assistant\n"
     },
     "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
     },
     "metadata": {
       "author": "01-ai, The Bloke",
-      "tags": ["General", "Role-playing", "Writing"],
+      "tags": ["34B", "Foundational Model"],
       "size": 24320000000
-    }
+    },
+    "engine": "nitro"
   }
   

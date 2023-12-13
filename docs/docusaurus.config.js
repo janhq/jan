@@ -3,7 +3,6 @@
 
 require("dotenv").config();
 
-const lightCodeTheme = require("prism-react-renderer/themes/github");
 const darkCodeTheme = require("prism-react-renderer/themes/dracula");
 
 /** @type {import('@docusaurus/types').Config} */
@@ -115,11 +114,10 @@ const config = {
           primaryColor: "#1a73e8",
           primaryColorDark: "#1a73e8",
           options: {
-              requiredPropsFirst: true,
-              noAutoAuth: true,
-              hideDownloadButton: true,
-              disableSearch: true,
-            },
+            requiredPropsFirst: true,
+            noAutoAuth: true,
+            hideDownloadButton: true,
+          },
         },
       },
     ],
@@ -127,7 +125,7 @@ const config = {
 
   // Docs: https://docusaurus.io/docs/api/themes/configuration
   themeConfig: {
-    image: "img/jan-social-card.png",
+    image: "img/og-image.png",
     // Only for react live
     liveCodeBlock: {
       playgroundPosition: "bottom",
@@ -135,48 +133,78 @@ const config = {
     docs: {
       sidebar: {
         hideable: true,
-        autoCollapseCategories: true,
+        autoCollapseCategories: false,
       },
     },
-    // SEO Docusarus 
+    // SEO Docusarus
     metadata: [
-      { name: 'description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
-      { name: 'keywords', content: 'Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee' },
-      { name: 'robots', content: 'index, follow' },
-      { property: 'og:title', content: 'Run your own AI | Jan' },
-      { property: 'og:description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
-      { property: 'og:image', content: 'https://jan.ai/img/jan-social-card.png' },
-      { property: 'og:type', content: 'website' },
-      { property: 'twitter:card', content: 'summary_large_image' },
-      { property: 'twitter:site', content: '@janhq_' }, 
-      { property: 'twitter:title', content: 'Run your own AI | Jan' },
-      { property: 'twitter:description', content: 'Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.' },
-      { property: 'twitter:image', content: 'https://jan.ai/img/jan-social-card.png' },
+      {
+        name: "description",
+        content:
+          "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
+      },
+      {
+        name: "keywords",
+        content:
+          "Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
+      },
+      { name: "robots", content: "index, follow" },
+      {
+        property: "og:title",
+        content: "Jan | Open-source ChatGPT Alternative",
+      },
+      {
+        property: "og:description",
+        content:
+          "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
+      },
+      {
+        property: "og:image",
+        content: "https://jan.ai/img/og-image.png",
+      },
+      { property: "og:type", content: "website" },
+      { property: "twitter:card", content: "summary_large_image" },
+      { property: "twitter:site", content: "@janhq_" },
+      {
+        property: "twitter:title",
+        content: "Jan | Open-source ChatGPT Alternative",
+      },
+      {
+        property: "twitter:description",
+        content:
+          "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
+      },
+      {
+        property: "twitter:image",
+        content: "https://jan.ai/img/og-image.png",
+      },
     ],
     headTags: [
       // Declare a <link> preconnect tag
       {
-        tagName: 'link',
+        tagName: "link",
         attributes: {
-          rel: 'preconnect',
-          href: 'https://jan.ai/',
+          rel: "preconnect",
+          href: "https://jan.ai/",
         },
       },
       // Declare some json-ld structured data
       {
-        tagName: 'script',
+        tagName: "script",
         attributes: {
-          type: 'application/ld+json',
+          type: "application/ld+json",
         },
         innerHTML: JSON.stringify({
-          '@context': 'https://schema.org/',
-          '@type': 'localAI',
-          name: 'Jan',
-          description: "Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.",
-          keywords: "Jan, ChatGPT alternative, on-premises AI, local API server, local AI, llm, conversational AI, no-subscription fee",
+          "@context": "https://schema.org/",
+          "@type": "localAI",
+          name: "Jan",
+          description:
+            "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
+          keywords:
+            "Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
           applicationCategory: "BusinessApplication",
           operatingSystem: "Multiple",
-          url: 'https://jan.ai/',
+          url: "https://jan.ai/",
         }),
       },
     ],
@@ -234,10 +262,10 @@ const config = {
     prism: {
       theme: darkCodeTheme,
       darkTheme: darkCodeTheme,
-      additionalLanguages: ["python"],
+      additionalLanguages: ["python", "powershell", "bash"],
     },
     colorMode: {
-      defaultMode: "dark",
+      defaultMode: "light",
       disableSwitch: false,
       respectPrefersColorScheme: false,
     },

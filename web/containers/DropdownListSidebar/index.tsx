@@ -19,13 +19,14 @@ import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGigabytes } from '@/utils/converter'
 
-import { activeThreadAtom } from '@/helpers/atoms/Conversation.atom'
+import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
 
@@ -36,32 +37,47 @@ export default function DropdownListSidebar() {
   const [selected, setSelected] = useState<Model | undefined>()
   const { setMainViewState } = useMainViewState()
 
+  const { activeModel, stateModel } = useActiveModel()
+
   useEffect(() => {
     getDownloadedModels().then((downloadedModels) => {
       setDownloadedModels(downloadedModels)
       if (downloadedModels.length > 0) {
         setSelected(
           downloadedModels.filter(
-            (x) => x.id === activeThread?.assistants[0].model.id
+            (x) =>
+              x.id === activeThread?.assistants[0].model.id ||
+              x.id === activeModel?.id
           )[0] || downloadedModels[0]
         )
         setSelectedModel(
           downloadedModels.filter(
-            (x) => x.id === activeThread?.assistants[0].model.id
+            (x) =>
+              x.id === activeThread?.assistants[0].model.id ||
+              x.id === activeModel?.id
           )[0] || downloadedModels[0]
         )
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeThread])
+  }, [activeThread, activeModel, stateModel.loading])
+
+  const threadStates = useAtomValue(threadStatesAtom)
+  if (!activeThread) {
+    return null
+  }
+  const finishInit = threadStates[activeThread.id].isFinishInit ?? true
+
+  const onValueSelected = (value: string) => {
+    setSelected(downloadedModels.filter((x) => x.id === value)[0])
+    setSelectedModel(downloadedModels.filter((x) => x.id === value)[0])
+  }
 
   return (
     <Select
+      disabled={finishInit}
       value={selected?.id}
-      onValueChange={(value) => {
-        setSelected(downloadedModels.filter((x) => x.id === value)[0])
-        setSelectedModel(downloadedModels.filter((x) => x.id === value)[0])
-      }}
+      onValueChange={finishInit ? undefined : onValueSelected}
     >
       <SelectTrigger className="w-full">
         <SelectValue placeholder="Choose model to start">
@@ -80,22 +96,20 @@ export default function DropdownListSidebar() {
           </div>
         ) : (
           <SelectGroup>
-            {downloadedModels.map((x, i) => {
-              return (
-                <SelectItem
-                  key={i}
-                  value={x.id}
-                  className={twMerge(x.id === selected?.id && 'bg-secondary')}
-                >
-                  <div className="flex w-full justify-between">
-                    <span className="line-clamp-1 block">{x.name}</span>
-                    <span className="font-bold text-muted-foreground">
-                      {toGigabytes(x.metadata.size)}
-                    </span>
-                  </div>
-                </SelectItem>
-              )
-            })}
+            {downloadedModels.map((x, i) => (
+              <SelectItem
+                key={i}
+                value={x.id}
+                className={twMerge(x.id === selected?.id && 'bg-secondary')}
+              >
+                <div className="flex w-full justify-between">
+                  <span className="line-clamp-1 block">{x.name}</span>
+                  <span className="font-bold text-muted-foreground">
+                    {toGigabytes(x.metadata.size)}
+                  </span>
+                </div>
+              </SelectItem>
+            ))}
           </SelectGroup>
         )}
         <div className="border-b border-border" />

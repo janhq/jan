@@ -7,12 +7,11 @@
  * @returns   Promise<any>
  *
  */
-const executeOnMain: (
-  extension: string,
-  method: string,
-  ...args: any[]
-) => Promise<any> = (extension, method, ...args) =>
-  window.core?.api?.invokeExtensionFunc(extension, method, ...args);
+const executeOnMain: (extension: string, method: string, ...args: any[]) => Promise<any> = (
+  extension,
+  method,
+  ...args
+) => global.core?.api?.invokeExtensionFunc(extension, method, ...args)
 
 /**
  * Downloads a file from a URL and saves it to the local file system.
@@ -20,10 +19,8 @@ const executeOnMain: (
  * @param {string} fileName - The name to use for the downloaded file.
  * @returns {Promise<any>} A promise that resolves when the file is downloaded.
  */
-const downloadFile: (url: string, fileName: string) => Promise<any> = (
-  url,
-  fileName
-) => window.core?.api?.downloadFile(url, fileName);
+const downloadFile: (url: string, fileName: string) => Promise<any> = (url, fileName) =>
+  global.core?.api?.downloadFile(url, fileName)
 
 /**
  * Aborts the download of a specific file.
@@ -31,20 +28,13 @@ const downloadFile: (url: string, fileName: string) => Promise<any> = (
  * @returns {Promise<any>} A promise that resolves when the download has been aborted.
  */
 const abortDownload: (fileName: string) => Promise<any> = (fileName) =>
-  window.core.api?.abortDownload(fileName);
-
-/**
- * Retrieves the path to the app data directory using the `coreAPI` object.
- * If the `coreAPI` object is not available, the function returns `undefined`.
- * @returns A Promise that resolves with the path to the app data directory, or `undefined` if the `coreAPI` object is not available.
- */
-const appDataPath: () => Promise<any> = () => window.core.api?.appDataPath();
+  global.core.api?.abortDownload(fileName)
 
 /**
  * Gets the user space path.
  * @returns {Promise<any>} A Promise that resolves with the user space path.
  */
-const getUserSpace = (): Promise<string> => window.core.api?.getUserSpace();
+const getUserSpace = (): Promise<string> => global.core.api?.getUserSpace()
 
 /**
  * Opens the file explorer at a specific path.
@@ -52,10 +42,9 @@ const getUserSpace = (): Promise<string> => window.core.api?.getUserSpace();
  * @returns {Promise<any>} A promise that resolves when the file explorer is opened.
  */
 const openFileExplorer: (path: string) => Promise<any> = (path) =>
-  window.core.api?.openFileExplorer(path);
+  global.core.api?.openFileExplorer(path)
 
-const getResourcePath: () => Promise<string> = () =>
-  window.core.api?.getResourcePath();
+const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
 
 /**
  * Register extension point function type definition
@@ -64,8 +53,8 @@ export type RegisterExtensionPoint = (
   extensionName: string,
   extensionId: string,
   method: Function,
-  priority?: number
-) => void;
+  priority?: number,
+) => void
 
 /**
  * Functions exports
@@ -74,8 +63,7 @@ export {
   executeOnMain,
   downloadFile,
   abortDownload,
-  appDataPath,
   getUserSpace,
   openFileExplorer,
   getResourcePath,
-};
+}

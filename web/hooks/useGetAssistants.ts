@@ -4,7 +4,7 @@ import { Assistant, ExtensionType, AssistantExtension } from '@janhq/core'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 
-const getAssistants = async (): Promise<Assistant[]> => {
+export const getAssistants = async (): Promise<Assistant[]> => {
   return (
     extensionManager
       .get<AssistantExtension>(ExtensionType.Assistant)
