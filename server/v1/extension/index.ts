@@ -5,7 +5,10 @@ import {
 } from "fastify";
 import { join, extname } from "path";
 import { ExtensionRoute } from "@janhq/core";
-
+const {
+  userSpacePath,
+  ModuleManager,
+} = require("@janhq/core/dist/node/index.cjs");
 import { readdirSync } from "fs";
 
 const node = require("@janhq/core/dist/node/index.cjs");
@@ -33,6 +36,24 @@ const router: FastifyPluginAsync = async (
     const extensions = req.body as any;
     const installed = await node.installExtensions(JSON.parse(extensions)[0]);
     return JSON.parse(JSON.stringify(installed));
+  });
+
+  app.post(`/${ExtensionRoute.invokeExtensionFunc}`, async (req, res) => {
+    const args = JSON.parse(req.body as any);
+    console.debug(args);
+    const module = require(join(userSpacePath, "extensions", args[0]));
+
+    ModuleManager.instance.setModule(args[0], module);
+    const method = args[1];
+    if (typeof module[method] === "function") {
+      // remove first item from args
+      const newArgs = args.slice(2); 
+      console.log(newArgs)
+      return module[method](...args.slice(2));
+    } else {
+      console.debug(module[method]);
+      console.error(`Function "${method}" does not exist in the module.`);
+    }
   });
 };
 export default router;

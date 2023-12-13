@@ -1,5 +1,5 @@
 import { app, ipcMain, shell, nativeTheme } from 'electron'
-import { ModuleManager } from './../managers/module'
+import { ModuleManager } from '@janhq/core/src/node/module'
 import { join } from 'path'
 import { WindowManager } from './../managers/window'
 import { userSpacePath } from './../utils/path'

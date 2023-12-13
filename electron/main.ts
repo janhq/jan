@@ -7,7 +7,7 @@ import { createUserSpace } from './utils/path'
  * Managers
  **/
 import { WindowManager } from './managers/window'
-import { ModuleManager } from './managers/module'
+import { ModuleManager } from '@janhq/core/src/node/module'
 
 /**
  * IPC Handlers
