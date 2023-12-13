@@ -1,7 +1,7 @@
 import { ipcMain, webContents } from 'electron'
 import { readdirSync } from 'fs'
-import { ModuleManager } from '@janhq/core/src/node/module'
 import { join, extname } from 'path'
+const { ModuleManager } = require('@janhq/core/dist/node/index.cjs')
 
 const {
   installExtensions,
