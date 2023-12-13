@@ -6,6 +6,8 @@ import { Toaster } from 'react-hot-toast'
 
 import { TooltipProvider } from '@janhq/uikit'
 
+import { PostHogProvider } from 'posthog-js/react'
+
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 import ThemeWrapper from '@/containers/Providers/Theme'
@@ -17,6 +19,8 @@ import {
   isCoreExtensionInstalled,
   setupBaseExtensions,
 } from '@/services/extensionService'
+
+import { instance } from '@/utils/posthog'
 
 import { extensionManager } from '@/extension'
 
@@ -63,18 +67,20 @@ const Providers = (props: PropsWithChildren) => {
   }, [setupCore])
 
   return (
-    <JotaiWrapper>
-      <ThemeWrapper>
-        {setupCore && activated && (
-          <FeatureToggleWrapper>
-            <EventListenerWrapper>
-              <TooltipProvider>{children}</TooltipProvider>
-            </EventListenerWrapper>
-            <Toaster position="top-right" />
-          </FeatureToggleWrapper>
-        )}
-      </ThemeWrapper>
-    </JotaiWrapper>
+    <PostHogProvider client={instance}>
+      <JotaiWrapper>
+        <ThemeWrapper>
+          {setupCore && activated && (
+            <FeatureToggleWrapper>
+              <EventListenerWrapper>
+                <TooltipProvider>{children}</TooltipProvider>
+              </EventListenerWrapper>
+              <Toaster position="top-right" />
+            </FeatureToggleWrapper>
+          )}
+        </ThemeWrapper>
+      </JotaiWrapper>
+    </PostHogProvider>
   )
 }
 
