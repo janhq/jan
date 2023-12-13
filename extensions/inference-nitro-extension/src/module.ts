@@ -188,18 +188,15 @@ async function validateModelStatus(): Promise<ModelOperationResponse> {
  * @returns A Promise that resolves when the subprocess is terminated successfully, or rejects with an error message if the subprocess fails to terminate.
  */
 function killSubprocess(): Promise<void> {
-  if (subprocess) {
-    return fetch(NITRO_HTTP_KILL_URL, {
-      method: "DELETE",
-    }).catch((err) => {
-      console.error(err);
-      subprocess.kill();
-      subprocess = null;
-      return kill(PORT, "tcp").then(console.log).catch(console.log);
-});
-  } else {
-    return kill(PORT, "tcp").then(console.log).catch(console.log);
-  }
+  fetch(NITRO_HTTP_KILL_URL, {
+    method: "DELETE",
+  }).catch((err) => {
+    console.error(err);
+    subprocess?.kill();
+    kill(PORT, "tcp").then(console.log).catch(console.log);
+    subprocess = null;
+  });
+  return
 }
 
 /**
