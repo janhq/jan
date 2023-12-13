@@ -4,36 +4,25 @@ description: Jan QuickStart Guide - A Gateway to Self-Hosted AI
 keywords: [Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ]
 ---
 # Quickstart Guide: A Gateway to Self-Hosted AI
-Join us on an adventure to explore the world of Jan, your new self-hosted AI companion!
+Start your journey using Jan with this set of quickstart instructions.
 
-## Getting Started with Jan
-*Follow these simple steps to get started with Jan and make the most of your AI companion. Let's embark on a whimsical journey to get Jan up and running!*
-
-- **Step 1: Install Jan**: 
-  *Our adventure begins! Follow the [mystical map](/install/overview) to bring Jan on your device.*
-
-- **Step 2: Open the App**: 
-  *Behold the magical portal (chat window)! This is where you'll converse with Jan.*
+- Step 1: Launch Jan's application to access the chat interface.
 
   ![StartAppUI](/img/docs/StartAppUI.webp)
 
-- **Step 3: Model Selection**: 
-  *Without a model, Jan is like a wizard without a wand. Journey to the enchanted library (Model) to choose your magical artifact.*
+- Step 2: Choose an AI model suited to your needs from the Model section.
   
   ![ExploreUI](/img/docs/ExploreHubUI.webp)
 
-- **Step 4: Explore the Hub**: 
-  *In the hub, you'll find various scrolls (models) sorted into sections - All Models, Recommended, Downloaded. Each scroll reveals its secrets (model details) to help you decide.*
+- Step 3: The Hub displays model information such as description, author, model ID, model size, tags, and format. Users should select models based on their preferences. Models are categorized into 'All Models', 'Downloaded', and 'Recommended'.
   
   ![HubUI](/img/docs/HubUI.webp)
 
-- **Step 5: Download and Start**: 
-  *Select your scroll (model), let the magic (download) happen, and begin your dialogues with Jan!*
+- Step 4: Download and start using the model.
 
  ![DownloadUI](/img/docs/DownloadUI.webp)
 
-- **Step 6: Start Your First Message with Jan**: 
-  *Now, with the model downloaded, it's time to cast your first spell (send your first message)! Watch as Jan comes to life, ready to chat and assist.*
+- Step 5: Start Your First Message with Jan
 
   ![FirstMessageUI](/img/docs/FirstMessageUI.webp)
 
