@@ -195,7 +195,10 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     requestInference(
       data?.messages ?? [],
       this._engineSettings,
-      JanInferenceOpenAIExtension._currentModel,
+      {
+        ...JanInferenceOpenAIExtension._currentModel,
+        parameters: data.model.parameters,
+      },
       instance.controller
     ).subscribe({
       next: (content) => {
