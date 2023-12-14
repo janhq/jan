@@ -15,22 +15,11 @@ const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
   const { mainViewState } = useMainViewState()
 
-  const { theme } = useTheme()
+  const { theme, setTheme } = useTheme()
 
-  // Force set theme native
   useEffect(() => {
-    async function setTheme() {
-      switch (theme) {
-        case 'light':
-          return await window?.electronAPI.setNativeThemeLight()
-        case 'dark':
-          return await window?.electronAPI.setNativeThemeDark()
-        default:
-          return await window?.electronAPI.setNativeThemeSystem()
-      }
-    }
-    setTheme()
-  }, [theme])
+    setTheme(theme as string)
+  }, [setTheme, theme])
 
   return (
     <div className="flex h-screen w-screen flex-1 overflow-hidden">
