@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { Model } from '@janhq/core'
+import { InferenceEngine, Model } from '@janhq/core'
 import {
   Button,
   Select,
@@ -41,7 +41,14 @@ export default function DropdownListSidebar() {
 
   useEffect(() => {
     getDownloadedModels().then((downloadedModels) => {
-      setDownloadedModels(downloadedModels)
+      setDownloadedModels(
+        downloadedModels.sort((a, b) =>
+          a.engine !== InferenceEngine.nitro &&
+          b.engine === InferenceEngine.nitro
+            ? 1
+            : -1
+        )
+      )
       if (downloadedModels.length > 0) {
         setSelected(
           downloadedModels.filter(
