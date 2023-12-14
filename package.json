@@ -27,6 +27,7 @@
     "test": "yarn workspace jan test:e2e",
     "dev:electron": "cpx \"models/**\" \"electron/models/\" && yarn workspace jan dev",
     "dev:web": "yarn workspace jan-web dev",
+    "dev:android": "yarn workspace jan-mobile cap run android",
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "test-local": "yarn lint && yarn build:test && yarn test",
     "dev:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit dev",
@@ -41,7 +42,9 @@
     "build:extensions": "run-script-os",
     "build:test": "yarn build:web && yarn workspace jan build:test",
     "build": "yarn build:web && yarn build:electron",
-    "build:publish": "cpx \"models/**\" \"electron/models/\" && yarn build:web && yarn workspace jan build:publish"
+    "build:publish": "cpx \"models/**\" \"electron/models/\" && yarn build:web && yarn workspace jan build:publish",
+    "regenerate:android": "yarn workspace jan-mobile cap add android",
+    "regenerate:ios": "yarn workspace jan-mobile cap add ios"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",

@@ -1,7 +1,7 @@
 {
-  "name": "capacitor-app",
+  "name": "jan-mobile",
   "version": "1.0.0",
-  "description": "An Amazing Capacitor App",
+  "description": "Jan mobile app, powered by Capacitor",
   "main": "index.js",
   "keywords": [
     "capacitor",
@@ -13,10 +13,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@capacitor/android": "^5.5.1",
+    "@capacitor/android": "latest",
     "@capacitor/camera": "latest",
     "@capacitor/core": "latest",
-    "@capacitor/ios": "^5.5.1",
+    "@capacitor/ios": "latest",
     "@capacitor/splash-screen": "latest"
   },
   "devDependencies": {
