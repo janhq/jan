@@ -64,6 +64,15 @@ export function handleAppIPCs() {
   })
 
   /**
+   * Opens a URL in the user's default browser.
+   * @param _event - The IPC event object.
+   * @param url - The URL to open.
+   */
+  ipcMain.handle(AppRoute.openFileExplore, async (_event, url) => {
+    shell.openPath(url)
+  })
+
+  /**
    * Relaunches the app in production - reload window in development.
    * @param _event - The IPC event object.
    * @param url - The URL to reload.
