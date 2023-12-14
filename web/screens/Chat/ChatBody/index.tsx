@@ -58,7 +58,7 @@ const ChatBody: React.FC = () => {
           {showOnboardingStep ? (
             <>
               <p className="mt-1 text-base font-medium">
-                {`You don't have a model yet.`}
+                {`You don't have a local model yet.`}
               </p>
               <div className="w-auto px-4 py-2">
                 <Button
