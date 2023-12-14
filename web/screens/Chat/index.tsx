@@ -1,9 +1,11 @@
 import { ChangeEvent, Fragment, KeyboardEvent, useEffect, useRef } from 'react'
 
+import { EventName, MessageStatus, events } from '@janhq/core'
 import { Button, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
 
+import { StopCircle } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
@@ -26,6 +28,7 @@ import ThreadList from '@/screens/Chat/ThreadList'
 
 import Sidebar, { showRightSideBarAtom } from './Sidebar'
 
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
@@ -40,6 +43,7 @@ const ChatScreen = () => {
 
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const activeThreadState = useAtomValue(activeThreadStateAtom)
@@ -92,6 +96,10 @@ const ChatScreen = () => {
         sendChatMessage()
       }
     }
+  }
+
+  const onStopInferenceClick = async () => {
+    events.emit(EventName.OnInferenceStopped, {})
   }
 
   return (
@@ -159,14 +167,26 @@ const ChatScreen = () => {
                 onPromptChange(e)
               }
             />
-            <Button
-              size="lg"
-              disabled={disabled || stateModel.loading || !activeThread}
-              themes={'primary'}
-              onClick={sendChatMessage}
-            >
-              Send
-            </Button>
+            {messages[messages.length - 1]?.status !== MessageStatus.Pending ? (
+              <Button
+                size="lg"
+                disabled={disabled || stateModel.loading || !activeThread}
+                themes="primary"
+                className="min-w-[100px]"
+                onClick={sendChatMessage}
+              >
+                Send
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                themes="danger"
+                onClick={onStopInferenceClick}
+                className="min-w-[100px]"
+              >
+                <StopCircle size={24} />
+              </Button>
+            )}
           </div>
         </div>
       </div>
