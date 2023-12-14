@@ -227,6 +227,11 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
         events.emit(EventName.OnMessageUpdate, message);
       },
       error: async (err) => {
+        if (instance.isCancelled) {
+          message.status = MessageStatus.Ready;
+          events.emit(EventName.OnMessageUpdate, message);
+          return;
+        }
         const messageContent: ThreadContent = {
           type: ContentType.Text,
           text: {
