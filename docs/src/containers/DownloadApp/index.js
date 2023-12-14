@@ -25,7 +25,6 @@ const systemsTemplate = [
     name: "Linux",
     logo: FaLinux,
     fileFormat: "{appname}-linux-amd64-{tag}.deb",
-    comingSoon: true,
   },
 ];
 
