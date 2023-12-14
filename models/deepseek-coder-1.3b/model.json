@@ -9,9 +9,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,
-      "system_prompt": "",
-      "user_prompt": "### Instruction:\n",
-      "ai_prompt": "### Response:\n"
+      "prompt_template": "### Instruction:\n{prompt}\n### Response:"
     },
     "parameters": {
       "max_tokens": 2048

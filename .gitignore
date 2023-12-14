@@ -18,6 +18,8 @@ core/lib/**
 
 # Nitro binary files
 extensions/inference-nitro-extension/bin/*/nitro
+extensions/inference-nitro-extension/bin/*/*.metal
 extensions/inference-nitro-extension/bin/*/*.exe
 extensions/inference-nitro-extension/bin/*/*.dll
-extensions/inference-nitro-extension/bin/*/*.metal
+extensions/inference-nitro-extension/bin/*/*.exp
+extensions/inference-nitro-extension/bin/*/*.lib
