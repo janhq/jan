@@ -3,9 +3,6 @@
  * @description Enum of all the routes exposed by the app
  */
 export enum AppRoute {
-  setNativeThemeLight = 'setNativeThemeLight',
-  setNativeThemeDark = 'setNativeThemeDark',
-  setNativeThemeSystem = 'setNativeThemeSystem',
   appDataPath = 'appDataPath',
   appVersion = 'appVersion',
   getResourcePath = 'getResourcePath',

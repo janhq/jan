@@ -9,30 +9,6 @@ import { getResourcePath } from './../utils/path'
 
 export function handleAppIPCs() {
   /**
-   * Handles the "setNativeThemeLight" IPC message by setting the native theme source to "light".
-   * This will change the appearance of the app to the light theme.
-   */
-  ipcMain.handle(AppRoute.setNativeThemeLight, () => {
-    nativeTheme.themeSource = 'light'
-  })
-
-  /**
-   * Handles the "setNativeThemeDark" IPC message by setting the native theme source to "dark".
-   * This will change the appearance of the app to the dark theme.
-   */
-  ipcMain.handle(AppRoute.setNativeThemeDark, () => {
-    nativeTheme.themeSource = 'dark'
-  })
-
-  /**
-   * Handles the "setNativeThemeSystem" IPC message by setting the native theme source to "system".
-   * This will change the appearance of the app to match the system's current theme.
-   */
-  ipcMain.handle(AppRoute.setNativeThemeSystem, () => {
-    nativeTheme.themeSource = 'system'
-  })
-
-  /**
    * Returns the version of the app.
    * @param _event - The IPC event object.
    * @returns The version of the app.
@@ -61,6 +37,15 @@ export function handleAppIPCs() {
    */
   ipcMain.handle(AppRoute.openExternalUrl, async (_event, url) => {
     shell.openExternal(url)
+  })
+
+  /**
+   * Opens a URL in the user's default browser.
+   * @param _event - The IPC event object.
+   * @param url - The URL to open.
+   */
+  ipcMain.handle(AppRoute.openFileExplore, async (_event, url) => {
+    shell.openPath(url)
   })
 
   /**

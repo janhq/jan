@@ -2,6 +2,9 @@ import posthog, { Properties } from 'posthog-js'
 
 posthog.init(ANALYTICS_ID, {
   api_host: ANALYTICS_HOST,
+  autocapture: {
+    url_allowlist: ['*'],
+  },
 })
 
 export const instance = posthog
@@ -11,5 +14,4 @@ export const trackEvent = (name: string, properties?: Properties) => {
   posthog.capture(name, properties)
 }
 
-export enum AnalyticsEvent {
-}
+export enum AnalyticsEvent {}
