@@ -45,20 +45,17 @@ export default function DropdownListSidebar() {
       if (downloadedModels.length > 0) {
         setSelected(
           downloadedModels.filter(
-            (x) =>
-              x.id === activeThread?.assistants[0].model.id ||
-              x.id === activeModel?.id
+            (x) => x.id === activeThread?.assistants[0].model.id
           )[0] || downloadedModels[0]
         )
         setSelectedModel(
           downloadedModels.filter(
-            (x) =>
-              x.id === activeThread?.assistants[0].model.id ||
-              x.id === activeModel?.id
+            (x) => x.id === activeThread?.assistants[0].model.id
           )[0] || downloadedModels[0]
         )
       }
     })
+    console.log(selected)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThread, activeModel, stateModel.loading])
 
