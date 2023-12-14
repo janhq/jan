@@ -55,7 +55,6 @@ export default function DropdownListSidebar() {
         )
       }
     })
-    console.log(selected)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThread, activeModel, stateModel.loading])
 
