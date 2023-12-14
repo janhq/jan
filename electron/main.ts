@@ -31,6 +31,7 @@ import {
   retrieveBuilder,
   retrieveMesasge,
   updateThread,
+  chatCompletions,
 } from './api/models'
 import { JanApiRouteConfiguration } from './api'
 
@@ -91,6 +92,11 @@ fastify.patch(`/${version}/threads/:threadId`, async (request: any) =>
 
 fastify.get(`/${version}/models/download/:modelId`, async (request: any) =>
   downloadModel(request.params.modelId)
+)
+
+// Endpoints
+fastify.post(`/${version}/chat/completions`, async (request: any, reply: any) =>
+  chatCompletions(request, reply)
 )
 
 app

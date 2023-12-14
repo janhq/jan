@@ -3,6 +3,8 @@ import { rimraf } from 'rimraf'
 import { JanApiRouteConfiguration, RouteConfiguration } from '../index'
 import { join } from 'path'
 import { ThreadMessage } from '@janhq/core/dist/types/types'
+
+import fetch from 'node-fetch'
 import { ulid } from 'ulid'
 const progress = require('request-progress')
 import request from 'request'
@@ -284,5 +286,50 @@ export const downloadModel = async (modelId: string) => {
 
   return {
     message: `Starting download ${modelId}`,
+  }
+}
+
+export const chatCompletions = async (request: any, reply: any) => {
+  // By default it's Local Nitro server
+  let apiUrl: string =
+    'http://127.0.0.1:3928/inferences/llamacpp/chat_completion'
+  const modelId = request.body.model
+  const oaiModelId = [
+    'gpt-4',
+    'gpt-3.5-turbo-1106',
+    'gpt-3.5-turbo-16k-0613',
+    'gpt-4-0314',
+    'gpt-3.5-turbo',
+    'gpt-4-0613',
+    'gpt-3.5-turbo-0301',
+  ]
+  if (oaiModelId.includes(modelId)) {
+    apiUrl = 'https://api.openai.com/v1/chat/completions'
+    // don't know how to handle engine here, maybe send engine with body?
+  }
+  // Else if modelList.includes(modelId) {}
+  // With Nitro, add FIFO queue to handle multiple requests at once while loading/ unloading properly
+  const apiKey = process.env.OPENAI_KEY || 'YOUR_OPENAI_API_KEY' // Replace with your API key
+  console.log(`chatCompletions: modelId=${modelId} with apiUrl=${apiUrl}`)
+  reply.raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  })
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'api-key': '${apiKey}',
+    },
+    body: JSON.stringify(request.body),
+  })
+  if (response.status !== 200) {
+    console.error(response)
+    return
+  } else {
+    response.body.pipe(reply.raw)
   }
 }

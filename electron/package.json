@@ -79,6 +79,7 @@
     "electron-updater": "^6.1.7",
     "fastify": "^4.25.0",
     "fs-extra": "^11.2.0",
+    "node-fetch": "2",
     "pacote": "^17.0.4",
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
