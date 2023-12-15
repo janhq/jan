@@ -93,4 +93,4 @@ Restart the Jan application and look for your model in the Hub.
 
 There you go! You are ready to use your model.
 
-If you have any questions or want to request for more preconfigured GGUF models, please message us on [Jan Discord](https://discord.gg/Dt7MxDyNNZ).
+If you have any questions or want to request for more preconfigured GGUF models, please message us in [Discord](https://discord.gg/Dt7MxDyNNZ).
