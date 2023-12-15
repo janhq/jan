@@ -14,7 +14,7 @@ export type ModelInfo = {
  * @stored
  */
 
-enum InferenceEngine {
+export enum InferenceEngine {
   nitro = 'nitro',
   openai = 'openai',
   triton_trtllm = 'triton_trtllm',
