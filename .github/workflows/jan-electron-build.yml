@@ -87,6 +87,8 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_PATH: "."
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+          ANALYTICS_ID: ${{ secrets.POSTHOG_PROJECT_API_KEY }}
+          ANALYTICS_HOST: ${{ secrets.POSTHOG_APP_URL }}
 
   build-windows-x64:
     runs-on: windows-latest
@@ -125,6 +127,9 @@ jobs:
         shell: cmd
         run: |
           make build
+        env:
+          ANALYTICS_ID: ${{ secrets.POSTHOG_PROJECT_API_KEY }}
+          ANALYTICS_HOST: ${{ secrets.POSTHOG_APP_URL }}
 
       - name: Windows Code Sign with AzureSignTool
         run: |
@@ -202,6 +207,8 @@ jobs:
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANALYTICS_ID: ${{ secrets.POSTHOG_PROJECT_API_KEY }}
+          ANALYTICS_HOST: ${{ secrets.POSTHOG_APP_URL }}
 
   update_release_draft:
     needs: [build-macos, build-windows-x64, build-linux-x64, create-draft-release]
