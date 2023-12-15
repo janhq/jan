@@ -7,11 +7,11 @@
     "description": "Starling-RM-7B-alpha is a language model finetuned with Reinforcement Learning from AI Feedback from Openchat 3.5. It stands out for its impressive performance using GPT-4 as a judge, making it one of the top-performing models in its category.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 2048,
+      "ctx_len": 4096,
       "prompt_template": "GPT4 User: {prompt}<|end_of_turn|>GPT4 Assistant:"
     },
     "parameters": {
-      "max_tokens": 2048
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "Berkeley-nest, The Bloke",

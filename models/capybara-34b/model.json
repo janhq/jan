@@ -7,11 +7,11 @@
     "description": "Nous Capybara 34B, a variant of the Yi-34B model, is the first Nous model with a 200K context length, trained for three epochs on the innovative Capybara dataset.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 2048,
+      "ctx_len": 4096,
       "prompt_template": "USER:\n{prompt}\nASSISTANT:"
     },
     "parameters": {
-      "max_tokens": 2048
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "NousResearch, The Bloke",

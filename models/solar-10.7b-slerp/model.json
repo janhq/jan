@@ -7,11 +7,11 @@
     "description": "This model uses the Slerp merge method from SOLAR Instruct and Pandora-v1",
     "format": "gguf",
     "settings": {
-      "ctx_len": 2048,
+      "ctx_len": 4096,
       "prompt_template": "### User: {prompt}\n### Assistant:"
     },
     "parameters": {
-      "max_tokens": 2048
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "Jan",

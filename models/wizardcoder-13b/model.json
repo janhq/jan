@@ -7,11 +7,11 @@
     "description": "WizardCoder-Python-13B is a Python coding model major models like ChatGPT-3.5. This model based on the Llama2 architecture, demonstrate high proficiency in specific domains like coding and mathematics.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 2048,
+      "ctx_len": 4096,
       "prompt_template": "### Instruction:\n{prompt}\n### Response:"
     },
     "parameters": {
-      "max_tokens": 2048
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "WizardLM, The Bloke",
