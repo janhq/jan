@@ -29,11 +29,9 @@ const nextConfig = {
         ),
         VERSION: JSON.stringify(packageJson.version),
         ANALYTICS_ID:
-          process.env.ANALYTICS_ID ??
-          JSON.stringify('phc_cJ95zWbMwdef6nVasPCoSNOvV8lUcL5IykIYOoyGXVm'),
+          JSON.stringify(process.env.ANALYTICS_ID) ?? JSON.stringify('xxx'),
         ANALYTICS_HOST:
-          process.env.ANALYTICS_HOST ??
-          JSON.stringify('https://app.posthog.com'),
+          JSON.stringify(process.env.ANALYTICS_HOST) ?? JSON.stringify('xxx'),
       }),
     ]
     return config
