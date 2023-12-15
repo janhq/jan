@@ -85,6 +85,11 @@ export type Model = {
    * The model engine.
    */
   engine: InferenceEngine
+
+  /**
+   * Is multimodal or not.
+   */
+  visionModel?: boolean
 }
 
 export type ModelMetadata = {

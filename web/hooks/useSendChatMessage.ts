@@ -13,17 +13,22 @@ import {
   events,
   Model,
   ConversationalExtension,
+  ChatCompletionMessageContentType,
 } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { ulid } from 'ulid'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
-import { currentPromptAtom } from '@/containers/Providers/Jotai'
+import {
+  currentFileAtom,
+  currentPromptAtom,
+} from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
+import { getBase64 } from '@/utils/base64'
 
 import { useActiveModel } from './useActiveModel'
 
@@ -64,6 +69,7 @@ export default function useSendChatMessage() {
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
 
   const [reloadModel, setReloadModel] = useState(false)
+  const getUploadedImage = useAtomValue(currentFileAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -190,6 +196,8 @@ export default function useSendChatMessage() {
     const prompt = currentPrompt.trim()
     setCurrentPrompt('')
 
+    const base64Image = await getBase64(getUploadedImage)
+
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
     ]
@@ -210,10 +218,24 @@ export default function useSendChatMessage() {
           .concat([
             {
               role: ChatCompletionRole.User,
-              content: prompt,
+              content: selectedModel
+                ? [
+                    {
+                      type: ChatCompletionMessageContentType.Text,
+                      text: prompt,
+                    },
+                    {
+                      type: ChatCompletionMessageContentType.Image,
+                      image_url: {
+                        url: base64Image,
+                      },
+                    },
+                  ]
+                : prompt,
             } as ChatCompletionMessage,
           ])
       )
+
     const msgId = ulid()
 
     const modelRequest = selectedModel ?? activeThread.assistants[0].model
