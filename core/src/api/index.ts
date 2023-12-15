@@ -42,6 +42,7 @@ export enum ExtensionRoute {
 export enum FileSystemRoute {
   appendFile = 'appendFile',
   copyFile = 'copyFile',
+  syncFile = 'syncFile',
   deleteFile = 'deleteFile',
   exists = 'exists',
   getResourcePath = 'getResourcePath',
