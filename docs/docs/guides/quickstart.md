@@ -16,7 +16,7 @@ keywords:
 
 Jan is compatible with all GGUF models.
 
-In this guide we will use our latest model, [Pandora](https://huggingface.co/janhq/pandora-v1-10.7b-GGUF), as an example.
+In this guide we will use our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
 
 ## 1. Create a model folder
 
@@ -51,12 +51,12 @@ The following is an example template for `model.json`
 
 ```
 {
-    "source_url": "https://huggingface.co/janhq/pandora-v1-10.7b-GGUF/blob/main/pandora-v1-10.7b.Q4_K_M.gguf",
-    "id": "pandora-v1-10-7b-gguf",
+    "source_url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf",
+    "id": "trinity-v1-7b",
     "object": "model",
-    "name": "PandoraQ4",
+    "name": "Trinity 7B Q4",
     "version": "1.0",
-    "description": "A helpful assistant",
+    "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,
@@ -67,10 +67,11 @@ The following is an example template for `model.json`
     },
     "metadata": {
       "author": "Jan",
-      "tags": ["7B", "Finetuned"]
+      "tags": ["7B", "Merged", "Featured"],
+      "size": 4370000000
     },
     "engine": "nitro"
-  }
+  }  
 ```
 
 :::caution
