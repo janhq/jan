@@ -207,12 +207,8 @@ export default class JanModelExtension implements ModelExtension {
 
       const allDirectories: string[] = []
       for (const file of files) {
-        const isDirectory = await fs.isDirectory(
-          await joinPath([JanModelExtension._homeDir, file])
-        )
-        if (isDirectory) {
-          allDirectories.push(file)
-        }
+        if (file === '.DS_Store') continue
+        allDirectories.push(file)
       }
 
       const readJsonPromises = allDirectories.map(async (dirName) => {
