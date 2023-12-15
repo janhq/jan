@@ -41,7 +41,10 @@ export default class JanModelExtension implements ModelExtension {
 
   private async copyModelsToHomeDir() {
     try {
-      if (localStorage.getItem(`${EXTENSION_NAME}-version`) === VERSION) {
+      if (
+        localStorage.getItem(`${EXTENSION_NAME}-version`) === VERSION &&
+        (await fs.exists(JanModelExtension._homeDir))
+      ) {
         console.debug('Model already migrated')
         return
       }
@@ -63,9 +66,7 @@ export default class JanModelExtension implements ModelExtension {
       const reconfigureModels = (await this.getConfiguredModels()).filter((e) =>
         readyModels.includes(e.id)
       )
-      console.debug(
-        'Finished updating downloaded models'
-      )
+      console.debug('Finished updating downloaded models')
 
       // update back the status
       await Promise.all(
