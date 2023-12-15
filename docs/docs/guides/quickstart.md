@@ -83,8 +83,8 @@ Ensure to choose right `prompt_template`
 
 # 3. Use your model
 
-Restart the Jan application and look for the your new custom model in the Hub.
+Restart the Jan application and look for your model in the Hub.
 
 ![image](https://hackmd.io/_uploads/HJLAqvwI6.png)
 
-There you go. If you have any questions or request GGUF version of any models, please message us on [Jan Discord](https://discord.gg/Dt7MxDyNNZ).
+There you go. If you have any questions or want to request for more preconfigured GGUF models, please message us on [Jan Discord](https://discord.gg/Dt7MxDyNNZ).
