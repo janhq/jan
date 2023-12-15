@@ -184,12 +184,18 @@ export default class JanModelExtension implements ModelExtension {
       const results = await Promise.allSettled(readJsonPromises)
       const modelData = results.map((result) => {
         if (result.status === 'fulfilled') {
-          return JSON.parse(result.value) as Model
+          try {
+            return JSON.parse(result.value) as Model
+          } catch {
+            console.log(`Unable to parse model metadata: ${result.value}`)
+            return undefined
+          }
         } else {
           console.error(result.reason)
+          return undefined
         }
       })
-      return modelData
+      return modelData.filter((e) => !!e)
     } catch (err) {
       console.error(err)
       return []
