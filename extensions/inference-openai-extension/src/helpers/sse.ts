@@ -40,6 +40,13 @@ export function requestInference(
       signal: controller?.signal,
     })
       .then(async (response) => {
+        if (!response.ok) {
+          subscriber.next(
+            (await response.json()).error?.message ?? "Error occured"
+          );
+          subscriber.complete();
+          return;
+        }
         if (model.parameters.stream) {
           const stream = response.body;
           const decoder = new TextDecoder("utf-8");
