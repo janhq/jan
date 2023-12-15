@@ -24,6 +24,8 @@ Navigate to `~/jan/models` folder on your computer.
 
 In `App Settings`, go to `Advanced`, then `Open App Directory`.
 
+Or, you can directly cd into:
+
 ```sh
 # Windows
 C:/Users/<your_user_name>/jan/models
@@ -40,19 +42,19 @@ mkdir pandora-v1-q4
 
 ## 2. Create a model JSON
 
-Jan follows a standardized model template, called a `model.json`. This allows for easy model configurations, exporting, and sharing.
+Jan follows a folder-based, [standard model template](/specs/models) called a `model.json`. This allows for easy model configurations, exporting, and sharing.
 
 ```sh
 cd pandora-v1-q4
 touch model.json
 ```
 
-The following is an example template for `model.json`
+Copy the following into the `model.json`
 
-```
+```js
 {
     "source_url": "https://huggingface.co/janhq/pandora-v1-10.7b-GGUF/blob/main/pandora-v1-10.7b.Q4_K_M.gguf",
-    "id": "pandora-v1-10-7b-gguf",
+    "id": "pandora-v1-q4",
     "object": "model",
     "name": "PandoraQ4",
     "version": "1.0",
@@ -74,17 +76,21 @@ The following is an example template for `model.json`
 ```
 
 :::caution
-Ensure the `source_url` is the link to download model
+Ensure the `source_url` property is the direct binary download link ending in `.gguf`. Find the links in Huggingface > `Files and versions` ([link](https://huggingface.co/janhq/pandora-v1-10.7b-GGUF/tree/main))
 
-Ensure the `id` is the same with the new created folder
+Ensure the `id` property is the model foldername
 
-Ensure to choose right `prompt_template`
+Ensure you are using the correct `prompt_template`
 :::
 
-# 3. Use your model
+## 3. Download your model binary
 
 Restart the Jan application and look for your model in the Hub.
 
 ![image](https://hackmd.io/_uploads/HJLAqvwI6.png)
 
-There you go. If you have any questions or want to request for more preconfigured GGUF models, please message us on [Jan Discord](https://discord.gg/Dt7MxDyNNZ).
+**Click download.**
+
+There you go! You are ready to use your model.
+
+If you have any questions or want to request for more preconfigured GGUF models, please message us on [Jan Discord](https://discord.gg/Dt7MxDyNNZ).
