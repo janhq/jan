@@ -293,6 +293,8 @@ export const chatCompletions = async (request: any, reply: any) => {
   // By default it's Local Nitro server
   let apiUrl: string =
     'http://127.0.0.1:3928/inferences/llamacpp/chat_completion'
+  // getBuilder() => modelList
+  // Read from engines.json
   const modelId = request.body.model
   const oaiModelId = [
     'gpt-4',
