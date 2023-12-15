@@ -4,7 +4,7 @@
     "object": "model",
     "name": "Trinity 7B Q4",
     "version": "1.0",
-    "description": "Trinity, our premier model, employs the Slerp merging technique. It is recommended for daily assistance purposes.",
+    "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,
