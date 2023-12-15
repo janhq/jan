@@ -2,7 +2,7 @@ const fs = require('fs')
 import { rimraf } from 'rimraf'
 import { JanApiRouteConfiguration, RouteConfiguration } from '../index'
 import { join } from 'path'
-import { ThreadMessage } from '@janhq/core/dist/types/types'
+import { Model, ThreadMessage } from '@janhq/core/dist/types/types'
 
 import fetch from 'node-fetch'
 import { ulid } from 'ulid'
@@ -25,16 +25,17 @@ export const getBuilder = async (configuration: RouteConfiguration) => {
 
     const allDirectories: string[] = []
     for (const file of files) {
-      if (!file.includes('.')) allDirectories.push(file)
+      if (file === '.DS_Store') continue
+      allDirectories.push(file)
     }
 
-    const readJsonPromises = allDirectories.map((dirName) => {
+    const readJsonPromises = allDirectories.map(async (dirName) => {
       const jsonPath = join(
         directoryPath,
         dirName,
         configuration.metadataFileName
       )
-      return readModelMetadata(jsonPath)
+      return await readModelMetadata(jsonPath)
     })
 
     const results = await Promise.allSettled(readJsonPromises)
@@ -43,8 +44,8 @@ export const getBuilder = async (configuration: RouteConfiguration) => {
         if (result.status === 'fulfilled') {
           try {
             return JSON.parse(result.value)
-          } catch {
-            return result.value
+          } catch (err) {
+            console.error(err)
           }
         } else {
           console.error(result.reason)
@@ -60,8 +61,8 @@ export const getBuilder = async (configuration: RouteConfiguration) => {
   }
 }
 
-const readModelMetadata = (path: string) => {
-  return fs.readFileSync(join(path))
+const readModelMetadata = async (path: string) => {
+  return fs.readFileSync(path, 'utf-8')
 }
 
 export const retrieveBuilder = async (
@@ -290,42 +291,56 @@ export const downloadModel = async (modelId: string) => {
 }
 
 export const chatCompletions = async (request: any, reply: any) => {
-  // By default it's Local Nitro server
-  let apiUrl: string =
-    'http://127.0.0.1:3928/inferences/llamacpp/chat_completion'
-  // getBuilder() => modelList
-  // Read from engines.json
+  const modelList = await getBuilder(JanApiRouteConfiguration.models)
   const modelId = request.body.model
-  const oaiModelId = [
-    'gpt-4',
-    'gpt-3.5-turbo-1106',
-    'gpt-3.5-turbo-16k-0613',
-    'gpt-4-0314',
-    'gpt-3.5-turbo',
-    'gpt-4-0613',
-    'gpt-3.5-turbo-0301',
-  ]
-  if (oaiModelId.includes(modelId)) {
-    apiUrl = 'https://api.openai.com/v1/chat/completions'
-    // don't know how to handle engine here, maybe send engine with body?
+
+  const matchedModels = modelList.filter((model: Model) => model.id === modelId)
+  if (matchedModels.length === 0) {
+    const error = {
+      error: {
+        message: `The model ${request.body.model} does not exist`,
+        type: 'invalid_request_error',
+        param: null,
+        code: 'model_not_found',
+      },
+    }
+    reply.code(404).send(error)
+    return
   }
-  // Else if modelList.includes(modelId) {}
-  // With Nitro, add FIFO queue to handle multiple requests at once while loading/ unloading properly
-  const apiKey = process.env.OPENAI_KEY || 'YOUR_OPENAI_API_KEY' // Replace with your API key
-  console.log(`chatCompletions: modelId=${modelId} with apiUrl=${apiUrl}`)
+
+  const requestedModel = matchedModels[0]
+  const engineConfiguration = await getEngineConfiguration(
+    requestedModel.engine
+  )
+
+  let apiKey: string | undefined = undefined
+  let apiUrl: string =
+    'http://127.0.0.1:3928/inferences/llamacpp/chat_completion' // default nitro url
+
+  if (engineConfiguration) {
+    apiKey = engineConfiguration.api_key
+    apiUrl = engineConfiguration.full_url
+  }
+
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
   })
 
+  const headers: Record<string, any> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`
+    headers['api-key'] = apiKey
+  }
+  console.log(apiUrl)
+  console.log(JSON.stringify(headers))
   const response = await fetch(apiUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'api-key': '${apiKey}',
-    },
+    headers: headers,
     body: JSON.stringify(request.body),
   })
   if (response.status !== 200) {
@@ -334,4 +349,14 @@ export const chatCompletions = async (request: any, reply: any) => {
   } else {
     response.body.pipe(reply.raw)
   }
+}
+
+const getEngineConfiguration = async (engineId: string) => {
+  if (engineId !== 'openai') {
+    return undefined
+  }
+  const directoryPath = join(path, 'engines')
+  const filePath = join(directoryPath, `${engineId}.json`)
+  const data = await fs.readFileSync(filePath, 'utf8')
+  return JSON.parse(data)
 }
