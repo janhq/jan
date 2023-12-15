@@ -16,7 +16,8 @@
     "metadata": {
       "author": "Jan",
       "tags": ["11B","Finetuned"],
-      "size": 4370000000
+      "size": 4370000000,
+      "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/pandora-10.7b-v1/cover.png"
     },
     "engine": "nitro"
   }
