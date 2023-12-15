@@ -16,7 +16,7 @@ keywords:
 
 Jan is compatible with all GGUF models.
 
-In this guide we will use our latest model, [Pandora](https://huggingface.co/janhq/pandora-v1-10.7b-GGUF), as an example.
+In this guide we will use our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
 
 ## 1. Create a model folder
 
@@ -37,7 +37,7 @@ jan/models
 In the `models` folder, create a folder with the name of the model.
 
 ```sh
-mkdir pandora-v1-q4
+mkdir trinity-v1-7b
 ```
 
 ## 2. Create a model JSON
@@ -45,7 +45,7 @@ mkdir pandora-v1-q4
 Jan follows a folder-based, [standard model template](/specs/models) called a `model.json`. This allows for easy model configurations, exporting, and sharing.
 
 ```sh
-cd pandora-v1-q4
+cd trinity-v1-7b
 touch model.json
 ```
 
@@ -53,12 +53,12 @@ Copy the following into the `model.json`
 
 ```js
 {
-    "source_url": "https://huggingface.co/janhq/pandora-v1-10.7b-GGUF/blob/main/pandora-v1-10.7b.Q4_K_M.gguf",
-    "id": "pandora-v1-q4",
+    "source_url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf",
+    "id": "trinity-v1-7b",
     "object": "model",
-    "name": "PandoraQ4",
+    "name": "Trinity 7B Q4",
     "version": "1.0",
-    "description": "A helpful assistant",
+    "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,
@@ -69,14 +69,15 @@ Copy the following into the `model.json`
     },
     "metadata": {
       "author": "Jan",
-      "tags": ["7B", "Finetuned"]
+      "tags": ["7B", "Merged", "Featured"],
+      "size": 4370000000
     },
     "engine": "nitro"
   }
 ```
 
 :::caution
-Ensure the `source_url` property is the direct binary download link ending in `.gguf`. Find the links in Huggingface > `Files and versions` ([link](https://huggingface.co/janhq/pandora-v1-10.7b-GGUF/tree/main))
+Ensure the `source_url` property is the direct binary download link ending in `.gguf`. Find the links in Huggingface > `Files and versions`.
 
 Ensure the `id` property is the model foldername
 
@@ -87,9 +88,9 @@ Ensure you are using the correct `prompt_template`
 
 Restart the Jan application and look for your model in the Hub.
 
-![image](https://hackmd.io/_uploads/HJLAqvwI6.png)
+Click the green `download` button to download your actual model binary from the URL you provided.
 
-**Click download.**
+![image](https://hackmd.io/_uploads/HJLAqvwI6.png)
 
 There you go! You are ready to use your model.
 
