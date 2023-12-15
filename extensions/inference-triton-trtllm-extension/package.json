@@ -1,7 +1,7 @@
 {
   "name": "@janhq/inference-triton-trt-llm-extension",
   "version": "1.0.0",
-  "description": "Inference Engine for NVIDIA Triton with TensorRT-LLM Extension integration on Jan extension framework",
+  "description": "This extension enables Nvidia's TensorRT-LLM as an inference engine option",
   "main": "dist/index.js",
   "module": "dist/module.js",
   "author": "Jan <service@jan.ai>",

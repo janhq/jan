@@ -1,7 +1,7 @@
 {
   "name": "@janhq/inference-nitro-extension",
   "version": "1.0.0",
-  "description": "Inference Engine for Nitro Extension, powered by @janhq/nitro, bring a high-performance Llama model inference in pure C++.",
+  "description": "This extension embeds Nitro, a lightweight (3mb) inference engine written in C++. See nitro.jan.ai",
   "main": "dist/index.js",
   "module": "dist/module.js",
   "author": "Jan <service@jan.ai>",

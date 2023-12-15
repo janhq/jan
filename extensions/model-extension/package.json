@@ -1,7 +1,7 @@
 {
   "name": "@janhq/model-extension",
   "version": "1.0.13",
-  "description": "Model Management Extension provides model exploration and seamless downloads",
+  "description": "This extension provides model downloads and controls the model lifecycle",
   "main": "dist/index.js",
   "module": "dist/module.js",
   "author": "Jan <service@jan.ai>",
