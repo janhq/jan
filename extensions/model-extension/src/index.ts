@@ -41,15 +41,6 @@ export default class JanModelExtension implements ModelExtension {
 
   private async copyModelsToHomeDir() {
     try {
-      // list all of the files under the home directory
-      const files = await fs.listFiles('')
-
-      if (files.includes(JanModelExtension._homeDir)) {
-        // ignore if the model is already downloaded
-        console.debug('Model already downloaded')
-        return
-      }
-
       // copy models folder from resources to home directory
       const resourePath = await getResourcePath()
       const srcPath = join(resourePath, 'models')

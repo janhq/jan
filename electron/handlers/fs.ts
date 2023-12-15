@@ -180,7 +180,11 @@ export function handleFsIPCs() {
     async (_event, src: string, dest: string) => {
       console.debug(`Copying file from ${src} to ${dest}`)
 
-      return fse.copySync(src, dest, { overwrite: false })
+      return fse.copySync(src, dest, {
+        overwrite: false,
+        recursive: true,
+        errorOnExist: false,
+      })
     }
   )
 
