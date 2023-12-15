@@ -41,6 +41,14 @@ export default class JanModelExtension implements ModelExtension {
 
   private async copyModelsToHomeDir() {
     try {
+      if (localStorage.getItem(`${EXTENSION_NAME}-version`) === VERSION) {
+        console.debug('Model already migrated')
+        return
+      }
+
+      // Get available models
+      const readyModels = (await this.getDownloadedModels()).map((e) => e.id)
+
       // copy models folder from resources to home directory
       const resourePath = await getResourcePath()
       const srcPath = join(resourePath, 'models')
@@ -48,7 +56,25 @@ export default class JanModelExtension implements ModelExtension {
       const userSpace = await getUserSpace()
       const destPath = join(userSpace, JanModelExtension._homeDir)
 
-      await fs.copyFile(srcPath, destPath)
+      await fs.syncFile(srcPath, destPath)
+
+      console.debug('Finished syncing models')
+
+      const reconfigureModels = (await this.getConfiguredModels()).filter((e) =>
+        readyModels.includes(e.id)
+      )
+      console.debug(
+        'Finished updating downloaded models'
+      )
+
+      // update back the status
+      await Promise.all(
+        reconfigureModels.map(async (model) => this.saveModel(model))
+      )
+
+      // Finished migration
+
+      localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION)
     } catch (err) {
       console.error(err)
     }
@@ -187,7 +213,7 @@ export default class JanModelExtension implements ModelExtension {
           try {
             return JSON.parse(result.value) as Model
           } catch {
-            console.log(`Unable to parse model metadata: ${result.value}`)
+            console.debug(`Unable to parse model metadata: ${result.value}`)
             return undefined
           }
         } else {
