@@ -1,0 +1,23 @@
+{
+    "source_url": "https://huggingface.co/janhq/Solar-10.7B-SLERP-GGUF/resolve/main/solar-10.7b-slerp.Q4_K_M.gguf",
+    "id": "solar-10.7b-slerp",
+    "object": "model",
+    "name": "Solar Slerp 10.7B Q4",
+    "version": "1.0",
+    "description": "This model uses the Slerp merge method from SOLAR Instruct and Pandora-v1",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 2048,
+      "prompt_template": "### User: {prompt}\n### Assistant:"
+    },
+    "parameters": {
+      "max_tokens": 2048
+    },
+    "metadata": {
+      "author": "Jan",
+      "tags": ["11B","Finetuned"],
+      "size": 6360000000
+    },
+    "engine": "nitro"
+  }
+  
