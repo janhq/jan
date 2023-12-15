@@ -1,13 +1,16 @@
 import { ChangeEvent, Fragment, KeyboardEvent, useEffect, useRef } from 'react'
 
+import { EventName, MessageStatus, events } from '@janhq/core'
 import { Button, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
 
+import { StopCircle } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
+import ModelStart from '@/containers/Loader/ModelStart'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { MainViewState } from '@/constants/screens'
@@ -25,6 +28,7 @@ import ThreadList from '@/screens/Chat/ThreadList'
 
 import Sidebar, { showRightSideBarAtom } from './Sidebar'
 
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
@@ -39,6 +43,7 @@ const ChatScreen = () => {
 
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const activeThreadState = useAtomValue(activeThreadStateAtom)
@@ -93,6 +98,10 @@ const ChatScreen = () => {
     }
   }
 
+  const onStopInferenceClick = async () => {
+    events.emit(EventName.OnInferenceStopped, {})
+  }
+
   return (
     <div className="flex h-full w-full">
       <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background dark:bg-background/50">
@@ -135,13 +144,8 @@ const ChatScreen = () => {
             </div>
           )}
 
-          {stateModel.loading && (
-            <div className="mb-1 mt-2 py-2 text-center">
-              <span className="rounded-lg border border-border bg-blue-200 px-4 py-2 font-semibold text-blue-600 shadow-lg">
-                Starting model {stateModel.model}
-              </span>
-            </div>
-          )}
+          <ModelStart />
+
           {queuedMessage && (
             <div className="my-2 py-2 text-center">
               <span className="rounded-lg border border-border px-4 py-2 shadow-lg">
@@ -163,14 +167,26 @@ const ChatScreen = () => {
                 onPromptChange(e)
               }
             />
-            <Button
-              size="lg"
-              disabled={disabled || stateModel.loading || !activeThread}
-              themes={'primary'}
-              onClick={sendChatMessage}
-            >
-              Send
-            </Button>
+            {messages[messages.length - 1]?.status !== MessageStatus.Pending ? (
+              <Button
+                size="lg"
+                disabled={disabled || stateModel.loading || !activeThread}
+                themes="primary"
+                className="min-w-[100px]"
+                onClick={sendChatMessage}
+              >
+                Send
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                themes="danger"
+                onClick={onStopInferenceClick}
+                className="min-w-[100px]"
+              >
+                <StopCircle size={24} />
+              </Button>
+            )}
           </div>
         </div>
       </div>

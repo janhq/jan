@@ -8,17 +8,6 @@ const themeMenus = [{ name: 'light' }, { name: 'dark' }, { name: 'system' }]
 export default function ToggleTheme() {
   const { theme: currentTheme, setTheme } = useTheme()
 
-  const handeleNativeTheme = async (val: string) => {
-    switch (val) {
-      case 'light':
-        return await window?.electronAPI.setNativeThemeLight()
-      case 'dark':
-        return await window?.electronAPI.setNativeThemeDark()
-      default:
-        return await window?.electronAPI.setNativeThemeSystem()
-    }
-  }
-
   return (
     <div className="flex items-center space-x-1">
       {themeMenus.map((theme, i) => {
@@ -32,7 +21,7 @@ export default function ToggleTheme() {
               )}
               onClick={async () => {
                 setTheme(theme.name)
-                handeleNativeTheme(theme.name)
+                // handeleNativeTheme(theme.name)
               }}
             >
               {theme.name}

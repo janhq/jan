@@ -20,13 +20,11 @@ const systemsTemplate = [
     name: "Windows",
     logo: FaWindows,
     fileFormat: "{appname}-win-x64-{tag}.exe",
-    comingSoon: true,
   },
   {
     name: "Linux",
     logo: FaLinux,
     fileFormat: "{appname}-linux-amd64-{tag}.deb",
-    comingSoon: true,
   },
 ];
 

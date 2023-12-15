@@ -195,7 +195,10 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     requestInference(
       data?.messages ?? [],
       this._engineSettings,
-      JanInferenceOpenAIExtension._currentModel,
+      {
+        ...JanInferenceOpenAIExtension._currentModel,
+        parameters: data.model.parameters,
+      },
       instance.controller
     ).subscribe({
       next: (content) => {
@@ -214,6 +217,11 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
         events.emit(EventName.OnMessageUpdate, message);
       },
       error: async (err) => {
+        if (instance.isCancelled) {
+          message.status = MessageStatus.Ready;
+          events.emit(EventName.OnMessageUpdate, message);
+          return;
+        }
         const messageContent: ThreadContent = {
           type: ContentType.Text,
           text: {
