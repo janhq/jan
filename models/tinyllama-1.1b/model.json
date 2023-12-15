@@ -7,11 +7,11 @@
   "description": "The TinyLlama project, featuring a 1.1B parameter Llama model, is pretrained on an expansive 3 trillion token dataset. Its design ensures easy integration with various Llama-based open-source projects. Despite its smaller size, it efficiently utilizes lower computational and memory resources, drawing on GPT-4's analytical prowess to enhance its conversational abilities and versatility.",
   "format": "gguf",
   "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 2048,
       "prompt_template": "<|system|>\n{system_message}<|user|>\n{prompt}<|assistant|>"
   },
   "parameters": {
-      "max_tokens": 4096
+      "max_tokens": 2048
   },
   "metadata": {
       "author": "TinyLlama",
