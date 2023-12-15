@@ -1,7 +1,7 @@
 {
   "name": "@janhq/conversational-extension",
   "version": "1.0.0",
-  "description": "Conversational Extension - Stores jan app threads and messages in JSON files",
+  "description": "This extension enables conversations and state persistence via your filesystem",
   "main": "dist/index.js",
   "author": "Jan <service@jan.ai>",
   "license": "MIT",
