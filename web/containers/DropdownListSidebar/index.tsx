@@ -21,6 +21,7 @@ import { twMerge } from 'tailwind-merge'
 import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
+import { useEngineSettings } from '@/hooks/useEngineSettings'
 import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
@@ -38,6 +39,16 @@ export default function DropdownListSidebar() {
   const [selected, setSelected] = useState<Model | undefined>()
   const { setMainViewState } = useMainViewState()
   const { activeModel, stateModel } = useActiveModel()
+  const [opeenAISettings, setOpenAISettings] = useState<
+    { api_key: string } | undefined
+  >(undefined)
+  const { readOpenAISettings, saveOpenAISettings } = useEngineSettings()
+
+  useEffect(() => {
+    readOpenAISettings().then((settings) => {
+      setOpenAISettings(settings)
+    })
+  }, [])
 
   useEffect(() => {
     getDownloadedModels().then((downloadedModels) => {
@@ -129,20 +140,20 @@ export default function DropdownListSidebar() {
         </SelectContent>
       </Select>
 
-      {selected?.engine === 'openai' && (
+      {selected?.engine === InferenceEngine.openai && (
         <div className="mt-4">
           <label
             id="thread-title"
             className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
           >
-            API_KEY
+            API Key
           </label>
           <Input
             id="assistant-instructions"
             placeholder="Enter your API_KEY"
-            value=""
+            defaultValue={opeenAISettings?.api_key}
             onChange={(e) => {
-              console.log(e.target.value)
+              saveOpenAISettings({ apiKey: e.target.value })
             }}
           />
         </div>
