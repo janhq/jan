@@ -34,8 +34,8 @@ const ExploreModelsScreen = () => {
   const [searchValue, setsearchValue] = useState('')
   const [tabActive, setTabActive] = useState('Model')
   const { downloadedModels } = useGetDownloadedModels()
-  const [sortSelected, setSortSelected] = useState('All Model')
-  const sortMenu = ['All Model', 'Recommended', 'Downloaded']
+  const [sortSelected, setSortSelected] = useState('All Models')
+  const sortMenu = ['All Models', 'Recommended', 'Downloaded']
 
   const filteredModels = models.filter((x) => {
     if (sortSelected === 'Downloaded') {
