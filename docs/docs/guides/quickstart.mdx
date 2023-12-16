@@ -1,0 +1,81 @@
+---
+title: Quickstart
+description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+  ]
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+In this quickstart we'll show you how to:
+
+- Download the Jan Desktop client - Mac, Windows, Linux, (and toaster) compatible
+- Download and customize models
+- Import custom models
+- Use the local server at port `1337`
+
+## Setup
+
+### Installation
+
+- To download the latest stable release: https://jan.ai/
+
+- To download a nightly release (highly unstable but lots of new features): https://github.com/janhq/jan/releases
+
+- For a detailed installation guide for your operating system, see the following:
+
+<Tabs groupId="operating-systems">
+  <TabItem value="mac" label="macOS">
+    [Mac installation guide](/install/mac)
+  </TabItem>
+  <TabItem value="win" label="Windows">
+    [Windows installation guide](/install/windows)
+  </TabItem>
+  <TabItem value="linux" label="Linux">
+    [Linux installation guide](/install/linux)
+  </TabItem>
+</Tabs>
+
+- To build Jan Desktop from scratch (and have the right to tinker!)
+
+  See the [Build from Source](/install/from-source) guide.
+
+### Working with Models
+
+Jan provides a list of recommended models to get you started.
+You can find them in the in-app Hub.
+
+1. `cmd + k` and type "hub" to open the Hub.
+2. Download your preferred models.
+3. `cmd + k` and type "chat" to open the conversation UI and start chatting.
+4. Your model may take a few seconds to start up.
+5. You can customize the model settings, at each conversation thread level, on the right panel.
+6. To change model defaults globally, edit the `model.json` file. See the [Models](/guides/models) guide.
+
+### Importing Models
+
+Jan is compatible with all GGUF models.
+
+For more information on how to import custom models, not found in the Hub, see the [Models](/guides/models) guide.
+
+## Working with the Local Server
+
+> This feature is currently under development. So expect bugs!
+
+Jan runs a local server on port `1337` by default.
+
+The endpoints are OpenAI compatible.
+
+See the [API server guide](/guides/server) for more information.
+
+## Next Steps
