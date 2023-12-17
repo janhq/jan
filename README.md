@@ -70,7 +70,7 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align: center">
     <td style="text-align:center"><b>Experimental (Nighlty Build)</b></td>
     <td style="text-align:center" colspan="4">
-      <a href='https://github.com/janhq/jan/actions/runs/7233981242'>
+      <a href='https://github.com/janhq/jan/actions/runs/7240700935'>
         <b>Github action artifactory</b>
       </a>
     </td>
