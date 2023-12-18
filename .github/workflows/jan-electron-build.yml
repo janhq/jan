@@ -124,7 +124,7 @@ jobs:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
 
       - name: Build app
-        shell: powershell
+        shell: bash
         run: |
           make build
         env:
