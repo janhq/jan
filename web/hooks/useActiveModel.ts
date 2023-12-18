@@ -1,13 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { EventName, events } from '@janhq/core'
-import { Model } from '@janhq/core'
+import { EventName, events, Model } from '@janhq/core'
 import { atom, useAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
 import { useGetDownloadedModels } from './useGetDownloadedModels'
-
-import { extensionManager } from '@/extension'
+import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
 
@@ -51,6 +49,7 @@ export function useActiveModel() {
       return
     }
 
+    localStorage.setItem(LAST_USED_MODEL_ID, model.id)
     events.emit(EventName.OnModelInit, model)
   }
 

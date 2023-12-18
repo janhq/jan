@@ -20,10 +20,7 @@ export function useGetDownloadedModels() {
   return { downloadedModels, setDownloadedModels }
 }
 
-export async function getDownloadedModels(): Promise<Model[]> {
-  const models = await extensionManager
+export const getDownloadedModels = async (): Promise<Model[]> =>
+  extensionManager
     .get<ModelExtension>(ExtensionType.Model)
-    ?.getDownloadedModels()
-
-  return models ?? []
-}
+    ?.getDownloadedModels() ?? []
