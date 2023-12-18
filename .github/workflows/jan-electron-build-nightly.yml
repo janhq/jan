@@ -88,7 +88,7 @@ jobs:
           mv /tmp/package.json electron/package.json
           echo "::set-output name=new_version::$NEW_VERSION"
 
-          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
       - name: Get Cer for code signing
@@ -198,7 +198,7 @@ jobs:
 
           echo "::set-output name=new_version::$NEW_VERSION"
 
-          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
       - name: Build app
@@ -285,7 +285,7 @@ jobs:
           jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           echo "::set-output name=new_version::$NEW_VERSION"
-          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
       - name: Build and publish app
