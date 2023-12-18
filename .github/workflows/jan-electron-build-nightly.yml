@@ -24,6 +24,7 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
+    needs: delete-cloudflare-r2-folder
     environment: production
     permissions:
       contents: write
@@ -160,6 +161,7 @@ jobs:
 
   build-windows-x64:
     runs-on: windows-latest
+    needs: delete-cloudflare-r2-folder
     permissions:
       contents: write
     steps:
@@ -253,6 +255,7 @@ jobs:
           
   build-linux-x64:
     runs-on: ubuntu-latest
+    needs: delete-cloudflare-r2-folder
     environment: production
     env:
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_TOKEN }}
@@ -340,7 +343,7 @@ jobs:
           destination: '/${{ steps.version_update.outputs.new_version }}/latest-linux.yml'
 
   noti-discord-nightly-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64]
+    needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder]
     environment: production
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -370,7 +373,7 @@ jobs:
           GITHUB_RUN_ID: ${{ github.run_id }}
 
   noti-discord-manual-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64]
+    needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder]
     environment: production
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
