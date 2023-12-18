@@ -125,7 +125,7 @@ export default class JSONConversationalExtension
       await fs.writeFile(
         threadMessagePath,
         messages.map((msg) => JSON.stringify(msg)).join('\n') +
-          (messages.length > 1 ? '\n' : '')
+          (messages.length ? '\n' : '')
       )
       Promise.resolve()
     } catch (err) {
