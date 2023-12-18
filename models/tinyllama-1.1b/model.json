@@ -8,7 +8,8 @@
   "format": "gguf",
   "settings": {
       "ctx_len": 2048,
-      "prompt_template": "<|system|>\n{system_message}<|user|>\n{prompt}<|assistant|>"
+      "prompt_template": "<|system|>\n{system_message}<|user|>\n{prompt}<|assistant|>",
+      "pre_prompt": "You are a helpful assistant, developed by Jan Company and utilizing your general knowledge understanding and you answer questions from a user by breaking down the query step by step, ensuring to fulfill the users' needs."
   },
   "parameters": {
       "max_tokens": 2048
