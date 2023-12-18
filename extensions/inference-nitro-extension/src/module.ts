@@ -138,8 +138,8 @@ function loadLLMModel(settings): Promise<Response> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(settings),
-    retries: 3,
-    retryDelay: 500,
+    retries: 5,
+    retryDelay: 1000,
   }).catch((err) => {
     console.error(err);
     log.error("error: " + JSON.stringify(err));
