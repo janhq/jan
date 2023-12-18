@@ -20,7 +20,7 @@ const sidebars = {
       link: { type: "doc", id: "guides/introduction" },
       collapsible: true,
       collapsed: true,
-      items: ["guides/quickstart", "guides/how-jan-works"],
+      items: ["guides/quickstart"],
     },
     {
       type: "category",
@@ -118,23 +118,20 @@ const sidebars = {
       id: "about/about",
     },
     {
-      type: "link",
-      label: "Careers",
-      href: "https://janai.bamboohr.com/careers",
-    },
-    {
       type: "category",
       label: "Company Handbook",
       collapsible: true,
-      collapsed: true,
-      // link: { type: "doc", id: "handbook/handbook" },
+      collapsed: false,
       items: [
-        {
-          type: "doc",
-          label: "Engineering",
-          id: "handbook/engineering/engineering",
-        },
+        "handbook/onboarding",
+        "handbook/engineering",
+        "handbook/product",
       ],
+    },
+    {
+      type: "link",
+      label: "Careers",
+      href: "https://janai.bamboohr.com/careers",
     },
   ],
 };
