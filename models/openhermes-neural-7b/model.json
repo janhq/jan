@@ -1,21 +1,21 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/OpenHermes-2.5-neural-chat-7B-v3-1-7B-GGUF/resolve/main/openhermes-2.5-neural-chat-7b-v3-1-7b.Q4_K_M.gguf",
+    "source_url": "https://huggingface.co/janhq/openhermes-2.5-neural-chat-v3-3-slerp-GGUF/resolve/main/openhermes-2.5-neural-chat-v3-3-slerp.Q4_K_M.gguf",
     "id": "openhermes-neural-7b",
     "object": "model",
     "name": "OpenHermes Neural 7B Q4",
     "version": "1.0",
-    "description": "OpenHermes Neural is a merged model from OpenHermes-2.5-Mistral-7B and neural-chat-7b-v3-1 with the TIES method.",
+    "description": "OpenHermes Neural is a merged model using the TIES method.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 2048,
+      "ctx_len": 4096,
       "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
     },
     "parameters": {
-      "max_tokens": 2048
+      "max_tokens": 4096
     },
     "metadata": {
-      "author": "Intel, The Bloke",
-      "tags": ["Featured", "7B", "Merged"],
+      "author": "Intel, Jan",
+      "tags": ["7B", "Merged", "Featured"],
       "size": 4370000000,
       "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/openhermes-neural-7b/cover.png"
     },

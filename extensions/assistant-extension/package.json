@@ -1,7 +1,7 @@
 {
   "name": "@janhq/assistant-extension",
   "version": "1.0.0",
-  "description": "Assistant extension",
+  "description": "This extension enables assistants, including Jan, a default assistant that can call all downloaded models",
   "main": "dist/index.js",
   "module": "dist/module.js",
   "author": "Jan <service@jan.ai>",
