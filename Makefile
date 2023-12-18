@@ -23,7 +23,7 @@ endif
 
 check-file-counts: install-and-build
 ifeq ($(OS),Windows_NT)
-	powershell -Command "$$tgz_count = (Get-ChildItem -Path electron/pre-install -Filter *.tgz | Measure-Object | Select-Object -ExpandProperty Count); $$dir_count = (Get-ChildItem -Path extensions -Directory | Measure-Object | Select-Object -ExpandProperty Count); if ($$tgz_count -ne $$dir_count) { Write-Host 'Number of .tgz files in electron/pre-install (' + $$tgz_count + ') does not match the number of subdirectories in extension (' + $$dir_count + ')'; exit 1 } else { Write-Host 'Extension build successful' }"
+	powershell -Command "if ((Get-ChildItem -Path electron/pre-install -Filter *.tgz | Measure-Object | Select-Object -ExpandProperty Count) -ne (Get-ChildItem -Path extensions -Directory | Measure-Object | Select-Object -ExpandProperty Count)) { Write-Host 'Number of .tgz files in electron/pre-install does not match the number of subdirectories in extension'; exit 1 } else { Write-Host 'Extension build successful' }"
 else
 	@tgz_count=$$(find electron/pre-install -type f -name "*.tgz" | wc -l); dir_count=$$(find extensions -mindepth 1 -maxdepth 1 -type d | wc -l); if [ $$tgz_count -ne $$dir_count ]; then echo "Number of .tgz files in electron/pre-install ($$tgz_count) does not match the number of subdirectories in extension ($$dir_count)"; exit 1; else echo "Extension build successful"; fi
 endif
