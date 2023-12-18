@@ -124,8 +124,8 @@ const sidebars = {
       collapsed: false,
       items: [
         "handbook/onboarding",
-        "handbook/engineering",
         "handbook/product",
+        "handbook/engineering",
       ],
     },
     {

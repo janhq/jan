@@ -4,39 +4,42 @@ title: Product
 
 We use Github for 100% of our product / project management.
 
-Projects are defined across the organization.
+As much as possible, everyone owns their respective `epics` and `tasks`.
 
-As much as possible, everyone owns their respective `epics`, `milestones`. and `tasks`.
+> We aim for a `loosely coupled, but tightly aligned` autonomous culture.
 
-> We aim for a `loosely coupled, but tightly aligned` autonomous PM culture.
+## Organization
 
-## Projects
+[`Projects`](https://github.com/janhq/jan/projects?query=is%3Aopen)
 
-- `Projects` track large, long-term, & strategic initiatives that can span multiple teams and multiple sprints.
-- Projects are listed in [Github Projects](https://github.com/janhq/jan/projects?query=is%3Aopen).
+- `Projects` track large, long-term, & strategic initiatives that can span multiple teams and multiple sprints
 - `Projects` contain `epics`
 
-## Epics && Milestones
+[`Epics`](https://github.com/janhq/jan/issues?q=is%3Aissue+is%3Aopen+label%3A%22type%3A+epic%22)
 
-`Epics`
-
-- `Epics` are large user stories that are then further broken down into tasks.
-- `Epics` track the specs, architecture decisions, designs, and what is in scope for large features.
-- Every `epic` corresponds with a single `Milestones`
+- `Epics` track large stories that span 1-2 weeks, and it outlines specs, architecture decisions, designs
+- Each `epic` corresponds with a Github `milestone`
 - `Epics` contain `tasks`
 - `Epics` should only have 1 owner
 
-`Milestones`
+[`Milestones`](https://github.com/janhq/jan/milestones)
 
-- `Milestones` correspond 1:1 to `epics`.
-- We use `milestones` to render the correct Roadmap & Kanban views.
-- `Milestones` should have a deadline.
+- `Milestones` correspond 1:1 to `epics` and are used to filter [Project Views](https://github.com/orgs/janhq/projects/5/views/1)
+- `Milestones` span 1-2 weeks and have deadlines
 
-## `Tasks`
+[`Tasks`](https://github.com/janhq/jan/issues)
 
-- Tasks are individual features, bug fixes, or chores that can be completed within a few days
+- Tasks are individual issues (feats, bugs, chores) that can be completed within a few days
 - Tasks under `In-progress` and `Todo` should always belong to a `milestone`
 - Tasks are usually named per [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/#summary)
 - Tasks should only have 1 owner
 
 We aim to always work on `tasks` that belong to a `milestones`.
+
+## Task Status
+
+- `triaged`: issues that have been assigned
+- `todo`: issues you plan to tackle within this week
+- `in-progress`: in progress
+- `in-review`: pending PR or blocked by something
+- `done`: done
