@@ -14,6 +14,7 @@ on:
       - "core/**"
       - "extensions/**"
       - "!README.md"
+      - "Makefile"
 
   pull_request:
     branches:
@@ -26,6 +27,7 @@ on:
       - "package.json"
       - "node_modules/**"
       - "yarn.lock"
+      - "Makefile"
 
 jobs:
   test-on-macos:
