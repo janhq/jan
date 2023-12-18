@@ -97,10 +97,6 @@ jobs:
           name: jan-mac-arm64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg
 
-      # Upload to Cloudflare R2 latest folder and version folder
-      - name: install-aws-cli-action
-        uses: unfor19/install-aws-cli-action@v1
-
       - name: put-object using awscli s3api
         continue-on-error: true
         run: |
@@ -113,6 +109,8 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: 'ap-south-1'
+          AWS_EC2_METADATA_DISABLED: 'true'
 
   build-windows-x64:
     runs-on: windows-latest
@@ -152,7 +150,7 @@ jobs:
           mv /tmp/package.json electron/package.json
 
       - name: Build app
-        shell: powershell
+        shell: bash
         run: |
           make build
 
@@ -167,10 +165,6 @@ jobs:
         with:
           name: jan-win-x64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/*.exe
-
-      # Upload to Cloudflare R2 latest folder and version folder
-      - name: install-aws-cli-action
-        uses: unfor19/install-aws-cli-action@v1
       
       - name: put-object using awscli s3api
         shell: bash
@@ -182,6 +176,8 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: 'ap-south-1'
+          AWS_EC2_METADATA_DISABLED: 'true'
           
   build-linux-x64:
     runs-on: ubuntu-latest
@@ -231,10 +227,6 @@ jobs:
         with:
           name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/*.deb
-
-      # Upload to Cloudflare R2 latest folder and version folder
-      - name: install-aws-cli-action
-        uses: unfor19/install-aws-cli-action@v1
       
       - name: put-object using awscli s3api
         run: |
@@ -245,6 +237,8 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: 'ap-south-1'
+          AWS_EC2_METADATA_DISABLED: 'true'
 
   noti-discord-nightly-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder]
