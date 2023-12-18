@@ -7,13 +7,10 @@ assignees: ''
 
 ---
 
-**Problem**
+**Motivation**
 - 
 
-**Spec**
-- 
-
-**Designs**
+**Specs & Designs**
 - 
 
 **In Scope**
@@ -22,7 +19,7 @@ assignees: ''
 **Not in Scope**
 - 
 
-**Sub Issues**
+**Tasklist**
 > Note: All issues need to share the same `milestone` as this epic
 - 
 
