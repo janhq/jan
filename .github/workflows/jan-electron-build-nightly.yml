@@ -47,8 +47,28 @@ jobs:
       - name: Update app version based on latest release tag with build number
         id: version_update
         run: |
+          # Function to get the latest release tag
+          get_latest_tag() {
+            local retries=0
+            local max_retries=3
+            local tag
+            while [ $retries -lt $max_retries ]; do
+              tag=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+              if [ -n "$tag" ] && [ "$tag" != "null" ]; then
+                echo $tag
+                return
+              else
+                let retries++
+                echo "Retrying... ($retries/$max_retries)"
+                sleep 2
+              fi
+            done
+            echo "Failed to fetch latest tag after $max_retries attempts."
+            exit 1
+          }
+      
           # Get the latest release tag from GitHub API
-          LATEST_TAG=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+          LATEST_TAG=$(get_latest_tag)
           
           # Remove the 'v' and append the build number to the version
           NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
@@ -135,8 +155,28 @@ jobs:
         id: version_update
         shell: bash
         run: |
+          # Function to get the latest release tag
+          get_latest_tag() {
+            local retries=0
+            local max_retries=3
+            local tag
+            while [ $retries -lt $max_retries ]; do
+              tag=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+              if [ -n "$tag" ] && [ "$tag" != "null" ]; then
+                echo $tag
+                return
+              else
+                let retries++
+                echo "Retrying... ($retries/$max_retries)"
+                sleep 2
+              fi
+            done
+            echo "Failed to fetch latest tag after $max_retries attempts."
+            exit 1
+          }
+      
           # Get the latest release tag from GitHub API
-          LATEST_TAG=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+          LATEST_TAG=$(get_latest_tag)
           
           # Remove the 'v' and append the build number to the version
           NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
@@ -203,8 +243,28 @@ jobs:
       - name: Update app version base on tag
         id: version_update
         run: |
+          # Function to get the latest release tag
+          get_latest_tag() {
+            local retries=0
+            local max_retries=3
+            local tag
+            while [ $retries -lt $max_retries ]; do
+              tag=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+              if [ -n "$tag" ] && [ "$tag" != "null" ]; then
+                echo $tag
+                return
+              else
+                let retries++
+                echo "Retrying... ($retries/$max_retries)"
+                sleep 2
+              fi
+            done
+            echo "Failed to fetch latest tag after $max_retries attempts."
+            exit 1
+          }
+      
           # Get the latest release tag from GitHub API
-          LATEST_TAG=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+          LATEST_TAG=$(get_latest_tag)
           
           # Remove the 'v' and append the build number to the version
           NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
