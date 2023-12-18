@@ -7,6 +7,21 @@ on:
   workflow_dispatch:
 
 jobs:
+  delete-cloudflare-r2-folder:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: install-aws-cli-action
+        uses: unfor19/install-aws-cli-action@v1
+
+      - name: Delete cloudflare-r2 folder using awscli s3api
+        run: |
+          aws s3api list-objects --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --prefix "latest/" --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com > objectlist.json
+          aws s3api delete-objects --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com delete-objects --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --delete file://objectlist.json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+
   build-macos:
     runs-on: macos-latest
     environment: production
@@ -39,6 +54,9 @@ jobs:
           jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           echo "::set-output name=new_version::$NEW_VERSION"
+
+          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
 
       - name: Get Cer for code signing
         run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
@@ -77,6 +95,69 @@ jobs:
           name: jan-mac-arm64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg
 
+      # Upload to Cloudflare R2 latest folder
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg'
+          destination: '/latest/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg'
+
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg'
+          destination: '/latest/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg'
+
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/latest-mac.yml'
+          destination: '/latest/latest-mac.yml'
+
+      # Upload to Cloudflare R2 version folder
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg'
+          destination: '/${{ steps.version_update.outputs.new_version }}/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg'
+
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg'
+          destination: '/${{ steps.version_update.outputs.new_version }}/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg'
+
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/latest-mac.yml'
+          destination: '/${{ steps.version_update.outputs.new_version }}/latest-mac.yml'
+
+
   build-windows-x64:
     runs-on: windows-latest
     permissions:
@@ -110,6 +191,9 @@ jobs:
 
           echo "::set-output name=new_version::$NEW_VERSION"
 
+          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+
       - name: Build app
         shell: cmd
         run: |
@@ -126,6 +210,46 @@ jobs:
         with:
           name: jan-win-x64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/*.exe
+      
+      # Upload to Cloudflare R2 latest folder
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe'
+          destination: '/latest/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe'
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/latest.yml'
+          destination: '/latest/latest.yml'
+      
+      # Upload to Cloudflare R2 version folder
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe'
+          destination: '/${{ steps.version_update.outputs.new_version }}/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe'
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/latest.yml'
+          destination: '/${{ steps.version_update.outputs.new_version }}/latest.yml'
           
   build-linux-x64:
     runs-on: ubuntu-latest
@@ -160,6 +284,8 @@ jobs:
           jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           echo "::set-output name=new_version::$NEW_VERSION"
+          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
 
       - name: Build and publish app
         run: |
@@ -172,6 +298,46 @@ jobs:
         with:
           name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}
           path: ./electron/dist/*.deb
+      
+      # Upload to Cloudflare R2 latest folder
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb'
+          destination: '/latest/jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb'
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/latest-linux.yml'
+          destination: '/latest/latest-linux.yml'
+      
+      # Upload to Cloudflare R2 version folder
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb'
+          destination: '/${{ steps.version_update.outputs.new_version }}/jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb'
+      - name: R2 Release
+        uses: randomairborne/r2-release@v1.0.2
+        with:
+          endpoint: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
+          accesskeyid: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          secretaccesskey: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          bucket: '${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}'
+          file: './electron/dist/latest-linux.yml'
+          destination: '/${{ steps.version_update.outputs.new_version }}/latest-linux.yml'
 
   noti-discord-nightly-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64]
