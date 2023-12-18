@@ -2,9 +2,7 @@ import posthog, { Properties } from 'posthog-js'
 
 posthog.init(ANALYTICS_ID, {
   api_host: ANALYTICS_HOST,
-  autocapture: {
-    url_allowlist: ['./*'],
-  },
+  autocapture: false,
 })
 
 export const instance = posthog
