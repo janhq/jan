@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 import { ChatCompletionRole, MessageStatus, ThreadMessage } from '@janhq/core'
 
@@ -16,46 +15,58 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import BubbleLoader from '@/containers/Loader/Bubble'
 
+import { useClipboard } from '@/hooks/useClipboard'
+
 import { displayDate } from '@/utils/datetime'
 
 import MessageToolbar from '../MessageToolbar'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
-const marked = new Marked(
-  markedHighlight({
-    langPrefix: 'hljs',
-    highlight(code, lang) {
-      if (lang === undefined || lang === '') {
-        return hljs.highlightAuto(code).value
-      }
-      try {
-        return hljs.highlight(code, { language: lang }).value
-      } catch (err) {
-        return hljs.highlight(code, { language: 'javascript' }).value
-      }
-    },
-  }),
-  {
-    renderer: {
-      code(code, lang, escaped) {
-        // Make a copy paste
-        return `
-        <pre class="hljs">
-          <code class="language-${lang ?? ''}">${
-            escaped ? code : decodeURIComponent(code)
-          }</code>
-          </pre>`
-      },
-    },
-  }
-)
-
 const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   let text = ''
   if (props.content && props.content.length > 0) {
     text = props.content[0]?.text?.value ?? ''
   }
+  const clipboard = useClipboard({ timeout: 1000 })
+
+  const marked = new Marked(
+    markedHighlight({
+      langPrefix: 'hljs',
+      highlight(code, lang) {
+        if (lang === undefined || lang === '') {
+          return hljs.highlightAuto(code).value
+        }
+        try {
+          return hljs.highlight(code, { language: lang }).value
+        } catch (err) {
+          return hljs.highlight(code, { language: 'javascript' }).value
+        }
+      },
+    }),
+    {
+      renderer: {
+        code(code, lang, escaped) {
+          return `
+          <div class="relative code-block group/item">
+            <button class='text-xs copy-action hidden group-hover/item:block bg-gray-950 hover:bg-gray-950/90 text-gray-200 p-2 rounded-lg absolute top-6 right-2' >
+              ${
+                clipboard.copied
+                  ? `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check pointer-events-none text-green-600"><path d="M20 6 9 17l-5-5"/></svg>`
+                  : `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy pointer-events-none text-gray-400"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
+              }
+            </button>
+            <pre class="hljs">
+              <code class="language-${lang ?? ''}">${
+                escaped ? code : decodeURIComponent(code)
+              }</code>
+            </pre>
+          </div>
+          `
+        },
+      },
+    }
+  )
 
   const parsedText = marked.parse(text)
   const isUser = props.role === ChatCompletionRole.User
@@ -65,6 +76,27 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
   const [tokenSpeed, setTokenSpeed] = useState(0)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
+
+  const codeBlockCopyEvent = useRef((e: Event) => {
+    const target: HTMLElement = e.target as HTMLElement
+    if (typeof target.className !== 'string') return null
+    const isCopyActionClassName = target?.className.includes('copy-action')
+    const isCodeBlockParent =
+      target.parentElement?.parentElement?.className.includes('code-block')
+
+    if (isCopyActionClassName || isCodeBlockParent) {
+      const content = target?.parentNode?.querySelector('code')?.innerText ?? ''
+      clipboard.copy(content)
+    }
+  })
+
+  useEffect(() => {
+    document.addEventListener('click', codeBlockCopyEvent.current)
+    return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      document.removeEventListener('click', codeBlockCopyEvent.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (props.status === MessageStatus.Ready) {
