@@ -45,7 +45,10 @@
       "icon": "icons/"
     },
     "win": {
-      "icon": "icons/icon.png"
+      "icon": "icons/icon.png",
+      "target": [
+        "nsis"
+      ]
     },
     "artifactName": "jan-${os}-${arch}-${version}.${ext}"
   },
@@ -59,11 +62,11 @@
     "build:test:win32": "tsc -p . && electron-builder -p never -w --dir",
     "build:test:linux": "tsc -p . && electron-builder -p never -l --dir",
     "build:darwin": "tsc -p . && electron-builder -p never -m --x64 --arm64",
-    "build:win32": "tsc -p . && electron-builder -p never -w",
+    "build:win32": "tsc -p . && electron-builder -p never -w --x64",
     "build:linux": "tsc -p . && electron-builder -p never -l deb",
     "build:publish": "run-script-os",
     "build:publish:darwin": "tsc -p . && electron-builder -p onTagOrDraft -m --x64 --arm64",
-    "build:publish:win32": "tsc -p . && electron-builder -p onTagOrDraft -w",
+    "build:publish:win32": "tsc -p . && electron-builder -p onTagOrDraft -w --x64",
     "build:publish:linux": "tsc -p . && electron-builder -p onTagOrDraft -l deb"
   },
   "dependencies": {
