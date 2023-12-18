@@ -152,7 +152,6 @@ jobs:
           mv /tmp/package.json electron/package.json
 
       - name: Build app
-        shell: bash
         run: |
           make build
 
