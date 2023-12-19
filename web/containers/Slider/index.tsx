@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from 'react'
+import { FieldValues, UseFormRegister } from 'react-hook-form'
 
+import { ModelRuntimeParams } from '@janhq/core'
 import { Slider, Input } from '@janhq/uikit'
 import { useAtomValue } from 'jotai'
 
@@ -18,7 +18,7 @@ type Props = {
   max: number
   step: number
   value: number
-  register: any
+  register: UseFormRegister<FieldValues>
 }
 
 const SliderRightPanel: React.FC<Props> = ({
@@ -30,30 +30,19 @@ const SliderRightPanel: React.FC<Props> = ({
   value,
   register,
 }) => {
-  const [currentValue, setCurrentValue] = useState<number>(value)
   const { updateModelParameter } = useUpdateModelParameters()
   const threadId = useAtomValue(getActiveThreadIdAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelRuntimeParamsAtom)
 
-  useEffect(() => {
-    setCurrentValue(value)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
+  const onValueChanged = (e: number[]) => {
+    if (!threadId || !activeModelParams) return
 
-  useEffect(() => {
-    updateSetting()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentValue])
-
-  const updateValue = [name].reduce((accumulator, value) => {
-    return { ...accumulator, [value]: currentValue }
-  }, {})
-
-  const updateSetting = () => {
-    return updateModelParameter(String(threadId), {
+    const updatedModelParams: ModelRuntimeParams = {
       ...activeModelParams,
-      ...updateValue,
-    })
+      [name]: Number(e[0]),
+    }
+
+    updateModelParameter(threadId, updatedModelParams)
   }
 
   return (
@@ -63,14 +52,10 @@ const SliderRightPanel: React.FC<Props> = ({
         <div className="relative w-full">
           <Slider
             {...register(name, {
-              setValueAs: (v: any) => parseInt(v),
+              setValueAs: (v: string) => parseInt(v),
             })}
-            value={[currentValue]}
-            onValueChange={async (e) => {
-              setCurrentValue(Number(e[0]))
-              await updateSetting()
-            }}
-            type="range"
+            value={[value]}
+            onValueChange={onValueChanged}
             min={min}
             max={max}
             step={step}
@@ -87,11 +72,8 @@ const SliderRightPanel: React.FC<Props> = ({
           className="-mt-4 h-8 w-16"
           min={min}
           max={max}
-          value={String(currentValue)}
-          onChange={async (e) => {
-            setCurrentValue(Number(e.target.value))
-            await updateSetting()
-          }}
+          value={String(value)}
+          onChange={(e) => onValueChanged([Number(e.target.value)])}
         />
       </div>
     </div>

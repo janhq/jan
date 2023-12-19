@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from 'react'
+import { FieldValues, UseFormRegister } from 'react-hook-form'
 
+import { ModelRuntimeParams } from '@janhq/core'
 import { Switch } from '@janhq/uikit'
 
 import { useAtomValue } from 'jotai'
@@ -16,44 +16,32 @@ type Props = {
   name: string
   title: string
   checked: boolean
-  register: any
+  register: UseFormRegister<FieldValues>
 }
 
 const Checkbox: React.FC<Props> = ({ name, title, checked, register }) => {
-  const [currentChecked, setCurrentChecked] = useState<boolean>(checked)
   const { updateModelParameter } = useUpdateModelParameters()
   const threadId = useAtomValue(getActiveThreadIdAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelRuntimeParamsAtom)
 
-  useEffect(() => {
-    setCurrentChecked(checked)
-  }, [checked])
+  const onCheckedChange = (checked: boolean) => {
+    if (!threadId || !activeModelParams) return
 
-  useEffect(() => {
-    updateSetting()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChecked])
-
-  const updateValue = [name].reduce((accumulator, value) => {
-    return { ...accumulator, [value]: currentChecked }
-  }, {})
-
-  const updateSetting = () => {
-    return updateModelParameter(String(threadId), {
+    const updatedModelParams: ModelRuntimeParams = {
       ...activeModelParams,
-      ...updateValue,
-    })
+      [name]: checked,
+    }
+
+    updateModelParameter(threadId, updatedModelParams)
   }
 
   return (
     <div className="flex justify-between">
       <label>{title}</label>
       <Switch
-        checked={currentChecked}
+        checked={checked}
         {...register(name)}
-        onCheckedChange={(e) => {
-          setCurrentChecked(e)
-        }}
+        onCheckedChange={onCheckedChange}
       />
     </div>
   )
