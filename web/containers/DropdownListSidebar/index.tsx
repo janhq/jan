@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { InferenceEngine, Model } from '@janhq/core'
 import {
@@ -20,11 +20,11 @@ import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
 import { useEngineSettings } from '@/hooks/useEngineSettings'
-import { getDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
+
+import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import { toGigabytes } from '@/utils/converter'
 
@@ -33,13 +33,12 @@ import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
 export const selectedModelAtom = atom<Model | undefined>(undefined)
 
 export default function DropdownListSidebar() {
-  const [downloadedModels, setDownloadedModels] = useState<Model[]>([])
   const setSelectedModel = useSetAtom(selectedModelAtom)
+  const threadStates = useAtomValue(threadStatesAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const [selected, setSelected] = useState<Model | undefined>()
   const { setMainViewState } = useMainViewState()
-  const { activeModel, stateModel } = useActiveModel()
-  const [opeenAISettings, setOpenAISettings] = useState<
+  const [openAISettings, setOpenAISettings] = useState<
     { api_key: string } | undefined
   >(undefined)
   const { readOpenAISettings, saveOpenAISettings } = useEngineSettings()
@@ -50,42 +49,26 @@ export default function DropdownListSidebar() {
     })
   }, [])
 
-  useEffect(() => {
-    getDownloadedModels().then((downloadedModels) => {
-      setDownloadedModels(
-        downloadedModels.sort((a, b) =>
-          a.engine !== InferenceEngine.nitro &&
-          b.engine === InferenceEngine.nitro
-            ? 1
-            : -1
-        )
-      )
-      if (downloadedModels.length > 0) {
-        setSelected(
-          downloadedModels.filter(
-            (x) => x.id === activeThread?.assistants[0].model.id
-          )[0] || downloadedModels[0]
-        )
-        setSelectedModel(
-          downloadedModels.filter(
-            (x) => x.id === activeThread?.assistants[0].model.id
-          )[0] || downloadedModels[0]
-        )
-      }
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeThread, activeModel, stateModel.loading])
+  const { recommendedModel, downloadedModels } = useRecommendedModel()
 
-  const threadStates = useAtomValue(threadStatesAtom)
+  useEffect(() => {
+    setSelected(recommendedModel)
+    setSelectedModel(recommendedModel)
+  }, [recommendedModel, setSelectedModel])
+
+  const onValueSelected = useCallback(
+    (modelId: string) => {
+      const model = downloadedModels.find((m) => m.id === modelId)
+      setSelected(model)
+      setSelectedModel(model)
+    },
+    [downloadedModels, setSelectedModel]
+  )
+
   if (!activeThread) {
     return null
   }
   const finishInit = threadStates[activeThread.id].isFinishInit ?? true
-
-  const onValueSelected = (value: string) => {
-    setSelected(downloadedModels.filter((x) => x.id === value)[0])
-    setSelectedModel(downloadedModels.filter((x) => x.id === value)[0])
-  }
 
   return (
     <>
@@ -151,7 +134,7 @@ export default function DropdownListSidebar() {
           <Input
             id="assistant-instructions"
             placeholder="Enter your API_KEY"
-            defaultValue={opeenAISettings?.api_key}
+            defaultValue={openAISettings?.api_key}
             onChange={(e) => {
               saveOpenAISettings({ apiKey: e.target.value })
             }}
