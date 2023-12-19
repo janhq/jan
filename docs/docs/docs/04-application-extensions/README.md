@@ -1,5 +1,5 @@
 ---
-title: Assitant
+title: Application Extensions
 ---
 
 :::caution

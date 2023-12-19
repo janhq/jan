@@ -1,5 +1,5 @@
 ---
-title: Extension Guides
+title: Assistant
 ---
 
 :::caution

@@ -1,5 +1,5 @@
 ---
-title: UI
+title: UI Kit
 ---
 
 :::caution

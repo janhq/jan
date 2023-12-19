@@ -1,5 +1,5 @@
 ---
-title: Core
+title: Core Extensions
 ---
 
 :::caution
