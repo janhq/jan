@@ -1,33 +1,32 @@
 {
-    "source": [
-      {
-        "filename": "mistral-7b-instruct-v0.1.Q4_K_M.gguf",
-        "url": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_K_M.gguf"
-      }
-    ],
-    "id": "mistral-ins-7b-q4",
-    "object": "model",
-    "name": "Mistral Instruct 7B Q4",
-    "version": "1.0",
-    "description": "This is a 4-bit quantized iteration of MistralAI's Mistral Instruct 7b model, specifically designed for a comprehensive understanding through training on extensive internet data.",
-    "format": "gguf",
-    "settings": {
-      "ctx_len": 4096,
-      "system_prompt": "",
-      "user_prompt": "<s>[INST]",
-      "ai_prompt": "[/INST]",
-      "prompt_template": "<s>[INST]{prompt}\n[/INST]",
-      "llama_model_path": "mistral-7b-instruct-v0.1.Q4_K_M.gguf"
-    },
-    "parameters": {
-      "max_tokens": 4096
-    },
-    "metadata": {
-      "author": "MistralAI, The Bloke",
-      "tags": ["Featured", "7B", "Foundational Model"],
-      "size": 4370000000,
-      "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/mistral-ins-7b-q4/cover.png"
-    },
-    "engine": "nitro"
-  }
-  
+  "source": [
+    {
+      "filename": "mistral-7b-instruct-v0.1.Q4_K_M.gguf",
+      "url": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_K_M.gguf"
+    }
+  ],
+  "id": "mistral-ins-7b-q4",
+  "object": "model",
+  "name": "Mistral Instruct 7B Q4",
+  "version": "1.0",
+  "description": "This is a 4-bit quantized iteration of MistralAI's Mistral Instruct 7b model, specifically designed for a comprehensive understanding through training on extensive internet data.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "system_prompt": "",
+    "user_prompt": "<s>[INST]",
+    "ai_prompt": "[/INST]",
+    "prompt_template": "<s>[INST]{prompt}\n[/INST]",
+    "llama_model_path": "mistral-7b-instruct-v0.1.Q4_K_M.gguf"
+  },
+  "parameters": {
+    "max_tokens": 4096
+  },
+  "metadata": {
+    "author": "MistralAI, The Bloke",
+    "tags": ["Featured", "7B", "Foundational Model"],
+    "size": 4370000000,
+    "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/mistral-ins-7b-q4/cover.png"
+  },
+  "engine": "nitro"
+}

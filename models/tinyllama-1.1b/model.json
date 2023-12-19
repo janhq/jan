@@ -20,9 +20,9 @@
       "max_tokens": 4096
   },
   "metadata": {
-      "author": "TinyLlama",
-      "tags": ["Tiny", "Foundation Model"],
-      "size": 637000000
+    "author": "TinyLlama",
+    "tags": ["Tiny", "Foundation Model"],
+    "size": 637000000
   },
   "engine": "nitro"
 }
