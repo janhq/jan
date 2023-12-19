@@ -21,6 +21,11 @@ export enum InferenceEngine {
   hf_endpoint = 'hf_endpoint',
 }
 
+type ModelArtifacts = {
+  filename: string
+  url: string
+}
+
 /**
  * Model type defines the shape of a model object.
  * @stored
@@ -45,7 +50,7 @@ export type Model = {
   /**
    * The model download source. It can be an external url or a local filepath.
    */
-  source_url: string
+  source: ModelArtifacts[]
 
   /**
    * The model identifier, which can be referenced in the API endpoints.
