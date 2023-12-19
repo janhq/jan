@@ -134,7 +134,7 @@ export default function ThreadList() {
                       <ModalHeader>
                         <ModalTitle>Delete Thread</ModalTitle>
                       </ModalHeader>
-                      <p>Are you sure you want to delete Thread?</p>
+                      <p>Are you sure you want to delete this thread?</p>
                       <ModalFooter>
                         <div className="flex gap-x-2">
                           <ModalClose asChild>
