@@ -75,14 +75,12 @@ const ChatScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitingToSendMessage, activeThreadId])
 
-  const resizeTextArea = () => {
+  useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
     }
-  }
-
-  useEffect(resizeTextArea, [currentPrompt])
+  }, [currentPrompt])
 
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {

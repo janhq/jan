@@ -57,6 +57,17 @@ export default function useRecommendedModel() {
       }
 
       return
+    } else {
+      const modelId = activeThread.assistants[0]?.model.id
+      if (modelId !== '*') {
+        const models = await getAndSortDownloadedModels()
+        const model = models.find((model) => model.id === modelId)
+
+        if (model) {
+          setRecommendedModel(model)
+        }
+        return
+      }
     }
 
     if (activeModel) {

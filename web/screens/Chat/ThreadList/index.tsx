@@ -13,11 +13,12 @@ import { twMerge } from 'tailwind-merge'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDeleteThread from '@/hooks/useDeleteThread'
-import useGetAllThreads from '@/hooks/useGetAllThreads'
 
 import useGetAssistants from '@/hooks/useGetAssistants'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useSetActiveThread from '@/hooks/useSetActiveThread'
+
+import useThreads from '@/hooks/useThreads'
 
 import { displayDate } from '@/utils/datetime'
 
@@ -30,7 +31,7 @@ import {
 export default function ThreadList() {
   const threads = useAtomValue(threadsAtom)
   const threadStates = useAtomValue(threadStatesAtom)
-  const { getAllThreads } = useGetAllThreads()
+  const { getAllThreads } = useThreads()
   const { assistants } = useGetAssistants()
   const { requestCreateNewThread } = useCreateNewThread()
   const activeThread = useAtomValue(activeThreadAtom)

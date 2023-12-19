@@ -55,7 +55,7 @@ export default class JSONConversationalExtension
       convos.sort(
         (a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime()
       )
-      console.debug('getThreads', JSON.stringify(convos, null, 2))
+
       return convos
     } catch (error) {
       console.error(error)
