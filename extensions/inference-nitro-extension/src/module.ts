@@ -5,6 +5,9 @@ const tcpPortUsed = require("tcp-port-used");
 const fetchRetry = require("fetch-retry")(global.fetch);
 const si = require("systeminformation");
 
+const log = require("electron-log");
+import { join } from "path";
+
 // The PORT to use for the Nitro subprocess
 const PORT = 3928;
 const LOCAL_HOST = "127.0.0.1";
@@ -36,7 +39,6 @@ function stopModel(): Promise<void> {
  * TODO: Should it be startModel instead?
  */
 async function initModel(wrapper: any): Promise<ModelOperationResponse> {
-  currentModelFile = wrapper.modelFullPath;
   if (wrapper.model.engine !== "nitro") {
     return Promise.resolve({ error: "Not a nitro model" });
   } else {
@@ -53,12 +55,17 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
       wrapper.model.settings.ai_prompt = prompt.ai_prompt;
     }
 
-    currentSettings = {
-      llama_model_path: currentModelFile,
+    const settings = {
+      llama_model_path: join(wrapper.modelFolderPath, wrapper.model.fileName),
       ...wrapper.model.settings,
       // This is critical and requires real system information
       cpu_threads: nitroResourceProbe.numCpuPhysicalCore,
     };
+
+    if (wrapper.model.settings.mmproj){
+      settings.mmproj = join(wrapper.modelFolderPath, wrapper.model.settings.mmproj);
+    }
+    
     return loadModel(nitroResourceProbe);
   }
 }
