@@ -38,7 +38,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   private static _currentModel: Model;
 
   private static _engineSettings: EngineSettings = {
-    ctx_len: 2048,
+    ctx_len: 4096,
     ngl: 100,
     cpu_threads: 1,
     cont_batching: false,

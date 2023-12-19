@@ -1,5 +1,10 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/lzlv_70B-GGUF/resolve/main/lzlv_70b_fp16_hf.Q5_K_M.gguf",
+    "source": [
+      {
+        "filename": "lzlv_70b_fp16_hf.Q5_K_M.gguf",
+        "url": "https://huggingface.co/TheBloke/lzlv_70B-GGUF/resolve/main/lzlv_70b_fp16_hf.Q5_K_M.gguf"
+      }
+    ],
     "id": "lzlv-70b",
     "object": "model",
     "name": "Lzlv 70B Q4",
@@ -8,7 +13,8 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "prompt_template": "USER:\n{prompt}\nASSISTANT:"
+      "prompt_template": "USER:\n{prompt}\nASSISTANT:",
+      "llama_model_path": "lzlv_70b_fp16_hf.Q5_K_M.gguf"
     },
     "parameters": {
       "max_tokens": 4096

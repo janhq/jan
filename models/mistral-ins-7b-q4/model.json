@@ -1,5 +1,10 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_K_M.gguf",
+    "source": [
+      {
+        "filename": "mistral-7b-instruct-v0.1.Q4_K_M.gguf",
+        "url": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_K_M.gguf"
+      }
+    ],
     "id": "mistral-ins-7b-q4",
     "object": "model",
     "name": "Mistral Instruct 7B Q4",
@@ -11,7 +16,8 @@
       "system_prompt": "",
       "user_prompt": "<s>[INST]",
       "ai_prompt": "[/INST]",
-      "prompt_template": "<s>[INST]{prompt}\n[/INST]"
+      "prompt_template": "<s>[INST]{prompt}\n[/INST]",
+      "llama_model_path": "mistral-7b-instruct-v0.1.Q4_K_M.gguf"
     },
     "parameters": {
       "max_tokens": 4096

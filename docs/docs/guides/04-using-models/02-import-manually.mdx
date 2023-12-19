@@ -111,7 +111,12 @@ Copy the following configurations into the `model.json`.
 
 ```js
 {
-    "source_url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf",
+    "source": [
+      {
+        "filename": "trinity-v1.Q4_K_M.gguf",
+        "url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf"
+      }
+    ],
     "id": "trinity-v1-7b",
     "object": "model",
     "name": "Trinity 7B Q4",
@@ -119,11 +124,12 @@ Copy the following configurations into the `model.json`.
     "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 2048,
-      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
+      "ctx_len": 4096,
+      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+      "llama_model_path": "trinity-v1.Q4_K_M.gguf"
     },
     "parameters": {
-      "max_tokens": 2048
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "Jan",

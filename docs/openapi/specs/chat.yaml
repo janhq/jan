@@ -24,7 +24,7 @@ components:
           description: Specifies the model being used for inference or processing tasks.
         max_tokens:
           type: number
-          default: 2048
+          default: 4096
           description: >-
             The maximum number of tokens the model will generate in a single
             response.
@@ -88,7 +88,7 @@ components:
             model responses.
         max_tokens:
           type: number
-          default: 2048
+          default: 4096
           description: >
             The maximum number of tokens the model will generate in a single
             response.

@@ -28,7 +28,7 @@ cd ../models && wget https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/mai
 4. **Run:**
 ```bash
 cd ../build/bin/
-./main -m ./models/llama-2-7b.Q8_0.gguf -p "Writing a thesis proposal can be done in 10 simple steps:\nStep 1:" -n 2048 -e -ngl 100 -t 48
+./main -m ./models/llama-2-7b.Q8_0.gguf -p "Writing a thesis proposal can be done in 10 simple steps:\nStep 1:" -n 4096 -e -ngl 100 -t 48
 ```
 
 For the llama.cpp CLI arguments you can see here:
@@ -116,7 +116,7 @@ python build.py --model_dir ./llama/7B/ --dtype float16 --remove_input_padding -
 
 4. Run Inference:
 ```bash
-python3 run.py --max_output_len=2048 --tokenizer_dir ./llama/7B/ --engine_dir=./llama/7B/trt_engines/weight_only/1-gpu/ --input_text "Writing a thesis proposal can be done in 10 simple steps:\nStep 1:"
+python3 run.py --max_output_len=4096 --tokenizer_dir ./llama/7B/ --engine_dir=./llama/7B/trt_engines/weight_only/1-gpu/ --input_text "Writing a thesis proposal can be done in 10 simple steps:\nStep 1:"
 ```
 
 For the tensorRT-LLM CLI arguments, you can see in the `run.py`.

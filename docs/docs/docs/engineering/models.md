@@ -76,14 +76,14 @@ Here's a standard example `model.json` for a GGUF model.
 "format": "ggufv3",                 // Defaults to "ggufv3"
 "engine": "nitro",                // engine_id specified in jan/engine folder
 "engine_parameters": {              // Engine parameters inside model.json can override
-    "ctx_len": 2048,                // the value inside the base engine.json
+    "ctx_len": 4096,                // the value inside the base engine.json
     "ngl": 100,
     "embedding": true,
     "n_parallel": 4,
 },
 "model_parameters": {                     // Models are called parameters
     "stream": true,
-    "max_tokens": 2048,
+    "max_tokens": 4096,
     "stop": ["<endofstring>"],      // This usually can be left blank, only used with specific need from model author
     "frequency_penalty": 0,
     "presence_penalty": 0,
