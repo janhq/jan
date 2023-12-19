@@ -1,5 +1,5 @@
 /* eslint-disable no-case-declarations */
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import { FieldValues, UseFormRegister } from 'react-hook-form'
 
 import Checkbox from '@/containers/Checkbox'
 import Slider from '@/containers/Slider'
@@ -27,7 +27,7 @@ type CheckboxData = {
 
 const settingComponentBuilder = (
   componentData: SettingComponentData[],
-  register: any
+  register: UseFormRegister<FieldValues>
 ) => {
   const components = componentData.map((data) => {
     switch (data.controllerType) {

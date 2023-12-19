@@ -75,19 +75,14 @@ const ChatScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitingToSendMessage, activeThreadId])
 
-  useEffect(() => {
-    if (textareaRef.current !== null) {
-      const scrollHeight = textareaRef.current.scrollHeight
-      if (currentPrompt.length === 0) {
-        textareaRef.current.style.height = '40px'
-      } else {
-        textareaRef.current.style.height = `${
-          scrollHeight < 40 ? 40 : scrollHeight
-        }px`
-      }
+  const resizeTextArea = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '40px'
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPrompt])
+  }
+
+  useEffect(resizeTextArea, [currentPrompt])
 
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
@@ -155,7 +150,8 @@ const ChatScreen = () => {
           )}
           <div className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 px-8 py-4">
             <Textarea
-              className="min-h-10 h-10 max-h-[400px] resize-none pr-20"
+              className="max-h-[400px] resize-none overflow-y-hidden pr-20"
+              style={{ height: '40px' }}
               ref={textareaRef}
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) =>
                 onKeyDown(e)
