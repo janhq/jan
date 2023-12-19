@@ -3,7 +3,7 @@
     "id": "gpt-4",
     "object": "model",
     "name": "OpenAI GPT 4",
-    "version": 1.0,
+    "version": "1.0",
     "description": "OpenAI GPT 4 model is extremely good",
     "format": "api",
     "settings": {},
