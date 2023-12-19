@@ -48,7 +48,8 @@
       "icon": "icons/icon.png",
       "target": [
         "nsis"
-      ]
+      ],
+      "sign": "./sign.js"
     },
     "artifactName": "jan-${os}-${arch}-${version}.${ext}"
   },
