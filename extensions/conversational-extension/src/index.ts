@@ -7,19 +7,10 @@ import { join } from 'path'
  * JSONConversationalExtension is a ConversationalExtension implementation that provides
  * functionality for managing threads.
  */
-export default class JSONConversationalExtension
-  implements ConversationalExtension
-{
+export default class JSONConversationalExtension extends ConversationalExtension {
   private static readonly _homeDir = 'threads'
   private static readonly _threadInfoFileName = 'thread.json'
   private static readonly _threadMessagesFileName = 'messages.jsonl'
-
-  /**
-   * Returns the type of the extension.
-   */
-  type(): ExtensionType {
-    return ExtensionType.Conversational
-  }
 
   /**
    * Called when the extension is loaded.

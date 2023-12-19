@@ -12,19 +12,9 @@ import { join } from 'path'
 /**
  * A extension for models
  */
-export default class JanModelExtension implements ModelExtension {
+export default class JanModelExtension extends ModelExtension {
   private static readonly _homeDir = 'models'
   private static readonly _modelMetadataFileName = 'model.json'
-
-  /**
-   * Implements type from JanExtension.
-   * @override
-   * @returns The type of the extension.
-   */
-  type(): ExtensionType {
-    return ExtensionType.Model
-  }
-
   /**
    * Called when the extension is loaded.
    * @override

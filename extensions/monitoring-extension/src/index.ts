@@ -6,15 +6,7 @@ import { executeOnMain } from "@janhq/core";
  * JanMonitoringExtension is a extension that provides system monitoring functionality.
  * It implements the MonitoringExtension interface from the @janhq/core package.
  */
-export default class JanMonitoringExtension implements MonitoringExtension {
-  /**
-   * Returns the type of the extension.
-   * @returns The ExtensionType.SystemMonitoring value.
-   */
-  type(): ExtensionType {
-    return ExtensionType.SystemMonitoring;
-  }
-
+export default class JanMonitoringExtension extends MonitoringExtension {
   /**
    * Called when the extension is loaded.
    */

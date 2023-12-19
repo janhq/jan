@@ -31,7 +31,7 @@ import { join } from "path";
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceNitroExtension implements InferenceExtension {
+export default class JanInferenceNitroExtension extends InferenceExtension {
   private static readonly _homeDir = "engines";
   private static readonly _engineMetadataFileName = "nitro.json";
 
@@ -47,13 +47,6 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
 
   controller = new AbortController();
   isCancelled = false;
-  /**
-   * Returns the type of the extension.
-   * @returns {ExtensionType} The type of the extension.
-   */
-  type(): ExtensionType {
-    return ExtensionType.Inference;
-  }
 
   /**
    * Subscribes to events emitted by the @janhq/core package.

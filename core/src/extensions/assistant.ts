@@ -1,5 +1,5 @@
 import { Assistant, AssistantInterface } from '../index'
-import { BaseExtension } from '../extension'
+import { BaseExtension, ExtensionType } from '../extension'
 
 /**
  * Assistant extension for managing assistants.
@@ -9,4 +9,8 @@ export abstract class AssistantExtension extends BaseExtension implements Assist
   abstract createAssistant(assistant: Assistant): Promise<void>
   abstract deleteAssistant(assistant: Assistant): Promise<void>
   abstract getAssistants(): Promise<Assistant[]>
+
+  type(): ExtensionType {
+    return ExtensionType.Assistant
+  }
 }

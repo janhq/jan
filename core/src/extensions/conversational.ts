@@ -1,5 +1,5 @@
 import { Thread, ThreadInterface, ThreadMessage, MessageInterface } from '../index'
-import { BaseExtension } from '../extension'
+import { BaseExtension, ExtensionType } from '../extension'
 
 /**
  * Conversational extension. Persists and retrieves conversations.
@@ -16,4 +16,10 @@ export abstract class ConversationalExtension
   abstract addNewMessage(message: ThreadMessage): Promise<void>
   abstract writeMessages(threadId: string, messages: ThreadMessage[]): Promise<void>
   abstract getAllMessages(threadId: string): Promise<ThreadMessage[]>
+  /**
+   * Returns the type of the extension.
+   */
+  type(): ExtensionType {
+    return ExtensionType.Conversational
+  }
 }
