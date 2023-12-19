@@ -47,7 +47,9 @@ export default function RowModel(props: RowModelProps) {
       <td className="px-6 py-4 font-bold">{props.data.id}</td>
       <td className="px-6 py-4">
         <Badge themes="secondary">
-          {toGigabytes(props.data.metadata.size)}
+          {props.data.metadata.size
+            ? toGigabytes(props.data.metadata.size)
+            : '-'}
         </Badge>
       </td>
       <td className="px-6 py-4">
