@@ -4,7 +4,7 @@ const { exec } = require('child_process');
 function sign({ path, name, certUrl, clientId, tenantId, clientSecret, certName, timestampServer, version }) {
     return new Promise((resolve, reject) => {
 
-        const command = `azuresigntool.exe sign -kvu "${certUrl}" -kvi "${clientId}" -kvt "${tenantId}" -kvs "${clientSecret}" -kvc "${certName}" -tr "${timestampServer}" -v "${name}-${version}.exe" "${path}"`;
+        const command = `azuresigntool.exe sign -kvu "${certUrl}" -kvi "${clientId}" -kvt "${tenantId}" -kvs "${clientSecret}" -kvc "${certName}" -tr "${timestampServer}" -v "${path}"`;
 
 
         exec(command, (error, stdout, stderr) => {
