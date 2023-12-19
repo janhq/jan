@@ -154,7 +154,7 @@ jobs:
           upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
           asset_path: ./electron/dist/jan-win-x64-${{ needs.create-draft-release.outputs.version }}.exe.blockmap
           asset_name: jan-win-x64-${{ needs.create-draft-release.outputs.version }}.exe.blockmap
-          asset_content_type: application/gzip
+          asset_content_type: application/octet-stream
 
       - uses: actions/upload-release-asset@v1.0.1
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
