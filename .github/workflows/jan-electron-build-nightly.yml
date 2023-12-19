@@ -203,7 +203,7 @@ jobs:
           jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
-          jq '.build.win.sign = "./sign.js"' package.json > /tmp/package.json
+          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
       - name: Install AzureSignTool

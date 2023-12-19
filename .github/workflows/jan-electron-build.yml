@@ -120,7 +120,7 @@ jobs:
           fi
           jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
-          jq '.build.win.sign = "./sign.js"' package.json > /tmp/package.json
+          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
