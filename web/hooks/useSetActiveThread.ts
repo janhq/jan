@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+
 import {
   InferenceEvent,
   ExtensionTypeEnum,

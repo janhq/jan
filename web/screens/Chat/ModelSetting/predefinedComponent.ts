@@ -1,4 +1,4 @@
-import { SettingComponentData } from './settingComponentBuilder'
+import { SettingComponentData } from './SettingComponent'
 
 export const presetConfiguration: Record<string, SettingComponentData> = {
   prompt_template: {
@@ -139,6 +139,54 @@ export const presetConfiguration: Record<string, SettingComponentData> = {
       max: 4,
       step: 1,
       value: 1,
+    },
+  },
+  // assistant
+  chunk_size: {
+    name: 'chunk_size',
+    title: 'Chunk Size',
+    description: 'Maximum number of tokens in a chunk',
+    controllerType: 'slider',
+    controllerData: {
+      min: 128,
+      max: 2048,
+      step: 128,
+      value: 1024,
+    },
+  },
+  chunk_overlap: {
+    name: 'chunk_overlap',
+    title: 'Chunk Overlap',
+    description: 'Number of tokens overlapping between two adjacent chunks',
+    controllerType: 'slider',
+    controllerData: {
+      min: 32,
+      max: 512,
+      step: 32,
+      value: 64,
+    },
+  },
+  top_k: {
+    name: 'top_k',
+    title: 'Top K',
+    description: 'Number of top-ranked documents to retrieve',
+    controllerType: 'slider',
+    controllerData: {
+      min: 1,
+      max: 5,
+      step: 1,
+      value: 2,
+    },
+  },
+  retrieval_template: {
+    name: 'retrieval_template',
+    title: 'Retrieval Template',
+    description:
+      'The template to use for retrieval. The following variables are available: {CONTEXT}, {QUESTION}',
+    controllerType: 'input',
+    controllerData: {
+      placeholder: 'Retrieval Template',
+      value: '',
     },
   },
 }

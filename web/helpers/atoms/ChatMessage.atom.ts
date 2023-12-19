@@ -14,6 +14,8 @@ import {
 /**
  * Stores all chat messages for all threads
  */
+export const generateResponseAtom = atom<boolean>(false)
+
 export const chatMessages = atom<Record<string, ThreadMessage[]>>({})
 
 /**
