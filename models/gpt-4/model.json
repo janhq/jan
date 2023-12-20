@@ -1,17 +1,22 @@
 {
-    "source_url": "https://openai.com",
-    "id": "gpt-4",
-    "object": "model",
-    "name": "OpenAI GPT 4",
-    "version": "1.0",
-    "description": "OpenAI GPT 4 model is extremely good",
-    "format": "api",
-    "settings": {},
-    "parameters": {},
-    "metadata": {
-      "author": "OpenAI",
-      "tags": ["General", "Big Context Length"]
-    },
-    "engine": "openai",
-    "state": "ready"
+  "source": [
+    {
+      "filename": "openai",
+      "url": "https://openai.com"
+    }
+  ],
+  "id": "gpt-4",
+  "object": "model",
+  "name": "OpenAI GPT 4",
+  "version": "1.0",
+  "description": "OpenAI GPT 4 model is extremely good",
+  "format": "api",
+  "settings": {},
+  "parameters": {},
+  "metadata": {
+    "author": "OpenAI",
+    "tags": ["General", "Big Context Length"]
+  },
+  "engine": "openai",
+  "state": "ready"
 }
