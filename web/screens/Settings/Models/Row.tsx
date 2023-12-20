@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { Model } from '@janhq/core'
+import { InferenceEngine, Model } from '@janhq/core'
 import { Badge } from '@janhq/uikit'
 
 import {
@@ -33,6 +33,10 @@ export default function RowModel(props: RowModelProps) {
 
   const isActiveModel = stateModel.model === props.data.id
 
+  const isRemoteModel =
+    props.data.engine === InferenceEngine.openai ||
+    InferenceEngine.triton_trtllm
+
   const onModelActionClick = (modelId: string) => {
     if (activeModel && activeModel.id === modelId) {
       stopModel(modelId)
@@ -56,7 +60,15 @@ export default function RowModel(props: RowModelProps) {
         <Badge themes="secondary">v{props.data.version}</Badge>
       </td>
       <td className="px-6 py-4">
-        {stateModel.loading && stateModel.model === props.data.id ? (
+        {isRemoteModel ? (
+          <Badge
+            themes="success"
+            className="inline-flex items-center space-x-2"
+          >
+            <span className="h-2 w-2 rounded-full bg-green-500" />
+            <span>Active</span>
+          </Badge>
+        ) : stateModel.loading && stateModel.model === props.data.id ? (
           <Badge
             className="inline-flex items-center space-x-2"
             themes="secondary"
@@ -85,15 +97,17 @@ export default function RowModel(props: RowModelProps) {
         )}
       </td>
       <td className="px-6 py-4 text-center">
-        <div
-          className="cursor-pointer"
-          ref={setToggle}
-          onClick={() => {
-            setMore(!more)
-          }}
-        >
-          <MoreVerticalIcon className="h-5 w-5" />
-        </div>
+        {!isRemoteModel && (
+          <div
+            className="cursor-pointer"
+            ref={setToggle}
+            onClick={() => {
+              setMore(!more)
+            }}
+          >
+            <MoreVerticalIcon className="h-5 w-5" />
+          </div>
+        )}
         {more && (
           <div
             className="absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-border bg-background py-2 shadow-lg"

@@ -9,6 +9,10 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipArrow,
   Input,
 } from '@janhq/uikit'
 
@@ -71,57 +75,66 @@ export default function DropdownListSidebar() {
   const finishInit = threadStates[activeThread.id].isFinishInit ?? true
 
   return (
-    <>
-      <Select
-        disabled={finishInit}
-        value={selected?.id}
-        onValueChange={finishInit ? undefined : onValueSelected}
-      >
-        <SelectTrigger className="w-full">
-          <SelectValue placeholder="Choose model to start">
-            {downloadedModels.filter((x) => x.id === selected?.id)[0]?.name}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent className="right-5 block w-full min-w-[300px] pr-0">
-          <div className="flex w-full items-center space-x-2 px-4 py-2">
-            <MonitorIcon size={20} className="text-muted-foreground" />
-            <span>Local</span>
-          </div>
-          <div className="border-b border-border" />
-          {downloadedModels.length === 0 ? (
-            <div className="px-4 py-2">
-              <p>{`Oops, you don't have a model yet.`}</p>
+    <Tooltip>
+      <TooltipTrigger className="w-full">
+        <Select
+          disabled={finishInit}
+          value={selected?.id}
+          onValueChange={finishInit ? undefined : onValueSelected}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Choose model to start">
+              {downloadedModels.filter((x) => x.id === selected?.id)[0]?.name}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent className="right-5 block w-full min-w-[300px] pr-0">
+            <div className="flex w-full items-center space-x-2 px-4 py-2">
+              <MonitorIcon size={20} className="text-muted-foreground" />
+              <span>Local</span>
             </div>
-          ) : (
-            <SelectGroup>
-              {downloadedModels.map((x, i) => (
-                <SelectItem
-                  key={i}
-                  value={x.id}
-                  className={twMerge(x.id === selected?.id && 'bg-secondary')}
-                >
-                  <div className="flex w-full justify-between">
-                    <span className="line-clamp-1 block">{x.name}</span>
-                    <span className="font-bold text-muted-foreground">
-                      {toGigabytes(x.metadata.size)}
-                    </span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          )}
-          <div className="border-b border-border" />
-          <div className="w-full px-4 py-2">
-            <Button
-              block
-              className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
-              onClick={() => setMainViewState(MainViewState.Hub)}
-            >
-              Explore The Hub
-            </Button>
-          </div>
-        </SelectContent>
-      </Select>
+            <div className="border-b border-border" />
+            {downloadedModels.length === 0 ? (
+              <div className="px-4 py-2">
+                <p>{`Oops, you don't have a model yet.`}</p>
+              </div>
+            ) : (
+              <SelectGroup>
+                {downloadedModels.map((x, i) => (
+                  <SelectItem
+                    key={i}
+                    value={x.id}
+                    className={twMerge(x.id === selected?.id && 'bg-secondary')}
+                  >
+                    <div className="flex w-full justify-between">
+                      <span className="line-clamp-1 block">{x.name}</span>
+                      <span className="font-bold text-muted-foreground">
+                        {toGigabytes(x.metadata.size)}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            <div className="border-b border-border" />
+            <div className="w-full px-4 py-2">
+              <Button
+                block
+                className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
+                onClick={() => setMainViewState(MainViewState.Hub)}
+              >
+                Explore The Hub
+              </Button>
+            </div>
+          </SelectContent>
+        </Select>
+      </TooltipTrigger>
+
+      {finishInit && (
+        <TooltipContent sideOffset={10}>
+          <span>To change model, please start a new thread</span>
+          <TooltipArrow />
+        </TooltipContent>
+      )}
 
       {selected?.engine === InferenceEngine.openai && (
         <div className="mt-4">
@@ -141,6 +154,6 @@ export default function DropdownListSidebar() {
           />
         </div>
       )}
-    </>
+    </Tooltip>
   )
 }
