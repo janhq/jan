@@ -1,6 +1,10 @@
-import { EventName, ExtensionType, Thread, events } from '@janhq/core'
-
-import { ConversationalExtension } from '@janhq/core'
+import {
+  EventName,
+  ExtensionType,
+  Thread,
+  events,
+  ConversationalExtension,
+} from '@janhq/core'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
