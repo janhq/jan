@@ -99,7 +99,10 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   }, [])
 
   useEffect(() => {
-    if (props.status === MessageStatus.Ready) {
+    if (
+      props.status === MessageStatus.Ready ||
+      props.status === MessageStatus.Error
+    ) {
       return
     }
     const currentTimestamp = new Date().getTime() // Get current time in milliseconds
