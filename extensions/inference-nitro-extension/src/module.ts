@@ -43,7 +43,7 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
     return Promise.resolve({ error: "Not a nitro model" });
   } else {
     const nitroResourceProbe = await getResourcesInfo();
-    // Convert settings.prompt_template to system_prompt, user_prompt, ai_prompt
+
     if (wrapper.model.settings.prompt_template) {
       const promptTemplate = wrapper.model.settings.prompt_template;
       const prompt = promptTemplateConverter(promptTemplate);
@@ -56,9 +56,8 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
     }
 
     const settings = {
-      llama_model_path: join(wrapper.modelFolderPath, wrapper.model.fileName),
+      llama_model_path: join(wrapper.modelFolderPath, wrapper.model.filename),
       ...wrapper.model.settings,
-      // This is critical and requires real system information
       cpu_threads: nitroResourceProbe.numCpuPhysicalCore,
     };
 

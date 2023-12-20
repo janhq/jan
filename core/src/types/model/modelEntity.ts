@@ -130,6 +130,8 @@ export type ModelSettingParams = {
   n_parallel?: number
   cpu_threads?: number
   prompt_template?: string
+  llama_model_path?: string
+  mmproj?: string
 }
 
 /**
