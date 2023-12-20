@@ -1,28 +1,28 @@
 {
-    "source": [
-      {
-        "filename": "deepseek-coder-1.3b-instruct.Q8_0.gguf",
-        "url": "https://huggingface.co/TheBloke/deepseek-coder-1.3b-instruct-GGUF/resolve/main/deepseek-coder-1.3b-instruct.Q8_0.gguf"
-      }
-    ],
-    "id": "deepseek-coder-1.3b",
-    "object": "model",
-    "name": "Deepseek Coder 1.3B Q8",
-    "version": "1.0",
-    "description": "Deepseek Coder trained on 2T tokens (87% code, 13% English/Chinese), excelling in project-level code completion with advanced capabilities across multiple programming languages.",
-    "format": "gguf",
-    "settings": {
-      "ctx_len": 4096,
-      "prompt_template": "### Instruction:\n{prompt}\n### Response:",
-      "llama_model_path": "deepseek-coder-1.3b-instruct.Q8_0.gguf"
-    },
-    "parameters": {
-      "max_tokens": 4096
-    },
-    "metadata": {
-      "author": "Deepseek, The Bloke",
-      "tags": ["Tiny", "Foundational Model"],
-      "size": 1430000000
-    },
-    "engine": "nitro"
-  }
+  "source": [
+    {
+      "filename": "deepseek-coder-1.3b-instruct.Q8_0.gguf",
+      "url": "https://huggingface.co/TheBloke/deepseek-coder-1.3b-instruct-GGUF/resolve/main/deepseek-coder-1.3b-instruct.Q8_0.gguf"
+    }
+  ],
+  "id": "deepseek-coder-1.3b",
+  "object": "model",
+  "name": "Deepseek Coder 1.3B Q8",
+  "version": "1.0",
+  "description": "Deepseek Coder trained on 2T tokens (87% code, 13% English/Chinese), excelling in project-level code completion with advanced capabilities across multiple programming languages.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "### Instruction:\n{prompt}\n### Response:",
+    "llama_model_path": "deepseek-coder-1.3b-instruct.Q8_0.gguf"
+  },
+  "parameters": {
+    "max_tokens": 4096
+  },
+  "metadata": {
+    "author": "Deepseek, The Bloke",
+    "tags": ["Tiny", "Foundational Model"],
+    "size": 1430000000
+  },
+  "engine": "nitro"
+}

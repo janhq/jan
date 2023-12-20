@@ -1,29 +1,28 @@
 {
-    "source": [
-      {
-        "filename": "nous-capybara-34b.Q5_K_M.gguf",
-        "url": "https://huggingface.co/TheBloke/Nous-Capybara-34B-GGUF/resolve/main/nous-capybara-34b.Q5_K_M.gguf"
-      }
-    ],
-    "id": "capybara-34b",
-    "object": "model",
-    "name": "Capybara 200k 34B Q5",
-    "version": "1.0",
-    "description": "Nous Capybara 34B, a variant of the Yi-34B model, is the first Nous model with a 200K context length, trained for three epochs on the innovative Capybara dataset.",
-    "format": "gguf",
-    "settings": {
-      "ctx_len": 4096,
-      "prompt_template": "USER:\n{prompt}\nASSISTANT:",
-      "llama_model_path": "nous-capybara-34b.Q5_K_M.gguf"
-    },
-    "parameters": {
-      "max_tokens": 4096
-    },
-    "metadata": {
-      "author": "NousResearch, The Bloke",
-      "tags": ["34B", "Finetuned"],
-      "size": 24320000000
-    }, 
-    "engine": "nitro"
-  }
-  
+  "source": [
+    {
+      "filename": "nous-capybara-34b.Q5_K_M.gguf",
+      "url": "https://huggingface.co/TheBloke/Nous-Capybara-34B-GGUF/resolve/main/nous-capybara-34b.Q5_K_M.gguf"
+    }
+  ],
+  "id": "capybara-34b",
+  "object": "model",
+  "name": "Capybara 200k 34B Q5",
+  "version": "1.0",
+  "description": "Nous Capybara 34B, a variant of the Yi-34B model, is the first Nous model with a 200K context length, trained for three epochs on the innovative Capybara dataset.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "USER:\n{prompt}\nASSISTANT:",
+    "llama_model_path": "nous-capybara-34b.Q5_K_M.gguf"
+  },
+  "parameters": {
+    "max_tokens": 4096
+  },
+  "metadata": {
+    "author": "NousResearch, The Bloke",
+    "tags": ["34B", "Finetuned"],
+    "size": 24320000000
+  },
+  "engine": "nitro"
+}
