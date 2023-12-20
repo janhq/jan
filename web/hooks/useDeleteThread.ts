@@ -10,8 +10,6 @@ import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { useActiveModel } from './useActiveModel'
-
 import { extensionManager } from '@/extension/ExtensionManager'
 
 import {
@@ -27,7 +25,6 @@ import {
 } from '@/helpers/atoms/Thread.atom'
 
 export default function useDeleteThread() {
-  const { activeModel } = useActiveModel()
   const [threads, setThreads] = useAtom(threadsAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
@@ -77,7 +74,7 @@ export default function useDeleteThread() {
         setCurrentPrompt('')
         toaster({
           title: 'Thread successfully deleted.',
-          description: `Thread with ${activeModel?.name} has been successfully deleted.`,
+          description: `Thread ${threadId} has been successfully deleted.`,
         })
       }
 
