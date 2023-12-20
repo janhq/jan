@@ -220,7 +220,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
         events.emit(EventName.OnMessageUpdate, message);
       },
       error: async (err) => {
-        if (instance.isCancelled) {
+        if (instance.isCancelled || message.content.length > 0) {
           message.status = MessageStatus.Ready;
           events.emit(EventName.OnMessageUpdate, message);
           return;

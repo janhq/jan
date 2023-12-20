@@ -1,5 +1,16 @@
 import { useEffect } from 'react'
 
+import {
+  Modal,
+  ModalTrigger,
+  ModalClose,
+  ModalFooter,
+  ModalContent,
+  ModalHeader,
+  ModalTitle,
+  Button,
+} from '@janhq/uikit'
+
 import { motion as m } from 'framer-motion'
 import { useAtomValue } from 'jotai'
 import {
@@ -13,11 +24,12 @@ import { twMerge } from 'tailwind-merge'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDeleteThread from '@/hooks/useDeleteThread'
-import useGetAllThreads from '@/hooks/useGetAllThreads'
 
 import useGetAssistants from '@/hooks/useGetAssistants'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useSetActiveThread from '@/hooks/useSetActiveThread'
+
+import useThreads from '@/hooks/useThreads'
 
 import { displayDate } from '@/utils/datetime'
 
@@ -30,7 +42,7 @@ import {
 export default function ThreadList() {
   const threads = useAtomValue(threadsAtom)
   const threadStates = useAtomValue(threadStatesAtom)
-  const { getAllThreads } = useGetAllThreads()
+  const { getAllThreads } = useThreads()
   const { assistants } = useGetAssistants()
   const { requestCreateNewThread } = useCreateNewThread()
   const activeThread = useAtomValue(activeThreadAtom)
@@ -107,15 +119,40 @@ export default function ThreadList() {
                       Clean thread
                     </span>
                   </div>
-                  <div
-                    className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
-                    onClick={() => deleteThread(thread.id)}
-                  >
-                    <Trash2Icon size={16} className="text-muted-foreground" />
-                    <span className="text-bold text-black dark:text-muted-foreground">
-                      Delete thread
-                    </span>
-                  </div>
+                  <Modal>
+                    <ModalTrigger asChild>
+                      <div className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary">
+                        <Trash2Icon
+                          size={16}
+                          className="text-muted-foreground"
+                        />
+                        <span className="text-bold text-black dark:text-muted-foreground">
+                          Delete thread
+                        </span>
+                      </div>
+                    </ModalTrigger>
+                    <ModalContent>
+                      <ModalHeader>
+                        <ModalTitle>Delete Thread</ModalTitle>
+                      </ModalHeader>
+                      <p>Are you sure you want to delete this thread?</p>
+                      <ModalFooter>
+                        <div className="flex gap-x-2">
+                          <ModalClose asChild>
+                            <Button themes="ghost">No</Button>
+                          </ModalClose>
+                          <ModalClose asChild>
+                            <Button
+                              themes="danger"
+                              onClick={() => deleteThread(thread.id)}
+                            >
+                              Yes
+                            </Button>
+                          </ModalClose>
+                        </div>
+                      </ModalFooter>
+                    </ModalContent>
+                  </Modal>
                 </div>
               </div>
               {/* {messages.length > 0 && (

@@ -71,7 +71,7 @@ async function loadModel(nitroResourceProbe: any | undefined) {
     .then(() => loadLLMModel(currentSettings))
     .then(validateModelStatus)
     .catch((err) => {
-      console.log("error: ", err);
+      console.error("error: ", err);
       // TODO: Broadcast error so app could display proper error message
       return { error: err, currentModelFile };
     });
@@ -172,7 +172,7 @@ async function validateModelStatus(): Promise<ModelOperationResponse> {
 async function killSubprocess(): Promise<void> {
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 5000);
-  console.log("Start requesting to kill Nitro...");
+  console.debug("Start requesting to kill Nitro...");
   return fetch(NITRO_HTTP_KILL_URL, {
     method: "DELETE",
     signal: controller.signal,
@@ -183,7 +183,7 @@ async function killSubprocess(): Promise<void> {
     })
     .catch(() => {})
     .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
-    .then(() => console.log("Nitro is killed"));
+    .then(() => console.debug("Nitro is killed"));
 }
 /**
  * Look for the Nitro binary and execute it
@@ -191,7 +191,7 @@ async function killSubprocess(): Promise<void> {
  * Should run exactly platform specified Nitro binary version
  */
 function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
-  console.log("Starting Nitro subprocess...");
+  console.debug("Starting Nitro subprocess...");
   return new Promise(async (resolve, reject) => {
     let binaryFolder = path.join(__dirname, "bin"); // Current directory by default
     let binaryName;
@@ -221,7 +221,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
     });
 
     subprocess.stderr.on("data", (data) => {
-      console.log("subprocess error:" + data.toString());
+      console.error("subprocess error:" + data.toString());
       console.error(`stderr: ${data}`);
     });
 
