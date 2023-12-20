@@ -236,8 +236,8 @@ const config = {
         {
           type: "docSidebar",
           position: "left",
-          sidebarId: "specsSidebar",
-          label: "Specs",
+          sidebarId: "docsSidebar",
+          label: "Docs",
         },
         // Navbar right
         {
