@@ -1,6 +1,6 @@
 .btn {
   @apply inline-flex items-center justify-center whitespace-nowrap rounded-lg font-semibold transition-colors;
-  @apply focus-visible:ring-ring cursor-pointer focus-visible:outline-none focus-visible:ring-1;
+  @apply cursor-pointer focus:outline-none focus-visible:outline-none focus-visible:ring-0;
   @apply disabled:pointer-events-none disabled:opacity-50;
 
   &-primary {
@@ -28,7 +28,7 @@
   }
 
   &-ghost {
-    @apply hover:bg-primary hover:text-primary-foreground;
+    @apply hover:bg-secondary hover:text-secondary-foreground;
   }
 
   &-sm {

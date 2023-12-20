@@ -14,11 +14,10 @@ import ModalCancelDownload from '@/containers/ModalCancelDownload'
 
 import { MainViewState } from '@/constants/screens'
 
-// import { ModelPerformance, TagType } from '@/constants/tagType'
-
-import { useActiveModel } from '@/hooks/useActiveModel'
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
+import { getAssistants } from '@/hooks/useGetAssistants'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
@@ -34,12 +33,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const { downloadModel } = useDownloadModel()
   const { downloadedModels } = useGetDownloadedModels()
   const { modelDownloadStateAtom, downloadStates } = useDownloadState()
-  const { startModel } = useActiveModel()
-  // const [title, setTitle] = useState<string>('Recommended')
-
-  // const [performanceTag, setPerformanceTag] = useState<TagType>(
-  //   ModelPerformance.PerformancePositive
-  // )
+  const { requestCreateNewThread } = useCreateNewThread()
 
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[model.id]),
@@ -59,10 +53,15 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
     <Button onClick={() => onDownloadClick()}>Download</Button>
   )
 
-  const onUseModelClick = () => {
-    startModel(model.id)
+  const onUseModelClick = useCallback(async () => {
+    const assistants = await getAssistants()
+    if (assistants.length === 0) {
+      alert('No assistant available')
+      return
+    }
+    await requestCreateNewThread(assistants[0], model)
     setMainViewState(MainViewState.Thread)
-  }
+  }, [])
 
   if (isDownloaded) {
     downloadButton = (
@@ -79,22 +78,6 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   if (downloadState != null && downloadStates.length > 0) {
     downloadButton = <ModalCancelDownload model={model} />
   }
-
-  // const renderBadge = (performance: TagType) => {
-  //   switch (performance) {
-  //     case ModelPerformance.PerformancePositive:
-  //       return <Badge themes="success">{title}</Badge>
-
-  //     case ModelPerformance.PerformanceNeutral:
-  //       return <Badge themes="secondary">{title}</Badge>
-
-  //     case ModelPerformance.PerformanceNegative:
-  //       return <Badge themes="danger">{title}</Badge>
-
-  //     default:
-  //       break
-  //   }
-  // }
 
   return (
     <div

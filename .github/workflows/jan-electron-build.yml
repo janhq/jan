@@ -120,8 +120,14 @@ jobs:
           fi
           jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
+          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
+
+      - name: Install AzureSignTool
+        run: |
+          dotnet tool install --global AzureSignTool
 
       - name: Build app
         run: |
@@ -129,12 +135,11 @@ jobs:
         env:
           ANALYTICS_ID: ${{ secrets.JAN_APP_POSTHOG_PROJECT_API_KEY }}
           ANALYTICS_HOST: ${{ secrets.JAN_APP_POSTHOG_URL }}
-
-      - name: Windows Code Sign with AzureSignTool
-        run: |
-          dotnet tool install --global AzureSignTool
-          cd ./electron/dist
-          azuresigntool.exe sign -kvu "${{ secrets.AZURE_KEY_VAULT_URI }}" -kvi "${{ secrets.AZURE_CLIENT_ID }}" -kvt "${{ secrets.AZURE_TENANT_ID }}" -kvs "${{ secrets.AZURE_CLIENT_SECRET }}" -kvc ${{ secrets.AZURE_CERT_NAME }} -tr http://timestamp.globalsign.com/tsa/r6advanced1 -v "jan-win-x64-${{ needs.create-draft-release.outputs.version }}.exe"
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
 
       - uses: actions/upload-release-asset@v1.0.1
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
@@ -154,7 +159,7 @@ jobs:
           upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
           asset_path: ./electron/dist/jan-win-x64-${{ needs.create-draft-release.outputs.version }}.exe.blockmap
           asset_name: jan-win-x64-${{ needs.create-draft-release.outputs.version }}.exe.blockmap
-          asset_content_type: text/xml
+          asset_content_type: application/octet-stream
 
       - uses: actions/upload-release-asset@v1.0.1
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')

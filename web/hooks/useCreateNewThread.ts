@@ -5,10 +5,13 @@ import {
   Thread,
   ThreadAssistantInfo,
   ThreadState,
+  Model,
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { generateThreadId } from '@/utils/thread'
+
+import useDeleteThread from './useDeleteThread'
 
 import { extensionManager } from '@/extension'
 import {
@@ -46,27 +49,33 @@ export const useCreateNewThread = () => {
     setThreadModelRuntimeParamsAtom
   )
 
-  const requestCreateNewThread = async (assistant: Assistant) => {
+  const { deleteThread } = useDeleteThread()
+
+  const requestCreateNewThread = async (
+    assistant: Assistant,
+    model?: Model | undefined
+  ) => {
     // loop through threads state and filter if there's any thread that is not finish init
-    let hasUnfinishedInitThread = false
+    let unfinishedInitThreadId: string | undefined = undefined
     for (const key in threadStates) {
       const isFinishInit = threadStates[key].isFinishInit ?? true
       if (!isFinishInit) {
-        hasUnfinishedInitThread = true
+        unfinishedInitThreadId = key
         break
       }
     }
 
-    if (hasUnfinishedInitThread) {
-      return
+    if (unfinishedInitThreadId) {
+      await deleteThread(unfinishedInitThreadId)
     }
 
+    const modelId = model ? model.id : '*'
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
       assistant_name: assistant.name,
       model: {
-        id: '*',
+        id: modelId,
         settings: {},
         parameters: {
           stream: true,
