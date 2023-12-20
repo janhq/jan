@@ -60,19 +60,21 @@ export const addOldMessagesAtom = atom(
 export const addNewMessageAtom = atom(
   null,
   (get, set, newMessage: ThreadMessage) => {
-    const threadId = get(getActiveThreadIdAtom)
-    if (!threadId) return
-
-    const currentMessages = get(chatMessages)[threadId] ?? []
+    const currentMessages = get(chatMessages)[newMessage.thread_id] ?? []
     const updatedMessages = [...currentMessages, newMessage]
 
     const newData: Record<string, ThreadMessage[]> = {
       ...get(chatMessages),
     }
-    newData[threadId] = updatedMessages
+    newData[newMessage.thread_id] = updatedMessages
     set(chatMessages, newData)
+
     // Update thread last message
-    set(updateThreadStateLastMessageAtom, threadId, newMessage.content)
+    set(
+      updateThreadStateLastMessageAtom,
+      newMessage.thread_id,
+      newMessage.content
+    )
   }
 )
 
