@@ -42,7 +42,7 @@ import {
 export default function ThreadList() {
   const threads = useAtomValue(threadsAtom)
   const threadStates = useAtomValue(threadStatesAtom)
-  const { getAllThreads } = useThreads()
+  const { getThreads } = useThreads()
   const { assistants } = useGetAssistants()
   const { requestCreateNewThread } = useCreateNewThread()
   const activeThread = useAtomValue(activeThreadAtom)
@@ -53,7 +53,7 @@ export default function ThreadList() {
     useSetActiveThread()
 
   useEffect(() => {
-    getAllThreads()
+    getThreads()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

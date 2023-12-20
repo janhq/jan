@@ -3,9 +3,12 @@ import {
   ModelRuntimeParams,
   Thread,
   ThreadState,
+  ConversationalExtension,
 } from '@janhq/core'
-import { ConversationalExtension } from '@janhq/core'
+
 import { useAtom } from 'jotai'
+
+import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
@@ -20,6 +23,7 @@ const useThreads = () => {
   const [threadModelRuntimeParams, setThreadModelRuntimeParams] = useAtom(
     threadModelRuntimeParamsAtom
   )
+  const { setActiveThread } = useSetActiveThread()
 
   const getThreads = async () => {
     try {
@@ -77,13 +81,16 @@ const useThreads = () => {
       setThreadStates(localThreadStates)
       setThreads(allThreads)
       setThreadModelRuntimeParams(threadModelParams)
+      if (allThreads.length > 0) {
+        setActiveThread(allThreads[0])
+      }
     } catch (error) {
       console.error(error)
     }
   }
 
   return {
-    getAllThreads: getThreads,
+    getThreads,
   }
 }
 
