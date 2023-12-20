@@ -237,10 +237,17 @@ export default class JanInferenceTritonTrtLLMExtension
         events.emit(EventName.OnMessageUpdate, message);
       },
       complete: async () => {
-        message.status = MessageStatus.Ready;
+        message.status = message.content.length
+          ? MessageStatus.Ready
+          : MessageStatus.Error;
         events.emit(EventName.OnMessageUpdate, message);
       },
       error: async (err) => {
+        if (instance.isCancelled || message.content.length) {
+          message.status = MessageStatus.Error;
+          events.emit(EventName.OnMessageUpdate, message);
+          return;
+        }
         const messageContent: ThreadContent = {
           type: ContentType.Text,
           text: {

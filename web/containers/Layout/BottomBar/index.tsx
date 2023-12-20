@@ -46,12 +46,12 @@ const BottomBar = () => {
         )}
         {!stateModel.loading && downloadedModels.length !== 0 && (
           <SystemItem
-            name="Active model:"
+            name={activeModel?.id ? 'Active model:' : ''}
             value={
               activeModel?.id || (
                 <Badge themes="outline" className="pl-1">
                   <ShortCut menu="E" />
-                  &nbsp; to show your model
+                  &nbsp; to view models
                 </Badge>
               )
             }

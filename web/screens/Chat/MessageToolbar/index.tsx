@@ -47,19 +47,20 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
     resendChatMessage(message)
   }
 
-  if (message.status !== MessageStatus.Ready) return null
+  if (message.status === MessageStatus.Pending) return null
 
   return (
     <div className={twMerge('flex flex-row items-center')}>
       <div className="flex overflow-hidden rounded-md border border-border bg-background/20">
-        {message.id === messages[messages.length - 1]?.id && (
-          <div
-            className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
-            onClick={onRegenerateClick}
-          >
-            <RefreshCcw size={14} />
-          </div>
-        )}
+        {message.id === messages[messages.length - 1]?.id &&
+          messages[messages.length - 1].status !== MessageStatus.Error && (
+            <div
+              className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
+              onClick={onRegenerateClick}
+            >
+              <RefreshCcw size={14} />
+            </div>
+          )}
         <div
           className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
           onClick={() => {
