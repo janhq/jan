@@ -13,9 +13,33 @@ name: "CodeQL"
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+    paths:
+      - "electron/**"
+      - .github/workflows/jan-electron-linter-and-test.yml
+      - "web/**"
+      - "uikit/**"
+      - "package.json"
+      - "node_modules/**"
+      - "yarn.lock"
+      - "core/**"
+      - "extensions/**"
+      - "!README.md"
+      - "Makefile"
+
   pull_request:
-    branches: ["main"]
+    branches:
+      - main
+    paths:
+      - "electron/**"
+      - .github/workflows/jan-electron-linter-and-test.yml
+      - "web/**"
+      - "uikit/**"
+      - "package.json"
+      - "node_modules/**"
+      - "yarn.lock"
+      - "Makefile"
 
 jobs:
   analyze:
