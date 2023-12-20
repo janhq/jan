@@ -92,7 +92,10 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       message.content,
       message.status
     )
-    if (message.status === MessageStatus.Ready) {
+    if (
+      message.status === MessageStatus.Ready ||
+      message.status === MessageStatus.Error
+    ) {
       // Mark the thread as not waiting for response
       updateThreadWaiting(message.thread_id, false)
 
