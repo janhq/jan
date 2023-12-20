@@ -86,7 +86,9 @@ const ChatScreen = () => {
     if (e.key === 'Enter') {
       if (!e.shiftKey) {
         e.preventDefault()
-        sendChatMessage()
+        if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
+          sendChatMessage()
+        else onStopInferenceClick()
       }
     }
   }
