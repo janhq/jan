@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { Model } from '@janhq/core'
+import { InferenceEngine, Model } from '@janhq/core'
 import { Badge } from '@janhq/uikit'
 
 import {
@@ -33,7 +33,9 @@ export default function RowModel(props: RowModelProps) {
 
   const isActiveModel = stateModel.model === props.data.id
 
-  const isRemoteModel = props.data.engine === 'openai'
+  const isRemoteModel =
+    props.data.engine === InferenceEngine.openai ||
+    InferenceEngine.triton_trtllm
 
   const onModelActionClick = (modelId: string) => {
     if (activeModel && activeModel.id === modelId) {
