@@ -71,6 +71,7 @@ export default function AnnoncementBanner() {
                 key={i}
                 href={social.href}
                 target="_blank"
+                rel="noopener"
               >
                 {social.icon}
               </a>
