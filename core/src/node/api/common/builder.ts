@@ -1,13 +1,13 @@
-const fs = require('fs')
-import { rimraf } from 'rimraf'
-import { JanApiRouteConfiguration, RouteConfiguration } from '../index'
+import fs from 'fs'
+import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
-import { Model, ThreadMessage } from '@janhq/core/dist/types/types'
+import { Model, ThreadMessage } from './../../../index'
 
 import fetch from 'node-fetch'
 import { ulid } from 'ulid'
-const progress = require('request-progress')
 import request from 'request'
+
+const progress = require('request-progress')
 const os = require('os')
 
 const path = join(os.homedir(), 'jan')
@@ -30,29 +30,20 @@ export const getBuilder = async (configuration: RouteConfiguration) => {
     }
 
     const readJsonPromises = allDirectories.map(async (dirName) => {
-      const jsonPath = join(
-        directoryPath,
-        dirName,
-        configuration.metadataFileName
-      )
+      const jsonPath = join(directoryPath, dirName, configuration.metadataFileName)
       return await readModelMetadata(jsonPath)
     })
 
-    const results = await Promise.allSettled(readJsonPromises)
+    const results = await Promise.all(readJsonPromises)
     const modelData = results
-      .map((result) => {
-        if (result.status === 'fulfilled') {
-          try {
-            return JSON.parse(result.value)
-          } catch (err) {
-            console.error(err)
-          }
-        } else {
-          console.error(result.reason)
-          return undefined
+      .map((result: any) => {
+        try {
+          return JSON.parse(result)
+        } catch (err) {
+          console.error(err)
         }
       })
-      .filter((e) => !!e)
+      .filter((e: any) => !!e)
 
     return modelData
   } catch (err) {
@@ -65,10 +56,7 @@ const readModelMetadata = async (path: string) => {
   return fs.readFileSync(path, 'utf-8')
 }
 
-export const retrieveBuilder = async (
-  configuration: RouteConfiguration,
-  id: string
-) => {
+export const retrieveBuilder = async (configuration: RouteConfiguration, id: string) => {
   const data = await getBuilder(configuration)
   const filteredData = data.filter((d: any) => d.id === id)[0]
 
@@ -79,10 +67,7 @@ export const retrieveBuilder = async (
   return filteredData
 }
 
-export const deleteBuilder = async (
-  configuration: RouteConfiguration,
-  id: string
-) => {
+export const deleteBuilder = async (configuration: RouteConfiguration, id: string) => {
   if (configuration.dirName === 'assistants' && id === 'jan') {
     return {
       message: 'Cannot delete Jan assistant',
@@ -99,7 +84,7 @@ export const deleteBuilder = async (
     }
 
     const myPath = join(directoryPath, id)
-    rimraf.sync(myPath)
+    fs.rmdirSync(myPath, { recursive: true })
     return {
       id: id,
       object: configuration.delete.object,
@@ -174,10 +159,7 @@ export const createThread = async (thread: any) => {
       fs.mkdirSync(threadDirPath)
     }
 
-    await fs.writeFileSync(
-      threadJsonPath,
-      JSON.stringify(updatedThread, null, 2)
-    )
+    await fs.writeFileSync(threadJsonPath, JSON.stringify(updatedThread, null, 2))
     return updatedThread
   } catch (err) {
     return {
@@ -188,10 +170,7 @@ export const createThread = async (thread: any) => {
 
 export const updateThread = async (threadId: string, thread: any) => {
   const threadMetadataFileName = 'thread.json'
-  const currentThreadData = await retrieveBuilder(
-    JanApiRouteConfiguration.threads,
-    threadId
-  )
+  const currentThreadData = await retrieveBuilder(JanApiRouteConfiguration.threads, threadId)
   if (!currentThreadData) {
     return {
       message: 'Thread not found',
@@ -210,10 +189,7 @@ export const updateThread = async (threadId: string, thread: any) => {
     const threadDirPath = join(path, 'threads', updatedThread.id)
     const threadJsonPath = join(threadDirPath, threadMetadataFileName)
 
-    await fs.writeFileSync(
-      threadJsonPath,
-      JSON.stringify(updatedThread, null, 2)
-    )
+    await fs.writeFileSync(threadJsonPath, JSON.stringify(updatedThread, null, 2))
     return updatedThread
   } catch (err) {
     return {
@@ -309,13 +285,10 @@ export const chatCompletions = async (request: any, reply: any) => {
   }
 
   const requestedModel = matchedModels[0]
-  const engineConfiguration = await getEngineConfiguration(
-    requestedModel.engine
-  )
+  const engineConfiguration = await getEngineConfiguration(requestedModel.engine)
 
   let apiKey: string | undefined = undefined
-  let apiUrl: string =
-    'http://127.0.0.1:3928/inferences/llamacpp/chat_completion' // default nitro url
+  let apiUrl: string = 'http://127.0.0.1:3928/inferences/llamacpp/chat_completion' // default nitro url
 
   if (engineConfiguration) {
     apiKey = engineConfiguration.api_key
@@ -325,7 +298,7 @@ export const chatCompletions = async (request: any, reply: any) => {
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
+    Connection: 'keep-alive',
   })
 
   const headers: Record<string, any> = {
