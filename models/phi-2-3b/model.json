@@ -1,10 +1,10 @@
 {
-    "source_url": "https://huggingface.co/janhq/pandora-v1-10.7b-GGUF/resolve/main/pandora-v1-10.7b.Q4_K_M.gguf",
-    "id": "pandora-10.7b-v1",
+    "source_url": "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf",
+    "id": "phi-2-3b",
     "object": "model",
-    "name": "Pandora 11B Q4",
+    "name": "Phi-2 3B Q4",
     "version": "1.0",
-    "description": "Pandora, our research model, employs the Passthrough merging technique to merge 2x7B models into 1.",
+    "description": "Phi-2 is a 2.7B model, excelling in common sense and logical reasoning benchmarks, trained with synthetic texts and filtered websites.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
@@ -14,8 +14,8 @@
       "max_tokens": 4096
     },
     "metadata": {
-      "author": "Jan",
-      "tags": ["11B","Finetuned", "Featured"],
+      "author": "Microsoft",
+      "tags": ["3B","Foundational Model"],
       "size": 6360000000
     },
     "engine": "nitro"

@@ -1,0 +1,23 @@
+{
+    "source_url": "https://huggingface.co/NeverSleep/Noromaid-7b-v0.1.1-GGUF/resolve/main/Noromaid-7b-v0.1.1.q5_k_m.gguf",
+    "id": "noromaid-7b",
+    "object": "model",
+    "name": "Noromaid 7B Q5",
+    "version": "1.0",
+    "description": "The Noromaid 7b model is designed for role-playing and general use, featuring a unique touch with the no_robots dataset that enhances human-like behavior.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "prompt_template": "### Instruction:{prompt}\n### Response:"
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "NeverSleep",
+      "tags": ["7B", "Merged"],
+      "size": 5130000000
+    },
+    "engine": "nitro"
+  }
+  
