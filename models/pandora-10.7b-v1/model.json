@@ -1,24 +1,29 @@
 {
-    "source_url": "https://huggingface.co/janhq/pandora-v1-10.7b-GGUF/resolve/main/pandora-v1-10.7b.Q4_K_M.gguf",
-    "id": "pandora-10.7b-v1",
-    "object": "model",
-    "name": "Pandora 11B Q4",
-    "version": "1.0",
-    "description": "Pandora, our research model, employs the Passthrough merging technique to merge 2x7B models into 1.",
-    "format": "gguf",
-    "settings": {
-      "ctx_len": 4096,
-      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
-    },
-    "parameters": {
-      "max_tokens": 4096
-    },
-    "metadata": {
-      "author": "Jan",
-      "tags": ["11B","Finetuned", "Featured"],
-      "size": 6360000000,
-      "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/pandora-10.7b-v1/cover.png"
-    },
-    "engine": "nitro"
-  }
-  
+  "source": [
+    {
+      "filename": "pandora-v1-10.7b.Q4_K_M.gguf",
+      "url": "https://huggingface.co/janhq/pandora-v1-10.7b-GGUF/resolve/main/pandora-v1-10.7b.Q4_K_M.gguf"
+    }
+  ],
+  "id": "pandora-10.7b-v1",
+  "object": "model",
+  "name": "Pandora 11B Q4",
+  "version": "1.0",
+  "description": "Pandora, our research model, employs the Passthrough merging technique to merge 2x7B models into 1.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+    "llama_model_path": "pandora-v1-10.7b.Q4_K_M.gguf"
+  },
+  "parameters": {
+    "max_tokens": 4096
+  },
+  "metadata": {
+    "author": "Jan",
+    "tags": ["11B", "Finetuned", "Featured"],
+    "size": 6360000000,
+    "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/pandora-10.7b-v1/cover.png"
+  },
+  "engine": "nitro"
+}

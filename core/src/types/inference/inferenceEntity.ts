@@ -1,3 +1,5 @@
+import { ContentType, ContentValue } from '../message'
+
 /**
  * The role of the author of this message.
  */
@@ -13,7 +15,25 @@ export enum ChatCompletionRole {
  */
 export type ChatCompletionMessage = {
   /** The contents of the message. **/
-  content?: string
+  content?: ChatCompletionMessageContent
   /** The role of the author of this message. **/
   role: ChatCompletionRole
+}
+
+export type ChatCompletionMessageContent =
+  | string
+  | (ChatCompletionMessageContentText & ChatCompletionMessageContentImage)[]
+
+export enum ChatCompletionMessageContentType {
+  Text = 'text',
+  Image = 'image_url',
+}
+
+export type ChatCompletionMessageContentText = {
+  type: ChatCompletionMessageContentType
+  text: string
+}
+export type ChatCompletionMessageContentImage = {
+  type: ChatCompletionMessageContentType
+  image_url: { url: string }
 }

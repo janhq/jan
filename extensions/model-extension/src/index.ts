@@ -91,9 +91,11 @@ export default class JanModelExtension implements ModelExtension {
     const directoryPath = join(JanModelExtension._homeDir, model.id)
     await fs.mkdir(directoryPath)
 
-    // path to model binary
-    const path = join(directoryPath, model.id)
-    downloadFile(model.source_url, path)
+    // path to model binaries
+    model.source.forEach(modelFile => {
+      const path = join(directoryPath, modelFile.filename)
+      downloadFile(modelFile.url, path)
+    })
   }
 
   /**
@@ -101,11 +103,18 @@ export default class JanModelExtension implements ModelExtension {
    * @param {string} modelId - The ID of the model whose download is to be cancelled.
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
+  // TODO: Fix for cancel/ delete multiple model binaries
   async cancelModelDownload(modelId: string): Promise<void> {
+    const model = await this.getConfiguredModels()
+    console.log(model)
     return abortDownload(
       join(JanModelExtension._homeDir, modelId, modelId)
     ).then(() => {
       fs.deleteFile(join(JanModelExtension._homeDir, modelId, modelId))
+      // model.source.forEach(modelFile => {
+      //   const path = join(directoryPath, modelFile)
+      //   downloadFile(modelFile.url, path)
+      // })
     })
   }
 
@@ -114,6 +123,7 @@ export default class JanModelExtension implements ModelExtension {
    * @param filePath - The path to the model file to delete.
    * @returns A Promise that resolves when the model is deleted.
    */
+  // TODO: Fix for cancel/ delete multiple model binaries
   async deleteModel(modelId: string): Promise<void> {
     try {
       const dirPath = join(JanModelExtension._homeDir, modelId)

@@ -10,7 +10,7 @@ export const presetConfiguration: Record<string, SettingComponentData> = {
       min: 0,
       max: 4096,
       step: 128,
-      value: 2048,
+      value: 4096,
     },
   },
   ngl: {

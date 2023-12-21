@@ -38,7 +38,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   private static _currentModel: Model;
 
   private static _engineSettings: EngineSettings = {
-    ctx_len: 2048,
+    ctx_len: 4096,
     ngl: 100,
     cpu_threads: 1,
     cont_batching: false,
@@ -111,10 +111,10 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
       return;
     }
     const userSpacePath = await getUserSpace();
-    const modelFullPath = join(userSpacePath, "models", model.id, model.id);
+    const modelFolderPath = join(userSpacePath, "models", model.id);
 
     const nitroInitResult = await executeOnMain(MODULE, "initModel", {
-      modelFullPath: modelFullPath,
+      modelFolderPath: modelFolderPath,
       model: model,
     });
 
