@@ -15,7 +15,7 @@
     },
     "metadata": {
       "author": "Jan",
-      "tags": ["11B","Finetuned"],
+      "tags": ["13B","Finetuned"],
       "size": 6360000000
     },
     "engine": "nitro"

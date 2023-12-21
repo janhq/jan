@@ -15,7 +15,7 @@
     },
     "metadata": {
       "author": "MistralAI, TheBloke",
-      "tags": ["MOE", "Foundational Model"],
+      "tags": ["70B", "Foundational Model"],
       "size": 26440000000
     },
     "engine": "nitro"
