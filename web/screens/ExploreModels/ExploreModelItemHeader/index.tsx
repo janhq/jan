@@ -16,9 +16,9 @@ import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
-import { useDownloadState } from '@/hooks/useDownloadState'
+import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import { getAssistants } from '@/hooks/useGetAssistants'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+import { downloadedModelsAtom } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGigabytes } from '@/utils/converter'
@@ -31,8 +31,7 @@ type Props = {
 
 const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const { downloadModel } = useDownloadModel()
-  const { downloadedModels } = useGetDownloadedModels()
-  const { modelDownloadStateAtom, downloadStates } = useDownloadState()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { requestCreateNewThread } = useCreateNewThread()
 
   const downloadAtom = useMemo(
@@ -73,9 +72,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
         Use
       </Button>
     )
-  }
-
-  if (downloadState != null && downloadStates.length > 0) {
+  } else if (downloadState != null) {
     downloadButton = <ModalCancelDownload model={model} />
   }
 

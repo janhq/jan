@@ -57,29 +57,27 @@ export default function CommandListDownloadedModel() {
           <CommandEmpty>No Model found.</CommandEmpty>
           {!isNotDownloadedModel && (
             <CommandGroup heading="Your Model">
-              {downloadedModels.map((model, i) => {
-                return (
-                  <CommandItem
-                    key={i}
-                    value={model.id}
-                    onSelect={() => {
-                      onModelActionClick(model.id)
-                      setOpen(false)
-                    }}
-                  >
-                    <DatabaseIcon
-                      size={16}
-                      className="mr-3 text-muted-foreground"
-                    />
-                    <div className="flex w-full items-center justify-between">
-                      <span>{model.id}</span>
-                      {activeModel && activeModel.id === model.id && (
-                        <Badge themes="secondary">Active</Badge>
-                      )}
-                    </div>
-                  </CommandItem>
-                )
-              })}
+              {downloadedModels.map((model) => (
+                <CommandItem
+                  key={model.id}
+                  value={model.id}
+                  onSelect={() => {
+                    onModelActionClick(model.id)
+                    setOpen(false)
+                  }}
+                >
+                  <DatabaseIcon
+                    size={16}
+                    className="mr-3 text-muted-foreground"
+                  />
+                  <div className="flex w-full items-center justify-between">
+                    <span>{model.id}</span>
+                    {activeModel && activeModel.id === model.id && (
+                      <Badge themes="secondary">Active</Badge>
+                    )}
+                  </div>
+                </CommandItem>
+              ))}
             </CommandGroup>
           )}
           <CommandGroup heading="Find another model">
