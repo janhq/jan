@@ -109,6 +109,7 @@ export default function Footer() {
                         key={i}
                         href={social.href}
                         target="_blank"
+                        rel="noopener"
                       >
                         {social.icon}
                       </a>
