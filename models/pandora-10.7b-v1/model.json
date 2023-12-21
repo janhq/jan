@@ -8,7 +8,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
+      "prompt_template": "{system_message}\n### Instruction:\n{prompt}\n### Response:"
     },
     "parameters": {
       "max_tokens": 4096
