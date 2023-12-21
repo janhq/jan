@@ -1,8 +1,8 @@
-import { rmdirSync } from "fs";
-import { resolve, join } from "path";
-import { manifest, extract } from "pacote";
-import * as Arborist from "@npmcli/arborist";
-import { ExtensionManager, userSpacePath } from "./manager";
+import { rmdirSync } from 'fs'
+import { resolve, join } from 'path'
+import { manifest, extract } from 'pacote'
+import * as Arborist from '@npmcli/arborist'
+import { ExtensionManager } from './manager'
 
 /**
  * An NPM package that can be used as an extension.
@@ -18,22 +18,22 @@ export default class Extension {
    * @property {string} main The entry point as defined in the main entry of the manifest.
    * @property {string} description The description of extension as defined in the manifest.
    */
-  origin?: string;
-  installOptions: any;
-  name?: string;
-  url?: string;
-  version?: string;
-  main?: string;
-  description?: string;
+  origin?: string
+  installOptions: any
+  name?: string
+  url?: string
+  version?: string
+  main?: string
+  description?: string
 
   /** @private */
-  _active = false;
+  _active = false
 
   /**
    * @private
    * @property {Object.<string, Function>} #listeners A list of callbacks to be executed when the Extension is updated.
    */
-  listeners: Record<string, (obj: any) => void> = {};
+  listeners: Record<string, (obj: any) => void> = {}
 
   /**
    * Set installOptions with defaults for options that have not been provided.
@@ -45,10 +45,10 @@ export default class Extension {
       version: false,
       fullMetadata: false,
       Arborist,
-    };
+    }
 
-    this.origin = origin;
-    this.installOptions = { ...defaultOpts, ...options };
+    this.origin = origin
+    this.installOptions = { ...defaultOpts, ...options }
   }
 
   /**
@@ -56,10 +56,7 @@ export default class Extension {
    * @type {string}
    */
   get specifier() {
-    return (
-      this.origin +
-      (this.installOptions.version ? "@" + this.installOptions.version : "")
-    );
+    return this.origin + (this.installOptions.version ? '@' + this.installOptions.version : '')
   }
 
   /**
@@ -67,7 +64,7 @@ export default class Extension {
    * @type {boolean}
    */
   get active() {
-    return this._active;
+    return this._active
   }
 
   /**
@@ -77,20 +74,18 @@ export default class Extension {
   async getManifest() {
     // Get the package's manifest (package.json object)
     try {
-      const mnf = await manifest(this.specifier, this.installOptions);
+      const mnf = await manifest(this.specifier, this.installOptions)
 
       // set the Package properties based on the it's manifest
-      this.name = mnf.name;
-      this.version = mnf.version;
-      this.main = mnf.main;
-      this.description = mnf.description;
+      this.name = mnf.name
+      this.version = mnf.version
+      this.main = mnf.main
+      this.description = mnf.description
     } catch (error) {
-      throw new Error(
-        `Package ${this.origin} does not contain a valid manifest: ${error}`
-      );
+      throw new Error(`Package ${this.origin} does not contain a valid manifest: ${error}`)
     }
 
-    return true;
+    return true
   }
 
   /**
@@ -101,26 +96,26 @@ export default class Extension {
   async _install() {
     try {
       // import the manifest details
-      await this.getManifest();
+      await this.getManifest()
 
       // Install the package in a child folder of the given folder
       await extract(
         this.specifier,
-        join(ExtensionManager.instance.extensionsPath ?? "", this.name ?? ""),
-        this.installOptions
-      );
+        join(ExtensionManager.instance.extensionsPath ?? '', this.name ?? ''),
+        this.installOptions,
+      )
 
       // Set the url using the custom extensions protocol
-      this.url = `extension://${this.name}/${this.main}`;
+      this.url = `extension://${this.name}/${this.main}`
 
-      this.emitUpdate();
+      this.emitUpdate()
     } catch (err) {
       // Ensure the extension is not stored and the folder is removed if the installation fails
-      this.setActive(false);
-      throw err;
+      this.setActive(false)
+      throw err
     }
 
-    return [this];
+    return [this]
   }
 
   /**
@@ -129,7 +124,7 @@ export default class Extension {
    * @param {callback} cb The function to execute on update
    */
   subscribe(name: string, cb: () => void) {
-    this.listeners[name] = cb;
+    this.listeners[name] = cb
   }
 
   /**
@@ -137,7 +132,7 @@ export default class Extension {
    * @param {string} name name of the callback to remove
    */
   unsubscribe(name: string) {
-    delete this.listeners[name];
+    delete this.listeners[name]
   }
 
   /**
@@ -145,7 +140,7 @@ export default class Extension {
    */
   emitUpdate() {
     for (const cb in this.listeners) {
-      this.listeners[cb].call(null, this);
+      this.listeners[cb].call(null, this)
     }
   }
 
@@ -156,12 +151,12 @@ export default class Extension {
    */
   async update(version = false) {
     if (await this.isUpdateAvailable()) {
-      this.installOptions.version = version;
-      await this._install();
-      return true;
+      this.installOptions.version = version
+      await this._install()
+      return true
     }
 
-    return false;
+    return false
   }
 
   /**
@@ -170,8 +165,8 @@ export default class Extension {
    */
   async isUpdateAvailable() {
     if (this.origin) {
-      const mnf = await manifest(this.origin);
-      return mnf.version !== this.version ? mnf.version : false;
+      const mnf = await manifest(this.origin)
+      return mnf.version !== this.version ? mnf.version : false
     }
   }
 
@@ -180,13 +175,10 @@ export default class Extension {
    * @returns {Promise}
    */
   async uninstall() {
-    const extPath = resolve(
-      ExtensionManager.instance.extensionsPath ?? "",
-      this.name ?? ""
-    );
-    await rmdirSync(extPath, { recursive: true });
+    const extPath = resolve(ExtensionManager.instance.extensionsPath ?? '', this.name ?? '')
+    await rmdirSync(extPath, { recursive: true })
 
-    this.emitUpdate();
+    this.emitUpdate()
   }
 
   /**
@@ -195,8 +187,8 @@ export default class Extension {
    * @returns {Extension} This extension
    */
   setActive(active: boolean) {
-    this._active = active;
-    this.emitUpdate();
-    return this;
+    this._active = active
+    this.emitUpdate()
+    return this
   }
 }
