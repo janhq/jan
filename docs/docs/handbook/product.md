@@ -25,7 +25,7 @@ As much as possible, everyone owns their respective `epics` and `tasks`.
 
 [`Milestones`](https://github.com/janhq/jan/milestones)
 
-- `Milestones` correspond 1:1 to `epics` and are used to filter [Roadmap Views](https://github.com/orgs/janhq/projects/5/views/12)
+- `Milestones` correspond 1:1 to `epics` and are used to filter [Roadmap Views](https://github.com/orgs/janhq/projects/5/views/16)
 - `Milestones` span 1-2 weeks and have deadlines
 
 [`Tasks`](https://github.com/janhq/jan/issues)
