@@ -1,0 +1,22 @@
+{
+    "source_url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf",
+    "id": "trinity-v1-7b",
+    "object": "model",
+    "name": "Trinity-v1 7B Q4",
+    "version": "1.0",
+    "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "Jan",
+      "tags": ["7B", "Merged", "Featured"],
+      "size": 4370000000
+    },
+    "engine": "nitro"
+  }  
