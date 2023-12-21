@@ -1,0 +1,23 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf",
+    "id": "phi-2-3b",
+    "object": "model",
+    "name": "Phi-2 3B Q4",
+    "version": "1.0",
+    "description": "Phi-2 is a 2.7B model, excelling in common sense and logical reasoning benchmarks, trained with synthetic texts and filtered websites.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "prompt_template": "Intruct:\n{prompt}\nOutput:"
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "Microsoft",
+      "tags": ["3B","Foundational Model"],
+      "size": 1790000000
+    },
+    "engine": "nitro"
+  }
+  
