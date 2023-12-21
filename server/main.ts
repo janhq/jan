@@ -1,6 +1,6 @@
 import fastify from "fastify";
 import dotenv from "dotenv";
-import v1API from "./v1";
+const { v1Router } = require("@janhq/core/dist/node/index.cjs");
 
 dotenv.config();
 
@@ -20,7 +20,7 @@ server.register(
   },
   { prefix: "extensions" }
 );
-server.register(v1API, { prefix: "/api/v1" });
+server.register(v1Router, { prefix: "/api/v1" });
 
 server
   .listen({

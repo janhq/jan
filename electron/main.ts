@@ -11,6 +11,7 @@ import { WindowManager } from './managers/window'
 const {
   ExtensionManager,
   ModuleManager,
+  threadRouter,
 } = require('@janhq/core/dist/node/index.cjs')
 
 /**
@@ -21,22 +22,7 @@ import { handleExtensionIPCs } from './handlers/extension'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
-import {
-  createMessage,
-  createThread,
-  deleteBuilder,
-  downloadModel,
-  getBuilder,
-  getMessages,
-  retrieveBuilder,
-  retrieveMesasge,
-  updateThread,
-  chatCompletions,
-} from './api/models'
-import { JanApiRouteConfiguration } from './api'
-
-// TODO: refactor this, this API piece of code should not belong here
-const version = 'v1'
+const { v1Router } = require('@janhq/core/dist/node/index.cjs')
 
 const fastify = Fastify({
   logger: true,
@@ -49,55 +35,9 @@ fastify.listen({ port: 1337 }, function (err, address) {
   }
 })
 
-Object.keys(JanApiRouteConfiguration).forEach((key) => {
-  fastify.get(`/${version}/${key}`, async (_request) =>
-    getBuilder(JanApiRouteConfiguration[key])
-  )
-
-  fastify.get(`/${version}/${key}/:id`, async (request: any) =>
-    retrieveBuilder(JanApiRouteConfiguration[key], request.params.id)
-  )
-
-  fastify.delete(`/${version}/${key}/:id`, async (request: any) =>
-    deleteBuilder(JanApiRouteConfiguration[key], request.params.id)
-  )
+fastify.register(v1Router, {
+  prefix: '/api/v1',
 })
-
-// get messages of thread id
-fastify.get(`/${version}/threads/:threadId/messages`, async (request: any) =>
-  getMessages(request.params.threadId)
-)
-
-// retrieve message
-fastify.get(
-  `/${version}/threads/:threadId/messages/:messageId`,
-  async (request: any) =>
-    retrieveMesasge(request.params.threadId, request.params.messageId)
-)
-
-// create thread
-fastify.post(`/${version}/threads`, async (request: any) =>
-  createThread(request.body)
-)
-
-// create message
-fastify.post(`/${version}/threads/:threadId/messages`, async (request: any) =>
-  createMessage(request.params.threadId, request.body)
-)
-
-// modify thread
-fastify.patch(`/${version}/threads/:threadId`, async (request: any) =>
-  updateThread(request.params.threadId, request.body)
-)
-
-fastify.get(`/${version}/models/download/:modelId`, async (request: any) =>
-  downloadModel(request.params.modelId)
-)
-
-// Endpoints
-fastify.post(`/${version}/chat/completions`, async (request: any, reply: any) =>
-  chatCompletions(request, reply)
-)
 
 app
   .whenReady()
