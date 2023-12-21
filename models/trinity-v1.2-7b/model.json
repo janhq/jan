@@ -1,6 +1,6 @@
 {
     "source_url": "https://huggingface.co/janhq/trinity-v1.2-GGUF/resolve/main/trinity-v1.2.Q4_K_M.gguf",
-    "id": "trinity-v1-7b",
+    "id": "trinity-v1.2-7b",
     "object": "model",
     "name": "Trinity 7B Q4",
     "version": "1.0",
