@@ -222,7 +222,18 @@ export default class JanModelExtension implements ModelExtension {
       const modelData = results.map((result) => {
         if (result.status === 'fulfilled') {
           try {
-            return JSON.parse(result.value) as Model
+            // TODO: Remove this when Jan reach 1.0
+            const tmpModel = JSON.parse(result.value)
+            if (tmpModel['source_url'] != null) {
+              tmpModel['source'] = [
+                {
+                  filename: tmpModel.id,
+                  url: tmpModel['source_url'],
+                },
+              ]
+            }
+
+            return tmpModel as Model
           } catch {
             console.debug(`Unable to parse model metadata: ${result.value}`)
             return undefined
