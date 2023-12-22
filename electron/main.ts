@@ -8,11 +8,7 @@ import Fastify from 'fastify'
  * Managers
  **/
 import { WindowManager } from './managers/window'
-const {
-  ExtensionManager,
-  ModuleManager,
-  threadRouter,
-} = require('@janhq/core/dist/node/index.cjs')
+import { ExtensionManager, ModuleManager } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -22,7 +18,8 @@ import { handleExtensionIPCs } from './handlers/extension'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
-const { v1Router } = require('@janhq/core/dist/node/index.cjs')
+import { migrateExtensions } from './utils/migration'
+import { v1Router } from '@janhq/core/node'
 
 const fastify = Fastify({
   logger: true,
@@ -42,7 +39,7 @@ fastify.register(v1Router, {
 app
   .whenReady()
   .then(createUserSpace)
-  .then(ExtensionManager.instance.migrateExtensions)
+  .then(migrateExtensions)
   .then(ExtensionManager.instance.setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)

@@ -1,6 +1,6 @@
 import fastify from "fastify";
 import dotenv from "dotenv";
-const { v1Router } = require("@janhq/core/dist/node/index.cjs");
+import { v1Router } from '@janhq/core/node'
 
 dotenv.config();
 

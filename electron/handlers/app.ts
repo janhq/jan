@@ -4,10 +4,10 @@ import { WindowManager } from './../managers/window'
 import { userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
 import { getResourcePath } from './../utils/path'
-const {
+import {
   ExtensionManager,
   ModuleManager,
-} = require('@janhq/core/dist/node/index.cjs')
+} from '@janhq/core/node'
 
 export function handleAppIPCs() {
   /**

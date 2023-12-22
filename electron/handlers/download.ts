@@ -5,7 +5,7 @@ import request from 'request'
 import { createWriteStream } from 'fs'
 import { DownloadEvent, DownloadRoute } from '@janhq/core'
 const progress = require('request-progress')
-const { DownloadManager } = require('@janhq/core/dist/node/index.cjs')
+import { DownloadManager } from '@janhq/core/node'
 
 export function handleDownloaderIPCs() {
   /**
@@ -46,6 +46,9 @@ export function handleDownloaderIPCs() {
    */
   ipcMain.handle(DownloadRoute.downloadFile, async (_event, url, fileName) => {
     const userDataPath = join(app.getPath('home'), 'jan')
+    if (typeof fileName === 'string' && fileName.includes('file:/')) {
+      fileName = fileName.replace('file:/', '')
+    }
     const destination = resolve(userDataPath, fileName)
     const rq = request(url)
 

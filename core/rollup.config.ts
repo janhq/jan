@@ -38,7 +38,7 @@ export default [
   },
   {
     input: `src/node/index.ts`,
-    output: [{ file: 'dist/node/index.cjs', format: 'cjs', sourcemap: true }],
+    output: [{ file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: true }],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
     external: [
       'fs/promises',
@@ -52,7 +52,7 @@ export default [
       'request',
       'crypto',
       'url',
-      'http'
+      'http',
     ],
     watch: {
       include: 'src/node/**',

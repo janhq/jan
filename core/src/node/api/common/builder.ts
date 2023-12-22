@@ -330,6 +330,6 @@ const getEngineConfiguration = async (engineId: string) => {
   }
   const directoryPath = join(path, 'engines')
   const filePath = join(directoryPath, `${engineId}.json`)
-  const data = await fs.readFileSync(filePath, 'utf8')
+  const data = await fs.readFileSync(filePath, 'utf-8')
   return JSON.parse(data)
 }
