@@ -1,5 +1,5 @@
 // @ts-nocheck
-const { app, Menu, dialog } = require("electron");
+import { app, Menu, dialog, shell } from "electron";
 const isMac = process.platform === "darwin";
 const { autoUpdater } = require("electron-updater");
 import { compareSemanticVersions } from "./versionDiff";
@@ -97,7 +97,6 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
       {
         label: "Learn More",
         click: async () => {
-          const { shell } = require("electron");
           await shell.openExternal("https://jan.ai/");
         },
       },

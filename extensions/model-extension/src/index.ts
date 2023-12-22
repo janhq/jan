@@ -42,7 +42,7 @@ export default class JanModelExtension implements ModelExtension {
    * Called when the extension is unloaded.
    * @override
    */
-  onUnload(): void {}
+  onUnload(): void { }
 
   private async copyModelsToHomeDir() {
     try {
@@ -248,7 +248,7 @@ export default class JanModelExtension implements ModelExtension {
   }
 
   private readModelMetadata(path: string) {
-    return fs.readFileSync(path)
+    return fs.readFileSync(join(path), 'utf-8')
   }
 
   /**

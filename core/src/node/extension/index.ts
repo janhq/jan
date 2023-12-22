@@ -1,13 +1,5 @@
 import { readFileSync } from 'fs'
 
-let electron: any = undefined
-
-try {
-  electron = require('electron')
-} catch (err) {
-  console.error('Electron is not available')
-}
-
 import { normalize } from 'path'
 
 import Extension from './extension'
@@ -39,7 +31,16 @@ export function init(options: any) {
  * @private
  * @returns {boolean} Whether the protocol registration was successful
  */
-function registerExtensionProtocol() {
+async function registerExtensionProtocol() {
+  let electron: any = undefined
+
+  try {
+    const moduleName = "electron"
+    electron = await import(moduleName)
+  } catch (err) {
+    console.error('Electron is not available')
+  }
+  
   if (electron) {
     return electron.protocol.registerFileProtocol('extension', (request: any, callback: any) => {
       const entry = request.url.substr('extension://'.length - 1)

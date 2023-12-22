@@ -15,6 +15,9 @@
     "paths": { "*": ["node_modules/*"] },
     "typeRoots": ["node_modules/@types"]
   },
+  "ts-node": {
+    "esm": true
+  },
   "include": ["./**/*.ts"],
   "exclude": ["core", "build", "dist", "tests", "node_modules"]
 }
