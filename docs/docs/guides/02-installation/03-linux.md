@@ -45,7 +45,7 @@ jan-linux-amd64-{version}.deb
 To uninstall VS Code on Linux, you should use your package manager's uninstall or remove option. For Debian/Ubuntu-based distributions, if you installed Jan via the `.deb` package, you can uninstall Jan using the following command:
 
 ```bash
-sudo apt-get remove jan`
+sudo apt-get remove jan
 # where jan is the name of Jan package
 ```
 
