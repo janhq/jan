@@ -5,7 +5,7 @@ import request from 'request'
 import { createWriteStream } from 'fs'
 import { DownloadEvent, DownloadRoute } from '@janhq/core'
 const progress = require('request-progress')
-const { DownloadManager } = require('@janhq/core/dist/node/index.cjs')
+import { DownloadManager } from '@janhq/core/node'
 
 export function handleDownloaderIPCs() {
   /**

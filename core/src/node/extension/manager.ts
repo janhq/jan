@@ -2,11 +2,12 @@ import { join, resolve } from "path";
 
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { init } from "./index";
+import { homedir } from "os"
 /**
  * Manages extension installation and migration.
  */
 
-export const userSpacePath = join(require("os").homedir(), "jan");
+export const userSpacePath = join(homedir(), "jan");
 
 export class ExtensionManager {
   public static instance: ExtensionManager = new ExtensionManager();

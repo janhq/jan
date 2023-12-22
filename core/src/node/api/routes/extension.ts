@@ -34,7 +34,7 @@ export const extensionRouter = async (app: HttpServer) => {
   app.post(`/${ExtensionRoute.invokeExtensionFunc}`, async (req, res) => {
     const args = JSON.parse(req.body as any)
     console.debug(args)
-    const module = require(join(userSpacePath, 'extensions', args[0]))
+    const module = await import(join(userSpacePath, 'extensions', args[0]))
 
     ModuleManager.instance.setModule(args[0], module)
     const method = args[1]

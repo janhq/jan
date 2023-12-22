@@ -1,7 +1,7 @@
 import { HttpServer } from '../HttpServer'
 import { commonRouter, threadRouter, fsRouter, extensionRouter, downloadRouter } from './index'
 
-const v1Router = async (app: HttpServer) => {
+export const v1Router = async (app: HttpServer) => {
   // MARK: External Routes
   app.register(commonRouter)
   app.register(threadRouter, {
@@ -19,4 +19,3 @@ const v1Router = async (app: HttpServer) => {
     prefix: '/download',
   })
 }
-export default v1Router

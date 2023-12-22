@@ -1,14 +1,14 @@
 import { ipcMain, webContents } from 'electron'
 import { readdirSync } from 'fs'
 import { join, extname } from 'path'
-const { ModuleManager } = require('@janhq/core/dist/node/index.cjs')
 
-const {
+import {
   installExtensions,
   getExtension,
   removeExtension,
   getActiveExtensions,
-} = require('@janhq/core/dist/node/index.cjs')
+  ModuleManager
+} from '@janhq/core/node'
 
 import { getResourcePath, userSpacePath } from './../utils/path'
 import { ExtensionRoute } from '@janhq/core'
