@@ -57,7 +57,8 @@ To remove all user data associated with Jan, you can delete the `/Jan` directory
 
 ```shell
 # Jan's User Data directory
-%AppData%\Jan
+cd C:\Users\%USERNAME%\AppData\Roaming
+rmdir /S Jan
 ```
 
 ## Troubleshooting
