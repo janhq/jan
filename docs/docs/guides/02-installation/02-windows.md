@@ -55,8 +55,7 @@ To uninstall Jan in Windows, use the [Windows Control Panel](https://support.mic
 
 To remove all user data associated with Jan, you can delete the `/jan` directory in Windows' [AppData directory](https://superuser.com/questions/632891/what-is-appdata).
 
-```shell
-# Jan's User Data directory
+```bash
 cd C:\Users\%USERNAME%\AppData\Roaming
 rmdir /S jan
 ```
