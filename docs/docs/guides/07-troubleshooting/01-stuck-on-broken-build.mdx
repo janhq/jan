@@ -53,15 +53,15 @@ The following steps will help you troubleshoot and resolve issues related to bro
     ```bash
     # Step 1: Delete the application data
     ## Newer versions
-    rm -rf /Users/$(whoami)/Library/Application\ Support/jan
+    rm -rf ~/Library/Application\ Support/jan
     ## Versions 0.2.0 and older
-    rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron
+    rm -rf ~/Library/Application\ Support/jan-electron
     
     # Step 2: Clear application cache
-    rm -rf /Users/$(whoami)/Library/Caches/jan*
+    rm -rf ~/Library/Caches/jan*
 
     # Step 3: Remove all user data
-    rm -rf ./jan
+    rm -rf ~/jan
     ```
 
   </TabItem>
@@ -77,9 +77,8 @@ The following steps will help you troubleshoot and resolve issues related to bro
   <TabItem value="linux" label="Linux">
   
     ```bash
-    # You can delete the user data folders located at the following `$HOME/.config/jan` and `~/.jan`
-    rm -r $HOME/.config/jan
-    rm -r ~/.jan
+    # You can delete the user data folders located at the following `~/jan`
+    rm -rf ~/jan
     ```
   
   </TabItem>

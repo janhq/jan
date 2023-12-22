@@ -58,16 +58,16 @@ To reset your installation
 
 ```bash
 # Newer versions
-rm -rf /Users/$(whoami)/Library/Application\ Support/jan
+rm -rf ~/Library/Application\ Support/jan
 
 # Versions 0.2.0 and older
-rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron
+rm -rf ~/Library/Application\ Support/jan-electron
 ```
 
 3. Clear Application cache
 
 ```bash
-rm -rf /Users/$(whoami)/Library/Caches/jan*
+rm -rf ~/Library/Caches/jan*
 ```
 
 4. Use the following commands to remove any dangling backend processes:
