@@ -126,7 +126,7 @@ const ChatBody: React.FC = () => {
                     className="mt-10 flex flex-col items-center"
                   >
                     <span className="mb-3 text-center text-sm font-medium text-gray-500">
-                      Whoops! Jan&apos;s generation was interrupted. Let&apos;s
+                      Oops! The generation was interrupted. Let&apos;s
                       give it another go!
                     </span>
                     <Button
