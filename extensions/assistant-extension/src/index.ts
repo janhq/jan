@@ -20,7 +20,7 @@ export default class JanAssistantExtension implements AssistantExtension {
   /**
    * Called when the extension is unloaded.
    */
-  onUnload(): void {}
+  onUnload(): void { }
 
   async createAssistant(assistant: Assistant): Promise<void> {
     // assuming that assistants/ directory is already created in the onLoad above
@@ -61,7 +61,7 @@ export default class JanAssistantExtension implements AssistantExtension {
         continue;
       }
 
-      const content = await fs.readFileSync(join(filePath, jsonFiles[0]));
+      const content = await fs.readFileSync(join(filePath, jsonFiles[0]), 'utf-8');
       const assistant: Assistant =
         typeof content === "object" ? content : JSON.parse(content);
 

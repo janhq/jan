@@ -37,7 +37,7 @@ export default class JanModelExtension implements ModelExtension {
    * Called when the extension is unloaded.
    * @override
    */
-  onUnload(): void {}
+  onUnload(): void { }
 
   private async copyModelsToHomeDir() {
     try {
@@ -113,7 +113,7 @@ export default class JanModelExtension implements ModelExtension {
         dirPath,
         JanModelExtension._modelMetadataFileName
       )
-      const json = await fs.readFileSync(jsonFilePath)
+      const json = await fs.readFileSync(jsonFilePath, 'utf-8')
       const model = JSON.parse(json) as Model
       delete model.state
 
@@ -208,7 +208,7 @@ export default class JanModelExtension implements ModelExtension {
   }
 
   private readModelMetadata(path: string) {
-    return fs.readFileSync(join(path))
+    return fs.readFileSync(join(path), 'utf-8')
   }
 
   /**

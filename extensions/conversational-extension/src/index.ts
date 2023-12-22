@@ -8,8 +8,7 @@ import { join } from 'path'
  * functionality for managing threads.
  */
 export default class JSONConversationalExtension
-  implements ConversationalExtension
-{
+  implements ConversationalExtension {
   private static readonly _homeDir = 'file://threads'
   private static readonly _threadInfoFileName = 'thread.json'
   private static readonly _threadMessagesFileName = 'messages.jsonl'
@@ -202,7 +201,7 @@ export default class JSONConversationalExtension
         JSONConversationalExtension._threadMessagesFileName
       )
 
-      const result = await fs.readFileSync(messageFilePath).then((content) =>
+      const result = await fs.readFileSync(messageFilePath, 'utf-8').then((content) =>
         content
           .toString()
           .split('\n')
