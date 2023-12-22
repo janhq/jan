@@ -76,7 +76,7 @@ rm -rf ~/Library/Caches/jan*
 ps aux | grep nitro
 ```
 
-Look for processes like "nitro" and "nitro_arm_64," and kill them one by one with:
+Look for processes like "nitro" and "nitro_arm_64", and kill them one by one with:
 
 ```bash
 kill -9 <PID>
