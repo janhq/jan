@@ -188,7 +188,9 @@ export default function useSendChatMessage() {
     const prompt = currentPrompt.trim()
     setCurrentPrompt('')
 
-    const base64Image = await getBase64(getUploadedImage)
+    const base64Image = getUploadedImage
+      ? await getBase64(getUploadedImage)
+      : undefined
 
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
@@ -210,20 +212,21 @@ export default function useSendChatMessage() {
           .concat([
             {
               role: ChatCompletionRole.User,
-              content: selectedModel
-                ? [
-                    {
-                      type: ChatCompletionMessageContentType.Text,
-                      text: prompt,
-                    },
-                    {
-                      type: ChatCompletionMessageContentType.Image,
-                      image_url: {
-                        url: base64Image,
+              content:
+                selectedModel && base64Image
+                  ? [
+                      {
+                        type: ChatCompletionMessageContentType.Text,
+                        text: prompt,
                       },
-                    },
-                  ]
-                : prompt,
+                      {
+                        type: ChatCompletionMessageContentType.Image,
+                        image_url: {
+                          url: base64Image,
+                        },
+                      },
+                    ]
+                  : prompt,
             } as ChatCompletionMessage,
           ])
       )
@@ -251,10 +254,10 @@ export default function useSendChatMessage() {
       object: 'thread.message',
       content: [
         {
-          type: ContentType.Text,
+          type: ContentType.Image,
           text: {
             value: prompt,
-            annotations: [],
+            annotations: [base64Image],
           },
         },
       ],

@@ -1,96 +1,76 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { PropsWithChildren, useEffect, useRef } from 'react'
 
-import { ExtensionType } from '@janhq/core'
-import { ModelExtension } from '@janhq/core'
+import { useSetAtom } from 'jotai'
 
-import { useAtomValue, useSetAtom } from 'jotai'
-
-import { useDownloadState } from '@/hooks/useDownloadState'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+import {
+  onDownloadFailedAtom,
+  onDownloadUpdateAtom,
+  onDownloadSuccessAtom,
+} from '@/hooks/useDownloadState'
 
 import EventHandler from './EventHandler'
 
 import { appDownloadProgress } from './Jotai'
 
-import { extensionManager } from '@/extension/ExtensionManager'
-import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-
 export default function EventListenerWrapper({ children }: PropsWithChildren) {
-  const setProgress = useSetAtom(appDownloadProgress)
-  const models = useAtomValue(downloadingModelsAtom)
-  const modelsRef = useRef(models)
-  useEffect(() => {
-    modelsRef.current = models
-  }, [models])
-  const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
-  const { setDownloadState, setDownloadStateSuccess, setDownloadStateFailed } =
-    useDownloadState()
-  const downloadedModelRef = useRef(downloadedModels)
+  const onDownloadUpdate = useSetAtom(onDownloadUpdateAtom)
+  const onDownloadFailed = useSetAtom(onDownloadFailedAtom)
+  const onDownloadSuccess = useSetAtom(onDownloadSuccessAtom)
+  const setAppDownloadProgress = useSetAtom(appDownloadProgress)
+
+  // prevent multiple event listener
+  const isEventListenerRegisteredRef = useRef(false)
 
   useEffect(() => {
-    downloadedModelRef.current = downloadedModels
-  }, [downloadedModels])
-
-  useEffect(() => {
+    if (isEventListenerRegisteredRef.current) return
+    console.debug('Register event listener')
     if (window && window.electronAPI) {
       window.electronAPI.onFileDownloadUpdate(
         (_event: string, state: any | undefined) => {
           if (!state) return
-          setDownloadState({
+
+          const fileName = state.fileName.split('/').pop() ?? ''
+          onDownloadUpdate({
             ...state,
-            modelId: state.fileName.split('/').pop() ?? '',
+            modelId: fileName,
           })
         }
       )
 
-      window.electronAPI.onFileDownloadError(
-        (_event: string, callback: any) => {
-          console.error('Download error', callback)
-          const modelId = callback.fileName.split('/').pop() ?? ''
-          setDownloadStateFailed(modelId)
+      window.electronAPI.onFileDownloadError((_event: string, state: any) => {
+        console.error('Download error', state)
+        const fileName = state.fileName.split('/').pop() ?? ''
+        onDownloadFailed(fileName)
+      })
+
+      window.electronAPI.onFileDownloadSuccess((_event: string, state: any) => {
+        if (state && state.fileName) {
+          console.debug(`onFileDownloadSuccess, ${JSON.stringify(state)}`)
+          const fileName = state.fileName.split('/').pop() ?? ''
+          onDownloadSuccess(fileName)
         }
-      )
-
-      window.electronAPI.onFileDownloadSuccess(
-        (_event: string, callback: any) => {
-          if (callback && callback.fileName) {
-            const modelId = callback.fileName.split('/').pop() ?? ''
-
-            const model = modelsRef.current.find((e) => e.id === modelId)
-
-            setDownloadStateSuccess(modelId)
-
-            if (model)
-              extensionManager
-                .get<ModelExtension>(ExtensionType.Model)
-                ?.saveModel(model)
-                .then(() => {
-                  setDownloadedModels([...downloadedModelRef.current, model])
-                })
-          }
-        }
-      )
+      })
 
       window.electronAPI.onAppUpdateDownloadUpdate(
         (_event: string, progress: any) => {
-          setProgress(progress.percent)
           console.debug('app update progress:', progress.percent)
+          setAppDownloadProgress(progress.percent)
         }
       )
 
       window.electronAPI.onAppUpdateDownloadError(
         (_event: string, callback: any) => {
           console.error('Download error', callback)
-          setProgress(-1)
+          setAppDownloadProgress(-1)
         }
       )
 
       window.electronAPI.onAppUpdateDownloadSuccess(() => {
-        setProgress(-1)
+        setAppDownloadProgress(-1)
       })
     }
+    isEventListenerRegisteredRef.current = true
     return () => {}
   }, [])
 

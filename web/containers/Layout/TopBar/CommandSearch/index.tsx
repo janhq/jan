@@ -18,30 +18,30 @@ import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
+const menus = [
+  {
+    name: 'Chat',
+    icon: (
+      <MessageCircleIcon size={16} className="mr-3 text-muted-foreground" />
+    ),
+    state: MainViewState.Thread,
+  },
+  {
+    name: 'Hub',
+    icon: <LayoutGridIcon size={16} className="mr-3 text-muted-foreground" />,
+    state: MainViewState.Hub,
+  },
+  {
+    name: 'Settings',
+    icon: <SettingsIcon size={16} className="mr-3 text-muted-foreground" />,
+    state: MainViewState.Settings,
+    shortcut: <ShortCut menu="," />,
+  },
+]
+
 export default function CommandSearch() {
   const { setMainViewState } = useMainViewState()
   const [open, setOpen] = useState(false)
-
-  const menus = [
-    {
-      name: 'Chat',
-      icon: (
-        <MessageCircleIcon size={16} className="mr-3 text-muted-foreground" />
-      ),
-      state: MainViewState.Thread,
-    },
-    {
-      name: 'Hub',
-      icon: <LayoutGridIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.Hub,
-    },
-    {
-      name: 'Settings',
-      icon: <SettingsIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.Settings,
-      shortcut: <ShortCut menu="," />,
-    },
-  ]
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -61,19 +61,6 @@ export default function CommandSearch() {
 
   return (
     <Fragment>
-      {/* Temporary disable view search input until we have proper UI placement, but we keep function cmd + K for showing list page */}
-      {/* <div className="relative">
-        <Button
-          themes="outline"
-          className="unset-drag h-8 w-[300px] justify-start text-left text-xs font-normal text-muted-foreground focus:ring-0"
-          onClick={() => setOpen((open) => !open)}
-        >
-          Search menus...
-        </Button>
-        <div className="absolute right-2 top-1/2 -translate-y-1/2">
-          <ShortCut menu="K" />
-        </div>
-      </div> */}
       <CommandModal open={open} onOpenChange={setOpen}>
         <CommandInput placeholder="Type a command or search..." />
         <CommandList>

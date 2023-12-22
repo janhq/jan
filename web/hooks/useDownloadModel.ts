@@ -1,17 +1,41 @@
-import { Model, ExtensionType, ModelExtension } from '@janhq/core'
+import {
+  Model,
+  ExtensionType,
+  ModelExtension,
+  ModelArtifact,
+} from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
-import { useDownloadState } from './useDownloadState'
+import {
+  addNewDownloadingModelAtom,
+  setDownloadStateAtom,
+} from './useDownloadState'
 
 import { extensionManager } from '@/extension/ExtensionManager'
-import { addNewDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useDownloadModel() {
-  const { setDownloadState } = useDownloadState()
+  const setDownloadState = useSetAtom(setDownloadStateAtom)
   const addNewDownloadingModel = useSetAtom(addNewDownloadingModelAtom)
 
   const downloadModel = async (model: Model) => {
+    const childrenDownloadProgress: DownloadState[] = []
+    model.source.forEach((source: ModelArtifact) => {
+      childrenDownloadProgress.push({
+        modelId: source.filename,
+        time: {
+          elapsed: 0,
+          remaining: 0,
+        },
+        speed: 0,
+        percent: 0,
+        size: {
+          total: 0,
+          transferred: 0,
+        },
+      })
+    })
+
     // set an initial download state
     setDownloadState({
       modelId: model.id,
@@ -25,6 +49,7 @@ export default function useDownloadModel() {
         total: 0,
         transferred: 0,
       },
+      children: childrenDownloadProgress,
     })
 
     addNewDownloadingModel(model)
