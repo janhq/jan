@@ -50,7 +50,7 @@ jan-mac-arm64-{version}.zip
 
 ## Uninstall Jan
 
-As Jan is development mode, you might get stuck on a broken build
+As Jan is development mode, you might get stuck on a broken build.
 To reset your installation
 
 1. Delete Jan from your `/Applications` folder

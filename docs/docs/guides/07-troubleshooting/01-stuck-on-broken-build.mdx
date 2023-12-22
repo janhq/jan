@@ -87,10 +87,35 @@ The following steps will help you troubleshoot and resolve issues related to bro
 
 3. If you are using version before `0.4.2` you need to run the following commands
 
-```bash
-ps aux | grep nitro
-# Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
-kill -9 <PID>
-```
+<Tabs groupId="operating-systems">
+  <TabItem value="mac" label="macOS">
+    
+    ```bash
+    ps aux | grep nitro
+    # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
+    kill -9 <PID>
+    ```
+
+  </TabItem>
+  <TabItem value="win" label="Windows">
+  
+    ```bash
+    # Find the process ID (PID) of the nitro process by filtering the list by process name
+    tasklist | findstr "nitro"
+    # Once you have the PID of the process you want to terminate, run the `taskkill`
+    taskkill /F /PID <PID>
+    ```
+  
+  </TabItem>
+  <TabItem value="linux" label="Linux">
+  
+    ```bash
+    ps aux | grep nitro
+    # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
+    kill -9 <PID>
+    ```
+  
+  </TabItem>
+</Tabs>
 
 4. Download the latest version from via our homepage, [https://jan.ai/](https://jan.ai/).
