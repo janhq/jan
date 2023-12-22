@@ -13,6 +13,7 @@ import {
   events,
   Model,
   ConversationalExtension,
+  InferenceEngine,
   ChatCompletionMessageContentType,
 } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -20,10 +21,7 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulid'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
-import {
-  currentFileAtom,
-  currentPromptAtom,
-} from '@/containers/Providers/Jotai'
+import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
@@ -69,7 +67,7 @@ export default function useSendChatMessage() {
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
 
   const [reloadModel, setReloadModel] = useState(false)
-  const getUploadedImage = useAtomValue(currentFileAtom)
+  const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -196,7 +194,9 @@ export default function useSendChatMessage() {
     const prompt = currentPrompt.trim()
     setCurrentPrompt('')
 
-    const base64Image = await getBase64(getUploadedImage)
+    const base64Blob = fileUpload[0]
+      ? await getBase64(fileUpload[0].file)
+      : undefined
 
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
@@ -218,30 +218,64 @@ export default function useSendChatMessage() {
           .concat([
             {
               role: ChatCompletionRole.User,
-              content: selectedModel
-                ? [
-                    {
-                      type: ChatCompletionMessageContentType.Text,
-                      text: prompt,
-                    },
-                    {
-                      type: ChatCompletionMessageContentType.Image,
-                      image_url: {
-                        url: base64Image,
+              content:
+                selectedModel && base64Blob
+                  ? [
+                      {
+                        type: ChatCompletionMessageContentType.Text,
+                        text: prompt,
                       },
-                    },
-                  ]
-                : prompt,
+                      {
+                        type: ChatCompletionMessageContentType.Doc,
+                        doc_url: {
+                          url: base64Blob,
+                        },
+                      },
+                    ]
+                  : prompt,
             } as ChatCompletionMessage,
           ])
+        // TODO: Deprioritize Jan Can See
+        // .concat([
+        //   {
+        //     role: ChatCompletionRole.User,
+        //     content:
+        //       selectedModel && base64Blob
+        //         ? [
+        //             {
+        //               type: ChatCompletionMessageContentType.Text,
+        //               text: prompt,
+        //             },
+        //             {
+        //               type: ChatCompletionMessageContentType.Image,
+        //               image_url: {
+        //                 url: base64Blob,
+        //               },
+        //             },
+        //           ]
+        //         : prompt,
+        //   } as ChatCompletionMessage,
+        // ])
       )
 
     const msgId = ulid()
 
-    const modelRequest = selectedModel ?? activeThread.assistants[0].model
+    let modelRequest = selectedModel ?? activeThread.assistants[0].model
     if (runtimeParams.stream == null) {
       runtimeParams.stream = true
     }
+    // Add middleware to the model request with tool retrieval enabled
+    // if (
+    //   activeThread.assistants[0].tools?.find(
+    //     (tool: AssistantTool) => tool.type === 'retrieval' && tool.enabled
+    //   )
+    // ) {
+    modelRequest = {
+      ...modelRequest,
+      engine: InferenceEngine.tool_retrieval_enabled,
+      proxyEngine: modelRequest.engine,
+    }
+    // }
     const messageRequest: MessageRequest = {
       id: msgId,
       threadId: activeThread.id,
@@ -253,6 +287,38 @@ export default function useSendChatMessage() {
       },
     }
     const timestamp = Date.now()
+
+    const content: any = []
+    if (base64Blob && fileUpload[0]?.type === 'image') {
+      content.push({
+        type: ContentType.Image,
+        text: {
+          value: prompt,
+          annotations: [base64Blob],
+        },
+      })
+    }
+
+    if (base64Blob && fileUpload[0]?.type === 'pdf') {
+      content.push({
+        type: ContentType.Pdf,
+        text: {
+          value: prompt,
+          annotations: [base64Blob],
+        },
+      })
+    }
+
+    if (prompt && !base64Blob) {
+      content.push({
+        type: ContentType.Text,
+        text: {
+          value: prompt,
+          annotations: [],
+        },
+      })
+    }
+
     const threadMessage: ThreadMessage = {
       id: msgId,
       thread_id: activeThread.id,
@@ -261,18 +327,13 @@ export default function useSendChatMessage() {
       created: timestamp,
       updated: timestamp,
       object: 'thread.message',
-      content: [
-        {
-          type: ContentType.Text,
-          text: {
-            value: prompt,
-            annotations: [],
-          },
-        },
-      ],
+      content: content,
     }
 
     addNewMessage(threadMessage)
+    if (base64Blob) {
+      setFileUpload([])
+    }
 
     await extensionManager
       .get<ConversationalExtension>(ExtensionType.Conversational)

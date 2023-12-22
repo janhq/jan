@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 
-import { ChatCompletionRole, MessageStatus, ThreadMessage } from '@janhq/core'
+import {
+  ChatCompletionRole,
+  ContentType,
+  MessageStatus,
+  ThreadMessage,
+} from '@janhq/core'
 
 import hljs from 'highlight.js'
 
@@ -193,6 +198,12 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               // eslint-disable-next-line @typescript-eslint/naming-convention
               dangerouslySetInnerHTML={{ __html: parsedText }}
             />
+            {props.content[0]?.type === ContentType.Image && (
+              <img
+                className="aspect-auto h-[300px] rounded-xl"
+                src={props.content[0]?.text.annotations[0]}
+              />
+            )}
           </>
         )}
       </div>

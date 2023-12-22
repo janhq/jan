@@ -17,6 +17,7 @@ import {
   ThreadMessage,
   events,
   fs,
+  InferenceEngine,
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
@@ -142,7 +143,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   }
 
   private static async handleModelInit(model: OpenAIModel) {
-    if (model.engine !== "openai") {
+    if (model.engine !== InferenceEngine.openai) {
       return;
     } else {
       JanInferenceOpenAIExtension._currentModel = model;

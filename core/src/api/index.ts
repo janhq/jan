@@ -58,6 +58,8 @@ export enum FileManagerRoute {
   getUserSpace = 'getUserSpace',
   getResourcePath = 'getResourcePath',
   fileStat = 'fileStat',
+  writeFile = 'writeFile',
+  writeBlob = 'writeBlob',
 }
 
 export type ApiFunction = (...args: any[]) => any

@@ -22,11 +22,12 @@ export type ChatCompletionMessage = {
 
 export type ChatCompletionMessageContent =
   | string
-  | (ChatCompletionMessageContentText & ChatCompletionMessageContentImage)[]
+  | (ChatCompletionMessageContentText & ChatCompletionMessageContentImage & ChatCompletionMessageContentDoc)[]
 
 export enum ChatCompletionMessageContentType {
   Text = 'text',
   Image = 'image_url',
+  Doc = 'doc_url',
 }
 
 export type ChatCompletionMessageContentText = {
@@ -37,3 +38,8 @@ export type ChatCompletionMessageContentImage = {
   type: ChatCompletionMessageContentType
   image_url: { url: string }
 }
+export type ChatCompletionMessageContentDoc = {
+  type: ChatCompletionMessageContentType
+  doc_url: { url: string }
+}
+

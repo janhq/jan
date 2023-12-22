@@ -28,5 +28,16 @@ export function handleFsIPCs() {
         )
       )
     })
-  })
+  }),
+  ipcMain.handle(
+    FileSystemRoute.writeBlob,
+    async (_event, path: string, data: string): Promise<void> => {
+      try {
+        const dataBuffer = Buffer.from(data, 'base64')
+        fs.writeFileSync(join(userSpacePath, path), dataBuffer)
+      } catch (err) {
+        console.error(`writeFile ${path} result: ${err}`)
+      }
+    }
+  )
 }

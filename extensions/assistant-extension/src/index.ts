@@ -1,9 +1,22 @@
-import { ExtensionType, fs, Assistant } from "@janhq/core";
+import {
+  ExtensionType,
+  fs,
+  Assistant,
+  MessageRequest,
+  events,
+  EventName,
+  InferenceEngine,
+  Thread,
+} from "@janhq/core";
+import { executeOnMain } from "@janhq/core";
 import { AssistantExtension } from "@janhq/core";
 import { join } from "path";
 
 export default class JanAssistantExtension implements AssistantExtension {
   private static readonly _homeDir = "file://assistants";
+
+  controller = new AbortController();
+  isCancelled = false;
 
   type(): ExtensionType {
     return ExtensionType.Assistant;
@@ -15,6 +28,56 @@ export default class JanAssistantExtension implements AssistantExtension {
       fs.mkdirSync(JanAssistantExtension._homeDir).then(() => {
         this.createJanAssistant();
       });
+
+    // Events subscription
+    events.on(EventName.OnMessageSent, (data) =>
+      JanAssistantExtension.handleMessageRequest(data, this)
+    );
+
+    events.on(EventName.OnInferenceStopped, () => {
+      JanAssistantExtension.handleInferenceStopped(this);
+    });
+
+    events.on(EventName.OnThreadStarted, (thread) => {
+      JanAssistantExtension.handleThreadStart(thread);
+    });
+  }
+
+  private static handleThreadStart(thread: Thread) {
+    // Ingest documents
+  }
+
+  private static async handleInferenceStopped(instance: JanAssistantExtension) {
+    instance.isCancelled = true;
+    instance.controller?.abort();
+  }
+
+  private static async handleMessageRequest(
+    data: MessageRequest,
+    instance: JanAssistantExtension
+  ) {
+    instance.isCancelled = false;
+    instance.controller = new AbortController();
+
+    if (data.model?.engine !== InferenceEngine.tool_retrieval_enabled) {
+      return;
+    }
+
+    const retrievalResult = await executeOnMain(MODULE, "toolRetrievalQueryResult", {
+      messageRequest: data,
+    });
+
+    console.log("get back data", retrievalResult);
+
+    const output = {
+      ...data,
+      model: {
+        ...data.model,
+        // engine: data.model.proxyEngine,
+        engine: InferenceEngine.testing,
+      },
+    };
+    events.emit(EventName.OnMessageSent, output);
   }
 
   /**
@@ -93,7 +156,13 @@ export default class JanAssistantExtension implements AssistantExtension {
       description: "A default assistant that can use all downloaded models",
       model: "*",
       instructions: "",
-      tools: undefined,
+      tools: [
+        {
+          type: "retrieval",
+          enabled: true,
+          settings: {},
+        },
+      ],
       file_ids: [],
       metadata: undefined,
     };

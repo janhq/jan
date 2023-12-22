@@ -19,6 +19,7 @@ import {
   executeOnMain,
   fs,
   Model,
+  InferenceEngine,
   joinPath,
   InferenceExtension,
   log,
