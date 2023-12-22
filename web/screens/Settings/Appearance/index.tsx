@@ -9,7 +9,7 @@ export default function AppearanceOptions() {
           <h6 className="text-sm font-semibold capitalize">
             Base color scheme
           </h6>
-          <p className="leading-relaxed ">Choose Jan default color scheme.</p>
+          <p className="leading-relaxed ">Choose between light and dark modes.</p>
         </div>
         <ToggleTheme />
       </div>
@@ -17,7 +17,7 @@ export default function AppearanceOptions() {
         <div className="flex-shrink-0 space-y-1">
           <h6 className="text-sm font-semibold capitalize">Accent Color</h6>
           <p className="leading-relaxed ">
-            Choose the accent color used throughout the app.
+            Choose the primary accent color used throughout the app.
           </p>
         </div>
         <ToggleAccent />

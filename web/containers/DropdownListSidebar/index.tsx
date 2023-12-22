@@ -131,7 +131,7 @@ export default function DropdownListSidebar() {
 
       {finishInit && (
         <TooltipContent sideOffset={10}>
-          <span>To change model, please start a new thread</span>
+          <span>Start a new thread to change the model</span>
           <TooltipArrow />
         </TooltipContent>
       )}
