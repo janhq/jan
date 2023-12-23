@@ -103,9 +103,13 @@ export const useCreateNewThread = () => {
 
   function updateThreadMetadata(thread: Thread) {
     updateThread(thread)
-    extensionManager
-      .get<ConversationalExtension>(ExtensionType.Conversational)
-      ?.saveThread(thread)
+    const threadState = threadStates[thread.id]
+    const isFinishInit = threadState?.isFinishInit ?? true
+    if (isFinishInit) {
+      extensionManager
+        .get<ConversationalExtension>(ExtensionType.Conversational)
+        ?.saveThread(thread)
+    }
   }
 
   return {
