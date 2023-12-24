@@ -1,6 +1,10 @@
-import { ExtensionType, Thread } from '@janhq/core'
-
-import { ConversationalExtension } from '@janhq/core'
+import {
+  EventName,
+  ExtensionType,
+  Thread,
+  events,
+  ConversationalExtension,
+} from '@janhq/core'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -21,6 +25,8 @@ export default function useSetActiveThread() {
       console.debug('Thread already active')
       return
     }
+
+    events.emit(EventName.OnInferenceStopped, thread.id)
 
     // load the corresponding messages
     const messages = await extensionManager

@@ -5,6 +5,7 @@ import { join } from 'path'
 import readline from 'readline'
 import { userSpacePath } from './../utils/path'
 import { FileSystemRoute } from '@janhq/core'
+const reflect = require('@alumna/reflect')
 
 /**
  * Handles file system operations.
@@ -176,11 +177,31 @@ export function handleFsIPCs() {
   )
 
   ipcMain.handle(
+    FileSystemRoute.syncFile,
+    async (_event, src: string, dest: string) => {
+      console.debug(`Copying file from ${src} to ${dest}`)
+
+      return reflect({
+        src,
+        dest,
+        recursive: true,
+        delete: false,
+        overwrite: true,
+        errorOnExist: false,
+      })
+    }
+  )
+
+  ipcMain.handle(
     FileSystemRoute.copyFile,
     async (_event, src: string, dest: string) => {
       console.debug(`Copying file from ${src} to ${dest}`)
 
-      return fse.copySync(src, dest, { overwrite: false })
+      return fse.copySync(src, dest, {
+        overwrite: false,
+        recursive: true,
+        errorOnExist: false,
+      })
     }
   )
 

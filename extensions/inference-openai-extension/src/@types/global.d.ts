@@ -1,6 +1,5 @@
-import { Model } from "@janhq/core";
-
 declare const MODULE: string;
+declare const OPENAI_DOMAIN: string;
 
 declare interface EngineSettings {
   full_url?: string;

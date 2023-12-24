@@ -18,10 +18,7 @@ module.exports = {
   plugins: [
     new webpack.DefinePlugin({
       MODULE: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
-      INFERENCE_URL: JSON.stringify(
-        process.env.INFERENCE_URL ||
-          "http://127.0.0.1:3928/inferences/llamacpp/chat_completion"
-      ),
+      OPENAI_DOMAIN: JSON.stringify("openai.azure.com"),
     }),
   ],
   output: {

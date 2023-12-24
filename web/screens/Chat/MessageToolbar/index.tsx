@@ -6,12 +6,11 @@ import {
 } from '@janhq/core'
 import { ConversationalExtension } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { RefreshCcw, Copy, Trash2Icon } from 'lucide-react'
+import { RefreshCcw, CopyIcon, Trash2Icon, CheckIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
-import { toaster } from '@/containers/Toast'
-
+import { useClipboard } from '@/hooks/useClipboard'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { extensionManager } from '@/extension'
@@ -26,6 +25,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const thread = useAtomValue(activeThreadAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { resendChatMessage } = useSendChatMessage()
+  const clipboard = useClipboard({ timeout: 1000 })
 
   const onDeleteClick = async () => {
     deleteMessage(message.id ?? '')
@@ -47,29 +47,31 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
     resendChatMessage(message)
   }
 
-  if (message.status !== MessageStatus.Ready) return null
+  if (message.status === MessageStatus.Pending) return null
 
   return (
     <div className={twMerge('flex flex-row items-center')}>
       <div className="flex overflow-hidden rounded-md border border-border bg-background/20">
-        {message.id === messages[messages.length - 1]?.id && (
-          <div
-            className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
-            onClick={onRegenerateClick}
-          >
-            <RefreshCcw size={14} />
-          </div>
-        )}
+        {message.id === messages[messages.length - 1]?.id &&
+          messages[messages.length - 1].status !== MessageStatus.Error && (
+            <div
+              className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
+              onClick={onRegenerateClick}
+            >
+              <RefreshCcw size={14} />
+            </div>
+          )}
         <div
           className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
           onClick={() => {
-            navigator.clipboard.writeText(message.content[0]?.text?.value ?? '')
-            toaster({
-              title: 'Copied to clipboard',
-            })
+            clipboard.copy(message.content[0]?.text?.value ?? '')
           }}
         >
-          <Copy size={14} />
+          {clipboard.copied ? (
+            <CheckIcon size={14} className="text-green-600" />
+          ) : (
+            <CopyIcon size={14} />
+          )}
         </div>
         <div
           className="cursor-pointer px-2 py-2 hover:bg-background/80"

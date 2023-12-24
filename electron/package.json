@@ -45,7 +45,10 @@
       "icon": "icons/"
     },
     "win": {
-      "icon": "icons/icon.png"
+      "icon": "icons/icon.png",
+      "target": [
+        "nsis"
+      ]
     },
     "artifactName": "jan-${os}-${arch}-${version}.${ext}"
   },
@@ -67,6 +70,7 @@
     "build:publish:linux": "tsc -p . && electron-builder -p onTagOrDraft -l deb"
   },
   "dependencies": {
+    "@alumna/reflect": "^1.1.3",
     "@janhq/core": "link:./core",
     "@npmcli/arborist": "^7.1.0",
     "@types/request": "^2.48.12",

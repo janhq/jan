@@ -59,6 +59,8 @@ export enum MessageStatus {
   Ready = 'ready',
   /** Message is not fully loaded. **/
   Pending = 'pending',
+  /** Message loaded with error. **/
+  Error = 'error',
 }
 
 /**

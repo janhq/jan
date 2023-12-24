@@ -3,10 +3,6 @@ import { useState } from 'react'
 import {
   Input,
   ScrollArea,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipArrow,
   Select,
   SelectTrigger,
   SelectValue,
@@ -16,10 +12,6 @@ import {
 } from '@janhq/uikit'
 
 import { SearchIcon } from 'lucide-react'
-
-import { Code2Icon, UserIcon } from 'lucide-react'
-
-import { twMerge } from 'tailwind-merge'
 
 import Loader from '@/containers/Loader'
 
@@ -32,10 +24,9 @@ import ExploreModelList from './ExploreModelList'
 const ExploreModelsScreen = () => {
   const { loading, models } = useGetConfiguredModels()
   const [searchValue, setsearchValue] = useState('')
-  const [tabActive, setTabActive] = useState('Model')
   const { downloadedModels } = useGetDownloadedModels()
-  const [sortSelected, setSortSelected] = useState('All Model')
-  const sortMenu = ['All Model', 'Recommended', 'Downloaded']
+  const [sortSelected, setSortSelected] = useState('All Models')
+  const sortMenu = ['All Models', 'Recommended', 'Downloaded']
 
   const filteredModels = models.filter((x) => {
     if (sortSelected === 'Downloaded') {
@@ -45,8 +36,8 @@ const ExploreModelsScreen = () => {
       )
     } else if (sortSelected === 'Recommended') {
       return (
-        x.metadata.tags.includes('Featured') ||
-        x.metadata.tags.includes('Recommended')
+        x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
+        x.metadata.tags.includes('Featured')
       )
     } else {
       return x.name.toLowerCase().includes(searchValue.toLowerCase())

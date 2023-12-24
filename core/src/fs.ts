@@ -63,6 +63,8 @@ const appendFile: (path: string, data: string) => Promise<any> = (path, data) =>
 const copyFile: (src: string, dest: string) => Promise<any> = (src, dest) =>
   global.core.api?.copyFile(src, dest)
 
+const syncFile: (src: string, dest: string) => Promise<any> = (src, dest) =>
+  global.core.api?.syncFile(src, dest)
 /**
  * Reads a file line by line.
  * @param {string} path - The path of the file to read.
@@ -83,4 +85,5 @@ export const fs = {
   appendFile,
   readLineByLine,
   copyFile,
+  syncFile,
 }

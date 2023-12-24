@@ -130,7 +130,7 @@ export default function Home() {
                     <div className="relative lg:-left-14 overflow-hidden rounded-lg group">
                       <div className="hidden group-hover:flex absolute top-0 left-0 rounded-lg bg-black/30 w-full h-full items-center justify-center transition-all">
                         <a
-                          href="https://github.com/orgs/janhq/projects/5/views/12"
+                          href="https://github.com/orgs/janhq/projects/5/views/16"
                           target="_blank"
                           className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 text-black bg-white hover:text-black"
                         >

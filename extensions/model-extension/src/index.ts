@@ -41,14 +41,16 @@ export default class JanModelExtension implements ModelExtension {
 
   private async copyModelsToHomeDir() {
     try {
-      // list all of the files under the home directory
-      const files = await fs.listFiles('')
-
-      if (files.includes(JanModelExtension._homeDir)) {
-        // ignore if the model is already downloaded
-        console.debug('Model already downloaded')
+      if (
+        localStorage.getItem(`${EXTENSION_NAME}-version`) === VERSION &&
+        (await fs.exists(JanModelExtension._homeDir))
+      ) {
+        console.debug('Model already migrated')
         return
       }
+
+      // Get available models
+      const readyModels = (await this.getDownloadedModels()).map((e) => e.id)
 
       // copy models folder from resources to home directory
       const resourePath = await getResourcePath()
@@ -57,7 +59,23 @@ export default class JanModelExtension implements ModelExtension {
       const userSpace = await getUserSpace()
       const destPath = join(userSpace, JanModelExtension._homeDir)
 
-      await fs.copyFile(srcPath, destPath)
+      await fs.syncFile(srcPath, destPath)
+
+      console.debug('Finished syncing models')
+
+      const reconfigureModels = (await this.getConfiguredModels()).filter((e) =>
+        readyModels.includes(e.id)
+      )
+      console.debug('Finished updating downloaded models')
+
+      // update back the status
+      await Promise.all(
+        reconfigureModels.map(async (model) => this.saveModel(model))
+      )
+
+      // Finished migration
+
+      localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION)
     } catch (err) {
       console.error(err)
     }
@@ -193,12 +211,18 @@ export default class JanModelExtension implements ModelExtension {
       const results = await Promise.allSettled(readJsonPromises)
       const modelData = results.map((result) => {
         if (result.status === 'fulfilled') {
-          return JSON.parse(result.value) as Model
+          try {
+            return JSON.parse(result.value) as Model
+          } catch {
+            console.debug(`Unable to parse model metadata: ${result.value}`)
+            return undefined
+          }
         } else {
           console.error(result.reason)
+          return undefined
         }
       })
-      return modelData
+      return modelData.filter((e) => !!e)
     } catch (err) {
       console.error(err)
       return []

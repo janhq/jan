@@ -25,13 +25,13 @@ export default function SystemMonitorScreen() {
       <ScrollArea className="h-full w-full">
         <div className="h-full p-8" data-test-id="testid-system-monitor">
           <div className="grid grid-cols-2 gap-8 lg:grid-cols-3">
-            <div className="rounded-xl border border-border px-8 py-6">
+            <div className="rounded-xl border border-border p-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-base font-bold uppercase">
                   ram ({Math.round((usedRam / totalRam) * 100)}%)
                 </h4>
                 <span className="text-xs text-muted-foreground">
-                  {toGigabytes(usedRam)} GB of {toGigabytes(totalRam)} GB used
+                  {toGigabytes(usedRam)} of {toGigabytes(totalRam)} used
                 </span>
               </div>
               <div className="mt-2">
@@ -41,7 +41,7 @@ export default function SystemMonitorScreen() {
                 />
               </div>
             </div>
-            <div className="rounded-xl border border-border px-8 py-6">
+            <div className="rounded-xl border border-border p-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-base font-bold uppercase">
                   cpu ({cpuUsage}%)
@@ -59,7 +59,7 @@ export default function SystemMonitorScreen() {
           {activeModel && (
             <div className="mt-8 overflow-hidden rounded-xl border border-border shadow-sm">
               <div className="px-6 py-5">
-                <h4 className="text-base font-medium">Running Models</h4>
+                <h4 className="text-base font-medium">Actively Running Models</h4>
               </div>
               <div className="relative overflow-x-auto shadow-md">
                 <table className="w-full px-8">

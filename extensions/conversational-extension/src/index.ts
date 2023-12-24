@@ -55,7 +55,7 @@ export default class JSONConversationalExtension
       convos.sort(
         (a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime()
       )
-      console.debug('getThreads', JSON.stringify(convos, null, 2))
+
       return convos
     } catch (error) {
       console.error(error)
@@ -124,7 +124,8 @@ export default class JSONConversationalExtension
       await fs.mkdir(threadDirPath)
       await fs.writeFile(
         threadMessagePath,
-        messages.map((msg) => JSON.stringify(msg)).join('\n') + '\n'
+        messages.map((msg) => JSON.stringify(msg)).join('\n') +
+          (messages.length ? '\n' : '')
       )
       Promise.resolve()
     } catch (err) {

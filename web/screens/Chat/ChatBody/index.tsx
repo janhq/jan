@@ -2,9 +2,17 @@ import { Fragment } from 'react'
 
 import ScrollToBottom from 'react-scroll-to-bottom'
 
-import { InferenceEngine } from '@janhq/core'
+import {
+  ChatCompletionRole,
+  ConversationalExtension,
+  ExtensionType,
+  InferenceEngine,
+  MessageStatus,
+} from '@janhq/core'
 import { Button } from '@janhq/uikit'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
+
+import { RefreshCcw } from 'lucide-react'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
@@ -14,14 +22,45 @@ import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
+import useSendChatMessage from '@/hooks/useSendChatMessage'
+
 import ChatItem from '../ChatItem'
 
-import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { extensionManager } from '@/extension'
+import {
+  deleteMessageAtom,
+  getCurrentChatMessagesAtom,
+} from '@/helpers/atoms/ChatMessage.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
+  const thread = useAtomValue(activeThreadAtom)
+  const deleteMessage = useSetAtom(deleteMessageAtom)
+  const { resendChatMessage } = useSendChatMessage()
+
+  const regenerateMessage = async () => {
+    const lastMessageIndex = messages.length - 1
+    const message = messages[lastMessageIndex]
+    if (message.role !== ChatCompletionRole.User) {
+      // Delete last response before regenerating
+      deleteMessage(message.id ?? '')
+      if (thread) {
+        await extensionManager
+          .get<ConversationalExtension>(ExtensionType.Conversational)
+          ?.writeMessages(
+            thread.id,
+            messages.filter((msg) => msg.id !== message.id)
+          )
+      }
+      const targetMessage = messages[lastMessageIndex - 1]
+      if (targetMessage) resendChatMessage(targetMessage)
+    } else {
+      resendChatMessage(message)
+    }
+  }
 
   if (downloadedModels.length === 0)
     return (
@@ -76,8 +115,32 @@ const ChatBody: React.FC = () => {
         </div>
       ) : (
         <ScrollToBottom className="flex h-full w-full flex-col">
-          {messages.map((message) => (
-            <ChatItem {...message} key={message.id} />
+          {messages.map((message, index) => (
+            <>
+              <ChatItem {...message} key={message.id} />
+
+              {message.status === MessageStatus.Error &&
+                index === messages.length - 1 && (
+                  <div
+                    key={message.id}
+                    className="mt-10 flex flex-col items-center"
+                  >
+                    <span className="mb-3 text-center text-sm font-medium text-gray-500">
+                      Oops! The generation was interrupted. Let&apos;s
+                      give it another go!
+                    </span>
+                    <Button
+                      className="w-min"
+                      themes="outline"
+                      onClick={regenerateMessage}
+                    >
+                      <RefreshCcw size={14} className="" />
+                      <span className="w-2" />
+                      Regenerate
+                    </Button>
+                  </div>
+                )}
+            </>
           ))}
         </ScrollToBottom>
       )}

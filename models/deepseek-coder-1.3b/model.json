@@ -8,11 +8,11 @@
     "description": "Deepseek Coder trained on 2T tokens (87% code, 13% English/Chinese), excelling in project-level code completion with advanced capabilities across multiple programming languages.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 2048,
+      "ctx_len": 4096,
       "prompt_template": "### Instruction:\n{prompt}\n### Response:"
     },
     "parameters": {
-      "max_tokens": 2048
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "Deepseek, The Bloke",

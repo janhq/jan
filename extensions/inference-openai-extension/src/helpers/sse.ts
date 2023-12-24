@@ -1,5 +1,4 @@
 import { Observable } from "rxjs";
-import { EngineSettings, OpenAIModel } from "../@types/global";
 
 /**
  * Sends a request to the inference server to generate a response based on the recent messages.
@@ -16,7 +15,7 @@ export function requestInference(
 ): Observable<string> {
   return new Observable((subscriber) => {
     let model_id: string = model.id;
-    if (engine.full_url.includes("openai.azure.com")) {
+    if (engine.full_url.includes(OPENAI_DOMAIN)) {
       model_id = engine.full_url.split("/")[5];
     }
     const requestBody = JSON.stringify({
@@ -40,6 +39,13 @@ export function requestInference(
       signal: controller?.signal,
     })
       .then(async (response) => {
+        if (!response.ok) {
+          subscriber.next(
+            (await response.json()).error?.message ?? "Error occured"
+          );
+          subscriber.complete();
+          return;
+        }
         if (model.parameters.stream) {
           const stream = response.body;
           const decoder = new TextDecoder("utf-8");

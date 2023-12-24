@@ -20,7 +20,7 @@ const Advanced = () => {
             </h6>
           </div>
           <p className="whitespace-pre-wrap leading-relaxed">
-            Enable experimental features that may be unstable or not fully
+            Enable experimental features that may be unstable
             tested.
           </p>
         </div>
@@ -44,7 +44,7 @@ const Advanced = () => {
               </h6>
             </div>
             <p className="whitespace-pre-wrap leading-relaxed">
-              Open the directory where the app data is located.
+              Open the directory where your app data, like conversation history and model configurations, is located.
             </p>
           </div>
           <Button

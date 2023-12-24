@@ -1,12 +1,14 @@
-import { ChatCompletionRole, ExtensionType } from '@janhq/core'
-import { ConversationalExtension } from '@janhq/core'
+import {
+  ChatCompletionRole,
+  ExtensionType,
+  ConversationalExtension,
+} from '@janhq/core'
+
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
-
-import { useActiveModel } from './useActiveModel'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 
@@ -19,10 +21,10 @@ import {
   threadsAtom,
   setActiveThreadIdAtom,
   deleteThreadStateAtom,
+  threadStatesAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function useDeleteThread() {
-  const { activeModel } = useActiveModel()
   const [threads, setThreads] = useAtom(threadsAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
@@ -31,6 +33,8 @@ export default function useDeleteThread() {
   const deleteMessages = useSetAtom(deleteChatMessagesAtom)
   const cleanMessages = useSetAtom(cleanChatMessagesAtom)
   const deleteThreadState = useSetAtom(deleteThreadStateAtom)
+
+  const threadStates = useAtomValue(threadStatesAtom)
 
   const cleanThread = async (threadId: string) => {
     if (threadId) {
@@ -59,15 +63,21 @@ export default function useDeleteThread() {
       const availableThreads = threads.filter((c) => c.id !== threadId)
       setThreads(availableThreads)
 
+      const deletingThreadState = threadStates[threadId]
+      const isFinishInit = deletingThreadState?.isFinishInit ?? true
+
       // delete the thread state
       deleteThreadState(threadId)
 
-      deleteMessages(threadId)
-      setCurrentPrompt('')
-      toaster({
-        title: 'Thread successfully deleted.',
-        description: `Thread with ${activeModel?.name} has been successfully deleted.`,
-      })
+      if (isFinishInit) {
+        deleteMessages(threadId)
+        setCurrentPrompt('')
+        toaster({
+          title: 'Thread successfully deleted.',
+          description: `Thread ${threadId} has been successfully deleted.`,
+        })
+      }
+
       if (availableThreads.length > 0) {
         setActiveThreadId(availableThreads[0].id)
       } else {

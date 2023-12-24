@@ -17,8 +17,9 @@ module.exports = {
   },
   plugins: [
     new webpack.DefinePlugin({
-      PLUGIN_NAME: JSON.stringify(packageJson.name),
+      EXTENSION_NAME: JSON.stringify(packageJson.name),
       MODULE_PATH: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
+      VERSION: JSON.stringify(packageJson.version),
     }),
   ],
   output: {

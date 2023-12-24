@@ -22,7 +22,6 @@ import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
 import { join } from "path";
-import { EngineSettings, OpenAIModel } from "./@types/global";
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -108,6 +107,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
    */
   async inference(data: MessageRequest): Promise<ThreadMessage> {
     const timestamp = Date.now();
+
     const message: ThreadMessage = {
       thread_id: data.threadId,
       created: timestamp,
@@ -213,12 +213,14 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
         events.emit(EventName.OnMessageUpdate, message);
       },
       complete: async () => {
-        message.status = MessageStatus.Ready;
+        message.status = message.content.length
+          ? MessageStatus.Ready
+          : MessageStatus.Error;
         events.emit(EventName.OnMessageUpdate, message);
       },
       error: async (err) => {
-        if (instance.isCancelled) {
-          message.status = MessageStatus.Ready;
+        if (instance.isCancelled || message.content.length > 0) {
+          message.status = MessageStatus.Error;
           events.emit(EventName.OnMessageUpdate, message);
           return;
         }
