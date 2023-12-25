@@ -24,7 +24,7 @@ const BaseLayout = (props: PropsWithChildren) => {
   return (
     <div className="flex h-screen w-screen flex-1 overflow-hidden">
       <RibbonNav />
-      <div className=" relative top-12 flex h-[calc(100vh-96px)] w-full overflow-hidden bg-background/50">
+      <div className=" relative top-12 flex h-[calc(100vh-96px)] w-full overflow-hidden bg-background">
         <div className="w-full">
           <TopBar />
           <m.div

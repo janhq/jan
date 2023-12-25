@@ -21,7 +21,7 @@ export default function SystemMonitorScreen() {
   const { activeModel, stateModel, stopModel } = useActiveModel()
 
   return (
-    <div className="flex h-full w-full bg-background dark:bg-background/50">
+    <div className="flex h-full w-full bg-background dark:bg-background">
       <ScrollArea className="h-full w-full">
         <div className="h-full p-8" data-test-id="testid-system-monitor">
           <div className="grid grid-cols-2 gap-8 lg:grid-cols-3">
@@ -59,7 +59,9 @@ export default function SystemMonitorScreen() {
           {activeModel && (
             <div className="mt-8 overflow-hidden rounded-xl border border-border shadow-sm">
               <div className="px-6 py-5">
-                <h4 className="text-base font-medium">Actively Running Models</h4>
+                <h4 className="text-base font-medium">
+                  Actively Running Models
+                </h4>
               </div>
               <div className="relative overflow-x-auto shadow-md">
                 <table className="w-full px-8">
