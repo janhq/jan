@@ -20,7 +20,7 @@ Jan offers a convenient and private way to interact with a conversational AI loc
 
 ## Viewing Chat History
 
-1. Navigate to the main dashboard
+1. Navigate to the main dashboard.
 2. Locate the list of threads on the left side of the screen. This list shows all your conversations.
 3. Select a thread to view the conversation in the main chat window.
 4. Scroll up and down to view the entire chat history in the selected thread.

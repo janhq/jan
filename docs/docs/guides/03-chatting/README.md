@@ -1,3 +1,24 @@
 ---
 title: Chatting
+slug: /guides/chatting/
+description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    chatting,
+  ]
 ---
+
+This guide is designed to help you maximize your experience with Jan, covering everything from starting engaging threads to managing your chat history effectively.
+
+- [Start a thread](start-thread)
+- [Upload docs](upload-docs)
+- [Upload images](upload-images)
+- [Manage chat history](manage-chat-history)
