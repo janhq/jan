@@ -58,17 +58,28 @@ const ExploreModelsScreen = () => {
                 className="w-full object-cover"
               />
               <div className="absolute left-1/2 top-1/2 w-1/3 -translate-x-1/2 -translate-y-1/2">
-                <SearchIcon
-                  size={20}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                  placeholder="Search models"
-                  className="bg-white pl-9 dark:bg-background"
-                  onChange={(e) => {
-                    setsearchValue(e.target.value)
-                  }}
-                />
+                <div className="relative">
+                  <SearchIcon
+                    size={20}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  />
+                  <Input
+                    placeholder="Search models"
+                    className="bg-white pl-9 dark:bg-background"
+                    onChange={(e) => {
+                      setsearchValue(e.target.value)
+                    }}
+                  />
+                </div>
+                <div className="mt-2 text-center">
+                  <a
+                    href="https://jan.ai/guides/using-models/import-manually/"
+                    target="_blank"
+                    className="font-semibold text-white underline"
+                  >
+                    How to manually import models
+                  </a>
+                </div>
               </div>
             </div>
             <div className="mx-auto w-4/5 py-6">
