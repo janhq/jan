@@ -99,7 +99,7 @@ const ChatScreen = () => {
 
   return (
     <div className="flex h-full w-full">
-      <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background dark:bg-background/50">
+      <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background">
         <ThreadList />
       </div>
       <div
