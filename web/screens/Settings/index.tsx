@@ -176,7 +176,7 @@ const SettingsScreen = () => {
         </ScrollArea>
       </div>
 
-      <div className="h-full w-full bg-background/50">
+      <div className="h-full w-full bg-background">
         <ScrollArea className="h-full w-full">
           <div className="p-4">
             {handleShowOptions(activeStaticMenu || activePreferenceExtension)}
