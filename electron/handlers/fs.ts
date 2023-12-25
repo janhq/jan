@@ -7,16 +7,17 @@ import { join } from 'path'
  * Handles file system operations.
  */
 export function handleFsIPCs() {
-  const moduleName = "fs"
+  const moduleName = 'fs'
   Object.values(FileSystemRoute).forEach((route) => {
     ipcMain.handle(route, async (event, ...args) => {
-      return import(moduleName).then(mdl => 
-          mdl[route](
-        ...args.map((arg) =>
-          arg.includes('file:/')
-            ? join(userSpacePath, arg.replace('file:/', ''))
-            : arg
-        ))
+      return import(moduleName).then((mdl) =>
+        mdl[route](
+          ...args.map((arg) =>
+            arg.includes('file:/')
+              ? join(userSpacePath, arg.replace('file:/', ''))
+              : arg
+          )
+        )
       )
     })
   })

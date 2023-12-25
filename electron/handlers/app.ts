@@ -28,10 +28,6 @@ export function handleAppIPCs() {
     shell.openPath(userSpacePath)
   })
 
-  ipcMain.handle(AppRoute.getResourcePath, async (_event) => {
-    return getResourcePath()
-  })
-
   /**
    * Opens a URL in the user's default browser.
    * @param _event - The IPC event object.
