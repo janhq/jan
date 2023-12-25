@@ -1,5 +1,7 @@
 import { join } from 'path'
 
+import React from 'react'
+
 import { getUserSpace, openFileExplorer } from '@janhq/core'
 
 import { Input, Textarea } from '@janhq/uikit'
@@ -16,13 +18,14 @@ import DropdownListSidebar, {
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
+import EngineSetting from '../EngineSetting'
 import ModelSetting from '../ModelSetting'
 
 import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
 
 export const showRightSideBarAtom = atom<boolean>(true)
 
-export default function Sidebar() {
+const Sidebar: React.FC = () => {
   const showing = useAtomValue(showRightSideBarAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
@@ -188,6 +191,15 @@ export default function Sidebar() {
           </div>
         </CardSidebar>
         <CardSidebar
+          title="Engine"
+          onRevealInFinderClick={onReviewInFinderClick}
+          onViewJsonClick={onViewJsonClick}
+        >
+          <div className="p-2">
+            <EngineSetting />
+          </div>
+        </CardSidebar>
+        <CardSidebar
           title="Model"
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
@@ -203,3 +215,5 @@ export default function Sidebar() {
     </div>
   )
 }
+
+export default React.memo(Sidebar)

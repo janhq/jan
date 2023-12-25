@@ -1,6 +1,5 @@
 import {
   ExtensionType,
-  ModelRuntimeParams,
   Thread,
   ThreadState,
   ConversationalExtension,
@@ -12,7 +11,8 @@ import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
-  threadModelRuntimeParamsAtom,
+  ModelParams,
+  threadModelParamsAtom,
   threadStatesAtom,
   threadsAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -21,7 +21,7 @@ const useThreads = () => {
   const [threadStates, setThreadStates] = useAtom(threadStatesAtom)
   const [threads, setThreads] = useAtom(threadsAtom)
   const [threadModelRuntimeParams, setThreadModelRuntimeParams] = useAtom(
-    threadModelRuntimeParamsAtom
+    threadModelParamsAtom
   )
   const { setActiveThread } = useSetActiveThread()
 
@@ -29,7 +29,7 @@ const useThreads = () => {
     try {
       const localThreads = await getLocalThreads()
       const localThreadStates: Record<string, ThreadState> = {}
-      const threadModelParams: Record<string, ModelRuntimeParams> = {}
+      const threadModelParams: Record<string, ModelParams> = {}
 
       localThreads.forEach((thread) => {
         if (thread.id != null) {
@@ -42,9 +42,12 @@ const useThreads = () => {
             isFinishInit: true,
           }
 
-          // model params
           const modelParams = thread.assistants?.[0]?.model?.parameters
-          threadModelParams[thread.id] = modelParams
+          const engineParams = thread.assistants?.[0]?.model?.settings
+          threadModelParams[thread.id] = {
+            ...modelParams,
+            ...engineParams,
+          }
         }
       })
 

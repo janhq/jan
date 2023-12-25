@@ -24,6 +24,8 @@ import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import { toRuntimeParams, toSettingParams } from '@/utils/model_param'
+
 import { useActiveModel } from './useActiveModel'
 
 import { extensionManager } from '@/extension/ExtensionManager'
@@ -33,7 +35,7 @@ import {
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
-  getActiveThreadModelRuntimeParamsAtom,
+  getActiveThreadModelParamsAtom,
   threadStatesAtom,
   updateThreadAtom,
   updateThreadInitSuccessAtom,
@@ -56,7 +58,7 @@ export default function useSendChatMessage() {
   const modelRef = useRef<Model | undefined>()
   const threadStates = useAtomValue(threadStatesAtom)
   const updateThreadInitSuccess = useSetAtom(updateThreadInitSuccessAtom)
-  const activeModelParams = useAtomValue(getActiveThreadModelRuntimeParamsAtom)
+  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -128,9 +130,8 @@ export default function useSendChatMessage() {
   }
 
   const sendChatMessage = async () => {
-    if (!currentPrompt || currentPrompt.trim().length === 0) {
-      return
-    }
+    if (!currentPrompt || currentPrompt.trim().length === 0) return
+
     if (!activeThread) {
       console.error('No active thread')
       return
@@ -147,10 +148,8 @@ export default function useSendChatMessage() {
       const assistantName = activeThread.assistants[0].assistant_name ?? ''
       const instructions = activeThread.assistants[0].instructions ?? ''
 
-      const modelParams: ModelRuntimeParams = {
-        ...selectedModel.parameters,
-        ...activeModelParams,
-      }
+      const runtimeParams = toRuntimeParams(activeModelParams)
+      const settingParams = toSettingParams(activeModelParams)
 
       const updatedThread: Thread = {
         ...activeThread,
@@ -161,8 +160,8 @@ export default function useSendChatMessage() {
             instructions: instructions,
             model: {
               id: selectedModel.id,
-              settings: selectedModel.settings,
-              parameters: modelParams,
+              settings: settingParams,
+              parameters: runtimeParams,
               engine: selectedModel.engine,
             },
           },
@@ -208,13 +207,19 @@ export default function useSendChatMessage() {
     const msgId = ulid()
 
     const modelRequest = selectedModel ?? activeThread.assistants[0].model
+    const runtimeParams: ModelRuntimeParams = {
+      ...modelRequest.parameters,
+    }
+    if (!runtimeParams.stream) {
+      runtimeParams.stream = true
+    }
     const messageRequest: MessageRequest = {
       id: msgId,
       threadId: activeThread.id,
       messages,
       model: {
         ...modelRequest,
-        ...(activeModelParams ? { parameters: activeModelParams } : {}),
+        parameters: runtimeParams,
       },
     }
     const timestamp = Date.now()
