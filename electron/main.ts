@@ -15,6 +15,7 @@ import { ExtensionManager, ModuleManager } from '@janhq/core/node'
  **/
 import { handleDownloaderIPCs } from './handlers/download'
 import { handleExtensionIPCs } from './handlers/extension'
+import { handleFileMangerIPCs } from './handlers/fileManager'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
@@ -97,4 +98,5 @@ function handleIPCs() {
   handleDownloaderIPCs()
   handleExtensionIPCs()
   handleAppIPCs()
+  handleFileMangerIPCs()
 }

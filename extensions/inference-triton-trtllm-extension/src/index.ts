@@ -58,7 +58,7 @@ export default class JanInferenceTritonTrtLLMExtension
    * Subscribes to events emitted by the @janhq/core package.
    */
   onLoad(): void {
-    fs.mkdir(JanInferenceTritonTrtLLMExtension._homeDir);
+    fs.mkdirSync(JanInferenceTritonTrtLLMExtension._homeDir);
     JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings();
 
     // Events subscription
@@ -98,12 +98,12 @@ export default class JanInferenceTritonTrtLLMExtension
         JanInferenceTritonTrtLLMExtension._homeDir,
         JanInferenceTritonTrtLLMExtension._engineMetadataFileName
       );
-      if (await fs.exists(engine_json)) {
+      if (await fs.existsSync(engine_json)) {
         JanInferenceTritonTrtLLMExtension._engineSettings = JSON.parse(
-          await fs.readFile(engine_json)
+          await fs.readFileSync(engine_json)
         );
       } else {
-        await fs.writeFile(
+        await fs.writeFileSync(
           engine_json,
           JSON.stringify(
             JanInferenceTritonTrtLLMExtension._engineSettings,

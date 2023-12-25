@@ -4,7 +4,7 @@ import { fs } from '@janhq/core'
 
 export const useEngineSettings = () => {
   const readOpenAISettings = async () => {
-    const settings = await fs.readFile(join('engines', 'openai.json'))
+    const settings = await fs.readFileSync(join('engines', 'openai.json'))
     if (settings) {
       return JSON.parse(settings)
     }
@@ -17,7 +17,10 @@ export const useEngineSettings = () => {
   }) => {
     const settings = await readOpenAISettings()
     settings.api_key = apiKey
-    await fs.writeFile(join('engines', 'openai.json'), JSON.stringify(settings))
+    await fs.writeFileSync(
+      join('engines', 'openai.json'),
+      JSON.stringify(settings)
+    )
   }
   return { readOpenAISettings, saveOpenAISettings }
 }

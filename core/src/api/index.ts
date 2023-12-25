@@ -5,7 +5,6 @@
 export enum AppRoute {
   appDataPath = 'appDataPath',
   appVersion = 'appVersion',
-  getResourcePath = 'getResourcePath',
   openExternalUrl = 'openExternalUrl',
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
@@ -49,10 +48,11 @@ export enum FileSystemRoute {
   readFileSync = 'readFileSync',
   rmdirSync = 'rmdirSync',
   writeFileSync = 'writeFileSync',
-  getResourcePath = 'getResourcePath',
-  
-  isDirectory = 'isDirectory',
+}
+export enum FileManagerRoute {
+  synceFile = 'syncFile',
   getUserSpace = 'getUserSpace',
+  getResourcePath = 'getResourcePath',
 }
 
 export type ApiFunction = (...args: any[]) => any
@@ -81,17 +81,23 @@ export type FileSystemRouteFunctions = {
   [K in FileSystemRoute]: ApiFunction
 }
 
+export type FileManagerRouteFunctions = {
+  [K in FileManagerRoute]: ApiFunction
+}
+
 export type APIFunctions = AppRouteFunctions &
   AppEventFunctions &
   DownloadRouteFunctions &
   DownloadEventFunctions &
   ExtensionRouteFunctions &
-  FileSystemRouteFunctions
+  FileSystemRouteFunctions &
+  FileManagerRoute
 
 export const APIRoutes = [
   ...Object.values(AppRoute),
   ...Object.values(DownloadRoute),
   ...Object.values(ExtensionRoute),
   ...Object.values(FileSystemRoute),
+  ...Object.values(FileManagerRoute),
 ]
 export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]
