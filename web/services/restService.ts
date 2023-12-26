@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { safeJsonParse } from '@/utils/json'
 import {
   AppRoute,
   DownloadRoute,
   ExtensionRoute,
   FileSystemRoute,
 } from '@janhq/core'
+
+import { safeJsonParse } from '@/utils/json'
 
 // Function to open an external URL in a new browser window
 export function openExternalUrl(url: string) {

@@ -1,22 +1,25 @@
 {
-  "name": "jan-server",
+  "name": "@janhq/server",
   "version": "0.1.3",
-  "main": "./build/main.js",
+  "main": "./build/index.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "homepage": "https://jan.ai",
   "description": "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers.",
-  "build": "",
+  "files": [
+    "build/**"
+  ],
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "test:e2e": "playwright test --workers=1",
-    "dev": "nodemon .",
+    "dev": "tsc --watch & node --watch build/main.js",
     "build": "tsc"
   },
   "dependencies": {
     "@fastify/cors": "^8.4.2",
     "@fastify/static": "^6.12.0",
     "core": "link:./core",
+    "fastify": "^4.24.3",
     "request": "^2.88.2",
     "request-progress": "^3.0.0"
   },
@@ -27,12 +30,7 @@
     "@typescript-eslint/parser": "^6.7.3",
     "dotenv": "^16.3.1",
     "eslint-plugin-react": "^7.33.2",
-    "fastify": "^4.24.3",
-    "nodemon": "^3.0.1",
     "run-script-os": "^1.1.6",
     "typescript": "^5.2.2"
-  },
-  "installConfig": {
-    "hoistingLimits": "workspaces"
   }
 }

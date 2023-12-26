@@ -2,7 +2,6 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { setupMenu } from './utils/menu'
 import { createUserSpace } from './utils/path'
-import Fastify from 'fastify'
 
 /**
  * Managers
@@ -20,22 +19,11 @@ import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
 import { migrateExtensions } from './utils/migration'
-import { v1Router } from '@janhq/core/node'
 
-const fastify = Fastify({
-  logger: true,
-})
-
-fastify.listen({ port: 1337 }, function (err, address) {
-  if (err) {
-    fastify.log.error(err)
-    process.exit(1)
-  }
-})
-
-fastify.register(v1Router, {
-  prefix: '/api/v1',
-})
+/**
+ * Server
+ */
+import { startServer } from '@janhq/server'
 
 app
   .whenReady()
@@ -46,6 +34,7 @@ app
   .then(handleIPCs)
   .then(handleAppUpdates)
   .then(createMainWindow)
+  .then(startServer)
   .then(() => {
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
