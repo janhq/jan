@@ -9,10 +9,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipArrow,
   Input,
 } from '@janhq/uikit'
 
