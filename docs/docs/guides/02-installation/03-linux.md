@@ -49,4 +49,4 @@ sudo apt-get remove jan
 # where jan is the name of Jan package
 ```
 
-In case you wish to completely remove all user data associated with Jan after uninstallation, you can delete the user data folders located at `$HOME/.config/Jan` and ~/.jan. This will return your system to its state prior to the installation of Jan. This method can also be used to reset all settings if you are experiencing any issues with Jan.
+In case you wish to completely remove all user data associated with Jan after uninstallation, you can delete the user data folders located at ~/jan. This will return your system to its state prior to the installation of Jan. This method can also be used to reset all settings if you are experiencing any issues with Jan.
