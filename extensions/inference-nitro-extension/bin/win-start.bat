@@ -34,12 +34,7 @@ cd win-cuda
 
 nitro.exe %* > output.log
 type output.log | findstr /C:"CUDA error" >nul
-if %errorlevel% equ 0 (
-    goto :RunCpuVersion
-)
-else (
-    goto :End
-)
+if %errorlevel% equ 0 ( goto :RunCpuVersion ) else ( goto :End )
 
 :RunCpuVersion
 rem Run nitro_windows_amd64.exe...
