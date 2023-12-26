@@ -81,7 +81,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 
   return (
     <div
-      className="cursor-pointer rounded-t-md bg-background/50"
+      className="cursor-pointer rounded-t-md bg-background"
       onClick={onClick}
     >
       {model.metadata.cover && (
