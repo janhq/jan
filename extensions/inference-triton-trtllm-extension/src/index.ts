@@ -57,9 +57,9 @@ export default class JanInferenceTritonTrtLLMExtension
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  onLoad(): void {
-    fs.mkdirSync(JanInferenceTritonTrtLLMExtension._homeDir);
-    JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings();
+  async onLoad() {
+    if (!(await fs.existsSync(JanInferenceTritonTrtLLMExtension._homeDir)))
+      JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings();
 
     // Events subscription
     events.on(EventName.OnMessageSent, (data) =>
@@ -99,9 +99,9 @@ export default class JanInferenceTritonTrtLLMExtension
         JanInferenceTritonTrtLLMExtension._engineMetadataFileName
       );
       if (await fs.existsSync(engine_json)) {
-        JanInferenceTritonTrtLLMExtension._engineSettings = JSON.parse(
-          await fs.readFileSync(engine_json)
-        );
+        const engine = await fs.readFileSync(engine_json, "utf-8");
+        JanInferenceTritonTrtLLMExtension._engineSettings =
+          typeof engine === "object" ? engine : JSON.parse(engine);
       } else {
         await fs.writeFileSync(
           engine_json,

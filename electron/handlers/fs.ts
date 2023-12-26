@@ -13,7 +13,7 @@ export function handleFsIPCs() {
       return import(moduleName).then((mdl) =>
         mdl[route](
           ...args.map((arg) =>
-            arg.includes('file:/')
+            typeof arg === 'string' && arg.includes('file:/')
               ? join(userSpacePath, arg.replace('file:/', ''))
               : arg
           )

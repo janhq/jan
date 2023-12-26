@@ -107,7 +107,7 @@ export const getMessages = async (threadId: string) => {
     const messageFilePath = join(threadDirPath, messageFile)
 
     const lines = fs
-      .readFileSync(messageFilePath)
+      .readFileSync(messageFilePath, 'utf-8')
       .toString()
       .split('\n')
       .filter((line: any) => line !== '')

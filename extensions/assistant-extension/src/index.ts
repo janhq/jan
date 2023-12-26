@@ -20,7 +20,7 @@ export default class JanAssistantExtension implements AssistantExtension {
   /**
    * Called when the extension is unloaded.
    */
-  onUnload(): void { }
+  onUnload(): void {}
 
   async createAssistant(assistant: Assistant): Promise<void> {
     const assistantDir = join(JanAssistantExtension._homeDir, assistant.id);
@@ -48,6 +48,7 @@ export default class JanAssistantExtension implements AssistantExtension {
     for (const fileName of allFileName) {
       const filePath = join(JanAssistantExtension._homeDir, fileName);
 
+      if (filePath.includes(".DS_Store")) continue;
       const jsonFiles: string[] = (await fs.readdirSync(filePath)).filter(
         (file: string) => file === "assistant.json"
       );
@@ -57,7 +58,10 @@ export default class JanAssistantExtension implements AssistantExtension {
         continue;
       }
 
-      const content = await fs.readFileSync(join(filePath, jsonFiles[0]), 'utf-8');
+      const content = await fs.readFileSync(
+        join(filePath, jsonFiles[0]),
+        "utf-8"
+      );
       const assistant: Assistant =
         typeof content === "object" ? content : JSON.parse(content);
 
