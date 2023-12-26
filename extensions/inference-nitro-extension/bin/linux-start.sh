@@ -28,11 +28,12 @@ export CUDA_VISIBLE_DEVICES=$selectedGpuId
 
 # Attempt to run nitro_linux_amd64_cuda
 cd linux-cuda
-if ./nitro "$@"; then
+./nitro "$@" > output.log 2>&1 || (
+    echo "Check output log" && 
+    if grep -q "CUDA error" output.log; then
+        echo "CUDA error detected, attempting to run nitro_linux_amd64..."
+        cd ../linux-cpu && ./nitro "$@"
+        exit $?
+    fi
     exit $?
-else
-    echo "nitro_linux_amd64_cuda encountered an error, attempting to run nitro_linux_amd64..."
-    cd ../linux-cpu
-    ./nitro "$@"
-    exit $?
-fi
+)
