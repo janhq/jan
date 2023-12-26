@@ -19,6 +19,10 @@ keywords:
 
 A thread is the conversations between an assistant and a user. This tutorial will walk you through the process of starting a thread on Jan.
 
+<br></br>
+
+![start-thread-gif](./assets/start-thread.gif)
+
 ### Setting Thread Title
 
 A thread title acts as a name for your thread. It appears on the left side of the chat window, helping you easily navigate through your interactions. If you do not set a thread title, Jan will set it to "New Thread" as default.
@@ -35,6 +39,3 @@ Jan offers a variety of models to suit your conversational needs. Each model has
 
 You can customize the model params for your thread e.g. setting a customized value of max_tokens value for your thread, etc.
 
-<br></br>
-
-![start-thread-gif](./assets/start-thread.gif)
