@@ -8,7 +8,8 @@ import { join } from 'path'
  * functionality for managing threads.
  */
 export default class JSONConversationalExtension
-  implements ConversationalExtension {
+  implements ConversationalExtension
+{
   private static readonly _homeDir = 'file://threads'
   private static readonly _threadInfoFileName = 'thread.json'
   private static readonly _threadMessagesFileName = 'messages.jsonl'
@@ -96,7 +97,8 @@ export default class JSONConversationalExtension
    */
   deleteThread(threadId: string): Promise<void> {
     return fs.rmdirSync(
-      join(JSONConversationalExtension._homeDir, `${threadId}`)
+      join(JSONConversationalExtension._homeDir, `${threadId}`),
+      { recursive: true }
     )
   }
 
@@ -153,7 +155,8 @@ export default class JSONConversationalExtension
         JSONConversationalExtension._homeDir,
         threadDirName,
         JSONConversationalExtension._threadInfoFileName
-      )
+      ),
+      'utf-8'
     )
   }
 
@@ -168,6 +171,8 @@ export default class JSONConversationalExtension
 
     const threadDirs: string[] = []
     for (let i = 0; i < fileInsideThread.length; i++) {
+      if (fileInsideThread[i].includes('.DS_Store')) continue
+
       const path = join(
         JSONConversationalExtension._homeDir,
         fileInsideThread[i]
@@ -202,12 +207,14 @@ export default class JSONConversationalExtension
         JSONConversationalExtension._threadMessagesFileName
       )
 
-      const result = await fs.readFileSync(messageFilePath, 'utf-8').then((content) =>
-        content
-          .toString()
-          .split('\n')
-          .filter((line) => line !== '')
-      )
+      const result = await fs
+        .readFileSync(messageFilePath, 'utf-8')
+        .then((content) =>
+          content
+            .toString()
+            .split('\n')
+            .filter((line) => line !== '')
+        )
 
       const messages: ThreadMessage[] = []
       result.forEach((line: string) => {

@@ -37,6 +37,10 @@ function stopModel(): Promise<void> {
  */
 async function initModel(wrapper: any): Promise<ModelOperationResponse> {
   currentModelFile = wrapper.modelFullPath;
+  const janRoot = path.join(require("os").homedir(), "jan");
+  if (!currentModelFile.includes(janRoot)) {
+    currentModelFile = path.join(janRoot, currentModelFile);
+  }
   if (wrapper.model.engine !== "nitro") {
     return Promise.resolve({ error: "Not a nitro model" });
   } else {

@@ -171,7 +171,7 @@ export default function useSendChatMessage() {
       updateThreadInitSuccess(activeThread.id)
       updateThread(updatedThread)
 
-      extensionManager
+      await extensionManager
         .get<ConversationalExtension>(ExtensionType.Conversational)
         ?.saveThread(updatedThread)
     }

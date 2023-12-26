@@ -87,14 +87,9 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
         JanInferenceOpenAIExtension._engineMetadataFileName
       );
       if (await fs.existsSync(engineFile)) {
-        try {
-          JanInferenceOpenAIExtension._engineSettings = JSON.parse(
-            await fs.readFileSync(engineFile)
-          );
-        } catch {
-          JanInferenceOpenAIExtension._engineSettings =
-            await fs.readFileSync(engineFile);
-        }
+        const engine = await fs.readFileSync(engineFile, 'utf-8');
+        JanInferenceOpenAIExtension._engineSettings =
+          typeof engine === "object" ? engine : JSON.parse(engine);
       } else {
         await fs.writeFileSync(
           engineFile,

@@ -17,7 +17,6 @@ import {
   ThreadMessage,
   events,
   executeOnMain,
-  getUserSpace,
   fs,
   Model,
 } from "@janhq/core";
@@ -93,9 +92,9 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
         JanInferenceNitroExtension._engineMetadataFileName
       );
       if (await fs.existsSync(engineFile)) {
-        JanInferenceNitroExtension._engineSettings = JSON.parse(
-          await fs.readFileSync(engineFile)
-        );
+        const engine = await fs.readFileSync(engineFile, 'utf-8');
+        JanInferenceNitroExtension._engineSettings =
+          typeof engine === "object" ? engine : JSON.parse(engine);
       } else {
         await fs.writeFileSync(
           engineFile,
