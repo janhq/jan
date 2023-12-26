@@ -58,16 +58,16 @@ To reset your installation
 
 ```bash
 # Newer versions
-rm -rf /Users/$(whoami)/Library/Application\ Support/jan
+rm -rf ~/Library/Application\ Support/jan
 
 # Versions 0.2.0 and older
-rm -rf /Users/$(whoami)/Library/Application\ Support/jan-electron
+rm -rf ~/Library/Application\ Support/jan-electron
 ```
 
 3. Clear Application cache
 
 ```bash
-rm -rf /Users/$(whoami)/Library/Caches/jan*
+rm -rf ~/Library/Caches/jan*
 ```
 
 4. Use the following commands to remove any dangling backend processes:
@@ -76,7 +76,7 @@ rm -rf /Users/$(whoami)/Library/Caches/jan*
 ps aux | grep nitro
 ```
 
-Look for processes like "nitro" and "nitro_arm_64," and kill them one by one with:
+Look for processes like "nitro" and "nitro_arm_64", and kill them one by one with:
 
 ```bash
 kill -9 <PID>
