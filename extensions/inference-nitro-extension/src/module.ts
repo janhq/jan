@@ -67,6 +67,8 @@ async function loadModel(nitroResourceProbe: any | undefined) {
   // Gather system information for CPU physical cores and memory
   if (!nitroResourceProbe) nitroResourceProbe = await getResourcesInfo();
   return killSubprocess()
+    .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
+    .then(() => new Promise((resolve) => setTimeout(resolve, 5000))) // wait 5 second
     .then(() => spawnNitroProcess(nitroResourceProbe))
     .then(() => loadLLMModel(currentSettings))
     .then(validateModelStatus)

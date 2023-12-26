@@ -31,9 +31,15 @@ set CUDA_VISIBLE_DEVICES=!gpuId!
 
 rem Attempt to run nitro_windows_amd64_cuda.exe
 cd win-cuda
-nitro.exe %*
+goto RunGPUVersion
+
+:RunGPUVersion
+nitro.exe %* > output.log
+type output.log | findstr /C:"Connection closed or buffer is null" >nul
+if %errorlevel% equ 0 (
+    goto :RunGPUVersion
+)
 if %errorlevel% neq 0 goto RunCpuVersion
-goto End
 
 :RunCpuVersion
 rem Run nitro_windows_amd64.exe...
