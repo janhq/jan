@@ -68,6 +68,15 @@ async function loadModel(nitroResourceProbe: any | undefined) {
   if (!nitroResourceProbe) nitroResourceProbe = await getResourcesInfo();
   return killSubprocess()
     .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
+    // wait for 500ms to make sure the port is free for windows platform
+    .then(() => {
+      if (process.platform === "win32") {
+        return sleep(500);
+      }
+      else {
+        return sleep(0);
+      }
+    })
     .then(() => spawnNitroProcess(nitroResourceProbe))
     .then(() => loadLLMModel(currentSettings))
     .then(validateModelStatus)
@@ -76,6 +85,11 @@ async function loadModel(nitroResourceProbe: any | undefined) {
       // TODO: Broadcast error so app could display proper error message
       return { error: err, currentModelFile };
     });
+}
+
+// Add function sleep
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function promptTemplateConverter(promptTemplate) {

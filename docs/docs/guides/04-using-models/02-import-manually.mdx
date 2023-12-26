@@ -109,6 +109,8 @@ Copy the following configurations into the `model.json`.
 2. Make sure the `source_url` property is the direct binary download link ending in `.gguf`. In HuggingFace, you can find the directl links in `Files and versions` tab.
 3. Ensure you are using the correct `prompt_template`. This is usually provided in the HuggingFace model's description page.
 
+> Note: Currently, the filename must be `model.json` and the ID has to be equal to the foldername. In the `model.json`, you have to include the `state` property and set it to `ready` for Jan to recognize the model.
+
 ```js
 {
     "source_url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf",
@@ -130,6 +132,7 @@ Copy the following configurations into the `model.json`.
       "tags": ["7B", "Merged", "Featured"],
       "size": 4370000000
     },
+    "state": "ready",
     "engine": "nitro"
   }
 ```
