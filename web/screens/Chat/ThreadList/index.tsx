@@ -169,6 +169,7 @@ export default function ThreadList() {
                           </ModalClose>
                           <ModalClose asChild>
                             <Button
+                              autoFocus
                               themes="danger"
                               onClick={() => deleteThread(thread.id)}
                             >
