@@ -1,0 +1,12 @@
+{
+    "notify": true,
+    "nvidia-driver": {
+        "exist": false,
+        "version": ""
+    },
+    "cuda": {
+        "exist": false,
+        "version": ""
+    },
+    "gpus": []
+}
