@@ -138,7 +138,10 @@ export default function useSendChatMessage() {
     const activeThreadState = threadStates[activeThread.id]
 
     // if the thread is not initialized, we need to initialize it first
-    if (!activeThreadState.isFinishInit) {
+    if (
+      !activeThreadState.isFinishInit ||
+      activeThread.assistants[0].model.id !== selectedModel?.id
+    ) {
       if (!selectedModel) {
         toaster({ title: 'Please select a model' })
         return
