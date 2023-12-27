@@ -7,22 +7,19 @@ assignees: ''
 
 ---
 
-**Motivation**
+## Motivation
 - 
 
-**Specs & Designs**
+## Specs
 - 
 
-**In Scope**
+## Designs
+[Figma](link)
+
+## Tasklist
+- [ ] 
+
+## Not in Scope
 - 
 
-**Not in Scope**
-- 
-
-**Tasklist**
-> Note: All issues need to share the same `milestone` as this epic
-- 
-
-**Related Milestones**
-- Past
-- Future
+## Appendix
