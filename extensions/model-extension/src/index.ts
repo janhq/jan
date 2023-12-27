@@ -5,9 +5,10 @@ import {
   abortDownload,
   getResourcePath,
   getUserSpace,
+  InferenceEngine,
 } from '@janhq/core'
-import { ModelExtension, Model, ModelState } from '@janhq/core'
-import { join } from 'path'
+import { ModelExtension, Model } from '@janhq/core'
+import { join, sep } from 'path'
 
 /**
  * A extension for models
@@ -15,6 +16,9 @@ import { join } from 'path'
 export default class JanModelExtension implements ModelExtension {
   private static readonly _homeDir = 'models'
   private static readonly _modelMetadataFileName = 'model.json'
+  private static readonly _supportedModelFormat = '.gguf'
+  private static readonly _incompletedModelFileName = '.download'
+  private static readonly _offlineInferenceEngine = InferenceEngine.nitro
 
   /**
    * Implements type from JanExtension.
@@ -88,11 +92,18 @@ export default class JanModelExtension implements ModelExtension {
    */
   async downloadModel(model: Model): Promise<void> {
     // create corresponding directory
-    const directoryPath = join(JanModelExtension._homeDir, model.id)
-    await fs.mkdir(directoryPath)
+    const modelDirPath = join(JanModelExtension._homeDir, model.id)
+    await fs.mkdir(modelDirPath)
 
-    // path to model binary
-    const path = join(directoryPath, model.id)
+    // try to retrieve the download file name from the source url
+    // if it fails, use the model ID as the file name
+    const extractedFileName = model.source_url.split(sep).pop()
+    const fileName = extractedFileName
+      .toLowerCase()
+      .endsWith(JanModelExtension._supportedModelFormat)
+      ? extractedFileName
+      : model.id
+    const path = join(modelDirPath, fileName)
     downloadFile(model.source_url, path)
   }
 
@@ -126,17 +137,6 @@ export default class JanModelExtension implements ModelExtension {
         }
       })
       await Promise.allSettled(deletePromises)
-
-      // update the state as default
-      const jsonFilePath = join(
-        dirPath,
-        JanModelExtension._modelMetadataFileName
-      )
-      const json = await fs.readFile(jsonFilePath)
-      const model = JSON.parse(json) as Model
-      delete model.state
-
-      await fs.writeFile(jsonFilePath, JSON.stringify(model, null, 2))
     } catch (err) {
       console.error(err)
     }
@@ -155,17 +155,7 @@ export default class JanModelExtension implements ModelExtension {
     )
 
     try {
-      await fs.writeFile(
-        jsonFilePath,
-        JSON.stringify(
-          {
-            ...model,
-            state: ModelState.Ready,
-          },
-          null,
-          2
-        )
-      )
+      await fs.writeFile(jsonFilePath, JSON.stringify(model, null, 2))
     } catch (err) {
       console.error(err)
     }
@@ -176,11 +166,34 @@ export default class JanModelExtension implements ModelExtension {
    * @returns A Promise that resolves with an array of all models.
    */
   async getDownloadedModels(): Promise<Model[]> {
-    const models = await this.getModelsMetadata()
-    return models.filter((model) => model.state === ModelState.Ready)
+    return await this.getModelsMetadata(
+      async (modelDir: string, model: Model) => {
+        if (model.engine !== JanModelExtension._offlineInferenceEngine) {
+          return true
+        }
+        return await fs
+          .listFiles(join(JanModelExtension._homeDir, modelDir))
+          .then((files: string[]) => {
+            // or model binary exists in the directory
+            // model binary name can match model ID or be a .gguf file and not be an incompleted model file
+            return (
+              files.includes(modelDir) ||
+              files.some(
+                (file) =>
+                  file
+                    .toLowerCase()
+                    .includes(JanModelExtension._supportedModelFormat) &&
+                  !file.endsWith(JanModelExtension._incompletedModelFileName)
+              )
+            )
+          })
+      }
+    )
   }
 
-  private async getModelsMetadata(): Promise<Model[]> {
+  private async getModelsMetadata(
+    selector?: (path: string, model: Model) => Promise<boolean>
+  ): Promise<Model[]> {
     try {
       const filesUnderJanRoot = await fs.listFiles('')
       if (!filesUnderJanRoot.includes(JanModelExtension._homeDir)) {
@@ -200,19 +213,28 @@ export default class JanModelExtension implements ModelExtension {
         }
       }
 
-      const readJsonPromises = allDirectories.map((dirName) => {
+      const readJsonPromises = allDirectories.map(async (dirName) => {
+        // filter out directories that don't match the selector
+
+        // read model.json
         const jsonPath = join(
           JanModelExtension._homeDir,
           dirName,
           JanModelExtension._modelMetadataFileName
         )
-        return this.readModelMetadata(jsonPath)
+        let model = await this.readModelMetadata(jsonPath)
+        model = typeof model === 'object' ? model : JSON.parse(model)
+
+        if (selector && !(await selector?.(dirName, model))) {
+          return
+        }
+        return model
       })
       const results = await Promise.allSettled(readJsonPromises)
       const modelData = results.map((result) => {
         if (result.status === 'fulfilled') {
           try {
-            return JSON.parse(result.value) as Model
+            return result.value as Model
           } catch {
             console.debug(`Unable to parse model metadata: ${result.value}`)
             return undefined

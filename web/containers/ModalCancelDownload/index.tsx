@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 
-import { ModelExtension, ExtensionType } from '@janhq/core'
 import { Model } from '@janhq/core'
 
 import {
@@ -17,11 +16,12 @@ import {
 
 import { atom, useAtomValue } from 'jotai'
 
+import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
-import { extensionManager } from '@/extension'
+import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   model: Model
@@ -30,6 +30,7 @@ type Props = {
 
 export default function ModalCancelDownload({ model, isFromList }: Props) {
   const { modelDownloadStateAtom } = useDownloadState()
+  const downloadingModels = useAtomValue(downloadingModelsAtom)
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[model.id]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -37,6 +38,7 @@ export default function ModalCancelDownload({ model, isFromList }: Props) {
   )
   const downloadState = useAtomValue(downloadAtom)
   const cancelText = `Cancel ${formatDownloadPercentage(downloadState.percent)}`
+  const { abortModelDownload } = useDownloadModel()
 
   return (
     <Modal>
@@ -80,9 +82,10 @@ export default function ModalCancelDownload({ model, isFromList }: Props) {
                 themes="danger"
                 onClick={() => {
                   if (downloadState?.modelId) {
-                    extensionManager
-                      .get<ModelExtension>(ExtensionType.Model)
-                      ?.cancelModelDownload(downloadState.modelId)
+                    const model = downloadingModels.find(
+                      (model) => model.id === downloadState.modelId
+                    )
+                    if (model) abortModelDownload(model)
                   }
                 }}
               >

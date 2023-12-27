@@ -3,7 +3,7 @@ import { DownloadManager } from './../managers/download'
 import { resolve, join } from 'path'
 import { WindowManager } from './../managers/window'
 import request from 'request'
-import { createWriteStream } from 'fs'
+import { createWriteStream, renameSync } from 'fs'
 import { DownloadEvent, DownloadRoute } from '@janhq/core'
 const progress = require('request-progress')
 
@@ -48,6 +48,8 @@ export function handleDownloaderIPCs() {
     const userDataPath = join(app.getPath('home'), 'jan')
     const destination = resolve(userDataPath, fileName)
     const rq = request(url)
+    // downloading file to a temp file first
+    const downloadingTempFile = `${destination}.download`
 
     progress(rq, {})
       .on('progress', function (state: any) {
@@ -70,6 +72,9 @@ export function handleDownloaderIPCs() {
       })
       .on('end', function () {
         if (DownloadManager.instance.networkRequests[fileName]) {
+          // Finished downloading, rename temp file to actual file
+          renameSync(downloadingTempFile, destination)
+
           WindowManager?.instance.currentWindow?.webContents.send(
             DownloadEvent.onFileDownloadSuccess,
             {
@@ -87,7 +92,7 @@ export function handleDownloaderIPCs() {
           )
         }
       })
-      .pipe(createWriteStream(destination))
+      .pipe(createWriteStream(downloadingTempFile))
 
     DownloadManager.instance.setRequest(fileName, rq)
   })
