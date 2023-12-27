@@ -70,6 +70,7 @@ function updateCudaExistence() {
       paths = process.env.LD_LIBRARY_PATH ? process.env.LD_LIBRARY_PATH.split(path.delimiter) : [];
       const nitro_cuda_path = path.join(__dirname, "bin", "linux-cuda");
       paths.push(nitro_cuda_path);
+      paths.push('/usr/lib/x86_64-linux-gnu/')
   }
 
   let cudaExists = files.every(file => existsSync(file) || checkFileExistenceInPaths(file, paths));
