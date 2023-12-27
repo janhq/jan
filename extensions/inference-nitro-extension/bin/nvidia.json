@@ -1,5 +1,6 @@
 {
     "notify": true,
+    "run_mode": "cpu",
     "nvidia-driver": {
         "exist": false,
         "version": ""
@@ -8,5 +9,6 @@
         "exist": false,
         "version": ""
     },
-    "gpus": []
+    "gpus": [],
+    "gpu_highest_vram": ""
 }
