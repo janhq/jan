@@ -138,6 +138,9 @@ export default function useSendChatMessage() {
     }
     const activeThreadState = threadStates[activeThread.id]
 
+    const runtimeParams = toRuntimeParams(activeModelParams)
+    const settingParams = toSettingParams(activeModelParams)
+
     // if the thread is not initialized, we need to initialize it first
     if (!activeThreadState.isFinishInit) {
       if (!selectedModel) {
@@ -147,9 +150,6 @@ export default function useSendChatMessage() {
       const assistantId = activeThread.assistants[0].assistant_id ?? ''
       const assistantName = activeThread.assistants[0].assistant_name ?? ''
       const instructions = activeThread.assistants[0].instructions ?? ''
-
-      const runtimeParams = toRuntimeParams(activeModelParams)
-      const settingParams = toSettingParams(activeModelParams)
 
       const updatedThread: Thread = {
         ...activeThread,
@@ -207,10 +207,7 @@ export default function useSendChatMessage() {
     const msgId = ulid()
 
     const modelRequest = selectedModel ?? activeThread.assistants[0].model
-    const runtimeParams: ModelRuntimeParams = {
-      ...modelRequest.parameters,
-    }
-    if (!runtimeParams.stream) {
+    if (runtimeParams.stream == null) {
       runtimeParams.stream = true
     }
     const messageRequest: MessageRequest = {
@@ -219,6 +216,7 @@ export default function useSendChatMessage() {
       messages,
       model: {
         ...modelRequest,
+        settings: settingParams,
         parameters: runtimeParams,
       },
     }

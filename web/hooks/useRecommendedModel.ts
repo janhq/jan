@@ -42,6 +42,7 @@ export default function useRecommendedModel() {
   const getRecommendedModel = useCallback(async (): Promise<
     Model | undefined
   > => {
+    const models = await getAndSortDownloadedModels()
     if (!activeThread) {
       return
     }
@@ -49,7 +50,6 @@ export default function useRecommendedModel() {
     const finishInit = threadStates[activeThread.id].isFinishInit ?? true
     if (finishInit) {
       const modelId = activeThread.assistants[0]?.model.id
-      const models = await getAndSortDownloadedModels()
       const model = models.find((model) => model.id === modelId)
 
       if (model) {
@@ -60,7 +60,6 @@ export default function useRecommendedModel() {
     } else {
       const modelId = activeThread.assistants[0]?.model.id
       if (modelId !== '*') {
-        const models = await getAndSortDownloadedModels()
         const model = models.find((model) => model.id === modelId)
 
         if (model) {
@@ -78,7 +77,7 @@ export default function useRecommendedModel() {
     }
 
     // sort the model, for display purpose
-    const models = await getAndSortDownloadedModels()
+
     if (models.length === 0) {
       // if we have no downloaded models, then can't recommend anything
       console.debug("No downloaded models, can't recommend anything")

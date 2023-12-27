@@ -36,7 +36,8 @@ export const presetConfiguration: Record<string, SettingComponentData> = {
   max_tokens: {
     name: 'max_tokens',
     title: 'Max Tokens',
-    description: 'Maximum context length the model can handle.',
+    description:
+      'The maximum number of tokens the model will generate in a single response.',
     controllerType: 'slider',
     controllerData: {
       min: 0,

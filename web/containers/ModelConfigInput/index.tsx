@@ -1,5 +1,3 @@
-// TODO: Should find a better name for this component
-
 import { Textarea } from '@janhq/uikit'
 
 import { useAtomValue } from 'jotai'
@@ -15,7 +13,12 @@ type Props = {
   value: string
 }
 
-const ConfigInput: React.FC<Props> = ({ title, name, value, placeholder }) => {
+const ModelConfigInput: React.FC<Props> = ({
+  title,
+  name,
+  value,
+  placeholder,
+}) => {
   const { updateModelParameter } = useUpdateModelParameters()
   const threadId = useAtomValue(getActiveThreadIdAtom)
 
@@ -37,4 +40,4 @@ const ConfigInput: React.FC<Props> = ({ title, name, value, placeholder }) => {
   )
 }
 
-export default ConfigInput
+export default ModelConfigInput

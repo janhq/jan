@@ -14,7 +14,7 @@ type Props = {
   checked: boolean
 }
 
-const Checkbox: React.FC<Props> = ({ name, title, checked, register }) => {
+const Checkbox: React.FC<Props> = ({ name, title, checked }) => {
   const { updateModelParameter } = useUpdateModelParameters()
   const threadId = useAtomValue(getActiveThreadIdAtom)
 

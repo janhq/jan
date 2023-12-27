@@ -1,6 +1,6 @@
 /* eslint-disable no-case-declarations */
 import Checkbox from '@/containers/Checkbox'
-import ConfigInput from '@/containers/ConfigInput'
+import ModelConfigInput from '@/containers/ModelConfigInput'
 import Slider from '@/containers/Slider'
 
 export type ControllerType = 'slider' | 'checkbox' | 'input'
@@ -49,7 +49,7 @@ const settingComponentBuilder = (componentData: SettingComponentData[]) => {
         const { placeholder, value: textValue } =
           data.controllerData as InputData
         return (
-          <ConfigInput
+          <ModelConfigInput
             title={data.title}
             key={data.name}
             name={data.name}
