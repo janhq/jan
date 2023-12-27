@@ -84,13 +84,21 @@ function updateGpuInfo() {
       let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf8'));
 
       if (!error) {
+          // Get GPU info and gpu has higher memory first
+          let highestVram = 0;
+          let highestVramId = "0";
           let gpus = stdout.trim().split('\n').map(line => {
               let [id, vram] = line.split(', ');
               vram = vram.replace(/\r/g, '');
+              if (parseFloat(vram) > highestVram) {
+                  highestVram = parseFloat(vram);
+                  highestVramId = id;
+              }
               return { id, vram };
           });
 
           data['gpus'] = gpus;
+          data['gpu_highest_vram'] = highestVramId;
       } else {
           data['gpus'] = [];
       }
@@ -298,15 +306,27 @@ async function killSubprocess(): Promise<void> {
  * Using child-process to spawn the process
  * Should run exactly platform specified Nitro binary version
  */
+/**
+ * Spawns a Nitro subprocess.
+ * @param nitroResourceProbe - The Nitro resource probe.
+ * @returns A promise that resolves when the Nitro subprocess is started.
+ */
 function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
-  updateNvidiaInfo();
+
   console.debug("Starting Nitro subprocess...");
   return new Promise(async (resolve, reject) => {
     let binaryFolder = path.join(__dirname, "bin"); // Current directory by default
+    let cudaVisibleDevices = ""
     let binaryName;
-
     if (process.platform === "win32") {
-      binaryName = "win-start.bat";
+      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf8'));
+      if (nvida_info['run_mode'] === 'cpu') {
+        binaryFolder = path.join(binaryFolder, "win-cpu");
+      } else {
+        binaryFolder = path.join(binaryFolder, "win-cuda");
+        cudaVisibleDevices = nvida_info['gpu_highest_vram'];
+      }
+      binaryName = "nitro.exe";
     } else if (process.platform === "darwin") {
       if (process.arch === "arm64") {
         binaryFolder = path.join(binaryFolder, "mac-arm64");
@@ -315,13 +335,24 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
       }
       binaryName = "nitro";
     } else {
-      binaryName = "linux-start.sh";
+      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf8'));
+      if (nvida_info['run_mode'] === 'cpu') {
+        binaryFolder = path.join(binaryFolder, "win-cpu");
+      } else {
+        binaryFolder = path.join(binaryFolder, "win-cuda");
+        cudaVisibleDevices = nvida_info['gpu_highest_vram'];
+      }
+      binaryName = "nitro";
     }
 
     const binaryPath = path.join(binaryFolder, binaryName);
     // Execute the binary
     subprocess = spawn(binaryPath, [1, LOCAL_HOST, PORT], {
       cwd: binaryFolder,
+      env: {
+        ...process.env,
+        CUDA_VISIBLE_DEVICES: cudaVisibleDevices,
+      }
     });
 
     // Handle subprocess output
@@ -375,3 +406,5 @@ module.exports = {
   dispose,
   updateNvidiaInfo,
 };
+
+updateNvidiaInfo();
