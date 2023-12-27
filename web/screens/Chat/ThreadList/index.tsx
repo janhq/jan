@@ -161,7 +161,10 @@ export default function ThreadList() {
                       <ModalHeader>
                         <ModalTitle>Delete Thread</ModalTitle>
                       </ModalHeader>
-                      <p>Are you sure you want to delete this thread?</p>
+                      <p>
+                        Are you sure you want to delete this thread? This action
+                        cannot be undone.
+                      </p>
                       <ModalFooter>
                         <div className="flex gap-x-2">
                           <ModalClose asChild>
@@ -169,6 +172,7 @@ export default function ThreadList() {
                           </ModalClose>
                           <ModalClose asChild>
                             <Button
+                              autoFocus
                               themes="danger"
                               onClick={() => deleteThread(thread.id)}
                             >
