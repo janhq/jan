@@ -26,8 +26,6 @@ export default function useSetActiveThread() {
       return
     }
 
-    events.emit(EventName.OnInferenceStopped, thread.id)
-
     // load the corresponding messages
     const messages = await extensionManager
       .get<ConversationalExtension>(ExtensionType.Conversational)

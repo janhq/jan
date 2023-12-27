@@ -174,7 +174,7 @@ export default function useSendChatMessage() {
       updateThreadInitSuccess(activeThread.id)
       updateThread(updatedThread)
 
-      extensionManager
+      await extensionManager
         .get<ConversationalExtension>(ExtensionType.Conversational)
         ?.saveThread(updatedThread)
     }
@@ -249,6 +249,9 @@ export default function useSendChatMessage() {
     const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
 
     if (activeModel?.id !== modelId) {
+      // Per #1191 - Stop any on-going inference when switching models
+      events.emit(EventName.OnInferenceStopped, {})
+
       setQueuedMessage(true)
       startModel(modelId)
       await WaitForModelStarting(modelId)

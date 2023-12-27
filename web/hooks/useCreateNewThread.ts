@@ -6,6 +6,8 @@ import {
   ThreadAssistantInfo,
   ThreadState,
   Model,
+  events,
+  EventName,
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -55,6 +57,8 @@ export const useCreateNewThread = () => {
     assistant: Assistant,
     model?: Model | undefined
   ) => {
+    // Per #1191 - Stop any on-going inference when creating a new thread
+    events.emit(EventName.OnInferenceStopped, {})
     // loop through threads state and filter if there's any thread that is not finish init
     let unfinishedInitThreadId: string | undefined = undefined
     for (const key in threadStates) {
