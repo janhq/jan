@@ -38,6 +38,10 @@ function stopModel(): Promise<void> {
  */
 async function initModel(wrapper: any): Promise<ModelOperationResponse> {
   currentModelFile = wrapper.modelFullPath;
+  const janRoot = path.join(require("os").homedir(), "jan");
+  if (!currentModelFile.includes(janRoot)) {
+    currentModelFile = path.join(janRoot, currentModelFile);
+  }
   const files: string[] = fs.readdirSync(currentModelFile);
 
   // Look for GGUF model file

@@ -7,27 +7,34 @@ import { createUserSpace } from './utils/path'
  * Managers
  **/
 import { WindowManager } from './managers/window'
-import { ModuleManager } from './managers/module'
-import { ExtensionManager } from './managers/extension'
+import { ExtensionManager, ModuleManager } from '@janhq/core/node'
 
 /**
  * IPC Handlers
  **/
 import { handleDownloaderIPCs } from './handlers/download'
 import { handleExtensionIPCs } from './handlers/extension'
+import { handleFileMangerIPCs } from './handlers/fileManager'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
+import { migrateExtensions } from './utils/migration'
+
+/**
+ * Server
+ */
+import { startServer } from '@janhq/server'
 
 app
   .whenReady()
   .then(createUserSpace)
-  .then(ExtensionManager.instance.migrateExtensions)
+  .then(migrateExtensions)
   .then(ExtensionManager.instance.setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
   .then(createMainWindow)
+  .then(startServer)
   .then(() => {
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
@@ -80,4 +87,5 @@ function handleIPCs() {
   handleDownloaderIPCs()
   handleExtensionIPCs()
   handleAppIPCs()
+  handleFileMangerIPCs()
 }

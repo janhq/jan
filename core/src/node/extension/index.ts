@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs'
-import { protocol } from 'electron'
+
 import { normalize } from 'path'
 
 import Extension from './extension'
@@ -12,18 +12,8 @@ import {
   getActiveExtensions,
   addExtension,
 } from './store'
-import { ExtensionManager } from './../managers/extension'
+import { ExtensionManager } from './manager'
 
-/**
- * Sets up the required communication between the main and renderer processes.
- * Additionally sets the extensions up using {@link useExtensions} if a extensionsPath is provided.
- * @param {Object} options configuration for setting up the renderer facade.
- * @param {confirmInstall} [options.confirmInstall] Function to validate that a extension should be installed.
- * @param {Boolean} [options.useFacade=true] Whether to make a facade to the extensions available in the renderer.
- * @param {string} [options.extensionsPath] Optional path to the extensions folder.
- * @returns {extensionManager|Object} A set of functions used to manage the extension lifecycle if useExtensions is provided.
- * @function
- */
 export function init(options: any) {
   // Create extensions protocol to serve extensions to renderer
   registerExtensionProtocol()
@@ -41,13 +31,24 @@ export function init(options: any) {
  * @private
  * @returns {boolean} Whether the protocol registration was successful
  */
-function registerExtensionProtocol() {
-  return protocol.registerFileProtocol('extension', (request, callback) => {
-    const entry = request.url.substr('extension://'.length - 1)
+async function registerExtensionProtocol() {
+  let electron: any = undefined
 
-    const url = normalize(ExtensionManager.instance.extensionsPath + entry)
-    callback({ path: url })
-  })
+  try {
+    const moduleName = "electron"
+    electron = await import(moduleName)
+  } catch (err) {
+    console.error('Electron is not available')
+  }
+  
+  if (electron) {
+    return electron.protocol.registerFileProtocol('extension', (request: any, callback: any) => {
+      const entry = request.url.substr('extension://'.length - 1)
+
+      const url = normalize(ExtensionManager.instance.extensionsPath + entry)
+      callback({ path: url })
+    })
+  }
 }
 
 /**
@@ -57,8 +58,7 @@ function registerExtensionProtocol() {
  * @returns {extensionManager} A set of functions used to manage the extension lifecycle.
  */
 export function useExtensions(extensionsPath: string) {
-  if (!extensionsPath)
-    throw Error('A path to the extensions folder is required to use extensions')
+  if (!extensionsPath) throw Error('A path to the extensions folder is required to use extensions')
   // Store the path to the extensions folder
   ExtensionManager.instance.setExtensionsPath(extensionsPath)
 
@@ -69,7 +69,7 @@ export function useExtensions(extensionsPath: string) {
 
   // Read extension list from extensions folder
   const extensions = JSON.parse(
-    readFileSync(ExtensionManager.instance.getExtensionsFile(), 'utf-8')
+    readFileSync(ExtensionManager.instance.getExtensionsFile(), 'utf-8'),
   )
   try {
     // Create and store a Extension instance for each extension in list
@@ -82,7 +82,7 @@ export function useExtensions(extensionsPath: string) {
     throw new Error(
       'Could not successfully rebuild list of installed extensions.\n' +
         error +
-        '\nPlease check the extensions.json file in the extensions folder.'
+        '\nPlease check the extensions.json file in the extensions folder.',
     )
   }
 
@@ -111,7 +111,6 @@ function loadExtension(ext: any) {
       })
     }
   }
-
   addExtension(extension, false)
   extension.subscribe('pe-persist', persistExtensions)
 }
@@ -123,7 +122,7 @@ function loadExtension(ext: any) {
 export function getStore() {
   if (!ExtensionManager.instance.extensionsPath) {
     throw new Error(
-      'The extension path has not yet been set up. Please run useExtensions before accessing the store'
+      'The extension path has not yet been set up. Please run useExtensions before accessing the store',
     )
   }
 
