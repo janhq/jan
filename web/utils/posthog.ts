@@ -9,40 +9,40 @@ posthog.init(ANALYTICS_ID, {
 
 export const instance = posthog
 
+// Constants for unwanted property keys
+const UNWANTED_PROPERTIES = [
+  '$ip',
+  '$referrer',
+  '$initial_referrer',
+  '$referring_domain',
+  '$initial_referring_domain',
+  '$pathname',
+  '$initial_pathname',
+  '$browser_language',
+  '$current_url',
+  '$initial_current_url',
+  '$browser',
+  '$initial_browser',
+  '$browser_version',
+  '$initial_browser_version',
+]
+
 // Function to remove unnecessary properties
 const filterProperties = (properties?: Properties): Properties | undefined => {
-  if (!properties) {
-    return undefined;
-  }
-
-  // Create a shallow copy of the properties object
-  const filteredProperties = { ...properties };
-
-  // Remove unwanted properties
-  delete filteredProperties['$ip'];
-  delete filteredProperties['$referrer'];
-  delete filteredProperties['$initial_referrer'];
-  delete filteredProperties['$referring_domain'];
-  delete filteredProperties['$initial_referring_domain'];
-  delete filteredProperties['$pathname'];
-  delete filteredProperties['$initial_pathname'];
-  delete filteredProperties['$browser_language'];
-  delete filteredProperties['$current_url'];
-  delete filteredProperties['$initial_current_url'];
-  delete filteredProperties['$browser'];
-  delete filteredProperties['$initial_browser'];
-  delete filteredProperties['$browser_version'];
-  delete filteredProperties['$initial_browser_version'];
-
-  return filteredProperties;
+  return properties
+    ? Object.fromEntries(
+        Object.entries(properties).filter(
+          ([key]) => !UNWANTED_PROPERTIES.includes(key)
+        )
+      )
+    : undefined
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const trackEvent = (name: string, properties?: Properties) => {
-  // Filter out unwanted properties before sending the event
-  const filteredProperties = filterProperties(properties);
-
-  posthog.capture(name, filteredProperties);
+// Track an event with filtered properties
+export const trackEvent = (name: string, properties?: Properties): void => {
+  const filteredProperties = filterProperties(properties)
+  posthog.capture(name, filteredProperties)
 }
 
 export enum AnalyticsEvent {}
