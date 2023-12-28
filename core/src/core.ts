@@ -51,6 +51,20 @@ const openFileExplorer: (path: string) => Promise<any> = (path) =>
  */
 const joinPath: (paths: string[]) => Promise<string> = (paths) => global.core.api?.joinPath(paths)
 
+/**
+ * Opens an external URL in the default web browser.
+ *
+ * @param {string} url - The URL to open.
+ * @returns {Promise<any>} - A promise that resolves when the URL has been successfully opened.
+ */
+const openExternalUrl: (url: string) => Promise<any> = (url) =>
+  global.core.api?.openExternalUrl(url)
+
+/**
+ * Gets the resource path of the application.
+ *
+ * @returns {Promise<string>} - A promise that resolves with the resource path.
+ */
 const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
 
 /**
@@ -74,4 +88,5 @@ export {
   openFileExplorer,
   getResourcePath,
   joinPath,
+  openExternalUrl,
 }

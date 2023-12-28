@@ -14,6 +14,8 @@ import ThemeWrapper from '@/containers/Providers/Theme'
 
 import FeatureToggleWrapper from '@/context/FeatureToggle'
 
+import { useSettings } from '@/hooks/useSettings'
+
 import { setupCoreServices } from '@/services/coreService'
 import {
   isCoreExtensionInstalled,
@@ -22,12 +24,14 @@ import {
 
 import { instance } from '@/utils/posthog'
 
+import GPUDriverPromptModal from '../GPUDriverPromptModal'
+
 import { extensionManager } from '@/extension'
 
 const Providers = (props: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
   const [activated, setActivated] = useState(false)
-
+  const { isShowNotification } = useSettings()
   const { children } = props
 
   async function setupExtensions() {
@@ -74,6 +78,7 @@ const Providers = (props: PropsWithChildren) => {
             <FeatureToggleWrapper>
               <EventListenerWrapper>
                 <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+                {!isMac && <GPUDriverPromptModal open={isShowNotification} />}
               </EventListenerWrapper>
               <Toaster position="top-right" />
             </FeatureToggleWrapper>
