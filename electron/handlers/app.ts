@@ -3,7 +3,6 @@ import { join } from 'path'
 import { WindowManager } from './../managers/window'
 import { userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
-import { getResourcePath } from './../utils/path'
 import {
   ExtensionManager,
   ModuleManager,
