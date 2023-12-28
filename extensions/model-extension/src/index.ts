@@ -62,7 +62,7 @@ export default class JanModelExtension implements ModelExtension {
       const srcPath = await joinPath([resourePath, 'models'])
 
       const userSpace = await getUserSpace()
-      const destPath = await joinPath([userSpace, JanModelExtension._homeDir])
+      const destPath = await joinPath([userSpace, 'models'])
 
       await fs.syncFile(srcPath, destPath)
 
