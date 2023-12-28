@@ -18,9 +18,25 @@ const NITRO_HTTP_KILL_URL = `${NITRO_HTTP_SERVER_URL}/processmanager/destroy`;
 const SUPPORTED_MODEL_FORMAT = ".gguf";
 const NVIDIA_INFO_FILE = path.join(
   require("os").homedir(),
+  "jan",
   "settings",
   "settings.json"
 );
+
+const DEFALT_SETTINGS = {
+  "notify": false,
+  "run_mode": "cpu",
+  "nvidia_driver": {
+    "exist": false,
+    "version": ""
+  },
+  "cuda": {
+    "exist": false,
+    "version": ""
+  },
+  "gpus": [],
+  "gpu_highest_vram": ""
+}
 
 // The subprocess instance for Nitro
 let subprocess = undefined;
@@ -43,7 +59,13 @@ async function updateNvidiaDriverInfo(): Promise<void> {
   exec(
     "nvidia-smi --query-gpu=driver_version --format=csv,noheader",
     (error, stdout) => {
-      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+      let data;
+      try {
+        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+      } catch (error) {
+        data = DEFALT_SETTINGS;
+      }
+      // let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
 
       if (!error) {
         const firstLine = stdout.split("\n")[0].trim();
@@ -86,7 +108,14 @@ function updateCudaExistence() {
     (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
   );
 
-  let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+  let data;
+  try {
+    data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+  } catch (error) {
+    data = DEFALT_SETTINGS;
+  }
+
+  // let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
   data["cuda"].exist = cudaExists;
   writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
 }
@@ -95,7 +124,13 @@ async function updateGpuInfo(): Promise<void> {
   exec(
     "nvidia-smi --query-gpu=index,memory.total --format=csv,noheader,nounits",
     (error, stdout) => {
-      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+      let data;
+      try {
+        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+      } catch (error) {
+        data = DEFALT_SETTINGS;
+      }
+      // let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
 
       if (!error) {
         // Get GPU info and gpu has higher memory first
