@@ -1,8 +1,8 @@
 {
-    "source_url": "https://huggingface.co/janhq/stealth-v1.1-GGUF/resolve/main/stealth-v1.1.Q4_K_M.gguf",
-    "id": "stealth-v1.1-7b",
+    "source_url": "https://huggingface.co/janhq/stealth-v1.2-GGUF/resolve/main/stealth-v1.2.Q4_K_M.gguf",
+    "id": "stealth-v1.2-7b",
     "object": "model",
-    "name": "Stealth-v1.1 7B Q4",
+    "name": "Stealth-v1.2 7B Q4",
     "version": "1.0",
     "description": "This is a new experimental family designed to enhance Mathematical and Logical abilities.",
     "format": "gguf",
@@ -21,6 +21,5 @@
       ],
       "size": 4370000000
     },
-    "engine": "nitro",
-    "state": "ready"
+    "engine": "nitro"
   }
