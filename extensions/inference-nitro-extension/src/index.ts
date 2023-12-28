@@ -87,8 +87,8 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     // Attempt to fetch nvidia info
     await executeOnMain(MODULE, "updateNvidiaInfo", {});
 
-    const gpuDriverConf = await fs.readFile(
-      join(__dirname, "bin", "nvidia.json")
+    const gpuDriverConf = await fs.readFileSync(
+      join(JanInferenceNitroExtension._settingsDir, "settings.json")
     );
     if (gpuDriverConf.notify && gpuDriverConf.run_mode === "cpu") {
       // Driver is fully installed, but not in use
