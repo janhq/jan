@@ -1,6 +1,6 @@
-import { join } from 'path'
+import React from 'react'
 
-import { getUserSpace, openFileExplorer } from '@janhq/core'
+import { getUserSpace, openFileExplorer, joinPath } from '@janhq/core'
 
 import { Input, Textarea } from '@janhq/uikit'
 
@@ -16,18 +16,28 @@ import DropdownListSidebar, {
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
+import { toSettingParams } from '@/utils/model_param'
+
+import EngineSetting from '../EngineSetting'
 import ModelSetting from '../ModelSetting'
 
-import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
+import {
+  activeThreadAtom,
+  getActiveThreadModelParamsAtom,
+  threadStatesAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 export const showRightSideBarAtom = atom<boolean>(true)
 
-export default function Sidebar() {
+const Sidebar: React.FC = () => {
   const showing = useAtomValue(showRightSideBarAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
   const threadStates = useAtomValue(threadStatesAtom)
+
+  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const modelSettingParams = toSettingParams(activeModelParams)
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
@@ -42,23 +52,22 @@ export default function Sidebar() {
     const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {
       case 'Thread':
-        filePath = join('threads', activeThread.id)
+        filePath = await joinPath(['threads', activeThread.id])
         break
       case 'Model':
         if (!selectedModel) return
-        filePath = join('models', selectedModel.id)
+        filePath = await joinPath(['models', selectedModel.id])
         break
       case 'Assistant':
         if (!assistantId) return
-        filePath = join('assistants', assistantId)
+        filePath = await joinPath(['assistants', assistantId])
         break
       default:
         break
     }
 
     if (!filePath) return
-
-    const fullPath = join(userSpace, filePath)
+    const fullPath = await joinPath([userSpace, filePath])
     openFileExplorer(fullPath)
   }
 
@@ -75,23 +84,22 @@ export default function Sidebar() {
     const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {
       case 'Thread':
-        filePath = join('threads', activeThread.id, 'thread.json')
+        filePath = await joinPath(['threads', activeThread.id, 'thread.json'])
         break
       case 'Model':
         if (!selectedModel) return
-        filePath = join('models', selectedModel.id, 'model.json')
+        filePath = await joinPath(['models', selectedModel.id, 'model.json'])
         break
       case 'Assistant':
         if (!assistantId) return
-        filePath = join('assistants', assistantId, 'assistant.json')
+        filePath = await joinPath(['assistants', assistantId, 'assistant.json'])
         break
       default:
         break
     }
 
     if (!filePath) return
-
-    const fullPath = join(userSpace, filePath)
+    const fullPath = await joinPath([userSpace, filePath])
     openFileExplorer(fullPath)
   }
 
@@ -187,6 +195,17 @@ export default function Sidebar() {
             </div>
           </div>
         </CardSidebar>
+        {Object.keys(modelSettingParams).length ? (
+          <CardSidebar
+            title="Engine"
+            onRevealInFinderClick={onReviewInFinderClick}
+            onViewJsonClick={onViewJsonClick}
+          >
+            <div className="p-2">
+              <EngineSetting />
+            </div>
+          </CardSidebar>
+        ) : null}
         <CardSidebar
           title="Model"
           onRevealInFinderClick={onReviewInFinderClick}
@@ -203,3 +222,5 @@ export default function Sidebar() {
     </div>
   )
 }
+
+export default React.memo(Sidebar)

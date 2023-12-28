@@ -1,25 +1,23 @@
-import React from 'react'
-
 import { useAtomValue } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toRuntimeParams } from '@/utils/model_param'
+import { toSettingParams } from '@/utils/model_param'
 
-import settingComponentBuilder from './settingComponentBuilder'
+import settingComponentBuilder from '../ModelSetting/settingComponentBuilder'
 
 import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
-const ModelSetting: React.FC = () => {
+const EngineSetting: React.FC = () => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
 
   if (!selectedModel || !activeModelParams) return null
 
-  const modelRuntimeParams = toRuntimeParams(activeModelParams)
+  const modelSettingParams = toSettingParams(activeModelParams)
 
-  const componentData = getConfigurationsData(modelRuntimeParams)
+  const componentData = getConfigurationsData(modelSettingParams)
 
   componentData.sort((a, b) => a.title.localeCompare(b.title))
 
@@ -30,4 +28,4 @@ const ModelSetting: React.FC = () => {
   )
 }
 
-export default React.memo(ModelSetting)
+export default EngineSetting

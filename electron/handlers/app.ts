@@ -49,6 +49,13 @@ export function handleAppIPCs() {
   })
 
   /**
+   * Joins multiple paths together, respect to the current OS.
+   */
+  ipcMain.handle(AppRoute.joinPath, async (_event, paths: string[]) =>
+    join(...paths)
+  )
+
+  /**
    * Relaunches the app in production - reload window in development.
    * @param _event - The IPC event object.
    * @param url - The URL to reload.

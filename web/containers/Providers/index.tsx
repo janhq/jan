@@ -73,7 +73,7 @@ const Providers = (props: PropsWithChildren) => {
           {setupCore && activated && (
             <FeatureToggleWrapper>
               <EventListenerWrapper>
-                <TooltipProvider>{children}</TooltipProvider>
+                <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
               </EventListenerWrapper>
               <Toaster position="top-right" />
             </FeatureToggleWrapper>
