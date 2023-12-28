@@ -46,8 +46,11 @@ export function handleDownloaderIPCs() {
    */
   ipcMain.handle(DownloadRoute.downloadFile, async (_event, url, fileName) => {
     const userDataPath = join(app.getPath('home'), 'jan')
-    if (typeof fileName === 'string' && fileName.includes('file:/')) {
-      fileName = fileName.replace('file:/', '')
+    if (
+      typeof fileName === 'string' &&
+      (fileName.includes('file:/') || fileName.includes('file:\\'))
+    ) {
+      fileName = fileName.replace('file:/', '').replace('file:\\', '')
     }
     const destination = resolve(userDataPath, fileName)
     const rq = request(url)

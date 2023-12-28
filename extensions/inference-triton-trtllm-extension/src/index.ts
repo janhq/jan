@@ -34,7 +34,7 @@ import { EngineSettings } from "./@types/global";
 export default class JanInferenceTritonTrtLLMExtension
   implements InferenceExtension
 {
-  private static readonly _homeDir = "engines";
+  private static readonly _homeDir = "file://engines";
   private static readonly _engineMetadataFileName = "triton_trtllm.json";
 
   static _currentModel: Model;
