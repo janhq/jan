@@ -48,7 +48,10 @@ export function handleAppIPCs() {
     shell.openPath(url)
   })
 
-  ipcMain.handle(AppRoute.janJoin, async (_event, paths: string[]) =>
+  /**
+   * Joins multiple paths together, respect to the current OS.
+   */
+  ipcMain.handle(AppRoute.joinPath, async (_event, paths: string[]) =>
     join(...paths)
   )
 

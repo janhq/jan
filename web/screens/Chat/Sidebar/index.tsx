@@ -1,6 +1,6 @@
 import React from 'react'
 
-import { getUserSpace, openFileExplorer, janJoin } from '@janhq/core'
+import { getUserSpace, openFileExplorer, joinPath } from '@janhq/core'
 
 import { Input, Textarea } from '@janhq/uikit'
 
@@ -52,22 +52,22 @@ const Sidebar: React.FC = () => {
     const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {
       case 'Thread':
-        filePath = await janJoin(['threads', activeThread.id])
+        filePath = await joinPath(['threads', activeThread.id])
         break
       case 'Model':
         if (!selectedModel) return
-        filePath = await janJoin(['models', selectedModel.id])
+        filePath = await joinPath(['models', selectedModel.id])
         break
       case 'Assistant':
         if (!assistantId) return
-        filePath = await janJoin(['assistants', assistantId])
+        filePath = await joinPath(['assistants', assistantId])
         break
       default:
         break
     }
 
     if (!filePath) return
-    const fullPath = await janJoin([userSpace, filePath])
+    const fullPath = await joinPath([userSpace, filePath])
     openFileExplorer(fullPath)
   }
 
@@ -84,22 +84,22 @@ const Sidebar: React.FC = () => {
     const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {
       case 'Thread':
-        filePath = await janJoin(['threads', activeThread.id, 'thread.json'])
+        filePath = await joinPath(['threads', activeThread.id, 'thread.json'])
         break
       case 'Model':
         if (!selectedModel) return
-        filePath = await janJoin(['models', selectedModel.id, 'model.json'])
+        filePath = await joinPath(['models', selectedModel.id, 'model.json'])
         break
       case 'Assistant':
         if (!assistantId) return
-        filePath = await janJoin(['assistants', assistantId, 'assistant.json'])
+        filePath = await joinPath(['assistants', assistantId, 'assistant.json'])
         break
       default:
         break
     }
 
     if (!filePath) return
-    const fullPath = await janJoin([userSpace, filePath])
+    const fullPath = await joinPath([userSpace, filePath])
     openFileExplorer(fullPath)
   }
 

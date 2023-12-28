@@ -49,7 +49,7 @@ const openFileExplorer: (path: string) => Promise<any> = (path) =>
  * @param paths - The paths to join.
  * @returns {Promise<string>} A promise that resolves with the joined path.
  */
-const janJoin: (paths: string[]) => Promise<string> = (paths) => global.core.api?.janJoin(paths)
+const joinPath: (paths: string[]) => Promise<string> = (paths) => global.core.api?.joinPath(paths)
 
 const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
 
@@ -73,5 +73,5 @@ export {
   getUserSpace,
   openFileExplorer,
   getResourcePath,
-  janJoin,
+  joinPath,
 }
