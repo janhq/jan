@@ -6,7 +6,8 @@
       "uikit",
       "core",
       "electron",
-      "web"
+      "web",
+      "server"
     ],
     "nohoist": [
       "uikit",
@@ -16,7 +17,9 @@
       "electron",
       "electron/**",
       "web",
-      "web/**"
+      "web/**",
+      "server",
+      "server/**"
     ]
   },
   "scripts": {

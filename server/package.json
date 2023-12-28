@@ -1,7 +1,8 @@
 {
   "name": "@janhq/server",
   "version": "0.1.3",
-  "main": "./build/index.js",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "homepage": "https://jan.ai",
@@ -18,11 +19,11 @@
   "dependencies": {
     "@fastify/cors": "^8.4.2",
     "@fastify/static": "^6.12.0",
-    "core": "link:./core",
+    "@janhq/core": "link:./core",
+    "dotenv": "^16.3.1",
     "fastify": "^4.24.3",
     "request": "^2.88.2",
-    "request-progress": "^3.0.0",
-    "dotenv": "^16.3.1"
+    "request-progress": "^3.0.0"
   },
   "devDependencies": {
     "@types/body-parser": "^1.19.5",
