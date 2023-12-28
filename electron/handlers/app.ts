@@ -48,9 +48,9 @@ export function handleAppIPCs() {
     shell.openPath(url)
   })
 
-  ipcMain.handle("janJoin", async (_event, stringArray) => {
-    return join(stringArray)
-  })
+  ipcMain.handle(AppRoute.janJoin, async (_event, paths: string[]) =>
+    join(...paths)
+  )
 
   /**
    * Relaunches the app in production - reload window in development.

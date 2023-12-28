@@ -32,6 +32,9 @@ const nextConfig = {
           JSON.stringify(process.env.ANALYTICS_ID) ?? JSON.stringify('xxx'),
         ANALYTICS_HOST:
           JSON.stringify(process.env.ANALYTICS_HOST) ?? JSON.stringify('xxx'),
+        isMac: process.platform === 'darwin',
+        isWindows: process.platform === 'win32',
+        isLinux: process.platform === 'linux',
       }),
     ]
     return config

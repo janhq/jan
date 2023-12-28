@@ -44,7 +44,12 @@ const getUserSpace = (): Promise<string> => global.core.api?.getUserSpace()
 const openFileExplorer: (path: string) => Promise<any> = (path) =>
   global.core.api?.openFileExplorer(path)
 
-const janJoin: (dirs: string[]) => Promise<string> = (dirs) => global.core.api?.janJoin(dirs)
+/**
+ * Joins multiple paths together.
+ * @param paths - The paths to join.
+ * @returns {Promise<string>} A promise that resolves with the joined path.
+ */
+const janJoin: (paths: string[]) => Promise<string> = (paths) => global.core.api?.janJoin(paths)
 
 const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
 
