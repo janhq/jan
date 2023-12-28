@@ -9,7 +9,8 @@ export enum AppRoute {
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
   relaunch = 'relaunch',
-  joinPath = 'joinPath'
+  joinPath = 'joinPath',
+  baseName = 'baseName',
 }
 
 export enum AppEvent {

@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 
 import { FileSystemRoute } from '@janhq/core'
 import { userSpacePath } from '../utils/path'
-import { join, sep } from 'path'
+import { join } from 'path'
 /**
  * Handles file system operations.
  */
@@ -17,10 +17,11 @@ export function handleFsIPCs() {
             (arg.includes(`file:/`) || arg.includes(`file:\\`))
               ? join(
                   userSpacePath,
-                  arg.replace(`file://`, '')
-                  .replace(`file:/`, '')
-                  .replace(`file:\\\\`, '')
-                  .replace(`file:\\`, '')
+                  arg
+                    .replace(`file://`, '')
+                    .replace(`file:/`, '')
+                    .replace(`file:\\\\`, '')
+                    .replace(`file:\\`, '')
                 )
               : arg
           )
