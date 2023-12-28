@@ -61,10 +61,10 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    */
   async onLoad() {
     if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir)))
-      fs.mkdirSync(JanInferenceNitroExtension._homeDir);
+      await fs.mkdirSync(JanInferenceNitroExtension._homeDir);
 
     if (!(await fs.existsSync(JanInferenceNitroExtension._settingsDir)))
-      fs.mkdirSync(JanInferenceNitroExtension._settingsDir);
+      await fs.mkdirSync(JanInferenceNitroExtension._settingsDir);
     this.writeDefaultEngineSettings();
 
     // Events subscription

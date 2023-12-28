@@ -55,7 +55,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
    */
   async onLoad() {
     if (!(await fs.existsSync(JanInferenceOpenAIExtension._homeDir)))
-      fs.mkdirSync(JanInferenceOpenAIExtension._homeDir);
+      await fs.mkdirSync(JanInferenceOpenAIExtension._homeDir);
     JanInferenceOpenAIExtension.writeDefaultEngineSettings();
 
     // Events subscription
