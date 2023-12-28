@@ -1,15 +1,11 @@
-import { FieldValues, UseFormRegister } from 'react-hook-form'
+import React from 'react'
 
-import { ModelRuntimeParams } from '@janhq/core'
 import { Slider, Input } from '@janhq/uikit'
 import { useAtomValue } from 'jotai'
 
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
-import {
-  getActiveThreadIdAtom,
-  getActiveThreadModelRuntimeParamsAtom,
-} from '@/helpers/atoms/Thread.atom'
+import { getActiveThreadIdAtom } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   name: string
@@ -18,7 +14,6 @@ type Props = {
   max: number
   step: number
   value: number
-  register: UseFormRegister<FieldValues>
 }
 
 const SliderRightPanel: React.FC<Props> = ({
@@ -28,21 +23,14 @@ const SliderRightPanel: React.FC<Props> = ({
   max,
   step,
   value,
-  register,
 }) => {
   const { updateModelParameter } = useUpdateModelParameters()
   const threadId = useAtomValue(getActiveThreadIdAtom)
-  const activeModelParams = useAtomValue(getActiveThreadModelRuntimeParamsAtom)
 
   const onValueChanged = (e: number[]) => {
-    if (!threadId || !activeModelParams) return
+    if (!threadId) return
 
-    const updatedModelParams: ModelRuntimeParams = {
-      ...activeModelParams,
-      [name]: Number(e[0]),
-    }
-
-    updateModelParameter(threadId, updatedModelParams)
+    updateModelParameter(threadId, name, e[0])
   }
 
   return (
@@ -51,9 +39,6 @@ const SliderRightPanel: React.FC<Props> = ({
       <div className="flex items-center gap-x-4">
         <div className="relative w-full">
           <Slider
-            {...register(name, {
-              setValueAs: (v: string) => parseInt(v),
-            })}
             value={[value]}
             onValueChange={onValueChanged}
             min={min}

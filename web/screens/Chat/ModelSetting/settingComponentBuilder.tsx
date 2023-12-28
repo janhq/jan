@@ -1,17 +1,21 @@
 /* eslint-disable no-case-declarations */
-import { FieldValues, UseFormRegister } from 'react-hook-form'
-
 import Checkbox from '@/containers/Checkbox'
+import ModelConfigInput from '@/containers/ModelConfigInput'
 import Slider from '@/containers/Slider'
 
-export type ControllerType = 'slider' | 'checkbox'
+export type ControllerType = 'slider' | 'checkbox' | 'input'
 
 export type SettingComponentData = {
   name: string
   title: string
   description: string
   controllerType: ControllerType
-  controllerData: SliderData | CheckboxData
+  controllerData: SliderData | CheckboxData | InputData
+}
+
+export type InputData = {
+  placeholder: string
+  value: string
 }
 
 export type SliderData = {
@@ -25,10 +29,7 @@ type CheckboxData = {
   checked: boolean
 }
 
-const settingComponentBuilder = (
-  componentData: SettingComponentData[],
-  register: UseFormRegister<FieldValues>
-) => {
+const settingComponentBuilder = (componentData: SettingComponentData[]) => {
   const components = componentData.map((data) => {
     switch (data.controllerType) {
       case 'slider':
@@ -42,7 +43,18 @@ const settingComponentBuilder = (
             step={step}
             value={value}
             name={data.name}
-            register={register}
+          />
+        )
+      case 'input':
+        const { placeholder, value: textValue } =
+          data.controllerData as InputData
+        return (
+          <ModelConfigInput
+            title={data.title}
+            key={data.name}
+            name={data.name}
+            placeholder={placeholder}
+            value={textValue}
           />
         )
       case 'checkbox':
@@ -50,7 +62,6 @@ const settingComponentBuilder = (
         return (
           <Checkbox
             key={data.name}
-            register={register}
             name={data.name}
             title={data.title}
             checked={checked}
