@@ -6,7 +6,8 @@
       "uikit",
       "core",
       "electron",
-      "web"
+      "web",
+      "server"
     ],
     "nohoist": [
       "uikit",
@@ -16,7 +17,9 @@
       "electron",
       "electron/**",
       "web",
-      "web/**"
+      "web/**",
+      "server",
+      "server/**"
     ]
   },
   "scripts": {
@@ -28,6 +31,7 @@
     "test-local": "yarn lint && yarn build:test && yarn test",
     "dev:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit dev",
     "build:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build",
+    "build:server": "cd server && yarn install && yarn run build",
     "build:core": "cd core && yarn install && yarn run build",
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "cpx \"models/**\" \"electron/models/\" && yarn workspace jan build",

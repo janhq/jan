@@ -18,6 +18,7 @@ ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif
 	yarn build:core
+	yarn build:server
 	yarn install
 	yarn build:extensions
 
