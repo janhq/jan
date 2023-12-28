@@ -1,14 +1,14 @@
-import { rmdir } from 'fs/promises'
+import { rmdirSync } from 'fs'
 import { resolve, join } from 'path'
 import { manifest, extract } from 'pacote'
 import * as Arborist from '@npmcli/arborist'
-import { ExtensionManager } from './../managers/extension'
+import { ExtensionManager } from './manager'
 
 /**
  * An NPM package that can be used as an extension.
  * Used to hold all the information and functions necessary to handle the extension lifecycle.
  */
-class Extension {
+export default class Extension {
   /**
    * @property {string} origin Original specification provided to fetch the package.
    * @property {Object} installOptions Options provided to pacote when fetching the manifest.
@@ -56,10 +56,7 @@ class Extension {
    * @type {string}
    */
   get specifier() {
-    return (
-      this.origin +
-      (this.installOptions.version ? '@' + this.installOptions.version : '')
-    )
+    return this.origin + (this.installOptions.version ? '@' + this.installOptions.version : '')
   }
 
   /**
@@ -85,9 +82,7 @@ class Extension {
       this.main = mnf.main
       this.description = mnf.description
     } catch (error) {
-      throw new Error(
-        `Package ${this.origin} does not contain a valid manifest: ${error}`
-      )
+      throw new Error(`Package ${this.origin} does not contain a valid manifest: ${error}`)
     }
 
     return true
@@ -107,7 +102,7 @@ class Extension {
       await extract(
         this.specifier,
         join(ExtensionManager.instance.extensionsPath ?? '', this.name ?? ''),
-        this.installOptions
+        this.installOptions,
       )
 
       // Set the url using the custom extensions protocol
@@ -180,11 +175,8 @@ class Extension {
    * @returns {Promise}
    */
   async uninstall() {
-    const extPath = resolve(
-      ExtensionManager.instance.extensionsPath ?? '',
-      this.name ?? ''
-    )
-    await rmdir(extPath, { recursive: true })
+    const extPath = resolve(ExtensionManager.instance.extensionsPath ?? '', this.name ?? '')
+    await rmdirSync(extPath, { recursive: true })
 
     this.emitUpdate()
   }
@@ -200,5 +192,3 @@ class Extension {
     return this
   }
 }
-
-export default Extension

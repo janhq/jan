@@ -1,16 +1,14 @@
-import { dispose } from "./../utils/disposable";
-
 /**
  * Manages imported modules.
  */
 export class ModuleManager {
-  public requiredModules: Record<string, any> = {};
+  public requiredModules: Record<string, any> = {}
 
-  public static instance: ModuleManager = new ModuleManager();
+  public static instance: ModuleManager = new ModuleManager()
 
   constructor() {
     if (ModuleManager.instance) {
-      return ModuleManager.instance;
+      return ModuleManager.instance
     }
   }
 
@@ -20,14 +18,13 @@ export class ModuleManager {
    * @param {any | undefined} nodule - The module to set, or undefined to clear the module.
    */
   setModule(moduleName: string, nodule: any | undefined) {
-    this.requiredModules[moduleName] = nodule;
+    this.requiredModules[moduleName] = nodule
   }
 
   /**
    * Clears all imported modules.
    */
   clearImportedModules() {
-    dispose(this.requiredModules);
-    this.requiredModules = {};
+    this.requiredModules = {}
   }
 }

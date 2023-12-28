@@ -51,6 +51,7 @@ const Sidebar: React.FC = () => {
     let filePath = undefined
     const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {
+      case 'Engine':
       case 'Thread':
         filePath = await joinPath(['threads', activeThread.id])
         break
@@ -83,6 +84,7 @@ const Sidebar: React.FC = () => {
     let filePath = undefined
     const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {
+      case 'Engine':
       case 'Thread':
         filePath = await joinPath(['threads', activeThread.id, 'thread.json'])
         break

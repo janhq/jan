@@ -1,11 +1,11 @@
 import { app, ipcMain } from 'electron'
-import { DownloadManager } from './../managers/download'
 import { resolve, join } from 'path'
 import { WindowManager } from './../managers/window'
 import request from 'request'
 import { createWriteStream, renameSync } from 'fs'
 import { DownloadEvent, DownloadRoute } from '@janhq/core'
 const progress = require('request-progress')
+import { DownloadManager } from '@janhq/core/node'
 
 export function handleDownloaderIPCs() {
   /**
@@ -46,6 +46,9 @@ export function handleDownloaderIPCs() {
    */
   ipcMain.handle(DownloadRoute.downloadFile, async (_event, url, fileName) => {
     const userDataPath = join(app.getPath('home'), 'jan')
+    if (typeof fileName === 'string' && fileName.includes('file:/')) {
+      fileName = fileName.replace('file:/', '')
+    }
     const destination = resolve(userDataPath, fileName)
     const rq = request(url)
     // downloading file to a temp file first
