@@ -9,7 +9,7 @@ type Props = {
 }
 
 export const currentPromptAtom = atom<string>('')
-export const currentFileAtom = atom<File | undefined | null>(undefined)
+export const fileUploadAtom = atom<File[]>([])
 export const appDownloadProgress = atom<number>(-1)
 export const searchAtom = atom<string>('')
 

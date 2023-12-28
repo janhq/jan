@@ -21,10 +21,7 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulid'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
-import {
-  currentFileAtom,
-  currentPromptAtom,
-} from '@/containers/Providers/Jotai'
+import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
@@ -63,7 +60,7 @@ export default function useSendChatMessage() {
   const threadStates = useAtomValue(threadStatesAtom)
   const updateThreadInitSuccess = useSetAtom(updateThreadInitSuccessAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelRuntimeParamsAtom)
-  const getUploadedImage = useAtomValue(currentFileAtom)
+  const fileUpload = useAtomValue(fileUploadAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -188,8 +185,8 @@ export default function useSendChatMessage() {
     const prompt = currentPrompt.trim()
     setCurrentPrompt('')
 
-    const base64Image = getUploadedImage
-      ? await getBase64(getUploadedImage)
+    const base64Image = fileUpload[0]
+      ? await getBase64(fileUpload[0])
       : undefined
 
     const messages: ChatCompletionMessage[] = [
