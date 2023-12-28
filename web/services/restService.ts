@@ -36,7 +36,7 @@ export const restAPI = {
       ...acc,
       [proxy.route]: (...args: any) => {
         // For each route, define a function that sends a request to the API
-        return fetch(`${API_BASE_URL}/api/v1/${proxy.path}/${proxy.route}`, {
+        return fetch(`${API_BASE_URL}/v1/${proxy.path}/${proxy.route}`, {
           method: 'POST',
           body: JSON.stringify(args),
           headers: { contentType: 'application/json' },

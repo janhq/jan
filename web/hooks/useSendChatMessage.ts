@@ -13,7 +13,6 @@ import {
   events,
   Model,
   ConversationalExtension,
-  ModelRuntimeParams,
 } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 

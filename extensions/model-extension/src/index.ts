@@ -42,7 +42,7 @@ export default class JanModelExtension implements ModelExtension {
    * Called when the extension is unloaded.
    * @override
    */
-  onUnload(): void { }
+  onUnload(): void {}
 
   private async copyModelsToHomeDir() {
     try {
@@ -117,7 +117,10 @@ export default class JanModelExtension implements ModelExtension {
     return abortDownload(
       await joinPath([JanModelExtension._homeDir, modelId, modelId])
     ).then(async () => {
-      fs.unlinkSync(await joinPath([JanModelExtension._homeDir, modelId, modelId]))
+      fs.unlinkSync(
+        await joinPath([JanModelExtension._homeDir, modelId, modelId])
+      )
+    })
   }
 
   /**
@@ -130,10 +133,10 @@ export default class JanModelExtension implements ModelExtension {
       const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
 
       // remove all files under dirPath except model.json
-      const files = await fs.listFilesSync(dirPath)
+      const files = await fs.readdirSync(dirPath)
       const deletePromises = files.map(async (fileName: string) => {
         if (fileName !== JanModelExtension._modelMetadataFileName) {
-          return fs.deleteFileSync(await joinPath([dirPath, fileName]))
+          return fs.unlinkSync(await joinPath([dirPath, fileName]))
         }
       })
       await Promise.allSettled(deletePromises)
@@ -155,10 +158,7 @@ export default class JanModelExtension implements ModelExtension {
     ])
 
     try {
-      await fs.writeFileSync(
-        jsonFilePath,
-        JSON.stringify(model, null, 2)
-      )
+      await fs.writeFileSync(jsonFilePath, JSON.stringify(model, null, 2))
     } catch (err) {
       console.error(err)
     }
@@ -175,7 +175,7 @@ export default class JanModelExtension implements ModelExtension {
           return true
         }
         return await fs
-          .listFiles(await joinPath([JanModelExtension._homeDir, modelDir]))
+          .readdirSync(await joinPath([JanModelExtension._homeDir, modelDir]))
           .then((files: string[]) => {
             // or model binary exists in the directory
             // model binary name can match model ID or be a .gguf file and not be an incompleted model file
@@ -237,10 +237,13 @@ export default class JanModelExtension implements ModelExtension {
             console.debug(`Unable to parse model metadata: ${result.value}`)
             return undefined
           }
-        })
-        .filter((e) => !!e)
+        } else {
+          console.error(result.reason)
+          return undefined
+        }
+      })
 
-      return modelData
+      return modelData.filter((e) => !!e)
     } catch (err) {
       console.error(err)
       return []
@@ -248,7 +251,7 @@ export default class JanModelExtension implements ModelExtension {
   }
 
   private readModelMetadata(path: string) {
-    return fs.readFileSync(join(path), 'utf-8')
+    return fs.readFileSync(path, 'utf-8')
   }
 
   /**

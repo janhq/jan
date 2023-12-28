@@ -23,7 +23,7 @@ server.register(
   },
   { prefix: "extensions" }
 );
-server.register(v1Router, { prefix: "/api/v1" });
+server.register(v1Router, { prefix: "/v1" });
 
 export const startServer = () => {
   server

@@ -19,6 +19,7 @@ import {
   executeOnMain,
   fs,
   Model,
+  joinPath,
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
@@ -92,7 +93,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
         JanInferenceNitroExtension._engineMetadataFileName
       );
       if (await fs.existsSync(engineFile)) {
-        const engine = await fs.readFileSync(engineFile, 'utf-8');
+        const engine = await fs.readFileSync(engineFile, "utf-8");
         JanInferenceNitroExtension._engineSettings =
           typeof engine === "object" ? engine : JSON.parse(engine);
       } else {
@@ -110,7 +111,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     if (model.engine !== "nitro") {
       return;
     }
-    const modelFullPath = join("models", model.id, model.id);
+    const modelFullPath = await joinPath(["models", model.id]);
 
     const nitroInitResult = await executeOnMain(MODULE, "initModel", {
       modelFullPath: modelFullPath,
