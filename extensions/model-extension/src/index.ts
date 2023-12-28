@@ -34,7 +34,7 @@ export default class JanModelExtension implements ModelExtension {
    * Called when the extension is loaded.
    * @override
    */
-  onLoad(): void {
+  async onLoad() {
     this.copyModelsToHomeDir()
   }
 
