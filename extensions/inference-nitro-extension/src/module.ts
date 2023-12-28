@@ -5,7 +5,7 @@ const { exec, spawn } = require("child_process");
 const tcpPortUsed = require("tcp-port-used");
 const fetchRetry = require("fetch-retry")(global.fetch);
 const si = require("systeminformation");
-const { readFileSync, writeFileSync, existsSync  } = require('fs');
+const { readFileSync, writeFileSync, existsSync } = require("fs");
 
 // The PORT to use for the Nitro subprocess
 const PORT = 3928;
@@ -16,7 +16,11 @@ const NITRO_HTTP_UNLOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacp
 const NITRO_HTTP_VALIDATE_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/modelstatus`;
 const NITRO_HTTP_KILL_URL = `${NITRO_HTTP_SERVER_URL}/processmanager/destroy`;
 const SUPPORTED_MODEL_FORMAT = ".gguf";
-const NVIDIA_INFO_FILE = path.join(__dirname, "bin", "nvidia.json");
+const NVIDIA_INFO_FILE = path.join(
+  require("os").homedir(),
+  "settings",
+  "settings.json"
+);
 
 // The subprocess instance for Nitro
 let subprocess = undefined;
@@ -35,83 +39,101 @@ function stopModel(): Promise<void> {
 /**
  * Validate nvidia and cuda for linux and windows
  */
-function updateNvidiaDriverInfo() {
-  exec('nvidia-smi --query-gpu=driver_version --format=csv,noheader', (error, stdout) => {
-      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf8'));
+async function updateNvidiaDriverInfo(): Promise<void> {
+  exec(
+    "nvidia-smi --query-gpu=driver_version --format=csv,noheader",
+    (error, stdout) => {
+      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
 
       if (!error) {
-          const firstLine = stdout.split('\n')[0].trim();
-          data['nvidia-driver'].exist = true;
-          data['nvidia-driver'].version = firstLine;
+        const firstLine = stdout.split("\n")[0].trim();
+        data["nvidia_driver"].exist = true;
+        data["nvidia_driver"].version = firstLine;
       } else {
-          data['nvidia-driver'].exist = false;
+        data["nvidia_driver"].exist = false;
       }
 
       writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
-  });
+      Promise.resolve();
+    }
+  );
 }
 
-
 function checkFileExistenceInPaths(file: string, paths: string[]): boolean {
-  return paths.some(p => existsSync(path.join(p, file)));
+  return paths.some((p) => existsSync(path.join(p, file)));
 }
 
 function updateCudaExistence() {
   let files: string[];
   let paths: string[];
 
-  if (process.platform === 'win32') {
-      files = ['cublas64_12.dll', 'cudart64_12.dll', 'cublasLt64_12.dll'];
-      paths = process.env.PATH ? process.env.PATH.split(path.delimiter) : [];
-      const nitro_cuda_path = path.join(__dirname, "bin", "win-cuda");
-      paths.push(nitro_cuda_path);
+  if (process.platform === "win32") {
+    files = ["cublas64_12.dll", "cudart64_12.dll", "cublasLt64_12.dll"];
+    paths = process.env.PATH ? process.env.PATH.split(path.delimiter) : [];
+    const nitro_cuda_path = path.join(__dirname, "bin", "win-cuda");
+    paths.push(nitro_cuda_path);
   } else {
-      files = ['libcudart.so.12', 'libcublas.so.12', 'libcublasLt.so.12'];
-      paths = process.env.LD_LIBRARY_PATH ? process.env.LD_LIBRARY_PATH.split(path.delimiter) : [];
-      const nitro_cuda_path = path.join(__dirname, "bin", "linux-cuda");
-      paths.push(nitro_cuda_path);
-      paths.push('/usr/lib/x86_64-linux-gnu/')
+    files = ["libcudart.so.12", "libcublas.so.12", "libcublasLt.so.12"];
+    paths = process.env.LD_LIBRARY_PATH
+      ? process.env.LD_LIBRARY_PATH.split(path.delimiter)
+      : [];
+    const nitro_cuda_path = path.join(__dirname, "bin", "linux-cuda");
+    paths.push(nitro_cuda_path);
+    paths.push("/usr/lib/x86_64-linux-gnu/");
   }
 
-  let cudaExists = files.every(file => existsSync(file) || checkFileExistenceInPaths(file, paths));
+  let cudaExists = files.every(
+    (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
+  );
 
-  let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf8'));
-  data['cuda'].exist = cudaExists;
+  let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+  data["cuda"].exist = cudaExists;
   writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
 }
 
-function updateGpuInfo() {
-  exec('nvidia-smi --query-gpu=index,memory.total --format=csv,noheader,nounits', (error, stdout) => {
-      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf8'));
+async function updateGpuInfo(): Promise<void> {
+  exec(
+    "nvidia-smi --query-gpu=index,memory.total --format=csv,noheader,nounits",
+    (error, stdout) => {
+      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
 
       if (!error) {
-          // Get GPU info and gpu has higher memory first
-          let highestVram = 0;
-          let highestVramId = "0";
-          let gpus = stdout.trim().split('\n').map(line => {
-              let [id, vram] = line.split(', ');
-              vram = vram.replace(/\r/g, '');
-              if (parseFloat(vram) > highestVram) {
-                  highestVram = parseFloat(vram);
-                  highestVramId = id;
-              }
-              return { id, vram };
+        // Get GPU info and gpu has higher memory first
+        let highestVram = 0;
+        let highestVramId = "0";
+        let gpus = stdout
+          .trim()
+          .split("\n")
+          .map((line) => {
+            let [id, vram] = line.split(", ");
+            vram = vram.replace(/\r/g, "");
+            if (parseFloat(vram) > highestVram) {
+              highestVram = parseFloat(vram);
+              highestVramId = id;
+            }
+            return { id, vram };
           });
 
-          data['gpus'] = gpus;
-          data['gpu_highest_vram'] = highestVramId;
+        data["gpus"] = gpus;
+        data["gpu_highest_vram"] = highestVramId;
       } else {
-          data['gpus'] = [];
+        data["gpus"] = [];
       }
 
       writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
-  });
+      Promise.resolve();
+    }
+  );
 }
 
-function updateNvidiaInfo() {
-  updateNvidiaDriverInfo();
-  updateCudaExistence();
-  updateGpuInfo();
+async function updateNvidiaInfo() {
+  if (process.platform !== "darwin") {
+    await Promise.all([
+      updateNvidiaDriverInfo(),
+      updateCudaExistence(),
+      updateGpuInfo(),
+    ]);
+  }
 }
 
 /**
@@ -313,19 +335,18 @@ async function killSubprocess(): Promise<void> {
  * @returns A promise that resolves when the Nitro subprocess is started.
  */
 function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
-
   console.debug("Starting Nitro subprocess...");
   return new Promise(async (resolve, reject) => {
     let binaryFolder = path.join(__dirname, "bin"); // Current directory by default
-    let cudaVisibleDevices = ""
+    let cudaVisibleDevices = "";
     let binaryName;
     if (process.platform === "win32") {
-      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf8'));
-      if (nvida_info['run_mode'] === 'cpu') {
+      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+      if (nvida_info["run_mode"] === "cpu") {
         binaryFolder = path.join(binaryFolder, "win-cpu");
       } else {
         binaryFolder = path.join(binaryFolder, "win-cuda");
-        cudaVisibleDevices = nvida_info['gpu_highest_vram'];
+        cudaVisibleDevices = nvida_info["gpu_highest_vram"];
       }
       binaryName = "nitro.exe";
     } else if (process.platform === "darwin") {
@@ -336,12 +357,12 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
       }
       binaryName = "nitro";
     } else {
-      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf8'));
-      if (nvida_info['run_mode'] === 'cpu') {
+      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+      if (nvida_info["run_mode"] === "cpu") {
         binaryFolder = path.join(binaryFolder, "win-cpu");
       } else {
         binaryFolder = path.join(binaryFolder, "win-cuda");
-        cudaVisibleDevices = nvida_info['gpu_highest_vram'];
+        cudaVisibleDevices = nvida_info["gpu_highest_vram"];
       }
       binaryName = "nitro";
     }
@@ -353,7 +374,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
       env: {
         ...process.env,
         CUDA_VISIBLE_DEVICES: cudaVisibleDevices,
-      }
+      },
     });
 
     // Handle subprocess output
@@ -407,5 +428,3 @@ module.exports = {
   dispose,
   updateNvidiaInfo,
 };
-
-updateNvidiaInfo();
