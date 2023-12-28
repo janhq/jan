@@ -6,9 +6,10 @@ import {
   getResourcePath,
   getUserSpace,
   InferenceEngine,
+  joinPath,
 } from '@janhq/core'
+import { basename } from 'path'
 import { ModelExtension, Model } from '@janhq/core'
-import { join, sep } from 'path'
 
 /**
  * A extension for models
@@ -58,10 +59,10 @@ export default class JanModelExtension implements ModelExtension {
 
       // copy models folder from resources to home directory
       const resourePath = await getResourcePath()
-      const srcPath = join(resourePath, 'models')
+      const srcPath = await joinPath([resourePath, 'models'])
 
       const userSpace = await getUserSpace()
-      const destPath = join(userSpace, JanModelExtension._homeDir)
+      const destPath = await joinPath([userSpace, JanModelExtension._homeDir])
 
       await fs.syncFile(srcPath, destPath)
 
@@ -92,18 +93,18 @@ export default class JanModelExtension implements ModelExtension {
    */
   async downloadModel(model: Model): Promise<void> {
     // create corresponding directory
-    const modelDirPath = join(JanModelExtension._homeDir, model.id)
+    const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     await fs.mkdir(modelDirPath)
 
     // try to retrieve the download file name from the source url
     // if it fails, use the model ID as the file name
-    const extractedFileName = model.source_url.split(sep).pop()
+    const extractedFileName = basename(model.source_url)
     const fileName = extractedFileName
       .toLowerCase()
       .endsWith(JanModelExtension._supportedModelFormat)
       ? extractedFileName
       : model.id
-    const path = join(modelDirPath, fileName)
+    const path = await joinPath([modelDirPath, fileName])
     downloadFile(model.source_url, path)
   }
 
@@ -114,10 +115,12 @@ export default class JanModelExtension implements ModelExtension {
    */
   async cancelModelDownload(modelId: string): Promise<void> {
     return abortDownload(
-      join(JanModelExtension._homeDir, modelId, modelId)
-    ).then(() => {
-      fs.deleteFile(join(JanModelExtension._homeDir, modelId, modelId))
-    })
+      await joinPath([JanModelExtension._homeDir, modelId, modelId])
+    ).then(async () =>
+      fs.deleteFile(
+        await joinPath([JanModelExtension._homeDir, modelId, modelId])
+      )
+    )
   }
 
   /**
@@ -127,13 +130,13 @@ export default class JanModelExtension implements ModelExtension {
    */
   async deleteModel(modelId: string): Promise<void> {
     try {
-      const dirPath = join(JanModelExtension._homeDir, modelId)
+      const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
 
       // remove all files under dirPath except model.json
       const files = await fs.listFiles(dirPath)
-      const deletePromises = files.map((fileName: string) => {
+      const deletePromises = files.map(async (fileName: string) => {
         if (fileName !== JanModelExtension._modelMetadataFileName) {
-          return fs.deleteFile(join(dirPath, fileName))
+          return fs.deleteFile(await joinPath([dirPath, fileName]))
         }
       })
       await Promise.allSettled(deletePromises)
@@ -148,11 +151,11 @@ export default class JanModelExtension implements ModelExtension {
    * @returns A Promise that resolves when the model is saved.
    */
   async saveModel(model: Model): Promise<void> {
-    const jsonFilePath = join(
+    const jsonFilePath = await joinPath([
       JanModelExtension._homeDir,
       model.id,
-      JanModelExtension._modelMetadataFileName
-    )
+      JanModelExtension._modelMetadataFileName,
+    ])
 
     try {
       await fs.writeFile(jsonFilePath, JSON.stringify(model, null, 2))
@@ -172,7 +175,7 @@ export default class JanModelExtension implements ModelExtension {
           return true
         }
         return await fs
-          .listFiles(join(JanModelExtension._homeDir, modelDir))
+          .listFiles(await joinPath([JanModelExtension._homeDir, modelDir]))
           .then((files: string[]) => {
             // or model binary exists in the directory
             // model binary name can match model ID or be a .gguf file and not be an incompleted model file
@@ -206,7 +209,7 @@ export default class JanModelExtension implements ModelExtension {
       const allDirectories: string[] = []
       for (const file of files) {
         const isDirectory = await fs.isDirectory(
-          join(JanModelExtension._homeDir, file)
+          await joinPath([JanModelExtension._homeDir, file])
         )
         if (isDirectory) {
           allDirectories.push(file)
@@ -217,11 +220,11 @@ export default class JanModelExtension implements ModelExtension {
         // filter out directories that don't match the selector
 
         // read model.json
-        const jsonPath = join(
+        const jsonPath = await joinPath([
           JanModelExtension._homeDir,
           dirName,
-          JanModelExtension._modelMetadataFileName
-        )
+          JanModelExtension._modelMetadataFileName,
+        ])
         let model = await this.readModelMetadata(jsonPath)
         model = typeof model === 'object' ? model : JSON.parse(model)
 
@@ -252,7 +255,7 @@ export default class JanModelExtension implements ModelExtension {
   }
 
   private readModelMetadata(path: string) {
-    return fs.readFile(join(path))
+    return fs.readFile(path)
   }
 
   /**

@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { basename } from 'path'
+
 import { PropsWithChildren, useEffect, useRef } from 'react'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -38,8 +40,7 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
         (_event: string, state: any | undefined) => {
           if (!state) return
           const model = modelsRef.current.find(
-            (model) =>
-              modelBinFileName(model) === state.fileName.split('/').pop()
+            (model) => modelBinFileName(model) === basename(state.fileName)
           )
           if (model)
             setDownloadState({
@@ -52,7 +53,7 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       window.electronAPI.onFileDownloadError((_event: string, state: any) => {
         console.error('Download error', state)
         const model = modelsRef.current.find(
-          (model) => modelBinFileName(model) === state.fileName.split('/').pop()
+          (model) => modelBinFileName(model) === basename(state.fileName)
         )
         if (model) setDownloadStateFailed(model.id)
       })
@@ -60,8 +61,7 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       window.electronAPI.onFileDownloadSuccess((_event: string, state: any) => {
         if (state && state.fileName) {
           const model = modelsRef.current.find(
-            (model) =>
-              modelBinFileName(model) === state.fileName.split('/').pop()
+            (model) => modelBinFileName(model) === basename(state.fileName)
           )
           if (model) {
             setDownloadStateSuccess(model.id)

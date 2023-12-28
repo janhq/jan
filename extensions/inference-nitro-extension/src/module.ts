@@ -43,7 +43,7 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
   // Look for GGUF model file
   const ggufBinFile = files.find(
     (file) =>
-      file === currentModelFile.split(path.sep).pop() ||
+      file === path.basename(currentModelFile) ||
       file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT)
   );
 

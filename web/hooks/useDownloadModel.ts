@@ -1,10 +1,9 @@
-import { join } from 'path'
-
 import {
   Model,
   ExtensionType,
   ModelExtension,
   abortDownload,
+  joinPath,
 } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
@@ -43,7 +42,9 @@ export default function useDownloadModel() {
       ?.downloadModel(model)
   }
   const abortModelDownload = async (model: Model) => {
-    await abortDownload(join('models', model.id, modelBinFileName(model)))
+    await abortDownload(
+      await joinPath(['models', model.id, modelBinFileName(model)])
+    )
   }
 
   return {
