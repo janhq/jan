@@ -3,6 +3,8 @@ import posthog, { Properties } from 'posthog-js'
 posthog.init(ANALYTICS_ID, {
   api_host: ANALYTICS_HOST,
   autocapture: false,
+  capture_pageleave: false, // disable automatic pageleave tracking
+  rageclick: false, // disable automatic rageclick tracking
 })
 
 export const instance = posthog
