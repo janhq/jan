@@ -52,6 +52,13 @@ const openFileExplorer: (path: string) => Promise<any> = (path) =>
 const joinPath: (paths: string[]) => Promise<string> = (paths) => global.core.api?.joinPath(paths)
 
 /**
+ * Retrive the basename from an url.
+ * @param path - The path to retrieve.
+ * @returns {Promise<string>} A promise that resolves with the basename.
+ */
+const baseName: (paths: string[]) => Promise<string> = (path) => global.core.api?.baseName(path)
+
+/**
  * Opens an external URL in the default web browser.
  *
  * @param {string} url - The URL to open.
@@ -89,4 +96,5 @@ export {
   getResourcePath,
   joinPath,
   openExternalUrl,
+  baseName,
 }
