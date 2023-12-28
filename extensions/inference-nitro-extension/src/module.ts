@@ -272,11 +272,11 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
 function getResourcesInfo(): Promise<ResourcesInfo> {
   return new Promise(async (resolve) => {
     const cpu = await si.cpu();
-    const mem = await si.mem();
+    // const mem = await si.mem();
 
-    const response = {
+    const response: ResourcesInfo = {
       numCpuPhysicalCore: cpu.physicalCores,
-      memAvailable: mem.available,
+      memAvailable: 0,
     };
     resolve(response);
   });
