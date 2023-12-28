@@ -65,11 +65,9 @@ const Sidebar: React.FC = () => {
       default:
         break
     }
-    console.log('filepath', filePath)
+
     if (!filePath) return
-    console.log('platform:', isMac, isWindows, isLinux)
     const fullPath = await janJoin([userSpace, filePath])
-    console.log(fullPath)
     openFileExplorer(fullPath)
   }
 
@@ -99,11 +97,9 @@ const Sidebar: React.FC = () => {
       default:
         break
     }
-    console.log('filepath', filePath)
+
     if (!filePath) return
-    console.log('platform:', isMac, isWindows, isLinux)
     const fullPath = await janJoin([userSpace, filePath])
-    console.log(fullPath)
     openFileExplorer(fullPath)
   }
 
