@@ -36,11 +36,11 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
   useEffect(() => {
     if (window && window.electronAPI) {
       window.electronAPI.onFileDownloadUpdate(
-        (_event: string, state: any | undefined) => {
+        async (_event: string, state: any | undefined) => {
           if (!state) return
+          const modelName = await baseName(state.fileName)
           const model = modelsRef.current.find(
-            async (model) =>
-              modelBinFileName(model) === (await baseName(state.fileName))
+            (model) => modelBinFileName(model) === modelName
           )
           if (model)
             setDownloadState({
@@ -50,27 +50,31 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
         }
       )
 
-      window.electronAPI.onFileDownloadError((_event: string, state: any) => {
-        console.error('Download error', state)
-        const model = modelsRef.current.find(
-          async (model) =>
-            modelBinFileName(model) === (await baseName(state.fileName))
-        )
-        if (model) setDownloadStateFailed(model.id)
-      })
-
-      window.electronAPI.onFileDownloadSuccess((_event: string, state: any) => {
-        if (state && state.fileName) {
+      window.electronAPI.onFileDownloadError(
+        async (_event: string, state: any) => {
+          console.error('Download error', state)
+          const modelName = await baseName(state.fileName)
           const model = modelsRef.current.find(
-            async (model) =>
-              modelBinFileName(model) === (await baseName(state.fileName))
+            (model) => modelBinFileName(model) === modelName
           )
-          if (model) {
-            setDownloadStateSuccess(model.id)
-            setDownloadedModels([...downloadedModelRef.current, model])
+          if (model) setDownloadStateFailed(model.id)
+        }
+      )
+
+      window.electronAPI.onFileDownloadSuccess(
+        async (_event: string, state: any) => {
+          if (state && state.fileName) {
+            const modelName = await baseName(state.fileName)
+            const model = modelsRef.current.find(
+              async (model) => modelBinFileName(model) === modelName
+            )
+            if (model) {
+              setDownloadStateSuccess(model.id)
+              setDownloadedModels([...downloadedModelRef.current, model])
+            }
           }
         }
-      })
+      )
 
       window.electronAPI.onAppUpdateDownloadUpdate(
         (_event: string, progress: any) => {

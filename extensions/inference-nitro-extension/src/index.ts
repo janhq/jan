@@ -59,9 +59,10 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  async onLoad() {
-    if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir)))
-      await fs.mkdirSync(JanInferenceNitroExtension._homeDir);
+  async onLoad(): Promise<void> {
+    if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir))) {
+      await fs.mkdirSync(JanInferenceNitroExtension._homeDir).catch((err) => console.debug(err));
+    }
 
     if (!(await fs.existsSync(JanInferenceNitroExtension._settingsDir)))
       await fs.mkdirSync(JanInferenceNitroExtension._settingsDir);
@@ -100,6 +101,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
         events.emit("OnGPUDriverMissingPrompt", {});
       }
     }
+    Promise.resolve()
   }
 
   /**
