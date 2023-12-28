@@ -116,7 +116,7 @@ const ChatBody: React.FC = () => {
       ) : (
         <ScrollToBottom className="flex h-full w-full flex-col">
           {messages.map((message, index) => (
-            <>
+            <div key={message.id}>
               <ChatItem {...message} key={message.id} />
 
               {message.status === MessageStatus.Error &&
@@ -126,8 +126,8 @@ const ChatBody: React.FC = () => {
                     className="mt-10 flex flex-col items-center"
                   >
                     <span className="mb-3 text-center text-sm font-medium text-gray-500">
-                      Oops! The generation was interrupted. Let&apos;s
-                      give it another go!
+                      Oops! The generation was interrupted. Let&apos;s give it
+                      another go!
                     </span>
                     <Button
                       className="w-min"
@@ -140,7 +140,7 @@ const ChatBody: React.FC = () => {
                     </Button>
                   </div>
                 )}
-            </>
+            </div>
           ))}
         </ScrollToBottom>
       )}
