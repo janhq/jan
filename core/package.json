@@ -22,6 +22,27 @@
   "engines": {
     "node": ">=6.0.0"
   },
+  "exports": {
+    ".": "./dist/core.umd.js",
+    "./sdk": "./dist/core.umd.js",
+    "./node": "./dist/node/index.cjs.js"
+  },
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/core.es5.js.map",
+        "./dist/types/index.d.ts"
+      ],
+      "sdk": [
+        "./dist/core.es5.js.map",
+        "./dist/types/index.d.ts"
+      ],
+      "node": [
+        "./dist/node/index.cjs.js.map",
+        "./dist/types/node/index.d.ts"
+      ]
+    }
+  },
   "scripts": {
     "lint": "tslint  --project tsconfig.json -t codeFrame 'src/**/*.ts' 'test/**/*.ts'",
     "prebuild": "rimraf dist",

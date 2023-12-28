@@ -1,15 +1,15 @@
 import { ipcMain, webContents } from 'electron'
 import { readdirSync } from 'fs'
-import { ModuleManager } from './../managers/module'
 import { join, extname } from 'path'
+
 import {
-  getActiveExtensions,
-  getAllExtensions,
   installExtensions,
-} from './../extension/store'
-import { getExtension } from './../extension/store'
-import { removeExtension } from './../extension/store'
-import Extension from './../extension/extension'
+  getExtension,
+  removeExtension,
+  getActiveExtensions,
+  ModuleManager
+} from '@janhq/core/node'
+
 import { getResourcePath, userSpacePath } from './../utils/path'
 import { ExtensionRoute } from '@janhq/core'
 
@@ -81,7 +81,7 @@ export function handleExtensionIPCs() {
     ExtensionRoute.updateExtension,
     async (e, extensions, reload) => {
       // Update all provided extensions
-      const updated: Extension[] = []
+      const updated: any[] = []
       for (const ext of extensions) {
         const extension = getExtension(ext)
         const res = await extension.update()

@@ -1,11 +1,13 @@
 import { app, ipcMain, shell, nativeTheme } from 'electron'
-import { ModuleManager } from './../managers/module'
 import { join } from 'path'
-import { ExtensionManager } from './../managers/extension'
 import { WindowManager } from './../managers/window'
 import { userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
 import { getResourcePath } from './../utils/path'
+import {
+  ExtensionManager,
+  ModuleManager,
+} from '@janhq/core/node'
 
 export function handleAppIPCs() {
   /**
@@ -26,10 +28,6 @@ export function handleAppIPCs() {
     shell.openPath(userSpacePath)
   })
 
-  ipcMain.handle(AppRoute.getResourcePath, async (_event) => {
-    return getResourcePath()
-  })
-
   /**
    * Opens a URL in the user's default browser.
    * @param _event - The IPC event object.
@@ -47,6 +45,13 @@ export function handleAppIPCs() {
   ipcMain.handle(AppRoute.openFileExplore, async (_event, url) => {
     shell.openPath(url)
   })
+
+  /**
+   * Joins multiple paths together, respect to the current OS.
+   */
+  ipcMain.handle(AppRoute.joinPath, async (_event, paths: string[]) =>
+    join(...paths)
+  )
 
   /**
    * Relaunches the app in production - reload window in development.

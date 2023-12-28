@@ -15,13 +15,10 @@ export const isCoreExtensionInstalled = () => {
   return true
 }
 export const setupBaseExtensions = async () => {
-  if (
-    typeof window === 'undefined' ||
-    typeof window.electronAPI === 'undefined'
-  ) {
+  if (typeof window === 'undefined') {
     return
   }
-  const baseExtensions = await window.electronAPI.baseExtensions()
+  const baseExtensions = await window.core?.api.baseExtensions()
 
   if (
     !extensionManager.get(ExtensionType.Conversational) ||

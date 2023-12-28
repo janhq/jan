@@ -1,7 +1,6 @@
-import { ExtensionType, fs } from '@janhq/core'
+import { ExtensionType, fs, joinPath } from '@janhq/core'
 import { ConversationalExtension } from '@janhq/core'
 import { Thread, ThreadMessage } from '@janhq/core'
-import { join } from 'path'
 
 /**
  * JSONConversationalExtension is a ConversationalExtension implementation that provides
@@ -10,7 +9,7 @@ import { join } from 'path'
 export default class JSONConversationalExtension
   implements ConversationalExtension
 {
-  private static readonly _homeDir = 'threads'
+  private static readonly _homeDir = 'file://threads'
   private static readonly _threadInfoFileName = 'thread.json'
   private static readonly _threadMessagesFileName = 'messages.jsonl'
 
@@ -24,8 +23,9 @@ export default class JSONConversationalExtension
   /**
    * Called when the extension is loaded.
    */
-  onLoad() {
-    fs.mkdir(JSONConversationalExtension._homeDir)
+  async onLoad() {
+    if (!(await fs.existsSync(JSONConversationalExtension._homeDir)))
+      fs.mkdirSync(JSONConversationalExtension._homeDir)
     console.debug('JSONConversationalExtension loaded')
   }
 
@@ -48,7 +48,9 @@ export default class JSONConversationalExtension
       const convos = promiseResults
         .map((result) => {
           if (result.status === 'fulfilled') {
-            return JSON.parse(result.value) as Thread
+            return typeof result.value === 'object'
+              ? result.value
+              : JSON.parse(result.value)
           }
         })
         .filter((convo) => convo != null)
@@ -69,16 +71,19 @@ export default class JSONConversationalExtension
    */
   async saveThread(thread: Thread): Promise<void> {
     try {
-      const threadDirPath = join(
+      const threadDirPath = await joinPath([
         JSONConversationalExtension._homeDir,
-        thread.id
-      )
-      const threadJsonPath = join(
+        thread.id,
+      ])
+      const threadJsonPath = await joinPath([
         threadDirPath,
-        JSONConversationalExtension._threadInfoFileName
-      )
-      await fs.mkdir(threadDirPath)
-      await fs.writeFile(threadJsonPath, JSON.stringify(thread, null, 2))
+        JSONConversationalExtension._threadInfoFileName,
+      ])
+      if (!(await fs.existsSync(threadDirPath))) {
+        await fs.mkdirSync(threadDirPath)
+      }
+
+      await fs.writeFileSync(threadJsonPath, JSON.stringify(thread))
       Promise.resolve()
     } catch (err) {
       Promise.reject(err)
@@ -89,22 +94,26 @@ export default class JSONConversationalExtension
    * Delete a thread with the specified ID.
    * @param threadId The ID of the thread to delete.
    */
-  deleteThread(threadId: string): Promise<void> {
-    return fs.rmdir(join(JSONConversationalExtension._homeDir, `${threadId}`))
+  async deleteThread(threadId: string): Promise<void> {
+    return fs.rmdirSync(
+      await joinPath([JSONConversationalExtension._homeDir, `${threadId}`]),
+      { recursive: true }
+    )
   }
 
   async addNewMessage(message: ThreadMessage): Promise<void> {
     try {
-      const threadDirPath = join(
+      const threadDirPath = await joinPath([
         JSONConversationalExtension._homeDir,
-        message.thread_id
-      )
-      const threadMessagePath = join(
+        message.thread_id,
+      ])
+      const threadMessagePath = await joinPath([
         threadDirPath,
-        JSONConversationalExtension._threadMessagesFileName
-      )
-      await fs.mkdir(threadDirPath)
-      await fs.appendFile(threadMessagePath, JSON.stringify(message) + '\n')
+        JSONConversationalExtension._threadMessagesFileName,
+      ])
+      if (!(await fs.existsSync(threadDirPath)))
+        await fs.mkdirSync(threadDirPath)
+      await fs.appendFileSync(threadMessagePath, JSON.stringify(message) + '\n')
       Promise.resolve()
     } catch (err) {
       Promise.reject(err)
@@ -116,13 +125,17 @@ export default class JSONConversationalExtension
     messages: ThreadMessage[]
   ): Promise<void> {
     try {
-      const threadDirPath = join(JSONConversationalExtension._homeDir, threadId)
-      const threadMessagePath = join(
+      const threadDirPath = await joinPath([
+        JSONConversationalExtension._homeDir,
+        threadId,
+      ])
+      const threadMessagePath = await joinPath([
         threadDirPath,
-        JSONConversationalExtension._threadMessagesFileName
-      )
-      await fs.mkdir(threadDirPath)
-      await fs.writeFile(
+        JSONConversationalExtension._threadMessagesFileName,
+      ])
+      if (!(await fs.existsSync(threadDirPath)))
+        await fs.mkdirSync(threadDirPath)
+      await fs.writeFileSync(
         threadMessagePath,
         messages.map((msg) => JSON.stringify(msg)).join('\n') +
           (messages.length ? '\n' : '')
@@ -139,12 +152,13 @@ export default class JSONConversationalExtension
    * @returns data of the thread
    */
   private async readThread(threadDirName: string): Promise<any> {
-    return fs.readFile(
-      join(
+    return fs.readFileSync(
+      await joinPath([
         JSONConversationalExtension._homeDir,
         threadDirName,
-        JSONConversationalExtension._threadInfoFileName
-      )
+        JSONConversationalExtension._threadInfoFileName,
+      ]),
+      'utf-8'
     )
   }
 
@@ -153,23 +167,19 @@ export default class JSONConversationalExtension
    * @private
    */
   private async getValidThreadDirs(): Promise<string[]> {
-    const fileInsideThread: string[] = await fs.listFiles(
+    const fileInsideThread: string[] = await fs.readdirSync(
       JSONConversationalExtension._homeDir
     )
 
     const threadDirs: string[] = []
     for (let i = 0; i < fileInsideThread.length; i++) {
-      const path = join(
+      if (fileInsideThread[i].includes('.DS_Store')) continue
+      const path = await joinPath([
         JSONConversationalExtension._homeDir,
-        fileInsideThread[i]
-      )
-      const isDirectory = await fs.isDirectory(path)
-      if (!isDirectory) {
-        console.debug(`Ignore ${path} because it is not a directory`)
-        continue
-      }
+        fileInsideThread[i],
+      ])
 
-      const isHavingThreadInfo = (await fs.listFiles(path)).includes(
+      const isHavingThreadInfo = (await fs.readdirSync(path)).includes(
         JSONConversationalExtension._threadInfoFileName
       )
       if (!isHavingThreadInfo) {
@@ -184,25 +194,31 @@ export default class JSONConversationalExtension
 
   async getAllMessages(threadId: string): Promise<ThreadMessage[]> {
     try {
-      const threadDirPath = join(JSONConversationalExtension._homeDir, threadId)
-      const isDir = await fs.isDirectory(threadDirPath)
-      if (!isDir) {
-        throw Error(`${threadDirPath} is not directory`)
-      }
+      const threadDirPath = await joinPath([
+        JSONConversationalExtension._homeDir,
+        threadId,
+      ])
 
-      const files: string[] = await fs.listFiles(threadDirPath)
+      const files: string[] = await fs.readdirSync(threadDirPath)
       if (
         !files.includes(JSONConversationalExtension._threadMessagesFileName)
       ) {
         throw Error(`${threadDirPath} not contains message file`)
       }
 
-      const messageFilePath = join(
+      const messageFilePath = await joinPath([
         threadDirPath,
-        JSONConversationalExtension._threadMessagesFileName
-      )
+        JSONConversationalExtension._threadMessagesFileName,
+      ])
 
-      const result = await fs.readLineByLine(messageFilePath)
+      const result = await fs
+        .readFileSync(messageFilePath, 'utf-8')
+        .then((content) =>
+          content
+            .toString()
+            .split('\n')
+            .filter((line) => line !== '')
+        )
 
       const messages: ThreadMessage[] = []
       result.forEach((line: string) => {

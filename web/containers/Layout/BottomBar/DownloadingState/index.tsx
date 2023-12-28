@@ -1,7 +1,5 @@
 import { Fragment } from 'react'
 
-import { ExtensionType } from '@janhq/core'
-import { ModelExtension } from '@janhq/core'
 import {
   Progress,
   Modal,
@@ -12,14 +10,19 @@ import {
   ModalTrigger,
 } from '@janhq/uikit'
 
+import { useAtomValue } from 'jotai'
+
+import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
-import { extensionManager } from '@/extension'
+import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 export default function DownloadingState() {
   const { downloadStates } = useDownloadState()
+  const downloadingModels = useAtomValue(downloadingModelsAtom)
+  const { abortModelDownload } = useDownloadModel()
 
   const totalCurrentProgress = downloadStates
     .map((a) => a.size.transferred + a.size.transferred)
@@ -73,9 +76,10 @@ export default function DownloadingState() {
                       size="sm"
                       onClick={() => {
                         if (item?.modelId) {
-                          extensionManager
-                            .get<ModelExtension>(ExtensionType.Model)
-                            ?.cancelModelDownload(item.modelId)
+                          const model = downloadingModels.find(
+                            (model) => model.id === item.modelId
+                          )
+                          if (model) abortModelDownload(model)
                         }
                       }}
                     >

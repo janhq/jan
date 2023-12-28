@@ -5,8 +5,6 @@ import React, { useState, useEffect, useRef, useContext } from 'react'
 
 import { Button } from '@janhq/uikit'
 
-import Loader from '@/containers/Loader'
-
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useGetAppVersion } from '@/hooks/useGetAppVersion'
@@ -18,7 +16,6 @@ import { extensionManager } from '@/extension'
 const ExtensionCatalog = () => {
   const [activeExtensions, setActiveExtensions] = useState<any[]>([])
   const [extensionCatalog, setExtensionCatalog] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState<boolean>(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const { version } = useGetAppVersion()
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
@@ -94,8 +91,6 @@ const ExtensionCatalog = () => {
       install(event)
     }
   }
-
-  if (isLoading) return <Loader description="Installing ..." />
 
   return (
     <div className="block w-full">

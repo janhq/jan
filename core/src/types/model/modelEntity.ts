@@ -68,13 +68,6 @@ export type Model = {
   description: string
 
   /**
-   * The model state.
-   * Default: "to_download"
-   * Enum: "to_download" "downloading" "ready" "running"
-   */
-  state?: ModelState
-
-  /**
    * The model settings.
    */
   settings: ModelSettingParams
@@ -99,15 +92,6 @@ export type ModelMetadata = {
   tags: string[]
   size: number
   cover?: string
-}
-
-/**
- * The Model transition states.
- */
-export enum ModelState {
-  Downloading = 'downloading',
-  Ready = 'ready',
-  Running = 'running',
 }
 
 /**
