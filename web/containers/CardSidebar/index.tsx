@@ -29,6 +29,13 @@ export default function CardSidebar({
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
+  let openFolderTitle: string = 'Open Containing Folder'
+  if (isMac) {
+    openFolderTitle = 'Reveal in Finder'
+  } else if (isWindows) {
+    openFolderTitle = 'Reveal in File Explorer'
+  }
+
   return (
     <div
       className={twMerge(
@@ -74,7 +81,7 @@ export default function CardSidebar({
             >
               <FolderOpenIcon size={16} className="text-muted-foreground" />
               <span className="text-bold text-black dark:text-muted-foreground">
-                Reveal in Finder
+                {openFolderTitle}
               </span>
             </div>
             <div
