@@ -48,6 +48,10 @@ export function handleAppIPCs() {
     shell.openPath(url)
   })
 
+  ipcMain.handle("janJoin", async (_event, stringArray) => {
+    return join(stringArray)
+  })
+
   /**
    * Relaunches the app in production - reload window in development.
    * @param _event - The IPC event object.

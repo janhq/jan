@@ -44,6 +44,8 @@ const getUserSpace = (): Promise<string> => global.core.api?.getUserSpace()
 const openFileExplorer: (path: string) => Promise<any> = (path) =>
   global.core.api?.openFileExplorer(path)
 
+const janJoin: (dirs: string[]) => Promise<string> = (dirs) => global.core.api?.janJoin(dirs)
+
 const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
 
 /**
@@ -66,4 +68,5 @@ export {
   getUserSpace,
   openFileExplorer,
   getResourcePath,
+  janJoin,
 }
