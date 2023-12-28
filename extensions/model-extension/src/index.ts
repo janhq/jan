@@ -48,7 +48,7 @@ export default class JanModelExtension implements ModelExtension {
     try {
       // list all of the files under the home directory
 
-      if (fs.existsSync(JanModelExtension._homeDir)) {
+      if (await fs.existsSync(JanModelExtension._homeDir)) {
         // ignore if the model is already downloaded
         console.debug('Models already persisted.')
         return
