@@ -13,10 +13,11 @@ const NITRO_HTTP_LOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/
 const NITRO_HTTP_UNLOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/unloadModel`;
 const NITRO_HTTP_VALIDATE_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/modelstatus`;
 const NITRO_HTTP_KILL_URL = `${NITRO_HTTP_SERVER_URL}/processmanager/destroy`;
+const SUPPORTED_MODEL_FORMAT = ".gguf";
 
 // The subprocess instance for Nitro
 let subprocess = undefined;
-let currentModelFile = undefined;
+let currentModelFile: string = undefined;
 let currentSettings = undefined;
 
 /**
@@ -37,6 +38,17 @@ function stopModel(): Promise<void> {
  */
 async function initModel(wrapper: any): Promise<ModelOperationResponse> {
   currentModelFile = wrapper.modelFullPath;
+  const files: string[] = fs.readdirSync(currentModelFile);
+
+  // Look for GGUF model file
+  const ggufBinFile = files.find(
+    (file) =>
+      file === path.basename(currentModelFile) ||
+      file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT)
+  );
+
+  currentModelFile = path.join(currentModelFile, ggufBinFile);
+
   if (wrapper.model.engine !== "nitro") {
     return Promise.resolve({ error: "Not a nitro model" });
   } else {
@@ -66,25 +78,26 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
 async function loadModel(nitroResourceProbe: any | undefined) {
   // Gather system information for CPU physical cores and memory
   if (!nitroResourceProbe) nitroResourceProbe = await getResourcesInfo();
-  return killSubprocess()
-    .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
-    // wait for 500ms to make sure the port is free for windows platform
-    .then(() => {
-      if (process.platform === "win32") {
-        return sleep(500);
-      }
-      else {
-        return sleep(0);
-      }
-    })
-    .then(() => spawnNitroProcess(nitroResourceProbe))
-    .then(() => loadLLMModel(currentSettings))
-    .then(validateModelStatus)
-    .catch((err) => {
-      console.error("error: ", err);
-      // TODO: Broadcast error so app could display proper error message
-      return { error: err, currentModelFile };
-    });
+  return (
+    killSubprocess()
+      .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
+      // wait for 500ms to make sure the port is free for windows platform
+      .then(() => {
+        if (process.platform === "win32") {
+          return sleep(500);
+        } else {
+          return sleep(0);
+        }
+      })
+      .then(() => spawnNitroProcess(nitroResourceProbe))
+      .then(() => loadLLMModel(currentSettings))
+      .then(validateModelStatus)
+      .catch((err) => {
+        console.error("error: ", err);
+        // TODO: Broadcast error so app could display proper error message
+        return { error: err, currentModelFile };
+      })
+  );
 }
 
 // Add function sleep
