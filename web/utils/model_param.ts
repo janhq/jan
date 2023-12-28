@@ -22,8 +22,7 @@ export const toRuntimeParams = (
 
   for (const [key, value] of Object.entries(modelParams)) {
     if (key in defaultModelParams) {
-      // @ts-ignore
-      runtimeParams[key] = value
+      runtimeParams[key as keyof ModelRuntimeParams] = value
     }
   }
 
@@ -46,8 +45,7 @@ export const toSettingParams = (
 
   for (const [key, value] of Object.entries(modelParams)) {
     if (key in defaultSettingParams) {
-      // @ts-ignore
-      settingParams[key] = value
+      settingParams[key as keyof ModelSettingParams] = value
     }
   }
 
