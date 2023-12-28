@@ -40,9 +40,15 @@ const filterProperties = (properties?: Properties): Properties | undefined => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // Track an event with filtered properties
-export const trackEvent = (name: string, properties?: Properties): void => {
-  const filteredProperties = filterProperties(properties)
-  posthog.capture(name, filteredProperties)
-}
+export const trackEvent = (name: string, properties?: Properties, appVersion?: string): void => {
+  let eventProperties = filterProperties(properties);
+
+  // Include app version if available
+  if (appVersion) {
+    eventProperties = { ...eventProperties, app_version: appVersion };
+  }
+
+  posthog.capture(name, eventProperties);
+};
 
 export enum AnalyticsEvent {}
