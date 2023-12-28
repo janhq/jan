@@ -1,6 +1,10 @@
-import { ExtensionType, fs } from '@janhq/core'
-import { ConversationalExtension } from '@janhq/core'
-import { Thread, ThreadMessage } from '@janhq/core'
+import {
+  ExtensionType,
+  fs,
+  ConversationalExtension,
+  Thread,
+  ThreadMessage,
+} from '@janhq/core'
 import { join } from 'path'
 
 /**
@@ -104,10 +108,30 @@ export default class JSONConversationalExtension
         JSONConversationalExtension._threadMessagesFileName
       )
       await fs.mkdir(threadDirPath)
+
+      if (message.content[0].type === 'image') {
+        const filesPath = join(threadDirPath, 'files')
+        await fs.mkdir(filesPath)
+
+        const imagePath = join(filesPath, `${message.id}.png`)
+        const base64 = message.content[0].text.annotations[0]
+        await this.storeImage(base64, imagePath)
+      }
+
       await fs.appendFile(threadMessagePath, JSON.stringify(message) + '\n')
       Promise.resolve()
     } catch (err) {
       Promise.reject(err)
+    }
+  }
+
+  async storeImage(base64: string, filePath: string): Promise<void> {
+    const base64Data = base64.replace(/^data:image\/\w+;base64,/, '')
+
+    try {
+      await fs.writeBlob(filePath, base64Data)
+    } catch (err) {
+      console.error(err)
     }
   }
 

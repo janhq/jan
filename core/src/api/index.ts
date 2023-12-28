@@ -54,6 +54,7 @@ export enum FileSystemRoute {
   readLineByLine = 'readLineByLine',
   rmdir = 'rmdir',
   writeFile = 'writeFile',
+  writeBlob = 'writeBlob',
 }
 
 export type ApiFunction = (...args: any[]) => any

@@ -82,7 +82,19 @@ export function handleFsIPCs() {
     FileSystemRoute.writeFile,
     async (event, path: string, data: string): Promise<void> => {
       try {
-        await fs.writeFileSync(join(userSpacePath, path), data, 'utf8')
+        fs.writeFileSync(join(userSpacePath, path), data, 'utf8')
+      } catch (err) {
+        console.error(`writeFile ${path} result: ${err}`)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    FileSystemRoute.writeBlob,
+    async (_event, path: string, data: string): Promise<void> => {
+      try {
+        const dataBuffer = Buffer.from(data, 'base64')
+        fs.writeFileSync(join(userSpacePath, path), dataBuffer)
       } catch (err) {
         console.error(`writeFile ${path} result: ${err}`)
       }

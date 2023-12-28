@@ -7,6 +7,9 @@
 const writeFile: (path: string, data: string) => Promise<any> = (path, data) =>
   global.core.api?.writeFile(path, data)
 
+const writeBlob: (path: string, data: string) => Promise<any> = (path, data) =>
+  global.core.api?.writeBlob(path, data)
+
 /**
  * Checks whether the path is a directory.
  * @param path - The path to check.
@@ -86,4 +89,5 @@ export const fs = {
   readLineByLine,
   copyFile,
   syncFile,
+  writeBlob,
 }
