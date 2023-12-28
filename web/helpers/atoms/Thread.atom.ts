@@ -1,5 +1,6 @@
 import {
   ModelRuntimeParams,
+  ModelSettingParams,
   Thread,
   ThreadContent,
   ThreadState,
@@ -110,30 +111,26 @@ export const activeThreadAtom = atom<Thread | undefined>((get) =>
 /**
  * Store model params at thread level settings
  */
-export const threadModelRuntimeParamsAtom = atom<
-  Record<string, ModelRuntimeParams>
->({})
+export const threadModelParamsAtom = atom<Record<string, ModelParams>>({})
 
-export const getActiveThreadModelRuntimeParamsAtom = atom<
-  ModelRuntimeParams | undefined
->((get) => {
-  const threadId = get(activeThreadIdAtom)
-  if (!threadId) {
-    console.debug('Active thread id is undefined')
-    return undefined
+export type ModelParams = ModelRuntimeParams | ModelSettingParams
+
+export const getActiveThreadModelParamsAtom = atom<ModelParams | undefined>(
+  (get) => {
+    const threadId = get(activeThreadIdAtom)
+    if (!threadId) {
+      console.debug('Active thread id is undefined')
+      return undefined
+    }
+
+    return get(threadModelParamsAtom)[threadId]
   }
-
-  return get(threadModelRuntimeParamsAtom)[threadId]
-})
-
-export const getThreadModelRuntimeParamsAtom = atom(
-  (get, threadId: string) => get(threadModelRuntimeParamsAtom)[threadId]
 )
 
-export const setThreadModelRuntimeParamsAtom = atom(
+export const setThreadModelParamsAtom = atom(
   null,
-  (get, set, threadId: string, params: ModelRuntimeParams) => {
-    const currentState = { ...get(threadModelRuntimeParamsAtom) }
+  (get, set, threadId: string, params: ModelParams) => {
+    const currentState = { ...get(threadModelParamsAtom) }
     currentState[threadId] = params
     console.debug(
       `Update model params for thread ${threadId}, ${JSON.stringify(
@@ -142,6 +139,6 @@ export const setThreadModelRuntimeParamsAtom = atom(
         2
       )}`
     )
-    set(threadModelRuntimeParamsAtom, currentState)
+    set(threadModelParamsAtom, currentState)
   }
 )

@@ -28,14 +28,22 @@ import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import { toGigabytes } from '@/utils/converter'
 
-import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
+import {
+  activeThreadAtom,
+  getActiveThreadIdAtom,
+  setThreadModelParamsAtom,
+  threadStatesAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
 
 export default function DropdownListSidebar() {
-  const setSelectedModel = useSetAtom(selectedModelAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
+  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const activeThread = useAtomValue(activeThreadAtom)
+  const threadStates = useAtomValue(threadStatesAtom)
+  const setSelectedModel = useSetAtom(selectedModelAtom)
+  const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+
   const [selected, setSelected] = useState<Model | undefined>()
   const { setMainViewState } = useMainViewState()
   const [openAISettings, setOpenAISettings] = useState<
@@ -54,15 +62,39 @@ export default function DropdownListSidebar() {
   useEffect(() => {
     setSelected(recommendedModel)
     setSelectedModel(recommendedModel)
-  }, [recommendedModel, setSelectedModel])
+
+    if (activeThread) {
+      const finishInit = threadStates[activeThread.id].isFinishInit ?? true
+      if (finishInit) return
+      const modelParams = {
+        ...recommendedModel?.parameters,
+        ...recommendedModel?.settings,
+      }
+      setThreadModelParams(activeThread.id, modelParams)
+    }
+  }, [
+    recommendedModel,
+    activeThread,
+    setSelectedModel,
+    setThreadModelParams,
+    threadStates,
+  ])
 
   const onValueSelected = useCallback(
     (modelId: string) => {
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelected(model)
       setSelectedModel(model)
+
+      if (activeThreadId) {
+        const modelParams = {
+          ...model?.parameters,
+          ...model?.settings,
+        }
+        setThreadModelParams(activeThreadId, modelParams)
+      }
     },
-    [downloadedModels, setSelectedModel]
+    [downloadedModels, activeThreadId, setSelectedModel, setThreadModelParams]
   )
 
   if (!activeThread) {

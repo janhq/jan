@@ -19,7 +19,6 @@ import {
   setActiveThreadIdAtom,
   threadStatesAtom,
   updateThreadAtom,
-  setThreadModelRuntimeParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -45,10 +44,6 @@ export const useCreateNewThread = () => {
   const createNewThread = useSetAtom(createNewThreadAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const updateThread = useSetAtom(updateThreadAtom)
-  const setThreadModelRuntimeParams = useSetAtom(
-    setThreadModelRuntimeParamsAtom
-  )
-
   const { deleteThread } = useDeleteThread()
 
   const requestCreateNewThread = async (
@@ -77,10 +72,7 @@ export const useCreateNewThread = () => {
       model: {
         id: modelId,
         settings: {},
-        parameters: {
-          stream: true,
-          max_tokens: 1024,
-        },
+        parameters: {},
         engine: undefined,
       },
       instructions: assistant.instructions,
@@ -94,7 +86,6 @@ export const useCreateNewThread = () => {
       created: createdAt,
       updated: createdAt,
     }
-    setThreadModelRuntimeParams(thread.id, assistantInfo.model.parameters)
 
     // add the new thread on top of the thread list to the state
     createNewThread(thread)

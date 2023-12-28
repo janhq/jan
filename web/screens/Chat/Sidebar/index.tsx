@@ -1,5 +1,7 @@
 import { join } from 'path'
 
+import React from 'react'
+
 import { getUserSpace, openFileExplorer } from '@janhq/core'
 
 import { Input, Textarea } from '@janhq/uikit'
@@ -16,18 +18,28 @@ import DropdownListSidebar, {
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
+import { toSettingParams } from '@/utils/model_param'
+
+import EngineSetting from '../EngineSetting'
 import ModelSetting from '../ModelSetting'
 
-import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
+import {
+  activeThreadAtom,
+  getActiveThreadModelParamsAtom,
+  threadStatesAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 export const showRightSideBarAtom = atom<boolean>(true)
 
-export default function Sidebar() {
+const Sidebar: React.FC = () => {
   const showing = useAtomValue(showRightSideBarAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
   const threadStates = useAtomValue(threadStatesAtom)
+
+  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const modelSettingParams = toSettingParams(activeModelParams)
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
@@ -187,6 +199,17 @@ export default function Sidebar() {
             </div>
           </div>
         </CardSidebar>
+        {Object.keys(modelSettingParams).length ? (
+          <CardSidebar
+            title="Engine"
+            onRevealInFinderClick={onReviewInFinderClick}
+            onViewJsonClick={onViewJsonClick}
+          >
+            <div className="p-2">
+              <EngineSetting />
+            </div>
+          </CardSidebar>
+        ) : null}
         <CardSidebar
           title="Model"
           onRevealInFinderClick={onReviewInFinderClick}
@@ -203,3 +226,5 @@ export default function Sidebar() {
     </div>
   )
 }
+
+export default React.memo(Sidebar)
