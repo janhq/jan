@@ -32,7 +32,8 @@ import { join } from "path";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceNitroExtension implements InferenceExtension {
-  private static readonly _homeDir = "engines";
+  private static readonly _homeDir = "file://engines";
+  private static readonly _settingsDir = "file://settings";
   private static readonly _engineMetadataFileName = "nitro.json";
 
   private static _currentModel: Model;
@@ -58,9 +59,13 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  async onLoad() {
-    if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir)))
-      fs.mkdirSync(JanInferenceNitroExtension._homeDir);
+  async onLoad(): Promise<void> {
+    if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir))) {
+      await fs.mkdirSync(JanInferenceNitroExtension._homeDir).catch((err) => console.debug(err));
+    }
+
+    if (!(await fs.existsSync(JanInferenceNitroExtension._settingsDir)))
+      await fs.mkdirSync(JanInferenceNitroExtension._settingsDir);
     this.writeDefaultEngineSettings();
 
     // Events subscription
@@ -79,6 +84,24 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     events.on(EventName.OnInferenceStopped, () => {
       JanInferenceNitroExtension.handleInferenceStopped(this);
     });
+
+    // Attempt to fetch nvidia info
+    await executeOnMain(MODULE, "updateNvidiaInfo", {});
+
+    const gpuDriverConf = await fs.readFileSync(
+      join(JanInferenceNitroExtension._settingsDir, "settings.json")
+    );
+    if (gpuDriverConf.notify && gpuDriverConf.run_mode === "cpu") {
+      // Driver is fully installed, but not in use
+      if (gpuDriverConf.nvidia_driver?.exist && gpuDriverConf.cuda?.exist) {
+        events.emit("OnGPUCompatiblePrompt", {});
+        // Prompt user to switch
+      } else if (gpuDriverConf.nvidia_driver?.exist) {
+        // Prompt user to install cuda toolkit
+        events.emit("OnGPUDriverMissingPrompt", {});
+      }
+    }
+    Promise.resolve()
   }
 
   /**

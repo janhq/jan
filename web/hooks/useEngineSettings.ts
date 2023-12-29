@@ -2,7 +2,9 @@ import { fs, joinPath } from '@janhq/core'
 
 export const useEngineSettings = () => {
   const readOpenAISettings = async () => {
-    if (!fs.existsSync(await joinPath(['file://engines', 'openai.json'])))
+    if (
+      !(await fs.existsSync(await joinPath(['file://engines', 'openai.json'])))
+    )
       return {}
     const settings = await fs.readFileSync(
       await joinPath(['file://engines', 'openai.json']),

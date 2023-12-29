@@ -25,7 +25,7 @@ export default class JSONConversationalExtension
    */
   async onLoad() {
     if (!(await fs.existsSync(JSONConversationalExtension._homeDir)))
-      fs.mkdirSync(JSONConversationalExtension._homeDir)
+      await fs.mkdirSync(JSONConversationalExtension._homeDir)
     console.debug('JSONConversationalExtension loaded')
   }
 

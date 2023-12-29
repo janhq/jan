@@ -53,9 +53,13 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  async onLoad() {
-    if (!(await fs.existsSync(JanInferenceOpenAIExtension._homeDir)))
-      fs.mkdirSync(JanInferenceOpenAIExtension._homeDir);
+  async onLoad(): Promise<void> {
+    if (!(await fs.existsSync(JanInferenceOpenAIExtension._homeDir))) {
+      await fs
+        .mkdirSync(JanInferenceOpenAIExtension._homeDir)
+        .catch((err) => console.debug(err));
+    }
+
     JanInferenceOpenAIExtension.writeDefaultEngineSettings();
 
     // Events subscription
@@ -73,6 +77,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     events.on(EventName.OnInferenceStopped, () => {
       JanInferenceOpenAIExtension.handleInferenceStopped(this);
     });
+    Promise.resolve();
   }
 
   /**
@@ -87,7 +92,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
         JanInferenceOpenAIExtension._engineMetadataFileName
       );
       if (await fs.existsSync(engineFile)) {
-        const engine = await fs.readFileSync(engineFile, 'utf-8');
+        const engine = await fs.readFileSync(engineFile, "utf-8");
         JanInferenceOpenAIExtension._engineSettings =
           typeof engine === "object" ? engine : JSON.parse(engine);
       } else {
