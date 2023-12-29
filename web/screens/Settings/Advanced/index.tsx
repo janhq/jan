@@ -12,8 +12,8 @@ const Advanced = () => {
   const { experimentalFeatureEnabed, setExperimentalFeatureEnabled } =
     useContext(FeatureToggleContext)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
-
-  const { readSettings, saveSettings } = useSettings()
+  const { readSettings, saveSettings, validateSettings, setShowNotification } =
+    useSettings()
 
   useEffect(() => {
     readSettings().then((settings) => {
@@ -24,30 +24,33 @@ const Advanced = () => {
   return (
     <div className="block w-full">
       {/* CPU / GPU switching */}
-      {!isMac && (
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="w-4/5 flex-shrink-0 space-y-1.5">
-            <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">NVidia GPU</h6>
-            </div>
-            <p className="whitespace-pre-wrap leading-relaxed">
-              Enable GPU acceleration for NVidia GPUs.
-            </p>
+
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">NVidia GPU</h6>
           </div>
-          <Switch
-            checked={gpuEnabled}
-            onCheckedChange={(e: boolean) => {
-              if (e === true) {
-                saveSettings({ runMode: 'gpu' })
-                setGpuEnabled(true)
-              } else {
-                saveSettings({ runMode: 'cpu' })
-                setGpuEnabled(false)
-              }
-            }}
-          />
+          <p className="whitespace-pre-wrap leading-relaxed">
+            Enable GPU acceleration for NVidia GPUs.
+          </p>
         </div>
-      )}
+        <Switch
+          checked={gpuEnabled}
+          onCheckedChange={(e: boolean) => {
+            if (e === true) {
+              saveSettings({ runMode: 'gpu' })
+              setGpuEnabled(true)
+              setShowNotification(false)
+              setTimeout(() => {
+                validateSettings()
+              }, 300)
+            } else {
+              saveSettings({ runMode: 'cpu' })
+              setGpuEnabled(false)
+            }
+          }}
+        />
+      </div>
       {/* Experimental */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="w-4/5 flex-shrink-0 space-y-1.5">
