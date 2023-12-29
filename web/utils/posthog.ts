@@ -27,7 +27,7 @@ function getOperatingSystem(): string {
 // Function to capture app version and operating system
 function captureAppVersionAndOS() {
   const properties: Properties = {
-    JanVersion: VERSION,
+    appVersion: VERSION,
     userOperatingSystem: getOperatingSystem(),
   }
   posthog.capture(AnalyticsEvent.Ping, properties)
