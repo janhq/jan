@@ -24,33 +24,34 @@ const Advanced = () => {
   return (
     <div className="block w-full">
       {/* CPU / GPU switching */}
-
-      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="w-4/5 flex-shrink-0 space-y-1.5">
-          <div className="flex gap-x-2">
-            <h6 className="text-sm font-semibold capitalize">NVidia GPU</h6>
+      {!isMac && (
+        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+          <div className="w-4/5 flex-shrink-0 space-y-1.5">
+            <div className="flex gap-x-2">
+              <h6 className="text-sm font-semibold capitalize">NVidia GPU</h6>
+            </div>
+            <p className="whitespace-pre-wrap leading-relaxed">
+              Enable GPU acceleration for NVidia GPUs.
+            </p>
           </div>
-          <p className="whitespace-pre-wrap leading-relaxed">
-            Enable GPU acceleration for NVidia GPUs.
-          </p>
+          <Switch
+            checked={gpuEnabled}
+            onCheckedChange={(e: boolean) => {
+              if (e === true) {
+                saveSettings({ runMode: 'gpu' })
+                setGpuEnabled(true)
+                setShowNotification(false)
+                setTimeout(() => {
+                  validateSettings()
+                }, 300)
+              } else {
+                saveSettings({ runMode: 'cpu' })
+                setGpuEnabled(false)
+              }
+            }}
+          />
         </div>
-        <Switch
-          checked={gpuEnabled}
-          onCheckedChange={(e: boolean) => {
-            if (e === true) {
-              saveSettings({ runMode: 'gpu' })
-              setGpuEnabled(true)
-              setShowNotification(false)
-              setTimeout(() => {
-                validateSettings()
-              }, 300)
-            } else {
-              saveSettings({ runMode: 'cpu' })
-              setGpuEnabled(false)
-            }
-          }}
-        />
-      </div>
+      )}
       {/* Experimental */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="w-4/5 flex-shrink-0 space-y-1.5">
