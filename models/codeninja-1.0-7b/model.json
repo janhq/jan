@@ -4,7 +4,7 @@
     "object": "model",
     "name": "CodeNinja 7B Q4",
     "version": "1.0",
-    "description": "CodeNinja is an enhanced version of the renowned model openchat/openchat-3.5-1210. It is designed to be an indispensable tool for coders",
+    "description": "CodeNinja is finetuned on openchat/openchat-3.5-1210. It is good for codding tasks",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
