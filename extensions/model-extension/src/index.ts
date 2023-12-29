@@ -8,8 +8,8 @@ import {
   InferenceEngine,
   joinPath,
 } from '@janhq/core'
-import { basename } from 'path'
 import { ModelExtension, Model } from '@janhq/core'
+import { baseName } from '@janhq/core/.'
 
 /**
  * A extension for models
@@ -34,7 +34,7 @@ export default class JanModelExtension implements ModelExtension {
    * Called when the extension is loaded.
    * @override
    */
-  onLoad(): void {
+  async onLoad() {
     this.copyModelsToHomeDir()
   }
 
@@ -48,7 +48,7 @@ export default class JanModelExtension implements ModelExtension {
     try {
       // list all of the files under the home directory
 
-      if (fs.existsSync(JanModelExtension._homeDir)) {
+      if (await fs.existsSync(JanModelExtension._homeDir)) {
         // ignore if the model is already downloaded
         console.debug('Models already persisted.')
         return
@@ -62,7 +62,7 @@ export default class JanModelExtension implements ModelExtension {
       const srcPath = await joinPath([resourePath, 'models'])
 
       const userSpace = await getUserSpace()
-      const destPath = await joinPath([userSpace, JanModelExtension._homeDir])
+      const destPath = await joinPath([userSpace, 'models'])
 
       await fs.syncFile(srcPath, destPath)
 
@@ -98,7 +98,7 @@ export default class JanModelExtension implements ModelExtension {
 
     // try to retrieve the download file name from the source url
     // if it fails, use the model ID as the file name
-    const extractedFileName = basename(model.source_url)
+    const extractedFileName = await model.source_url.split('/').pop()
     const fileName = extractedFileName
       .toLowerCase()
       .endsWith(JanModelExtension._supportedModelFormat)

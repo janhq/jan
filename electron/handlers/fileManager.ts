@@ -2,8 +2,8 @@ import { ipcMain } from 'electron'
 // @ts-ignore
 import reflect from '@alumna/reflect'
 
-import { FileManagerRoute, getResourcePath } from '@janhq/core'
-import { userSpacePath } from './../utils/path'
+import { FileManagerRoute } from '@janhq/core'
+import { userSpacePath, getResourcePath } from './../utils/path'
 
 /**
  * Handles file system extensions operations.

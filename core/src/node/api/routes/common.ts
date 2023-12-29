@@ -1,6 +1,6 @@
 import { AppRoute } from '../../../api'
 import { HttpServer } from '../HttpServer'
-import { join } from 'path'
+import { basename, join } from 'path'
 import {
   chatCompletions,
   deleteBuilder,
@@ -36,7 +36,11 @@ export const commonRouter = async (app: HttpServer) => {
   // App Routes
   app.post(`/app/${AppRoute.joinPath}`, async (request: any, reply: any) => {
     const args = JSON.parse(request.body) as any[]
-    console.debug('joinPath: ', ...args[0])
     reply.send(JSON.stringify(join(...args[0])))
+  })
+
+  app.post(`/app/${AppRoute.baseName}`, async (request: any, reply: any) => {
+    const args = JSON.parse(request.body) as any[]
+    reply.send(JSON.stringify(basename(args[0])))
   })
 }
