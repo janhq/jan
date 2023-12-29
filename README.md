@@ -98,8 +98,8 @@ _Video: Jan v0.4.0 on Mac Air M2, 16GB Ventura_
 - [API reference](https://jan.ai/api-reference/)
 - [Specs](https://jan.ai/specs/)
 
-#### Nitro:
-Nitro is a high-efficiency C++ inference engine for edge computing, powering Jan. It is lightweight and embeddable, ideal for product integration.
+#### Nitro
+Nitro is a high-efficiency C++ inference engine for edge computing. It is lightweight and embeddable, and can be used on its own within your own projects.
 - [Nitro Website](https://nitro.jan.ai)
 - [Nitro Github](https://github.com/janhq/nitro)
 - [Documentation](https://nitro.jan.ai/docs)
@@ -176,19 +176,21 @@ This will build the app MacOS m1/m2 for production (with code signing already do
 
 ## Nightly Build
 
-Nightly build is a process where the software is built automatically every night. This helps in detecting and fixing bugs early in the development cycle. The process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
-
-You can join our Discord server [here](https://discord.gg/FTk2MvZwJH) and go to channel [github-jan](https://discordapp.com/channels/1107178041848909847/1148534730359308298) to monitor the build process.
+Our nightly build process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
 
 The nightly build is triggered at 2:00 AM UTC every day.
 
-The nightly build can be downloaded from the url notified in the Discord channel. Please access the url from the browser and download the build artifacts from there.
+Getting on Nightly: 
+1. Join our Discord server [here](https://discord.gg/FTk2MvZwJH) and go to channel [github-jan](https://discordapp.com/channels/1107178041848909847/1148534730359308298).
+2. Download the build artifacts from the channel.
+3. Subsequently, to get the latest nightly, just quit and restart the app.
+4. Upon app restart, you will be automatically prompted to update to the latest nightly build.
 
 ## Manual Build
 
-Manual build is a process where the software is built manually by the developers. This is usually done when a new feature is implemented or a bug is fixed. The process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
+Stable releases are triggered by manual builds. This is usually done for new features or a bug fixes. 
 
-It is similar to the nightly build process, except that it is triggered manually by the developers.
+The process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
 
 ## Acknowledgements
 
