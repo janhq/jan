@@ -33,5 +33,4 @@ function captureAppVersionAndOS() {
   posthog.capture(AnalyticsEvent.Ping, properties)
 }
 
-// Example usage
 captureAppVersionAndOS()
