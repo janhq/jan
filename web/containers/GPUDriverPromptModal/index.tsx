@@ -36,11 +36,11 @@ const GPUDriverPrompt: React.FC = () => {
       <Modal open={showNotification} onOpenChange={openChanged}>
         <ModalContent>
           <ModalHeader>
-            <ModalTitle>Missing Cuda Toolkit</ModalTitle>
+            <ModalTitle>Missing Nvidia Driver and Cuda Toolkit</ModalTitle>
           </ModalHeader>
           <p>
-            It seems like you are missing Cuda Toolkit. Please follow the
-            instructions on the{' '}
+            It seems like you are missing Nvidia Driver or Cuda Toolkit or both.
+            Please follow the instructions on the{' '}
             <span
               className="cursor-pointer text-blue-600"
               onClick={() =>
@@ -48,7 +48,17 @@ const GPUDriverPrompt: React.FC = () => {
               }
             >
               NVidia Cuda Toolkit Installation Page
+            </span>{' '}
+            and the{' '}
+            <span
+              className="cursor-pointer text-blue-600"
+              onClick={() =>
+                openExternalUrl('https://www.nvidia.com/Download/index.aspx')
+              }
+            >
+              Nvidia Driver Installation Page
             </span>
+            .
           </p>
           <div className="flex items-center space-x-2">
             <input

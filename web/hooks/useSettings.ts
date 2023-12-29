@@ -20,8 +20,8 @@ export const useSettings = () => {
       if (
         settings &&
         settings.notify &&
-        settings.nvidia_driver?.exist &&
-        !settings.cuda?.exist
+        ((settings.nvidia_driver?.exist && !settings.cuda?.exist) ||
+          !settings.nvidia_driver?.exist)
       ) {
         setShowNotification(true)
       }

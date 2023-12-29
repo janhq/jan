@@ -31,11 +31,9 @@ export class ExtensionManager {
    * Loads all registered extension.
    */
   load() {
-    this.listExtensions()
-      .map((e) => e.onLoad())
-      .reduce((p, load) => {
-        return p.then(load)
-      }, Promise.resolve())
+    this.listExtensions().forEach((ext) => {
+      ext.onLoad()
+    })
   }
 
   /**
