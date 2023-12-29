@@ -7,7 +7,7 @@ import {
   ThreadState,
   Model,
 } from '@janhq/core'
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { generateThreadId } from '@/utils/thread'
 
@@ -21,6 +21,8 @@ import {
   updateThreadAtom,
   setThreadModelRuntimeParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
+
+import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
   // create thread state for this new thread
@@ -45,6 +47,7 @@ export const useCreateNewThread = () => {
   const createNewThread = useSetAtom(createNewThreadAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const updateThread = useSetAtom(updateThreadAtom)
+  const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const setThreadModelRuntimeParams = useSetAtom(
     setThreadModelRuntimeParamsAtom
   )
@@ -79,7 +82,7 @@ export const useCreateNewThread = () => {
         settings: {},
         parameters: {
           stream: true,
-          max_tokens: 1024,
+          max_tokens: 4096,
         },
         engine: undefined,
       },
@@ -99,6 +102,9 @@ export const useCreateNewThread = () => {
     // add the new thread on top of the thread list to the state
     createNewThread(thread)
     setActiveThreadId(thread.id)
+
+    // Delete the file upload state
+    setFileUpload([])
   }
 
   function updateThreadMetadata(thread: Thread) {
