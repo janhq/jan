@@ -5,9 +5,6 @@ const tcpPortUsed = require("tcp-port-used");
 const fetchRetry = require("fetch-retry")(global.fetch);
 const si = require("systeminformation");
 
-const log = require("electron-log");
-import { join } from "path";
-
 // The PORT to use for the Nitro subprocess
 const PORT = 3928;
 const LOCAL_HOST = "127.0.0.1";
@@ -55,26 +52,37 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
       wrapper.model.settings.ai_prompt = prompt.ai_prompt;
     }
 
+    const modelFolderPath = path.join(
+      wrapper.userSpacePath,
+      "models",
+      wrapper.model.id
+    );
     const settings = {
-      llama_model_path: join(wrapper.modelFolderPath, wrapper.model.filename),
       ...wrapper.model.settings,
+      llama_model_path: path.join(
+        modelFolderPath,
+        wrapper.model.settings.llama_model_path
+      ),
       cpu_threads: nitroResourceProbe.numCpuPhysicalCore,
     };
 
-    if (wrapper.model.settings.mmproj){
-      settings.mmproj = join(wrapper.modelFolderPath, wrapper.model.settings.mmproj);
+    if (wrapper.model.settings.mmproj) {
+      settings.mmproj = path.join(
+        modelFolderPath,
+        wrapper.model.settings.mmproj
+      );
     }
-    
+
+    currentSettings = settings;
+
     return loadModel(nitroResourceProbe);
   }
 }
 
 async function loadModel(nitroResourceProbe: any | undefined) {
-  // Gather system information for CPU physical cores and memory
-  if (!nitroResourceProbe) nitroResourceProbe = await getResourcesInfo();
   return killSubprocess()
     .then(() => spawnNitroProcess(nitroResourceProbe))
-    .then(() => loadLLMModel(currentSettings))
+    .then(() => loadLLMModel())
     .then(validateModelStatus)
     .catch((err) => {
       console.error("error: ", err);
@@ -129,13 +137,13 @@ function promptTemplateConverter(promptTemplate) {
  * Loads a LLM model into the Nitro subprocess by sending a HTTP POST request.
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
-function loadLLMModel(settings): Promise<Response> {
+function loadLLMModel(): Promise<Response> {
   return fetchRetry(NITRO_HTTP_LOAD_MODEL_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(settings),
+    body: JSON.stringify(currentSettings),
     retries: 3,
     retryDelay: 500,
   });
