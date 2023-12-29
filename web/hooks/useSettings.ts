@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react'
 
 import { fs, joinPath } from '@janhq/core'
+import { atom, useAtom } from 'jotai'
+
+export const isShowNotificationAtom = atom<boolean>(false)
 
 export const useSettings = () => {
-  const [isShowNotification, setIsShowNotification] = useState(false)
   const [isGPUModeEnabled, setIsGPUModeEnabled] = useState(false) // New state for GPU mode
+  const [showNotification, setShowNotification] = useAtom(
+    isShowNotificationAtom
+  )
 
   useEffect(() => {
+    setTimeout(() => validateSettings, 3000)
+  }, [])
+
+  const validateSettings = async () => {
     readSettings().then((settings) => {
       if (
         settings &&
@@ -14,13 +23,13 @@ export const useSettings = () => {
         settings.nvidia_driver?.exist &&
         !settings.cuda?.exist
       ) {
-        setIsShowNotification(true)
+        setShowNotification(true)
       }
 
       // Check if run_mode is 'gpu' or 'cpu' and update state accordingly
       setIsGPUModeEnabled(settings?.run_mode === 'gpu')
     })
-  }, [])
+  }
 
   const readSettings = async () => {
     if (!window?.core?.api) {
@@ -47,5 +56,12 @@ export const useSettings = () => {
     await fs.writeFileSync(settingsFile, JSON.stringify(settings))
   }
 
-  return { isShowNotification, isGPUModeEnabled, readSettings, saveSettings }
+  return {
+    showNotification,
+    isGPUModeEnabled,
+    readSettings,
+    saveSettings,
+    setShowNotification,
+    validateSettings,
+  }
 }
