@@ -75,7 +75,7 @@ const Providers = (props: PropsWithChildren) => {
             <FeatureToggleWrapper>
               <EventListenerWrapper>
                 <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
-                <GPUDriverPrompt />
+                {!isMac && <GPUDriverPrompt />}
               </EventListenerWrapper>
               <Toaster position="top-right" />
             </FeatureToggleWrapper>
