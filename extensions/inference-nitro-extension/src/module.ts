@@ -24,7 +24,7 @@ const NVIDIA_INFO_FILE = path.join(
 );
 
 const DEFALT_SETTINGS = {
-  "notify": false,
+  "notify": true,
   "run_mode": "cpu",
   "nvidia_driver": {
     "exist": false,
@@ -65,7 +65,6 @@ async function updateNvidiaDriverInfo(): Promise<void> {
       } catch (error) {
         data = DEFALT_SETTINGS;
       }
-      // let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
 
       if (!error) {
         const firstLine = stdout.split("\n")[0].trim();
@@ -115,8 +114,10 @@ function updateCudaExistence() {
     data = DEFALT_SETTINGS;
   }
 
-  // let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
   data["cuda"].exist = cudaExists;
+  if (cudaExists) {
+    data.run_mode = "gpu";
+  }
   writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
 }
 
@@ -130,7 +131,6 @@ async function updateGpuInfo(): Promise<void> {
       } catch (error) {
         data = DEFALT_SETTINGS;
       }
-      // let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
 
       if (!error) {
         // Get GPU info and gpu has higher memory first
