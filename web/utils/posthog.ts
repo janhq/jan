@@ -45,7 +45,7 @@ export const trackEvent = (name: string, properties?: Properties, appVersion?: s
 
   // Include app version if available
   if (appVersion) {
-    eventProperties = { ...eventProperties, app_version: appVersion };
+    eventProperties = { ...eventProperties, app_version: VERSION };
   }
 
   posthog.capture(name, eventProperties);
