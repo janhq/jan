@@ -230,7 +230,7 @@ async function loadModel(nitroResourceProbe: any | undefined) {
       // wait for 500ms to make sure the port is free for windows platform
       .then(() => {
         if (process.platform === "win32") {
-          return sleep(500);
+          return sleep(1500);
         } else {
           return sleep(0);
         }
