@@ -119,8 +119,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       }
     }
   }
-  function handleGpuCompatiblePrompt() {}
-  function handleGpuDriverMissingPrompt() {}
 
   useEffect(() => {
     if (window.core?.events) {
@@ -129,8 +127,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       events.on(EventName.OnModelReady, handleModelReady)
       events.on(EventName.OnModelFail, handleModelFail)
       events.on(EventName.OnModelStopped, handleModelStopped)
-      events.on('OnGPUCompatiblePrompt', handleGpuCompatiblePrompt)
-      events.on('OnGPUDriverMissingPrompt', handleGpuDriverMissingPrompt)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
