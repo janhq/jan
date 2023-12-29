@@ -1,16 +1,20 @@
 {
   "name": "jan-mobile",
+  "private": true,
   "version": "1.0.0",
   "description": "Jan mobile app, powered by Capacitor",
-  "main": "index.js",
+  "type": "module",
   "keywords": [
     "capacitor",
     "mobile"
   ],
   "scripts": {
-    "start": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test.e2e": "cypress run",
+    "test.unit": "vitest",
+    "lint": "eslint"
   },
   "dependencies": {
     "@capacitor/android": "latest",
