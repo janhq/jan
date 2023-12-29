@@ -53,7 +53,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  async onLoad(): Promise<void> {
+  async onLoad() {
     if (!(await fs.existsSync(JanInferenceOpenAIExtension._homeDir))) {
       await fs
         .mkdirSync(JanInferenceOpenAIExtension._homeDir)
@@ -77,7 +77,6 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     events.on(EventName.OnInferenceStopped, () => {
       JanInferenceOpenAIExtension.handleInferenceStopped(this);
     });
-    Promise.resolve();
   }
 
   /**
