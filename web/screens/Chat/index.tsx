@@ -5,6 +5,7 @@ import { Button, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
 
+import { debounce } from 'lodash'
 import { StopCircle } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
@@ -82,16 +83,20 @@ const ChatScreen = () => {
     }
   }, [currentPrompt])
 
-  const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter') {
-      if (!e.shiftKey) {
-        e.preventDefault()
-        if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
-          sendChatMessage()
-        else onStopInferenceClick()
+  const onKeyDown = debounce(
+    async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter') {
+        if (!e.shiftKey) {
+          e.preventDefault()
+          if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
+            sendChatMessage()
+          else onStopInferenceClick()
+        }
       }
-    }
-  }
+    },
+    50,
+    { leading: false, trailing: true }
+  )
 
   const onStopInferenceClick = async () => {
     events.emit(EventName.OnInferenceStopped, {})
