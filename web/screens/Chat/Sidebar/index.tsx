@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useContext } from 'react'
 
 import { getUserSpace, openFileExplorer, joinPath } from '@janhq/core'
 
@@ -13,6 +13,8 @@ import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
@@ -35,6 +37,7 @@ const Sidebar: React.FC = () => {
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
   const threadStates = useAtomValue(threadStatesAtom)
+  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
 
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const modelSettingParams = toSettingParams(activeModelParams)
@@ -197,7 +200,7 @@ const Sidebar: React.FC = () => {
             </div>
           </div>
         </CardSidebar>
-        {Object.keys(modelSettingParams).length ? (
+        {experimentalFeatureEnabed && Object.keys(modelSettingParams).length ? (
           <CardSidebar
             title="Engine"
             onRevealInFinderClick={onReviewInFinderClick}
