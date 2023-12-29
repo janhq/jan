@@ -2,6 +2,8 @@ import React, { useEffect } from 'react'
 import { useState } from 'react'
 
 import { getBase64 } from '@/utils/base64'
+import { useAtom } from 'jotai'
+import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 type Props = {
   file: File
@@ -9,6 +11,7 @@ type Props = {
 
 const ImageUploadPreview: React.FC<Props> = ({ file }) => {
   const [base64, setBase64] = useState<string | undefined>()
+  const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
 
   useEffect(() => {
     getBase64(file)
@@ -20,7 +23,14 @@ const ImageUploadPreview: React.FC<Props> = ({ file }) => {
     return <div>Loading..</div>
   }
 
-  return <img src={base64} alt="" />
+  const onDeleteClick = () => {
+    setFileUpload([])
+  }
+
+  return <div className="flex flex-col">
+  <div onClick={onDeleteClick}>Delete</div>
+  <img src={base64} alt="" />
+  </div>
 }
 
 export default React.memo(ImageUploadPreview)
