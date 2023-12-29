@@ -81,16 +81,14 @@ Download the latest version of Jan at https://jan.ai/ or visit the **[GitHub Rel
 
 ## Demo
 
-<p align="center">
-  <video src="https://github.com/janhq/jan/assets/89722390/43adfddc-7980-4ae6-b544-719f04660dd7"> 
-  </video>
-</p>
+![Demo](/demo.gif)
 
-
-_Video: Jan v0.4.0 on Mac Air M2, 16GB Ventura_
+_Realtime Video: Jan v0.4.3-nightly on a Mac M1, 16GB Sonoma 14_
 
 ## Quicklinks
+
 #### Jan
+
 - [Jan website](https://jan.ai/)
 - [Jan Github](https://github.com/janhq/jan)
 - [User Guides](https://jan.ai/docs)
@@ -99,7 +97,9 @@ _Video: Jan v0.4.0 on Mac Air M2, 16GB Ventura_
 - [Specs](https://jan.ai/specs/)
 
 #### Nitro
+
 Nitro is a high-efficiency C++ inference engine for edge computing. It is lightweight and embeddable, and can be used on its own within your own projects.
+
 - [Nitro Website](https://nitro.jan.ai)
 - [Nitro Github](https://github.com/janhq/nitro)
 - [Documentation](https://nitro.jan.ai/docs)
@@ -118,21 +118,22 @@ To reset your installation:
    ```
 
    This will remove all build artifacts and cached files:
+
    - Delete Jan from your `/Applications` folder
    - Clear Application cache in `/Users/$(whoami)/Library/Caches/jan`
 
 2. Use the following commands to remove any dangling backend processes:
 
-    ```sh
-    ps aux | grep nitro
-    ```
+   ```sh
+   ps aux | grep nitro
+   ```
 
-    Look for processes like "nitro" and "nitro_arm_64," and kill them one by one with:
+   Look for processes like "nitro" and "nitro_arm_64," and kill them one by one with:
 
-    ```sh
-    kill -9 <PID>
-    ```
-    
+   ```sh
+   kill -9 <PID>
+   ```
+
 ## Contributing
 
 Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) file
@@ -180,7 +181,8 @@ Our nightly build process for this project is defined in [`.github/workflows/jan
 
 The nightly build is triggered at 2:00 AM UTC every day.
 
-Getting on Nightly: 
+Getting on Nightly:
+
 1. Join our Discord server [here](https://discord.gg/FTk2MvZwJH) and go to channel [github-jan](https://discordapp.com/channels/1107178041848909847/1148534730359308298).
 2. Download the build artifacts from the channel.
 3. Subsequently, to get the latest nightly, just quit and restart the app.
@@ -188,7 +190,7 @@ Getting on Nightly:
 
 ## Manual Build
 
-Stable releases are triggered by manual builds. This is usually done for new features or a bug fixes. 
+Stable releases are triggered by manual builds. This is usually done for new features or a bug fixes.
 
 The process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
 
