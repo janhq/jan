@@ -4,7 +4,7 @@
     "object": "model",
     "name": "Trinity-v1 7B Q4",
     "version": "1.0",
-    "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
+    "description": "Please use the latest version Trinity v1.2 for the best experience. Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
