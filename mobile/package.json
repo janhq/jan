@@ -17,11 +17,35 @@
     "@capacitor/camera": "latest",
     "@capacitor/core": "latest",
     "@capacitor/ios": "latest",
-    "@capacitor/splash-screen": "latest"
+    "@capacitor/splash-screen": "latest",
+    "@ionic/react": "^7.0.0",
+    "@ionic/react-router": "^7.0.0",
+    "@types/react-router": "^5.1.20",
+    "@types/react-router-dom": "^5.3.3",
+    "ionicons": "^7.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router": "^5.3.4",
+    "react-router-dom": "^5.3.4"
   },
   "devDependencies": {
-    "@capacitor/cli": "latest",
-    "vite": "^2.9.13"
+    "@capacitor/cli": "5.6.0",
+    "@testing-library/dom": ">=7.21.4",
+    "@testing-library/jest-dom": "^5.16.5",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/user-event": "^14.4.3",
+    "@types/react": "^18.0.27",
+    "@types/react-dom": "^18.0.10",
+    "@vitejs/plugin-legacy": "^5.0.0",
+    "@vitejs/plugin-react": "^4.0.1",
+    "cypress": "^13.5.0",
+    "eslint": "^8.35.0",
+    "eslint-plugin-react": "^7.32.2",
+    "jsdom": "^22.1.0",
+    "terser": "^5.4.0",
+    "typescript": "^5.1.6",
+    "vite": "^5.0.10",
+    "vitest": "^0.34.6"
   },
   "author": "",
   "license": "ISC"

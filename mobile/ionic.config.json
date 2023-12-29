@@ -1,0 +1,7 @@
+{
+  "name": "jan-mobile",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "react-vite"
+}
