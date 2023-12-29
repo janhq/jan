@@ -4,6 +4,7 @@ import { fs, joinPath } from '@janhq/core'
 
 export const useSettings = () => {
   const [isShowNotification, setIsShowNotification] = useState(false)
+  const [isGPUModeEnabled, setIsGPUModeEnabled] = useState(false) // New state for GPU mode
 
   useEffect(() => {
     readSettings().then((settings) => {
@@ -15,6 +16,9 @@ export const useSettings = () => {
       ) {
         setIsShowNotification(true)
       }
+
+      // Check if run_mode is 'gpu' or 'cpu' and update state accordingly
+      setIsGPUModeEnabled(settings?.run_mode === 'gpu')
     })
   }, [])
 
@@ -25,9 +29,6 @@ export const useSettings = () => {
     const settingsFile = await joinPath(['file://settings', 'settings.json'])
     if (await fs.existsSync(settingsFile)) {
       const settings = await fs.readFileSync(settingsFile, 'utf-8')
-      if (settings) {
-        return JSON.parse(settings)
-      }
       return typeof settings === 'object' ? settings : JSON.parse(settings)
     }
     return {}
@@ -45,5 +46,6 @@ export const useSettings = () => {
     if (notify != null) settings.notify = notify
     await fs.writeFileSync(settingsFile, JSON.stringify(settings))
   }
-  return { isShowNotification, readSettings, saveSettings }
+
+  return { isShowNotification, isGPUModeEnabled, readSettings, saveSettings }
 }

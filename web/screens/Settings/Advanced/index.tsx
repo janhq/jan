@@ -19,7 +19,7 @@ const Advanced = () => {
     readSettings().then((settings) => {
       setGpuEnabled(settings.run_mode === 'gpu')
     })
-  })
+  }, [])
 
   return (
     <div className="block w-full">
@@ -35,12 +35,14 @@ const Advanced = () => {
             </p>
           </div>
           <Switch
-            defaultChecked={gpuEnabled}
+            checked={gpuEnabled}
             onCheckedChange={(e: boolean) => {
               if (e === true) {
                 saveSettings({ runMode: 'gpu' })
+                setGpuEnabled(true)
               } else {
                 saveSettings({ runMode: 'cpu' })
+                setGpuEnabled(false)
               }
             }}
           />
