@@ -59,9 +59,11 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  async onLoad(): Promise<void> {
+  async onLoad() {
     if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir))) {
-      await fs.mkdirSync(JanInferenceNitroExtension._homeDir).catch((err) => console.debug(err));
+      await fs
+        .mkdirSync(JanInferenceNitroExtension._homeDir)
+        .catch((err) => console.debug(err));
     }
 
     if (!(await fs.existsSync(JanInferenceNitroExtension._settingsDir)))
@@ -87,21 +89,6 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
 
     // Attempt to fetch nvidia info
     await executeOnMain(MODULE, "updateNvidiaInfo", {});
-
-    const gpuDriverConf = await fs.readFileSync(
-      join(JanInferenceNitroExtension._settingsDir, "settings.json")
-    );
-    if (gpuDriverConf.notify && gpuDriverConf.run_mode === "cpu") {
-      // Driver is fully installed, but not in use
-      if (gpuDriverConf.nvidia_driver?.exist && gpuDriverConf.cuda?.exist) {
-        events.emit("OnGPUCompatiblePrompt", {});
-        // Prompt user to switch
-      } else if (gpuDriverConf.nvidia_driver?.exist) {
-        // Prompt user to install cuda toolkit
-        events.emit("OnGPUDriverMissingPrompt", {});
-      }
-    }
-    Promise.resolve()
   }
 
   /**
