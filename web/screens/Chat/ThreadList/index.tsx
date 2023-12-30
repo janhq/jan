@@ -136,6 +136,7 @@ export default function ThreadList() {
                             <Button
                               themes="danger"
                               onClick={() => cleanThread(thread.id)}
+                              autoFocus
                             >
                               Yes
                             </Button>
