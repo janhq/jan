@@ -146,15 +146,15 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 ### Instructions
 
-1. **Clone the Repository:**
+1. **Clone the repository and prepare:**
 
 ```bash
    git clone https://github.com/janhq/jan
-   git checkout DESIRED_BRANCH
    cd jan
+   git checkout -b DESIRED_BRANCH
 ```
 
-2. **Run development and Using Jan Desktop**
+2. **Run development and use Jan Desktop**
 
    ```
    make dev
@@ -165,10 +165,7 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 ### For production build
 
 ```bash
-# Do step 1 and 2 in previous section
-git clone https://github.com/janhq/jan
-cd jan
-
+# Do steps 1 and 2 in the previous section
 # Build the app
 make build
 ```
@@ -203,7 +200,7 @@ Jan builds on top of other open-source projects:
 
 ## Contact
 
-- Bugs & requests: file a Github ticket
+- Bugs & requests: file a GitHub ticket
 - For discussion: join our Discord [here](https://discord.gg/FTk2MvZwJH)
 - For business inquiries: email hello@jan.ai
 - For jobs: please email hr@jan.ai
