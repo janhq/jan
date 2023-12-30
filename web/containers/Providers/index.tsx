@@ -8,6 +8,7 @@ import { TooltipProvider } from '@janhq/uikit'
 
 import { PostHogProvider } from 'posthog-js/react'
 
+import GPUDriverPrompt from '@/containers/GPUDriverPromptModal'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 import ThemeWrapper from '@/containers/Providers/Theme'
@@ -25,10 +26,10 @@ import { instance } from '@/utils/posthog'
 import { extensionManager } from '@/extension'
 
 const Providers = (props: PropsWithChildren) => {
+  const { children } = props
+
   const [setupCore, setSetupCore] = useState(false)
   const [activated, setActivated] = useState(false)
-
-  const { children } = props
 
   async function setupExtensions() {
     // Register all active extensions
@@ -74,6 +75,7 @@ const Providers = (props: PropsWithChildren) => {
             <FeatureToggleWrapper>
               <EventListenerWrapper>
                 <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+                {!isMac && <GPUDriverPrompt />}
               </EventListenerWrapper>
               <Toaster position="top-right" />
             </FeatureToggleWrapper>

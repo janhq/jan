@@ -1,11 +1,9 @@
 import { app, ipcMain, shell, nativeTheme } from 'electron'
-import { ModuleManager } from './../managers/module'
-import { join } from 'path'
-import { ExtensionManager } from './../managers/extension'
+import { join, basename } from 'path'
 import { WindowManager } from './../managers/window'
 import { userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
-import { getResourcePath } from './../utils/path'
+import { ExtensionManager, ModuleManager } from '@janhq/core/node'
 
 export function handleAppIPCs() {
   /**
@@ -24,10 +22,6 @@ export function handleAppIPCs() {
    */
   ipcMain.handle(AppRoute.openAppDirectory, async (_event) => {
     shell.openPath(userSpacePath)
-  })
-
-  ipcMain.handle(AppRoute.getResourcePath, async (_event) => {
-    return getResourcePath()
   })
 
   /**
@@ -53,6 +47,13 @@ export function handleAppIPCs() {
    */
   ipcMain.handle(AppRoute.joinPath, async (_event, paths: string[]) =>
     join(...paths)
+  )
+
+  /**
+   * Retrieve basename from given path, respect to the current OS.
+   */
+  ipcMain.handle(AppRoute.baseName, async (_event, path: string) =>
+    basename(path)
   )
 
   /**
