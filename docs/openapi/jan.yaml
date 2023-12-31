@@ -14,7 +14,7 @@ license:
   name: AGPLv3
   url: "https://github.com/janhq/nitro/blob/main/LICENSE"
 servers:
-  - url: "https://localhost:1337/v1/"
+  - url: "http://localhost:1337/v1/"
 tags:
   - name: Models
     description: List and describe the various models available in the API.
@@ -100,7 +100,7 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl https://localhost:1337/v1/models
+            curl http://localhost:1337/v1/models
     post:
       operationId: downloadModel
       tags:
@@ -118,7 +118,7 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl -X POST https://localhost:1337/v1/models
+            curl -X POST http://localhost:1337/v1/models
   "/models/{model_id}":
     get:
       operationId: retrieveModel
@@ -149,7 +149,7 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl https://localhost:1337/v1/models/{model_id}
+            curl http://localhost:1337/v1/models/{model_id}
     delete:
       operationId: deleteModel
       tags:
@@ -178,7 +178,7 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl -X DELETE https://localhost:1337/v1/models/{model_id}
+            curl -X DELETE http://localhost:1337/v1/models/{model_id}
   "/models/{model_id}/start":
     put:
       operationId: startModel
@@ -206,7 +206,7 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl -X PUT https://localhost:1337/v1/models/{model_id}/start
+            curl -X PUT http://localhost:1337/v1/models/{model_id}/start
   "/models/{model_id}/stop":
     put:
       operationId: stopModel
@@ -233,7 +233,7 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl -X PUT https://localhost:1337/v1/models/{model_id}/stop
+            curl -X PUT http://localhost:1337/v1/models/{model_id}/stop
   /threads:
     post:
       operationId: createThread
