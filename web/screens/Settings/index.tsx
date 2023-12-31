@@ -156,8 +156,7 @@ const SettingsScreen = () => {
                   >
                     <span
                       className={twMerge(
-                        activePreferenceExtension === 'Models' &&
-                          'relative z-10'
+                        activeStaticMenu === 'Models' && 'relative z-10'
                       )}
                     >
                       Models
