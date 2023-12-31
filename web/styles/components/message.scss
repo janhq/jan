@@ -1,5 +1,7 @@
 .message {
   @apply text-black dark:text-gray-300;
+  white-space: pre-line;
+
   ul,
   ol {
     list-style: auto;
@@ -9,4 +11,8 @@
 
 button[class*='react-scroll-to-bottom--'] {
   display: none;
+}
+
+.code-block {
+  white-space: normal;
 }
