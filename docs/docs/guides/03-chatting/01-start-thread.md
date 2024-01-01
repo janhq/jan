@@ -17,7 +17,7 @@ keywords:
   ]
 ---
 
-A thread is the conversations between an assistant and a user. This tutorial will walk you through the process of starting a thread on Jan.
+Jan persists your app usage locally on your filesystem, so your data never leaves your computer. This guide will walk you through how to direct manage your application files and start a thread.
 
 <br></br>
 
@@ -32,7 +32,6 @@ A thread title acts as a name for your thread. It appears on the left side of th
 ### Setting Assistant Instructions
 
 On Jan, you can set assistant instructions that guide the responses of your assistant. These instructions are set at the conversation level. Globally, as default, assistant instructions will apply to all conversations in this thread unless you change it at the conversation level. In one thread, you can change the assistant instructions for each conversation. If you do not set assistant instructions, Jan will set it to empty as default.
-
 
 ### Choosing a Model
 
