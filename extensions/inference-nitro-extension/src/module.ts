@@ -394,9 +394,9 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
     } else {
       let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
       if (nvida_info["run_mode"] === "cpu") {
-        binaryFolder = path.join(binaryFolder, "win-cpu");
+        binaryFolder = path.join(binaryFolder, "linux-cpu");
       } else {
-        binaryFolder = path.join(binaryFolder, "win-cuda");
+        binaryFolder = path.join(binaryFolder, "linux-cuda");
         cudaVisibleDevices = nvida_info["gpu_highest_vram"];
       }
       binaryName = "nitro";
