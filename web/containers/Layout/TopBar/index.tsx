@@ -1,18 +1,31 @@
+import { useState } from 'react'
+
+import { getUserSpace, joinPath, openFileExplorer } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { PanelLeftIcon, PenSquareIcon, PanelRightIcon } from 'lucide-react'
+import {
+  PanelLeftIcon,
+  PenSquareIcon,
+  PanelRightIcon,
+  MoreVerticalIcon,
+  FolderOpenIcon,
+  Code2Icon,
+} from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
 
 import CommandListDownloadedModel from '@/containers/Layout/TopBar/CommandListDownloadedModel'
 import CommandSearch from '@/containers/Layout/TopBar/CommandSearch'
 
 import { MainViewState } from '@/constants/screens'
 
+import { useClickOutside } from '@/hooks/useClickOutside'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useGetAssistants, { getAssistants } from '@/hooks/useGetAssistants'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
 
 const TopBar = () => {
   const activeThread = useAtomValue(activeThreadAtom)
@@ -20,6 +33,13 @@ const TopBar = () => {
   const { requestCreateNewThread } = useCreateNewThread()
   const { assistants } = useGetAssistants()
   const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
+  const showing = useAtomValue(showRightSideBarAtom)
+  const threadStates = useAtomValue(threadStatesAtom)
+  const [more, setMore] = useState(false)
+  const [menu, setMenu] = useState<HTMLDivElement | null>(null)
+  const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
+
+  useClickOutside(() => setMore(false), null, [menu, toggle])
 
   const titleScreen = (viewStateName: MainViewState) => {
     switch (viewStateName) {
@@ -47,15 +67,45 @@ const TopBar = () => {
     }
   }
 
+  const onReviewInFinderClick = async () => {
+    if (!activeThread) return
+    const activeThreadState = threadStates[activeThread.id]
+    if (!activeThreadState.isFinishInit) {
+      alert('Thread is not started yet')
+      return
+    }
+
+    const userSpace = await getUserSpace()
+    let filePath = undefined
+    filePath = await joinPath(['threads', activeThread.id])
+
+    if (!filePath) return
+    const fullPath = await joinPath([userSpace, filePath])
+    openFileExplorer(fullPath)
+  }
+
+  const onViewJsonClick = async () => {
+    if (!activeThread) return
+    const activeThreadState = threadStates[activeThread.id]
+    if (!activeThreadState.isFinishInit) {
+      alert('Thread is not started yet')
+      return
+    }
+
+    const userSpace = await getUserSpace()
+    let filePath = undefined
+    filePath = await joinPath(['threads', activeThread.id, 'thread.json'])
+    if (!filePath) return
+    const fullPath = await joinPath([userSpace, filePath])
+    openFileExplorer(fullPath)
+  }
+
   return (
     <div className="fixed left-0 top-0 z-50 flex h-12 w-full border-b border-border bg-background/80 backdrop-blur-md">
       {mainViewState === MainViewState.Thread && (
-        <div className="absolute left-16 h-full w-60 border-r border-border" />
-      )}
-      <div className="relative left-16 flex w-[calc(100%-64px)] items-center justify-between space-x-4 pl-6 pr-2">
-        {mainViewState === MainViewState.Thread ? (
-          <div className="unset-drag flex space-x-8">
-            <div className="flex w-52 justify-between">
+        <div className="relative w-full">
+          <div className="absolute left-16 h-full w-60 border-r border-border">
+            <div className="flex h-full w-full items-center justify-between">
               <div className="cursor-pointer">
                 <PanelLeftIcon
                   size={20}
@@ -63,34 +113,107 @@ const TopBar = () => {
                 />
               </div>
               <div
-                className="cursor-pointer pr-2"
+                className="unset-drag cursor-pointer pr-4"
                 onClick={onCreateConversationClick}
               >
                 <PenSquareIcon size={20} className="text-muted-foreground" />
               </div>
             </div>
-            <span className="text-sm font-bold">
-              {titleScreen(mainViewState)}
-            </span>
+          </div>
+          <div className="absolute left-80 h-full">
+            <div className="flex h-full items-center">
+              <span className="text-sm font-bold">
+                {titleScreen(mainViewState)}
+              </span>
+            </div>
+          </div>
+          <div
+            className={twMerge(
+              'absolute right-0 h-full w-80',
+              showing && 'border-l border-border'
+            )}
+          >
             {activeThread && (
-              <div
-                className="unset-drag absolute right-4 cursor-pointer"
-                onClick={() => setShowRightSideBar((show) => !show)}
-              >
-                <PanelRightIcon size={20} className="text-muted-foreground" />
+              <div className="flex h-full w-52 items-center justify-between px-4">
+                {showing && (
+                  <div className="relative flex h-full items-center">
+                    <span className="mr-2 text-sm font-bold">
+                      Threads Settings
+                    </span>
+                    <div
+                      ref={setToggle}
+                      className="unset-drag cursor-pointer rounded-md p-2"
+                      onClick={() => setMore(!more)}
+                    >
+                      <MoreVerticalIcon className="h-5 w-5" />
+                    </div>
+
+                    {more && (
+                      <div
+                        className="absolute right-0 top-11 z-20 w-64 overflow-hidden rounded-lg border border-border bg-background shadow-lg"
+                        ref={setMenu}
+                      >
+                        <div
+                          className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
+                          onClick={() => {
+                            onReviewInFinderClick()
+                            setMore(false)
+                          }}
+                        >
+                          <FolderOpenIcon
+                            size={16}
+                            className="text-muted-foreground"
+                          />
+                          <span className="font-medium text-black dark:text-muted-foreground">
+                            Show in Finder
+                          </span>
+                        </div>
+                        <div
+                          className="flex cursor-pointer items-start space-x-2 px-4 py-2 hover:bg-secondary"
+                          onClick={() => {
+                            onViewJsonClick()
+                            setMore(false)
+                          }}
+                        >
+                          <Code2Icon
+                            size={16}
+                            className="mt-1 flex-shrink-0 text-muted-foreground"
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-medium text-black dark:text-muted-foreground">
+                              View as JSON
+                            </span>
+                            <span className="mt-1 text-muted-foreground">
+                              Opens thread.json. Changes affect this thread
+                              only.
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div
+                  className="unset-drag absolute right-4 cursor-pointer"
+                  onClick={() => setShowRightSideBar((show) => !show)}
+                >
+                  <PanelRightIcon size={20} className="text-muted-foreground" />
+                </div>
               </div>
             )}
           </div>
-        ) : (
-          <div>
-            <span className="text-sm font-bold">
-              {titleScreen(mainViewState)}
-            </span>
-          </div>
-        )}
-        <CommandSearch />
-        <CommandListDownloadedModel />
-      </div>
+        </div>
+      )}
+
+      {mainViewState !== MainViewState.Thread && (
+        <div className="relative left-16 flex w-[calc(100%-64px)] items-center justify-between space-x-4 pl-6 pr-2">
+          <span className="text-sm font-bold">
+            {titleScreen(mainViewState)}
+          </span>
+        </div>
+      )}
+      <CommandSearch />
+      <CommandListDownloadedModel />
     </div>
   )
 }
