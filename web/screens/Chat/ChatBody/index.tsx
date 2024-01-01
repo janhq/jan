@@ -118,7 +118,6 @@ const ChatBody: React.FC = () => {
           {messages.map((message, index) => (
             <div key={message.id}>
               <ChatItem {...message} key={message.id} />
-
               {message.status === MessageStatus.Error &&
                 index === messages.length - 1 && (
                   <div

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react'
 
 import { Slider, Input, TooltipPortal } from '@janhq/uikit'
@@ -7,12 +8,12 @@ import {
   TooltipTrigger,
   TooltipArrow,
 } from '@janhq/uikit'
-import { useAtomValue } from 'jotai'
+// import { useAtomValue } from 'jotai'
 import { InfoIcon } from 'lucide-react'
 
-import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
+// import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
-import { getActiveThreadIdAtom } from '@/helpers/atoms/Thread.atom'
+// import { getActiveThreadIdAtom } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   name: string
@@ -21,7 +22,9 @@ type Props = {
   min: number
   max: number
   step: number
-  value: number
+  value: number[]
+  onChange: (e: any) => void
+  onBlur: (e: any) => void
 }
 
 const SliderRightPanel: React.FC<Props> = ({
@@ -30,24 +33,28 @@ const SliderRightPanel: React.FC<Props> = ({
   min,
   max,
   description,
+  onChange,
+  onBlur,
   step,
   value,
 }) => {
-  const { updateModelParameter } = useUpdateModelParameters()
-  const threadId = useAtomValue(getActiveThreadIdAtom)
+  // const { updateModelParameter } = useUpdateModelParameters()
+  // const threadId = useAtomValue(getActiveThreadIdAtom)
 
-  const onValueChanged = (e: number[]) => {
-    if (!threadId) return
-    updateModelParameter(threadId, name, e[0])
-  }
+  // const onValueChanged = (e: number[]) => {
+  //   if (!threadId) return
+  //   updateModelParameter(threadId, name, e[0])
+  // }
 
   return (
     <div className="flex flex-col">
       <div className="mb-4 flex items-center gap-x-2">
-        <p className="text-sm font-semibold text-gray-600">{title}</p>
+        <p className="text-sm font-semibold text-zinc-500 dark:text-gray-300">
+          {title}
+        </p>
         <Tooltip>
           <TooltipTrigger asChild>
-            <InfoIcon size={16} className="flex-shrink-0" />
+            <InfoIcon size={16} className="flex-shrink-0 dark:text-gray-500" />
           </TooltipTrigger>
           <TooltipPortal>
             <TooltipContent side="top" className="max-w-[240px]">
@@ -60,8 +67,11 @@ const SliderRightPanel: React.FC<Props> = ({
       <div className="flex items-center gap-x-4">
         <div className="relative w-full">
           <Slider
-            value={[value]}
-            onValueChange={onValueChanged}
+            defaultValue={value}
+            onValueChange={(e) => onChange(e[0])}
+            onChange={(e) => onChange(e)}
+            onBlur={onBlur}
+            name={name}
             min={min}
             max={max}
             step={step}
@@ -78,8 +88,10 @@ const SliderRightPanel: React.FC<Props> = ({
           className="-mt-4 h-8 w-16"
           min={min}
           max={max}
-          value={String(value)}
-          onChange={(e) => onValueChanged([Number(e.target.value)])}
+          name={name}
+          value={value[0] || String(value[0])}
+          onChange={(e) => onChange([e.target.value])}
+          onBlur={onBlur}
         />
       </div>
     </div>

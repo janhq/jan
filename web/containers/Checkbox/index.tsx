@@ -9,38 +9,49 @@ import {
   TooltipTrigger,
 } from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
+// import { useAtomValue } from 'jotai'
 
 import { InfoIcon } from 'lucide-react'
 
-import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
+// import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
-import { getActiveThreadIdAtom } from '@/helpers/atoms/Thread.atom'
+// import { getActiveThreadIdAtom } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   name: string
   title: string
   description: string
-  checked: boolean
+  value: boolean
+  onBlur: () => void
+  onChange: () => void
 }
 
-const Checkbox: React.FC<Props> = ({ name, title, checked, description }) => {
-  const { updateModelParameter } = useUpdateModelParameters()
-  const threadId = useAtomValue(getActiveThreadIdAtom)
+const Checkbox: React.FC<Props> = ({
+  name,
+  value,
+  title,
+  description,
+  onChange,
+  onBlur,
+}) => {
+  // const { updateModelParameter } = useUpdateModelParameters()
+  // const threadId = useAtomValue(getActiveThreadIdAtom)
 
-  const onCheckedChange = (checked: boolean) => {
-    if (!threadId) return
+  // const onCheckedChange = (checked: boolean) => {
+  //   if (!threadId) return
 
-    updateModelParameter(threadId, name, checked)
-  }
+  //   updateModelParameter(threadId, name, checked)
+  // }
 
   return (
     <div className="flex justify-between">
       <div className="mb-1 flex items-center gap-x-2">
-        <p className="text-sm font-semibold text-gray-600">{title}</p>
+        <p className="text-sm font-semibold text-zinc-500 dark:text-gray-300">
+          {title}
+        </p>
         <Tooltip>
           <TooltipTrigger asChild>
-            <InfoIcon size={16} className="flex-shrink-0" />
+            <InfoIcon size={16} className="flex-shrink-0 dark:text-gray-500" />
           </TooltipTrigger>
           <TooltipPortal>
             <TooltipContent side="top" className="max-w-[240px]">
@@ -51,7 +62,13 @@ const Checkbox: React.FC<Props> = ({ name, title, checked, description }) => {
         </Tooltip>
       </div>
 
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      <Switch
+        name={name}
+        defaultChecked={value}
+        onCheckedChange={onChange}
+        onChange={onChange}
+        onBlur={onBlur}
+      />
     </div>
   )
 }
