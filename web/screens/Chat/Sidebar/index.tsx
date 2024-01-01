@@ -119,11 +119,44 @@ const Sidebar: React.FC = () => {
     >
       <div
         className={twMerge(
-          'flex flex-col gap-4 p-4 delay-200',
+          'flex flex-col gap-1 delay-200',
           showing ? 'animate-enter opacity-100' : 'opacity-0'
         )}
       >
-        <CardSidebar
+        <div className="flex flex-col space-y-4 p-4">
+          <div>
+            <label
+              id="thread-title"
+              className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
+            >
+              Title
+            </label>
+            <Input
+              id="thread-title"
+              value={activeThread?.title}
+              onChange={(e) => {
+                if (activeThread)
+                  updateThreadMetadata({
+                    ...activeThread,
+                    title: e.target.value || '',
+                  })
+              }}
+            />
+          </div>
+          <div className="flex flex-col">
+            <label
+              id="thread-title"
+              className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
+            >
+              Threads ID
+            </label>
+            <span className="text-xs text-muted-foreground">
+              {activeThread?.id || '-'}
+            </span>
+          </div>
+        </div>
+
+        {/* <CardSidebar
           title="Thread"
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
@@ -160,8 +193,9 @@ const Sidebar: React.FC = () => {
               </span>
             </div>
           </div>
-        </CardSidebar>
-        <CardSidebar
+        </CardSidebar> */}
+
+        {/* <CardSidebar
           title="Assistant"
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
@@ -199,19 +233,9 @@ const Sidebar: React.FC = () => {
               />
             </div>
           </div>
-        </CardSidebar>
-        {experimentalFeatureEnabed && Object.keys(modelSettingParams).length ? (
-          <CardSidebar
-            title="Engine"
-            onRevealInFinderClick={onReviewInFinderClick}
-            onViewJsonClick={onViewJsonClick}
-          >
-            <div className="p-2">
-              <EngineSetting />
-            </div>
-          </CardSidebar>
-        ) : null}
-        <CardSidebar
+        </CardSidebar> */}
+
+        {/* <CardSidebar
           title="Model"
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
@@ -221,8 +245,21 @@ const Sidebar: React.FC = () => {
             <div className="mt-4">
               <ModelSetting />
             </div>
+
+            {experimentalFeatureEnabed &&
+            Object.keys(modelSettingParams).length ? (
+              <CardSidebar
+                title="Engine"
+                onRevealInFinderClick={onReviewInFinderClick}
+                onViewJsonClick={onViewJsonClick}
+              >
+                <div className="p-2">
+                  <EngineSetting />
+                </div>
+              </CardSidebar>
+            ) : null}
           </div>
-        </CardSidebar>
+        </CardSidebar> */}
       </div>
     </div>
   )

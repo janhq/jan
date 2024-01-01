@@ -39,34 +39,37 @@ export default function CardSidebar({
   return (
     <div
       className={twMerge(
-        'flex w-full flex-col overflow-hidden rounded-md border border-border bg-zinc-200 dark:bg-zinc-600/10'
+        'flex w-full flex-col overflow-hidden border-t border-border bg-zinc-200 dark:bg-zinc-600/10'
       )}
     >
       <div
         className={twMerge(
-          'relative flex items-center rounded-t-md ',
+          'relative flex items-center justify-between pl-4',
           show && 'border-b border-border'
         )}
       >
-        <button
-          onClick={() => setShow(!show)}
-          className="flex w-full flex-1 items-center space-x-2 bg-zinc-200 px-3 py-2 dark:bg-zinc-600/10"
-        >
-          <ChevronDownIcon
-            className={twMerge(
-              'h-5 w-5 flex-none text-gray-400',
-              show && 'rotate-180'
-            )}
-          />
-          <span className="font-bold">{title}</span>
-        </button>
-        <div
-          ref={setToggle}
-          className="cursor-pointer rounded-md bg-zinc-200 p-2 dark:bg-zinc-600/10"
-          onClick={() => setMore(!more)}
-        >
-          <MoreVerticalIcon className="h-5 w-5" />
+        <span className="font-bold">{title}</span>
+        <div className="flex">
+          <div
+            ref={setToggle}
+            className="cursor-pointer rounded-md bg-zinc-200 p-2 pr-0 dark:bg-zinc-600/10"
+            onClick={() => setMore(!more)}
+          >
+            <MoreVerticalIcon className="h-5 w-5" />
+          </div>
+          <button
+            onClick={() => setShow(!show)}
+            className="flex w-full flex-1 items-center space-x-2 bg-zinc-200 px-3 py-2 dark:bg-zinc-600/10"
+          >
+            <ChevronDownIcon
+              className={twMerge(
+                'h-5 w-5 flex-none text-gray-400',
+                show && 'rotate-180'
+              )}
+            />
+          </button>
         </div>
+
         {more && (
           <div
             className="absolute right-0 top-8 z-20 w-52 overflow-hidden rounded-lg border border-border bg-background shadow-lg"
