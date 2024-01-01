@@ -38,6 +38,7 @@ const settingComponentBuilder = (componentData: SettingComponentData[]) => {
           <Slider
             key={data.name}
             title={data.title}
+            description={data.description}
             min={min}
             max={max}
             step={step}
@@ -53,6 +54,7 @@ const settingComponentBuilder = (componentData: SettingComponentData[]) => {
             title={data.title}
             key={data.name}
             name={data.name}
+            description={data.description}
             placeholder={placeholder}
             value={textValue}
           />
@@ -63,6 +65,7 @@ const settingComponentBuilder = (componentData: SettingComponentData[]) => {
           <Checkbox
             key={data.name}
             name={data.name}
+            description={data.description}
             title={data.title}
             checked={checked}
           />

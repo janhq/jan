@@ -10,6 +10,7 @@ import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 import CardSidebar from '@/containers/CardSidebar'
+
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
@@ -127,7 +128,7 @@ const Sidebar: React.FC = () => {
           <div>
             <label
               id="thread-title"
-              className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
+              className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
             >
               Title
             </label>
@@ -146,7 +147,7 @@ const Sidebar: React.FC = () => {
           <div className="flex flex-col">
             <label
               id="thread-title"
-              className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
+              className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
             >
               Threads ID
             </label>
@@ -156,46 +157,7 @@ const Sidebar: React.FC = () => {
           </div>
         </div>
 
-        {/* <CardSidebar
-          title="Thread"
-          onRevealInFinderClick={onReviewInFinderClick}
-          onViewJsonClick={onViewJsonClick}
-        >
-          <div className="flex flex-col space-y-4 p-2">
-            <div>
-              <label
-                id="thread-title"
-                className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
-              >
-                Title
-              </label>
-              <Input
-                id="thread-title"
-                value={activeThread?.title}
-                onChange={(e) => {
-                  if (activeThread)
-                    updateThreadMetadata({
-                      ...activeThread,
-                      title: e.target.value || '',
-                    })
-                }}
-              />
-            </div>
-            <div className="flex flex-col">
-              <label
-                id="thread-title"
-                className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
-              >
-                Threads ID
-              </label>
-              <span className="text-xs text-muted-foreground">
-                {activeThread?.id || '-'}
-              </span>
-            </div>
-          </div>
-        </CardSidebar> */}
-
-        {/* <CardSidebar
+        <CardSidebar
           title="Assistant"
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
@@ -210,7 +172,7 @@ const Sidebar: React.FC = () => {
             <div>
               <label
                 id="thread-title"
-                className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
+                className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
               >
                 Instructions
               </label>
@@ -232,34 +194,62 @@ const Sidebar: React.FC = () => {
                 }}
               />
             </div>
+            {/* <div>
+              <label
+                id="tool-title"
+                className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
+              >
+                Tools
+              </label>
+              <div className="flex items-center justify-between">
+                <label className="font-medium text-zinc-500 dark:text-gray-300">
+                  Retrieval
+                </label>
+                <Switch name="retrieval" />
+              </div>
+            </div> */}
           </div>
-        </CardSidebar> */}
+        </CardSidebar>
 
-        {/* <CardSidebar
+        <CardSidebar
           title="Model"
           onRevealInFinderClick={onReviewInFinderClick}
           onViewJsonClick={onViewJsonClick}
         >
           <div className="p-2">
             <DropdownListSidebar />
+
+            <div className="mt-6">
+              <CardSidebar title="Inference Parameters" asChild>
+                <div className="p-2">
+                  <ModelSetting />
+                </div>
+              </CardSidebar>
+            </div>
+
             <div className="mt-4">
-              <ModelSetting />
+              <CardSidebar title="Model Parameters" asChild>
+                <div className="p-2">{/* <ModelSetting /> */}</div>
+              </CardSidebar>
             </div>
 
             {experimentalFeatureEnabed &&
             Object.keys(modelSettingParams).length ? (
-              <CardSidebar
-                title="Engine"
-                onRevealInFinderClick={onReviewInFinderClick}
-                onViewJsonClick={onViewJsonClick}
-              >
-                <div className="p-2">
-                  <EngineSetting />
-                </div>
-              </CardSidebar>
+              <div className="mt-4">
+                <CardSidebar
+                  title="Engine Parameters"
+                  onRevealInFinderClick={onReviewInFinderClick}
+                  onViewJsonClick={onViewJsonClick}
+                  asChild
+                >
+                  <div className="p-2">
+                    <EngineSetting />
+                  </div>
+                </CardSidebar>
+              </div>
             ) : null}
           </div>
-        </CardSidebar> */}
+        </CardSidebar>
       </div>
     </div>
   )

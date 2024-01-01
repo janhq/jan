@@ -13,14 +13,16 @@ import { useClickOutside } from '@/hooks/useClickOutside'
 interface Props {
   children: ReactNode
   title: string
-  onRevealInFinderClick: (type: string) => void
-  onViewJsonClick: (type: string) => void
+  onRevealInFinderClick?: (type: string) => void
+  onViewJsonClick?: (type: string) => void
+  asChild?: boolean
 }
 export default function CardSidebar({
   children,
   title,
   onRevealInFinderClick,
   onViewJsonClick,
+  asChild,
 }: Props) {
   const [show, setShow] = useState(true)
   const [more, setMore] = useState(false)
@@ -39,7 +41,8 @@ export default function CardSidebar({
   return (
     <div
       className={twMerge(
-        'flex w-full flex-col overflow-hidden border-t border-border bg-zinc-200 dark:bg-zinc-600/10'
+        'flex w-full flex-col border-t border-border bg-zinc-100 dark:bg-zinc-600/10',
+        asChild ? 'rounded-lg border' : 'border-t'
       )}
     >
       <div
@@ -50,16 +53,18 @@ export default function CardSidebar({
       >
         <span className="font-bold">{title}</span>
         <div className="flex">
-          <div
-            ref={setToggle}
-            className="cursor-pointer rounded-md bg-zinc-200 p-2 pr-0 dark:bg-zinc-600/10"
-            onClick={() => setMore(!more)}
-          >
-            <MoreVerticalIcon className="h-5 w-5" />
-          </div>
+          {!asChild && (
+            <div
+              ref={setToggle}
+              className="cursor-pointer rounded-lg bg-zinc-100 p-2 pr-0 dark:bg-zinc-600/10"
+              onClick={() => setMore(!more)}
+            >
+              <MoreVerticalIcon className="h-5 w-5" />
+            </div>
+          )}
           <button
             onClick={() => setShow(!show)}
-            className="flex w-full flex-1 items-center space-x-2 bg-zinc-200 px-3 py-2 dark:bg-zinc-600/10"
+            className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-600/10"
           >
             <ChevronDownIcon
               className={twMerge(
@@ -72,38 +77,76 @@ export default function CardSidebar({
 
         {more && (
           <div
-            className="absolute right-0 top-8 z-20 w-52 overflow-hidden rounded-lg border border-border bg-background shadow-lg"
+            className="absolute right-4 top-8 z-20 w-64 rounded-lg border border-border bg-background shadow-lg"
             ref={setMenu}
           >
             <div
-              className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
+              className={twMerge(
+                'flex cursor-pointer space-x-2 px-4 py-2 hover:bg-secondary',
+                title === 'Model' ? 'items-start' : 'items-center'
+              )}
               onClick={() => {
-                onRevealInFinderClick(title)
+                onRevealInFinderClick && onRevealInFinderClick(title)
                 setMore(false)
               }}
             >
-              <FolderOpenIcon size={16} className="text-muted-foreground" />
-              <span className="text-bold text-black dark:text-muted-foreground">
-                {openFolderTitle}
-              </span>
+              <FolderOpenIcon
+                size={16}
+                className={twMerge(
+                  'flex-shrink-0 text-muted-foreground',
+                  title === 'Model' && 'mt-1'
+                )}
+              />
+              <>
+                {title === 'Model' ? (
+                  <div className="flex flex-col">
+                    <span className="font-medium text-black dark:text-muted-foreground">
+                      {openFolderTitle}
+                    </span>
+                    <span className="mt-1 text-muted-foreground">
+                      Opens thread.json. Changes affect this thread only.
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-bold text-black dark:text-muted-foreground">
+                    {openFolderTitle}
+                  </span>
+                )}
+              </>
             </div>
             <div
-              className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
+              className="flex cursor-pointer items-start space-x-2 px-4 py-2 hover:bg-secondary"
               onClick={() => {
-                onViewJsonClick(title)
+                onViewJsonClick && onViewJsonClick(title)
                 setMore(false)
               }}
             >
-              <Code2Icon size={16} className="text-muted-foreground" />
-              <span className="text-bold text-black dark:text-muted-foreground">
-                View as JSON
-              </span>
+              <Code2Icon
+                size={16}
+                className="mt-0.5 flex-shrink-0 text-muted-foreground"
+              />
+              <>
+                <div className="flex flex-col">
+                  <span className="font-medium text-black dark:text-muted-foreground">
+                    View as JSON
+                  </span>
+                  <span className="mt-1 text-muted-foreground">
+                    Opens <span className="lowercase">{title}.json.</span>&nbsp;
+                    Changes affect all new threads.
+                  </span>
+                </div>
+              </>
             </div>
           </div>
         )}
       </div>
       {show && (
-        <div className="flex flex-col gap-2 bg-white p-2 dark:bg-background">
+        <div
+          className={twMerge(
+            'flex flex-col gap-2 bg-white p-2 dark:bg-background',
+            asChild && 'rounded-b-lg'
+          )}
+        >
           {children}
         </div>
       )}
