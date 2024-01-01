@@ -10,6 +10,23 @@ const JAN_API_PORT = Number.parseInt(process.env.JAN_API_PORT || "1337");
 
 const server = fastify();
 server.register(require("@fastify/cors"), {});
+server.register(require("@fastify/swagger"), {
+  mode: "static",
+  specification: {
+    path: "./../docs/openapi/jan.yaml",
+    baseDir: "./../docs/openapi",
+  },
+});
+server.register(require("@fastify/swagger-ui"), {
+  routePrefix: "/docs",
+  baseDir: path.join(__dirname, "../..", "./docs/openapi"),
+  uiConfig: {
+    docExpansion: "full",
+    deepLinking: false,
+  },
+  staticCSP: true,
+  transformSpecificationClone: true,
+});
 server.register(
   (childContext, _, done) => {
     childContext.register(require("@fastify/static"), {
