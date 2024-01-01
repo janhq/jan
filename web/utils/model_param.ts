@@ -39,6 +39,7 @@ export const toSettingParams = (
     embedding: undefined,
     n_parallel: undefined,
     cpu_threads: undefined,
+    prompt_template: undefined,
   }
   const settingParams: ModelSettingParams = {}
 

@@ -41,7 +41,7 @@ export default function CardSidebar({
   return (
     <div
       className={twMerge(
-        'flex w-full flex-col border-t border-border bg-zinc-100 dark:bg-zinc-600/10',
+        'flex w-full flex-col border-t border-border bg-zinc-100 dark:bg-zinc-900',
         asChild ? 'rounded-lg border' : 'border-t'
       )}
     >
@@ -56,7 +56,7 @@ export default function CardSidebar({
           {!asChild && (
             <div
               ref={setToggle}
-              className="cursor-pointer rounded-lg bg-zinc-100 p-2 pr-0 dark:bg-zinc-600/10"
+              className="cursor-pointer rounded-lg bg-zinc-100 p-2 pr-0 dark:bg-zinc-900"
               onClick={() => setMore(!more)}
             >
               <MoreVerticalIcon className="h-5 w-5" />
@@ -64,7 +64,7 @@ export default function CardSidebar({
           )}
           <button
             onClick={() => setShow(!show)}
-            className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-600/10"
+            className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-900"
           >
             <ChevronDownIcon
               className={twMerge(
