@@ -15,6 +15,7 @@ jobs:
         uses: unfor19/install-aws-cli-action@v1
 
       - name: Delete cloudflare-r2 folder using awscli s3api
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true
         run: |
           # Get the list of objects in the 'latest' folder
@@ -34,24 +35,17 @@ jobs:
           AWS_DEFAULT_REGION: auto
           AWS_EC2_METADATA_DISABLED: "true"
 
-  build-macos:
-    runs-on: macos-latest
+  # Job create Update app version based on latest release tag with build number and save to output
+  get-update-version:
+    runs-on: ubuntu-latest
     needs: delete-cloudflare-r2-folder
     environment: production
-    permissions:
-      contents: write
+    outputs:
+      new_version: ${{ steps.version_update.outputs.new_version }}
     steps:
-      - name: Getting the repo
-        uses: actions/checkout@v3
-
-      - name: Installing node
-        uses: actions/setup-node@v1
-        with:
-          node-version: 20
 
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
-
 
       - name: Update app version based on latest release tag with build number
         id: version_update
@@ -82,11 +76,35 @@ jobs:
           # Remove the 'v' and append the build number to the version
           NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
           echo "New version: $NEW_VERSION"
-          
-          # Update the version in electron/package.json
-          jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
           echo "::set-output name=new_version::$NEW_VERSION"
+  build-macos:
+    runs-on: macos-latest
+    needs: [delete-cloudflare-r2-folder, get-update-version]
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+
+      - name: Update app version based on latest release tag with build number
+        id: version_update
+        run: |
+          # Update the version in electron/package.json
+          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+
+          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
 
           jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
@@ -119,26 +137,27 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-mac-x64-${{ steps.version_update.outputs.new_version }}
-          path: ./electron/dist/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg
+          name: jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}
+          path: ./electron/dist/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-mac-arm64-${{ steps.version_update.outputs.new_version }}
-          path: ./electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg
+          name: jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}
+          path: ./electron/dist/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg
 
       - name: put-object using awscli s3api
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true
         run: |
           ls -al ./electron/dist
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg" --body "./electron/dist/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg" --content-type "application/octet-stream"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg" --body "./electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg" --content-type "application/octet-stream"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.zip" --body "./electron/dist/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.zip" --content-type "application/zip"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.zip" --body "./electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.zip" --content-type "application/zip"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ steps.version_update.outputs.new_version }}/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg" --body "./electron/dist/jan-mac-x64-${{ steps.version_update.outputs.new_version }}.dmg" --content-type "application/octet-stream"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ steps.version_update.outputs.new_version }}/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg" --body "./electron/dist/jan-mac-arm64-${{ steps.version_update.outputs.new_version }}.dmg" --content-type "application/octet-stream"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ steps.version_update.outputs.new_version }}/latest-mac.yml" --body "./electron/dist/latest-mac.yml" --content-type "text/yaml"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg" --body "./electron/dist/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg" --body "./electron/dist/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.zip" --body "./electron/dist/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.zip" --content-type "application/zip"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.zip" --body "./electron/dist/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.zip" --content-type "application/zip"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg" --body "./electron/dist/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg" --body "./electron/dist/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/latest-mac.yml" --body "./electron/dist/latest-mac.yml" --content-type "text/yaml"
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/latest-mac.yml" --body "./electron/dist/latest-mac.yml" --content-type "text/yaml"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
@@ -148,7 +167,7 @@ jobs:
 
   build-windows-x64:
     runs-on: windows-latest
-    needs: delete-cloudflare-r2-folder
+    needs: [delete-cloudflare-r2-folder, get-update-version]
     permissions:
       contents: write
     steps:
@@ -167,38 +186,12 @@ jobs:
         id: version_update
         shell: bash
         run: |
-          # Function to get the latest release tag
-          get_latest_tag() {
-            local retries=0
-            local max_retries=3
-            local tag
-            while [ $retries -lt $max_retries ]; do
-              tag=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
-              if [ -n "$tag" ] && [ "$tag" != "null" ]; then
-                echo $tag
-                return
-              else
-                let retries++
-                echo "Retrying... ($retries/$max_retries)"
-                sleep 2
-              fi
-            done
-            echo "Failed to fetch latest tag after $max_retries attempts."
-            exit 1
-          }
-      
-          # Get the latest release tag from GitHub API
-          LATEST_TAG=$(get_latest_tag)
-          
-          # Remove the 'v' and append the build number to the version
-          NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
-          echo "New version: $NEW_VERSION"
-          
           # Update the version in electron/package.json
-          jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
+          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
-          echo "::set-output name=new_version::$NEW_VERSION"
+          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
 
           jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
@@ -223,18 +216,19 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-win-x64-${{ steps.version_update.outputs.new_version }}
+          name: jan-win-x64-${{ needs.get-update-version.outputs.new_version }}
           path: ./electron/dist/*.exe
       
       - name: put-object using awscli s3api
+        if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
           ls -al ./electron/dist
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe" --body "./electron/dist/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe.blockmap" --body "./electron/dist/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe.blockmap"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ steps.version_update.outputs.new_version }}/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe" --body "./electron/dist/jan-win-x64-${{ steps.version_update.outputs.new_version }}.exe"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe" --body "./electron/dist/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe.blockmap" --body "./electron/dist/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe.blockmap"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe" --body "./electron/dist/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe"
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/latest.yml" --body "./electron/dist/latest.yml"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ steps.version_update.outputs.new_version }}/latest.yml" --body "./electron/dist/latest.yml"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/latest.yml" --body "./electron/dist/latest.yml"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
@@ -243,7 +237,7 @@ jobs:
           
   build-linux-x64:
     runs-on: ubuntu-latest
-    needs: delete-cloudflare-r2-folder
+    needs: [delete-cloudflare-r2-folder, get-update-version]
     environment: production
     env:
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_TOKEN }}
@@ -264,37 +258,11 @@ jobs:
       - name: Update app version base on tag
         id: version_update
         run: |
-          # Function to get the latest release tag
-          get_latest_tag() {
-            local retries=0
-            local max_retries=3
-            local tag
-            while [ $retries -lt $max_retries ]; do
-              tag=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
-              if [ -n "$tag" ] && [ "$tag" != "null" ]; then
-                echo $tag
-                return
-              else
-                let retries++
-                echo "Retrying... ($retries/$max_retries)"
-                sleep 2
-              fi
-            done
-            echo "Failed to fetch latest tag after $max_retries attempts."
-            exit 1
-          }
-      
-          # Get the latest release tag from GitHub API
-          LATEST_TAG=$(get_latest_tag)
-          
-          # Remove the 'v' and append the build number to the version
-          NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
-          echo "New version: $NEW_VERSION"
-          
           # Update the version in electron/package.json
-          jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
+          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
-          echo "::set-output name=new_version::$NEW_VERSION"
+          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
           jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
@@ -307,16 +275,17 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-linux-amd64-${{ steps.version_update.outputs.new_version }}
+          name: jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}
           path: ./electron/dist/*.deb
       
       - name: put-object using awscli s3api
+        if: github.ref == 'refs/heads/main'
         run: |
           ls -al ./electron/dist
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb" --content-type "application/octet-stream"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ steps.version_update.outputs.new_version }}/jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ steps.version_update.outputs.new_version }}.deb" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --content-type "application/octet-stream"
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/latest-linux.yml" --body "./electron/dist/latest-linux.yml" --content-type "text/yaml"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ steps.version_update.outputs.new_version }}/latest-linux.yml" --body "./electron/dist/latest-linux.yml" --content-type "text/yaml"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/latest-linux.yml" --body "./electron/dist/latest-linux.yml" --content-type "text/yaml"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
@@ -324,7 +293,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
 
   noti-discord-nightly-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder]
+    needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
     environment: production
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -335,16 +304,23 @@ jobs:
           fetch-depth: "0"
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
 
+      - name: Set version to environment variable
+        run: |
+          echo "VERSION=${{ needs.get-update-version.outputs.new_version }}" >> $GITHUB_ENV
+
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
         with:
-          args: "Nightly build artifact: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}"
+          args: "Jan App Nightly build artifact version {{ VERSION }}: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}"
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
 
       - name: Update README.md with artifact URL
         run: |
-          sed -i "s|<a href='https://github.com/janhq/jan/actions/runs/.*'>|<a href='https://github.com/janhq/jan/actions/runs/${GITHUB_RUN_ID}'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-win-x64-.*'>|<a href='https://delta.jan.ai/latest/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-mac-x64-.*'>|<a href='https://delta.jan.ai/latest/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-mac-arm64-.*'>|<a href='https://delta.jan.ai/latest/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-linux-amd64-.*'>|<a href='https://delta.jan.ai/latest/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb'>|" README.md
           git config --global user.email "service@jan.ai"
           git config --global user.name "Service Account"
           git add README.md
@@ -354,9 +330,9 @@ jobs:
           GITHUB_RUN_ID: ${{ github.run_id }}
 
   noti-discord-manual-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder]
+    needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
     environment: production
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -364,11 +340,15 @@ jobs:
         with:
           fetch-depth: "0"
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
-  
+
+      - name: Set version to environment variable
+        run: |
+          echo "VERSION=${{ needs.get-update-version.outputs.new_version }}" >> $GITHUB_ENV
+
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
         with:
-          args: "Manual build artifact: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}"
+          args: "Jan App Manual build artifact version {{ VERSION }}: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}"
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
 
@@ -376,7 +356,10 @@ jobs:
       - name: Update README.md with artifact URL
         if: github.ref == 'refs/heads/main'
         run: |
-          sed -i "s|<a href='https://github.com/janhq/jan/actions/runs/.*'>|<a href='https://github.com/janhq/jan/actions/runs/${GITHUB_RUN_ID}'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-win-x64-.*'>|<a href='https://delta.jan.ai/latest/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-mac-x64-.*'>|<a href='https://delta.jan.ai/latest/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-mac-arm64-.*'>|<a href='https://delta.jan.ai/latest/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-linux-amd64-.*'>|<a href='https://delta.jan.ai/latest/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb'>|" README.md
           git config --global user.email "service@jan.ai"
           git config --global user.name "Service Account"
           git add README.md
