@@ -172,11 +172,13 @@ Your model is now ready to use in Jan.
 
 In this guide, we will show you how to configure a client connection to a remote/local server, using LM Studio as an example.
 
-At the moment, you can only connect to one compatible server at a time (e.g OpenAI Platform, Azure OpenAI, LM Studio, etc)
+At the moment, you can only connect to one compatible server at a time (e.g OpenAI Platform, Azure OpenAI, LM Studio, etc).
 
 ### 1. Configure Local Server in Engine
 
-Create `lmstudio.json` in the `~/jan/engines` folder. Configure `full_url` properties with the endpoint server that you want to connect. For example, if you want to connect to LM Studio, you can configure as follows:
+Navigate to the `~/jan/engines` folder and find the `openai.json` file. Currently, the code support any openai compatible endpoint only read `engine/openai.json` file, thus, it will not search any other files in this directory.
+
+Configure `full_url` properties with the endpoint server that you want to connect. For example, if you want to connect to LM Studio, you can configure as follows:
 
 ```js
 {
@@ -194,17 +196,12 @@ Navigate to the `~/jan/models` folder. Create a folder named `remote-lmstudio` a
 - Ensure the filename must be `model.json`.
 - Ensure the `id` property matches the folder name you created.
 - Ensure the `format` property is set to `api`.
-- Ensure the `engine` property is set to as the filename that you recently created in `~/jan/models`. In this example, it is `lmstudio`.
+- Ensure the `engine` property is set to `openai`.
 - Ensure the `state` property is set to `ready`.
 
 ```js
 {
-    "source": [
-      {
-        "filename": "lmstudio",
-        "url": "https://lmstudio.ai"
-      }
-    ],
+    "source_url": "https://lmstudio.ai",
     // highlight-next-line
     "id": "remote-lmstudio",
     "object": "model",
@@ -220,7 +217,7 @@ Navigate to the `~/jan/models` folder. Create a folder named `remote-lmstudio` a
     "tags": ["remote", "awesome"]
     },
     // highlight-start
-    "engine": "lmstudio",
+    "engine": "openai",
     "state": "ready"
     // highlight-end
 }
@@ -229,8 +226,6 @@ Navigate to the `~/jan/models` folder. Create a folder named `remote-lmstudio` a
 ### 3. Start the Model
 
 Restart Jan and navigate to the Hub. Locate your model and click the Use button.
-
-![start-model](assets/configure-local-server.png)
 
 ## Assistance and Support
 
