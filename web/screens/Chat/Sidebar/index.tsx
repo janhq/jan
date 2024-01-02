@@ -221,8 +221,7 @@ const Sidebar: React.FC = () => {
     } else {
       setThreadSettingFormUpdate(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.formState.dirtyFields])
+  }, [form.formState, setThreadSettingFormUpdate])
 
   return (
     <div

@@ -1,10 +1,18 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
   TooltipArrow,
+  Modal,
+  ModalTitle,
+  ModalContent,
+  ModalHeader,
+  ModalFooter,
+  ModalDescription,
+  ModalClose,
+  Button,
 } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 
@@ -31,6 +39,8 @@ import { threadSettingFormUpdateAtom } from '@/helpers/atoms/Thread.atom'
 export default function RibbonNav() {
   const { mainViewState, setMainViewState } = useMainViewState()
   const threadSettingFormUpdate = useAtomValue(threadSettingFormUpdateAtom)
+  const [showModalUpdateThreadSetting, setshowModalUpdateThreadSetting] =
+    useState({ show: false, view: mainViewState })
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
@@ -100,10 +110,6 @@ export default function RibbonNav() {
     },
   ]
 
-  // useEffect(() => {
-  //   console.log(threadSettingFormUpdate)
-  // }, [threadSettingFormUpdate])
-
   return (
     <div className="relative top-12 flex h-[calc(100%-48px)] w-16 flex-shrink-0 flex-col border-r border-border bg-background py-4">
       <div className="mt-2 flex h-full w-full flex-col items-center justify-between">
@@ -127,9 +133,19 @@ export default function RibbonNav() {
                             isActive && 'z-10'
                           )}
                           onClick={() => {
-                            if (threadSettingFormUpdate) {
-                              console.log('hahah')
+                            if (
+                              threadSettingFormUpdate &&
+                              mainViewState === MainViewState.Thread
+                            ) {
+                              setshowModalUpdateThreadSetting({
+                                show: true,
+                                view: primary.state,
+                              })
                             } else {
+                              setshowModalUpdateThreadSetting({
+                                show: false,
+                                view: mainViewState,
+                              })
                               onMenuClick(primary.state)
                             }
                           }}
@@ -194,7 +210,23 @@ export default function RibbonNav() {
                             'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center',
                             isActive && 'z-10'
                           )}
-                          onClick={() => onMenuClick(secondary.state)}
+                          onClick={() => {
+                            if (
+                              threadSettingFormUpdate &&
+                              mainViewState === MainViewState.Thread
+                            ) {
+                              setshowModalUpdateThreadSetting({
+                                show: true,
+                                view: secondary.state,
+                              })
+                            } else {
+                              setshowModalUpdateThreadSetting({
+                                show: false,
+                                view: mainViewState,
+                              })
+                              onMenuClick(secondary.state)
+                            }
+                          }}
                         >
                           {secondary.icon}
                         </div>
@@ -216,6 +248,52 @@ export default function RibbonNav() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={showModalUpdateThreadSetting.show}
+        onOpenChange={() =>
+          setshowModalUpdateThreadSetting({
+            show: false,
+            view: mainViewState,
+          })
+        }
+      >
+        <ModalContent>
+          <ModalHeader>
+            <ModalTitle>
+              <div className="text-lg">Unsave changes</div>
+            </ModalTitle>
+            <ModalDescription>
+              <p className="mb-2">
+                You have unsave changes. Are you sure you want to leave this
+                page?
+              </p>
+            </ModalDescription>
+          </ModalHeader>
+          <ModalFooter>
+            <div className="flex gap-x-2">
+              <ModalClose asChild>
+                <Button themes="secondary" block>
+                  Stay
+                </Button>
+              </ModalClose>
+              <Button
+                themes="danger"
+                block
+                onClick={() => {
+                  setshowModalUpdateThreadSetting({
+                    show: false,
+                    view: mainViewState,
+                  })
+                  onMenuClick(showModalUpdateThreadSetting.view)
+                }}
+              >
+                Leave
+              </Button>
+            </div>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   )
 }
