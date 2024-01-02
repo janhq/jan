@@ -143,7 +143,7 @@ export default function CardSidebar({
       {show && (
         <div
           className={twMerge(
-            'flex flex-col gap-2 bg-white p-2 dark:bg-background',
+            'flex flex-col gap-2 bg-white px-2 dark:bg-background',
             asChild && 'rounded-b-lg'
           )}
         >

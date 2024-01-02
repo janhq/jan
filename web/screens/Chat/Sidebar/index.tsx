@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useContext } from 'react'
+import React, { useEffect } from 'react'
 import { FieldValues, useForm } from 'react-hook-form'
 
 import { getUserSpace, openFileExplorer, joinPath } from '@janhq/core'
@@ -56,7 +56,6 @@ const Sidebar: React.FC = () => {
   const threadStates = useAtomValue(threadStatesAtom)
   const threadId = useAtomValue(getActiveThreadIdAtom)
   const modelEngineParams = toSettingParams(activeModelParams)
-
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
   const onReviewInFinderClick = async (type: string) => {
@@ -180,6 +179,23 @@ const Sidebar: React.FC = () => {
       form.reset()
     }
   }
+
+  const onCancel = () => {
+    form.reset()
+  }
+
+  const handleEventClick = () => {
+    return console.log('click')
+  }
+
+  // Detect event click after changes value in form to showing tooltip on save button
+  useEffect(() => {
+    if (Object.keys(form.formState.dirtyFields).length >= 1) {
+      window.addEventListener('click', handleEventClick)
+      return () => window.removeEventListener('click', handleEventClick)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.formState.dirtyFields])
 
   return (
     <div
@@ -306,8 +322,10 @@ const Sidebar: React.FC = () => {
               onRevealInFinderClick={onReviewInFinderClick}
               onViewJsonClick={onViewJsonClick}
             >
-              <div className="p-2">
-                <DropdownListSidebar />
+              <div className="px-2">
+                <div className="mt-4">
+                  <DropdownListSidebar />
+                </div>
 
                 <div className="mt-6">
                   <CardSidebar title="Inference Parameters" asChild>
@@ -329,7 +347,7 @@ const Sidebar: React.FC = () => {
                   </CardSidebar>
                 </div>
 
-                <div className="mt-4">
+                <div className="my-4">
                   <CardSidebar
                     title="Engine Parameters"
                     onRevealInFinderClick={onReviewInFinderClick}
@@ -343,10 +361,15 @@ const Sidebar: React.FC = () => {
                 </div>
 
                 {Object.keys(form.formState.dirtyFields).length !== 0 && (
-                  <div className="pt-4">
-                    <Button type="submit" block>
-                      Submit
-                    </Button>
+                  <div className="sticky bottom-0 -ml-4 w-[calc(100%+32px)] border-t border-border bg-background px-4 py-3">
+                    <div className="flex gap-3">
+                      <Button themes="secondaryBlue" block onClick={onCancel}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" block>
+                        Save
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
