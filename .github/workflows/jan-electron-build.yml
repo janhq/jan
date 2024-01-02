@@ -60,6 +60,8 @@ jobs:
           fi
           jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
 
@@ -120,6 +122,8 @@ jobs:
           fi
           jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
           jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
         env:
@@ -203,6 +207,8 @@ jobs:
           fi
           jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
         env:
           VERSION_TAG: ${{ steps.tag.outputs.tag }}
 
