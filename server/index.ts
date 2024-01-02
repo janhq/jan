@@ -45,7 +45,7 @@ export const startServer = async (schemaPath?: string, baseDir?: string) => {
     });
 
     await server.register(require("@fastify/swagger-ui"), {
-      routePrefix: "/docs",
+      routePrefix: "/",
       baseDir: baseDir ?? path.join(__dirname, "../..", "./docs/openapi"),
       uiConfig: {
         docExpansion: "full",
