@@ -3,6 +3,7 @@
  */
 export class ModuleManager {
   public requiredModules: Record<string, any> = {}
+  public cleaningResource = false
 
   public static instance: ModuleManager = new ModuleManager()
 

@@ -21,7 +21,7 @@ import { getAssistants } from '@/hooks/useGetAssistants'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
-import { toGigabytes } from '@/utils/converter'
+import { toGibibytes } from '@/utils/converter'
 
 type Props = {
   model: Model
@@ -99,7 +99,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
         </div>
         <div className="inline-flex items-center space-x-2">
           <span className="mr-4 font-semibold text-muted-foreground">
-            {toGigabytes(model.metadata.size)}
+            {toGibibytes(model.metadata.size)}
           </span>
           {downloadButton}
           <ChevronDownIcon
