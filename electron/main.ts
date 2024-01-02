@@ -39,7 +39,7 @@ app
   })
 
 app.once('window-all-closed', () => {
-  cleanUpAndQuit()
+  if (process.platform !== 'darwin') app.quit()
 })
 
 app.once('quit', () => {
