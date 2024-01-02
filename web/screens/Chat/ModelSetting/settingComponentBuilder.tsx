@@ -88,7 +88,7 @@ const settingComponentBuilder = (
                       description={data.description}
                       placeholder={placeholder}
                       {...field}
-                      value={field.value || textValue}
+                      value={field.value}
                     />
                   </FormControl>
                   <FormMessage />
@@ -112,7 +112,8 @@ const settingComponentBuilder = (
                         description={data.description}
                         title={data.title}
                         {...field}
-                        value={field.value || checked}
+                        checked={field.value || checked}
+                        value={field.value}
                       />
                     </FormControl>
                     <FormMessage />

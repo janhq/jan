@@ -66,6 +66,7 @@ const ModelConfigInput: React.FC<Props> = ({
         placeholder={placeholder}
         onChange={onChange}
         onBlur={onBlur}
+        value={value}
       />
     </div>
   )
