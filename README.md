@@ -148,19 +148,19 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 1. **Clone the repository and prepare:**
 
-```bash
-   git clone https://github.com/janhq/jan
-   cd jan
-   git checkout -b DESIRED_BRANCH
-```
+    ```bash
+    git clone https://github.com/janhq/jan
+    cd jan
+    git checkout -b DESIRED_BRANCH
+    ```
 
 2. **Run development and use Jan Desktop**
 
-   ```
-   make dev
-   ```
+    ```bash
+    make dev
+    ```
 
-   This will start the development server and open the desktop app.
+This will start the development server and open the desktop app.
 
 ### For production build
 

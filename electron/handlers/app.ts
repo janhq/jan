@@ -1,9 +1,10 @@
 import { app, ipcMain, shell, nativeTheme } from 'electron'
 import { join, basename } from 'path'
 import { WindowManager } from './../managers/window'
-import { userSpacePath } from './../utils/path'
+import { getResourcePath, userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
 import { ExtensionManager, ModuleManager } from '@janhq/core/node'
+import { startServer, stopServer } from '@janhq/server'
 
 export function handleAppIPCs() {
   /**
@@ -55,6 +56,23 @@ export function handleAppIPCs() {
   ipcMain.handle(AppRoute.baseName, async (_event, path: string) =>
     basename(path)
   )
+
+  /**
+   * Start Jan API Server.
+   */
+  ipcMain.handle(AppRoute.startServer, async (_event) =>
+    startServer(
+      app.isPackaged
+        ? join(getResourcePath(), 'docs', 'openapi', 'jan.yaml')
+        : undefined,
+      app.isPackaged ? join(getResourcePath(), 'docs', 'openapi') : undefined
+    )
+  )
+  
+  /**
+   * Stop Jan API Server.
+   */
+  ipcMain.handle(AppRoute.stopServer, async (_event) => stopServer())
 
   /**
    * Relaunches the app in production - reload window in development.

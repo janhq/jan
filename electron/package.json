@@ -14,11 +14,13 @@
       "build/*.{js,map}",
       "build/**/*.{js,map}",
       "pre-install",
-      "models/**/*"
+      "models/**/*",
+      "docs/**/*"
     ],
     "asarUnpack": [
       "pre-install",
-      "models"
+      "models",
+      "docs"
     ],
     "publish": [
       {

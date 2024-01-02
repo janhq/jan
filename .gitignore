@@ -11,6 +11,7 @@ build
 .DS_Store
 electron/renderer
 electron/models
+electron/docs
 package-lock.json
 
 *.log
