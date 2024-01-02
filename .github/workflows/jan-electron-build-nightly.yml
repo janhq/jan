@@ -317,7 +317,10 @@ jobs:
 
       - name: Update README.md with artifact URL
         run: |
-          sed -i "s|<a href='https://github.com/janhq/jan/actions/runs/.*'>|<a href='https://github.com/janhq/jan/actions/runs/${GITHUB_RUN_ID}'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-win-x64-.*'>|<a href='https://delta.jan.ai/latest/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-mac-x64-.*'>|<a href='https://delta.jan.ai/latest/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-mac-arm64-.*'>|<a href='https://delta.jan.ai/latest/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-linux-amd64-.*'>|<a href='https://delta.jan.ai/latest/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb'>|" README.md
           git config --global user.email "service@jan.ai"
           git config --global user.name "Service Account"
           git add README.md
@@ -353,7 +356,10 @@ jobs:
       - name: Update README.md with artifact URL
         if: github.ref == 'refs/heads/main'
         run: |
-          sed -i "s|<a href='https://github.com/janhq/jan/actions/runs/.*'>|<a href='https://github.com/janhq/jan/actions/runs/${GITHUB_RUN_ID}'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-win-x64-.*'>|<a href='https://delta.jan.ai/latest/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-mac-x64-.*'>|<a href='https://delta.jan.ai/latest/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-mac-arm64-.*'>|<a href='https://delta.jan.ai/latest/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/latest/jan-linux-amd64-.*'>|<a href='https://delta.jan.ai/latest/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb'>|" README.md
           git config --global user.email "service@jan.ai"
           git config --global user.name "Service Account"
           git add README.md
