@@ -19,13 +19,9 @@ keywords:
 
 Jan persists your app usage locally on your filesystem, so your data never leaves your computer. This guide will walk you through how to direct manage your application files and start a thread.
 
-<br></br>
-
-![start-thread-gif](./assets/start-thread.gif)
-
 ### Setting Thread Title
 
-A thread title acts as a name for your thread. It appears on the left side of the chat window, helping you easily navigate through your interactions. If you do not set a thread title, Jan will set it to 'New Thread' as default.
+Naming your thread is a good way to keep your conversations organized. It appears on the right side of chat window. Without a thread title, Jan will set it to `New Thread` as default.
 
 ![set-thread-title](./assets/setting-thread-title.png)
 
