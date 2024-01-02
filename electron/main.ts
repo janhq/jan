@@ -68,6 +68,12 @@ function createMainWindow() {
     if (process.platform !== 'darwin') app.quit()
   })
 
+  /* Open external links in the default browser */
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    require('electron').shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
   /* Enable dev tools for development */
   if (!app.isPackaged) mainWindow.webContents.openDevTools()
 }
