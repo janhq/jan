@@ -20,11 +20,6 @@ import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
 import { migrateExtensions } from './utils/migration'
 
-/**
- * Server
- */
-import { startServer } from '@janhq/server'
-
 app
   .whenReady()
   .then(createUserSpace)
@@ -34,7 +29,6 @@ app
   .then(handleIPCs)
   .then(handleAppUpdates)
   .then(createMainWindow)
-  .then(startServer)
   .then(() => {
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {

@@ -11,6 +11,8 @@ export enum AppRoute {
   relaunch = 'relaunch',
   joinPath = 'joinPath',
   baseName = 'baseName',
+  startServer = 'startServer',
+  stopServer = 'stopServer',
 }
 
 export enum AppEvent {
