@@ -19,6 +19,7 @@ import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
 import { migrateExtensions } from './utils/migration'
+import { dispose } from './utils/disposable'
 
 app
   .whenReady()
@@ -37,14 +38,12 @@ app
     })
   })
 
-app.on('window-all-closed', () => {
-  ModuleManager.instance.clearImportedModules()
-  app.quit()
+app.once('window-all-closed', () => {
+  cleanUpAndQuit()
 })
 
-app.on('quit', () => {
-  ModuleManager.instance.clearImportedModules()
-  app.quit()
+app.once('quit', () => {
+  cleanUpAndQuit()
 })
 
 function createMainWindow() {
@@ -82,4 +81,14 @@ function handleIPCs() {
   handleExtensionIPCs()
   handleAppIPCs()
   handleFileMangerIPCs()
+}
+
+function cleanUpAndQuit() {
+  if (!ModuleManager.instance.cleaningResource) {
+    ModuleManager.instance.cleaningResource = true
+    WindowManager.instance.currentWindow?.destroy()
+    dispose(ModuleManager.instance.requiredModules)
+    ModuleManager.instance.clearImportedModules()
+    app.quit()
+  }
 }
