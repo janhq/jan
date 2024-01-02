@@ -111,18 +111,7 @@ As Jan is in development mode, you might get stuck on a broken build.
 
 To reset your installation:
 
-1. **Remove Jan from your Applications folder and Cache folder**
-
-   ```bash
-   make clean
-   ```
-
-   This will remove all build artifacts and cached files:
-
-   - Delete Jan from your `/Applications` folder
-   - Clear Application cache in `/Users/$(whoami)/Library/Caches/jan`
-
-2. Use the following commands to remove any dangling backend processes:
+1. Use the following commands to remove any dangling backend processes:
 
    ```sh
    ps aux | grep nitro
@@ -133,6 +122,18 @@ To reset your installation:
    ```sh
    kill -9 <PID>
    ```
+
+2. **Remove Jan from your Applications folder and Cache folder**
+
+   ```bash
+   make clean
+   ```
+
+   This will remove all build artifacts and cached files:
+
+   - Delete Jan extension from your `~/jan/extensions` folder
+   - Delete all `node_modules` in current folder
+   - Clear Application cache in `~/Library/Caches/jan`
 
 ## Contributing
 
