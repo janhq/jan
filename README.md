@@ -91,10 +91,10 @@ _Realtime Video: Jan v0.4.3-nightly on a Mac M1, 16GB Sonoma 14_
 
 - [Jan website](https://jan.ai/)
 - [Jan Github](https://github.com/janhq/jan)
-- [User Guides](https://jan.ai/docs)
-- [Developer docs](https://jan.ai/docs/extensions/)
+- [User Guides](https://jan.ai/guides/)
+- [Developer docs](https://jan.ai/developer/)
 - [API reference](https://jan.ai/api-reference/)
-- [Specs](https://jan.ai/specs/)
+- [Specs](https://jan.ai/docs/)
 
 #### Nitro
 
