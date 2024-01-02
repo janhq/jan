@@ -60,7 +60,7 @@ export default function useSendChatMessage() {
   const threadStates = useAtomValue(threadStatesAtom)
   const updateThreadInitSuccess = useSetAtom(updateThreadInitSuccessAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelRuntimeParamsAtom)
-  const fileUpload = useAtomValue(fileUploadAtom)
+  const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -185,8 +185,8 @@ export default function useSendChatMessage() {
     const prompt = currentPrompt.trim()
     setCurrentPrompt('')
 
-    const base64Image = fileUpload[0]
-      ? await getBase64(fileUpload[0])
+    const base64Blob = fileUpload[0]
+      ? await getBase64(fileUpload[0].file)
       : undefined
 
     const messages: ChatCompletionMessage[] = [
@@ -210,7 +210,7 @@ export default function useSendChatMessage() {
             {
               role: ChatCompletionRole.User,
               content:
-                selectedModel && base64Image
+                selectedModel && base64Blob
                   ? [
                       {
                         type: ChatCompletionMessageContentType.Text,
@@ -219,7 +219,7 @@ export default function useSendChatMessage() {
                       {
                         type: ChatCompletionMessageContentType.Image,
                         image_url: {
-                          url: base64Image,
+                          url: base64Blob,
                         },
                       },
                     ]
@@ -241,6 +241,38 @@ export default function useSendChatMessage() {
       },
     }
     const timestamp = Date.now()
+
+    let content: any = []
+    if (base64Blob && fileUpload[0]?.type === 'image') {
+      content.push({
+        type: ContentType.Image,
+        text: {
+          value: prompt,
+          annotations: [base64Blob],
+        },
+      })
+    }
+
+    if (base64Blob && fileUpload[0]?.type === 'pdf') {
+      content.push({
+        type: ContentType.Pdf,
+        text: {
+          value: prompt,
+          annotations: [base64Blob],
+        },
+      })
+    }
+
+    if (prompt && !base64Blob) {
+      content.push({
+        type: ContentType.Text,
+        text: {
+          value: prompt,
+          annotations: [],
+        },
+      })
+    }
+
     const threadMessage: ThreadMessage = {
       id: msgId,
       thread_id: activeThread.id,
@@ -249,18 +281,13 @@ export default function useSendChatMessage() {
       created: timestamp,
       updated: timestamp,
       object: 'thread.message',
-      content: [
-        {
-          type: ContentType.Image,
-          text: {
-            value: prompt,
-            annotations: [base64Image],
-          },
-        },
-      ],
+      content: content,
     }
 
     addNewMessage(threadMessage)
+    if (base64Blob) {
+      setFileUpload([])
+    }
 
     await extensionManager
       .get<ConversationalExtension>(ExtensionType.Conversational)

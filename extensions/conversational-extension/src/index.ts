@@ -118,6 +118,15 @@ export default class JSONConversationalExtension
         await this.storeImage(base64, imagePath)
       }
 
+      if (message.content[0].type === 'pdf') {
+        const filesPath = join(threadDirPath, 'files')
+        await fs.mkdir(filesPath)
+
+        const imagePath = join(filesPath, `${message.id}.pdf`)
+        const blob = message.content[0].text.annotations[0]
+        await this.storeFile(blob, imagePath)
+      }
+
       await fs.appendFile(threadMessagePath, JSON.stringify(message) + '\n')
       Promise.resolve()
     } catch (err) {
@@ -130,6 +139,15 @@ export default class JSONConversationalExtension
 
     try {
       await fs.writeBlob(filePath, base64Data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async storeFile(blob: any, filePath: string): Promise<void> {
+    console.log(blob)
+    try {
+      await fs.writeBlob(filePath, blob)
     } catch (err) {
       console.error(err)
     }

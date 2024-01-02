@@ -69,6 +69,7 @@ export enum MessageStatus {
 export enum ContentType {
   Text = 'text',
   Image = 'image',
+  Pdf = 'pdf',
 }
 
 /**
