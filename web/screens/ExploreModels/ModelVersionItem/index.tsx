@@ -14,8 +14,6 @@ import { useDownloadState } from '@/hooks/useDownloadState'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
-import { toGigabytes } from '@/utils/converter'
-
 type Props = {
   model: Model
   isRecommended: boolean
