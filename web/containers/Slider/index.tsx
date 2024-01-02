@@ -75,6 +75,7 @@ const SliderRightPanel: React.FC<Props> = ({
             min={min}
             max={max}
             step={step}
+            value={value}
           />
           <div className="relative mt-2 flex items-center justify-between text-gray-400">
             <p className="text-sm">{min}</p>
