@@ -155,7 +155,7 @@ const ChatScreen = () => {
           )}
           <div className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 px-8 py-4">
             <Textarea
-              className="max-h-[400px] resize-none overflow-y-scroll pr-20"
+              className="max-h-[400px] resize-none overflow-y-auto pr-20"
               style={{ height: '40px' }}
               ref={textareaRef}
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) =>

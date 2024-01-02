@@ -14,7 +14,7 @@ import {
   FormControl,
 } from '@janhq/uikit'
 
-import { atom, useAtomValue } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -30,7 +30,7 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/model_param'
+import { toRuntimeParams, toSettingParams } from '@/utils/model_param'
 
 import EngineSetting from '../EngineSetting'
 import ModelSetting from '../ModelSetting'
@@ -41,6 +41,7 @@ import {
   activeThreadAtom,
   getActiveThreadIdAtom,
   getActiveThreadModelParamsAtom,
+  threadSettingFormUpdateAtom,
   threadStatesAtom,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -55,8 +56,37 @@ const Sidebar: React.FC = () => {
   const { updateModelParameter } = useUpdateModelParameters()
   const threadStates = useAtomValue(threadStatesAtom)
   const threadId = useAtomValue(getActiveThreadIdAtom)
+
   const modelEngineParams = toSettingParams(activeModelParams)
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
+  const modelRuntimeParams = toRuntimeParams(activeModelParams)
+
+  const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
+  const setThreadSettingFormUpdate = useSetAtom(threadSettingFormUpdateAtom)
+
+  // console.log(componentDataRuntimeSetting)
+
+  const componentData = [
+    ...[
+      { name: 'title', controllerData: { value: activeThread?.title } },
+      {
+        name: 'instructions',
+        controllerData: { value: activeThread?.assistants[0].instructions },
+      },
+    ],
+    ...componentDataRuntimeSetting,
+    ...componentDataEngineSetting,
+  ]
+
+  const defaultValues = componentData.reduce(
+    (obj: any, item: { name: any; controllerData: any }) =>
+      Object.assign(obj, {
+        [item.name]: item.controllerData.value
+          ? item.controllerData.value
+          : item.controllerData.checked,
+      }),
+    {}
+  )
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
@@ -124,7 +154,7 @@ const Sidebar: React.FC = () => {
     openFileExplorer(fullPath)
   }
 
-  const form = useForm()
+  const form = useForm({ defaultValues })
 
   const filterChangedFormFields = <T extends FieldValues>(
     allFields: T,
@@ -184,15 +214,12 @@ const Sidebar: React.FC = () => {
     form.reset()
   }
 
-  const handleEventClick = () => {
-    return console.log('click')
-  }
-
   // Detect event click after changes value in form to showing tooltip on save button
   useEffect(() => {
-    if (Object.keys(form.formState.dirtyFields).length >= 1) {
-      window.addEventListener('click', handleEventClick)
-      return () => window.removeEventListener('click', handleEventClick)
+    if (Object.keys(form.formState.dirtyFields).length !== 0) {
+      setThreadSettingFormUpdate(true)
+    } else {
+      setThreadSettingFormUpdate(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.formState.dirtyFields])

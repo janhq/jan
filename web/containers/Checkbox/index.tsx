@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react'
 
 import {
@@ -22,14 +23,16 @@ type Props = {
   title: string
   description: string
   value: boolean
+  checked: boolean
   onBlur: () => void
-  onChange: () => void
+  onChange: (e: boolean) => void
 }
 
 const Checkbox: React.FC<Props> = ({
   name,
   value,
   title,
+  checked,
   description,
   onChange,
   onBlur,
@@ -64,9 +67,8 @@ const Checkbox: React.FC<Props> = ({
 
       <Switch
         name={name}
-        defaultChecked={value}
-        onCheckedChange={onChange}
-        onChange={onChange}
+        checked={value !== undefined ? value : checked}
+        onCheckedChange={(e) => onChange(e)}
         onBlur={onBlur}
       />
     </div>

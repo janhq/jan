@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+
 import {
   Tooltip,
   TooltipContent,
@@ -6,6 +8,7 @@ import {
 } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 
+import { useAtomValue } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
@@ -23,8 +26,11 @@ import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
+import { threadSettingFormUpdateAtom } from '@/helpers/atoms/Thread.atom'
+
 export default function RibbonNav() {
   const { mainViewState, setMainViewState } = useMainViewState()
+  const threadSettingFormUpdate = useAtomValue(threadSettingFormUpdateAtom)
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
@@ -93,6 +99,11 @@ export default function RibbonNav() {
       state: MainViewState.Settings,
     },
   ]
+
+  // useEffect(() => {
+  //   console.log(threadSettingFormUpdate)
+  // }, [threadSettingFormUpdate])
+
   return (
     <div className="relative top-12 flex h-[calc(100%-48px)] w-16 flex-shrink-0 flex-col border-r border-border bg-background py-4">
       <div className="mt-2 flex h-full w-full flex-col items-center justify-between">
@@ -115,7 +126,13 @@ export default function RibbonNav() {
                             'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center',
                             isActive && 'z-10'
                           )}
-                          onClick={() => onMenuClick(primary.state)}
+                          onClick={() => {
+                            if (threadSettingFormUpdate) {
+                              console.log('hahah')
+                            } else {
+                              onMenuClick(primary.state)
+                            }
+                          }}
                         >
                           {primary.icon}
                         </div>
