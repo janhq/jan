@@ -132,32 +132,32 @@ Edit `model.json` and include the following configurations:
 
 ```js
 {
-    // highlight-start
-    "source_url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf",
-    "id": "trinity-v1-7b",
-    // highlight-end
-    "object": "model",
-    "name": "Trinity-v1 7B Q4",
-    "version": "1.0",
-    "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
-    "format": "gguf",
-    "settings": {
-      "ctx_len": 4096,
-      // highlight-next-line
-      "prompt_template": "{system_message}\n### Instruction:\n{prompt}\n### Response:"
-    },
-    "parameters": {
-      "max_tokens": 4096
-    },
-    "metadata": {
-      "author": "Jan",
-      "tags": ["7B", "Merged"],
-      "size": 4370000000
-    },
-    "engine": "nitro",
+  // highlight-start
+  "source_url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf",
+  "id": "trinity-v1-7b",
+  // highlight-end
+  "object": "model",
+  "name": "Trinity-v1 7B Q4",
+  "version": "1.0",
+  "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
     // highlight-next-line
-    "state": "ready"
-  }
+    "prompt_template": "{system_message}\n### Instruction:\n{prompt}\n### Response:"
+  },
+  "parameters": {
+    "max_tokens": 4096
+  },
+  "metadata": {
+    "author": "Jan",
+    "tags": ["7B", "Merged"],
+    "size": 4370000000
+  },
+  "engine": "nitro",
+  // highlight-next-line
+  "state": "ready"
+}
 ```
 
 ### 3. Download the Model
@@ -201,25 +201,28 @@ Navigate to the `~/jan/models` folder. Create a folder named `remote-lmstudio` a
 
 ```js
 {
-    "source_url": "https://lmstudio.ai",
-    // highlight-next-line
-    "id": "remote-lmstudio",
-    "object": "model",
-    "name": "remote lmstudio",
-    "version": "1.0",
-    "description": "Jan integration with remote LMstudio server",
-    // highlight-next-line
-    "format": "api",
-    "settings": {},
-    "parameters": {},
-    "metadata": {
+  "source_url": "https://lmstudio.ai",
+  // highlight-next-line
+  "id": "remote-lmstudio",
+  "object": "model",
+  "name": "remote lmstudio",
+  "version": "1.0",
+  "description": "Jan integration with remote LMstudio server",
+  // highlight-next-line
+  "format": "api",
+  "settings": {},
+  "parameters": {},
+  "metadata": {
     "author": "LMstudio",
-    "tags": ["remote", "awesome"]
-    },
-    // highlight-start
-    "engine": "openai",
-    "state": "ready"
-    // highlight-end
+    "tags": [
+      "remote",
+      "awesome"
+    ]
+  },
+  // highlight-start
+  "engine": "openai",
+  "state": "ready"
+  // highlight-end
 }
 ```
 
