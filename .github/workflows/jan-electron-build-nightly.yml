@@ -187,7 +187,7 @@ jobs:
         shell: bash
         run: |
           # Update the version in electron/package.json
-          jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
+          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
           jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
@@ -259,7 +259,7 @@ jobs:
         id: version_update
         run: |
           # Update the version in electron/package.json
-          jq --arg version "$NEW_VERSION" '.version = $version' electron/package.json > /tmp/package.json
+          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
