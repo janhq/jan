@@ -24,11 +24,25 @@ function getOperatingSystem(): string {
   return 'Unknown'
 }
 
-// Function to capture app version and operating system
 function captureAppVersionAndOS() {
   const properties: Properties = {
-    appVersion: VERSION,
-    userOperatingSystem: getOperatingSystem(),
+    $appVersion: VERSION,
+    $userOperatingSystem: getOperatingSystem(),
+    // Set the following Posthog default properties to empty strings
+    $initial_browser: '',
+    $browser: '',
+    $initial_browser_version: '',
+    $browser_version: '',
+    $initial_current_url: '',
+    $current_url: '',
+    $initial_device_type: '',
+    $device_type: '',
+    $initial_pathname: '',
+    $pathname: '',
+    $initial_referrer: '',
+    $referrer: '',
+    $initial_referring_domain: '',
+    $referring_domain: '',
   }
   posthog.capture(AnalyticsEvent.Ping, properties)
 }
