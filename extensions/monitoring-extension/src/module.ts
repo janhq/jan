@@ -1,22 +1,32 @@
-const si = require("systeminformation");
+const os = require("os");
+const osUtils = require("os-utils");
 
-const getResourcesInfo = async () =>
-  new Promise(async (resolve) => {
-    const cpu = await si.cpu();
-    const mem = await si.mem();
-    // const gpu = await si.graphics();
+const getResourcesInfo = () =>
+  new Promise((resolve) => {
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+    const usedMemory = totalMemory - freeMemory;
+
     const response = {
-      cpu,
-      mem,
-      // gpu,
+      mem: {
+        totalMemory,
+        usedMemory,
+      },
     };
     resolve(response);
   });
 
-const getCurrentLoad = async () =>
-  new Promise(async (resolve) => {
-    const currentLoad = await si.currentLoad();
-    resolve(currentLoad);
+const getCurrentLoad = () =>
+  new Promise((resolve) => {
+    osUtils.cpuUsage(function(v){
+      const cpuPercentage = v * 100;
+      const response = {
+        cpu: {
+          usage: cpuPercentage,
+        },
+      };
+      resolve(response);
+    });
   });
 
 module.exports = {

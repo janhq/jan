@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
-    "systeminformation": "^5.21.8",
+    "os-utils": "^0.0.14",
     "ts-loader": "^9.5.0"
   },
   "files": [
@@ -26,6 +26,6 @@
     "README.md"
   ],
   "bundleDependencies": [
-    "systeminformation"
+    "os-utils"
   ]
 }

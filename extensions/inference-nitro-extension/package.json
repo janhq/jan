@@ -32,9 +32,9 @@
     "@janhq/core": "file:../../core",
     "download-cli": "^1.1.1",
     "fetch-retry": "^5.0.6",
+    "os-utils": "^0.0.14",
     "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",
-    "systeminformation": "^5.21.20",
     "tcp-port-used": "^1.0.2",
     "ts-loader": "^9.5.0",
     "ulid": "^2.3.0"
@@ -50,6 +50,6 @@
   "bundleDependencies": [
     "tcp-port-used",
     "fetch-retry",
-    "systeminformation"
+    "os-utils"
   ]
 }

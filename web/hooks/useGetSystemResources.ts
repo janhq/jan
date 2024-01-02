@@ -32,24 +32,26 @@ export default function useGetSystemResources() {
     const currentLoadInfor = await monitoring?.getCurrentLoad()
 
     const ram =
-      (resourceInfor?.mem?.active ?? 0) / (resourceInfor?.mem?.total ?? 1)
-    if (resourceInfor?.mem?.active) setUsedRam(resourceInfor.mem.active)
-    if (resourceInfor?.mem?.total) setTotalRam(resourceInfor.mem.total)
+      (resourceInfor?.mem?.usedMemory ?? 0) /
+      (resourceInfor?.mem?.totalMemory ?? 1)
+    if (resourceInfor?.mem?.usedMemory) setUsedRam(resourceInfor.mem.usedMemory)
+    if (resourceInfor?.mem?.totalMemory)
+      setTotalRam(resourceInfor.mem.totalMemory)
 
     setRam(Math.round(ram * 100))
-    setCPU(Math.round(currentLoadInfor?.currentLoad ?? 0))
-    setCpuUsage(Math.round(currentLoadInfor?.currentLoad ?? 0))
+    setCPU(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
+    setCpuUsage(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
   }
 
   useEffect(() => {
     getSystemResources()
 
-    // Fetch interval - every 5s
+    // Fetch interval - every 2s
     // TODO: Will we really need this?
     // There is a possibility that this will be removed and replaced by the process event hook?
     const intervalId = setInterval(() => {
       getSystemResources()
-    }, 5000)
+    }, 2000)
 
     // clean up interval
     return () => clearInterval(intervalId)
