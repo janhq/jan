@@ -122,9 +122,9 @@ export default class JSONConversationalExtension
         const filesPath = join(threadDirPath, 'files')
         await fs.mkdir(filesPath)
 
-        const imagePath = join(filesPath, `${message.id}.pdf`)
+        const filePath = join(filesPath, `${message.id}.pdf`)
         const blob = message.content[0].text.annotations[0]
-        await this.storeFile(blob, imagePath)
+        await this.storeFile(blob, filePath)
       }
 
       await fs.appendFile(threadMessagePath, JSON.stringify(message) + '\n')
@@ -144,10 +144,10 @@ export default class JSONConversationalExtension
     }
   }
 
-  async storeFile(blob: any, filePath: string): Promise<void> {
-    console.log(blob)
+  async storeFile(base64: string, filePath: string): Promise<void> {
+    const base64Data = base64.replace(/^data:application\/pdf;base64,/, '')
     try {
-      await fs.writeBlob(filePath, blob)
+      await fs.writeBlob(filePath, base64Data)
     } catch (err) {
       console.error(err)
     }
