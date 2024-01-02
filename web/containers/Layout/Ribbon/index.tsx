@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import {
   Tooltip,
@@ -279,6 +279,7 @@ export default function RibbonNav() {
               </ModalClose>
               <Button
                 themes="danger"
+                autoFocus
                 block
                 onClick={() => {
                   setshowModalUpdateThreadSetting({
