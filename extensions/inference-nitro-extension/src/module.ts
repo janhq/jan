@@ -4,7 +4,7 @@ const path = require("path");
 const { exec, spawn } = require("child_process");
 const tcpPortUsed = require("tcp-port-used");
 const fetchRetry = require("fetch-retry")(global.fetch);
-const si = require("systeminformation");
+const osUtils = require("os-utils");
 const { readFileSync, writeFileSync, existsSync } = require("fs");
 
 // The PORT to use for the Nitro subprocess
@@ -440,11 +440,10 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
  */
 function getResourcesInfo(): Promise<ResourcesInfo> {
   return new Promise(async (resolve) => {
-    const cpu = await si.cpu();
-    // const mem = await si.mem();
-
+    const cpu = await osUtils.cpuCount();
+    console.log("cpu: ", cpu);
     const response: ResourcesInfo = {
-      numCpuPhysicalCore: cpu.physicalCores,
+      numCpuPhysicalCore: cpu,
       memAvailable: 0,
     };
     resolve(response);
