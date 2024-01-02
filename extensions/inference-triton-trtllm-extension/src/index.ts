@@ -34,7 +34,7 @@ import { EngineSettings } from "./@types/global";
 export default class JanInferenceTritonTrtLLMExtension
   implements InferenceExtension
 {
-  private static readonly _homeDir = "engines";
+  private static readonly _homeDir = "file://engines";
   private static readonly _engineMetadataFileName = "triton_trtllm.json";
 
   static _currentModel: Model;
@@ -57,9 +57,9 @@ export default class JanInferenceTritonTrtLLMExtension
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  onLoad(): void {
-    fs.mkdir(JanInferenceTritonTrtLLMExtension._homeDir);
-    JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings();
+  async onLoad() {
+    if (!(await fs.existsSync(JanInferenceTritonTrtLLMExtension._homeDir)))
+      JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings();
 
     // Events subscription
     events.on(EventName.OnMessageSent, (data) =>
@@ -98,12 +98,12 @@ export default class JanInferenceTritonTrtLLMExtension
         JanInferenceTritonTrtLLMExtension._homeDir,
         JanInferenceTritonTrtLLMExtension._engineMetadataFileName
       );
-      if (await fs.exists(engine_json)) {
-        JanInferenceTritonTrtLLMExtension._engineSettings = JSON.parse(
-          await fs.readFile(engine_json)
-        );
+      if (await fs.existsSync(engine_json)) {
+        const engine = await fs.readFileSync(engine_json, "utf-8");
+        JanInferenceTritonTrtLLMExtension._engineSettings =
+          typeof engine === "object" ? engine : JSON.parse(engine);
       } else {
-        await fs.writeFile(
+        await fs.writeFileSync(
           engine_json,
           JSON.stringify(
             JanInferenceTritonTrtLLMExtension._engineSettings,

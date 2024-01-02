@@ -1,47 +1,33 @@
-import { useForm } from 'react-hook-form'
-
-import { ModelRuntimeParams } from '@janhq/core'
+import React from 'react'
 
 import { useAtomValue } from 'jotai'
 
-import { presetConfiguration } from './predefinedComponent'
-import settingComponentBuilder, {
-  SettingComponentData,
-} from './settingComponentBuilder'
+import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 
-import { getActiveThreadModelRuntimeParamsAtom } from '@/helpers/atoms/Thread.atom'
+import { getConfigurationsData } from '@/utils/componentSettings'
+import { toRuntimeParams } from '@/utils/model_param'
 
-export default function ModelSetting() {
-  const { register } = useForm()
-  const activeModelParams = useAtomValue(getActiveThreadModelRuntimeParamsAtom)
+import settingComponentBuilder from './settingComponentBuilder'
 
-  if (!activeModelParams) {
-    return null
-  }
+import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
-  const componentData: SettingComponentData[] = []
-  Object.keys(activeModelParams).forEach((key) => {
-    const componentSetting = presetConfiguration[key]
+const ModelSetting: React.FC = () => {
+  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const selectedModel = useAtomValue(selectedModelAtom)
 
-    if (componentSetting) {
-      if ('value' in componentSetting.controllerData) {
-        componentSetting.controllerData.value = Number(
-          activeModelParams[key as keyof ModelRuntimeParams]
-        )
-      } else if ('checked' in componentSetting.controllerData) {
-        const checked = activeModelParams[
-          key as keyof ModelRuntimeParams
-        ] as boolean
+  if (!selectedModel || !activeModelParams) return null
 
-        componentSetting.controllerData.checked = checked
-      }
-      componentData.push(componentSetting)
-    }
-  })
+  const modelRuntimeParams = toRuntimeParams(activeModelParams)
+
+  const componentData = getConfigurationsData(modelRuntimeParams)
+
+  componentData.sort((a, b) => a.title.localeCompare(b.title))
 
   return (
     <form className="flex flex-col">
-      {settingComponentBuilder(componentData, register)}
+      {settingComponentBuilder(componentData)}
     </form>
   )
 }
+
+export default React.memo(ModelSetting)

@@ -1,6 +1,24 @@
 ---
 title: Import Models Manually
+slug: /guides/using-models/import-manually
+description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    import-models-manually,
+  ]
 ---
+
+:::caution
+This is currently under development.
+:::
 
 {/* Imports */}
 import Tabs from "@theme/Tabs";
@@ -8,17 +26,17 @@ import TabItem from "@theme/TabItem";
 
 Jan is compatible with all GGUF models.
 
-If you don't see the model you want in the Hub, or if you have a custom model, you can add it to Jan.
+If you can not find the model you want in the Hub or have a custom model you want to use, you can import it manually.
 
-In this guide we will use our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
+In this guide, we will show you how to import a GGUF model from [HuggingFace](https://huggingface.co/), using our lastest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
 
 > We are fast shipping a UI to make this easier, but it's a bit manual for now. Apologies.
 
-## 1. Create a model folder
+## Steps to Manually Import a Model
 
-Navigate to the `~/jan/models` folder on your computer.
+### 1. Create a Model Folder
 
-In `App Settings`, go to `Advanced`, then `Open App Directory`.
+Navigate to the `~/jan/models` folder. You can find this folder by going to `App Settings` > `Advanced` > `Open App Directory`.
 
 <Tabs groupId="operating-systems">
   <TabItem value="mac" label="macOS">
@@ -70,11 +88,11 @@ In the `models` folder, create a folder with the name of the model.
   </TabItem>
 </Tabs>
 
-## 2. Create a model JSON
+### 2. Create a Model JSON
 
-Jan follows a folder-based, [standard model template](/specs/models) called a `model.json` to persist the model configurations on your local filesystem.
+Jan follows a folder-based, [standard model template](/docs/engineering/models) called a `model.json` to persist the model configurations on your local filesystem.
 
-This means you can easily & transparently reconfigure your models and export and share your preferences.
+This means that you can easily reconfigure your models, export them, and share your preferences transparently.
 
 <Tabs groupId="operating-systems">
   <TabItem value="mac" label="macOS">
@@ -89,7 +107,7 @@ This means you can easily & transparently reconfigure your models and export and
     
     ```sh
     cd trinity-v1-7b
-    touch model.json
+    echo {} > model.json
     ```
 
   </TabItem>
@@ -103,45 +121,53 @@ This means you can easily & transparently reconfigure your models and export and
   </TabItem>
 </Tabs>
 
-Copy the following configurations into the `model.json`.
+Edit `model.json` and include the following configurations:
 
-1. Make sure the `id` property is the same as the folder name you created.
-2. Make sure the `source_url` property is the direct binary download link ending in `.gguf`. In HuggingFace, you can find the directl links in `Files and versions` tab.
-3. Ensure you are using the correct `prompt_template`. This is usually provided in the HuggingFace model's description page.
+- Ensure the filename must be `model.json`.
+- Ensure the `id` property matches the folder name you created.
+- Ensure the GGUF filename should match the `id` property exactly.
+- Ensure the `source_url` property is the direct binary download link ending in `.gguf`. In HuggingFace, you can find the direct links in `Files and versions` tab.
+- Ensure you are using the correct `prompt_template`. This is usually provided in the HuggingFace model's description page.
+- Ensure the `state` property is set to `ready`.
 
 ```js
 {
+    // highlight-start
     "source_url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf",
     "id": "trinity-v1-7b",
+    // highlight-end
     "object": "model",
-    "name": "Trinity 7B Q4",
+    "name": "Trinity-v1 7B Q4",
     "version": "1.0",
     "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
     "format": "gguf",
     "settings": {
-      "ctx_len": 2048,
-      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
+      "ctx_len": 4096,
+      // highlight-next-line
+      "prompt_template": "{system_message}\n### Instruction:\n{prompt}\n### Response:"
     },
     "parameters": {
-      "max_tokens": 2048
+      "max_tokens": 4096
     },
     "metadata": {
       "author": "Jan",
-      "tags": ["7B", "Merged", "Featured"],
+      "tags": ["7B", "Merged"],
       "size": 4370000000
     },
+    // highlight-next-line
+    "state": "ready",
     "engine": "nitro"
   }
 ```
 
-## 3. Download your model
+### 3. Download the Model
 
-Restart the Jan application and look for your model in the Hub.
+Restart Jan and navigate to the Hub. Locate your model and click the `Download` button to download the model binary.
 
-Click the green `download` button to download your actual model binary. This pulls from the `source_url` you provided above.
+![image](assets/download-model.png)
 
-![image](https://hackmd.io/_uploads/HJLAqvwI6.png)
+Your model is now ready to use in Jan.
 
-There you go! You are ready to use your model.
+## Assistance and Support
 
-If you have any questions or want to request for more preconfigured GGUF models, please message us in [Discord](https://discord.gg/Dt7MxDyNNZ).
+If you have questions or are looking for more preconfigured GGUF models, please feel free to join our [Discord community](https://discord.gg/Dt7MxDyNNZ) for support, updates, and discussions.

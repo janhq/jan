@@ -14,3 +14,9 @@ keywords:
     large language model,
   ]
 ---
+
+:::caution
+This is currently under development.
+:::
+
+A quickstart on how to upload images to Jan.

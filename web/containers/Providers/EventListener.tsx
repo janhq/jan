@@ -2,33 +2,33 @@
 
 import { PropsWithChildren, useEffect, useRef } from 'react'
 
-import { ExtensionType } from '@janhq/core'
-import { ModelExtension } from '@janhq/core'
-
+import { baseName } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
+import { modelBinFileName } from '@/utils/model'
+
 import EventHandler from './EventHandler'
 
 import { appDownloadProgress } from './Jotai'
 
-import { extensionManager } from '@/extension/ExtensionManager'
 import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 export default function EventListenerWrapper({ children }: PropsWithChildren) {
   const setProgress = useSetAtom(appDownloadProgress)
   const models = useAtomValue(downloadingModelsAtom)
   const modelsRef = useRef(models)
-  useEffect(() => {
-    modelsRef.current = models
-  }, [models])
+
   const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
   const { setDownloadState, setDownloadStateSuccess, setDownloadStateFailed } =
     useDownloadState()
   const downloadedModelRef = useRef(downloadedModels)
 
+  useEffect(() => {
+    modelsRef.current = models
+  }, [models])
   useEffect(() => {
     downloadedModelRef.current = downloadedModels
   }, [downloadedModels])
@@ -36,39 +36,42 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
   useEffect(() => {
     if (window && window.electronAPI) {
       window.electronAPI.onFileDownloadUpdate(
-        (_event: string, state: any | undefined) => {
+        async (_event: string, state: any | undefined) => {
           if (!state) return
-          setDownloadState({
-            ...state,
-            modelId: state.fileName.split('/').pop() ?? '',
-          })
+          const modelName = await baseName(state.fileName)
+          const model = modelsRef.current.find(
+            (model) => modelBinFileName(model) === modelName
+          )
+          if (model)
+            setDownloadState({
+              ...state,
+              modelId: model.id,
+            })
         }
       )
 
       window.electronAPI.onFileDownloadError(
-        (_event: string, callback: any) => {
-          console.error('Download error', callback)
-          const modelId = callback.fileName.split('/').pop() ?? ''
-          setDownloadStateFailed(modelId)
+        async (_event: string, state: any) => {
+          console.error('Download error', state)
+          const modelName = await baseName(state.fileName)
+          const model = modelsRef.current.find(
+            (model) => modelBinFileName(model) === modelName
+          )
+          if (model) setDownloadStateFailed(model.id)
         }
       )
 
       window.electronAPI.onFileDownloadSuccess(
-        (_event: string, callback: any) => {
-          if (callback && callback.fileName) {
-            const modelId = callback.fileName.split('/').pop() ?? ''
-
-            const model = modelsRef.current.find((e) => e.id === modelId)
-
-            setDownloadStateSuccess(modelId)
-
-            if (model)
-              extensionManager
-                .get<ModelExtension>(ExtensionType.Model)
-                ?.saveModel(model)
-                .then(() => {
-                  setDownloadedModels([...downloadedModelRef.current, model])
-                })
+        async (_event: string, state: any) => {
+          if (state && state.fileName) {
+            const modelName = await baseName(state.fileName)
+            const model = modelsRef.current.find(
+              async (model) => modelBinFileName(model) === modelName
+            )
+            if (model) {
+              setDownloadStateSuccess(model.id)
+              setDownloadedModels([...downloadedModelRef.current, model])
+            }
           }
         }
       )

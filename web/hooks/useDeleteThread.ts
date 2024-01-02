@@ -22,6 +22,7 @@ import {
   setActiveThreadIdAtom,
   deleteThreadStateAtom,
   threadStatesAtom,
+  updateThreadStateLastMessageAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function useDeleteThread() {
@@ -33,21 +34,23 @@ export default function useDeleteThread() {
   const deleteMessages = useSetAtom(deleteChatMessagesAtom)
   const cleanMessages = useSetAtom(cleanChatMessagesAtom)
   const deleteThreadState = useSetAtom(deleteThreadStateAtom)
-
   const threadStates = useAtomValue(threadStatesAtom)
+  const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
 
   const cleanThread = async (threadId: string) => {
     if (threadId) {
       const thread = threads.filter((c) => c.id === threadId)[0]
       cleanMessages(threadId)
 
-      if (thread)
+      if (thread) {
         await extensionManager
           .get<ConversationalExtension>(ExtensionType.Conversational)
           ?.writeMessages(
             threadId,
             messages.filter((msg) => msg.role === ChatCompletionRole.System)
           )
+        updateThreadLastMessage(threadId, undefined)
+      }
     }
   }
 

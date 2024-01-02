@@ -17,9 +17,9 @@ import {
   ThreadMessage,
   events,
   executeOnMain,
-  getUserSpace,
   fs,
   Model,
+  joinPath,
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
@@ -32,7 +32,8 @@ import { join } from "path";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceNitroExtension implements InferenceExtension {
-  private static readonly _homeDir = "engines";
+  private static readonly _homeDir = "file://engines";
+  private static readonly _settingsDir = "file://settings";
   private static readonly _engineMetadataFileName = "nitro.json";
 
   private static _currentModel: Model;
@@ -58,8 +59,15 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
-  onLoad(): void {
-    fs.mkdir(JanInferenceNitroExtension._homeDir);
+  async onLoad() {
+    if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir))) {
+      await fs
+        .mkdirSync(JanInferenceNitroExtension._homeDir)
+        .catch((err) => console.debug(err));
+    }
+
+    if (!(await fs.existsSync(JanInferenceNitroExtension._settingsDir)))
+      await fs.mkdirSync(JanInferenceNitroExtension._settingsDir);
     this.writeDefaultEngineSettings();
 
     // Events subscription
@@ -78,6 +86,9 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     events.on(EventName.OnInferenceStopped, () => {
       JanInferenceNitroExtension.handleInferenceStopped(this);
     });
+
+    // Attempt to fetch nvidia info
+    await executeOnMain(MODULE, "updateNvidiaInfo", {});
   }
 
   /**
@@ -91,12 +102,12 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
         JanInferenceNitroExtension._homeDir,
         JanInferenceNitroExtension._engineMetadataFileName
       );
-      if (await fs.exists(engineFile)) {
-        JanInferenceNitroExtension._engineSettings = JSON.parse(
-          await fs.readFile(engineFile)
-        );
+      if (await fs.existsSync(engineFile)) {
+        const engine = await fs.readFileSync(engineFile, "utf-8");
+        JanInferenceNitroExtension._engineSettings =
+          typeof engine === "object" ? engine : JSON.parse(engine);
       } else {
-        await fs.writeFile(
+        await fs.writeFileSync(
           engineFile,
           JSON.stringify(JanInferenceNitroExtension._engineSettings, null, 2)
         );
@@ -110,8 +121,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     if (model.engine !== "nitro") {
       return;
     }
-    const userSpacePath = await getUserSpace();
-    const modelFullPath = join(userSpacePath, "models", model.id, model.id);
+    const modelFullPath = await joinPath(["models", model.id]);
 
     const nitroInitResult = await executeOnMain(MODULE, "initModel", {
       modelFullPath: modelFullPath,

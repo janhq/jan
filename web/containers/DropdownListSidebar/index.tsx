@@ -9,10 +9,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipArrow,
   Input,
 } from '@janhq/uikit'
 
@@ -32,14 +28,22 @@ import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import { toGigabytes } from '@/utils/converter'
 
-import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
+import {
+  activeThreadAtom,
+  getActiveThreadIdAtom,
+  setThreadModelParamsAtom,
+  threadStatesAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
 
 export default function DropdownListSidebar() {
-  const setSelectedModel = useSetAtom(selectedModelAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
+  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const activeThread = useAtomValue(activeThreadAtom)
+  const threadStates = useAtomValue(threadStatesAtom)
+  const setSelectedModel = useSetAtom(selectedModelAtom)
+  const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+
   const [selected, setSelected] = useState<Model | undefined>()
   const { setMainViewState } = useMainViewState()
   const [openAISettings, setOpenAISettings] = useState<
@@ -58,83 +62,93 @@ export default function DropdownListSidebar() {
   useEffect(() => {
     setSelected(recommendedModel)
     setSelectedModel(recommendedModel)
-  }, [recommendedModel, setSelectedModel])
+
+    if (activeThread) {
+      const finishInit = threadStates[activeThread.id].isFinishInit ?? true
+      if (finishInit) return
+      const modelParams = {
+        ...recommendedModel?.parameters,
+        ...recommendedModel?.settings,
+      }
+      setThreadModelParams(activeThread.id, modelParams)
+    }
+  }, [
+    recommendedModel,
+    activeThread,
+    setSelectedModel,
+    setThreadModelParams,
+    threadStates,
+  ])
 
   const onValueSelected = useCallback(
     (modelId: string) => {
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelected(model)
       setSelectedModel(model)
+
+      if (activeThreadId) {
+        const modelParams = {
+          ...model?.parameters,
+          ...model?.settings,
+        }
+        setThreadModelParams(activeThreadId, modelParams)
+      }
     },
-    [downloadedModels, setSelectedModel]
+    [downloadedModels, activeThreadId, setSelectedModel, setThreadModelParams]
   )
 
   if (!activeThread) {
     return null
   }
-  const finishInit = threadStates[activeThread.id].isFinishInit ?? true
 
   return (
-    <Tooltip>
-      <TooltipTrigger className="w-full">
-        <Select
-          disabled={finishInit}
-          value={selected?.id}
-          onValueChange={finishInit ? undefined : onValueSelected}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Choose model to start">
-              {downloadedModels.filter((x) => x.id === selected?.id)[0]?.name}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent className="right-5 block w-full min-w-[300px] pr-0">
-            <div className="flex w-full items-center space-x-2 px-4 py-2">
-              <MonitorIcon size={20} className="text-muted-foreground" />
-              <span>Local</span>
+    <>
+      <Select value={selected?.id} onValueChange={onValueSelected}>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Choose model to start">
+            {downloadedModels.filter((x) => x.id === selected?.id)[0]?.name}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent className="right-5 block w-full min-w-[300px] pr-0">
+          <div className="flex w-full items-center space-x-2 px-4 py-2">
+            <MonitorIcon size={20} className="text-muted-foreground" />
+            <span>Local</span>
+          </div>
+          <div className="border-b border-border" />
+          {downloadedModels.length === 0 ? (
+            <div className="px-4 py-2">
+              <p>{`Oops, you don't have a model yet.`}</p>
             </div>
-            <div className="border-b border-border" />
-            {downloadedModels.length === 0 ? (
-              <div className="px-4 py-2">
-                <p>{`Oops, you don't have a model yet.`}</p>
-              </div>
-            ) : (
-              <SelectGroup>
-                {downloadedModels.map((x, i) => (
-                  <SelectItem
-                    key={i}
-                    value={x.id}
-                    className={twMerge(x.id === selected?.id && 'bg-secondary')}
-                  >
-                    <div className="flex w-full justify-between">
-                      <span className="line-clamp-1 block">{x.name}</span>
-                      <span className="font-bold text-muted-foreground">
-                        {toGigabytes(x.metadata.size)}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            )}
-            <div className="border-b border-border" />
-            <div className="w-full px-4 py-2">
-              <Button
-                block
-                className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
-                onClick={() => setMainViewState(MainViewState.Hub)}
-              >
-                Explore The Hub
-              </Button>
-            </div>
-          </SelectContent>
-        </Select>
-      </TooltipTrigger>
-
-      {finishInit && (
-        <TooltipContent sideOffset={10}>
-          <span>Start a new thread to change the model</span>
-          <TooltipArrow />
-        </TooltipContent>
-      )}
+          ) : (
+            <SelectGroup>
+              {downloadedModels.map((x, i) => (
+                <SelectItem
+                  key={i}
+                  value={x.id}
+                  className={twMerge(x.id === selected?.id && 'bg-secondary')}
+                >
+                  <div className="flex w-full justify-between">
+                    <span className="line-clamp-1 block">{x.name}</span>
+                    <span className="font-bold text-muted-foreground">
+                      {toGigabytes(x.metadata.size)}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          )}
+          <div className="border-b border-border" />
+          <div className="w-full px-4 py-2">
+            <Button
+              block
+              className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
+              onClick={() => setMainViewState(MainViewState.Hub)}
+            >
+              Explore The Hub
+            </Button>
+          </div>
+        </SelectContent>
+      </Select>
 
       {selected?.engine === InferenceEngine.openai && (
         <div className="mt-4">
@@ -154,6 +168,6 @@ export default function DropdownListSidebar() {
           />
         </div>
       )}
-    </Tooltip>
+    </>
   )
 }

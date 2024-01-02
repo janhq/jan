@@ -51,13 +51,13 @@ C:\Users\{username}\AppData\Local\Programs\Jan
 
 ## Uninstalling Jan
 
-To uninstall Jan in Windows, use the [Windows Control Panel](https://support.microsoft.com/en-us/windows/uninstall-or-remove-apps-and-programs-in-windows-4b55f974-2cc6-2d2b-d092-5905080eaf98).
+To uninstall Jan on Windows, use the [Windows Control Panel](https://support.microsoft.com/en-us/windows/uninstall-or-remove-apps-and-programs-in-windows-4b55f974-2cc6-2d2b-d092-5905080eaf98).
 
-To remove all user data associated with Jan, you can delete the `/Jan` directory in Windows' [AppData directory](https://superuser.com/questions/632891/what-is-appdata).
+To remove all user data associated with Jan, you can delete the `/jan` directory in Windows' [AppData directory](https://superuser.com/questions/632891/what-is-appdata).
 
-```shell
-# Jan's User Data directory
-%AppData%\Jan
+```bash
+cd C:\Users\%USERNAME%\AppData\Roaming
+rmdir /S jan
 ```
 
 ## Troubleshooting

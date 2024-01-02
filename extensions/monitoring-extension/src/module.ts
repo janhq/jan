@@ -4,11 +4,11 @@ const getResourcesInfo = async () =>
   new Promise(async (resolve) => {
     const cpu = await si.cpu();
     const mem = await si.mem();
-    const gpu = await si.graphics();
+    // const gpu = await si.graphics();
     const response = {
       cpu,
       mem,
-      gpu,
+      // gpu,
     };
     resolve(response);
   });

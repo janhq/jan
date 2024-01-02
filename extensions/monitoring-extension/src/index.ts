@@ -18,7 +18,7 @@ export default class JanMonitoringExtension implements MonitoringExtension {
   /**
    * Called when the extension is loaded.
    */
-  onLoad(): void {}
+  async onLoad() {}
 
   /**
    * Called when the extension is unloaded.

@@ -44,6 +44,34 @@ const getUserSpace = (): Promise<string> => global.core.api?.getUserSpace()
 const openFileExplorer: (path: string) => Promise<any> = (path) =>
   global.core.api?.openFileExplorer(path)
 
+/**
+ * Joins multiple paths together.
+ * @param paths - The paths to join.
+ * @returns {Promise<string>} A promise that resolves with the joined path.
+ */
+const joinPath: (paths: string[]) => Promise<string> = (paths) => global.core.api?.joinPath(paths)
+
+/**
+ * Retrive the basename from an url.
+ * @param path - The path to retrieve.
+ * @returns {Promise<string>} A promise that resolves with the basename.
+ */
+const baseName: (paths: string[]) => Promise<string> = (path) => global.core.api?.baseName(path)
+
+/**
+ * Opens an external URL in the default web browser.
+ *
+ * @param {string} url - The URL to open.
+ * @returns {Promise<any>} - A promise that resolves when the URL has been successfully opened.
+ */
+const openExternalUrl: (url: string) => Promise<any> = (url) =>
+  global.core.api?.openExternalUrl(url)
+
+/**
+ * Gets the resource path of the application.
+ *
+ * @returns {Promise<string>} - A promise that resolves with the resource path.
+ */
 const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
 
 /**
@@ -66,4 +94,7 @@ export {
   getUserSpace,
   openFileExplorer,
   getResourcePath,
+  joinPath,
+  openExternalUrl,
+  baseName,
 }

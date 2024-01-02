@@ -10,7 +10,12 @@ import {
   CommandList,
 } from '@janhq/uikit'
 
-import { MessageCircleIcon, SettingsIcon, LayoutGridIcon } from 'lucide-react'
+import {
+  MessageCircleIcon,
+  SettingsIcon,
+  LayoutGridIcon,
+  MonitorIcon,
+} from 'lucide-react'
 
 import ShortCut from '@/containers/Shortcut'
 
@@ -34,6 +39,11 @@ export default function CommandSearch() {
       name: 'Hub',
       icon: <LayoutGridIcon size={16} className="mr-3 text-muted-foreground" />,
       state: MainViewState.Hub,
+    },
+    {
+      name: 'System Monitor',
+      icon: <MonitorIcon size={16} className="mr-3 text-muted-foreground" />,
+      state: MainViewState.SystemMonitor,
     },
     {
       name: 'Settings',
