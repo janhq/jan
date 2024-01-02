@@ -4,7 +4,7 @@ import { useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
-import { toGigabytes } from '@/utils/converter'
+import { toGibibytes } from '@/utils/converter'
 
 import {
   cpuUsageAtom,
@@ -31,7 +31,7 @@ export default function SystemMonitorScreen() {
                   ram ({Math.round((usedRam / totalRam) * 100)}%)
                 </h4>
                 <span className="text-xs text-muted-foreground">
-                  {toGigabytes(usedRam)} of {toGigabytes(totalRam)} used
+                  {toGibibytes(usedRam)} of {toGibibytes(totalRam)} used
                 </span>
               </div>
               <div className="mt-2">
@@ -87,7 +87,7 @@ export default function SystemMonitorScreen() {
                       <td className="px-6 py-2 font-bold">{activeModel.id}</td>
                       <td className="px-6 py-2">
                         <Badge themes="secondary">
-                          {toGigabytes(activeModel.metadata.size)}
+                          {toGibibytes(activeModel.metadata.size)}
                         </Badge>
                       </td>
                       <td className="px-6 py-2">
