@@ -15,6 +15,7 @@ jobs:
         uses: unfor19/install-aws-cli-action@v1
 
       - name: Delete cloudflare-r2 folder using awscli s3api
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true
         run: |
           # Get the list of objects in the 'latest' folder
@@ -146,6 +147,7 @@ jobs:
           path: ./electron/dist/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg
 
       - name: put-object using awscli s3api
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true
         run: |
           ls -al ./electron/dist
@@ -218,6 +220,7 @@ jobs:
           path: ./electron/dist/*.exe
       
       - name: put-object using awscli s3api
+        if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
           ls -al ./electron/dist
@@ -276,6 +279,7 @@ jobs:
           path: ./electron/dist/*.deb
       
       - name: put-object using awscli s3api
+        if: github.ref == 'refs/heads/main'
         run: |
           ls -al ./electron/dist
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --content-type "application/octet-stream"
@@ -325,7 +329,7 @@ jobs:
   noti-discord-manual-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
     environment: production
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
