@@ -192,25 +192,6 @@ make build
 
 This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
 
-## Nightly Build
-
-Our nightly build process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
-
-The nightly build is triggered at 2:00 AM UTC every day.
-
-Getting on Nightly:
-
-1. Join our Discord server [here](https://discord.gg/FTk2MvZwJH) and go to channel [github-jan](https://discordapp.com/channels/1107178041848909847/1148534730359308298).
-2. Download the build artifacts from the channel.
-3. Subsequently, to get the latest nightly, just quit and restart the app.
-4. Upon app restart, you will be automatically prompted to update to the latest nightly build.
-
-## Manual Build
-
-Stable releases are triggered by manual builds. This is usually done for new features or a bug fixes.
-
-The process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
-
 ## Acknowledgements
 
 Jan builds on top of other open-source projects:
