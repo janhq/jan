@@ -56,6 +56,7 @@ export enum FileManagerRoute {
   synceFile = 'syncFile',
   getUserSpace = 'getUserSpace',
   getResourcePath = 'getResourcePath',
+  fileStat = 'fileStat',
 }
 
 export type ApiFunction = (...args: any[]) => any

@@ -4,6 +4,9 @@ import reflect from '@alumna/reflect'
 
 import { FileManagerRoute } from '@janhq/core'
 import { userSpacePath, getResourcePath } from './../utils/path'
+import fs from 'fs'
+import { join } from 'path'
+import { FileStat } from '@janhq/core/.'
 
 /**
  * Handles file system extensions operations.
@@ -34,4 +37,30 @@ export function handleFileMangerIPCs() {
   ipcMain.handle(FileManagerRoute.getResourcePath, async (_event) => {
     return getResourcePath()
   })
+
+  // handle fs is directory here
+  ipcMain.handle(
+    FileManagerRoute.fileStat,
+    async (_event, path: string): Promise<FileStat | undefined> => {
+      const normalizedPath = path
+        .replace(`file://`, '')
+        .replace(`file:/`, '')
+        .replace(`file:\\\\`, '')
+        .replace(`file:\\`, '')
+
+      const fullPath = join(userSpacePath, normalizedPath)
+      const isExist = fs.existsSync(fullPath)
+      if (!isExist) return undefined
+
+      const isDirectory = fs.lstatSync(fullPath).isDirectory()
+      const size = fs.statSync(fullPath).size
+
+      const fileStat: FileStat = {
+        isDirectory,
+        size,
+      }
+
+      return fileStat
+    }
+  )
 }
