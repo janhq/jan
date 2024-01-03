@@ -85,15 +85,15 @@ In this section, we will show you how to configure a client connection to a remo
 
 ### 1. Configure a Client Connection
 
-Navigate to the `~/jan/engines` folder and modify the `openai.json` file. Please note that at the moment the code that supports any openai compatible endpoint only read `engine/openai.json` file, thus, it will not search any other files in this directory.
+Navigate to the `~/jan/engines` folder and modify the `openai.json` file. Please note that at the moment the code that supports any openai compatible endpoint only reads `engine/openai.json` file, thus, it will not search any other files in this directory.
 
-Configure `full_url` properties with the endpoint server that you want to connect. For example, if you want to connect to Jan's API server, you can configure as follows:
+Configure `full_url` properties with the endpoint server that you want to connect. For example, if you want to connect to Jan's API server, you can configure it as follows:
 
 ```js
 {
   // highlight-start
-  // "full_url": "http://<server-ip-address>:<port>/v1/chat/completions"
-  "full_url": "http://<server-ip-address>:1337/v1/chat/completions",
+  // "full_url": "https://<server-ip-address>:<port>/v1/chat/completions"
+  "full_url": "https://<server-ip-address>:1337/v1/chat/completions",
   // highlight-end
   // Skip api_key if your local server does not require authentication
   // "api_key": "sk-<your key here>"
