@@ -14,7 +14,6 @@ keywords:
     large language model,
     import-models-manually,
     local model,
-    remote model,
   ]
 ---
 
@@ -25,25 +24,6 @@ This is currently under development.
 {/* Imports */}
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
-
-## Overview
-
-In this guide, we will walk you through how to import models manually. In Jan, you can use a local model directly on your computer or connect to a remote server.
-
-- Local Model: Jan is compatible with all GGUF models. If you can not find the model you want in the Hub or have a custom model you want to use, you can import it manually by following the [Steps to Manually Import a Local Model](#steps-to-manually-import-a-local-model) section.
-
-- Remote Model: Jan also supports integration with remote models. To establish a connection with these remote models, you can configure the client connection to a remote/ local server by following the [OpenAI Platform Configuration](#openai-platform-configuration) or [Engines with OAI Compatible Configuration](#engines-with-oai-compatible-configuration) section. Please note that at the moment, you can only connect to one OpenAI compatible server at a time (e.g. OpenAI Platform, Azure OpenAI, Jan API Server, etc).
-
-```mermaid
-graph TB
-    Model --> LocalModel[Local model]
-    Model --> RemoteModel[Remote model]
-    LocalModel[Local Model] --> NitroEngine[Nitro Engine]
-    RemoteModel[Remote Model] --> OpenAICompatible[OpenAI Compatible]
-
-    OpenAICompatible --> OpenAIPlatform[OpenAI Platform]
-    OpenAICompatible --> OAIEngines[Engines with OAI Compatible: Jan API server, Azure OpenAI, LM Studio, vLLM, etc]
-```
 
 ## Steps to Manually Import a Local Model
 
@@ -184,123 +164,6 @@ Restart Jan and navigate to the Hub. Locate your model and click the `Download` 
 ![image-01](assets/02-manually-import-local-model.png)
 
 Your model is now ready to use in Jan.
-
-## OpenAI Platform Configuration
-
-In this section, we will show you how to configure with OpenAI Platform, using the OpenAI GPT 3.5 Turbo 16k model as an example.
-
-### 1. Create a Model JSON
-
-Navigate to the `~/jan/models` folder. Create a folder named `gpt-3.5-turbo-16k` and create a `model.json` file inside the folder including the following configurations:
-
-- Ensure the filename must be `model.json`.
-- Ensure the `id` property matches the folder name you created.
-- Ensure the `format` property is set to `api`.
-- Ensure the `engine` property is set to `openai`.
-- Ensure the `state` property is set to `ready`.
-
-```js
-{
-  "source_url": "https://openai.com",
-  // highlight-next-line
-  "id": "gpt-3.5-turbo-16k",
-  "object": "model",
-  "name": "OpenAI GPT 3.5 Turbo 16k",
-  "version": "1.0",
-  "description": "OpenAI GPT 3.5 Turbo 16k model is extremely good",
-  // highlight-start
-  "format": "api",
-  "settings": {},
-  "parameters": {},
-  "metadata": {
-    "author": "OpenAI",
-    "tags": ["General", "Big Context Length"]
-  },
-  "engine": "openai",
-  "state": "ready"
-  // highlight-end
-}
-```
-
-### 2. Configure OpenAI API Keys
-
-You can find your API keys in the [OpenAI Platform](https://platform.openai.com/api-keys) and set the OpenAI API keys in `~/jan/engines/openai.json` file.
-
-```js
-{
-  "full_url": "https://api.openai.com/v1/chat/completions",
-  // highlight-next-line
-  "api_key": "sk-<your key here>"
-}
-```
-
-### 3. Start the Model
-
-Restart Jan and navigate to the Hub. Then, select your configured model and start the model.
-
-![image-02](assets/02-openai-platform-configuration.png)
-
-## Engines with OAI Compatible Configuration
-
-In this section, we will show you how to configure a client connection to a remote/local server, using Jan's API server that is running model `mistral-ins-7b-q4` as an example.
-
-### 1. Configure a Client Connection
-
-Navigate to the `~/jan/engines` folder and modify the `openai.json` file. Please note that at the moment the code supports any openai compatible endpoint only read `engine/openai.json` file, thus, it will not search any other files in this directory.
-
-Configure `full_url` properties with the endpoint server that you want to connect. For example, if you want to connect to Jan's API server, you can configure as follows:
-
-```js
-{
-  // highlight-next-line
-  "full_url": "http://<server-ip-address>:1337/v1/chat/completions",
-  // Skip api_key if your local server does not require authentication
-  // "api_key": "sk-<your key here>"
-}
-```
-
-### 2. Create a Model JSON
-
-Navigate to the `~/jan/models` folder. Create a folder named `mistral-ins-7b-q4` and create a `model.json` file inside the folder including the following configurations:
-
-- Ensure the filename must be `model.json`.
-- Ensure the `id` property matches the folder name you created.
-- Ensure the `format` property is set to `api`.
-- Ensure the `engine` property is set to `openai`.
-- Ensure the `state` property is set to `ready`.
-
-```js
-{
-  "source_url": "https://jan.ai",
-  // highlight-next-line
-  "id": "mistral-ins-7b-q4",
-  "object": "model",
-  "name": "Mistral Instruct 7B Q4 on Jan API Server",
-  "version": "1.0",
-  "description": "Jan integration with remote Jan API server",
-  // highlight-next-line
-  "format": "api",
-  "settings": {},
-  "parameters": {},
-  "metadata": {
-    "author": "MistralAI, The Bloke",
-    "tags": [
-      "remote",
-      "awesome"
-    ]
-  },
-  // highlight-start
-  "engine": "openai",
-  "state": "ready"
-  // highlight-end
-}
-```
-
-### 3. Start the Model
-
-Restart Jan and navigate to the Hub. Locate your model and click the Use button.
-
-![image-03](assets/02-oai-compatible-configuration.png)
 
 ## Assistance and Support
 
