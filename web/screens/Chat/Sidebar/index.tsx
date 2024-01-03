@@ -226,7 +226,7 @@ const Sidebar: React.FC = () => {
 
             <div className="mt-6">
               <CardSidebar title="Inference Parameters" asChild>
-                <div className="p-2">
+                <div className="px-2 py-4">
                   <ModelSetting />
                 </div>
               </CardSidebar>
@@ -234,7 +234,7 @@ const Sidebar: React.FC = () => {
 
             <div className="mt-4">
               <CardSidebar title="Model Parameters" asChild>
-                <div className="p-2">
+                <div className="px-2 py-4">
                   {settingComponentBuilder(componentDataEngineSetting, true)}
                 </div>
               </CardSidebar>
@@ -247,7 +247,7 @@ const Sidebar: React.FC = () => {
                 onViewJsonClick={onViewJsonClick}
                 asChild
               >
-                <div className="p-2">
+                <div className="px-2 py-4">
                   <EngineSetting />
                 </div>
               </CardSidebar>

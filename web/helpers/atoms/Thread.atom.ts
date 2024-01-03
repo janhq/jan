@@ -7,6 +7,8 @@ import {
 } from '@janhq/core'
 import { atom } from 'jotai'
 
+export const engineParamsUpdateAtom = atom<boolean>(false)
+
 /**
  * Stores the current active thread id.
  */
