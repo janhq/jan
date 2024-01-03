@@ -32,7 +32,7 @@ Welcome to Jan! We’re really excited to bring you onboard.
 - We operate on the basis of trust.
 - We expect you to be available and communicative during scheduled meetings or work hours.
 - Turning on video during meetings is encouraged.
-- Casual dress during meetings is acceptable; however, use discretion (No naked top, pajamas, etc.)
+- Casual dress during meetings is acceptable; however, use discretion (No nudity, pajamas, etc.)
 - While it’s natural for people to disagree at times, disagreement is no excuse for poor behavior and poor manners. We cannot allow that frustration to turn into a personal attack.
 - Respect other people's cultures. Especially since we are working in a diverse working culture.
 - Sexual harassment is a specific type of prohibited conduct. Sexual harassment is any unwelcome conduct of a sexual nature that might reasonably be expected or be perceived to cause offense or humiliation. Sexual harassment may involve any conduct of a verbal, nonverbal, or physical nature, including written and electronic communications, and may occur between persons of the same or different genders.
