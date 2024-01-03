@@ -64,8 +64,6 @@ const Sidebar: React.FC = () => {
   const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
   const setThreadSettingFormUpdate = useSetAtom(threadSettingFormUpdateAtom)
 
-  // console.log(componentDataRuntimeSetting)
-
   const componentData = [
     ...[
       { name: 'title', controllerData: { value: activeThread?.title } },
@@ -206,7 +204,7 @@ const Sidebar: React.FC = () => {
         threadId,
         filterChangedFormFields(values, form.formState.dirtyFields)
       )
-      form.reset()
+      form.reset({}, { keepValues: true })
     }
   }
 
