@@ -61,7 +61,7 @@ async function updateNvidiaDriverInfo(): Promise<void> {
     (error, stdout) => {
       let data;
       try {
-        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
       } catch (error) {
         data = DEFALT_SETTINGS;
       }
@@ -109,7 +109,7 @@ function updateCudaExistence() {
 
   let data;
   try {
-    data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+    data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
   } catch (error) {
     data = DEFALT_SETTINGS;
   }
@@ -127,7 +127,7 @@ async function updateGpuInfo(): Promise<void> {
     (error, stdout) => {
       let data;
       try {
-        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
       } catch (error) {
         data = DEFALT_SETTINGS;
       }
@@ -376,7 +376,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
     let cudaVisibleDevices = "";
     let binaryName;
     if (process.platform === "win32") {
-      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
       if (nvida_info["run_mode"] === "cpu") {
         binaryFolder = path.join(binaryFolder, "win-cpu");
       } else {
@@ -392,7 +392,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
       }
       binaryName = "nitro";
     } else {
-      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf8"));
+      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
       if (nvida_info["run_mode"] === "cpu") {
         binaryFolder = path.join(binaryFolder, "linux-cpu");
       } else {
