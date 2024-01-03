@@ -24,15 +24,28 @@ This is currently under development.
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-Jan is compatible with all GGUF models.
+In this guide, we will walk you through how to import models manually. In Jan, you can use a local model directly on your computer or connect to a remote server.
 
-If you can not find the model you want in the Hub or have a custom model you want to use, you can import it manually.
+- Local Model: Jan is compatible with all GGUF models. If you can not find the model you want in the Hub or have a custom model you want to use, you can import it manually by following the [Steps to Manually Import a Local Model](#steps-to-manually-import-a-local-model) section.
+
+- Remote Model: Jan also supports integration with remote models. To establish a connection with these remote model, you can configure the client connection to a remote/ local server by following the [OpenAI Platform Configuration](#openai-platform-configuration) or [Engines with OAI Compatible Configuration](#engines-with-oai-compatible-configuration) section. Please note that at the moment, you can only connect to one OpenAI compatible at a time (e.g OpenAI Platform, Azure OpenAI, LM Studio, etc).
+
+```mermaid
+graph TB
+    Model --> LocalModel[Local model]
+    Model --> RemoteModel[Remote model]
+    LocalModel[Local Model] --> NitroEngine[Nitro Engine]
+    RemoteModel[Remote Model] --> OpenAICompatible[OpenAI Compatible]
+
+    OpenAICompatible --> OpenAIPlatform[OpenAI Platform]
+    OpenAICompatible --> OAIEngines[Engines with OAI Compatible: Jan server, Azure OpenAI, LM Studio, vLLM, etc]
+```
+
+## Steps to Manually Import a Local Model
 
 In this guide, we will show you how to import a GGUF model from [HuggingFace](https://huggingface.co/), using our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
 
 > We are fast shipping a UI to make this easier, but it's a bit manual for now. Apologies.
-
-## Steps to Manually Import a Model
 
 ### 1. Create a Model Folder
 
@@ -168,30 +181,13 @@ Restart Jan and navigate to the Hub. Locate your model and click the `Download` 
 
 Your model is now ready to use in Jan.
 
-## Configuring Client Connection to Remote/Local Server
+## OpenAI Platform Configuration
 
-In this guide, we will show you how to configure a client connection to a remote/local server, using LM Studio as an example.
+In this guide, we will show you how to configure with OpenAI Platform, using the OpenAI GPT 3.5 Turbo 16k model as an example.
 
-At the moment, you can only connect to one compatible server at a time (e.g OpenAI Platform, Azure OpenAI, LM Studio, etc).
+### 1. Create a Model JSON
 
-### 1. Configure Local Server in Engine
-
-Navigate to the `~/jan/engines` folder and modify the `openai.json` file. Please note that at the moment the code supports any openai compatible endpoint only read `engine/openai.json` file, thus, it will not search any other files in this directory.
-
-Configure `full_url` properties with the endpoint server that you want to connect. For example, if you want to connect to LM Studio, you can configure as follows:
-
-```js
-{
-  // highlight-next-line
-  "full_url": "http://<REMOTE_LMSTUDIO_IP>:<REMOTE_LMSTUDIO_PORT>/v1/chat/completions",
-  // Skip api_key if your local server does not require authentication
-  // "api_key": "sk-<your key here>"
-}
-```
-
-### 2. Create a Model JSON
-
-Navigate to the `~/jan/models` folder. Create a folder named `remote-lmstudio` and create a `model.json` file inside the folder including the following configurations:
+Navigate to the `~/jan/models` folder. Create a folder named `gpt-3.5-turbo-16k` and create a `model.json` file inside the folder including the following configurations:
 
 - Ensure the filename must be `model.json`.
 - Ensure the `id` property matches the folder name you created.
@@ -201,19 +197,90 @@ Navigate to the `~/jan/models` folder. Create a folder named `remote-lmstudio` a
 
 ```js
 {
-  "source_url": "https://lmstudio.ai",
+  "source_url": "https://openai.com",
   // highlight-next-line
-  "id": "remote-lmstudio",
+  "id": "gpt-3.5-turbo-16k",
   "object": "model",
-  "name": "remote lmstudio",
+  "name": "OpenAI GPT 3.5 Turbo 16k",
   "version": "1.0",
-  "description": "Jan integration with remote LMstudio server",
+  "description": "OpenAI GPT 3.5 Turbo 16k model is extremely good",
+  // highlight-start
+  "format": "api",
+  "settings": {},
+  "parameters": {},
+  "metadata": {
+    "author": "OpenAI",
+    "tags": ["General", "Big Context Length"]
+  },
+  "engine": "openai",
+  "state": "ready"
+  // highlight-end
+}
+```
+
+### 2. Configure OpenAI API Keys
+
+You can find your API keys in the [OpenAI Platform](https://platform.openai.com/api-keys) and set the OpenAI API keys in `~/jan/engines/openai.json` file.
+
+```js
+{
+  "full_url": "https://api.openai.com/v1/chat/completions",
+  // highlight-next-line
+  "api_key": "sk-<your key here>"
+}
+```
+
+### 3. Start the Model
+
+Restart Jan and navigate to the Hub. Then, select your configured model and start the model.
+
+![openai-platform-configuration](assets/openai-platform-configuration.png)
+
+## Engines with OAI Compatible Configuration
+
+In this guide, we will show you how to configure a client connection to a remote/local server, using Jan API local server as an example.
+
+### 1. Configure Local Server in Engine
+
+Navigate to the `~/jan/engines` folder and modify the `openai.json` file. Please note that at the moment the code supports any openai compatible endpoint only read `engine/openai.json` file, thus, it will not search any other files in this directory.
+
+Configure `full_url` properties with the endpoint server that you want to connect. For example, if you want to connect to Jan API local server, you can configure as follows:
+
+```js
+{
+  // highlight-next-line
+  "full_url": "http://localhost:1337/v1/chat/completions",
+  // Skip api_key if your local server does not require authentication
+  // "api_key": "sk-<your key here>"
+}
+```
+
+### 2. Create a Model JSON
+
+Navigate to the `~/jan/models` folder. Create a folder named `remote-jan` and create a `model.json` file inside the folder including the following configurations:
+
+- Ensure the filename must be `model.json`.
+- Ensure the `id` property matches the folder name you created.
+- Ensure the `format` property is set to `api`.
+- Ensure the `engine` property is set to `openai`.
+- Ensure the `state` property is set to `ready`.
+
+```js
+{
+  "source_url": "https://jan.ai",
+  // highlight-next-line
+  "id": "remote-jan",
+  "object": "model",
+  "name": "remote jan",
+  "model": "tinyllama-1.1b",
+  "version": "1.0",
+  "description": "Jan integration with remote Jan API server",
   // highlight-next-line
   "format": "api",
   "settings": {},
   "parameters": {},
   "metadata": {
-    "author": "LMstudio",
+    "author": "Jan",
     "tags": [
       "remote",
       "awesome"
