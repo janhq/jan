@@ -29,7 +29,6 @@ const SliderRightPanel: React.FC<Props> = ({
 
   const onValueChanged = (e: number[]) => {
     if (!threadId) return
-
     updateModelParameter(threadId, name, e[0])
   }
 
@@ -58,7 +57,13 @@ const SliderRightPanel: React.FC<Props> = ({
           min={min}
           max={max}
           value={String(value)}
-          onChange={(e) => onValueChanged([Number(e.target.value)])}
+          onChange={(e) => {
+            if (Number(e.target.value) >= max) {
+              onValueChanged([Number(max)])
+            } else {
+              onValueChanged([Number(e.target.value)])
+            }
+          }}
         />
       </div>
     </div>
