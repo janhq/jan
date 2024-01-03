@@ -39,7 +39,10 @@ app
   })
 
 app.once('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin') {
+    cleanResources()
+    app.quit()
+  }
 })
 
 app.once('quit', () => {
@@ -96,5 +99,13 @@ function cleanUpAndQuit() {
     dispose(ModuleManager.instance.requiredModules)
     ModuleManager.instance.clearImportedModules()
     app.quit()
+  }
+}
+
+function cleanResources() {
+  if (!ModuleManager.instance.cleaningResource) {
+    ModuleManager.instance.cleaningResource = true
+    dispose(ModuleManager.instance.requiredModules)
+    ModuleManager.instance.clearImportedModules()
   }
 }
