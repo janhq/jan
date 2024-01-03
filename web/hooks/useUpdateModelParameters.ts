@@ -25,7 +25,11 @@ export default function useUpdateModelParameters() {
   const activeThreadState = useAtomValue(activeThreadStateAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
 
-  const updateModelParameter = async (threadId: string, values: any) => {
+  const updateModelParameter = async (
+    threadId: string,
+    name: string,
+    value: number | boolean | string
+  ) => {
     const thread = threads.find((thread) => thread.id === threadId)
     if (!thread) {
       console.error(`Thread ${threadId} not found`)
@@ -36,10 +40,9 @@ export default function useUpdateModelParameters() {
       console.error('No active thread')
       return
     }
-
     const updatedModelParams: ModelParams = {
       ...activeModelParams,
-      ...values,
+      [name]: value,
     }
 
     // update the state

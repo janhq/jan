@@ -7,8 +7,6 @@ import {
 } from '@janhq/core'
 import { atom } from 'jotai'
 
-export const threadSettingFormUpdateAtom = atom<boolean>(false)
-
 /**
  * Stores the current active thread id.
  */
