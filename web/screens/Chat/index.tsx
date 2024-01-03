@@ -30,6 +30,7 @@ import ThreadList from '@/screens/Chat/ThreadList'
 import Sidebar, { showRightSideBarAtom } from './Sidebar'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { threadSettingFormUpdateAtom } from '@/helpers/atoms/Thread.atom'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
@@ -59,6 +60,8 @@ const ChatScreen = () => {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelRef = useRef(activeModel)
+
+  const threadSettingFormUpdate = useAtomValue(threadSettingFormUpdateAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -171,7 +174,12 @@ const ChatScreen = () => {
             {messages[messages.length - 1]?.status !== MessageStatus.Pending ? (
               <Button
                 size="lg"
-                disabled={disabled || stateModel.loading || !activeThread}
+                disabled={
+                  disabled ||
+                  stateModel.loading ||
+                  !activeThread ||
+                  threadSettingFormUpdate
+                }
                 themes="primary"
                 className="min-w-[100px]"
                 onClick={sendChatMessage}

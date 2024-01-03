@@ -11,10 +11,15 @@ import {
   Button,
   FormField,
   FormItem,
+  Tooltip,
+  TooltipArrow,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
   FormControl,
 } from '@janhq/uikit'
 
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -24,6 +29,8 @@ import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
+
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
@@ -63,6 +70,7 @@ const Sidebar: React.FC = () => {
 
   const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
   const setThreadSettingFormUpdate = useSetAtom(threadSettingFormUpdateAtom)
+  const [currentPrompt] = useAtom(currentPromptAtom)
 
   const componentData = [
     ...[
@@ -390,9 +398,19 @@ const Sidebar: React.FC = () => {
                       <Button themes="secondaryBlue" block onClick={onCancel}>
                         Cancel
                       </Button>
-                      <Button type="submit" block>
-                        Save
-                      </Button>
+                      <Tooltip open={currentPrompt.length !== 0}>
+                        <TooltipTrigger asChild>
+                          <Button type="submit" block>
+                            Save
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipPortal>
+                          <TooltipContent side="top" className="max-w-[240px]">
+                            <span>{`It seems changes haven't been saved yet`}</span>
+                            <TooltipArrow />
+                          </TooltipContent>
+                        </TooltipPortal>
+                      </Tooltip>
                     </div>
                   </div>
                 )}
