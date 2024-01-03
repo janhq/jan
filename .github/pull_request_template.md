@@ -1,8 +1,8 @@
-## Describe your changes
+## Describe Your Changes
 
 -
 
-## Fixes issues
+## Fixes Issues
 
 -
 
