@@ -187,6 +187,10 @@ const Sidebar: React.FC = () => {
     return changedFieldValues
   }
 
+  const isEngineParamsChanges = componentDataEngineSetting.some((x) =>
+    Object.keys(form.formState.dirtyFields).includes(x.name)
+  )
+
   const onSubmit = async (values: any) => {
     if (!threadId) return
     if (!activeThread) return
@@ -334,19 +338,19 @@ const Sidebar: React.FC = () => {
                 </div>
                 {/* Temporary disabled */}
                 {/* <div>
-              <label
-                id="tool-title"
-                className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
-              >
-                Tools
-              </label>
-              <div className="flex items-center justify-between">
-                <label className="font-medium text-zinc-500 dark:text-gray-300">
-                  Retrieval
+                <label
+                  id="tool-title"
+                  className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
+                >
+                  Tools
                 </label>
-                <Switch name="retrieval" />
-              </div>
-            </div> */}
+                <div className="flex items-center justify-between">
+                  <label className="font-medium text-zinc-500 dark:text-gray-300">
+                    Retrieval
+                  </label>
+                  <Switch name="retrieval" />
+                </div>
+              </div> */}
               </div>
             </CardSidebar>
             <CardSidebar
@@ -401,7 +405,7 @@ const Sidebar: React.FC = () => {
                       <Tooltip open={currentPrompt.length !== 0}>
                         <TooltipTrigger asChild>
                           <Button type="submit" block>
-                            Save
+                            {isEngineParamsChanges ? 'Save & Reload' : 'Save'}
                           </Button>
                         </TooltipTrigger>
                         <TooltipPortal>
