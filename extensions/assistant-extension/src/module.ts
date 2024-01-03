@@ -1,6 +1,5 @@
-import { Retrieval } from "./tools/retrieval/node";
+import { Retrieval } from "./tools/retrieval/node/index.js";
 import { HuggingFaceTransformersEmbeddings } from "langchain/embeddings/hf_transformers";
-// import { OpenAIEmbeddings } from "langchain/embeddings/openai";
 
 const run = async () => {
   const embeddingModel = new HuggingFaceTransformersEmbeddings();

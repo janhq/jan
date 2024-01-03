@@ -2,7 +2,7 @@
   "name": "@janhq/assistant-extension",
   "version": "1.0.0",
   "description": "This extension enables assistants, including Jan, a default assistant that can call all downloaded models",
-  "main": "dist/index.js",
+  "main": "dist/module.js",
   "module": "dist/module.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
@@ -15,10 +15,14 @@
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
   },
+  "type": "module",
   "dependencies": {
     "@janhq/core": "file:../../core",
-    "langchain": "^0.0.213",
+    "@xenova/transformers": "^2.13.0",
+    "hnswlib-node": "^2.1.0",
+    "langchain": "^0.0.214",
     "path-browserify": "^1.0.1",
+    "pdf-parse": "^1.1.1",
     "ts-loader": "^9.5.0"
   },
   "files": [

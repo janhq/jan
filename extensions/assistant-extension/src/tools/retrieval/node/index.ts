@@ -6,8 +6,6 @@ import { formatDocumentsAsString } from "langchain/util/document";
 import { HNSWLib } from "langchain/vectorstores/hnswlib";
 import { PDFLoader } from "langchain/document_loaders/fs/pdf";
 
-import { readFileSync } from "fs";
-
 export class Retrieval {
   private readonly chunkSize: number;
   private readonly chunkOverlap: number;
@@ -16,7 +14,6 @@ export class Retrieval {
 
   private embeddingModel = null;
   private textSplitter = null;
-
   private queryRetrievalPrompt = PromptTemplate.fromTemplate(
     `Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
   ----------------
