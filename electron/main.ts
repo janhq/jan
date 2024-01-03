@@ -40,14 +40,14 @@ app
 
 app.once('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    cleanUpAndQuit()
+    cleanResourcesAndQuit()
   } else {
-    cleanResources()
+    cleanResourcesAndQuit(false)
   }
 })
 
 app.once('quit', () => {
-  cleanUpAndQuit()
+  cleanResourcesAndQuit()
 })
 
 function createMainWindow() {
@@ -93,20 +93,14 @@ function handleIPCs() {
   handleFileMangerIPCs()
 }
 
-function cleanUpAndQuit() {
-  if (!ModuleManager.instance.cleaningResource) {
-    ModuleManager.instance.cleaningResource = true
-    WindowManager.instance.currentWindow?.destroy()
-    dispose(ModuleManager.instance.requiredModules)
-    ModuleManager.instance.clearImportedModules()
-    app.quit()
-  }
-}
-
-function cleanResources() {
+function cleanResourcesAndQuit(quit = true) {
   if (!ModuleManager.instance.cleaningResource) {
     ModuleManager.instance.cleaningResource = true
     dispose(ModuleManager.instance.requiredModules)
     ModuleManager.instance.clearImportedModules()
+    if (quit) {
+      WindowManager.instance.currentWindow?.destroy()
+      app.quit()
+    }
   }
 }
