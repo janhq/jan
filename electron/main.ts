@@ -40,8 +40,9 @@ app
 
 app.once('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    cleanUpAndQuit()
+  } else {
     cleanResources()
-    app.quit()
   }
 })
 
