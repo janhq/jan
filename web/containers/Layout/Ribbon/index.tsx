@@ -60,7 +60,7 @@ export default function RibbonNav() {
       icon: (
         <Twitter size={20} className="flex-shrink-0 text-muted-foreground" />
       ),
-      link: 'https://twitter.com/janhq',
+      link: 'https://twitter.com/janhq_',
     },
     {
       name: 'Github',
