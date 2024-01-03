@@ -84,7 +84,7 @@ export function persistExtensions() {
   writeFileSync(
     ExtensionManager.instance.getExtensionsFile(),
     JSON.stringify(persistData),
-    "utf8"
+    "utf-8"
   );
 }
 
