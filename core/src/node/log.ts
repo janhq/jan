@@ -3,12 +3,16 @@ import util from 'util'
 import path from 'path'
 import os from 'os'
 
-export const logPath = path.join(os.homedir(), 'jan', 'app.log')
+const appDir = path.join(os.homedir(), 'jan')
 
-var log_file = fs.createWriteStream(logPath, {
-  flags: 'a',
-})
+export const logPath = path.join(appDir, 'app.log')
 
 export const log = function (d: any) {
-  log_file.write(util.format(d) + '\n')
+  if (fs.existsSync(appDir)) {
+    var log_file = fs.createWriteStream(logPath, {
+      flags: 'a',
+    })
+    log_file.write(util.format(d) + '\n')
+    log_file.close()
+  }
 }
