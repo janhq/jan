@@ -16,14 +16,13 @@ import {
 } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 
-import { useAtomValue } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
   MonitorIcon,
   LayoutGridIcon,
-  Twitter,
-  Github,
+  // Twitter,
+  // Github,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -34,13 +33,8 @@ import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
-import { threadSettingFormUpdateAtom } from '@/helpers/atoms/Thread.atom'
-
 export default function RibbonNav() {
   const { mainViewState, setMainViewState } = useMainViewState()
-  const threadSettingFormUpdate = useAtomValue(threadSettingFormUpdateAtom)
-  const [showModalUpdateThreadSetting, setshowModalUpdateThreadSetting] =
-    useState({ show: false, view: mainViewState })
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
@@ -70,22 +64,22 @@ export default function RibbonNav() {
     },
   ]
 
-  const linksMenu = [
-    {
-      name: 'Twitter',
-      icon: (
-        <Twitter size={20} className="flex-shrink-0 text-muted-foreground" />
-      ),
-      link: 'https://twitter.com/janhq_',
-    },
-    {
-      name: 'Github',
-      icon: (
-        <Github size={20} className="flex-shrink-0 text-muted-foreground" />
-      ),
-      link: 'https://github.com/janhq/jan',
-    },
-  ]
+  // const linksMenu = [
+  //   {
+  //     name: 'Twitter',
+  //     icon: (
+  //       <Twitter size={20} className="flex-shrink-0 text-muted-foreground" />
+  //     ),
+  //     link: 'https://twitter.com/janhq_',
+  //   },
+  //   {
+  //     name: 'Github',
+  //     icon: (
+  //       <Github size={20} className="flex-shrink-0 text-muted-foreground" />
+  //     ),
+  //     link: 'https://github.com/janhq/jan',
+  //   },
+  // ]
 
   const secondaryMenus = [
     {
@@ -132,23 +126,7 @@ export default function RibbonNav() {
                             'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center',
                             isActive && 'z-10'
                           )}
-                          onClick={() => {
-                            if (
-                              threadSettingFormUpdate &&
-                              mainViewState === MainViewState.Thread
-                            ) {
-                              setshowModalUpdateThreadSetting({
-                                show: true,
-                                view: primary.state,
-                              })
-                            } else {
-                              setshowModalUpdateThreadSetting({
-                                show: false,
-                                view: mainViewState,
-                              })
-                              onMenuClick(primary.state)
-                            }
-                          }}
+                          onClick={() => onMenuClick(primary.state)}
                         >
                           {primary.icon}
                         </div>
@@ -170,7 +148,8 @@ export default function RibbonNav() {
           </div>
 
           <div>
-            <>
+            {/* Temporary hidden social media until we finalize design */}
+            {/* <>
               {linksMenu
                 .filter((link) => !!link)
                 .map((link, i) => {
@@ -195,7 +174,8 @@ export default function RibbonNav() {
                     </div>
                   )
                 })}
-            </>
+            </> */}
+
             {secondaryMenus
               .filter((secondary) => !!secondary)
               .map((secondary, i) => {
@@ -210,23 +190,7 @@ export default function RibbonNav() {
                             'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center',
                             isActive && 'z-10'
                           )}
-                          onClick={() => {
-                            if (
-                              threadSettingFormUpdate &&
-                              mainViewState === MainViewState.Thread
-                            ) {
-                              setshowModalUpdateThreadSetting({
-                                show: true,
-                                view: secondary.state,
-                              })
-                            } else {
-                              setshowModalUpdateThreadSetting({
-                                show: false,
-                                view: mainViewState,
-                              })
-                              onMenuClick(secondary.state)
-                            }
-                          }}
+                          onClick={() => onMenuClick(secondary.state)}
                         >
                           {secondary.icon}
                         </div>
@@ -248,53 +212,6 @@ export default function RibbonNav() {
           </div>
         </div>
       </div>
-
-      <Modal
-        open={showModalUpdateThreadSetting.show}
-        onOpenChange={() =>
-          setshowModalUpdateThreadSetting({
-            show: false,
-            view: mainViewState,
-          })
-        }
-      >
-        <ModalContent>
-          <ModalHeader>
-            <ModalTitle>
-              <div className="text-lg">Unsave changes</div>
-            </ModalTitle>
-            <ModalDescription>
-              <p className="mb-2">
-                You have unsave changes. Are you sure you want to leave this
-                page?
-              </p>
-            </ModalDescription>
-          </ModalHeader>
-          <ModalFooter>
-            <div className="flex gap-x-2">
-              <ModalClose asChild>
-                <Button themes="secondary" block>
-                  Stay
-                </Button>
-              </ModalClose>
-              <Button
-                themes="danger"
-                autoFocus
-                block
-                onClick={() => {
-                  setshowModalUpdateThreadSetting({
-                    show: false,
-                    view: mainViewState,
-                  })
-                  onMenuClick(showModalUpdateThreadSetting.view)
-                }}
-              >
-                Leave
-              </Button>
-            </div>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
     </div>
   )
 }

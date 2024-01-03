@@ -181,7 +181,7 @@ const TopBar = () => {
                           />
                           <div className="flex flex-col">
                             <span className="font-medium text-black dark:text-muted-foreground">
-                              View as JSON
+                              Edit Threads Settings
                             </span>
                             <span className="mt-1 text-muted-foreground">
                               Opens thread.json. Changes affect this thread

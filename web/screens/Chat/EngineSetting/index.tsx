@@ -10,7 +10,7 @@ import settingComponentBuilder from '../ModelSetting/settingComponentBuilder'
 
 import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
-const EngineSetting = (props: { form: any }) => {
+const EngineSetting = () => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
 
@@ -24,7 +24,7 @@ const EngineSetting = (props: { form: any }) => {
 
   return (
     <div className="flex flex-col">
-      {settingComponentBuilder(componentData, props.form)}
+      {settingComponentBuilder(componentData)}
     </div>
   )
 }
