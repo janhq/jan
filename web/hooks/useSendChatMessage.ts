@@ -34,6 +34,7 @@ import {
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
+  engineParamsUpdateAtom,
   getActiveThreadModelParamsAtom,
   threadStatesAtom,
   updateThreadAtom,
@@ -58,6 +59,8 @@ export default function useSendChatMessage() {
   const threadStates = useAtomValue(threadStatesAtom)
   const updateThreadInitSuccess = useSetAtom(updateThreadInitSuccessAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+
+  const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -135,8 +138,10 @@ export default function useSendChatMessage() {
       console.error('No active thread')
       return
     }
-    const activeThreadState = threadStates[activeThread.id]
 
+    console.log(engineParamsUpdate)
+
+    const activeThreadState = threadStates[activeThread.id]
     const runtimeParams = toRuntimeParams(activeModelParams)
     const settingParams = toSettingParams(activeModelParams)
 
@@ -256,6 +261,7 @@ export default function useSendChatMessage() {
       await WaitForModelStarting(modelId)
       setQueuedMessage(false)
     }
+
     events.emit(EventName.OnMessageSent, messageRequest)
   }
 

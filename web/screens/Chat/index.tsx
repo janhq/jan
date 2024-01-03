@@ -1,4 +1,11 @@
-import { ChangeEvent, Fragment, KeyboardEvent, useEffect, useRef } from 'react'
+import {
+  ChangeEvent,
+  Fragment,
+  KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
 import { EventName, MessageStatus, events } from '@janhq/core'
 import { Button, Textarea } from '@janhq/uikit'
@@ -51,7 +58,8 @@ const ChatScreen = () => {
   const activeThreadState = useAtomValue(activeThreadStateAtom)
   const { sendChatMessage, queuedMessage } = useSendChatMessage()
   const isWaitingForResponse = activeThreadState?.waitingForResponse ?? false
-  const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
+  const isDisabledChatbox =
+    currentPrompt.trim().length === 0 || isWaitingForResponse
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
@@ -147,13 +155,22 @@ const ChatScreen = () => {
 
           <ModelStart />
 
+          {/* {reloadModel && (
+            <div className="mb-2 text-center">
+              <span className="text-muted-foreground">
+                Model is reloading to apply new changes.
+              </span>
+            </div>
+          )} */}
+
           {queuedMessage && (
-            <div className="my-2 py-2 text-center">
-              <span className="rounded-lg border border-border px-4 py-2 shadow-lg">
+            <div className="mb-2 text-center">
+              <span className="text-muted-foreground">
                 Message queued. It can be sent once the model has started
               </span>
             </div>
           )}
+
           <div className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 px-8 py-4">
             <Textarea
               className="max-h-[400px] resize-none overflow-y-auto pr-20"
@@ -172,7 +189,9 @@ const ChatScreen = () => {
             {messages[messages.length - 1]?.status !== MessageStatus.Pending ? (
               <Button
                 size="lg"
-                disabled={disabled || stateModel.loading || !activeThread}
+                disabled={
+                  isDisabledChatbox || stateModel.loading || !activeThread
+                }
                 themes="primary"
                 className="min-w-[100px]"
                 onClick={sendChatMessage}
