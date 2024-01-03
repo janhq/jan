@@ -4,7 +4,6 @@
  */
 export enum AppRoute {
   appDataPath = 'appDataPath',
-  appVersion = 'appVersion',
   openExternalUrl = 'openExternalUrl',
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',

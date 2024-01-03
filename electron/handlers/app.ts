@@ -8,15 +8,6 @@ import { startServer, stopServer } from '@janhq/server'
 
 export function handleAppIPCs() {
   /**
-   * Returns the version of the app.
-   * @param _event - The IPC event object.
-   * @returns The version of the app.
-   */
-  ipcMain.handle(AppRoute.appVersion, async (_event) => {
-    return app.getVersion()
-  })
-
-  /**
    * Handles the "openAppDirectory" IPC message by opening the app's user data directory.
    * The `shell.openPath` method is used to open the directory in the user's default file explorer.
    * @param _event - The IPC event object.
