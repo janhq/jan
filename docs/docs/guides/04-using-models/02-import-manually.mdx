@@ -26,6 +26,8 @@ This is currently under development.
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
+## Overview
+
 In this guide, we will walk you through how to import models manually. In Jan, you can use a local model directly on your computer or connect to a remote server.
 
 - Local Model: Jan is compatible with all GGUF models. If you can not find the model you want in the Hub or have a custom model you want to use, you can import it manually by following the [Steps to Manually Import a Local Model](#steps-to-manually-import-a-local-model) section.
@@ -40,12 +42,12 @@ graph TB
     RemoteModel[Remote Model] --> OpenAICompatible[OpenAI Compatible]
 
     OpenAICompatible --> OpenAIPlatform[OpenAI Platform]
-    OpenAICompatible --> OAIEngines[Engines with OAI Compatible: Jan server, Azure OpenAI, LM Studio, vLLM, etc]
+    OpenAICompatible --> OAIEngines[Engines with OAI Compatible: Jan API server, Azure OpenAI, LM Studio, vLLM, etc]
 ```
 
 ## Steps to Manually Import a Local Model
 
-In this guide, we will show you how to import a GGUF model from [HuggingFace](https://huggingface.co/), using our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
+In this section, we will show you how to import a GGUF model from [HuggingFace](https://huggingface.co/), using our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
 
 > We are fast shipping a UI to make this easier, but it's a bit manual for now. Apologies.
 
@@ -185,7 +187,7 @@ Your model is now ready to use in Jan.
 
 ## OpenAI Platform Configuration
 
-In this guide, we will show you how to configure with OpenAI Platform, using the OpenAI GPT 3.5 Turbo 16k model as an example.
+In this section, we will show you how to configure with OpenAI Platform, using the OpenAI GPT 3.5 Turbo 16k model as an example.
 
 ### 1. Create a Model JSON
 
@@ -240,7 +242,7 @@ Restart Jan and navigate to the Hub. Then, select your configured model and star
 
 ## Engines with OAI Compatible Configuration
 
-In this guide, we will show you how to configure a client connection to a remote/local server, using Jan's API server that is running model `mistral-ins-7b-q4` as an example.
+In this section, we will show you how to configure a client connection to a remote/local server, using Jan's API server that is running model `mistral-ins-7b-q4` as an example.
 
 ### 1. Configure a Client Connection
 
