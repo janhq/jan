@@ -52,7 +52,8 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
 
       window.electronAPI.onFileDownloadError(
         async (_event: string, state: any) => {
-          console.error('Download error', state)
+          if (state.err?.message !== 'aborted')
+            console.error('Download error', state)
           const modelName = await baseName(state.fileName)
           const model = modelsRef.current.find(
             (model) => modelBinFileName(model) === modelName
@@ -66,7 +67,7 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
           if (state && state.fileName) {
             const modelName = await baseName(state.fileName)
             const model = modelsRef.current.find(
-              async (model) => modelBinFileName(model) === modelName
+              (model) => modelBinFileName(model) === modelName
             )
             if (model) {
               setDownloadStateSuccess(model.id)

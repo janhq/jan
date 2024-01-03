@@ -34,8 +34,18 @@ export function handleDownloaderIPCs() {
    */
   ipcMain.handle(DownloadRoute.abortDownload, async (_event, fileName) => {
     const rq = DownloadManager.instance.networkRequests[fileName]
-    DownloadManager.instance.networkRequests[fileName] = undefined
-    rq?.abort()
+    if (rq) {
+      DownloadManager.instance.networkRequests[fileName] = undefined
+      rq?.abort()
+    } else {
+      WindowManager?.instance.currentWindow?.webContents.send(
+        DownloadEvent.onFileDownloadError,
+        {
+          fileName,
+          err: { message: 'aborted' },
+        }
+      )
+    }
   })
 
   /**
@@ -54,7 +64,11 @@ export function handleDownloaderIPCs() {
     }
     const destination = resolve(userDataPath, fileName)
     const rq = request(url)
-    // downloading file to a temp file first
+
+    // Put request to download manager instance
+    DownloadManager.instance.setRequest(fileName, rq)
+
+    // Downloading file to a temp file first
     const downloadingTempFile = `${destination}.download`
 
     progress(rq, {})
@@ -93,13 +107,11 @@ export function handleDownloaderIPCs() {
             DownloadEvent.onFileDownloadError,
             {
               fileName,
-              err: 'Download cancelled',
+              err: { message: 'aborted' },
             }
           )
         }
       })
       .pipe(createWriteStream(downloadingTempFile))
-
-    DownloadManager.instance.setRequest(fileName, rq)
   })
 }
