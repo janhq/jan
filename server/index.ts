@@ -1,9 +1,8 @@
 import fastify from "fastify";
 import dotenv from "dotenv";
-import { v1Router } from "@janhq/core/node";
+import { log, v1Router } from "@janhq/core/node";
 import path from "path";
-import fs from "fs";
-import util from "util";
+
 import os from "os";
 
 dotenv.config();
@@ -13,18 +12,6 @@ const JAN_API_PORT = Number.parseInt(process.env.JAN_API_PORT || "1337");
 const serverLogPath = path.join(os.homedir(), "jan", "server.log");
 
 let server: any | undefined = undefined;
-
-var log_file = fs.createWriteStream(serverLogPath, {
-  flags: "a",
-});
-var log_stdout = process.stdout;
-var log_stderr = process.stderr;
-
-const logServer = function (d: any) {
-  log_file.write(util.format(d) + "\n");
-  log_stdout.write(util.format(d) + "\n");
-  log_stderr.write(util.format(d) + "\n");
-};
 
 export const startServer = async (schemaPath?: string, baseDir?: string) => {
   try {
@@ -75,12 +62,10 @@ export const startServer = async (schemaPath?: string, baseDir?: string) => {
         host: JAN_API_HOST,
       })
       .then(() => {
-        logServer(
-          `JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`
-        );
+        log(`JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`);
       });
   } catch (e) {
-    logServer(e);
+    log(e);
   }
 };
 
@@ -88,6 +73,6 @@ export const stopServer = async () => {
   try {
     await server.close();
   } catch (e) {
-    logServer(e);
+    log(e);
   }
 };
