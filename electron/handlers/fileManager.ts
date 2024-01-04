@@ -12,9 +12,9 @@ import { FileStat } from '@janhq/core/.'
  * Handles file system extensions operations.
  */
 export function handleFileMangerIPCs() {
-  // Handles the 'synceFile' IPC event. This event is triggered to synchronize a file from a source path to a destination path.
+  // Handles the 'syncFile' IPC event. This event is triggered to synchronize a file from a source path to a destination path.
   ipcMain.handle(
-    FileManagerRoute.synceFile,
+    FileManagerRoute.syncFile,
     async (_event, src: string, dest: string) => {
       return reflect({
         src,
@@ -34,9 +34,9 @@ export function handleFileMangerIPCs() {
   )
 
   // Handles the 'getResourcePath' IPC event. This event is triggered to get the resource path.
-  ipcMain.handle(FileManagerRoute.getResourcePath, async (_event) => {
-    return getResourcePath()
-  })
+  ipcMain.handle(FileManagerRoute.getResourcePath, async (_event) =>
+    getResourcePath()
+  )
 
   // handle fs is directory here
   ipcMain.handle(
