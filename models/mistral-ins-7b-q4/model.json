@@ -8,9 +8,6 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "system_prompt": "",
-      "user_prompt": "<s>[INST]",
-      "ai_prompt": "[/INST]",
       "prompt_template": "<s>[INST]{prompt}\n[/INST]"
     },
     "parameters": {
