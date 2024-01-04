@@ -53,10 +53,12 @@ export function useActiveModel() {
     events.emit(EventName.OnModelInit, model)
   }
 
-  const stopModel = async (modelId: string) => {
-    const model = downloadedModels.find((e) => e.id === modelId)
-    setStateModel({ state: 'stop', loading: true, model: modelId })
-    events.emit(EventName.OnModelStop, model)
+  const stopModel = async () => {
+    if (activeModel) {
+      setActiveModel(undefined)
+      setStateModel({ state: 'stop', loading: true, model: activeModel.id })
+      events.emit(EventName.OnModelStop, activeModel)
+    }
   }
 
   return { activeModel, startModel, stopModel, stateModel }
