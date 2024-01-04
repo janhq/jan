@@ -36,7 +36,7 @@
   
 ## How to switch mode CPU/GPU Jan app
 
-By default, Jan app will run in CPU mode. When starting Jan app, the program will automatically check if your computer meets the requirements to run in GPU mode. If it does, we will automatically enable GPU mode for you. You can check whether you are using CPU mode or GPU mode in the settings/advance section of Jan app. (see image below). ![](/docs/static/img/usage/jan-gpu-enable-setting.png)
+By default, Jan app will run in CPU mode. When starting Jan app, the program will automatically check if your computer meets the requirements to run in GPU mode. If it does, we will automatically enable GPU mode and pick the GPU has highest VGRAM for you (feature allowing users to select one or more GPU devices for use - currently in planning). You can check whether you are using CPU mode or GPU mode in the settings/advance section of Jan app. (see image below). ![](/docs/static/img/usage/jan-gpu-enable-setting.png)
 
 If you have GPU mode but it is not enabled by default, the following possibilities may exist, you can follow the next steps to fix the error:
 
