@@ -17,6 +17,7 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@alumna/reflect": "^1.1.3",
     "@fastify/cors": "^8.4.2",
     "@fastify/static": "^6.12.0",
     "@fastify/swagger": "^8.13.0",
