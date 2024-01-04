@@ -173,7 +173,7 @@ export default class JanModelExtension implements ModelExtension {
    * @returns A Promise that resolves with an array of all models.
    */
   async getDownloadedModels(): Promise<Model[]> {
-    const downloadedModels = await this.getModelsMetadata(
+    return await this.getModelsMetadata(
       async (modelDir: string, model: Model) => {
         if (model.engine !== JanModelExtension._offlineInferenceEngine) {
           return true
@@ -196,9 +196,6 @@ export default class JanModelExtension implements ModelExtension {
           })
       }
     )
-    // TODO remove this
-    console.log(`NamH downloaded models: ${JSON.stringify(downloadedModels)}`)
-    return downloadedModels
   }
 
   private async getModelsMetadata(
