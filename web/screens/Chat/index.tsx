@@ -1,11 +1,4 @@
-import {
-  ChangeEvent,
-  Fragment,
-  KeyboardEvent,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import { ChangeEvent, Fragment, KeyboardEvent, useEffect, useRef } from 'react'
 
 import { EventName, MessageStatus, events } from '@janhq/core'
 import { Button, Textarea } from '@janhq/uikit'

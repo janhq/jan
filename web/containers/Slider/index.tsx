@@ -13,6 +13,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { InfoIcon } from 'lucide-react'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
@@ -54,10 +55,13 @@ const SliderRightPanel: React.FC<Props> = ({
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
 
+  const { stopModel } = useActiveModel()
+
   const onValueChanged = (e: number[]) => {
     if (!threadId) return
     if (engineParams.some((x) => x.name.includes(name))) {
       setEngineParamsUpdate(true)
+      stopModel()
     } else {
       setEngineParamsUpdate(false)
     }

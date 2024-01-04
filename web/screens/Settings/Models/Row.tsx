@@ -39,7 +39,7 @@ export default function RowModel(props: RowModelProps) {
 
   const onModelActionClick = (modelId: string) => {
     if (activeModel && activeModel.id === modelId) {
-      stopModel(modelId)
+      stopModel()
     } else {
       startModel(modelId)
     }
@@ -134,7 +134,7 @@ export default function RowModel(props: RowModelProps) {
               className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
               onClick={() => {
                 setTimeout(async () => {
-                  await stopModel(props.data.id)
+                  await stopModel()
                   deleteModel(props.data)
                 }, 500)
                 setMore(false)
