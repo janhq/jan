@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 
+import { MessageStatus } from '@janhq/core'
 import {
   Modal,
   ModalTrigger,
@@ -33,6 +34,7 @@ import useThreads from '@/hooks/useThreads'
 
 import { displayDate } from '@/utils/datetime'
 
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
   threadStatesAtom,
@@ -48,6 +50,7 @@ export default function ThreadList() {
   const activeThread = useAtomValue(activeThreadAtom)
   const { deleteThread, cleanThread } = useDeleteThread()
   const { downloadedModels } = useGetDownloadedModels()
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const { activeThreadId, setActiveThread: onThreadClick } =
     useSetActiveThread()
@@ -89,7 +92,14 @@ export default function ThreadList() {
               className={twMerge(
                 `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-gray-100 hover:dark:bg-secondary/50`
               )}
-              onClick={() => onThreadClick(thread)}
+              onClick={() => {
+                if (
+                  messages[messages.length - 1]?.status !==
+                  MessageStatus.Pending
+                ) {
+                  onThreadClick(thread)
+                }
+              }}
             >
               <div className="relative z-10 p-4 py-4">
                 <div className="flex justify-between">
