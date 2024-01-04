@@ -11,6 +11,7 @@ import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
+import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
@@ -33,6 +34,7 @@ import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 import {
   activeThreadAtom,
+  engineParamsUpdateAtom,
   getActiveThreadIdAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
@@ -49,7 +51,7 @@ const ChatScreen = () => {
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const activeThreadState = useAtomValue(activeThreadStateAtom)
-  const { sendChatMessage, queuedMessage } = useSendChatMessage()
+  const { sendChatMessage, queuedMessage, reloadModel } = useSendChatMessage()
   const isWaitingForResponse = activeThreadState?.waitingForResponse ?? false
   const isDisabledChatbox =
     currentPrompt.trim().length === 0 || isWaitingForResponse
@@ -61,6 +63,7 @@ const ChatScreen = () => {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelRef = useRef(activeModel)
+  const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -146,17 +149,20 @@ const ChatScreen = () => {
             </div>
           )}
 
-          <ModelStart />
+          {!engineParamsUpdate && <ModelStart />}
 
-          {/* {reloadModel && (
-            <div className="mb-2 text-center">
-              <span className="text-muted-foreground">
-                Model is reloading to apply new changes.
-              </span>
-            </div>
-          )} */}
+          {reloadModel && (
+            <>
+              <ModelReload />
+              <div className="mb-2 text-center">
+                <span className="text-muted-foreground">
+                  Model is reloading to apply new changes.
+                </span>
+              </div>
+            </>
+          )}
 
-          {queuedMessage && (
+          {queuedMessage && !reloadModel && (
             <div className="mb-2 text-center">
               <span className="text-muted-foreground">
                 Message queued. It can be sent once the model has started
