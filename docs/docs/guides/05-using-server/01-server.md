@@ -1,6 +1,6 @@
 ---
 title: Connect to Server
-description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+description: Connect to Jan's built-in API server.
 keywords:
   [
     Jan AI,

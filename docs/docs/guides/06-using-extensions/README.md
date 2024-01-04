@@ -1,3 +1,0 @@
----
-title: Using Extensions
----
