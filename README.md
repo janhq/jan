@@ -34,13 +34,13 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
 ## Download
 
 <table>
-  <tr>
+  <tr style="text-align:center">
     <td style="text-align:center"><b>Version Type</b></td>
     <td style="text-align:center"><b>Windows</b></td>
     <td colspan="2" style="text-align:center"><b>MacOS</b></td>
     <td style="text-align:center"><b>Linux</b></td>
   </tr>
-  <tr>
+  <tr style="text-align:center">
     <td style="text-align:center"><b>Stable (Recommended)</b></td>
     <td style="text-align:center">
       <a href='https://github.com/janhq/jan/releases/download/v0.4.3/jan-win-x64-0.4.3.exe'>
@@ -67,11 +67,30 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
       </a>
     </td>
   </tr>
-  <tr style="text-align: center">
-    <td style="text-align:center"><b>Experimental (Nighlty Build)</b></td>
-    <td style="text-align:center" colspan="4">
-      <a href='https://github.com/janhq/jan/actions/runs/7372465396'>
-        <b>Github action artifactory</b>
+  <tr style="text-align:center">
+    <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
+    <td style="text-align:center">
+      <a href='https://delta.jan.ai/0.4.3-118/jan-win-x64-0.4.3-118.exe'>
+        <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
+        <b>jan.exe</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://delta.jan.ai/0.4.3-118/jan-mac-x64-0.4.3-118.dmg'>
+        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+        <b>Intel</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://delta.jan.ai/0.4.3-118/jan-mac-arm64-0.4.3-118.dmg'>
+        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+        <b>M1/M2</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://delta.jan.ai/0.4.3-118/jan-linux-amd64-0.4.3-118.deb'>
+        <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
+        <b>jan.deb</b>
       </a>
     </td>
   </tr>
@@ -91,10 +110,10 @@ _Realtime Video: Jan v0.4.3-nightly on a Mac M1, 16GB Sonoma 14_
 
 - [Jan website](https://jan.ai/)
 - [Jan Github](https://github.com/janhq/jan)
-- [User Guides](https://jan.ai/docs)
-- [Developer docs](https://jan.ai/docs/extensions/)
+- [User Guides](https://jan.ai/guides/)
+- [Developer docs](https://jan.ai/developer/)
 - [API reference](https://jan.ai/api-reference/)
-- [Specs](https://jan.ai/specs/)
+- [Specs](https://jan.ai/docs/)
 
 #### Nitro
 
@@ -111,18 +130,7 @@ As Jan is in development mode, you might get stuck on a broken build.
 
 To reset your installation:
 
-1. **Remove Jan from your Applications folder and Cache folder**
-
-   ```bash
-   make clean
-   ```
-
-   This will remove all build artifacts and cached files:
-
-   - Delete Jan from your `/Applications` folder
-   - Clear Application cache in `/Users/$(whoami)/Library/Caches/jan`
-
-2. Use the following commands to remove any dangling backend processes:
+1. Use the following commands to remove any dangling backend processes:
 
    ```sh
    ps aux | grep nitro
@@ -133,6 +141,18 @@ To reset your installation:
    ```sh
    kill -9 <PID>
    ```
+
+2. **Remove Jan from your Applications folder and Cache folder**
+
+   ```bash
+   make clean
+   ```
+
+   This will remove all build artifacts and cached files:
+
+   - Delete Jan extension from your `~/jan/extensions` folder
+   - Delete all `node_modules` in current folder
+   - Clear Application cache in `~/Library/Caches/jan`
 
 ## Contributing
 
@@ -148,19 +168,19 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 1. **Clone the repository and prepare:**
 
-```bash
-   git clone https://github.com/janhq/jan
-   cd jan
-   git checkout -b DESIRED_BRANCH
-```
+    ```bash
+    git clone https://github.com/janhq/jan
+    cd jan
+    git checkout -b DESIRED_BRANCH
+    ```
 
 2. **Run development and use Jan Desktop**
 
-   ```
-   make dev
-   ```
+    ```bash
+    make dev
+    ```
 
-   This will start the development server and open the desktop app.
+This will start the development server and open the desktop app.
 
 ### For production build
 
@@ -171,25 +191,6 @@ make build
 ```
 
 This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
-
-## Nightly Build
-
-Our nightly build process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
-
-The nightly build is triggered at 2:00 AM UTC every day.
-
-Getting on Nightly:
-
-1. Join our Discord server [here](https://discord.gg/FTk2MvZwJH) and go to channel [github-jan](https://discordapp.com/channels/1107178041848909847/1148534730359308298).
-2. Download the build artifacts from the channel.
-3. Subsequently, to get the latest nightly, just quit and restart the app.
-4. Upon app restart, you will be automatically prompted to update to the latest nightly build.
-
-## Manual Build
-
-Stable releases are triggered by manual builds. This is usually done for new features or a bug fixes.
-
-The process for this project is defined in [`.github/workflows/jan-electron-build-nightly.yml`](.github/workflows/jan-electron-build-nightly.yml)
 
 ## Acknowledgements
 

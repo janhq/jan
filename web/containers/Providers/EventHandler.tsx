@@ -68,10 +68,10 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     setTimeout(async () => {
       setActiveModel(undefined)
       setStateModel({ state: 'start', loading: false, model: '' })
-      toaster({
-        title: 'Success!',
-        description: `Model ${model.id} has been stopped.`,
-      })
+      // toaster({
+      //   title: 'Success!',
+      //   description: `Model ${model.id} has been stopped.`,
+      // })
     }, 500)
   }
 

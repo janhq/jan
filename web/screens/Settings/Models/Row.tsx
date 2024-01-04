@@ -15,7 +15,7 @@ import { useClickOutside } from '@/hooks/useClickOutside'
 
 import useDeleteModel from '@/hooks/useDeleteModel'
 
-import { toGigabytes } from '@/utils/converter'
+import { toGibibytes } from '@/utils/converter'
 
 type RowModelProps = {
   data: Model
@@ -39,7 +39,7 @@ export default function RowModel(props: RowModelProps) {
 
   const onModelActionClick = (modelId: string) => {
     if (activeModel && activeModel.id === modelId) {
-      stopModel(modelId)
+      stopModel()
     } else {
       startModel(modelId)
     }
@@ -52,7 +52,7 @@ export default function RowModel(props: RowModelProps) {
       <td className="px-6 py-4">
         <Badge themes="secondary">
           {props.data.metadata.size
-            ? toGigabytes(props.data.metadata.size)
+            ? toGibibytes(props.data.metadata.size)
             : '-'}
         </Badge>
       </td>
@@ -134,7 +134,7 @@ export default function RowModel(props: RowModelProps) {
               className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
               onClick={() => {
                 setTimeout(async () => {
-                  await stopModel(props.data.id)
+                  await stopModel()
                   deleteModel(props.data)
                 }, 500)
                 setMore(false)

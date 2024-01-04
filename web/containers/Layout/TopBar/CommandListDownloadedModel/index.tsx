@@ -26,7 +26,7 @@ export default function CommandListDownloadedModel() {
 
   const onModelActionClick = (modelId: string) => {
     if (activeModel && activeModel.id === modelId) {
-      stopModel(modelId)
+      stopModel()
     } else {
       startModel(modelId)
     }

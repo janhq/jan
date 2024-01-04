@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useAtomValue } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
@@ -9,7 +10,7 @@ import settingComponentBuilder from '../ModelSetting/settingComponentBuilder'
 
 import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
-const EngineSetting: React.FC = () => {
+const EngineSetting = () => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
 
@@ -22,9 +23,9 @@ const EngineSetting: React.FC = () => {
   componentData.sort((a, b) => a.title.localeCompare(b.title))
 
   return (
-    <form className="flex flex-col">
+    <div className="flex flex-col">
       {settingComponentBuilder(componentData)}
-    </form>
+    </div>
   )
 }
 

@@ -74,6 +74,7 @@ export default function RibbonNav() {
       state: MainViewState.Settings,
     },
   ]
+
   return (
     <div className="relative top-12 flex h-[calc(100%-48px)] w-16 flex-shrink-0 flex-col border-r border-border bg-background py-4">
       <div className="mt-2 flex h-full w-full flex-col items-center justify-between">

@@ -4,13 +4,14 @@
  */
 export enum AppRoute {
   appDataPath = 'appDataPath',
-  appVersion = 'appVersion',
   openExternalUrl = 'openExternalUrl',
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
   relaunch = 'relaunch',
   joinPath = 'joinPath',
   baseName = 'baseName',
+  startServer = 'startServer',
+  stopServer = 'stopServer',
 }
 
 export enum AppEvent {

@@ -19,11 +19,7 @@ import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
 import { migrateExtensions } from './utils/migration'
-
-/**
- * Server
- */
-import { startServer } from '@janhq/server'
+import { dispose } from './utils/disposable'
 
 app
   .whenReady()
@@ -34,7 +30,6 @@ app
   .then(handleIPCs)
   .then(handleAppUpdates)
   .then(createMainWindow)
-  .then(startServer)
   .then(() => {
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
@@ -43,14 +38,12 @@ app
     })
   })
 
-app.on('window-all-closed', () => {
-  ModuleManager.instance.clearImportedModules()
-  app.quit()
+app.once('window-all-closed', () => {
+  cleanUpAndQuit()
 })
 
-app.on('quit', () => {
-  ModuleManager.instance.clearImportedModules()
-  app.quit()
+app.once('quit', () => {
+  cleanUpAndQuit()
 })
 
 function createMainWindow() {
@@ -75,6 +68,12 @@ function createMainWindow() {
     if (process.platform !== 'darwin') app.quit()
   })
 
+  /* Open external links in the default browser */
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    require('electron').shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
   /* Enable dev tools for development */
   if (!app.isPackaged) mainWindow.webContents.openDevTools()
 }
@@ -88,4 +87,14 @@ function handleIPCs() {
   handleExtensionIPCs()
   handleAppIPCs()
   handleFileMangerIPCs()
+}
+
+function cleanUpAndQuit() {
+  if (!ModuleManager.instance.cleaningResource) {
+    ModuleManager.instance.cleaningResource = true
+    WindowManager.instance.currentWindow?.destroy()
+    dispose(ModuleManager.instance.requiredModules)
+    ModuleManager.instance.clearImportedModules()
+    app.quit()
+  }
 }

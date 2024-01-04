@@ -11,6 +11,7 @@ import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
+import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
@@ -30,8 +31,10 @@ import ThreadList from '@/screens/Chat/ThreadList'
 import Sidebar, { showRightSideBarAtom } from './Sidebar'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+
 import {
   activeThreadAtom,
+  engineParamsUpdateAtom,
   getActiveThreadIdAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
@@ -48,9 +51,10 @@ const ChatScreen = () => {
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const activeThreadState = useAtomValue(activeThreadStateAtom)
-  const { sendChatMessage, queuedMessage } = useSendChatMessage()
+  const { sendChatMessage, queuedMessage, reloadModel } = useSendChatMessage()
   const isWaitingForResponse = activeThreadState?.waitingForResponse ?? false
-  const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
+  const isDisabledChatbox =
+    currentPrompt.trim().length === 0 || isWaitingForResponse
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
@@ -59,6 +63,7 @@ const ChatScreen = () => {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelRef = useRef(activeModel)
+  const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -144,18 +149,30 @@ const ChatScreen = () => {
             </div>
           )}
 
-          <ModelStart />
+          {!engineParamsUpdate && <ModelStart />}
 
-          {queuedMessage && (
-            <div className="my-2 py-2 text-center">
-              <span className="rounded-lg border border-border px-4 py-2 shadow-lg">
+          {reloadModel && (
+            <>
+              <ModelReload />
+              <div className="mb-2 text-center">
+                <span className="text-muted-foreground">
+                  Model is reloading to apply new changes.
+                </span>
+              </div>
+            </>
+          )}
+
+          {queuedMessage && !reloadModel && (
+            <div className="mb-2 text-center">
+              <span className="text-muted-foreground">
                 Message queued. It can be sent once the model has started
               </span>
             </div>
           )}
+
           <div className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 px-8 py-4">
             <Textarea
-              className="max-h-[400px] resize-none overflow-y-hidden pr-20"
+              className="max-h-[400px] resize-none overflow-y-auto pr-20"
               style={{ height: '40px' }}
               ref={textareaRef}
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) =>
@@ -171,7 +188,9 @@ const ChatScreen = () => {
             {messages[messages.length - 1]?.status !== MessageStatus.Pending ? (
               <Button
                 size="lg"
-                disabled={disabled || stateModel.loading || !activeThread}
+                disabled={
+                  isDisabledChatbox || stateModel.loading || !activeThread
+                }
                 themes="primary"
                 className="min-w-[100px]"
                 onClick={sendChatMessage}

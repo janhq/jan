@@ -1,20 +1,12 @@
 import { app, ipcMain, shell, nativeTheme } from 'electron'
 import { join, basename } from 'path'
 import { WindowManager } from './../managers/window'
-import { userSpacePath } from './../utils/path'
+import { getResourcePath, userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
 import { ExtensionManager, ModuleManager } from '@janhq/core/node'
+import { startServer, stopServer } from '@janhq/server'
 
 export function handleAppIPCs() {
-  /**
-   * Returns the version of the app.
-   * @param _event - The IPC event object.
-   * @returns The version of the app.
-   */
-  ipcMain.handle(AppRoute.appVersion, async (_event) => {
-    return app.getVersion()
-  })
-
   /**
    * Handles the "openAppDirectory" IPC message by opening the app's user data directory.
    * The `shell.openPath` method is used to open the directory in the user's default file explorer.
@@ -55,6 +47,23 @@ export function handleAppIPCs() {
   ipcMain.handle(AppRoute.baseName, async (_event, path: string) =>
     basename(path)
   )
+
+  /**
+   * Start Jan API Server.
+   */
+  ipcMain.handle(AppRoute.startServer, async (_event) =>
+    startServer(
+      app.isPackaged
+        ? join(getResourcePath(), 'docs', 'openapi', 'jan.yaml')
+        : undefined,
+      app.isPackaged ? join(getResourcePath(), 'docs', 'openapi') : undefined
+    )
+  )
+  
+  /**
+   * Stop Jan API Server.
+   */
+  ipcMain.handle(AppRoute.stopServer, async (_event) => stopServer())
 
   /**
    * Relaunches the app in production - reload window in development.

@@ -25,7 +25,8 @@
   "scripts": {
     "lint": "yarn workspace jan lint && yarn workspace jan-web lint",
     "test": "yarn workspace jan test:e2e",
-    "dev:electron": "cpx \"models/**\" \"electron/models/\" && yarn workspace jan dev",
+    "copy:assets": "cpx \"models/**\" \"electron/models/\" && cpx \"docs/openapi/**\" \"electron/docs/openapi\"",
+    "dev:electron": "yarn copy:assets && yarn workspace jan dev",
     "dev:web": "yarn workspace jan-web dev",
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "test-local": "yarn lint && yarn build:test && yarn test",
@@ -34,15 +35,15 @@
     "build:server": "cd server && yarn install && yarn run build",
     "build:core": "cd core && yarn install && yarn run build",
     "build:web": "yarn workspace jan-web build && cpx \"web/out/**\" \"electron/renderer/\"",
-    "build:electron": "cpx \"models/**\" \"electron/models/\" && yarn workspace jan build",
+    "build:electron": "yarn copy:assets && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
     "build:extensions:windows": "rimraf ./electron/pre-install/*.tgz && powershell -command \"$jobs = Get-ChildItem -Path './extensions' -Directory | ForEach-Object { Start-Job -Name ($_.Name) -ScriptBlock { param($_dir); try { Set-Location $_dir; npm install; npm run build:publish; Write-Output 'Build successful in ' + $_dir } catch { Write-Error 'Error in ' + $_dir; throw } } -ArgumentList $_.FullName }; $jobs | Wait-Job; $jobs | ForEach-Object { Receive-Job -Job $_ -Keep } | ForEach-Object { Write-Host $_ }; $failed = $jobs | Where-Object { $_.State -ne 'Completed' -or $_.ChildJobs[0].JobStateInfo.State -ne 'Completed' }; if ($failed) { Exit 1 }\"",
     "build:extensions:linux": "rimraf ./electron/pre-install/*.tgz && find ./extensions -mindepth 1 -maxdepth 1 -type d -print0 | xargs -0 -n 1 -P 4 -I {} sh -c 'cd {} && npm install && npm run build:publish'",
     "build:extensions:darwin": "rimraf ./electron/pre-install/*.tgz && find ./extensions -mindepth 1 -maxdepth 1 -type d -print0 | xargs -0 -n 1 -P 4 -I {} sh -c 'cd {} && npm install && npm run build:publish'",
     "build:extensions": "run-script-os",
-    "build:test": "yarn build:web && yarn workspace jan build:test",
+    "build:test": "yarn copy:assets && yarn build:web && yarn workspace jan build:test",
     "build": "yarn build:web && yarn build:electron",
-    "build:publish": "cpx \"models/**\" \"electron/models/\" && yarn build:web && yarn workspace jan build:publish"
+    "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",

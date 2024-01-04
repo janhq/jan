@@ -26,7 +26,7 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
-import { toGigabytes } from '@/utils/converter'
+import { toGibibytes } from '@/utils/converter'
 
 import {
   activeThreadAtom,
@@ -130,7 +130,7 @@ export default function DropdownListSidebar() {
                   <div className="flex w-full justify-between">
                     <span className="line-clamp-1 block">{x.name}</span>
                     <span className="font-bold text-muted-foreground">
-                      {toGigabytes(x.metadata.size)}
+                      {toGibibytes(x.metadata.size)}
                     </span>
                   </div>
                 </SelectItem>
