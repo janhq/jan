@@ -36,28 +36,23 @@ const GPUDriverPrompt: React.FC = () => {
       <Modal open={showNotification} onOpenChange={openChanged}>
         <ModalContent>
           <ModalHeader>
-            <ModalTitle>Missing Nvidia Driver and Cuda Toolkit</ModalTitle>
+            <ModalTitle>
+              Checking for machine that does not meet the requirements.
+            </ModalTitle>
           </ModalHeader>
           <p>
-            It seems like you are missing Nvidia Driver or Cuda Toolkit or both.
-            Please follow the instructions on the{' '}
+            It appears that you are missing some dependencies required to run in
+            GPU mode. Please follow the instructions below for more details{' '}
             <span
               className="cursor-pointer text-blue-600"
               onClick={() =>
-                openExternalUrl('https://developer.nvidia.com/cuda-toolkit')
+                openExternalUrl(
+                  'https://github.com/janhq/jan/blob/main/USAGE.md'
+                )
               }
             >
-              NVidia Cuda Toolkit Installation Page
+              Jan running mode documentation
             </span>{' '}
-            and the{' '}
-            <span
-              className="cursor-pointer text-blue-600"
-              onClick={() =>
-                openExternalUrl('https://www.nvidia.com/Download/index.aspx')
-              }
-            >
-              Nvidia Driver Installation Page
-            </span>
             .
           </p>
           <div className="flex items-center space-x-2">
