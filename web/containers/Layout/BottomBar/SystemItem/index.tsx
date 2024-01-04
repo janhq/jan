@@ -9,7 +9,7 @@ export default function SystemItem({ name, value }: Props) {
   return (
     <div className="flex items-center gap-x-1">
       <p className="text-xs">{name}</p>
-      <span className="text-xs">{value}</span>
+      <span className="text-xs font-bold">{value}</span>
     </div>
   )
 }
