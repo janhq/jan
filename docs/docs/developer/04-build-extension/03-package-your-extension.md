@@ -1,7 +1,7 @@
 ---
-title: Your First Engine
-slug: /developer/build-engine/your-first-engine/
-description: A quick start on how to build your first engine
+title: Package your Engine
+slug: /developer/build-extension/package-your-extension/
+description: Package your extension for sharing and publishing.
 keywords:
   [
     Jan AI,
@@ -12,13 +12,11 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
-    quick start,
-    build engine,
+    build extension,
+    extension anatomy,
   ]
 ---
 
 :::caution
 This is currently under development.
 :::
-
-A quickstart on how to integrate tensorrt llm
