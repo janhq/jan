@@ -1,0 +1,22 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/openchat-3.5-1210-GGUF/resolve/main/openchat-3.5-1210.Q4_K_M.gguf",
+    "id": "openchat-3.5-7b",
+    "object": "model",
+    "name": "Openchat-3.5 7B Q4",
+    "version": "1.0",
+    "description": "The performance of this open-source model surpasses that of ChatGPT-3.5 and Grok-1 across various benchmarks.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "prompt_template": "GPT4 Correct User: {prompt}<|end_of_turn|>GPT4 Correct Assistant:"
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "Openchat",
+      "tags": ["7B", "Fintuned", "Featured"],
+      "size": 4370000000
+    },
+    "engine": "nitro"
+  }
