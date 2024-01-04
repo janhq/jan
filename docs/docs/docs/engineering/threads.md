@@ -33,7 +33,7 @@ This is currently under development.
 - Threads are saved in the `/threads` folder.
 - Threads are organized by folders, one for each thread, and can be easily zipped, exported, and cleared.
 - Thread folders follow the naming: `assistant_id` + `thread_created_at`.
-- Thread folders also contain `messages.jsonl` files. See [messages](/specs/messages).
+- Thread folders also contain `messages.jsonl` files. See [messages](/docs/engineering/messages).
 
 ```yaml
 janroot/

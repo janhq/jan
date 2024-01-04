@@ -15,9 +15,9 @@ keywords:
   ]
 ---
 
-Jan is a ChatGPT-alternative that runs on your own computer, with a [local API server](/api-reference/).
+Jan is a ChatGPT-alternative that runs on your own computer, with a [local API server](/api-reference).
 
-Jan uses [open-source AI models](/docs/models), stores data in [open file formats](/specs/data-structures), is highly customizable via [extensions](/docs/extensions).
+Jan uses [open-source AI models](/docs/engineering/models), stores data in [open file formats](/developer/file-based), is highly customizable via [extensions](/developer/build-extension).
 
 Jan believes in the need for an open source AI ecosystem. We aim to build infra and tooling to allow open source AIs to compete on a level playing field with proprietary offerings.
 
@@ -29,11 +29,11 @@ Jan runs 100% on your own machine, [predictably](https://www.reddit.com/r/LocalL
 
 #### 🏗️ Extensions
 
-Jan ships with a powerful [extension framework](/docs/extensions), which allows developers to extend and customize Jan's functionality. In fact, most core modules of Jan are [built as extensions](/specs/architecture) and use the same extensions API.
+Jan ships with a powerful [extension framework](/developer/build-extension), which allows developers to extend and customize Jan's functionality. In fact, most core modules of Jan are [built as extensions](/developer/architecture) and use the same extensions API.
 
 #### 🗂️ Open File Formats
 
-Jan stores data in a [local folder of non-proprietary files](/specs/data-structures). You're never locked-in and can do what you want with your data with extensions, or even a different app.
+Jan stores data in a [local folder of non-proprietary files](/developer/architecture). You're never locked-in and can do what you want with your data with extensions, or even a different app.
 
 #### 🌍 Open Source
 

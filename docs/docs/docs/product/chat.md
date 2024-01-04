@@ -16,7 +16,7 @@ keywords:
 
 ## Overview
 
-A home screen for users to chat with [assistants](/specs/assistants) via conversation [threads](/specs/threads).
+A home screen for users to chat with [assistants](/docs/engineering/assistants) via conversation [threads](/docs/engineering/threads).
 
 ![alt text](../img/chat-screen.png)
 
