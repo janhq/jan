@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 
-import { MessageStatus } from '@janhq/core'
 import {
   Modal,
   ModalTrigger,
