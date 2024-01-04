@@ -11,8 +11,6 @@ import {
   SettingsIcon,
   MonitorIcon,
   LayoutGridIcon,
-  Twitter,
-  Github,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -51,23 +49,6 @@ export default function RibbonNav() {
         />
       ),
       state: MainViewState.Hub,
-    },
-  ]
-
-  const linksMenu = [
-    {
-      name: 'Twitter',
-      icon: (
-        <Twitter size={20} className="flex-shrink-0 text-muted-foreground" />
-      ),
-      link: 'https://twitter.com/janhq_',
-    },
-    {
-      name: 'Github',
-      icon: (
-        <Github size={20} className="flex-shrink-0 text-muted-foreground" />
-      ),
-      link: 'https://github.com/janhq/jan',
     },
   ]
 
@@ -138,33 +119,6 @@ export default function RibbonNav() {
           </div>
 
           <div>
-            <>
-              {linksMenu
-                .filter((link) => !!link)
-                .map((link, i) => {
-                  return (
-                    <div className="relative flex p-2" key={i}>
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <a
-                            href={link.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center"
-                          >
-                            {link.icon}
-                          </a>
-                        </TooltipTrigger>
-                        <TooltipContent side="right" sideOffset={10}>
-                          <span>{link.name}</span>
-                          <TooltipArrow />
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  )
-                })}
-            </>
-
             {secondaryMenus
               .filter((secondary) => !!secondary)
               .map((secondary, i) => {
