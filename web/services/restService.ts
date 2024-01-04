@@ -13,11 +13,6 @@ export function openExternalUrl(url: string) {
   window?.open(url, '_blank')
 }
 
-// Async function to get the application version
-export async function appVersion() {
-  return Promise.resolve(VERSION)
-}
-
 // Define API routes based on different route types
 export const APIRoutes = [
   ...Object.values(AppRoute).map((r) => ({ path: 'app', route: r })),
@@ -55,5 +50,4 @@ export const restAPI = {
     }
   }, {}),
   openExternalUrl,
-  appVersion,
 }
