@@ -1,18 +1,8 @@
-import { useState } from 'react'
-
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
   TooltipArrow,
-  Modal,
-  ModalTitle,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
-  ModalDescription,
-  ModalClose,
-  Button,
 } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 
@@ -21,8 +11,8 @@ import {
   SettingsIcon,
   MonitorIcon,
   LayoutGridIcon,
-  // Twitter,
-  // Github,
+  Twitter,
+  Github,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -64,22 +54,22 @@ export default function RibbonNav() {
     },
   ]
 
-  // const linksMenu = [
-  //   {
-  //     name: 'Twitter',
-  //     icon: (
-  //       <Twitter size={20} className="flex-shrink-0 text-muted-foreground" />
-  //     ),
-  //     link: 'https://twitter.com/janhq_',
-  //   },
-  //   {
-  //     name: 'Github',
-  //     icon: (
-  //       <Github size={20} className="flex-shrink-0 text-muted-foreground" />
-  //     ),
-  //     link: 'https://github.com/janhq/jan',
-  //   },
-  // ]
+  const linksMenu = [
+    {
+      name: 'Twitter',
+      icon: (
+        <Twitter size={20} className="flex-shrink-0 text-muted-foreground" />
+      ),
+      link: 'https://twitter.com/janhq_',
+    },
+    {
+      name: 'Github',
+      icon: (
+        <Github size={20} className="flex-shrink-0 text-muted-foreground" />
+      ),
+      link: 'https://github.com/janhq/jan',
+    },
+  ]
 
   const secondaryMenus = [
     {
@@ -148,8 +138,7 @@ export default function RibbonNav() {
           </div>
 
           <div>
-            {/* Temporary hidden social media until we finalize design */}
-            {/* <>
+            <>
               {linksMenu
                 .filter((link) => !!link)
                 .map((link, i) => {
@@ -174,7 +163,7 @@ export default function RibbonNav() {
                     </div>
                   )
                 })}
-            </> */}
+            </>
 
             {secondaryMenus
               .filter((secondary) => !!secondary)
