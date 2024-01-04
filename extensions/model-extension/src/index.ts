@@ -22,6 +22,9 @@ export default class JanModelExtension implements ModelExtension {
   private static readonly _incompletedModelFileName = '.download'
   private static readonly _offlineInferenceEngine = InferenceEngine.nitro
 
+  private static readonly _configDirName = 'config'
+  private static readonly _defaultModelFileName = 'default-model.json'
+
   /**
    * Implements type from JanExtension.
    * @override
@@ -170,7 +173,7 @@ export default class JanModelExtension implements ModelExtension {
    * @returns A Promise that resolves with an array of all models.
    */
   async getDownloadedModels(): Promise<Model[]> {
-    const downloadedModels = await this.getModelsMetadata(
+    return await this.getModelsMetadata(
       async (modelDir: string, model: Model) => {
         if (model.engine !== JanModelExtension._offlineInferenceEngine) {
           return true
@@ -193,9 +196,6 @@ export default class JanModelExtension implements ModelExtension {
           })
       }
     )
-    // TODO remove this
-    console.log(`NamH downloaded models: ${JSON.stringify(downloadedModels)}`)
-    return downloadedModels
   }
 
   private async getModelsMetadata(
@@ -304,41 +304,20 @@ export default class JanModelExtension implements ModelExtension {
       return
     }
 
+    const defaultModel = await this.getDefaultModel()
+    if (!defaultModel) {
+      console.error('Unable to find default model')
+      return
+    }
+
     const model: Model = {
-      object: 'model',
-      version: 1,
-      format: 'gguf',
-      source_url: 'N/A',
+      ...defaultModel,
       id: dirName,
       name: dirName,
       created: Date.now(),
       description: `${dirName} - user self import model`,
-      settings: {
-        ctx_len: 4096,
-        ngl: 0,
-        embedding: false,
-        n_parallel: 0,
-        cpu_threads: 0,
-        prompt_template: '',
-      },
-      parameters: {
-        temperature: 0,
-        token_limit: 0,
-        top_k: 0,
-        top_p: 0,
-        stream: false,
-        max_tokens: 4096,
-        stop: [],
-        frequency_penalty: 0,
-        presence_penalty: 0,
-      },
-      metadata: {
-        author: 'User',
-        tags: [],
-        size: binaryFileSize,
-      },
-      engine: InferenceEngine.nitro,
     }
+
     const modelFilePath = await joinPath([
       JanModelExtension._homeDir,
       dirName,
@@ -348,6 +327,22 @@ export default class JanModelExtension implements ModelExtension {
     await fs.writeFileSync(modelFilePath, JSON.stringify(model, null, 2))
 
     return model
+  }
+
+  private async getDefaultModel(): Promise<Model | undefined> {
+    const defaultModelPath = await joinPath([
+      JanModelExtension._homeDir,
+      JanModelExtension._configDirName,
+      JanModelExtension._defaultModelFileName,
+    ])
+
+    if (!(await fs.existsSync(defaultModelPath))) {
+      return undefined
+    }
+
+    const model = await this.readModelMetadata(defaultModelPath)
+
+    return typeof model === 'object' ? model : JSON.parse(model)
   }
 
   /**
