@@ -61,6 +61,9 @@ export default function useSendChatMessage() {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
 
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
+  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
+
+  const [reloadModel, setReloadModel] = useState(false)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -139,7 +142,7 @@ export default function useSendChatMessage() {
       return
     }
 
-    console.log(engineParamsUpdate)
+    if (engineParamsUpdate) setReloadModel(true)
 
     const activeThreadState = threadStates[activeThread.id]
     const runtimeParams = toRuntimeParams(activeModelParams)
@@ -263,9 +266,13 @@ export default function useSendChatMessage() {
     }
 
     events.emit(EventName.OnMessageSent, messageRequest)
+
+    setReloadModel(false)
+    setEngineParamsUpdate(false)
   }
 
   return {
+    reloadModel,
     sendChatMessage,
     resendChatMessage,
     queuedMessage,

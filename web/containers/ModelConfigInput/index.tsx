@@ -7,13 +7,22 @@ import {
   TooltipTrigger,
 } from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { InfoIcon } from 'lucide-react'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
-import { getActiveThreadIdAtom } from '@/helpers/atoms/Thread.atom'
+import { getConfigurationsData } from '@/utils/componentSettings'
+
+import { toSettingParams } from '@/utils/model_param'
+
+import {
+  engineParamsUpdateAtom,
+  getActiveThreadIdAtom,
+  getActiveThreadModelParamsAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   title: string
@@ -33,9 +42,24 @@ const ModelConfigInput: React.FC<Props> = ({
   const { updateModelParameter } = useUpdateModelParameters()
   const threadId = useAtomValue(getActiveThreadIdAtom)
 
+  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+
+  const modelSettingParams = toSettingParams(activeModelParams)
+
+  const engineParams = getConfigurationsData(modelSettingParams)
+
+  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
+
+  const { stopModel } = useActiveModel()
+
   const onValueChanged = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     if (!threadId) return
-
+    if (engineParams.some((x) => x.name.includes(name))) {
+      setEngineParamsUpdate(true)
+      stopModel()
+    } else {
+      setEngineParamsUpdate(false)
+    }
     updateModelParameter(threadId, name, e.target.value)
   }
 
