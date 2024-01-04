@@ -1,14 +1,19 @@
 import { ReactNode, useState } from 'react'
 
+import { useAtomValue } from 'jotai'
 import {
   ChevronDownIcon,
   MoreVerticalIcon,
   FolderOpenIcon,
   Code2Icon,
+  PencilIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { useClickOutside } from '@/hooks/useClickOutside'
+
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 interface Props {
   children: ReactNode
@@ -28,6 +33,8 @@ export default function CardSidebar({
   const [more, setMore] = useState(false)
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
+  const { activeModel } = useActiveModel()
+  const activeThread = useAtomValue(activeThreadAtom)
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
@@ -77,7 +84,7 @@ export default function CardSidebar({
 
         {more && (
           <div
-            className="absolute right-4 top-8 z-20 w-64 rounded-lg border border-border bg-background shadow-lg"
+            className="absolute right-4 top-8 z-20 w-72 rounded-lg border border-border bg-background shadow-lg"
             ref={setMenu}
           >
             <div
@@ -101,7 +108,7 @@ export default function CardSidebar({
                 {title === 'Model' ? (
                   <div className="flex flex-col">
                     <span className="font-medium text-black dark:text-muted-foreground">
-                      {openFolderTitle}
+                      Show in Finder
                     </span>
                     <span className="mt-1 text-muted-foreground">
                       Opens thread.json. Changes affect this thread only.
@@ -109,7 +116,7 @@ export default function CardSidebar({
                   </div>
                 ) : (
                   <span className="text-bold text-black dark:text-muted-foreground">
-                    {openFolderTitle}
+                    Show in Finder
                   </span>
                 )}
               </>
@@ -121,18 +128,33 @@ export default function CardSidebar({
                 setMore(false)
               }}
             >
-              <Code2Icon
+              <PencilIcon
                 size={16}
                 className="mt-0.5 flex-shrink-0 text-muted-foreground"
               />
               <>
                 <div className="flex flex-col">
-                  <span className="font-medium text-black dark:text-muted-foreground">
-                    View as JSON
+                  <span className="line-clamp-1 font-medium text-black dark:text-muted-foreground">
+                    Edit Global Defaults for{' '}
+                    <span
+                      className="font-bold"
+                      title={activeThread?.assistants[0].model.id}
+                    >
+                      {activeThread?.assistants[0].model.id}
+                    </span>
                   </span>
                   <span className="mt-1 text-muted-foreground">
-                    Opens <span className="lowercase">{title}.json.</span>&nbsp;
-                    Changes affect all new threads.
+                    {title === 'Model' ? (
+                      <>
+                        Opens <span className="lowercase">{title}.json.</span>
+                        &nbsp;Changes affect all new assistants and threads.
+                      </>
+                    ) : (
+                      <>
+                        Opens <span className="lowercase">{title}.json.</span>
+                        &nbsp;Changes affect all new threads.
+                      </>
+                    )}
                   </span>
                 </div>
               </>
