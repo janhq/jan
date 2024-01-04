@@ -47,7 +47,7 @@ export class ExtensionManager {
 
       const extensionsJson = join(extDir, "extensions.json");
       if (!existsSync(extensionsJson))
-        writeFileSync(extensionsJson, "{}", "utf-8");
+        writeFileSync(extensionsJson, "{}");
 
       this.extensionsPath = extDir;
     } catch (error) {

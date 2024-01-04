@@ -11,8 +11,6 @@ import {
   SettingsIcon,
   MonitorIcon,
   LayoutGridIcon,
-  Twitter,
-  Github,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -54,23 +52,6 @@ export default function RibbonNav() {
     },
   ]
 
-  const linksMenu = [
-    {
-      name: 'Twitter',
-      icon: (
-        <Twitter size={20} className="flex-shrink-0 text-muted-foreground" />
-      ),
-      link: 'https://twitter.com/janhq_',
-    },
-    {
-      name: 'Github',
-      icon: (
-        <Github size={20} className="flex-shrink-0 text-muted-foreground" />
-      ),
-      link: 'https://github.com/janhq/jan',
-    },
-  ]
-
   const secondaryMenus = [
     {
       name: 'System Monitor',
@@ -93,6 +74,7 @@ export default function RibbonNav() {
       state: MainViewState.Settings,
     },
   ]
+
   return (
     <div className="relative top-12 flex h-[calc(100%-48px)] w-16 flex-shrink-0 flex-col border-r border-border bg-background py-4">
       <div className="mt-2 flex h-full w-full flex-col items-center justify-between">
@@ -137,32 +119,6 @@ export default function RibbonNav() {
           </div>
 
           <div>
-            <>
-              {linksMenu
-                .filter((link) => !!link)
-                .map((link, i) => {
-                  return (
-                    <div className="relative flex p-2" key={i}>
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <a
-                            href={link.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center"
-                          >
-                            {link.icon}
-                          </a>
-                        </TooltipTrigger>
-                        <TooltipContent side="right" sideOffset={10}>
-                          <span>{link.name}</span>
-                          <TooltipArrow />
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  )
-                })}
-            </>
             {secondaryMenus
               .filter((secondary) => !!secondary)
               .map((secondary, i) => {

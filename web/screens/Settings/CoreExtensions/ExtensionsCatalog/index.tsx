@@ -7,8 +7,6 @@ import { Button } from '@janhq/uikit'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
-import { useGetAppVersion } from '@/hooks/useGetAppVersion'
-
 import { formatExtensionsName } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
@@ -17,7 +15,6 @@ const ExtensionCatalog = () => {
   const [activeExtensions, setActiveExtensions] = useState<any[]>([])
   const [extensionCatalog, setExtensionCatalog] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const { version } = useGetAppVersion()
   const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
   /**
    * Loads the extension catalog module from a CDN and sets it as the extension catalog state.
@@ -26,7 +23,6 @@ const ExtensionCatalog = () => {
     if (!window.electronAPI) {
       return
     }
-    if (!version) return
 
     // Get extension manifest
     import(/* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`).then(
@@ -35,7 +31,7 @@ const ExtensionCatalog = () => {
           setExtensionCatalog(data.default)
       }
     )
-  }, [experimentalFeatureEnabed, version])
+  }, [experimentalFeatureEnabed])
 
   /**
    * Fetches the active extensions and their preferences from the `extensions` and `preferences` modules.

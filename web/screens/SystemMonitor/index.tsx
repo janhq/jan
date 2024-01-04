@@ -101,7 +101,7 @@ export default function SystemMonitorScreen() {
                           }
                           className="w-16"
                           loading={stateModel.loading}
-                          onClick={() => stopModel(activeModel.id)}
+                          onClick={() => stopModel()}
                         >
                           Stop
                         </Button>

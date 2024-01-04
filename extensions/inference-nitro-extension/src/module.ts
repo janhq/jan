@@ -85,27 +85,39 @@ function checkFileExistenceInPaths(file: string, paths: string[]): boolean {
 }
 
 function updateCudaExistence() {
-  let files: string[];
+  let filesCuda12: string[];
+  let filesCuda11: string[];
   let paths: string[];
+  let cudaVersion: string = "";
 
   if (process.platform === "win32") {
-    files = ["cublas64_12.dll", "cudart64_12.dll", "cublasLt64_12.dll"];
+    filesCuda12 = ["cublas64_12.dll", "cudart64_12.dll", "cublasLt64_12.dll"];
+    filesCuda11 = ["cublas64_11.dll", "cudart64_11.dll", "cublasLt64_11.dll"];
     paths = process.env.PATH ? process.env.PATH.split(path.delimiter) : [];
-    const nitro_cuda_path = path.join(__dirname, "bin", "win-cuda");
-    paths.push(nitro_cuda_path);
   } else {
-    files = ["libcudart.so.12", "libcublas.so.12", "libcublasLt.so.12"];
+    filesCuda12 = ["libcudart.so.12", "libcublas.so.12", "libcublasLt.so.12"];
+    filesCuda11 = ["libcudart.so.11.0", "libcublas.so.11", "libcublasLt.so.11"];
     paths = process.env.LD_LIBRARY_PATH
       ? process.env.LD_LIBRARY_PATH.split(path.delimiter)
       : [];
-    const nitro_cuda_path = path.join(__dirname, "bin", "linux-cuda");
-    paths.push(nitro_cuda_path);
     paths.push("/usr/lib/x86_64-linux-gnu/");
   }
 
-  let cudaExists = files.every(
+  let cudaExists = filesCuda12.every(
     (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
   );
+
+  if (!cudaExists) {
+    cudaExists = filesCuda11.every(
+      (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
+    );
+    if (cudaExists) {
+      cudaVersion = "11";
+    }
+  }
+  else {
+    cudaVersion = "12";
+  }
 
   let data;
   try {
@@ -115,6 +127,7 @@ function updateCudaExistence() {
   }
 
   data["cuda"].exist = cudaExists;
+  data["cuda"].version = cudaVersion;
   if (cudaExists) {
     data.run_mode = "gpu";
   }
@@ -376,12 +389,17 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
     let cudaVisibleDevices = "";
     let binaryName;
     if (process.platform === "win32") {
-      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-      if (nvida_info["run_mode"] === "cpu") {
+      let nvidiaInfo = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
+      if (nvidiaInfo["run_mode"] === "cpu") {
         binaryFolder = path.join(binaryFolder, "win-cpu");
       } else {
-        binaryFolder = path.join(binaryFolder, "win-cuda");
-        cudaVisibleDevices = nvida_info["gpu_highest_vram"];
+        if (nvidiaInfo["cuda"].version === "12") {
+          binaryFolder = path.join(binaryFolder, "win-cuda-12-0");
+        }
+        else {
+          binaryFolder = path.join(binaryFolder, "win-cuda-11-4");
+        }
+        cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];
       }
       binaryName = "nitro.exe";
     } else if (process.platform === "darwin") {
@@ -392,12 +410,17 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
       }
       binaryName = "nitro";
     } else {
-      let nvida_info = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-      if (nvida_info["run_mode"] === "cpu") {
+      let nvidiaInfo = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
+      if (nvidiaInfo["run_mode"] === "cpu") {
         binaryFolder = path.join(binaryFolder, "linux-cpu");
       } else {
-        binaryFolder = path.join(binaryFolder, "linux-cuda");
-        cudaVisibleDevices = nvida_info["gpu_highest_vram"];
+        if (nvidiaInfo["cuda"].version === "12") {
+          binaryFolder = path.join(binaryFolder, "linux-cuda-12-0");
+        }
+        else {
+          binaryFolder = path.join(binaryFolder, "linux-cuda-11-4");
+        }
+        cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];
       }
       binaryName = "nitro";
     }

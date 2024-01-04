@@ -4,14 +4,17 @@ import reflect from '@alumna/reflect'
 
 import { FileManagerRoute } from '@janhq/core'
 import { userSpacePath, getResourcePath } from './../utils/path'
+import fs from 'fs'
+import { join } from 'path'
+import { FileStat } from '@janhq/core/.'
 
 /**
  * Handles file system extensions operations.
  */
 export function handleFileMangerIPCs() {
-  // Handles the 'synceFile' IPC event. This event is triggered to synchronize a file from a source path to a destination path.
+  // Handles the 'syncFile' IPC event. This event is triggered to synchronize a file from a source path to a destination path.
   ipcMain.handle(
-    FileManagerRoute.synceFile,
+    FileManagerRoute.syncFile,
     async (_event, src: string, dest: string) => {
       return reflect({
         src,
@@ -31,7 +34,33 @@ export function handleFileMangerIPCs() {
   )
 
   // Handles the 'getResourcePath' IPC event. This event is triggered to get the resource path.
-  ipcMain.handle(FileManagerRoute.getResourcePath, async (_event) => {
-    return getResourcePath()
-  })
+  ipcMain.handle(FileManagerRoute.getResourcePath, async (_event) =>
+    getResourcePath()
+  )
+
+  // handle fs is directory here
+  ipcMain.handle(
+    FileManagerRoute.fileStat,
+    async (_event, path: string): Promise<FileStat | undefined> => {
+      const normalizedPath = path
+        .replace(`file://`, '')
+        .replace(`file:/`, '')
+        .replace(`file:\\\\`, '')
+        .replace(`file:\\`, '')
+
+      const fullPath = join(userSpacePath, normalizedPath)
+      const isExist = fs.existsSync(fullPath)
+      if (!isExist) return undefined
+
+      const isDirectory = fs.lstatSync(fullPath).isDirectory()
+      const size = fs.statSync(fullPath).size
+
+      const fileStat: FileStat = {
+        isDirectory,
+        size,
+      }
+
+      return fileStat
+    }
+  )
 }
