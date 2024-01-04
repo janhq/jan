@@ -56,7 +56,7 @@ export default function DownloadingState() {
               return (
                 <div className="pt-2" key={i}>
                   <Progress
-                    className="mb-2 h-2"
+                    className="inline-block h-2 w-[80px] bg-blue-100"
                     value={
                       formatDownloadPercentage(item?.percent, {
                         hidePercentage: true,

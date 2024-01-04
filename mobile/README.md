@@ -15,6 +15,7 @@ yarn start
 Use following command (in root directory):
 
 ```bash
+npm install -g @ionic/cli native-run
 yarn regenerate:android
 ```
 

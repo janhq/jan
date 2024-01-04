@@ -1,6 +1,10 @@
 /* Ionic Variables and Theming. For more info, please see:
 http://ionicframework.com/docs/theming/ */
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /** Ionic CSS Variables **/
 :root {
   /** primary **/

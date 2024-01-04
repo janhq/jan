@@ -1,6 +1,13 @@
-import { IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/react';
-import ExploreContainer from '../components/ExploreContainer';
-import './Tab1.css';
+import {
+  IonContent,
+  IonHeader,
+  IonPage,
+  IonTitle,
+  IonToolbar,
+} from '@ionic/react'
+import { Badge, Button, Progress, Textarea } from '@janhq/uikit'
+import ExploreContainer from '../components/ExploreContainer'
+import './Tab1.css'
 
 const Tab1: React.FC = () => {
   return (
@@ -17,9 +24,20 @@ const Tab1: React.FC = () => {
           </IonToolbar>
         </IonHeader>
         <ExploreContainer name="Jan.AI Tab 1 page" />
+        <Button size="lg" themes="primary">
+          Click me
+        </Button>
+
+        <Textarea
+          id="assistant-instructions"
+          placeholder="Eg. You are a helpful assistant."
+          className="px-4"
+        />
+
+        <Badge themes="secondary">-</Badge>
       </IonContent>
     </IonPage>
-  );
-};
+  )
+}
 
-export default Tab1;
+export default Tab1

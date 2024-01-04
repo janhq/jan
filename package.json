@@ -27,7 +27,7 @@
     "test": "yarn workspace jan test:e2e",
     "dev:electron": "cpx \"models/**\" \"electron/models/\" && yarn workspace jan dev",
     "dev:web": "yarn workspace jan-web dev",
-    "dev:android": "yarn workspace jan-mobile cap run android",
+    "dev:android": "yarn workspace jan-mobile dev:android",
     "dev:mobile": "yarn workspace jan-mobile dev",
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "test-local": "yarn lint && yarn build:test && yarn test",
