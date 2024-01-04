@@ -52,3 +52,8 @@ We aim to always sprint on `tasks` that are a part of the [current roadmap](http
 - `in-progress`: in progress
 - `in-review`: pending PR or blocked by something
 - `done`: done
+
+## Triage SOP
+
+- `Urgent bugs`: assign to an owner (or @engineers if you are not sure) && tag the current `sprint` & `milestone`
+- `All else`: assign the correct roadmap `label(s)` and owner (if any)
