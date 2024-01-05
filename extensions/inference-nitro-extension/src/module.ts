@@ -24,19 +24,19 @@ const NVIDIA_INFO_FILE = path.join(
 );
 
 const DEFALT_SETTINGS = {
-  "notify": true,
-  "run_mode": "cpu",
-  "nvidia_driver": {
-    "exist": false,
-    "version": ""
+  notify: true,
+  run_mode: "cpu",
+  nvidia_driver: {
+    exist: false,
+    version: "",
   },
-  "cuda": {
-    "exist": false,
-    "version": ""
+  cuda: {
+    exist: false,
+    version: "",
   },
-  "gpus": [],
-  "gpu_highest_vram": ""
-}
+  gpus: [],
+  gpu_highest_vram: "",
+};
 
 // The subprocess instance for Nitro
 let subprocess = undefined;
@@ -114,8 +114,7 @@ function updateCudaExistence() {
     if (cudaExists) {
       cudaVersion = "11";
     }
-  }
-  else {
+  } else {
     cudaVersion = "12";
   }
 
@@ -395,8 +394,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
       } else {
         if (nvidiaInfo["cuda"].version === "12") {
           binaryFolder = path.join(binaryFolder, "win-cuda-12-0");
-        }
-        else {
+        } else {
           binaryFolder = path.join(binaryFolder, "win-cuda-11-4");
         }
         cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];
@@ -416,8 +414,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
       } else {
         if (nvidiaInfo["cuda"].version === "12") {
           binaryFolder = path.join(binaryFolder, "linux-cuda-12-0");
-        }
-        else {
+        } else {
           binaryFolder = path.join(binaryFolder, "linux-cuda-11-4");
         }
         cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];

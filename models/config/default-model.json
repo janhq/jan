@@ -11,18 +11,14 @@
     "ctx_len": 4096,
     "ngl": 0,
     "embedding": false,
-    "n_parallel": 0,
-    "cpu_threads": 0,
-    "prompt_template": ""
+    "prompt_template": "{system_message}\n### Instruction: {prompt}\n### Response:"
   },
   "parameters": {
-    "temperature": 0,
-    "token_limit": 0,
-    "top_k": 0,
-    "top_p": 0,
-    "stream": false,
-    "max_tokens": 4096,
-    "stop": [],
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 2048,
+    "stop": ["<endofstring>"],
     "frequency_penalty": 0,
     "presence_penalty": 0
   },
