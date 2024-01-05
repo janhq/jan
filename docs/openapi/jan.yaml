@@ -67,18 +67,21 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: >
-            curl -X POST
-            'http://localhost:3982/inferences/llamacpp/chat_completion' \
-                  -H "Content-Type: application/json" \
-                  -d '{
-                    "llama_model_path": "/path/to/your/model.gguf",
-                    "messages": [
-                      {
-                        "role": "user",
-                        "content": "hello"
-                      },
-                    ]
-                  }'
+            curl http://localhost:1337/v1/chat/completions \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "tinyllama-1.1b",
+                "messages": [
+                  {
+                    "role": "system",
+                    "content": "You are a helpful assistant."
+                  },
+                  {
+                    "role": "user",
+                    "content": "Hello!"
+                  }
+                ]
+              }'
   /models:
     get:
       operationId: listModels
