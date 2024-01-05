@@ -148,6 +148,6 @@ export type ModelRuntimeParams = {
   stop?: string[]
   frequency_penalty?: number
   presence_penalty?: number
-  proxyEngine?: string
   engine?: string
+  proxyEngine?: string
 }
