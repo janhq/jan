@@ -18,7 +18,7 @@ keywords:
 
 :::warning
 
-- Nightly releases are cutting-edge verions that include the latest features. However, they are highly unstable and may contain bugs.
+- Nightly releases are cutting-edge versions that include the latest features. However, they are highly unstable and may contain bugs.
 
 :::
 
