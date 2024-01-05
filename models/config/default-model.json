@@ -1,0 +1,35 @@
+{
+  "object": "model",
+  "version": 1,
+  "format": "gguf",
+  "source_url": "N/A",
+  "id": "N/A",
+  "name": "N/A",
+  "created": 0,
+  "description": "User self import model",
+  "settings": {
+    "ctx_len": 4096,
+    "ngl": 0,
+    "embedding": false,
+    "n_parallel": 0,
+    "cpu_threads": 0,
+    "prompt_template": ""
+  },
+  "parameters": {
+    "temperature": 0,
+    "token_limit": 0,
+    "top_k": 0,
+    "top_p": 0,
+    "stream": false,
+    "max_tokens": 4096,
+    "stop": [],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "User",
+    "tags": [],
+    "size": 0
+  },
+  "engine": "nitro"
+}

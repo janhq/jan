@@ -46,7 +46,10 @@ export function requestInference(
           subscriber.complete();
           return;
         }
-        if (model.parameters.stream) {
+        if (model.parameters.stream === false) {
+          const data = await response.json();
+          subscriber.next(data.choices[0]?.message?.content ?? "");
+        } else {
           const stream = response.body;
           const decoder = new TextDecoder("utf-8");
           const reader = stream?.getReader();
@@ -70,9 +73,6 @@ export function requestInference(
               }
             }
           }
-        } else {
-          const data = await response.json();
-          subscriber.next(data.choices[0]?.message?.content ?? "");
         }
         subscriber.complete();
       })

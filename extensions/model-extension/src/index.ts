@@ -5,11 +5,12 @@ import {
   abortDownload,
   getResourcePath,
   getUserSpace,
+  fileStat,
   InferenceEngine,
   joinPath,
+  ModelExtension,
+  Model,
 } from '@janhq/core'
-import { ModelExtension, Model } from '@janhq/core'
-import { baseName } from '@janhq/core/.'
 
 /**
  * A extension for models
@@ -20,6 +21,9 @@ export default class JanModelExtension implements ModelExtension {
   private static readonly _supportedModelFormat = '.gguf'
   private static readonly _incompletedModelFileName = '.download'
   private static readonly _offlineInferenceEngine = InferenceEngine.nitro
+
+  private static readonly _configDirName = 'config'
+  private static readonly _defaultModelFileName = 'default-model.json'
 
   /**
    * Implements type from JanExtension.
@@ -199,7 +203,7 @@ export default class JanModelExtension implements ModelExtension {
   ): Promise<Model[]> {
     try {
       if (!(await fs.existsSync(JanModelExtension._homeDir))) {
-        console.debug('model folder not found')
+        console.error('Model folder not found')
         return []
       }
 
@@ -220,13 +224,22 @@ export default class JanModelExtension implements ModelExtension {
           dirName,
           JanModelExtension._modelMetadataFileName,
         ])
-        let model = await this.readModelMetadata(jsonPath)
-        model = typeof model === 'object' ? model : JSON.parse(model)
 
-        if (selector && !(await selector?.(dirName, model))) {
-          return
+        if (await fs.existsSync(jsonPath)) {
+          // if we have the model.json file, read it
+          let model = await this.readModelMetadata(jsonPath)
+          model = typeof model === 'object' ? model : JSON.parse(model)
+
+          if (selector && !(await selector?.(dirName, model))) {
+            return
+          }
+          return model
+        } else {
+          // otherwise, we generate our own model file
+          // TODO: we might have more than one binary file here. This will be addressed with new version of Model file
+          //  which is the PR from Hiro on branch Jan can see
+          return this.generateModelMetadata(dirName)
         }
-        return model
       })
       const results = await Promise.allSettled(readJsonPromises)
       const modelData = results.map((result) => {
@@ -252,6 +265,84 @@ export default class JanModelExtension implements ModelExtension {
 
   private readModelMetadata(path: string) {
     return fs.readFileSync(path, 'utf-8')
+  }
+
+  /**
+   * Handle the case where we have the model directory but we don't have the corresponding
+   * model.json file associated with it.
+   *
+   * This function will create a model.json file for the model.
+   *
+   * @param dirName the director which reside in ~/jan/models but does not have model.json file.
+   */
+  private async generateModelMetadata(dirName: string): Promise<Model> {
+    const files: string[] = await fs.readdirSync(
+      await joinPath([JanModelExtension._homeDir, dirName])
+    )
+
+    // sort files by name
+    files.sort()
+
+    // find the first file which is not a directory
+    let binaryFileName: string | undefined = undefined
+    let binaryFileSize: number | undefined = undefined
+
+    for (const file of files) {
+      if (file.endsWith(JanModelExtension._incompletedModelFileName)) continue
+      if (file.endsWith('.json')) continue
+
+      const path = await joinPath([JanModelExtension._homeDir, dirName, file])
+      const fileStats = await fileStat(path)
+      if (fileStats.isDirectory) continue
+      binaryFileSize = fileStats.size
+      binaryFileName = file
+      break
+    }
+
+    if (!binaryFileName) {
+      console.warn(`Unable to find binary file for model ${dirName}`)
+      return
+    }
+
+    const defaultModel = await this.getDefaultModel()
+    if (!defaultModel) {
+      console.error('Unable to find default model')
+      return
+    }
+
+    const model: Model = {
+      ...defaultModel,
+      id: dirName,
+      name: dirName,
+      created: Date.now(),
+      description: `${dirName} - user self import model`,
+    }
+
+    const modelFilePath = await joinPath([
+      JanModelExtension._homeDir,
+      dirName,
+      JanModelExtension._modelMetadataFileName,
+    ])
+
+    await fs.writeFileSync(modelFilePath, JSON.stringify(model, null, 2))
+
+    return model
+  }
+
+  private async getDefaultModel(): Promise<Model | undefined> {
+    const defaultModelPath = await joinPath([
+      JanModelExtension._homeDir,
+      JanModelExtension._configDirName,
+      JanModelExtension._defaultModelFileName,
+    ])
+
+    if (!(await fs.existsSync(defaultModelPath))) {
+      return undefined
+    }
+
+    const model = await this.readModelMetadata(defaultModelPath)
+
+    return typeof model === 'object' ? model : JSON.parse(model)
   }
 
   /**

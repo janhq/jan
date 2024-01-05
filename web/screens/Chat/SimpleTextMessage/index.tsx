@@ -5,7 +5,7 @@ import { ChatCompletionRole, MessageStatus, ThreadMessage } from '@janhq/core'
 import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
-import { Marked } from 'marked'
+import { Marked, Renderer } from 'marked'
 
 import { markedHighlight } from 'marked-highlight'
 
@@ -30,7 +30,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   }
   const clipboard = useClipboard({ timeout: 1000 })
 
-  const marked = new Marked(
+  const marked: Marked = new Marked(
     markedHighlight({
       langPrefix: 'hljs',
       highlight(code, lang) {
@@ -46,6 +46,11 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     }),
     {
       renderer: {
+        link: (href, title, text) => {
+          return Renderer.prototype.link
+            ?.apply(this, [href, title, text])
+            .replace('<a', "<a target='_blank'")
+        },
         code(code, lang, escaped) {
           return `
           <div class="relative code-block group/item">
