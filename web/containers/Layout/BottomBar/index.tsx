@@ -69,7 +69,6 @@ const BottomBar = () => {
           My Models&nbsp;
           <ShortCut menu="E" />
         </Badge>
-
         {stateModel.state === 'start' && stateModel.loading && (
           <SystemItem
             titleBold
@@ -85,7 +84,11 @@ const BottomBar = () => {
           />
         )}
         {!stateModel.loading && downloadedModels.length !== 0 && (
-          <SystemItem titleBold name={'Active model'} value={activeModel?.id} />
+          <SystemItem
+            titleBold
+            name={activeModel?.id ? 'Active model' : ''}
+            value={activeModel?.id}
+          />
         )}
         {downloadedModels.length === 0 &&
           !stateModel.loading &&
