@@ -64,7 +64,7 @@ Jan is a startup with an open source business model. We believe in the need for 
 We use Github to build in public, and welcome anyone to join in.  
 
 - [Jan's Kanban](https://github.com/orgs/janhq/projects/5)
-- [Jan's Roadmap](https://github.com/orgs/janhq/projects/5/views/2)
+- [Jan's Roadmap](https://github.com/orgs/janhq/projects/5/views/29)
 
 ### Bootstrapped
 

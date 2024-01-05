@@ -72,7 +72,7 @@ export const presetConfiguration: Record<string, SettingComponentData> = {
   stream: {
     name: 'stream',
     title: 'Stream',
-    description: 'Stream',
+    description: 'Enable real-time data processing for faster predictions.',
     controllerType: 'checkbox',
     controllerData: {
       checked: false,
