@@ -114,7 +114,7 @@ const ChatScreen = () => {
       </div>
       <div
         className={twMerge(
-          'relative flex h-full flex-col bg-background',
+          'relative flex h-full flex-col overflow-auto bg-background',
           activeThread && activeThreadId && showing
             ? 'w-[calc(100%-560px)]'
             : 'w-full'
