@@ -29,26 +29,49 @@ const setDownloadStateSuccessAtom = atom(null, (get, set, modelId: string) => {
   })
 })
 
-const setDownloadStateFailedAtom = atom(null, (get, set, modelId: string) => {
-  const currentState = { ...get(modelDownloadStateAtom) }
-  const state = currentState[modelId]
-  if (!state) {
-    console.debug(`Cannot find download state for ${modelId}`)
-    toaster({
-      title: 'Cancel Download',
-      description: `Model ${modelId} cancel download`,
-    })
-    return
+const setDownloadStateFailedAtom = atom(
+  null,
+  (get, set, modelId: string, error: string) => {
+    const currentState = { ...get(modelDownloadStateAtom) }
+    const state = currentState[modelId]
+    if (!state) {
+      console.debug(`Cannot find download state for ${modelId}`)
+      toaster({
+        title: 'Download Failed',
+        description: `Model ${modelId} download failed: ${error}`,
+        type: 'error',
+      })
+      return
+    }
+    delete currentState[modelId]
+    set(modelDownloadStateAtom, currentState)
   }
-  delete currentState[modelId]
-  set(modelDownloadStateAtom, currentState)
-})
+)
+const setDownloadStateCancelledAtom = atom(
+  null,
+  (get, set, modelId: string) => {
+    const currentState = { ...get(modelDownloadStateAtom) }
+    const state = currentState[modelId]
+    if (!state) {
+      console.debug(`Cannot find download state for ${modelId}`)
+      toaster({
+        title: 'Cancel Download',
+        description: `Model ${modelId} cancel download`,
+      })
+
+      return
+    }
+    delete currentState[modelId]
+    set(modelDownloadStateAtom, currentState)
+  }
+)
 
 export function useDownloadState() {
   const modelDownloadState = useAtomValue(modelDownloadStateAtom)
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
   const setDownloadStateFailed = useSetAtom(setDownloadStateFailedAtom)
+  const setDownloadStateCancelled = useSetAtom(setDownloadStateCancelledAtom)
 
   const downloadStates: DownloadState[] = []
   for (const [, value] of Object.entries(modelDownloadState)) {
@@ -61,6 +84,7 @@ export function useDownloadState() {
     setDownloadState,
     setDownloadStateSuccess,
     setDownloadStateFailed,
+    setDownloadStateCancelled,
     downloadStates,
   }
 }
