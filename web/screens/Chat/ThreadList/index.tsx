@@ -91,7 +91,6 @@ export default function ThreadList() {
                 `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-gray-100 hover:dark:bg-secondary/50`
               )}
               onClick={() => {
-                console.log('a')
                 onThreadClick(thread)
               }}
             >
