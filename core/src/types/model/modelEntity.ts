@@ -18,7 +18,8 @@ export enum InferenceEngine {
   nitro = 'nitro',
   openai = 'openai',
   triton_trtllm = 'triton_trtllm',
-  hf_endpoint = 'hf_endpoint',
+
+  tool_retrieval_enabled = 'tool_retrieval_enabled',
 }
 
 type ModelArtifacts = {
@@ -147,4 +148,6 @@ export type ModelRuntimeParams = {
   stop?: string[]
   frequency_penalty?: number
   presence_penalty?: number
+  proxyEngine?: string
+  engine?: string
 }
