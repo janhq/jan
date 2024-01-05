@@ -1,5 +1,4 @@
 import { BufferMemory } from "langchain/memory";
-
 import { PromptTemplate } from "langchain/prompts";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { formatDocumentsAsString } from "langchain/util/document";
@@ -9,31 +8,11 @@ import { PDFLoader } from "langchain/document_loaders/fs/pdf";
 export class Retrieval {
   private readonly chunkSize: number;
   private readonly chunkOverlap: number;
-  private shortTermMemory: BufferMemory;
   private retriever: any;
+  // private shortTermMemory: BufferMemory;
 
   private embeddingModel = null;
   private textSplitter = null;
-  private queryRetrievalPrompt = PromptTemplate.fromTemplate(
-    `Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
-  ----------------
-  CHAT HISTORY: {chatHistory}
-  ----------------
-  CONTEXT: {context}
-  ----------------
-  QUESTION: {question}
-  ----------------
-  Helpful Answer:`
-  );
-
-  private questionGeneratorTemplate =
-    PromptTemplate.fromTemplate(`Given the following conversation and a follow up question, rephrase the follow up question to be a standalone question.
-----------------
-CHAT HISTORY: {chatHistory}
-----------------
-FOLLOWUP QUESTION: {question}
-----------------
-Standalone question:`);
 
   constructor(embeddingModel: any, chunkSize: number) {
     this.chunkSize = chunkSize;
@@ -43,9 +22,9 @@ Standalone question:`);
     });
     this.embeddingModel = embeddingModel;
 
-    this.shortTermMemory = new BufferMemory({
-      memoryKey: "chatHistory",
-    });
+    // this.shortTermMemory = new BufferMemory({
+    //   memoryKey: "chatHistory",
+    // });
   }
 
   public ingestDocument = async (
@@ -64,6 +43,10 @@ Standalone question:`);
     await vectorStore.save(memoryPath);
   };
 
+  public ingestConversationalHistory = async (
+    conversationHistoryArray
+  ): Promise<any> => {};
+
   public loadRetrievalAgent = async (memoryPath: string): Promise<any> => {
     const vectorStore = await HNSWLib.load(memoryPath, this.embeddingModel);
     this.retriever = vectorStore.asRetriever(2);
@@ -79,8 +62,4 @@ Standalone question:`);
   public generateFollowUpQuestion = async (): Promise<any> => {
     return;
   };
-
-  public ingestConversationalHistory = async (
-    conversationHistoryArray
-  ): Promise<any> => {};
 }
