@@ -19,7 +19,7 @@ import DropdownListSidebar, {
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/model_param'
+import { toRuntimeParams, toSettingParams } from '@/utils/model_param'
 
 import EngineSetting from '../EngineSetting'
 import ModelSetting from '../ModelSetting'
@@ -44,7 +44,9 @@ const Sidebar: React.FC = () => {
   const threadStates = useAtomValue(threadStatesAtom)
 
   const modelEngineParams = toSettingParams(activeModelParams)
-  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
+  const modelRuntimeParams = toRuntimeParams(activeModelParams)
+  const componentDataRuntimeSetting = getConfigurationsData(modelEngineParams)
+  const componentDataEngineSetting = getConfigurationsData(modelRuntimeParams)
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
@@ -224,34 +226,42 @@ const Sidebar: React.FC = () => {
               <DropdownListSidebar />
             </div>
 
-            <div className="mt-6">
-              <CardSidebar title="Inference Parameters" asChild>
-                <div className="px-2 py-4">
-                  <ModelSetting />
-                </div>
-              </CardSidebar>
-            </div>
+            {componentDataRuntimeSetting.length !== 0 && (
+              <div className="mt-6">
+                <CardSidebar title="Inference Parameters" asChild>
+                  <div className="px-2 py-4">
+                    <ModelSetting />
+                  </div>
+                </CardSidebar>
+              </div>
+            )}
 
-            <div className="mt-4">
-              <CardSidebar title="Model Parameters" asChild>
-                <div className="px-2 py-4">
-                  {settingComponentBuilder(componentDataEngineSetting, true)}
+            {componentDataEngineSetting.length !== 0 && (
+              <>
+                <div className="mt-4">
+                  <CardSidebar title="Model Parameters" asChild>
+                    <div className="px-2 py-4">
+                      {settingComponentBuilder(
+                        componentDataEngineSetting,
+                        true
+                      )}
+                    </div>
+                  </CardSidebar>
                 </div>
-              </CardSidebar>
-            </div>
-
-            <div className="my-4">
-              <CardSidebar
-                title="Engine Parameters"
-                onRevealInFinderClick={onReviewInFinderClick}
-                onViewJsonClick={onViewJsonClick}
-                asChild
-              >
-                <div className="px-2 py-4">
-                  <EngineSetting />
+                <div className="my-4">
+                  <CardSidebar
+                    title="Engine Parameters"
+                    onRevealInFinderClick={onReviewInFinderClick}
+                    onViewJsonClick={onViewJsonClick}
+                    asChild
+                  >
+                    <div className="px-2 py-4">
+                      <EngineSetting />
+                    </div>
+                  </CardSidebar>
                 </div>
-              </CardSidebar>
-            </div>
+              </>
+            )}
           </div>
         </CardSidebar>
       </div>
