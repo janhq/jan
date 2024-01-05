@@ -13,7 +13,6 @@ import {
 
 import { twMerge } from 'tailwind-merge'
 
-import CommandListDownloadedModel from '@/containers/Layout/TopBar/CommandListDownloadedModel'
 import CommandSearch from '@/containers/Layout/TopBar/CommandSearch'
 
 import { MainViewState } from '@/constants/screens'
@@ -213,7 +212,6 @@ const TopBar = () => {
         </div>
       )}
       <CommandSearch />
-      <CommandListDownloadedModel />
     </div>
   )
 }

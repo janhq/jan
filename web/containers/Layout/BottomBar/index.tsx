@@ -6,17 +6,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@janhq/uikit'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { FaGithub, FaDiscord } from 'react-icons/fa'
 
 import DownloadingState from '@/containers/Layout/BottomBar/DownloadingState'
 
 import SystemItem from '@/containers/Layout/BottomBar/SystemItem'
+import CommandListDownloadedModel from '@/containers/Layout/TopBar/CommandListDownloadedModel'
 import ProgressBar from '@/containers/ProgressBar'
 
 import { appDownloadProgress } from '@/containers/Providers/Jotai'
 
+import { showSelectModelModalAtom } from '@/containers/Providers/KeyListener'
 import ShortCut from '@/containers/Shortcut'
 
 import { MainViewState } from '@/constants/screens'
@@ -48,6 +50,7 @@ const BottomBar = () => {
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
   const { downloadStates } = useDownloadState()
+  const setShowSelectModelModal = useSetAtom(showSelectModelModalAtom)
 
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/80 px-3">
@@ -58,24 +61,31 @@ const BottomBar = () => {
           ) : null}
         </div>
 
+        <Badge
+          themes="secondary"
+          className="cursor-pointer rounded-md border-none font-medium"
+          onClick={() => setShowSelectModelModal((show) => !show)}
+        >
+          My Models&nbsp;
+          <ShortCut menu="E" />
+        </Badge>
+
         {stateModel.state === 'start' && stateModel.loading && (
-          <SystemItem name="Starting:" value={stateModel.model || '-'} />
+          <SystemItem
+            titleBold
+            name="Starting"
+            value={stateModel.model || '-'}
+          />
         )}
         {stateModel.state === 'stop' && stateModel.loading && (
-          <SystemItem name="Stopping:" value={stateModel.model || '-'} />
+          <SystemItem
+            titleBold
+            name="Stopping"
+            value={stateModel.model || '-'}
+          />
         )}
         {!stateModel.loading && downloadedModels.length !== 0 && (
-          <SystemItem
-            name={activeModel?.id ? 'Active model:' : ''}
-            value={
-              activeModel?.id || (
-                <Badge themes="outline" className="pl-1">
-                  <ShortCut menu="E" />
-                  &nbsp; to view models
-                </Badge>
-              )
-            }
-          />
+          <SystemItem titleBold name={'Active model'} value={activeModel?.id} />
         )}
         {downloadedModels.length === 0 &&
           !stateModel.loading &&
@@ -91,13 +101,15 @@ const BottomBar = () => {
 
         <DownloadingState />
       </div>
-      <div className="flex items-center gap-x-4">
+      <div className="flex items-center gap-x-3">
         <div className="flex items-center gap-x-2">
           <SystemItem name="CPU:" value={`${cpu}%`} />
           <SystemItem name="Mem:" value={`${ram}%`} />
         </div>
         {/* VERSION is defined by webpack, please see next.config.js */}
-        <span className="text-xs">Jan v{VERSION ?? ''}</span>
+        <span className="text-xs text-muted-foreground">
+          Jan v{VERSION ?? ''}
+        </span>
         <div className="mt-1 flex items-center gap-x-2">
           {menuLinks
             .filter((link) => !!link)
@@ -123,6 +135,7 @@ const BottomBar = () => {
             ))}
         </div>
       </div>
+      <CommandListDownloadedModel />
     </div>
   )
 }
