@@ -50,17 +50,16 @@ export default class JanModelExtension implements ModelExtension {
 
   private async copyModelsToHomeDir() {
     try {
-      // list all of the files under the home directory
-
-      if (await fs.existsSync(JanModelExtension._homeDir)) {
-        // ignore if the model is already downloaded
+      
+      // Check for migration conditions
+      if (
+        localStorage.getItem(`${EXTENSION_NAME}-version`) === VERSION &&
+        (await fs.existsSync(JanModelExtension._homeDir))
+      ) {
+        // ignore if the there is no need to migrate
         console.debug('Models already persisted.')
         return
       }
-
-      // Get available models
-      const readyModels = (await this.getDownloadedModels()).map((e) => e.id)
-
       // copy models folder from resources to home directory
       const resourePath = await getResourcePath()
       const srcPath = await joinPath([resourePath, 'models'])
@@ -72,18 +71,7 @@ export default class JanModelExtension implements ModelExtension {
 
       console.debug('Finished syncing models')
 
-      const reconfigureModels = (await this.getConfiguredModels()).filter((e) =>
-        readyModels.includes(e.id)
-      )
-      console.debug('Finished updating downloaded models')
-
-      // update back the status
-      await Promise.all(
-        reconfigureModels.map(async (model) => this.saveModel(model))
-      )
-
       // Finished migration
-
       localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION)
     } catch (err) {
       console.error(err)
@@ -203,7 +191,7 @@ export default class JanModelExtension implements ModelExtension {
   ): Promise<Model[]> {
     try {
       if (!(await fs.existsSync(JanModelExtension._homeDir))) {
-        console.error('Model folder not found')
+        console.debug('Model folder not found')
         return []
       }
 
