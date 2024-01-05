@@ -14,14 +14,13 @@ const path = join(os.homedir(), 'jan')
 
 export const getBuilder = async (configuration: RouteConfiguration) => {
   const directoryPath = join(path, configuration.dirName)
-
   try {
-    if (!(await fs.existsSync(directoryPath))) {
+    if (!fs.existsSync(directoryPath)) {
       console.debug('model folder not found')
       return []
     }
 
-    const files: string[] = await fs.readdirSync(directoryPath)
+    const files: string[] = fs.readdirSync(directoryPath)
 
     const allDirectories: string[] = []
     for (const file of files) {
@@ -29,12 +28,12 @@ export const getBuilder = async (configuration: RouteConfiguration) => {
       allDirectories.push(file)
     }
 
-    const readJsonPromises = allDirectories.map(async (dirName) => {
-      const jsonPath = join(directoryPath, dirName, configuration.metadataFileName)
-      return await readModelMetadata(jsonPath)
-    })
-
-    const results = await Promise.all(readJsonPromises)
+    const results = allDirectories
+      .map((dirName) => {
+        const jsonPath = join(directoryPath, dirName, configuration.metadataFileName)
+        return readModelMetadata(jsonPath)
+      })
+      .filter((data) => !!data)
     const modelData = results
       .map((result: any) => {
         try {
@@ -52,8 +51,12 @@ export const getBuilder = async (configuration: RouteConfiguration) => {
   }
 }
 
-const readModelMetadata = async (path: string) => {
-  return fs.readFileSync(path, 'utf-8')
+const readModelMetadata = (path: string): string | undefined => {
+  if (fs.existsSync(path)) {
+    return fs.readFileSync(path, 'utf-8')
+  } else {
+    return undefined
+  }
 }
 
 export const retrieveBuilder = async (configuration: RouteConfiguration, id: string) => {
@@ -99,7 +102,7 @@ export const getMessages = async (threadId: string) => {
   const threadDirPath = join(path, 'threads', threadId)
   const messageFile = 'messages.jsonl'
   try {
-    const files: string[] = await fs.readdirSync(threadDirPath)
+    const files: string[] = fs.readdirSync(threadDirPath)
     if (!files.includes(messageFile)) {
       throw Error(`${threadDirPath} not contains message file`)
     }
