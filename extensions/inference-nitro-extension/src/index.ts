@@ -20,6 +20,7 @@ import {
   getUserSpace,
   fs,
   Model,
+  InferenceEngine,
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
@@ -107,7 +108,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   }
 
   private static async handleModelInit(model: Model) {
-    if (model.engine !== "nitro") {
+    if (model.engine !== InferenceEngine.nitro) {
       return;
     }
     const userSpacePath = await getUserSpace();
