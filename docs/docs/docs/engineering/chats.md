@@ -29,7 +29,7 @@ In Jan, `chats` are LLM responses in the form of OpenAI compatible `chat complet
 
 ## Folder Structure
 
-Chats are stateless, thus are not saved in `janroot`. Any content and relevant metadata from calling this endpoint is extracted and persisted through [Messages](/specs/messages).
+Chats are stateless, thus are not saved in `janroot`. Any content and relevant metadata from calling this endpoint is extracted and persisted through [Messages](/docs/engineering/messages).
 
 ## API Reference
 
