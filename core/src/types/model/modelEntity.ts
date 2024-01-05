@@ -99,6 +99,8 @@ export type Model = {
    */
   engine: InferenceEngine
 
+  proxyEngine?: InferenceEngine
+
   /**
    * Is multimodal or not.
    */
@@ -149,5 +151,4 @@ export type ModelRuntimeParams = {
   frequency_penalty?: number
   presence_penalty?: number
   engine?: string
-  proxyEngine?: string
 }

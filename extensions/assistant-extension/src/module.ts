@@ -19,6 +19,10 @@
 
 // run();
 
-async function tool_retrieval(data) {
-  console.log("tool_retrieval", data);
+async function toolRetrieval(data) {
+  console.log("toolRetrieval", data);
 }
+
+module.exports = {
+  toolRetrieval,
+};

@@ -232,21 +232,21 @@ export default function useSendChatMessage() {
 
     const msgId = ulid()
 
-    const modelRequest = selectedModel ?? activeThread.assistants[0].model
-
+    let modelRequest = selectedModel ?? activeThread.assistants[0].model
+    console.log(activeThread.assistants[0])
     // Add middleware to the model request with tool retrieval enabled
-    if (
-      activeThread.assistants[0].tools.find(
-        (tool: AssistantTool) => tool.type === 'retrieval' && tool.enabled
-      )
-    ) {
-      console.log('Tool retrieval enabled')
-      modelRequest.parameters = {
-        ...modelRequest.parameters,
-        proxyEngine: modelRequest.engine,
-        engine: InferenceEngine.tool_retrieval_enabled,
-      }
+    // if (
+    //   activeThread.assistants[0].tools.find(
+    //     (tool: AssistantTool) => tool.type === 'retrieval' && tool.enabled
+    //   )
+    // ) {
+    modelRequest = {
+      ...modelRequest,
+      engine: InferenceEngine.tool_retrieval_enabled,
+      proxyEngine: modelRequest.engine,
     }
+    // }
+    console.log('Tool retrieval enabled', modelRequest)
 
     const messageRequest: MessageRequest = {
       id: msgId,

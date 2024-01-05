@@ -31,7 +31,7 @@ export type ThreadAssistantInfo = {
   assistant_name: string
   model: ModelInfo
   instructions?: string
-  tool?: AssistantTool[]
+  tools?: AssistantTool[]
 }
 
 /**
