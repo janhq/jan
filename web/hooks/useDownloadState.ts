@@ -36,13 +36,14 @@ const setDownloadStateFailedAtom = atom(
     const state = currentState[modelId]
     if (!state) {
       console.debug(`Cannot find download state for ${modelId}`)
-      toaster({
-        title: 'Download Failed',
-        description: `Model ${modelId} download failed: ${error}`,
-        type: 'error',
-      })
       return
     }
+    toaster({
+      title: 'Download Failed',
+      description: `Model ${modelId} download failed: ${error}`,
+      type: 'error',
+    })
+
     delete currentState[modelId]
     set(modelDownloadStateAtom, currentState)
   }
