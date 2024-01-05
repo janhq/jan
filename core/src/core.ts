@@ -1,3 +1,5 @@
+import { FileStat } from './types'
+
 /**
  * Execute a extension module function in main process
  *
@@ -75,6 +77,15 @@ const openExternalUrl: (url: string) => Promise<any> = (url) =>
 const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
 
 /**
+ * Gets the file's stats.
+ *
+ * @param path - The path to the file.
+ * @returns {Promise<FileStat>} - A promise that resolves with the file's stats.
+ */
+const fileStat: (path: string) => Promise<FileStat | undefined> = (path) =>
+  global.core.api?.fileStat(path)
+
+/**
  * Register extension point function type definition
  */
 export type RegisterExtensionPoint = (
@@ -97,4 +108,5 @@ export {
   joinPath,
   openExternalUrl,
   baseName,
+  fileStat,
 }

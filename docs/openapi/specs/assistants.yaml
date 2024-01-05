@@ -1,3 +1,4 @@
+---
 components:
   schemas:
     AssistantObject:
@@ -9,7 +10,7 @@ components:
           example: asst_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's an assistant."
+          description: Type of the object, indicating it's an assistant.
           default: assistant
         version:
           type: integer
@@ -31,7 +32,7 @@ components:
         avatar:
           type: string
           description: URL of the assistant's avatar. Jan-specific property.
-          example: "https://pic.png"
+          example: https://pic.png
         models:
           type: array
           description: List of models associated with the assistant. Jan-specific property.
@@ -70,7 +71,7 @@ components:
           example: asst_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's an assistant."
+          description: Type of the object, indicating it's an assistant.
           default: assistant
         version:
           type: integer
@@ -92,7 +93,7 @@ components:
         avatar:
           type: string
           description: URL of the assistant's avatar. Jan-specific property.
-          example: "https://pic.png"
+          example: https://pic.png
         models:
           type: array
           description: List of models associated with the assistant. Jan-specific property.
@@ -130,7 +131,7 @@ components:
           example: asst_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's an assistant."
+          description: Type of the object, indicating it's an assistant.
           default: assistant
         version:
           type: integer
@@ -152,7 +153,7 @@ components:
         avatar:
           type: string
           description: URL of the assistant's avatar. Jan-specific property.
-          example: "https://pic.png"
+          example: https://pic.png
         models:
           type: array
           description: List of models associated with the assistant. Jan-specific property.
@@ -190,7 +191,7 @@ components:
           example: asst_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's an assistant."
+          description: Type of the object, indicating it's an assistant.
           default: assistant
         version:
           type: integer
@@ -212,7 +213,7 @@ components:
         avatar:
           type: string
           description: URL of the assistant's avatar. Jan-specific property.
-          example: "https://pic.png"
+          example: https://pic.png
         models:
           type: array
           description: List of models associated with the assistant. Jan-specific property.
@@ -250,7 +251,7 @@ components:
           example: asst_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's an assistant."
+          description: Type of the object, indicating it's an assistant.
           default: assistant
         version:
           type: integer
@@ -272,7 +273,7 @@ components:
         avatar:
           type: string
           description: URL of the assistant's avatar. Jan-specific property.
-          example: "https://pic.png"
+          example: https://pic.png
         models:
           type: array
           description: List of models associated with the assistant. Jan-specific property.
@@ -310,7 +311,7 @@ components:
           example: asst_abc123
         object:
           type: string
-          description: "Type of the object, indicating the assistant has been deleted."
+          description: Type of the object, indicating the assistant has been deleted.
           example: assistant.deleted
         deleted:
           type: boolean

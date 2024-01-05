@@ -1,3 +1,4 @@
+---
 components:
   schemas:
     ListModelsResponse:
@@ -27,8 +28,7 @@ components:
           description: The version number of the model.
         id:
           type: string
-          description: >-
-            Unique identifier used in chat-completions model_name, matches
+          description: Unique identifier used in chat-completions model_name, matches
             folder name.
           example: zephyr-7b
         name:
@@ -57,14 +57,13 @@ components:
           description: Current state of the model.
         format:
           type: string
-          description: "State format of the model, distinct from the engine."
+          description: State format of the model, distinct from the engine.
           example: ggufv3
         source_url:
           type: string
           format: uri
           description: URL to the source of the model.
-          example: >-
-            https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
+          example: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
         settings:
           type: object
           properties:
@@ -152,7 +151,7 @@ components:
           example: zephyr-7b
         object:
           type: string
-          description: "Type of the object, indicating it's a model."
+          description: Type of the object, indicating it's a model.
           default: model
         created:
           type: integer
@@ -174,8 +173,7 @@ components:
           type: string
           format: uri
           description: URL to the source of the model.
-          example: >-
-            https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
+          example: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
         engine_parameters:
           type: object
           properties:
@@ -198,8 +196,7 @@ components:
               default: "ASSISTANT: "
             ngl:
               type: integer
-              description: >-
-                Number of neural network layers loaded onto the GPU for
+              description: Number of neural network layers loaded onto the GPU for
                 acceleration.
               minimum: 0
               maximum: 100
@@ -207,18 +204,16 @@ components:
               example: 100
             ctx_len:
               type: integer
-              description: >-
-                Context length for model operations, varies based on the
-                specific model.
+              description: Context length for model operations, varies based on the specific
+                model.
               minimum: 128
               maximum: 4096
               default: 2048
               example: 2048
             n_parallel:
               type: integer
-              description: >-
-                Number of parallel operations, relevant when continuous batching
-                is enabled.
+              description: Number of parallel operations, relevant when continuous batching is
+                enabled.
               minimum: 1
               maximum: 10
               default: 1
@@ -269,8 +264,7 @@ components:
               example: 4
             temperature:
               type: number
-              description: >-
-                Controls randomness in model's responses. Higher values lead to
+              description: Controls randomness in model's responses. Higher values lead to
                 more random responses.
               minimum: 0
               maximum: 2
@@ -278,8 +272,7 @@ components:
               example: 0.7
             token_limit:
               type: integer
-              description: >-
-                Maximum number of tokens the model can generate in a single
+              description: Maximum number of tokens the model can generate in a single
                 response.
               minimum: 1
               maximum: 4096
@@ -287,18 +280,16 @@ components:
               example: 2048
             top_k:
               type: integer
-              description: >-
-                Limits the model to consider only the top k most likely next
-                tokens at each step.
+              description: Limits the model to consider only the top k most likely next tokens
+                at each step.
               minimum: 0
               maximum: 100
               default: 0
               example: 0
             top_p:
               type: number
-              description: >-
-                Nucleus sampling parameter. The model considers the smallest set
-                of tokens whose cumulative probability exceeds the top_p value.
+              description: Nucleus sampling parameter. The model considers the smallest set of
+                tokens whose cumulative probability exceeds the top_p value.
               minimum: 0
               maximum: 1
               default: 1

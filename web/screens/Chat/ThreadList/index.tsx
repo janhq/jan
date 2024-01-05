@@ -5,6 +5,7 @@ import {
   ModalTrigger,
   ModalClose,
   ModalFooter,
+  ModalPortal,
   ModalContent,
   ModalHeader,
   ModalTitle,
@@ -89,7 +90,9 @@ export default function ThreadList() {
               className={twMerge(
                 `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-gray-100 hover:dark:bg-secondary/50`
               )}
-              onClick={() => onThreadClick(thread)}
+              onClick={() => {
+                onThreadClick(thread)
+              }}
             >
               <div className="relative z-10 p-4 py-4">
                 <div className="flex justify-between">
@@ -111,7 +114,7 @@ export default function ThreadList() {
                 <MoreVerticalIcon />
                 <div className="invisible absolute right-0 z-20 w-40 overflow-hidden rounded-lg border border-border bg-background shadow-lg group-hover/icon:visible">
                   <Modal>
-                    <ModalTrigger asChild>
+                    <ModalTrigger asChild onClick={(e) => e.stopPropagation()}>
                       <div className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary">
                         <Paintbrush
                           size={16}
@@ -122,6 +125,7 @@ export default function ThreadList() {
                         </span>
                       </div>
                     </ModalTrigger>
+                    <ModalPortal />
                     <ModalContent>
                       <ModalHeader>
                         <ModalTitle>Clean Thread</ModalTitle>
@@ -129,13 +133,19 @@ export default function ThreadList() {
                       <p>Are you sure you want to clean this thread?</p>
                       <ModalFooter>
                         <div className="flex gap-x-2">
-                          <ModalClose asChild>
+                          <ModalClose
+                            asChild
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <Button themes="ghost">No</Button>
                           </ModalClose>
                           <ModalClose asChild>
                             <Button
                               themes="danger"
-                              onClick={() => cleanThread(thread.id)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                cleanThread(thread.id)
+                              }}
                               autoFocus
                             >
                               Yes
@@ -145,9 +155,8 @@ export default function ThreadList() {
                       </ModalFooter>
                     </ModalContent>
                   </Modal>
-
                   <Modal>
-                    <ModalTrigger asChild>
+                    <ModalTrigger asChild onClick={(e) => e.stopPropagation()}>
                       <div className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary">
                         <Trash2Icon
                           size={16}
@@ -158,6 +167,7 @@ export default function ThreadList() {
                         </span>
                       </div>
                     </ModalTrigger>
+                    <ModalPortal />
                     <ModalContent>
                       <ModalHeader>
                         <ModalTitle>Delete Thread</ModalTitle>
@@ -168,14 +178,20 @@ export default function ThreadList() {
                       </p>
                       <ModalFooter>
                         <div className="flex gap-x-2">
-                          <ModalClose asChild>
+                          <ModalClose
+                            asChild
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <Button themes="ghost">No</Button>
                           </ModalClose>
                           <ModalClose asChild>
                             <Button
                               autoFocus
                               themes="danger"
-                              onClick={() => deleteThread(thread.id)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                deleteThread(thread.id)
+                              }}
                             >
                               Yes
                             </Button>

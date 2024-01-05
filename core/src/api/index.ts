@@ -53,9 +53,10 @@ export enum FileSystemRoute {
   writeFileSync = 'writeFileSync',
 }
 export enum FileManagerRoute {
-  synceFile = 'syncFile',
+  syncFile = 'syncFile',
   getUserSpace = 'getUserSpace',
   getResourcePath = 'getResourcePath',
+  fileStat = 'fileStat',
 }
 
 export type ApiFunction = (...args: any[]) => any

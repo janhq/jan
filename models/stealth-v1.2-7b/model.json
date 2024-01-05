@@ -1,5 +1,5 @@
 {
-    "source_url": "https://huggingface.co/janhq/stealth-v1.2-GGUF/resolve/main/stealth-v1.2.Q4_K_M.gguf",
+    "source_url": "https://huggingface.co/janhq/stealth-v1.3-GGUF/resolve/main/stealth-v1.3.Q4_K_M.gguf",
     "id": "stealth-v1.2-7b",
     "object": "model",
     "name": "Stealth-v1.2 7B Q4",

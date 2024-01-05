@@ -1,3 +1,4 @@
+---
 components:
   schemas:
     ThreadObject:
@@ -39,13 +40,13 @@ components:
                   settings:
                     type: object
                     description: >
-                      Defaults to and overrides assistant.json's "settings" (and
-                      if none, then model.json "settings")
+                      Defaults to and overrides assistant.json's "settings" (and if none,
+                      then model.json "settings")
                   parameters:
                     type: object
                     description: >
-                      Defaults to and overrides assistant.json's "parameters"
-                      (and if none, then model.json "parameters")
+                      Defaults to and overrides assistant.json's "parameters" (and if
+                      none, then model.json "parameters")
         created:
           type: integer
           format: int64
@@ -141,7 +142,7 @@ components:
           example: thread_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's a thread."
+          description: Type of the object, indicating it's a thread.
           example: thread
         created_at:
           type: integer
@@ -161,7 +162,7 @@ components:
           example: thread_abc123
         object:
           type: string
-          description: "Type of the object, indicating the thread has been deleted."
+          description: Type of the object, indicating the thread has been deleted.
           example: thread.deleted
         deleted:
           type: boolean
