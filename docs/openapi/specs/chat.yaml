@@ -71,13 +71,13 @@ components:
           description: |
             Contains input data or prompts for the model to process.
           example:
-            - content: "You are a helpful assistant."
-              role: system
-            - content: Hello!
+            - content: "Hello there :wave:"
+              role: assistant
+            - content: Can you write a long story
               role: user
         model:
           type: string
-          example: tinyllama-1.1b
+          example: model-zephyr-7B
           description: |
             Specifies the model being used for inference or processing tasks.
         stream:
