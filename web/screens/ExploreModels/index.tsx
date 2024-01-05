@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { openExternalUrl } from '@janhq/core'
 import {
   Input,
   ScrollArea,
@@ -44,6 +45,10 @@ const ExploreModelsScreen = () => {
     }
   })
 
+  const onHowToImportModelClick = () => {
+    openExternalUrl('https://jan.ai/guides/using-models/import-manually/')
+  }
+
   if (loading) return <Loader description="loading ..." />
 
   return (
@@ -72,13 +77,12 @@ const ExploreModelsScreen = () => {
                   />
                 </div>
                 <div className="mt-2 text-center">
-                  <a
-                    href="https://jan.ai/guides/using-models/import-manually/"
-                    target="_blank"
-                    className="font-semibold text-white underline"
+                  <p
+                    onClick={onHowToImportModelClick}
+                    className="cursor-pointer font-semibold text-white underline"
                   >
                     How to manually import models
-                  </a>
+                  </p>
                 </div>
               </div>
             </div>
