@@ -1,0 +1,22 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/dolphin-2.7-mixtral-8x7b-GGUF/resolve/main/dolphin-2.7-mixtral-8x7b.Q4_K_M.gguf",
+    "id": "dolphin-2.7-mixtral-8x7b",
+    "object": "model",
+    "name": "Dolphin 8x7B Q4",
+    "version": "1.0",
+    "description": "This model is an uncensored model based on Mixtral-8x7b. Dolphin is really good at coding",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "Cognitive Computations, TheBloke",
+      "tags": ["70B", "Fintuned"],
+      "size": 26440000000
+    },
+    "engine": "nitro"
+  }

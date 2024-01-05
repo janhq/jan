@@ -1,6 +1,6 @@
 {
   "name": "@janhq/model-extension",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "Model Management Extension provides model exploration and seamless downloads",
   "main": "dist/index.js",
   "module": "dist/module.js",
