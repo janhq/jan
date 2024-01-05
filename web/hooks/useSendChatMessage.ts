@@ -15,6 +15,8 @@ import {
   ConversationalExtension,
   ModelRuntimeParams,
   ChatCompletionMessageContentType,
+  AssistantTool,
+  InferenceEngine,
 } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -231,6 +233,21 @@ export default function useSendChatMessage() {
     const msgId = ulid()
 
     const modelRequest = selectedModel ?? activeThread.assistants[0].model
+
+    // Add middleware to the model request with tool retrieval enabled
+    if (
+      activeThread.assistants[0].tools.find(
+        (tool: AssistantTool) => tool.type === 'retrieval' && tool.enabled
+      )
+    ) {
+      console.log('Tool retrieval enabled')
+      modelRequest.parameters = {
+        ...modelRequest.parameters,
+        proxyEngine: modelRequest.engine,
+        engine: InferenceEngine.tool_retrieval_enabled,
+      }
+    }
+
     const messageRequest: MessageRequest = {
       id: msgId,
       threadId: activeThread.id,
