@@ -45,10 +45,8 @@ const Sidebar: React.FC = () => {
 
   const modelEngineParams = toSettingParams(activeModelParams)
   const modelRuntimeParams = toRuntimeParams(activeModelParams)
-  const componentDataRuntimeSetting = getConfigurationsData(modelEngineParams)
-  const componentDataEngineSetting = getConfigurationsData(modelRuntimeParams)
-
-  console.log(componentDataEngineSetting)
+  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
+  const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
 
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
