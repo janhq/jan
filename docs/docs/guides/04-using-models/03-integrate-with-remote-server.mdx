@@ -38,7 +38,7 @@ Navigate to the `~/jan/models` folder. Create a folder named `gpt-3.5-turbo-16k`
 - Ensure the `engine` property is set to `openai`.
 - Ensure the `state` property is set to `ready`.
 
-```js
+```json title="~/jan/models/gpt-3.5-turbo-16k/model.json"
 {
   "source_url": "https://openai.com",
   // highlight-next-line
@@ -65,7 +65,7 @@ Navigate to the `~/jan/models` folder. Create a folder named `gpt-3.5-turbo-16k`
 
 You can find your API keys in the [OpenAI Platform](https://platform.openai.com/api-keys) and set the OpenAI API keys in `~/jan/engines/openai.json` file.
 
-```js
+```json title="~/jan/engines/openai.json"
 {
   "full_url": "https://api.openai.com/v1/chat/completions",
   // highlight-next-line
@@ -83,17 +83,23 @@ Restart Jan and navigate to the Hub. Then, select your configured model and star
 
 In this section, we will show you how to configure a client connection to a remote/local server, using Jan's API server that is running model `mistral-ins-7b-q4` as an example.
 
+:::note
+
+- Please note that at the moment, you can only connect to one OpenAI compatible endpoint at a time.
+
+:::
+
 ### 1. Configure a Client Connection
 
 Navigate to the `~/jan/engines` folder and modify the `openai.json` file. Please note that at the moment the code that supports any openai compatible endpoint only reads `engine/openai.json` file, thus, it will not search any other files in this directory.
 
 Configure `full_url` properties with the endpoint server that you want to connect. For example, if you want to connect to Jan's API server, you can configure it as follows:
 
-```js
+```json title="~/jan/engines/openai.json"
 {
   // highlight-start
   // "full_url": "https://<server-ip-address>:<port>/v1/chat/completions"
-  "full_url": "https://<server-ip-address>:1337/v1/chat/completions",
+  "full_url": "https://<server-ip-address>:1337/v1/chat/completions"
   // highlight-end
   // Skip api_key if your local server does not require authentication
   // "api_key": "sk-<your key here>"
@@ -110,7 +116,7 @@ Navigate to the `~/jan/models` folder. Create a folder named `mistral-ins-7b-q4`
 - Ensure the `engine` property is set to `openai`.
 - Ensure the `state` property is set to `ready`.
 
-```js
+```json title="~/jan/models/mistral-ins-7b-q4/model.json"
 {
   "source_url": "https://jan.ai",
   // highlight-next-line
@@ -125,10 +131,7 @@ Navigate to the `~/jan/models` folder. Create a folder named `mistral-ins-7b-q4`
   "parameters": {},
   "metadata": {
     "author": "MistralAI, The Bloke",
-    "tags": [
-      "remote",
-      "awesome"
-    ]
+    "tags": ["remote", "awesome"]
   },
   // highlight-start
   "engine": "openai",
