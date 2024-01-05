@@ -48,6 +48,8 @@ const Sidebar: React.FC = () => {
   const componentDataRuntimeSetting = getConfigurationsData(modelEngineParams)
   const componentDataEngineSetting = getConfigurationsData(modelRuntimeParams)
 
+  console.log(componentDataEngineSetting)
+
   const onReviewInFinderClick = async (type: string) => {
     if (!activeThread) return
     const activeThreadState = threadStates[activeThread.id]
@@ -236,31 +238,31 @@ const Sidebar: React.FC = () => {
               </div>
             )}
 
+            {componentDataEngineSetting.filter(
+              (x) => x.name === 'prompt_template'
+            ).length !== 0 && (
+              <div className="mt-4">
+                <CardSidebar title="Model Parameters" asChild>
+                  <div className="px-2 py-4">
+                    {settingComponentBuilder(componentDataEngineSetting, true)}
+                  </div>
+                </CardSidebar>
+              </div>
+            )}
+
             {componentDataEngineSetting.length !== 0 && (
-              <>
-                <div className="mt-4">
-                  <CardSidebar title="Model Parameters" asChild>
-                    <div className="px-2 py-4">
-                      {settingComponentBuilder(
-                        componentDataEngineSetting,
-                        true
-                      )}
-                    </div>
-                  </CardSidebar>
-                </div>
-                <div className="my-4">
-                  <CardSidebar
-                    title="Engine Parameters"
-                    onRevealInFinderClick={onReviewInFinderClick}
-                    onViewJsonClick={onViewJsonClick}
-                    asChild
-                  >
-                    <div className="px-2 py-4">
-                      <EngineSetting />
-                    </div>
-                  </CardSidebar>
-                </div>
-              </>
+              <div className="my-4">
+                <CardSidebar
+                  title="Engine Parameters"
+                  onRevealInFinderClick={onReviewInFinderClick}
+                  onViewJsonClick={onViewJsonClick}
+                  asChild
+                >
+                  <div className="px-2 py-4">
+                    <EngineSetting />
+                  </div>
+                </CardSidebar>
+              </div>
             )}
           </div>
         </CardSidebar>
