@@ -1,9 +1,21 @@
-import { ExtensionType, fs, Assistant } from "@janhq/core";
+import {
+  ExtensionType,
+  fs,
+  Assistant,
+  MessageRequest,
+  events,
+  EventName,
+  InferenceEngine,
+} from "@janhq/core";
+import { executeOnMain } from "@janhq/core";
 import { AssistantExtension } from "@janhq/core";
 import { join } from "path";
 
 export default class JanAssistantExtension implements AssistantExtension {
   private static readonly _homeDir = "assistants";
+
+  controller = new AbortController();
+  isCancelled = false;
 
   type(): ExtensionType {
     return ExtensionType.Assistant;
@@ -14,6 +26,46 @@ export default class JanAssistantExtension implements AssistantExtension {
     fs.mkdir(JanAssistantExtension._homeDir).then(() => {
       this.createJanAssistant();
     });
+
+    // Events subscription
+    events.on(EventName.OnMessageSent, (data) =>
+      JanAssistantExtension.handleMessageRequest(data, this)
+    );
+
+    events.on(EventName.OnInferenceStopped, () => {
+      JanAssistantExtension.handleInferenceStopped(this);
+    });
+  }
+
+  private static async handleInferenceStopped(instance: JanAssistantExtension) {
+    instance.isCancelled = true;
+    instance.controller?.abort();
+  }
+
+  private static async handleMessageRequest(
+    data: MessageRequest,
+    instance: JanAssistantExtension
+  ) {
+    instance.isCancelled = false;
+    instance.controller = new AbortController();
+
+    if (data.model?.engine !== InferenceEngine.tool_retrieval_enabled) {
+      return;
+    }
+
+    console.log("messageRequest", data);
+
+    const input = data;
+
+    const retrievalResult = await executeOnMain(MODULE, "tool_retrieval", {});
+
+    const output = {
+      ...data,
+      model: {
+        ...data.model,
+      },
+    };
+    events.emit(EventName.OnMessageSent, output);
   }
 
   /**
@@ -93,7 +145,13 @@ export default class JanAssistantExtension implements AssistantExtension {
       description: "A default assistant that can use all downloaded models",
       model: "*",
       instructions: "",
-      tools: undefined,
+      tools: [
+        {
+          type: "retrieval",
+          enabled: true,
+          settings: {},
+        },
+      ],
       file_ids: [],
       metadata: undefined,
     };
