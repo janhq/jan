@@ -109,7 +109,7 @@ _Realtime Video: Jan v0.4.3-nightly on a Mac M1, 16GB Sonoma 14_
 #### Jan
 
 - [Jan website](https://jan.ai/)
-- [Jan Github](https://github.com/janhq/jan)
+- [Jan GitHub](https://github.com/janhq/jan)
 - [User Guides](https://jan.ai/guides/)
 - [Developer docs](https://jan.ai/developer/)
 - [API reference](https://jan.ai/api-reference/)
@@ -120,7 +120,7 @@ _Realtime Video: Jan v0.4.3-nightly on a Mac M1, 16GB Sonoma 14_
 Nitro is a high-efficiency C++ inference engine for edge computing. It is lightweight and embeddable, and can be used on its own within your own projects.
 
 - [Nitro Website](https://nitro.jan.ai)
-- [Nitro Github](https://github.com/janhq/nitro)
+- [Nitro GitHub](https://github.com/janhq/nitro)
 - [Documentation](https://nitro.jan.ai/docs)
 - [API Reference](https://nitro.jan.ai/api-reference)
 
