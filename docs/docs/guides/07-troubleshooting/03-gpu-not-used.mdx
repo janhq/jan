@@ -19,101 +19,119 @@ This guide provides steps to troubleshoot and resolve issues when Jan app does n
 
 ## Requirements for Running Jan in Gpu Mode on Windows and Linux
 
-- You must have an NVIDIA driver that supports CUDA 11.4 or higher. Refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
-  To check if the NVIDIA driver is installed, open PowerShell or Terminal and enter the following command:
+### NVIDIA Driver
 
-  ```bash
-  nvidia-smi
-  ```
+Ensure that you have installed the NVIDIA driver that supports CUDA 11.4 or higher. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
 
-  If you see a result similar to the following, you have successfully installed the NVIDIA driver:
+To verify, open PowerShell or Terminal and enter the following command:
 
-  ```bash
-  +-----------------------------------------------------------------------------+
-  | NVIDIA-SMI 470.57.02    Driver Version: 470.57.02    CUDA Version: 11.4     |
-  |-------------------------------+----------------------+----------------------+
-  | GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
-  | Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
-  |                               |                      |               MIG M. |
-  |===============================+======================+======================|
-  |   0  NVIDIA GeForce ...  Off  | 00000000:01:00.0  On |                  N/A |
-  |  0%   51C    P8    10W / 170W |    364MiB /  7982MiB |      0%      Default |
-  |                               |                      |                  N/A |
-  +-------------------------------+----------------------+----------------------+
-  ```
+```bash
+nvidia-smi
+```
 
-- You must have CUDA 11.4 or higher (refer [here](https://developer.nvidia.com/cuda-toolkit-archive)).
-  To check if CUDA is installed, open PowerShell or Terminal and enter the following command:
+If you see a result similar to the following, you have successfully installed the NVIDIA driver:
 
-  ```bash
-  nvcc --version
-  ```
+```bash
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 470.57.02    Driver Version: 470.57.02    CUDA Version: 11.4     |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|                               |                      |               MIG M. |
+|===============================+======================+======================|
+|   0  NVIDIA GeForce ...  Off  | 00000000:01:00.0  On |                  N/A |
+|  0%   51C    P8    10W / 170W |    364MiB /  7982MiB |      0%      Default |
+|                               |                      |                  N/A |
++-------------------------------+----------------------+----------------------+
+```
 
-  If you see a result similar to the following, you have successfully installed CUDA:
+### CUDA Toolkit
 
-  ```bash
-  nvcc: NVIDIA (R) Cuda compiler driver
+Ensure that you have installed the CUDA toolkit that is compatible with your NVIDIA driver. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
 
-  Cuda compilation tools, release 11.4, V11.4.100
-  Build cuda_11.4.r11.4/compiler.30033411_0
-  ```
+To verify, open PowerShell or Terminal and enter the following command:
 
-- Specifically for Linux:
+```bash
+nvcc --version
+```
 
-  - you must have `gcc-11`, `g++-11`, `cpp-11` or higher, refer [here](https://gcc.gnu.org/projects/cxx-status.html#cxx17). For Ubuntu, you can install g++ 11 by following the instructions [here](https://linuxconfig.org/how-to-switch-between-multiple-gcc-and-g-compiler-versions-on-ubuntu-20-04-lts-focal-fossa).
+If you see a result similar to the following, you have successfully installed CUDA:
 
-    ```bash
-    # Example for ubuntu
-    # Add the following PPA repository
-    sudo add-apt-repository ppa:ubuntu-toolchain-r/test
-    # Update the package list
-    sudo apt update
-    # Install g++ 11
-    sudo apt-get install -y gcc-11 g++-11 cpp-11
+```bash
+nvcc: NVIDIA (R) Cuda compiler driver
 
-    # Update the default g++ version
-    sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 \
-                         --slave /usr/bin/g++ g++ /usr/bin/g++-11 \
-                         --slave /usr/bin/gcov gcov /usr/bin/gcov-11 \
-                         --slave /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-11 \
-                         --slave /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-11
-    sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-11 110
-    # Check the default g++ version
-    g++ --version
-    ```
+Cuda compilation tools, release 11.4, V11.4.100
+Build cuda_11.4.r11.4/compiler.30033411_0
+```
 
-  - You must add the `.so` libraries of CUDA to the `LD_LIBRARY_PATH` environment variable, refer [here](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions).
+### Additional Requirements for Linux
 
-    ```bash
-    # Example for ubuntu with CUDA 11.4
-    sudo nano /etc/environment
-    # Add /usr/local/cuda-11.4/bin to the PATH environment variable - the first line
-    # Add the following line to the end of the file
-    LD_LIBRARY_PATH=/usr/local/cuda-11.4/lib64
+**GCC and G++ Version**: Ensure that you have installed `gcc-11`, `g++-11`, `cpp-11` or higher, refer [here](https://gcc.gnu.org/projects/cxx-status.html#cxx17). For Ubuntu, you can install g++ 11 by following the instructions [here](https://linuxconfig.org/how-to-switch-between-multiple-gcc-and-g-compiler-versions-on-ubuntu-20-04-lts-focal-fossa).
 
-    # Save and exit
-    # Restart your computer or log out and log in again, the changes will take effect
-    ```
+```bash
+# Example for ubuntu
+# Add the following PPA repository
+sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+# Update the package list
+sudo apt update
+# Install g++ 11
+sudo apt-get install -y gcc-11 g++-11 cpp-11
+
+# Update the default g++ version
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 \
+                      --slave /usr/bin/g++ g++ /usr/bin/g++-11 \
+                      --slave /usr/bin/gcov gcov /usr/bin/gcov-11 \
+                      --slave /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-11 \
+                      --slave /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-11
+sudo update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-11 110
+# Check the default g++ version
+g++ --version
+```
+
+**Post-Installation Actions**: You must add the `.so` libraries of CUDA to the `LD_LIBRARY_PATH` environment variable by following the [Post-installation Actions instruction](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions).
+
+```bash
+# Example for ubuntu with CUDA 11.4
+sudo nano /etc/environment
+# Add /usr/local/cuda-11.4/bin to the PATH environment variable - the first line
+# Add the following line to the end of the file
+LD_LIBRARY_PATH=/usr/local/cuda-11.4/lib64
+
+# Save and exit
+# Restart your computer or log out and log in again, the changes will take effect
+```
 
 ## Switching Between CPU/GPU Modes in Jan
 
-By default, Jan app will run in CPU mode. When starting Jan app, the program will automatically check if your computer meets the requirements to run in GPU mode. If it does, we will automatically enable GPU mode and pick the GPU has highest VGRAM for you (feature allowing users to select one or more GPU devices for use - currently in planning). You can check whether you are using CPU mode or GPU mode in the settings/advance section of Jan app. (see image below). ![](../../../static/img/usage/jan-gpu-enable-setting.png)
+By default, Jan runs in CPU mode. Upon start, Jan checks if your system is capable of running in GPU mode. If compatible, GPU mode is enabled automatically, and the GPU with the highest VRAM is selected. This setting can be verified in the `Settings` > `Advanced` section.
 
-If you have GPU mode but it is not enabled by default, the following possibilities may exist, you can follow the next steps to fix the error:
+![](../../../static/img/usage/jan-gpu-enable-setting.png)
 
-1. You have not installed the NVIDIA driver, refer to the NVIDIA driver that supports CUDA 11.4 [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+If you find that GPU mode is available but not enabled by default, consider the following troubleshooting steps:
 
-2. You have not installed the CUDA toolkit or your CUDA toolkit is not compatible with the NVIDIA driver, refer to CUDA compatibility [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+:::tip
 
-3. You have not installed a CUDA compatible driver, refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver), and you must add the `.so` libraries of CUDA and the CUDA compatible driver to the `LD_LIBRARY_PATH` environment variable, refer [here](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions). For Windows, add the `.dll` libraries of CUDA and the CUDA compatible driver to the `PATH` environment variable. Usually, when installing CUDA on Windows, this environment variable is automatically added, but if you do not see it, you can add it manually by referring [here](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#environment-setup).
+1. Check if you have installed the NVIDIA driver that supports CUDA 11.4 or higher. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+
+2. Ensure that the CUDA toolkit is installed and compatible with your NVIDIA driver. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+
+3. For Linux, it's crucial to add the `.so` libraries of CUDA and the CUDA compatible driver to the `LD_LIBRARY_PATH` environment variable. For Windows, users should ensure that the `.dll` libraries of CUDA and the CUDA compatible driver are included in the PATH environment variable. Usually when installing CUDA on Windows, this environment variable is automatically added, but if you do not see it, you can add it manually by referring [here](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#environment-setup).
+
+:::
 
 ## Checking GPU Settings in Jan
 
-To verify the current GPU-related settings that Jan has detected, navigate to `Settings` > `Advanced` > `Open App Directory`
+1. To check the current GPU settings detected by Jan, navigate to `Settings` > `Advanced` > `Open App Directory`
+
+<br></br>
 
 ![OpenAppDirectory](../../../static/img/usage/jan-open-home-directory.png)
 
-Then, open the `settings.json` file under the `settings` folder. The following is an example of the `settings.json` file:
+<br></br>
+
+2. Open the `settings.json` file under the `settings` folder. The following is an example of the `settings.json` file:
+
+<br></br>
 
 ```json title="~/jan/settings/settings.json"
 {
