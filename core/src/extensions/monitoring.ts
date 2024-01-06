@@ -13,6 +13,5 @@ export abstract class MonitoringExtension extends BaseExtension implements Monit
     return ExtensionTypeEnum.SystemMonitoring;
   }
 
-  abstract getResourcesInfo(): Promise<any>;
   abstract getCurrentLoad(): Promise<any>;
 }

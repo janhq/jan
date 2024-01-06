@@ -33,15 +33,15 @@ export default function useGetSystemResources() {
     const monitoring = extensionManager.get<MonitoringExtension>(
       ExtensionTypeEnum.SystemMonitoring
     )
-    const resourceInfor = await monitoring?.getResourcesInfo()
     const currentLoadInfor = await monitoring?.getCurrentLoad()
 
     const ram =
-      (resourceInfor?.mem?.usedMemory ?? 0) /
-      (resourceInfor?.mem?.totalMemory ?? 1)
-    if (resourceInfor?.mem?.usedMemory) setUsedRam(resourceInfor.mem.usedMemory)
-    if (resourceInfor?.mem?.totalMemory)
-      setTotalRam(resourceInfor.mem.totalMemory)
+      (currentLoadInfor?.mem?.usedMemory ?? 0) /
+      (currentLoadInfor?.mem?.totalMemory ?? 1)
+    if (currentLoadInfor?.mem?.usedMemory)
+      setUsedRam(currentLoadInfor.mem.usedMemory)
+    if (currentLoadInfor?.mem?.totalMemory)
+      setTotalRam(currentLoadInfor.mem.totalMemory)
 
     setRam(Math.round(ram * 100))
     setCPU(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
