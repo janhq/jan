@@ -17,7 +17,7 @@ keywords: [
 
 This guide provides steps to troubleshoot and resolve issues when Jan app does not utilize the GPU on Windows and Linux systems.
 
-## Requirements for Running Jan in Gpu Mode on Windows and Linux
+## Requirements for Running Jan in GPU Mode on Windows and Linux
 
 ### NVIDIA Driver
 
@@ -115,7 +115,7 @@ If you find that GPU mode is available but not enabled by default, consider the 
 
 2. Ensure that the CUDA toolkit is installed and compatible with your NVIDIA driver. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
 
-3. For Linux, it's crucial to add the `.so` libraries of CUDA and the CUDA compatible driver to the `LD_LIBRARY_PATH` environment variable. For Windows, users should ensure that the `.dll` libraries of CUDA and the CUDA compatible driver are included in the PATH environment variable. Usually when installing CUDA on Windows, this environment variable is automatically added, but if you do not see it, you can add it manually by referring [here](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#environment-setup).
+3. For Linux, it's crucial to add the `.so` libraries of CUDA and the CUDA compatible driver to the `LD_LIBRARY_PATH` environment variable. For Windows, users should ensure that the `.dll` libraries of CUDA and the CUDA compatible driver are included in the PATH environment variable. Usually, when installing CUDA on Windows, this environment variable is automatically added, but if you do not see it, you can add it manually by referring [here](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#environment-setup).
 
 :::
 
@@ -167,9 +167,9 @@ If you find that GPU mode is available but not enabled by default, consider the 
 
 Troubleshooting tips:
 
-- Ensure `nvidia_driver` and `cuda` fields indicates that requirements software are installed.
-- If `gpus` field is empty or does not list your GPU, verify the installation of the NVIDIA driver and CUDA toolkit.
-- For futher assistance, please share the `settings.json` with us.
+- Ensure the `nvidia_driver` and `cuda` fields indicate that requirements software are installed.
+- If the `gpus` field is empty or does not list your GPU, verify the installation of the NVIDIA driver and CUDA toolkit.
+- For further assistance, please share the `settings.json` with us.
 
 :::
 
