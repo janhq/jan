@@ -39,8 +39,8 @@ const getNvidiaInfo = async (): Promise<any> => {
         if (err) {
           return resolve(err);
         }
-
-        return resolve(data);
+        const json_data = JSON.stringify(data, null, "  ");
+        return resolve(json_data);
       });
     });
   });
