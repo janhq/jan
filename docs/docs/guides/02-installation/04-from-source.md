@@ -15,7 +15,7 @@ keywords:
   ]
 ---
 
-# Install Jan from Source
+# Installing Jan from Source
 
 ## Installation
 
@@ -28,7 +28,11 @@ Before proceeding with the installation of Jan from source, ensure that the foll
 
 ### Instructions
 
-> **_Note:_** This instruction is tested on MacOS only.
+:::note
+
+This instruction is tested on MacOS only.
+
+:::
 
 1. Clone the Jan repository from GitHub
 
