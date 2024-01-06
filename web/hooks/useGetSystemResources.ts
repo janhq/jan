@@ -15,6 +15,9 @@ import {
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
   const [cpu, setCPU] = useState<number>(0)
+  const [nvidia_gpu, setNvidiaGpu] = useState<number>(0)
+  const [nvidia_vram, setNvidiaVram] = useState<number>(0)
+
   const setTotalRam = useSetAtom(totalRamAtom)
   const setUsedRam = useSetAtom(usedRamAtom)
   const setCpuUsage = useSetAtom(cpuUsageAtom)
