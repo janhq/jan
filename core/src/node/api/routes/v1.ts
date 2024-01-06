@@ -5,7 +5,7 @@ export const v1Router = async (app: HttpServer) => {
   // MARK: External Routes
   app.register(commonRouter)
   app.register(threadRouter, {
-    prefix: '/thread',
+    prefix: '/threads',
   })
 
   // MARK: Internal Application Routes
