@@ -13,7 +13,7 @@ const options = {
   trim: true,
 };
 
-const checkNvidiaDriverExist = async (): Promise<any> => {
+const checkNvidiaDriverExist = async () => {
   new Promise(async (resolve) => {
     exec("nvidia-smi", (error, stdout, stderr) => {
       if (error) {
@@ -24,7 +24,7 @@ const checkNvidiaDriverExist = async (): Promise<any> => {
   });
 };
 
-const getNvidiaInfo = async (): Promise<any> => {
+const getNvidiaInfo = async () => {
   new Promise((resolve) => {
     exec("nvidia-smi -q -x", (error, stdout, stderr) => {
       if (error) {
@@ -46,9 +46,10 @@ const getNvidiaInfo = async (): Promise<any> => {
   });
 };
 
-const getResourcesInfo = (): Promise<any> =>
+const getCurrentLoad = () =>
   new Promise(async (resolve) => {
     let response = {};
+    // Get system RAM information
     nodeOsUtils.mem.used().then(async (ramUsedInfo) => {
       const totalMemory = ramUsedInfo.totalMemMb * 1024 * 1024;
       const usedMemory = ramUsedInfo.usedMemMb * 1024 * 1024;
@@ -59,6 +60,17 @@ const getResourcesInfo = (): Promise<any> =>
         },
       };
     });
+    // Get CPU information
+    nodeOsUtils.cpu.usage().then((cpuPercentage) => {
+      response = {
+        ...response,
+        cpu: {
+          usage: cpuPercentage,
+        },
+      };
+    });
+
+    // Get platform specific accelerator information
     if (platform == "darwin") {
       // Check Metal with powermetrics
     } else if (platform == "linux") {
@@ -83,19 +95,13 @@ const getResourcesInfo = (): Promise<any> =>
     }
   });
 
-const getCurrentLoad = () =>
-  new Promise((resolve) => {
-    nodeOsUtils.cpu.usage().then((cpuPercentage) => {
-      const response = {
-        cpu: {
-          usage: cpuPercentage,
-        },
-      };
-      resolve(response);
-    });
-  });
-
 module.exports = {
-  getResourcesInfo,
   getCurrentLoad,
 };
+
+const test = async () => {
+  const test2 = await getCurrentLoad();
+  console.log("hehe", test2);
+};
+
+test();
