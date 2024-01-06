@@ -41,7 +41,7 @@ The RAM and GPU VRAM requirements are dependent on the size and complexity of th
 
 ## Architecture
 
-Jan is designed to run on muptiple architectures, versatility and widespread usability. The supported architectures include:
+Jan is designed to run on multiple architectures, versatility and widespread usability. The supported architectures include:
 
 ### CPU Support
 
