@@ -260,9 +260,9 @@ const config = {
       ],
     },
     prism: {
-      theme: darkCodeTheme,
+      theme: darkCodeTheme, 
       darkTheme: darkCodeTheme,
-      additionalLanguages: ["python", "powershell", "bash"],
+      additionalLanguages: ["python", "powershell", "bash", "json", "javascript", "jsx"],
     },
     colorMode: {
       defaultMode: "light",
