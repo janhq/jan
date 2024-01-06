@@ -1,0 +1,33 @@
+---
+title: Jan is Not Using GPU
+keywords: [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    convZ
+    ersational AI,
+    no-subscription fee,
+    large language model,
+    troubleshooting,
+  ]
+---
+
+By default, Jan uses GPU acceleration.
+
+If you are experiencing this issue, you may need to download the latest Nvidia CUDA toolkit.
+
+> We weren't propagating CUDA issues in the old build.
+
+Steps:
+
+1. Download Cuda toolkit (versions 11.4+) from [Nvidia](https://developer.nvidia.com/cuda-downloads?target_os=Windows)
+
+1. Go to Settings > Advanced > Turn on GPU acceleration
+
+1. You may need to restart Jan
+
+1. Check in `System Monitor` that there is more (V)RAM now
+
+1. If the issue is not fixed, please install the [Nightly version](/install/nightly) instead.
