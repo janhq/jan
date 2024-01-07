@@ -200,6 +200,7 @@ export default class JanModelExtension implements ModelExtension {
       const allDirectories: string[] = []
       for (const file of files) {
         if (file === '.DS_Store') continue
+        if (file === 'config') continue
         allDirectories.push(file)
       }
 
