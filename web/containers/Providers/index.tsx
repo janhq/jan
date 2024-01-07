@@ -23,6 +23,8 @@ import {
 
 import { instance } from '@/utils/posthog'
 
+import KeyListener from './KeyListener'
+
 import { extensionManager } from '@/extension'
 
 const Providers = (props: PropsWithChildren) => {
@@ -70,17 +72,21 @@ const Providers = (props: PropsWithChildren) => {
   return (
     <PostHogProvider client={instance}>
       <JotaiWrapper>
-        <ThemeWrapper>
-          {setupCore && activated && (
-            <FeatureToggleWrapper>
-              <EventListenerWrapper>
-                <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
-                {!isMac && <GPUDriverPrompt />}
-              </EventListenerWrapper>
-              <Toaster position="top-right" />
-            </FeatureToggleWrapper>
-          )}
-        </ThemeWrapper>
+        <KeyListener>
+          <ThemeWrapper>
+            {setupCore && activated && (
+              <FeatureToggleWrapper>
+                <EventListenerWrapper>
+                  <TooltipProvider delayDuration={0}>
+                    {children}
+                  </TooltipProvider>
+                  {!isMac && <GPUDriverPrompt />}
+                </EventListenerWrapper>
+                <Toaster position="top-right" />
+              </FeatureToggleWrapper>
+            )}
+          </ThemeWrapper>
+        </KeyListener>
       </JotaiWrapper>
     </PostHogProvider>
   )
