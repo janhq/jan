@@ -33,7 +33,7 @@ We aim for a `loosely coupled, but tightly aligned` autonomous culture.
 
 - `Milestones` track release versions. We use [semantic versioning](https://semver.org/)
 - `Milestones` span ~2 weeks and have deadlines
-- `Milestones` usually fit within 2 week sprint cycles
+- `Milestones` usually fit within 2-week sprint cycles
 
 [`Tasks`](https://github.com/janhq/jan/issues)
 

@@ -18,7 +18,7 @@ keywords:
 The following docs are aimed at developers who want to build extensions on top of the Jan Framework.
 
 :::tip
-If you are interested to **contribute to the framework's Core SDK itself**, like adding new drivers, runtimes, and infrastracture level support, please refer to [framework docs](/docs) instead.
+If you are interested to **contribute to the framework's Core SDK itself**, like adding new drivers, runtimes, and infrastructure level support, please refer to [framework docs](/docs) instead.
 :::
 
 ## Extensions
