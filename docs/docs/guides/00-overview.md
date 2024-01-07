@@ -15,19 +15,34 @@ keywords:
   ]
 ---
 
-Jan is a ChatGPT alternative that runs on your own computer, with a [local API server](/guides/using-server).
+The following docs are aimed at end users who want to troubleshoot or learn how to use the **Jan Desktop** application better.
 
-We believe in the need for an open source AI ecosystem. We're focused on building infra, tooling and [custom models](https://huggingface.co/janhq) to allow open source AIs to compete on a level playing field with proprietary offerings.
+:::tip
+If you are interested to build extensions, please refer to [developer docs](/developer) instead (WIP).
+
+If you are interested to contribute to the underlying framework, please refer to [framework docs](/docs) instead.
+:::
+
+## Jan Desktop
+
+The desktop client is a ChatGPT alternative that runs on your own computer, with a [local API server](/guides/using-server).
 
 ## Features
 
-- Compatible with [open-source models](/guides/using-models) (GGUF, TensorRT, and remote APIs)
-- Compatible with most OSes: [Windows](/install/windows/), [Mac](/install/mac), [Linux](/install/linux), with/without GPU acceleration
+- Compatible with [open-source models](/guides/using-models) (GGUF via [llama.cpp](https://github.com/ggerganov/llama.cpp), TensorRT via [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM), and [remote APIs](https://platform.openai.com/docs/api-reference))
+- Compatible with most OSes: [Windows](/install/windows/), [Mac](/install/mac), [Linux](/install/linux), with GPU acceleration through [llama.cpp](https://github.com/ggerganov/llama.cpp)
 - Stores data in [open file formats](/developer/file-based)
+- Local API [server mode](/guides/using-server)
 - Customizable via [extensions](/developer/build-extension)
 - And more in the [roadmap](https://github.com/orgs/janhq/projects/5/views/16). Join us on [Discord](https://discord.gg/5rQ2zTv3be) and tell us what you want to see!
 
 ## Why Jan?
+
+We believe in the need for an open source AI ecosystem.
+
+We're focused on building infra, tooling and [custom models](https://huggingface.co/janhq) to allow open source AIs to compete on a level playing field with proprietary offerings.
+
+Read more about our mission and culture [here](/about).
 
 #### 💻 Own your AI
 
