@@ -93,9 +93,3 @@ const getCurrentLoad = () =>
 module.exports = {
   getCurrentLoad,
 };
-
-const test = async () => {
-  const test2 = await getCurrentLoad();
-};
-
-// test();
