@@ -3,17 +3,17 @@ title: Overview
 slug: /docs
 ---
 
-The following low-level docs are aimed at core contributors and cover how to contribute to the Core SDK.
+The following low-level docs are aimed at core contributors and cover how to contribute to the core SDK.
 
 :::tip
 If you are interested to **build on top of the SDK**, like creating assistants or adding app level extensions, please refer to [developer docs](/developer) instead.
 :::
 
-## Core SDK
+## Jan Framework
 
-At its Core, Jan is a cross-platform, local-first and AI native framework that can be used to build anything. In fact, current features are all implemented as 3rd party extensions on top of this Core SDK.
+At its core, Jan is a cross-platform, local-first and AI native framework that can be used to build anything. In fact, current features are all implemented as 3rd party extensions on top of this core SDK.
 
-Ultimately, we aim for a VSCode or Obsidian like framework that allows devs to build and customize complex AI applications for their specific needs, in less than 15 minutes.
+Ultimately, we aim for a VSCode or Obsidian like framework that allows devs to build and customize complex AI applications for their specific needs, in less than 30 minutes.
 
 ### Cross Platform
 

@@ -15,22 +15,36 @@ keywords:
   ]
 ---
 
-Jan SDK is an **extensible framework** that lets you build and run AI applications everywhere, with an emphasis on local first.
+The following docs are aimed at developers who want to build extensions on top of the Jan Framework.
 
-It is available across Mac, Windows, Linux Desktops. It is also available as a headless server that can be deployed into any on-prem or cloud environments.
+:::tip
+If you are interested to **contribute to the framework's Core SDK itself**, like adding new drivers, runtimes, and infrastracture level support, please refer to [framework docs](/docs) instead.
+:::
+
+## Extensions
+
+Jan an **extensible framework** (like VSCode or Obsidian) that lets you build, customize and run AI applications everywhere, with an emphasis on local first.
+
+Extensions are automatically available across Mac, Windows, Linux Desktops.
+
+Extensions can also be made available in local API server-mode, which can be deployed on any VM.
+
+### Building Extensions
 
 This framework is packaged and regularly published as an SDK through [npm](https://www.npmjs.com/org/janhq) and [pip](https://pypi.org/).
 
-The SDK provides built-in support for the following:
+The framework provides built-in support for the following:
 
 - Native OS integrations with Electron and Chromium
 - Native server integrations with Nodejs
 - Native mobile integrations with Capacitor (coming soon)
 
 :::tip
-The [Jan Desktop client](https://github.com/janhq/jan/releases) is built with Jan SDK. This means you can customize any part of the application from the branding to the features, and truly make it your own.
+Build once, deploy everywhere
 :::
 
 ## Jan in Action
+
+The [Jan Desktop client](https://github.com/janhq/jan/releases) is built with Jan SDK. This means you can customize any part of the application from the branding to the features, and truly make it your own.
 
 [Gif: show desktop & server side by side]
