@@ -24,7 +24,7 @@ export default function useGetSystemResources() {
   const setUsedRam = useSetAtom(usedRamAtom)
 
   const setCpuUsage = useSetAtom(cpuUsageAtom)
-  
+
   const setTotalNvidiaVram = useSetAtom(nvidiaTotalVramAtom)
   const setUtilizationNvidiaVram = useSetAtom(nvidiaUtilizationVramAtom)
 
@@ -58,8 +58,12 @@ export default function useGetSystemResources() {
     setCPU(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
     setCpuUsage(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
 
-    setNvidiaGpuUtilization(Math.round(currentLoadInfor?.nvidia?.gpu_utilization ?? 0))
-    setNvidiaVramUtilization(Math.round(currentLoadInfor?.nvidia?. * 100))
+    setNvidiaGpuUtilization(
+      Math.round(currentLoadInfor?.nvidia?.gpu_utilization ?? 0)
+    )
+    setNvidiaVramUtilization(
+      Math.round(currentLoadInfor?.nvidia?.vram_utilization * 100)
+    )
   }
 
   useEffect(() => {

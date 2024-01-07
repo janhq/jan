@@ -8,13 +8,15 @@ const nodeOsUtils = require("node-os-utils");
 
 const checkNvidiaDriverExist = () => {
   return new Promise(async (resolve, reject) => {
-    exec("nvidia-smi", (error, stdout, stderr) => {
-      console.log(stdout);
-      if (error) {
-        resolve(false);
+    exec(
+      "nvidia-smi --query-gpu=name --format=csv,noheader",
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve(false);
+        }
+        resolve(true);
       }
-      resolve(true);
-    });
+    );
   });
 };
 
@@ -83,8 +85,6 @@ const getCurrentLoad = () =>
         const nvidiaInfo = await getNvidiaInfo();
         response.nvidia = nvidiaInfo;
       }
-
-      console.log("response gpu", response);
 
       resolve(response);
     }
