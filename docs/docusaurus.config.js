@@ -237,7 +237,7 @@ const config = {
           type: "docSidebar",
           position: "left",
           sidebarId: "docsSidebar",
-          label: "Docs",
+          label: "Framework",
         },
         // Navbar right
         {
@@ -260,9 +260,16 @@ const config = {
       ],
     },
     prism: {
-      theme: darkCodeTheme, 
+      theme: darkCodeTheme,
       darkTheme: darkCodeTheme,
-      additionalLanguages: ["python", "powershell", "bash", "json", "javascript", "jsx"],
+      additionalLanguages: [
+        "python",
+        "powershell",
+        "bash",
+        "json",
+        "javascript",
+        "jsx",
+      ],
     },
     colorMode: {
       defaultMode: "light",

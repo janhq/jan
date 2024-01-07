@@ -47,11 +47,11 @@ const GPUDriverPrompt: React.FC = () => {
               className="cursor-pointer text-blue-600"
               onClick={() =>
                 openExternalUrl(
-                  'https://github.com/janhq/jan/blob/main/USAGE.md'
+                  'https://jan.ai/guides/troubleshooting/gpu-not-used/'
                 )
               }
             >
-              Jan running mode documentation
+              Jan is Not Using GPU
             </span>{' '}
             .
           </p>

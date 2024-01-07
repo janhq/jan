@@ -26,7 +26,7 @@ Jan runs on port `1337` by default, but this can (soon) be changed in Settings.
 
 1. Go to Settings > Advanced > Enable API Server
 
-2. Go to http://localhost:1337/docs for API docs.
+2. Go to http://localhost:1337 for the API docs.
 
 3. In terminal, simply CURL...
 
