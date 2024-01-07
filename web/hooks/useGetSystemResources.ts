@@ -62,7 +62,7 @@ export default function useGetSystemResources() {
       Math.round(currentLoadInfor?.nvidia?.gpu_utilization ?? 0)
     )
     setNvidiaVramUtilization(
-      Math.round(currentLoadInfor?.nvidia?.vram_utilization * 100)
+      Math.round(currentLoadInfor?.nvidia?.vram_utilization ?? 0)
     )
   }
 
