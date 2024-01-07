@@ -68,7 +68,7 @@ const BottomBar = () => {
           className="cursor-pointer rounded-md border-none font-medium"
           onClick={() => setShowSelectModelModal((show) => !show)}
         >
-          My Models&nbsp;
+          My Models
           <ShortCut menu="E" />
         </Badge>
 
@@ -86,9 +86,15 @@ const BottomBar = () => {
             value={stateModel.model || '-'}
           />
         )}
-        {!stateModel.loading && downloadedModels.length !== 0 && (
-          <SystemItem titleBold name={'Active model'} value={activeModel?.id} />
-        )}
+        {!stateModel.loading &&
+          downloadedModels.length !== 0 &&
+          activeModel?.id && (
+            <SystemItem
+              titleBold
+              name={'Active model'}
+              value={activeModel?.id}
+            />
+          )}
         {downloadedModels.length === 0 &&
           !stateModel.loading &&
           downloadStates.length === 0 && (
