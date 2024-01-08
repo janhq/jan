@@ -219,8 +219,8 @@ export default function useSendChatMessage() {
                         text: prompt,
                       },
                       {
-                        type: ChatCompletionMessageContentType.Image,
-                        image_url: {
+                        type: ChatCompletionMessageContentType.Doc,
+                        doc_url: {
                           url: base64Blob,
                         },
                       },
@@ -228,6 +228,27 @@ export default function useSendChatMessage() {
                   : prompt,
             } as ChatCompletionMessage,
           ])
+        // TODO: Deprioritize Jan Can See
+        // .concat([
+        //   {
+        //     role: ChatCompletionRole.User,
+        //     content:
+        //       selectedModel && base64Blob
+        //         ? [
+        //             {
+        //               type: ChatCompletionMessageContentType.Text,
+        //               text: prompt,
+        //             },
+        //             {
+        //               type: ChatCompletionMessageContentType.Image,
+        //               image_url: {
+        //                 url: base64Blob,
+        //               },
+        //             },
+        //           ]
+        //         : prompt,
+        //   } as ChatCompletionMessage,
+        // ])
       )
 
     const msgId = ulid()
@@ -235,7 +256,7 @@ export default function useSendChatMessage() {
     let modelRequest = selectedModel ?? activeThread.assistants[0].model
     // Add middleware to the model request with tool retrieval enabled
     // if (
-    //   activeThread.assistants[0].tools.find(
+    //   activeThread.assistants[0].tools?.find(
     //     (tool: AssistantTool) => tool.type === 'retrieval' && tool.enabled
     //   )
     // ) {

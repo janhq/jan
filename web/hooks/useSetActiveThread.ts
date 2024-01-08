@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+
 import { EventName, ExtensionType, Thread, events } from '@janhq/core'
 
 import { ConversationalExtension } from '@janhq/core'
@@ -7,6 +9,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { extensionManager } from '@/extension'
 import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
+  activeThreadStateAtom,
   getActiveThreadIdAtom,
   setActiveThreadIdAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -15,6 +18,14 @@ export default function useSetActiveThread() {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const setThreadMessage = useSetAtom(setConvoMessagesAtom)
+  const activeThread = useAtomValue(activeThreadStateAtom)
+
+  // On active thread change, emit event
+  useEffect(() => {
+    if (activeThread) {
+      events.emit(EventName.OnThreadStarted, activeThread)
+    }
+  }, [activeThread])
 
   const setActiveThread = async (thread: Thread) => {
     if (activeThreadId === thread.id) {

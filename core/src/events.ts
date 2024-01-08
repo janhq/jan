@@ -21,6 +21,8 @@ export enum EventName {
   OnModelStopped = 'OnModelStopped',
   /** The `OnInferenceStopped` event is emitted when a inference is stopped. */
   OnInferenceStopped = 'OnInferenceStopped',
+  /** The `OnThreadStarted` event is emitted when a thread is started. */
+  OnThreadStarted = 'OnThreadStarted'
 }
 
 /**

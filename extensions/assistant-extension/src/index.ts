@@ -6,6 +6,7 @@ import {
   events,
   EventName,
   InferenceEngine,
+  Thread,
 } from "@janhq/core";
 import { executeOnMain } from "@janhq/core";
 import { AssistantExtension } from "@janhq/core";
@@ -35,6 +36,14 @@ export default class JanAssistantExtension implements AssistantExtension {
     events.on(EventName.OnInferenceStopped, () => {
       JanAssistantExtension.handleInferenceStopped(this);
     });
+
+    events.on(EventName.OnThreadStarted, (thread) => {
+      JanAssistantExtension.handleThreadStart(thread);
+    });
+  }
+
+  private static handleThreadStart(thread: Thread) {
+    // Ingest documents
   }
 
   private static async handleInferenceStopped(instance: JanAssistantExtension) {
@@ -53,7 +62,7 @@ export default class JanAssistantExtension implements AssistantExtension {
       return;
     }
 
-    const retrievalResult = await executeOnMain(MODULE, "toolRetrieval", {
+    const retrievalResult = await executeOnMain(MODULE, "toolRetrievalQueryResult", {
       messageRequest: data,
     });
 

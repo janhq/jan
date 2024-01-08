@@ -3,7 +3,7 @@ const { formatDocumentsAsString } = require("langchain/util/document");
 const { HNSWLib } = require("langchain/vectorstores/hnswlib");
 const { PDFLoader } = require("langchain/document_loaders/fs/pdf");
 
-export default class Retrieval {
+class Retrieval {
   private readonly chunkSize: number;
   private readonly chunkOverlap: number;
   private retriever: any;
