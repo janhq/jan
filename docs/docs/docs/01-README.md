@@ -79,7 +79,7 @@ We believe all software applications can be natively supercharged with AI primit
 Including:
 
 - OpenAI Compatible AI [types](https://github.com/janhq/jan/tree/main/core/src/types) and [core extensions](https://github.com/janhq/jan/tree/main/core/src/extensions) to support common functionality like making an inference call.
-- A lightweight, embedded C++ [inference engine/wrapper](https://github.com/janhq/jan/tree/main/extensions/inference-nitro-extension) that's immediately callable from code. _On this, we'd like to appreciate the folks at [llamacpp](https://github.com/ggerganov/llama.cpp) and [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM) for. To which we'll continue to make commits & fixes back upstream._
+- Multiple inference engines through [extensions, integrations & wrappers](https://github.com/janhq/jan/tree/main/extensions/inference-nitro-extension) _On this, we'd like to appreciate the folks at [llamacpp](https://github.com/ggerganov/llama.cpp) and [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM) for. To which we'll continue to make commits & fixes back upstream._
 
 - [Code Entrypoint](https://github.com/janhq/jan/tree/main/core/src/api)
 
