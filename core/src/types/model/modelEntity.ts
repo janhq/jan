@@ -21,6 +21,7 @@ export enum InferenceEngine {
   triton_trtllm = 'triton_trtllm',
 
   tool_retrieval_enabled = 'tool_retrieval_enabled',
+  testing = 'testing',
 }
 
 type ModelArtifacts = {

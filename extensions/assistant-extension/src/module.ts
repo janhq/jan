@@ -1,5 +1,7 @@
-// import { Retrieval } from "./tools/retrieval/node/index.js";
-// import { HuggingFaceTransformersEmbeddings } from "langchain/embeddings/hf_transformers";
+const { Retrieval } = require("./tools/retrieval/node/index.js");
+const {
+  HuggingFaceTransformersEmbeddings,
+} = require("langchain/embeddings/hf_transformers");
 
 // const run = async () => {
 //   const embeddingModel = new HuggingFaceTransformersEmbeddings();
@@ -21,6 +23,8 @@
 
 async function toolRetrieval(data) {
   console.log("toolRetrieval", data);
+  const embeddingModel = new HuggingFaceTransformersEmbeddings();
+  console.log(embeddingModel);
 }
 
 module.exports = {
