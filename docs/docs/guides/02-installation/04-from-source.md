@@ -70,7 +70,7 @@ This will start the development server and open the desktop app. During this ste
 Build the app for macOS M1/M2 for production and place the result in the dist folder
 
 ```bash
-# Do step 1 and 2 in previous section
+# Do step 1 and 2 in the previous section
 git clone https://github.com/janhq/jan
 cd jan
 yarn install

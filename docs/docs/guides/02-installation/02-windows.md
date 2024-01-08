@@ -64,7 +64,7 @@ rmdir /S jan
 
 ### Microsoft Defender
 
-**Error: "Microsoft Defender Smartscreen prevented an unrecognized app from starting"**
+**Error: "Microsoft Defender SmartScreen prevented an unrecognized app from starting"**
 
 Windows Defender may display the above warning when running the Jan Installer, as a standard security measure.
 

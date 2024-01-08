@@ -30,7 +30,7 @@ jan-mac-x64-{version}.dmg
 jan-mac-arm64-{version}.dmg
 ```
 
-The typical installation process taks around a minute.
+The typical installation process takes around a minute.
 
 ## GitHub Releases
 
@@ -50,7 +50,7 @@ jan-mac-arm64-{version}.zip
 
 ## Uninstall Jan
 
-As Jan is development mode, you might get stuck on a broken build.
+As Jan is in development mode, you might get stuck on a broken build.
 To reset your installation
 
 1. Delete Jan from your `/Applications` folder

@@ -74,4 +74,4 @@ Welcome to Jan! We’re really excited to bring you onboard.
   - [ ] Github
 - Communications
   - [ ] Fill in your contact details [here](https://docs.google.com/spreadsheets/d/1KAxya29_wb1bEESiFJeCrOec4pCG3uA2D4_VPgAn89U/edit#gid=0)
-  - [ ] To make sure everyone in the remote working environment understand more about each other, we encourage you to share your `How to work with me` in the [Drive Tab](https://docs.google.com/spreadsheets/d/1KAxya29_wb1bEESiFJeCrOec4pCG3uA2D4_VPgAn89U/edit#gid=0) under your name and the Discord `Internal` channel.
+  - [ ] To make sure everyone in the remote working environment understands more about each other, we encourage you to share your `How to work with me` in the [Drive Tab](https://docs.google.com/spreadsheets/d/1KAxya29_wb1bEESiFJeCrOec4pCG3uA2D4_VPgAn89U/edit#gid=0) under your name and the Discord `Internal` channel.
