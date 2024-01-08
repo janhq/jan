@@ -233,7 +233,6 @@ export default function useSendChatMessage() {
     const msgId = ulid()
 
     let modelRequest = selectedModel ?? activeThread.assistants[0].model
-    console.log(activeThread.assistants[0])
     // Add middleware to the model request with tool retrieval enabled
     // if (
     //   activeThread.assistants[0].tools.find(
@@ -246,7 +245,6 @@ export default function useSendChatMessage() {
       proxyEngine: modelRequest.engine,
     }
     // }
-    console.log('Tool retrieval enabled', modelRequest)
 
     const messageRequest: MessageRequest = {
       id: msgId,
