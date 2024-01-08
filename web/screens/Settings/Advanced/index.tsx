@@ -149,7 +149,7 @@ const Advanced = () => {
           </p>
         </div>
         <Modal>
-          <ModalTrigger>
+          <ModalTrigger asChild>
             <Button size="sm" themes="secondary">
               Show
             </Button>
@@ -192,6 +192,30 @@ const Advanced = () => {
                 <div className="w-full">
                   <div className="py-2">
                     <p>Show list navigation pages</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex w-full gap-4 border-b border-border pb-2">
+                <div className="w-1/2">
+                  <div className="py-2">
+                    <ShortCut menu="," />
+                  </div>
+                </div>
+                <div className="w-full">
+                  <div className="py-2">
+                    <p>Navigate to setting page</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex w-full gap-4 border-b border-border pb-2">
+                <div className="w-1/2">
+                  <div className="py-2">
+                    <ShortCut menu="B" />
+                  </div>
+                </div>
+                <div className="w-full">
+                  <div className="py-2">
+                    <p>Toogle collapsible left panel</p>
                   </div>
                 </div>
               </div>
