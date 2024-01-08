@@ -113,7 +113,7 @@ Join our strategic discussions [here](https://github.com/janhq/jan/discussions).
 
 ### Analytics
 
-Adhering to Jan's privacy preserving philosophy, our analytics philosophy is to get `minimally-enough-to-function`.
+Adhering to Jan's privacy preserving philosophy, our analytics philosophy is to get `barely-enough-to-function`.
 
 #### What is tracked
 
