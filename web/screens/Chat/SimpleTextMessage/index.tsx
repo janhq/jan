@@ -85,11 +85,10 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   const codeBlockCopyEvent = useRef((e: Event) => {
     const target: HTMLElement = e.target as HTMLElement
     if (typeof target.className !== 'string') return null
-    const isCopyActionClassName = target?.className.includes('copy-action')
-    const isCodeBlockParent =
-      target.parentElement?.parentElement?.className.includes('code-block')
 
-    if (isCopyActionClassName || isCodeBlockParent) {
+    const isCopyActionClassName = target?.className.includes('copy-action')
+
+    if (isCopyActionClassName) {
       const content = target?.parentNode?.querySelector('code')?.innerText ?? ''
       clipboard.copy(content)
     }
