@@ -1,15 +1,12 @@
-import { BufferMemory } from "langchain/memory";
-import { PromptTemplate } from "langchain/prompts";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-import { formatDocumentsAsString } from "langchain/util/document";
-import { HNSWLib } from "langchain/vectorstores/hnswlib";
-import { PDFLoader } from "langchain/document_loaders/fs/pdf";
+const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
+const { formatDocumentsAsString } = require("langchain/util/document");
+const { HNSWLib } = require("langchain/vectorstores/hnswlib");
+const { PDFLoader } = require("langchain/document_loaders/fs/pdf");
 
-export class Retrieval {
+export default class Retrieval {
   private readonly chunkSize: number;
   private readonly chunkOverlap: number;
   private retriever: any;
-  // private shortTermMemory: BufferMemory;
 
   private embeddingModel = null;
   private textSplitter = null;
@@ -21,17 +18,12 @@ export class Retrieval {
       chunkOverlap: this.chunkOverlap,
     });
     this.embeddingModel = embeddingModel;
-
-    // this.shortTermMemory = new BufferMemory({
-    //   memoryKey: "chatHistory",
-    // });
   }
 
   public ingestDocument = async (
     documentPath: string,
     memoryPath: string
   ): Promise<any> => {
-    /* Load in the file we want to do question answering over */
     const loader = new PDFLoader(documentPath, {
       splitPages: false,
       parsedItemSeparator: "",
