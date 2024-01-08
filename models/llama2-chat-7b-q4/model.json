@@ -4,14 +4,19 @@
     "object": "model",
     "name": "Llama 2 Chat 7B Q4",
     "version": "1.0",
-    "description": "This is a 4-bit quantized iteration of Meta AI's Llama 2 Chat 7b model, specifically designed for a comprehensive understanding through training on extensive internet data.",
+    "description": "Llama 2 Chat 7b model, specifically designed for a comprehensive understanding through training on extensive internet data.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "[INST] <<SYS>>\n{system_message}<</SYS>>\n{prompt}[/INST]"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "MetaAI, The Bloke",

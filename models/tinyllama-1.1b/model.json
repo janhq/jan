@@ -4,19 +4,24 @@
   "object": "model",
   "name": "TinyLlama Chat 1.1B Q4",
   "version": "1.0",
-  "description": "The TinyLlama project, featuring a 1.1B parameter Llama model, is pretrained on an expansive 3 trillion token dataset. Its design ensures easy integration with various Llama-based open-source projects. Despite its smaller size, it efficiently utilizes lower computational and memory resources, drawing on GPT-4's analytical prowess to enhance its conversational abilities and versatility.",
+  "description": "TinyLlama is a tiny model with only 1.1B. It's a good model for less powerful computers.",
   "format": "gguf",
   "settings": {
       "ctx_len": 2048,
       "prompt_template": "<|system|>\n{system_message}<|user|>\n{prompt}<|assistant|>"
   },
   "parameters": {
-      "max_tokens": 2048
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 2048,
+    "frequency_penalty": 0,
+    "presence_penalty": 0
   },
   "metadata": {
       "author": "TinyLlama",
       "tags": ["Tiny", "Foundation Model"],
-      "size": 669000000
+      "size": 1170000000
   },
   "engine": "nitro"
 }

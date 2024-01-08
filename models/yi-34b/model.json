@@ -11,12 +11,17 @@
       "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "01-ai, The Bloke",
       "tags": ["34B", "Foundational Model"],
-      "size": 24320000000
+      "size": 20660000000
     },
     "engine": "nitro"
   }

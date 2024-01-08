@@ -4,14 +4,19 @@
     "object": "model",
     "name": "OpenHermes Neural 7B Q4",
     "version": "1.0",
-    "description": "OpenHermes Neural is a merged model using the TIES method.",
+    "description": "OpenHermes Neural is a merged model using the TIES method. It performs well in various benchmarks.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Intel, Jan",

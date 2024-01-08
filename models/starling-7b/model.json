@@ -4,18 +4,23 @@
     "object": "model",
     "name": "Starling alpha 7B Q4",
     "version": "1.0",
-    "description": "Starling-RM-7B-alpha is a language model finetuned with Reinforcement Learning from AI Feedback from Openchat 3.5. It stands out for its impressive performance using GPT-4 as a judge, making it one of the top-performing models in its category.",
+    "description": "Starling 7B, an upgrade of Openchat 3.5 using RLAIF, is really good at various benchmarks, especially with GPT-4 judging its performance.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "GPT4 User: {prompt}<|end_of_turn|>GPT4 Assistant:"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Berkeley-nest, The Bloke",
-      "tags": ["Recommended", "7B","Finetuned"],
+      "tags": ["7B","Finetuned"],
       "size": 4370000000
     },
     "engine": "nitro"

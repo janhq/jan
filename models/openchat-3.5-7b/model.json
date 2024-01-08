@@ -11,11 +11,16 @@
       "prompt_template": "GPT4 Correct User: {prompt}<|end_of_turn|>GPT4 Correct Assistant:"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Openchat",
-      "tags": ["7B", "Finetuned"],
+      "tags": ["Recommended", "7B", "Finetuned"],
       "size": 4370000000
     },
     "engine": "nitro"

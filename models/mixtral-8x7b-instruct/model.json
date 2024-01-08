@@ -4,14 +4,19 @@
     "object": "model",
     "name": "Mixtral 8x7B Instruct Q4",
     "version": "1.0",
-    "description": "The Mixtral-8x7B Large Language Model (LLM) is a pretrained generative Sparse Mixture of Experts. The Mixtral-8x7B outperforms Llama 2 70B on most benchmarks we tested.",
+    "description": "The Mixtral-8x7B is a pretrained generative Sparse Mixture of Experts. The Mixtral-8x7B outperforms 70B models on most benchmarks.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "[INST] {prompt} [/INST]"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "MistralAI, TheBloke",
