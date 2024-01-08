@@ -72,9 +72,9 @@ const Providers = (props: PropsWithChildren) => {
   return (
     <PostHogProvider client={instance}>
       <JotaiWrapper>
-        <KeyListener>
-          <ThemeWrapper>
-            {setupCore && activated && (
+        <ThemeWrapper>
+          {setupCore && activated && (
+            <KeyListener>
               <FeatureToggleWrapper>
                 <EventListenerWrapper>
                   <TooltipProvider delayDuration={0}>
@@ -84,9 +84,9 @@ const Providers = (props: PropsWithChildren) => {
                 </EventListenerWrapper>
                 <Toaster position="top-right" />
               </FeatureToggleWrapper>
-            )}
-          </ThemeWrapper>
-        </KeyListener>
+            </KeyListener>
+          )}
+        </ThemeWrapper>
       </JotaiWrapper>
     </PostHogProvider>
   )
