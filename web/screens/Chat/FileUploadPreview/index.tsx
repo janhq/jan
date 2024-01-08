@@ -18,7 +18,6 @@ const FileUploadPreview: React.FC<Props> = ({ file }) => {
   }, [file])
 
   const onDeleteClick = () => {
-    console.log('delete')
     setFileUpload([])
   }
 
