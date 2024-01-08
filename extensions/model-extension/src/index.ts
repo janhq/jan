@@ -5,7 +5,6 @@ import {
   abortDownload,
   getResourcePath,
   getUserSpace,
-  fileStat,
   InferenceEngine,
   joinPath,
   ModelExtension,
@@ -281,7 +280,7 @@ export default class JanModelExtension implements ModelExtension {
       if (file.endsWith('.json')) continue
 
       const path = await joinPath([JanModelExtension._homeDir, dirName, file])
-      const fileStats = await fileStat(path)
+      const fileStats = await fs.fileStat(path)
       if (fileStats.isDirectory) continue
       binaryFileSize = fileStats.size
       binaryFileName = file
