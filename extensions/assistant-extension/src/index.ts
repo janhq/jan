@@ -65,6 +65,7 @@ export default class JanAssistantExtension implements AssistantExtension {
       ...data,
       model: {
         ...data.model,
+        engine: data.model.proxyEngine,
       },
     };
     events.emit(EventName.OnMessageSent, output);
