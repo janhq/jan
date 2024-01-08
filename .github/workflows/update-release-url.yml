@@ -36,7 +36,8 @@ jobs:
           sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-win-x64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-win-x64-${release}.exe'>|" README.md
           sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-mac-x64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-mac-x64-${release}.dmg'>|" README.md
           sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-mac-arm64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-mac-arm64-${release}.dmg'>|" README.md
-          sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-linux-amd64-.*'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-linux-amd64-${release}.deb'>|" README.md
+          sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-linux-amd64-.*.deb'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-linux-amd64-${release}.deb'>|" README.md
+          sed -i "s|<a href='https://github.com/janhq/jan/releases/download/v.*/jan-linux-amd64-.*.AppImage'>|<a href='https://github.com/janhq/jan/releases/download/v${release}/jan-linux-amd64-${release}.AppImage'>|" README.md
 
       - name: Commit and Push changes
         if: github.event_name == 'release'

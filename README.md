@@ -38,7 +38,7 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
     <td style="text-align:center"><b>Version Type</b></td>
     <td style="text-align:center"><b>Windows</b></td>
     <td colspan="2" style="text-align:center"><b>MacOS</b></td>
-    <td style="text-align:center"><b>Linux</b></td>
+    <td colspan="2" style="text-align:center"><b>Linux</b></td>
   </tr>
   <tr style="text-align:center">
     <td style="text-align:center"><b>Stable (Recommended)</b></td>
@@ -66,6 +66,12 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
         <b>jan.deb</b>
       </a>
     </td>
+    <td style="text-align:center">
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.3/jan-linux-amd64-0.4.3.AppImage'>
+        <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
+        <b>jan.AppImage</b>
+      </a>
+    </td>
   </tr>
   <tr style="text-align:center">
     <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
@@ -91,6 +97,12 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
       <a href='https://delta.jan.ai/0.4.3-130/jan-linux-amd64-0.4.3-130.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://delta.jan.ai/0.4.3-130/jan-linux-amd64-0.4.3-130.AppImage'>
+        <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
+        <b>jan.AppImage</b>
       </a>
     </td>
   </tr>
