@@ -91,15 +91,41 @@ We use GitHub to build in public and welcome anyone to join in.
 - [Jan's Roadmap](https://github.com/orgs/janhq/projects/5/views/29)
 - [Jan's Newsletter](https://newsletter.jan.ai)
 
-### Bootstrapped
-
-Jan is currently a bootstrapped startup. We balance technical invention with the search for a sustainable business model.
-
-We appreciate any business that can balance growth with cashflow/profitability.
-
 ### Remote Team
 
 Jan has a fully-remote team. We are mainly based in the APAC timezone. We use [Discord](https://discord.gg/af6SaTdzpx) and [Github](https://github.com/janhq) to work.
+
+### Bootstrapped
+
+Jan is currently a bootstrapped, founder funded startup.
+
+We balance technical invention with the search for a sustainable business model. Thus, we appreciate any business inquiries that can balance growth with cashflow.
+
+**We invite you to join us on our journey to find PMF**. Join our [Discord here](https://discord.gg/BnHRr3Q7Ms)
+
+### Revenue
+
+❌ Features centering on user compute & data should remain free. See [analytics](#analytics-philosophy).
+
+✅ Features incurring opex on Jan could be monetized, e.g. custom solutions, hosted APIs
+
+Join our strategic discussions [here](https://github.com/janhq/jan/discussions).
+
+### Analytics
+
+Adhering to Jan's privacy preserving philosophy, our analytics philosophy is to get `barely-enough-to-function`.
+
+#### What is tracked
+
+1. By default, Github tracks downloads and device metadata for all public Github repos. This helps us troubleshoot & ensure cross platform support.
+1. We use Posthog to track a single `app.opened` event without additional user metadata, in order to understand retention.
+1. Additionally, we plan to enable a `Settings` feature for users to turn off all tracking.
+
+#### Request for help
+
+As a result, our feature prioritization can feel a bit black box at times.
+
+We'd appreciate high quality insights and volunteers for user interviews through [Discord](https://discord.gg/af6SaTdzpx) and [Github](https://github.com/janhq).
 
 ## Contact
 
