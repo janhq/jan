@@ -2,7 +2,7 @@
 import { useCallback, useMemo } from 'react'
 
 import { Model } from '@janhq/core'
-import { Button } from '@janhq/uikit'
+import { Badge, Button } from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
 
@@ -101,6 +101,19 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
           <span className="mr-4 font-semibold text-muted-foreground">
             {toGibibytes(model.metadata.size)}
           </span>
+          {model.metadata.size && (
+            <>
+              <Badge className="rounded-md bg-green-500 text-white">
+                Recommended
+              </Badge>
+              <Badge className="rounded-md bg-yellow-500 text-white">
+                Slow on your device
+              </Badge>
+              <Badge className="rounded-md bg-red-500 text-white">
+                Not enough RAM
+              </Badge>
+            </>
+          )}
           {downloadButton}
           <ChevronDownIcon
             className={twMerge(
