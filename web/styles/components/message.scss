@@ -6,6 +6,14 @@
   ol {
     list-style: auto;
     padding-left: 24px;
+    white-space: normal;
+  }
+
+  a {
+    @apply text-blue-600 dark:text-blue-300;
+    &:hover {
+      @apply underline;
+    }
   }
 }
 
