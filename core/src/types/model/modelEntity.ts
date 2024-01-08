@@ -7,6 +7,7 @@ export type ModelInfo = {
   settings: ModelSettingParams
   parameters: ModelRuntimeParams
   engine?: InferenceEngine
+  proxyEngine?: InferenceEngine
 }
 
 /**
