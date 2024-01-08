@@ -17,7 +17,7 @@ At its core, Jan is a **cross-platform, local-first and AI native framework** th
 
 ### Extensions
 
-Ultimately, we aim for a `VSCode` or `Obsidian` like SDK that allows **devs to build and customize complex AI applications for their specific needs**, in less than 30 minutes.
+Ultimately, we aim for a `VSCode` or `Obsidian` like SDK that allows **devs to build and customize complex and ethical AI applications for any use case**, in less than 30 minutes.
 
 In fact, the current Jan [Desktop Client](https://jan.ai/) is actually just a specific set of extensions & integrations built on top of this framework.
 
