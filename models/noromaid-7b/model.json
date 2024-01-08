@@ -4,19 +4,24 @@
     "object": "model",
     "name": "Noromaid 7B Q5",
     "version": "1.0",
-    "description": "The Noromaid 7b model is designed for role-playing and general use, featuring a unique touch with the no_robots dataset that enhances human-like behavior.",
+    "description": "The Noromaid 7b model is designed for role-playing with human-like behavior.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "### Instruction:{prompt}\n### Response:"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "NeverSleep",
       "tags": ["7B", "Merged"],
-      "size": 5130000000
+      "size": 4370000000
     },
     "engine": "nitro"
   }

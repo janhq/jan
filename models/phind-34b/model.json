@@ -4,19 +4,24 @@
     "object": "model",
     "name": "Phind 34B Q5",
     "version": "1.0",
-    "description": "Phind-CodeLlama-34B-v2 is an AI model fine-tuned on 1.5B tokens of high-quality programming data. It's a SOTA open-source model in coding. This multi-lingual model excels in various programming languages, including Python, C/C++, TypeScript, Java, and is designed to be steerable and user-friendly.",
+    "description": "Phind 34B is fine-tuned on 1.5B tokens of high-quality programming data. This multi-lingual model excels in various programming languages and is designed to be steerable and user-friendly.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "### System Prompt\n{system_message}\n### User Message\n{prompt}\n### Assistant"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Phind, The Bloke",
       "tags": ["34B", "Finetuned"],
-      "size": 24320000000
+      "size": 20220000000
     },
     "engine": "nitro"
   }

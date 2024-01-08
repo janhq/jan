@@ -4,14 +4,19 @@
     "object": "model",
     "name": "CodeNinja 7B Q4",
     "version": "1.0",
-    "description": "CodeNinja is finetuned on openchat/openchat-3.5-1210. It is good for codding tasks",
+    "description": "CodeNinja is good for coding tasks and can handle various languages including Python, C, C++, Rust, Java, JavaScript, and more.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "GPT4 Correct User: {prompt}<|end_of_turn|>GPT4 Correct Assistant:"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Beowolx",

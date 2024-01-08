@@ -4,19 +4,24 @@
     "object": "model",
     "name": "Deepseek Coder 33B Q5",
     "version": "1.0",
-    "description": "Deepseek Coder trained on 2T tokens (87% code, 13% English/Chinese), excelling in project-level code completion with advanced capabilities across multiple programming languages.",
+    "description": "Deepseek Coder excelled in project-level code completion with advanced capabilities across multiple programming languages.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "### Instruction:\n{prompt}\n### Response:"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Deepseek, The Bloke",
       "tags": ["34B", "Foundational Model"],
-      "size": 26040000000
+      "size": 19940000000
     },
     "engine": "nitro"
   }

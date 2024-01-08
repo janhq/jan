@@ -4,14 +4,19 @@
     "object": "model",
     "name": "Tulu 2 70B Q4",
     "version": "1.0",
-    "description": "Tulu V2 DPO 70B is a fine-tuned version of Llama 2 using (DPO). This model is a strong alternative to Llama 2 70b Chat to act as helpful assistants.",
+    "description": "Tulu 70B is a strong alternative to Llama 2 70b Chat to act as helpful assistants.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "<|user|>\n{prompt}\n<|assistant|>"
     },
     "parameters": {
-      "max_tokens": 4096
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Lizpreciatior, The Bloke",
