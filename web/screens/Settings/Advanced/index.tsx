@@ -215,7 +215,7 @@ const Advanced = () => {
                 </div>
                 <div className="w-full">
                   <div className="py-2">
-                    <p>Toogle collapsible left panel</p>
+                    <p>Toggle collapsible left panel</p>
                   </div>
                 </div>
               </div>
