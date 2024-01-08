@@ -16,7 +16,7 @@ Our mission is to allow humans and businesses to own their AI, with the right to
 
 ### Ideal Customer
 
-Our ideal customer is an AI enthusiast or business who has experienced some limitations with current AI solutions,and is keen to find open source alternatives. 
+Our ideal customer is an AI enthusiast or business who has experienced some limitations with current AI solutions and is keen to find open source alternatives. 
 
 ### Problems
 
@@ -61,7 +61,7 @@ Jan is a startup with an open source business model. We believe in the need for 
 
 ### Build in Public
 
-We use Github to build in public, and welcome anyone to join in.  
+We use GitHub to build in public and welcome anyone to join in.  
 
 - [Jan's Kanban](https://github.com/orgs/janhq/projects/5)
 - [Jan's Roadmap](https://github.com/orgs/janhq/projects/5/views/29)
@@ -75,7 +75,7 @@ We appreciate any business that can balance growth with cashflow/profitability.
 
 ### Remote Team
 
-Jan has a fully-remote team. We are mainly based in the APAC timezone We use [Discord](https://discord.gg/af6SaTdzpx) and [Github](https://github.com/janhq) to work. 
+Jan has a fully-remote team. We are mainly based in the APAC timezone. We use [Discord](https://discord.gg/af6SaTdzpx) and [Github](https://github.com/janhq) to work. 
 
 ## Contact
 
