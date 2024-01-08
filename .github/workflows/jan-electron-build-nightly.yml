@@ -275,8 +275,14 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}
+          name: jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}-deb
           path: ./electron/dist/*.deb
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}-AppImage
+          path: ./electron/dist/*.AppImage
       
       - name: put-object using awscli s3api
         if: github.ref == 'refs/heads/main'
@@ -284,6 +290,8 @@ jobs:
           ls -al ./electron/dist
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --content-type "application/octet-stream"
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.AppImage" --body "./electron/dist/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.AppImage" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.AppImage" --body "./electron/dist/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.AppImage" --content-type "application/octet-stream"
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/latest-linux.yml" --body "./electron/dist/latest-linux.yml" --content-type "text/yaml"
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/latest-linux.yml" --body "./electron/dist/latest-linux.yml" --content-type "text/yaml"
         env:
@@ -316,7 +324,8 @@ jobs:
             - Windows: https://delta.jan.ai/{{ VERSION }}/jan-win-x64-{{ VERSION }}.exe
             - macOS Intel: https://delta.jan.ai/{{ VERSION }}/jan-mac-x64-{{ VERSION }}.dmg
             - macOS Apple Silicon: https://delta.jan.ai/{{ VERSION }}/jan-mac-arm64-{{ VERSION }}.dmg
-            - Linux: https://delta.jan.ai/{{ VERSION }}/jan-linux-amd64-{{ VERSION }}.deb
+            - Linux Deb: https://delta.jan.ai/{{ VERSION }}/jan-linux-amd64-{{ VERSION }}.deb
+            - Linux AppImage: https://delta.jan.ai/{{ VERSION }}/jan-linux-amd64-{{ VERSION }}.AppImage
             - Github action run: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
@@ -326,7 +335,8 @@ jobs:
           sed -i "s|<a href='https://delta.jan.ai/.*/jan-win-x64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe'>|" README.md
           sed -i "s|<a href='https://delta.jan.ai/.*/jan-mac-x64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
           sed -i "s|<a href='https://delta.jan.ai/.*/jan-mac-arm64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
-          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-amd64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-amd64-.*.deb'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-amd64-.*.AppImage'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.AppImage'>|" README.md
           git config --global user.email "service@jan.ai"
           git config --global user.name "Service Account"
           git add README.md
@@ -360,6 +370,7 @@ jobs:
             - macOS Intel: https://delta.jan.ai/{{ VERSION }}/jan-mac-x64-{{ VERSION }}.dmg
             - macOS Apple Silicon: https://delta.jan.ai/{{ VERSION }}/jan-mac-arm64-{{ VERSION }}.dmg
             - Linux: https://delta.jan.ai/{{ VERSION }}/jan-linux-amd64-{{ VERSION }}.deb
+            - Linux AppImage: https://delta.jan.ai/{{ VERSION }}/jan-linux-amd64-{{ VERSION }}.AppImage
             - Github action run: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
@@ -371,7 +382,8 @@ jobs:
           sed -i "s|<a href='https://delta.jan.ai/.*/jan-win-x64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe'>|" README.md
           sed -i "s|<a href='https://delta.jan.ai/.*/jan-mac-x64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
           sed -i "s|<a href='https://delta.jan.ai/.*/jan-mac-arm64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
-          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-amd64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-amd64-.*.deb'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-amd64-.*.AppImage'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.AppImage'>|" README.md
           git config --global user.email "service@jan.ai"
           git config --global user.name "Service Account"
           git add README.md
