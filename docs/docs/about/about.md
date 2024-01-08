@@ -93,9 +93,23 @@ We use GitHub to build in public and welcome anyone to join in.
 
 ### Bootstrapped
 
-Jan is currently a bootstrapped startup. We balance technical invention with the search for a sustainable business model.
+Jan is currently a **bootstrapped, founder funded** startup.
 
-We appreciate any business that can balance growth with cashflow/profitability.
+We balance technical invention with the search for a sustainable business model.
+
+Thus, we appreciate any business inquiries that can balance growth with cashflow.
+
+**We invite you to join us on our journey to find PMF**.
+
+Join our [Discord here](https://discord.gg/BnHRr3Q7Ms)
+
+### Revenue Philosophy
+
+❌ Features centering on user compute & data should remain free
+
+✅ Features incurring opex on Jan could be monetized, e.g. custom solutions, hosted APIs
+
+Join our strategic discussions [here](https://github.com/janhq/jan/discussions).
 
 ### Remote Team
 
