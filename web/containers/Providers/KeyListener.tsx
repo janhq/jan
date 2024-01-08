@@ -24,7 +24,6 @@ export default function KeyListener({ children }: Props) {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      e.preventDefault()
       const prefixKey = isMac ? e.metaKey : e.ctrlKey
 
       if (e.key === 'b' && prefixKey) {
