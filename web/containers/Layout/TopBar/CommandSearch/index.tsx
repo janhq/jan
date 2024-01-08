@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect } from 'react'
+import { Fragment } from 'react'
 
 import {
   CommandModal,
@@ -10,6 +10,7 @@ import {
   CommandList,
 } from '@janhq/uikit'
 
+import { useAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
@@ -17,57 +18,44 @@ import {
   MonitorIcon,
 } from 'lucide-react'
 
+import { showCommandSearchModalAtom } from '@/containers/Providers/KeyListener'
 import ShortCut from '@/containers/Shortcut'
 
 import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
+const menus = [
+  {
+    name: 'Chat',
+    icon: (
+      <MessageCircleIcon size={16} className="mr-3 text-muted-foreground" />
+    ),
+    state: MainViewState.Thread,
+  },
+  {
+    name: 'Hub',
+    icon: <LayoutGridIcon size={16} className="mr-3 text-muted-foreground" />,
+    state: MainViewState.Hub,
+  },
+  {
+    name: 'System Monitor',
+    icon: <MonitorIcon size={16} className="mr-3 text-muted-foreground" />,
+    state: MainViewState.SystemMonitor,
+  },
+  {
+    name: 'Settings',
+    icon: <SettingsIcon size={16} className="mr-3 text-muted-foreground" />,
+    state: MainViewState.Settings,
+    shortcut: <ShortCut menu="," />,
+  },
+]
+
 export default function CommandSearch() {
   const { setMainViewState } = useMainViewState()
-  const [open, setOpen] = useState(false)
-
-  const menus = [
-    {
-      name: 'Chat',
-      icon: (
-        <MessageCircleIcon size={16} className="mr-3 text-muted-foreground" />
-      ),
-      state: MainViewState.Thread,
-    },
-    {
-      name: 'Hub',
-      icon: <LayoutGridIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.Hub,
-    },
-    {
-      name: 'System Monitor',
-      icon: <MonitorIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.SystemMonitor,
-    },
-    {
-      name: 'Settings',
-      icon: <SettingsIcon size={16} className="mr-3 text-muted-foreground" />,
-      state: MainViewState.Settings,
-      shortcut: <ShortCut menu="," />,
-    },
-  ]
-
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        setOpen((open) => !open)
-      }
-      if (e.key === ',' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        setMainViewState(MainViewState.Settings)
-      }
-    }
-    document.addEventListener('keydown', down)
-    return () => document.removeEventListener('keydown', down)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const [showCommandSearchModal, setShowCommandSearchModal] = useAtom(
+    showCommandSearchModalAtom
+  )
 
   return (
     <Fragment>
@@ -84,7 +72,10 @@ export default function CommandSearch() {
           <ShortCut menu="K" />
         </div>
       </div> */}
-      <CommandModal open={open} onOpenChange={setOpen}>
+      <CommandModal
+        open={showCommandSearchModal}
+        onOpenChange={setShowCommandSearchModal}
+      >
         <CommandInput placeholder="Type a command or search..." />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
@@ -96,7 +87,7 @@ export default function CommandSearch() {
                   value={menu.name}
                   onSelect={() => {
                     setMainViewState(menu.state)
-                    setOpen(false)
+                    setShowCommandSearchModal(false)
                   }}
                 >
                   {menu.icon}

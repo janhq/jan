@@ -7,13 +7,14 @@ import { useAtom, useAtomValue } from 'jotai'
 
 import { debounce } from 'lodash'
 import { StopCircle } from 'lucide-react'
-import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
+
+import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -28,7 +29,7 @@ import ChatBody from '@/screens/Chat/ChatBody'
 
 import ThreadList from '@/screens/Chat/ThreadList'
 
-import Sidebar, { showRightSideBarAtom } from './Sidebar'
+import Sidebar from './Sidebar'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
@@ -44,6 +45,7 @@ import { activeThreadStateAtom } from '@/helpers/atoms/Thread.atom'
 const ChatScreen = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const { downloadedModels } = useGetDownloadedModels()
+  const showLeftSideBar = useAtomValue(showLeftSideBarAtom)
 
   const { activeModel, stateModel } = useActiveModel()
   const { setMainViewState } = useMainViewState()
@@ -58,8 +60,6 @@ const ChatScreen = () => {
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
-
-  const showing = useAtomValue(showRightSideBarAtom)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelRef = useRef(activeModel)
@@ -109,17 +109,14 @@ const ChatScreen = () => {
 
   return (
     <div className="flex h-full w-full">
-      <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border bg-background">
-        <ThreadList />
-      </div>
-      <div
-        className={twMerge(
-          'relative flex h-full flex-col overflow-auto bg-background',
-          activeThread && activeThreadId && showing
-            ? 'w-[calc(100%-560px)]'
-            : 'w-full'
-        )}
-      >
+      {/* Left side bar */}
+      {showLeftSideBar ? (
+        <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+          <ThreadList />
+        </div>
+      ) : null}
+
+      <div className="relative flex h-full w-full flex-col overflow-auto bg-background">
         <div className="flex h-full w-full flex-col justify-between">
           {activeThread ? (
             <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
@@ -210,8 +207,9 @@ const ChatScreen = () => {
           </div>
         </div>
       </div>
-      {/* Sidebar */}
-      {activeThreadId && activeThread && <Sidebar />}
+
+      {/* Right side bar */}
+      {activeThread && <Sidebar />}
     </div>
   )
 }

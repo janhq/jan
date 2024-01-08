@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useMemo } from 'react'
 
 import { Model } from '@janhq/core'
@@ -32,6 +31,7 @@ const ModelVersionItem: React.FC<Props> = ({ model }) => {
 
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[model.id ?? '']),
+    /* eslint-disable react-hooks/exhaustive-deps */
     [model.id]
   )
   const downloadState = useAtomValue(downloadAtom)
