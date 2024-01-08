@@ -53,11 +53,9 @@ export default class JanAssistantExtension implements AssistantExtension {
       return;
     }
 
-    console.log("messageRequest", data);
-
-    const input = data;
-
-    const retrievalResult = await executeOnMain(MODULE, "toolRetrieval", {});
+    const retrievalResult = await executeOnMain(MODULE, "toolRetrieval", {
+      messageRequest: data,
+    });
 
     console.log("get back data", retrievalResult);
 
