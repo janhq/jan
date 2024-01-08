@@ -1,19 +1,21 @@
 import { useState } from 'react'
 
 import { getUserSpace, joinPath, openFileExplorer } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import {
-  PanelLeftIcon,
   PenSquareIcon,
-  PanelRightIcon,
   MoreVerticalIcon,
   FolderOpenIcon,
   Code2Icon,
+  PanelLeftCloseIcon,
+  PanelRightCloseIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import CommandSearch from '@/containers/Layout/TopBar/CommandSearch'
+
+import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -31,7 +33,8 @@ const TopBar = () => {
   const { mainViewState } = useMainViewState()
   const { requestCreateNewThread } = useCreateNewThread()
   const { assistants } = useGetAssistants()
-  const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
+  const [showRightSideBar, setShowRightSideBar] = useAtom(showRightSideBarAtom)
+  const [showLeftSideBar, setShowLeftSideBar] = useAtom(showLeftSideBarAtom)
   const showing = useAtomValue(showRightSideBarAtom)
   const threadStates = useAtomValue(threadStatesAtom)
   const [more, setMore] = useState(false)
@@ -105,10 +108,16 @@ const TopBar = () => {
         <div className="relative w-full">
           <div className="absolute left-16 h-full w-60 border-r border-border">
             <div className="flex h-full w-full items-center justify-between">
-              <div className="cursor-pointer">
-                <PanelLeftIcon
+              <div
+                className="unset-drag cursor-pointer"
+                onClick={() => setShowLeftSideBar((show) => !show)}
+              >
+                <PanelRightCloseIcon
                   size={20}
-                  className="invisible text-muted-foreground"
+                  className={twMerge(
+                    'ml-4 text-muted-foreground',
+                    showLeftSideBar && 'rotate-180'
+                  )}
                 />
               </div>
               <div
@@ -196,7 +205,13 @@ const TopBar = () => {
                   className="unset-drag absolute right-4 cursor-pointer"
                   onClick={() => setShowRightSideBar((show) => !show)}
                 >
-                  <PanelRightIcon size={20} className="text-muted-foreground" />
+                  <PanelLeftCloseIcon
+                    size={20}
+                    className={twMerge(
+                      'text-muted-foreground',
+                      showRightSideBar && 'rotate-180'
+                    )}
+                  />
                 </div>
               </div>
             )}
