@@ -69,7 +69,7 @@
     "build:publish": "run-script-os",
     "build:publish:darwin": "tsc -p . && electron-builder -p onTagOrDraft -m --x64 --arm64",
     "build:publish:win32": "tsc -p . && electron-builder -p onTagOrDraft -w",
-    "build:publish:linux": "tsc -p . && electron-builder -p onTagOrDraft -l deb"
+    "build:publish:linux": "tsc -p . && electron-builder -p onTagOrDraft -l deb -l AppImage"
   },
   "dependencies": {
     "@alumna/reflect": "^1.1.3",
