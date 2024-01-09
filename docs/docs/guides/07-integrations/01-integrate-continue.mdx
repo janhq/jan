@@ -25,7 +25,7 @@ import TabItem from "@theme/TabItem";
 
 [Continue](https://continue.dev/docs/intro) is an open-source autopilot for VS Code and JetBrains—the easiest way to code with any LLM.
 
-In this guide, we will show you how to integrate Continue with Jan and VSCode, enhancing your coding experience with the power of local AI language model.
+In this guide, we will show you how to integrate Continue with Jan and VSCode, enhancing your coding experience with the power of the local AI language model.
 
 ## Steps to Integrate Continue with Jan and VSCode
 
@@ -85,7 +85,7 @@ Edit the `config.json` file and include the following configuration.
 ```
 
 - Ensure that the `provider` is `openai`.
-- Ensure that the `model` is the same as the one you enabled in Jan API Server.
+- Ensure that the `model` is the same as the one you enabled in the Jan API Server.
 - Ensure that the `apiBase` is `http://localhost:1337`.
 - Ensure that the `apiKey` is `EMPTY`.
 
@@ -97,16 +97,15 @@ Navigate to `Settings` > `Models`. Activate the model that you want to use in Ja
 
 ### 5. Try Out the Integration of Jan and Continue in Vscode
 
-1. Highlight a code, and press `Command + Shift + M`
+#### Asking questions about the code
 
-You will see the **Left Panel** is being opened. Change the Model to use Jan.
+- Highlight a code snippet and press `Command + Shift + M` to open the **Left Panel**.
+- Select Jan at the bottom and ask a question about the code, for example, `Explain this code`.
 
-![Continue Interactions](assets/01-continue-left-panel.png)
+![Continue Interactions](assets/01-continue-ask.png)
 
-Ask a question, and press **Enter**. Example: `Explain this code`
+#### Editing the code with the help of a large language model
 
-2. Highlight a code, and press `Command + Shift + L`
+- Highlight a code snippet and press `Command + Shift + L` and input your edit request, for example, `Write comments for this code`.
 
-![Continue Edit Code](assets/01-continue-edit.png)
-
-Type your edit request, and press **Enter**. Example: `Put comments in the code`
+![Continue Edit Code](assets/01-continue-edit-demo.gif)
