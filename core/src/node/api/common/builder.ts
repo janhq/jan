@@ -1,7 +1,7 @@
 import fs from 'fs'
 import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
-import { Model, ThreadMessage } from './../../../index'
+import { ContentType, MessageStatus, Model, ThreadMessage } from './../../../index'
 
 import fetch from 'node-fetch'
 import { ulid } from 'ulid'
@@ -207,17 +207,27 @@ const generateThreadId = (assistantId: string) => {
 
 export const createMessage = async (threadId: string, message: any) => {
   const threadMessagesFileName = 'messages.jsonl'
-  // TODO: add validation
+
   try {
     const msgId = ulid()
     const createdAt = Date.now()
     const threadMessage: ThreadMessage = {
-      ...message,
       id: msgId,
       thread_id: threadId,
+      status: MessageStatus.Ready,
       created: createdAt,
       updated: createdAt,
       object: 'thread.message',
+      role: message.role,
+      content: [
+        {
+          type: ContentType.Text,
+          text: {
+            value: message.content,
+            annotations: [],
+          },
+        },
+      ],
     }
 
     const threadDirPath = join(path, 'threads', threadId)
@@ -312,8 +322,8 @@ export const chatCompletions = async (request: any, reply: any) => {
     headers['Authorization'] = `Bearer ${apiKey}`
     headers['api-key'] = apiKey
   }
-  console.log(apiUrl)
-  console.log(JSON.stringify(headers))
+  console.debug(apiUrl)
+  console.debug(JSON.stringify(headers))
   const response = await fetch(apiUrl, {
     method: 'POST',
     headers: headers,
