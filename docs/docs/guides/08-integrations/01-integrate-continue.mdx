@@ -1,0 +1,72 @@
+---
+title: Integrate Continue with Jan and VSCode
+slug: /guides/integrations/integrate-continue
+description: Guide to integrate Continue with Jan and VSCode
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    integrate Continue,
+    integrate VSCode,
+  ]
+---
+## Quick Introduction
+
+[Continue](https://continue.dev/docs/intro) is an open-source autopilot for VS Code and JetBrains—the easiest way to code with any LLM.
+
+## Steps to Integrate Continue with Jan and VSCode
+
+### 1. Download & Install [Continue for VSCode](https://continue.dev/docs/quickstart)
+
+### 2. [Enable API Server](../05-using-server/01-server.md) in Jan
+
+### 3. Configure Continue to use Jan's Local Server
+
+```bash
+vim ~/.continue/config.json
+```
+```bash
+{
+  "models": [
+    {
+      "title": "Jan",
+      "provider": "openai",
+      "model": "openhermes-neural-7b",
+      "apiKey": "EMPTY",
+      "apiBase": "http://localhost:1337"
+    }
+  ]
+}
+```
+
+### 4. Make sure the Large Language Models (LLM) that you want to use in Jan is Active
+
+Go to **_Settings, Models_**
+
+![Active Models](assets/01-activate-model.png)
+
+You can **Activate** the Model you want to use in Jan by clicking the **_Three Dots, Start Model_**
+
+![Active Models](assets/01-start-model.png)
+
+### 5. Try out the integration of Jan and Continue in VSCode
+
+1. Highlight a code, and press `Command + Shift + M`
+
+You will see the **Left Panel** is being opened. Change the Model to use Jan.
+
+![Continue Interactions](assets/01-continue-left-panel.png)
+
+Ask a question, and press **Enter**. Example: `Explain this code`
+
+2. Highlight a code, and press `Command + Shift + L`
+
+![Continue Edit Code](assets/01-continue-edit.png)
+
+Type your edit request, and press **Enter**. Example: `Put comments in the code`
