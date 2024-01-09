@@ -28,6 +28,9 @@ on:
       - "node_modules/**"
       - "yarn.lock"
       - "Makefile"
+      - "extensions/**"
+      - "core/**"
+      - "!README.md"
 
 jobs:
   test-on-macos:
