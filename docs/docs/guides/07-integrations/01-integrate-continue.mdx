@@ -1,6 +1,6 @@
 ---
 title: Integrate Continue with Jan and VSCode
-slug: /guides/integrations/integrate-continue
+slug: /guides/integrations/continue
 description: Guide to integrate Continue with Jan and VSCode
 keywords:
   [
@@ -16,21 +16,28 @@ keywords:
     integrate VSCode,
   ]
 ---
+
 ## Quick Introduction
 
 [Continue](https://continue.dev/docs/intro) is an open-source autopilot for VS Code and JetBrains—the easiest way to code with any LLM.
+In this guide, we will show you how to integrate Continue with Jan and VSCode.
 
 ## Steps to Integrate Continue with Jan and VSCode
 
-### 1. Download & Install [Continue for VSCode](https://continue.dev/docs/quickstart)
+### 1. Install Continue for VSCode
 
-### 2. [Enable API Server](../05-using-server/01-server.md) in Jan
+You need to install Continue for VSCode. You can follow this [guide to install Continue for VSCode](https://continue.dev/docs/quickstart)
+
+### 2. Enable Jan API Server
+
+To configure the Continue to use Jan's Local Server, you need to enable Jan API Server with your preferred model, please follow this [guide to enable Jan API Server](../05-using-server/01-server.md)
 
 ### 3. Configure Continue to use Jan's Local Server
 
 ```bash
 vim ~/.continue/config.json
 ```
+
 ```bash
 {
   "models": [
