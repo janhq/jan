@@ -22,10 +22,15 @@ const systemsTemplate = [
     fileFormat: "{appname}-win-x64-{tag}.exe",
   },
   {
-    name: "Download for Linux",
+    name: "Download for Linux (AppImage)",
+    logo: FaLinux,
+    fileFormat: "{appname}-linux-x86_64-{tag}.AppImage",
+  },
+  {
+    name: "Download for Linux (deb)",
     logo: FaLinux,
     fileFormat: "{appname}-linux-amd64-{tag}.deb",
-  },
+  }
 ];
 
 function classNames(...classes) {
@@ -49,7 +54,7 @@ export default function Dropdown() {
 
   const extractAppName = (fileName) => {
     // Extract appname using a regex that matches the provided file formats
-    const regex = /^(.*?)-(?:mac|win|linux)-(?:arm64|x64|amd64)-.*$/;
+    const regex = /^(.*?)-(?:mac|win|linux)-(?:arm64|x64|x86_64|amd64)-.*$/;
     const match = fileName.match(regex);
     return match ? match[1] : null;
   };
