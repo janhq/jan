@@ -103,14 +103,6 @@ We balance technical invention with the search for a sustainable business model.
 
 **We invite you to join us on our journey to find PMF**. Join our [Discord here](https://discord.gg/BnHRr3Q7Ms)
 
-### Revenue
-
-❌ Features centering on user compute & data should remain free. See [analytics](#analytics-philosophy).
-
-✅ Features incurring opex on Jan could be monetized, e.g. custom solutions, hosted APIs
-
-Join our strategic discussions [here](https://github.com/janhq/jan/discussions).
-
 ### Analytics
 
 Adhering to Jan's privacy preserving philosophy, our analytics philosophy is to get `barely-enough-to-function`.
