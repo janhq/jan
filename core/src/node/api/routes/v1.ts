@@ -1,5 +1,9 @@
 import { HttpServer } from '../HttpServer'
-import { commonRouter, threadRouter, fsRouter, extensionRouter, downloadRouter } from './index'
+import { commonRouter } from './common'
+import { threadRouter } from './thread'
+import { fsRouter } from './fs'
+import { extensionRouter } from './extension'
+import { downloadRouter } from './download'
 
 export const v1Router = async (app: HttpServer) => {
   // MARK: External Routes

@@ -20,6 +20,7 @@ import {
   fs,
   Model,
   joinPath,
+  log,
 } from "@janhq/core";
 import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
@@ -254,6 +255,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
         message.content = [messageContent];
         message.status = MessageStatus.Ready;
         events.emit(EventName.OnMessageUpdate, message);
+        log(`[APP]::Error: ${err.message}`);
       },
     });
   }

@@ -12,6 +12,7 @@ export enum AppRoute {
   baseName = 'baseName',
   startServer = 'startServer',
   stopServer = 'stopServer',
+  log = 'log'
 }
 
 export enum AppEvent {

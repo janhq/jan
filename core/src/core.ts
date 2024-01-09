@@ -77,13 +77,12 @@ const openExternalUrl: (url: string) => Promise<any> = (url) =>
 const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
 
 /**
- * Gets the file's stats.
+ * Log to file from browser processes.
  *
- * @param path - The path to the file.
- * @returns {Promise<FileStat>} - A promise that resolves with the file's stats.
+ * @param message - Message to log.
  */
-const fileStat: (path: string) => Promise<FileStat | undefined> = (path) =>
-  global.core.api?.fileStat(path)
+const log: (message: string, fileName?: string) => void = (message, fileName) =>
+  global.core.api?.log(message, fileName)
 
 /**
  * Register extension point function type definition
@@ -108,5 +107,6 @@ export {
   joinPath,
   openExternalUrl,
   baseName,
-  fileStat,
+  log,
+  FileStat
 }

@@ -7,7 +7,7 @@ import { createUserSpace } from './utils/path'
  * Managers
  **/
 import { WindowManager } from './managers/window'
-import { ExtensionManager, ModuleManager } from '@janhq/core/node'
+import { ModuleManager } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -18,14 +18,19 @@ import { handleFileMangerIPCs } from './handlers/fileManager'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
+
+/**
+ * Utils
+ **/
 import { migrateExtensions } from './utils/migration'
 import { dispose } from './utils/disposable'
+import { setupExtensions } from './utils/extension'
 
 app
   .whenReady()
   .then(createUserSpace)
   .then(migrateExtensions)
-  .then(ExtensionManager.instance.setupExtensions)
+  .then(setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)

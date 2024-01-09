@@ -50,6 +50,7 @@
   "bundleDependencies": [
     "tcp-port-used",
     "fetch-retry",
-    "os-utils"
+    "os-utils",
+    "@janhq/core"
   ]
 }

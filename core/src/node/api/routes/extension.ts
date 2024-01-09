@@ -1,12 +1,10 @@
 import { join, extname } from 'path'
-import { ExtensionRoute } from '../../../api'
-import {
-  userSpacePath,
-  ModuleManager,
-  getActiveExtensions,
-  installExtensions,
-  HttpServer,
-} from '../../index'
+import { ExtensionRoute } from '../../../api/index'
+import { userSpacePath } from '../../extension/manager'
+import { ModuleManager } from '../../module'
+import { getActiveExtensions, installExtensions } from '../../extension/store'
+import { HttpServer } from '../HttpServer'
+
 import { readdirSync } from 'fs'
 
 export const extensionRouter = async (app: HttpServer) => {

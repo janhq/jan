@@ -1,3 +1,5 @@
+import { FileStat } from "./types"
+
 /**
  * Writes data to a file at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the file is written successfully.
@@ -58,6 +60,17 @@ const syncFile: (src: string, dest: string) => Promise<any> = (src, dest) =>
  */
 const copyFileSync = (...args: any[]) => global.core.api?.copyFileSync(...args)
 
+
+/**
+ * Gets the file's stats.
+ *
+ * @param path - The path to the file.
+ * @returns {Promise<FileStat>} - A promise that resolves with the file's stats.
+ */
+const fileStat: (path: string) => Promise<FileStat | undefined> = (path) =>
+  global.core.api?.fileStat(path)
+
+
 // TODO: Export `dummy` fs functions automatically
 // Currently adding these manually
 export const fs = {
@@ -71,4 +84,5 @@ export const fs = {
   appendFileSync,
   copyFileSync,
   syncFile,
+  fileStat
 }

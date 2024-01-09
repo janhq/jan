@@ -1,4 +1,3 @@
-import { Request } from "request";
 
 /**
  * Manages file downloads and network requests.
@@ -18,7 +17,7 @@ export class DownloadManager {
    * @param {string} fileName - The name of the file.
    * @param {Request | undefined} request - The network request to set, or undefined to clear the request.
    */
-  setRequest(fileName: string, request: Request | undefined) {
+  setRequest(fileName: string, request: any | undefined) {
     this.networkRequests[fileName] = request;
   }
 }

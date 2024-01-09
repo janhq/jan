@@ -1,10 +1,9 @@
 import { DownloadRoute } from '../../../api'
 import { join } from 'path'
-import { userSpacePath, DownloadManager, HttpServer } from '../../index'
+import { userSpacePath } from '../../extension/manager'
+import { DownloadManager } from '../../download'
+import { HttpServer } from '../HttpServer'
 import { createWriteStream } from 'fs'
-
-const request = require('request')
-const progress = require('request-progress')
 
 export const downloadRouter = async (app: HttpServer) => {
   app.post(`/${DownloadRoute.downloadFile}`, async (req, res) => {
@@ -19,6 +18,9 @@ export const downloadRouter = async (app: HttpServer) => {
     const localPath = normalizedArgs[1]
     const fileName = localPath.split('/').pop() ?? ''
 
+    const request = require('request')
+    const progress = require('request-progress')
+    
     const rq = request(normalizedArgs[0])
     progress(rq, {})
       .on('progress', function (state: any) {

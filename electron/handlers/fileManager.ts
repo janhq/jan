@@ -6,7 +6,7 @@ import { FileManagerRoute } from '@janhq/core'
 import { userSpacePath, getResourcePath } from './../utils/path'
 import fs from 'fs'
 import { join } from 'path'
-import { FileStat } from '@janhq/core/.'
+import { FileStat } from '@janhq/core'
 
 /**
  * Handles file system extensions operations.

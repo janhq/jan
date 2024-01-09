@@ -9,12 +9,13 @@ dotenv.config();
 
 const JAN_API_HOST = process.env.JAN_API_HOST || "127.0.0.1";
 const JAN_API_PORT = Number.parseInt(process.env.JAN_API_PORT || "1337");
-const serverLogPath = path.join(os.homedir(), "jan", "server.log");
+const serverLogPath = path.join(os.homedir(), "jan", "logs", "server.log");
 
 let server: any | undefined = undefined;
 
 export const startServer = async (schemaPath?: string, baseDir?: string) => {
   try {
+    log(`[API]::Debug: Starting JAN API server...`, "server.log")
     server = fastify({
       logger: {
         level: "info",
@@ -62,17 +63,18 @@ export const startServer = async (schemaPath?: string, baseDir?: string) => {
         host: JAN_API_HOST,
       })
       .then(() => {
-        log(`JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`);
+        log(`[API]::Debug: JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`);
       });
   } catch (e) {
-    log(e);
+    log(`[API]::Error: ${e}`);
   }
 };
 
 export const stopServer = async () => {
   try {
+    log(`[API]::Debug: Server stopped`, "server.log")
     await server.close();
   } catch (e) {
-    log(e);
+    log(`[API]::Error: ${e}`);
   }
 };
