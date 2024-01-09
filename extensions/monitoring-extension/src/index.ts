@@ -26,14 +26,6 @@ export default class JanMonitoringExtension implements MonitoringExtension {
   onUnload(): void {}
 
   /**
-   * Returns information about the system resources.
-   * @returns A Promise that resolves to an object containing information about the system resources.
-   */
-  getResourcesInfo(): Promise<any> {
-    return executeOnMain(MODULE, "getResourcesInfo");
-  }
-
-  /**
    * Returns information about the current system load.
    * @returns A Promise that resolves to an object containing information about the current system load.
    */

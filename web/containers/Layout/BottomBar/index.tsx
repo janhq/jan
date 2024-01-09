@@ -47,7 +47,7 @@ const menuLinks = [
 
 const BottomBar = () => {
   const { activeModel, stateModel } = useActiveModel()
-  const { ram, cpu } = useGetSystemResources()
+  const { ram, cpu, nvidiaGpuUtilization, nvidiaVramUtilization } = useGetSystemResources()
   const progress = useAtomValue(appDownloadProgress)
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
@@ -113,6 +113,12 @@ const BottomBar = () => {
         <div className="flex items-center gap-x-2">
           <SystemItem name="CPU:" value={`${cpu}%`} />
           <SystemItem name="Mem:" value={`${ram}%`} />
+          {nvidiaGpuUtilization || nvidiaVramUtilization ? (
+            <div>
+              <SystemItem name="N-GPU:" value={`${nvidiaGpuUtilization}%`} />
+              <SystemItem name="N-VRAM:" value={`${nvidiaVramUtilization}%`} />
+            </div>
+          ) : ""}
         </div>
         {/* VERSION is defined by webpack, please see next.config.js */}
         <span className="text-xs text-muted-foreground">

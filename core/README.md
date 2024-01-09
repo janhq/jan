@@ -8,10 +8,10 @@
 
 ```js
 // javascript
-const core = require("@janhq/core");
+const core = require('@janhq/core')
 
 // typescript
-import * as core from "@janhq/core";
+import * as core from '@janhq/core'
 ```
 
 ### Register Plugin Extensions
@@ -43,10 +43,10 @@ The Core API allows you to interact with local data storage. Here are a couple o
 You can use the store.insertOne function to insert data into a specific collection in the local data store.
 
 ```js
-import { store } from "@janhq/core";
+import { store } from '@janhq/core'
 
 function insertData() {
-  store.insertOne("conversations", { name: "meow" });
+  store.insertOne('conversations', { name: 'meow' })
   // Insert a new document with { name: "meow" } into the "conversations" collection.
 }
 ```
@@ -59,11 +59,11 @@ store.getOne(collectionName, key) retrieves a single document that matches the p
 store.getMany(collectionName, selector, sort) retrieves multiple documents that match the provided selector in the specified collection.
 
 ```js
-import { store } from "@janhq/core";
+import { store } from '@janhq/core'
 
 function getData() {
-  const selector = { name: "meow" };
-  const data = store.findMany("conversations", selector);
+  const selector = { name: 'meow' }
+  const data = store.findMany('conversations', selector)
   // Retrieve documents from the "conversations" collection that match the filter.
 }
 ```
@@ -77,9 +77,9 @@ store.updateMany(collectionName, selector, update) updates multiple documents th
 
 ```js
 function updateData() {
-  const selector = { name: "meow" };
-  const update = { name: "newName" };
-  store.updateOne("conversations", selector, update);
+  const selector = { name: 'meow' }
+  const update = { name: 'newName' }
+  store.updateOne('conversations', selector, update)
   // Update a document in the "conversations" collection.
 }
 ```
@@ -93,8 +93,8 @@ store.deleteMany(collectionName, selector) deletes multiple documents that match
 
 ```js
 function deleteData() {
-  const selector = { name: "meow" };
-  store.deleteOne("conversations", selector);
+  const selector = { name: 'meow' }
+  store.deleteOne('conversations', selector)
   // Delete a document from the "conversations" collection.
 }
 ```
@@ -186,7 +186,7 @@ In your main entry code (e.g., `index.ts`), start by importing the necessary mod
 
 ```js
 // index.ts
-import * as core from "@janhq/core";
+import * as core from '@janhq/core'
 ```
 
 #### Perform File Operations
@@ -223,7 +223,7 @@ In your main process code (e.g., `index.ts`), start by importing the `core` obje
 
 ```js
 // index.ts
-import * as core from "@janhq/core";
+import * as core from '@janhq/core'
 ```
 
 ##### Define the Module Path
@@ -232,7 +232,7 @@ Specify the path to the plugin module you want to execute. This path should lead
 
 ```js
 // index.ts
-const MODULE_PATH = "data-plugin/dist/module.js";
+const MODULE_PATH = 'data-plugin/dist/module.js'
 ```
 
 ##### Define the Function to Execute
@@ -335,7 +335,6 @@ The `PreferenceService` enum provides methods for managing plugin preferences:
 
 The `SystemMonitoringService` enum includes methods for monitoring system resources:
 
-- `GetResourcesInfo`: Gets information about system resources.
 - `GetCurrentLoad`: Gets the current system load.
 
 ## PluginService

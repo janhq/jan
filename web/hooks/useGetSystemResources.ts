@@ -8,6 +8,8 @@ import { useSetAtom } from 'jotai'
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
   cpuUsageAtom,
+  nvidiaTotalVramAtom,
+  nvidiaUtilizationVramAtom,
   totalRamAtom,
   usedRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
@@ -15,9 +17,16 @@ import {
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
   const [cpu, setCPU] = useState<number>(0)
+  const [nvidiaGpuUtilization, setNvidiaGpuUtilization] = useState<number>(0)
+  const [nvidiaVramUtilization, setNvidiaVramUtilization] = useState<number>(0)
+
   const setTotalRam = useSetAtom(totalRamAtom)
   const setUsedRam = useSetAtom(usedRamAtom)
+
   const setCpuUsage = useSetAtom(cpuUsageAtom)
+
+  const setTotalNvidiaVram = useSetAtom(nvidiaTotalVramAtom)
+  const setUtilizationNvidiaVram = useSetAtom(nvidiaUtilizationVramAtom)
 
   const getSystemResources = async () => {
     if (
@@ -28,19 +37,31 @@ export default function useGetSystemResources() {
     const monitoring = extensionManager.get<MonitoringExtension>(
       ExtensionType.SystemMonitoring
     )
-    const resourceInfor = await monitoring?.getResourcesInfo()
     const currentLoadInfor = await monitoring?.getCurrentLoad()
 
     const ram =
-      (resourceInfor?.mem?.usedMemory ?? 0) /
-      (resourceInfor?.mem?.totalMemory ?? 1)
-    if (resourceInfor?.mem?.usedMemory) setUsedRam(resourceInfor.mem.usedMemory)
-    if (resourceInfor?.mem?.totalMemory)
-      setTotalRam(resourceInfor.mem.totalMemory)
+      (currentLoadInfor?.mem?.usedMemory ?? 0) /
+      (currentLoadInfor?.mem?.totalMemory ?? 1)
+    if (currentLoadInfor?.mem?.usedMemory)
+      setUsedRam(currentLoadInfor.mem.usedMemory)
+    if (currentLoadInfor?.mem?.totalMemory)
+      setTotalRam(currentLoadInfor.mem.totalMemory)
+    if (currentLoadInfor?.nvidia?.vram_total)
+      setTotalNvidiaVram(currentLoadInfor.nvidia.vram_total)
+    if (currentLoadInfor?.nvidia?.vram_utilization)
+      setUtilizationNvidiaVram(currentLoadInfor.nvidia.vram_utilization)
 
     setRam(Math.round(ram * 100))
+
     setCPU(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
     setCpuUsage(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
+
+    setNvidiaGpuUtilization(
+      Math.round(currentLoadInfor?.nvidia?.gpu_utilization ?? 0)
+    )
+    setNvidiaVramUtilization(
+      Math.round(currentLoadInfor?.nvidia?.vram_utilization ?? 0)
+    )
   }
 
   useEffect(() => {
@@ -62,5 +83,7 @@ export default function useGetSystemResources() {
     totalRamAtom,
     ram,
     cpu,
+    nvidiaGpuUtilization,
+    nvidiaVramUtilization,
   }
 }
