@@ -173,7 +173,7 @@ To reset your installation:
   - To enable GPU support:
     - Nvidia GPU with CUDA Toolkit 11.7 or higher
     - Nvidia driver 470.63.01 or higher
-Linux:
+- Linux:
   - glibc 2.27 or higher (check with `ldd --version`)
   - gcc 11, g++ 11, cpp 11 or higher, refer to this [link](https://jan.ai/guides/troubleshooting/gpu-not-used/#specific-requirements-for-linux) for more information
   - To enable GPU support:
