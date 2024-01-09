@@ -2,7 +2,6 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { setupMenu } from './utils/menu'
 import { createUserSpace } from './utils/path'
-
 /**
  * Managers
  **/
@@ -19,7 +18,7 @@ import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
 import { migrateExtensions } from './utils/migration'
-import { dispose } from './utils/disposable'
+import { cleanUpAndQuit } from './utils/clean'
 
 app
   .whenReady()
@@ -89,12 +88,10 @@ function handleIPCs() {
   handleFileMangerIPCs()
 }
 
-function cleanUpAndQuit() {
-  if (!ModuleManager.instance.cleaningResource) {
-    ModuleManager.instance.cleaningResource = true
-    WindowManager.instance.currentWindow?.destroy()
-    dispose(ModuleManager.instance.requiredModules)
-    ModuleManager.instance.clearImportedModules()
-    app.quit()
-  }
-}
+/*
+** Suppress Node error messages
+*/
+process.on('uncaughtException', function (err) {
+  // TODO: Write error to log file in #1447
+  console.error(err)
+})
