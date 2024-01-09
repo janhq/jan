@@ -21,10 +21,34 @@ keywords:
 
 Jan is available for download via our homepage, [https://jan.ai](https://jan.ai/).
 
-For Linux, the download should be available as a `.deb` file in the following format.
+For Linux, the download should be available as a `.AppImage` file or a `.deb` file in the following format.
 
 ```bash
+# AppImage
+jan-linux-x86_64-{version}.AppImage
+
+# Debian Linux distribution
 jan-linux-amd64-{version}.deb
+```
+
+To install Jan on Linux, you should use your package manager's install or `dpkg``. For Debian/Ubuntu-based distributions, you can install Jan using the following command:
+
+```bash
+# Install Jan using dpkg
+sudo dpkg -i jan-linux-amd64-{version}.deb
+
+# Install Jan using apt-get
+sudo apt-get install ./jan-linux-amd64-{version}.deb
+# where jan-linux-amd64-{version}.deb is path to the Jan package
+```
+
+For other Linux distributions, you launch the AppImage file without installation. To do so, you need to make the AppImage file executable and then run it. You can do this either through your file manager's properties dialog or with the following commands:
+
+```bash
+# Install Jan using AppImage
+chmod +x jan-linux-x86_64-{version}.AppImage
+./jan-linux-x86_64-{version}.AppImage
+# where jan-linux-x86_64-{version}.AppImage is path to the Jan package
 ```
 
 The typical installation process takes around a minute.
@@ -38,6 +62,10 @@ Within the Releases' assets, you will find the following files for Linux:
 ```bash
 # Debian Linux distribution
 jan-linux-amd64-{version}.deb
+
+# AppImage
+jan-linux-x86_64-{version}.AppImage
+```
 ```
 
 ## Uninstall Jan
@@ -48,5 +76,7 @@ To uninstall Jan on Linux, you should use your package manager's uninstall or re
 sudo apt-get remove jan
 # where jan is the name of Jan package
 ```
+
+For other Linux distributions, if you installed Jan via the `.AppImage` file, you can uninstall Jan by deleting the `.AppImage` file.
 
 In case you wish to completely remove all user data associated with Jan after uninstallation, you can delete the user data folders located at ~/jan. This will return your system to its state prior to the installation of Jan. This method can also be used to reset all settings if you are experiencing any issues with Jan.

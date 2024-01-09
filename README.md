@@ -61,13 +61,13 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-linux-x86_64-0.4.4.AppImage'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-linux-amd64-0.4.4.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.3/jan-linux-x86_64-0.4.3.AppImage'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-linux-x86_64-0.4.4.AppImage'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
@@ -165,6 +165,20 @@ To reset your installation:
    - Delete Jan extension from your `~/jan/extensions` folder
    - Delete all `node_modules` in current folder
    - Clear Application cache in `~/Library/Caches/jan`
+
+## Requirements for running Jan
+- MacOS: 13 or higher
+- Windows:
+  - Windows 10 or higher
+  - To enable GPU support:
+    - Nvidia GPU with CUDA Toolkit 11.7 or higher
+    - Nvidia driver 470.63.01 or higher
+Linux:
+  - glibc 2.27 or higher (check with `ldd --version`)
+  - gcc 11, g++ 11, cpp 11 or higher, refer to this [link](https://jan.ai/guides/troubleshooting/gpu-not-used/#specific-requirements-for-linux) for more information
+  - To enable GPU support:
+    - Nvidia GPU with CUDA Toolkit 11.7 or higher
+    - Nvidia driver 470.63.01 or higher
 
 ## Contributing
 
