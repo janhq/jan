@@ -69,6 +69,10 @@ const config = {
             from: "/troubleshooting/failed-to-fetch",
             to: "/troubleshooting/somethings-amiss",
           },
+          {
+            from: "/guides/troubleshooting/gpu-not-used/",
+            to: "/troubleshooting/gpu-not-used",
+          },
         ],
       },
     ],
