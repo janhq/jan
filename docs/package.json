@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@docusaurus/core": "^3.0.0",
+    "@docusaurus/plugin-client-redirects": "^3.1.0",
     "@docusaurus/plugin-content-docs": "^3.0.0",
     "@docusaurus/preset-classic": "^3.0.0",
     "@docusaurus/theme-live-codeblock": "^3.0.0",

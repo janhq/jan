@@ -61,6 +61,17 @@ const config = {
         enableInDevelopment: false, // optional
       },
     ],
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        redirects: [
+          {
+            from: "troubleshooting/failed-to-fetch",
+            to: "troubleshooting/somethings-amiss",
+          },
+        ],
+      },
+    ],
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
