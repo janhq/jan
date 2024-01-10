@@ -53,6 +53,8 @@ export default [
       'crypto',
       'url',
       'http',
+      'os',
+      'util'
     ],
     watch: {
       include: 'src/node/**',

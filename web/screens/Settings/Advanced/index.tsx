@@ -3,6 +3,7 @@
 
 import { useContext, useEffect, useState } from 'react'
 
+import { fs } from '@janhq/core'
 import {
   Switch,
   Button,
@@ -20,6 +21,7 @@ import ShortCut from '@/containers/Shortcut'
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useSettings } from '@/hooks/useSettings'
+import { toaster } from '@/containers/Toast'
 
 const serverEnabledAtom = atom<boolean>(false)
 
@@ -36,6 +38,16 @@ const Advanced = () => {
       setGpuEnabled(settings.run_mode === 'gpu')
     })
   }, [])
+
+  const clearLogs = async () => {
+    if (await fs.existsSync(`file://logs`)) {
+      await fs.rmdirSync(`file://logs`, { recursive: true })
+    }
+    toaster({
+      title: 'Logs cleared',
+      description: 'All logs have been cleared.',
+    })
+  }
 
   return (
     <div className="block w-full">
@@ -137,6 +149,19 @@ const Advanced = () => {
           </Button>
         </div>
       )}
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">Clear logs</h6>
+          </div>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            Clear all logs from Jan app.
+          </p>
+        </div>
+        <Button size="sm" themes="secondary" onClick={clearLogs}>
+          Clear
+        </Button>
+      </div>
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="w-4/5 flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">

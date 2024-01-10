@@ -22,6 +22,7 @@ module.exports = {
         process.env.INFERENCE_URL ||
           "http://127.0.0.1:3928/inferences/llamacpp/chat_completion"
       ),
+      TROUBLESHOOTING_URL: JSON.stringify("https://jan.ai/guides/troubleshooting")
     }),
   ],
   output: {
