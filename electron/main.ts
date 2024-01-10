@@ -6,7 +6,7 @@ import { createUserSpace } from './utils/path'
  * Managers
  **/
 import { WindowManager } from './managers/window'
-import { ModuleManager } from '@janhq/core/node'
+import { log, ModuleManager } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -98,5 +98,5 @@ function handleIPCs() {
 */
 process.on('uncaughtException', function (err) {
   // TODO: Write error to log file in #1447
-  console.error(err)
+  log(`Error: ${err}`)
 })
