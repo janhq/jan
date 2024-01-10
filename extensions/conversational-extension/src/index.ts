@@ -128,19 +128,19 @@ export default class JSONConversationalExtension
       if (!(await fs.existsSync(threadDirPath)))
         await fs.mkdirSync(threadDirPath)
       if (message.content[0].type === 'image') {
-        const filesPath = join(threadDirPath, 'files')
-        await fs.mkdir(filesPath)
+        const filesPath = await joinPath([threadDirPath, 'files'])
+        await fs.mkdirSync(filesPath)
 
-        const imagePath = join(filesPath, `${message.id}.png`)
+        const imagePath = await joinPath([filesPath, `${message.id}.png`])
         const base64 = message.content[0].text.annotations[0]
         await this.storeImage(base64, imagePath)
       }
 
       if (message.content[0].type === 'pdf') {
-        const filesPath = join(threadDirPath, 'files')
-        await fs.mkdir(filesPath)
+        const filesPath = await joinPath([threadDirPath, 'files'])
+        await fs.mkdirSync(filesPath)
 
-        const filePath = join(filesPath, `${message.id}.pdf`)
+        const filePath = await joinPath([filesPath, `${message.id}.pdf`])
         const blob = message.content[0].text.annotations[0]
         await this.storeFile(blob, filePath)
       }
