@@ -66,8 +66,8 @@ const config = {
       {
         redirects: [
           {
-            from: "troubleshooting/failed-to-fetch",
-            to: "troubleshooting/somethings-amiss",
+            from: "/troubleshooting/failed-to-fetch",
+            to: "/troubleshooting/somethings-amiss",
           },
         ],
       },
