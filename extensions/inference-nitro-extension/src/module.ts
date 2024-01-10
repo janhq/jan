@@ -43,6 +43,8 @@ let subprocess = undefined;
 let currentModelFile: string = undefined;
 let currentSettings = undefined;
 
+let nitroProcessInfo = undefined;
+
 /**
  * Stops a Nitro subprocess.
  * @param wrapper - The model wrapper.
@@ -80,7 +82,7 @@ async function updateNvidiaDriverInfo(): Promise<void> {
   );
 }
 
-function checkFileExistenceInPaths(file: string, paths: string[]): boolean {
+function isExists(file: string, paths: string[]): boolean {
   return paths.some((p) => existsSync(path.join(p, file)));
 }
 
@@ -104,12 +106,12 @@ function updateCudaExistence() {
   }
 
   let cudaExists = filesCuda12.every(
-    (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
+    (file) => existsSync(file) || isExists(file, paths)
   );
 
   if (!cudaExists) {
     cudaExists = filesCuda11.every(
-      (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
+      (file) => existsSync(file) || isExists(file, paths)
     );
     if (cudaExists) {
       cudaVersion = "11";
@@ -461,7 +463,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
 function getResourcesInfo(): Promise<ResourcesInfo> {
   return new Promise(async (resolve) => {
     const cpu = await osUtils.cpuCount();
-    console.log("cpu: ", cpu);
+    console.debug("cpu: ", cpu);
     const response: ResourcesInfo = {
       numCpuPhysicalCore: cpu,
       memAvailable: 0,
@@ -469,6 +471,13 @@ function getResourcesInfo(): Promise<ResourcesInfo> {
     resolve(response);
   });
 }
+
+const getCurrentNitroProcessInfo = (): Promise<any> => {
+  nitroProcessInfo = {
+    isRunning: subprocess != null,
+  };
+  return nitroProcessInfo;
+};
 
 function dispose() {
   // clean other registered resources here
@@ -481,4 +490,5 @@ module.exports = {
   killSubprocess,
   dispose,
   updateNvidiaInfo,
+  getCurrentNitroProcessInfo,
 };

@@ -8,8 +8,8 @@ import {
   ExtensionType,
   MessageStatus,
   Model,
+  ConversationalExtension,
 } from '@janhq/core'
-import { ConversationalExtension } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
@@ -64,14 +64,10 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     }))
   }
 
-  async function handleModelStopped(model: Model) {
+  async function handleModelStopped() {
     setTimeout(async () => {
       setActiveModel(undefined)
       setStateModel({ state: 'start', loading: false, model: '' })
-      // toaster({
-      //   title: 'Success!',
-      //   description: `Model ${model.id} has been stopped.`,
-      // })
     }, 500)
   }
 
