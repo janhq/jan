@@ -14,6 +14,7 @@ import ModalCancelDownload from '@/containers/ModalCancelDownload'
 
 import { MainViewState } from '@/constants/screens'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
@@ -83,9 +84,11 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
     downloadButton = <ModalCancelDownload model={model} />
   }
 
+  const { activeModel } = useActiveModel()
+
   const getLabel = (size: number) => {
     const minimumRamModel = size * 1.25
-    const availableRam = totalRam - usedRam
+    const availableRam = totalRam - usedRam + (activeModel?.metadata.size ?? 0)
 
     if (minimumRamModel > totalRam) {
       return (
