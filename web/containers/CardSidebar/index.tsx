@@ -5,12 +5,10 @@ import {
   ChevronDownIcon,
   MoreVerticalIcon,
   FolderOpenIcon,
-  Code2Icon,
   PencilIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
 import { useClickOutside } from '@/hooks/useClickOutside'
 
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
@@ -33,16 +31,15 @@ export default function CardSidebar({
   const [more, setMore] = useState(false)
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
-  const { activeModel } = useActiveModel()
   const activeThread = useAtomValue(activeThreadAtom)
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
   let openFolderTitle: string = 'Open Containing Folder'
   if (isMac) {
-    openFolderTitle = 'Reveal in Finder'
+    openFolderTitle = 'Show in Finder'
   } else if (isWindows) {
-    openFolderTitle = 'Reveal in File Explorer'
+    openFolderTitle = 'Show in File Explorer'
   }
 
   return (
@@ -108,7 +105,7 @@ export default function CardSidebar({
                 {title === 'Model' ? (
                   <div className="flex flex-col">
                     <span className="font-medium text-black dark:text-muted-foreground">
-                      Show in Finder
+                      {openFolderTitle}
                     </span>
                     <span className="mt-1 text-muted-foreground">
                       Opens thread.json. Changes affect this thread only.
