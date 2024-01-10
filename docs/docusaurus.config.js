@@ -61,6 +61,21 @@ const config = {
         enableInDevelopment: false, // optional
       },
     ],
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        redirects: [
+          {
+            from: "/troubleshooting/failed-to-fetch",
+            to: "/troubleshooting/somethings-amiss",
+          },
+          {
+            from: "/guides/troubleshooting/gpu-not-used/",
+            to: "/troubleshooting/gpu-not-used",
+          },
+        ],
+      },
+    ],
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
