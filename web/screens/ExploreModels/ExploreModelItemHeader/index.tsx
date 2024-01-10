@@ -23,6 +23,8 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGibibytes } from '@/utils/converter'
 
+import { totalRamAtom, usedRamAtom } from '@/helpers/atoms/SystemBar.atom'
+
 type Props = {
   model: Model
   onClick: () => void
@@ -34,6 +36,8 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const { downloadedModels } = useGetDownloadedModels()
   const { modelDownloadStateAtom, downloadStates } = useDownloadState()
   const { requestCreateNewThread } = useCreateNewThread()
+  const totalRam = useAtomValue(totalRamAtom)
+  const usedRam = useAtomValue(usedRamAtom)
 
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[model.id]),
@@ -79,6 +83,33 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
     downloadButton = <ModalCancelDownload model={model} />
   }
 
+  const getLabel = (size: number) => {
+    const minimumRamModel = size * 1.25
+    const availableRam = totalRam - usedRam
+
+    if (minimumRamModel > totalRam) {
+      return (
+        <Badge className="rounded-md bg-red-500 text-white">
+          Not enough RAM
+        </Badge>
+      )
+    }
+    if (minimumRamModel < availableRam) {
+      return (
+        <Badge className="rounded-md bg-green-500 text-white">
+          Recommended
+        </Badge>
+      )
+    }
+    if (minimumRamModel < totalRam && minimumRamModel > availableRam) {
+      return (
+        <Badge className="rounded-md bg-yellow-500 text-white">
+          Slow on your device
+        </Badge>
+      )
+    }
+  }
+
   return (
     <div
       className="cursor-pointer rounded-t-md bg-background"
@@ -101,19 +132,8 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
           <span className="mr-4 font-semibold text-muted-foreground">
             {toGibibytes(model.metadata.size)}
           </span>
-          {model.metadata.size && (
-            <>
-              <Badge className="rounded-md bg-green-500 text-white">
-                Recommended
-              </Badge>
-              <Badge className="rounded-md bg-yellow-500 text-white">
-                Slow on your device
-              </Badge>
-              <Badge className="rounded-md bg-red-500 text-white">
-                Not enough RAM
-              </Badge>
-            </>
-          )}
+          {getLabel(model.metadata.size)}
+
           {downloadButton}
           <ChevronDownIcon
             className={twMerge(
