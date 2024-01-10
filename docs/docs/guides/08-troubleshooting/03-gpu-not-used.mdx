@@ -21,7 +21,7 @@ This guide provides steps to troubleshoot and resolve issues when Jan app does n
 
 ### NVIDIA Driver
 
-Ensure that you have installed the NVIDIA driver that supports CUDA 11.7 or higher. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+Ensure that you have installed the NVIDIA driver that supports CUDA 11.4 or higher. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
 
 To verify, open PowerShell or Terminal and enter the following command:
 
@@ -33,7 +33,7 @@ If you see a result similar to the following, you have successfully installed th
 
 ```bash
 +-----------------------------------------------------------------------------+
-| NVIDIA-SMI 470.57.02    Driver Version: 470.57.02    CUDA Version: 11.7     |
+| NVIDIA-SMI 470.57.02    Driver Version: 470.57.02    CUDA Version: 11.4     |
 |-------------------------------+----------------------+----------------------+
 | GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
 | Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
@@ -60,7 +60,7 @@ If you see a result similar to the following, you have successfully installed CU
 ```bash
 nvcc: NVIDIA (R) Cuda compiler driver
 
-Cuda compilation tools, release 11.7, V11.7.100
+Cuda compilation tools, release 11.4, V11.7.100
 Build cuda_11.7.r11.7/compiler.30033411_0
 ```
 
@@ -91,11 +91,11 @@ g++ --version
 **Post-Installation Actions**: You must add the `.so` libraries of CUDA to the `LD_LIBRARY_PATH` environment variable by following the [Post-installation Actions instruction](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions).
 
 ```bash
-# Example for ubuntu with CUDA 11.7
+# Example for ubuntu with CUDA 11.4
 sudo nano /etc/environment
-# Add /usr/local/cuda-11.7/bin to the PATH environment variable - the first line
+# Add /usr/local/cuda-11.4/bin to the PATH environment variable - the first line
 # Add the following line to the end of the file
-LD_LIBRARY_PATH=/usr/local/cuda-11.7/lib64
+LD_LIBRARY_PATH=/usr/local/cuda-11.4/lib64
 
 # Save and exit
 # Restart your computer or log out and log in again, the changes will take effect
@@ -111,7 +111,7 @@ If you find that GPU mode is available but not enabled by default, consider the 
 
 :::tip
 
-1. Check if you have installed the NVIDIA driver that supports CUDA 11.7 or higher. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+1. Check if you have installed the NVIDIA driver that supports CUDA 11.4 or higher. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
 
 2. Ensure that the CUDA toolkit is installed and compatible with your NVIDIA driver. For a detailed of CUDA compatibility, please refer [here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
 
