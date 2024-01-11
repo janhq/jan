@@ -42,7 +42,9 @@ export default function useUpdateModelParameters() {
     }
     const updatedModelParams: ModelParams = {
       ...activeModelParams,
-      [name]: value,
+      // Explicitly set the value to an array if the name is 'stop'
+      // This is because the inference engine would only accept an array for the 'stop' parameter
+      [name]: name === 'stop' ? (value === '' ? [] : [value]) : value,
     }
 
     // update the state
