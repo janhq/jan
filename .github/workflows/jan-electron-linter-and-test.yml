@@ -63,7 +63,10 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
   test-on-windows:
-    runs-on: [self-hosted, Windows, windows-desktop]
+    strategy:
+      matrix:
+        antivirus-tools: ['mcafee', 'default-windows-security','bit-defender']
+    runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Clean workspace
         run: |
