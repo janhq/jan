@@ -4,7 +4,7 @@ import { useAtomValue } from 'jotai'
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/model_param'
+import { toSettingParams } from '@/utils/modelParam'
 
 import settingComponentBuilder from '../ModelSetting/settingComponentBuilder'
 
@@ -18,7 +18,7 @@ const EngineSetting = () => {
 
   const modelSettingParams = toSettingParams(activeModelParams)
 
-  const componentData = getConfigurationsData(modelSettingParams)
+  const componentData = getConfigurationsData(modelSettingParams, selectedModel)
 
   componentData.sort((a, b) => a.title.localeCompare(b.title))
 

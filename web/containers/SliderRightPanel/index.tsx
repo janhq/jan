@@ -19,9 +19,7 @@ import { useClickOutside } from '@/hooks/useClickOutside'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/model_param'
-
-import { selectedModelAtom } from '../DropdownListSidebar'
+import { toSettingParams } from '@/utils/modelParam'
 
 import {
   engineParamsUpdateAtom,
@@ -59,7 +57,6 @@ const SliderRightPanel: React.FC<Props> = ({
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
 
-  const selectedModel = useAtomValue(selectedModelAtom)
   const { stopModel } = useActiveModel()
 
   const [showTooltip, setShowTooltip] = useState({ max: false, min: false })
@@ -75,19 +72,6 @@ const SliderRightPanel: React.FC<Props> = ({
       setEngineParamsUpdate(false)
     }
     updateModelParameter(threadId, name, e[0])
-  }
-
-  const maxValue = (name: string) => {
-    switch (name) {
-      case 'max_tokens':
-        return selectedModel?.parameters.max_tokens || max
-
-      case 'ctx_len':
-        return selectedModel?.settings.ctx_len || max
-
-      default:
-        return max
-    }
   }
 
   return (
@@ -114,12 +98,12 @@ const SliderRightPanel: React.FC<Props> = ({
             value={[value]}
             onValueChange={onValueChanged}
             min={min}
-            max={maxValue(name)}
+            max={max}
             step={step}
           />
           <div className="relative mt-2 flex items-center justify-between text-gray-400">
             <p className="text-sm">{min}</p>
-            <p className="text-sm">{maxValue(name) as number}</p>
+            <p className="text-sm">{max}</p>
           </div>
         </div>
         <Tooltip open={showTooltip.max || showTooltip.min}>
@@ -128,11 +112,11 @@ const SliderRightPanel: React.FC<Props> = ({
               type="number"
               className="-mt-4 h-8 w-20"
               min={min}
-              max={maxValue(name)}
+              max={max}
               value={String(value)}
               onChange={(e) => {
-                if (Number(e.target.value) > Number(maxValue(name))) {
-                  onValueChanged([Number(maxValue(name))])
+                if (Number(e.target.value) > Number(max)) {
+                  onValueChanged([Number(max)])
                   setShowTooltip({ max: true, min: false })
                 } else if (Number(e.target.value) < Number(min)) {
                   onValueChanged([Number(min)])

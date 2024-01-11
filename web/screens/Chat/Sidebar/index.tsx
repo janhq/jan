@@ -19,7 +19,7 @@ import DropdownListSidebar, {
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toRuntimeParams, toSettingParams } from '@/utils/model_param'
+import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import EngineSetting from '../EngineSetting'
 import ModelSetting from '../ModelSetting'

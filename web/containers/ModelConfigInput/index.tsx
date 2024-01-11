@@ -16,7 +16,7 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 
-import { toSettingParams } from '@/utils/model_param'
+import { toSettingParams } from '@/utils/modelParam'
 
 import {
   engineParamsUpdateAtom,
