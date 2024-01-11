@@ -71,7 +71,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   if (isDownloaded) {
     downloadButton = (
       <Button
-        themes="success"
+        themes="secondaryBlue"
         className="min-w-[98px]"
         onClick={onUseModelClick}
       >
@@ -92,21 +92,21 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 
     if (minimumRamModel > totalRam) {
       return (
-        <Badge className="rounded-md bg-red-500 text-white">
+        <Badge className="rounded-md" themes="danger">
           Not enough RAM
         </Badge>
       )
     }
     if (minimumRamModel < availableRam) {
       return (
-        <Badge className="rounded-md bg-green-500 text-white">
+        <Badge className="rounded-md" themes="success">
           Recommended
         </Badge>
       )
     }
     if (minimumRamModel < totalRam && minimumRamModel > availableRam) {
       return (
-        <Badge className="rounded-md bg-yellow-500 text-white">
+        <Badge className="rounded-md" themes="warning">
           Slow on your device
         </Badge>
       )
