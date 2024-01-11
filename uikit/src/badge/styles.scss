@@ -21,6 +21,10 @@
     @apply border-transparent bg-red-100 text-red-700;
   }
 
+  &-warning {
+    @apply border-transparent bg-yellow-100 text-yellow-700;
+  }
+
   &-outline {
     @apply text-foreground border-border border;
   }
