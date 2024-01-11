@@ -151,10 +151,10 @@ const config = {
         autoCollapseCategories: false,
       },
     },
-    // Agolia DocSearch
+    // Algolia DocSearch
     algolia: {
-      appId: process.env.ALGOLIA_APP_ID ?? "key",
-      apiKey: process.env.ALGOLIA_API_KEY ?? "key",
+      appId: process.env.ALGOLIA_APP_ID,
+      apiKey: process.env.ALGOLIA_API_KEY,
       indexName: "jan",
       insights: true,
     },
