@@ -95,10 +95,19 @@ export default class JSONConversationalExtension
    * @param threadId The ID of the thread to delete.
    */
   async deleteThread(threadId: string): Promise<void> {
-    return fs.rmdirSync(
-      await joinPath([JSONConversationalExtension._homeDir, `${threadId}`]),
-      { recursive: true }
-    )
+    const path = await joinPath([
+      JSONConversationalExtension._homeDir,
+      `${threadId}`,
+    ])
+    try {
+      if (await fs.existsSync(path)) {
+        await fs.rmdirSync(path, { recursive: true })
+      } else {
+        console.debug(`${path} does not exist`)
+      }
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   async addNewMessage(message: ThreadMessage): Promise<void> {
