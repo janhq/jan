@@ -6,6 +6,7 @@ const badgeVariants = cva('badge', {
   variants: {
     themes: {
       primary: 'badge-primary',
+      warning: 'badge-warning',
       success: 'badge-success',
       secondary: 'badge-secondary',
       danger: 'badge-danger',

@@ -2,7 +2,7 @@
 import { useCallback, useMemo } from 'react'
 
 import { Model } from '@janhq/core'
-import { Button } from '@janhq/uikit'
+import { Badge, Button } from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
 
@@ -14,6 +14,7 @@ import ModalCancelDownload from '@/containers/ModalCancelDownload'
 
 import { MainViewState } from '@/constants/screens'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
@@ -22,6 +23,8 @@ import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGibibytes } from '@/utils/converter'
+
+import { totalRamAtom, usedRamAtom } from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
   model: Model
@@ -34,6 +37,8 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const { downloadedModels } = useGetDownloadedModels()
   const { modelDownloadStateAtom, downloadStates } = useDownloadState()
   const { requestCreateNewThread } = useCreateNewThread()
+  const totalRam = useAtomValue(totalRamAtom)
+  const usedRam = useAtomValue(usedRamAtom)
 
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[model.id]),
@@ -66,7 +71,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   if (isDownloaded) {
     downloadButton = (
       <Button
-        themes="success"
+        themes="secondaryBlue"
         className="min-w-[98px]"
         onClick={onUseModelClick}
       >
@@ -77,6 +82,35 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 
   if (downloadState != null && downloadStates.length > 0) {
     downloadButton = <ModalCancelDownload model={model} />
+  }
+
+  const { activeModel } = useActiveModel()
+
+  const getLabel = (size: number) => {
+    const minimumRamModel = size * 1.25
+    const availableRam = totalRam - usedRam + (activeModel?.metadata.size ?? 0)
+
+    if (minimumRamModel > totalRam) {
+      return (
+        <Badge className="rounded-md" themes="danger">
+          Not enough RAM
+        </Badge>
+      )
+    }
+    if (minimumRamModel < availableRam) {
+      return (
+        <Badge className="rounded-md" themes="success">
+          Recommended
+        </Badge>
+      )
+    }
+    if (minimumRamModel < totalRam && minimumRamModel > availableRam) {
+      return (
+        <Badge className="rounded-md" themes="warning">
+          Slow on your device
+        </Badge>
+      )
+    }
   }
 
   return (
@@ -101,6 +135,8 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
           <span className="mr-4 font-semibold text-muted-foreground">
             {toGibibytes(model.metadata.size)}
           </span>
+          {getLabel(model.metadata.size)}
+
           {downloadButton}
           <ChevronDownIcon
             className={twMerge(

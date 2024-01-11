@@ -61,6 +61,21 @@ const config = {
         enableInDevelopment: false, // optional
       },
     ],
+    [
+      "@docusaurus/plugin-client-redirects",
+      {
+        redirects: [
+          {
+            from: "/troubleshooting/failed-to-fetch",
+            to: "/troubleshooting/somethings-amiss",
+          },
+          {
+            from: "/guides/troubleshooting/gpu-not-used/",
+            to: "/troubleshooting/gpu-not-used",
+          },
+        ],
+      },
+    ],
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
@@ -135,6 +150,14 @@ const config = {
         hideable: true,
         autoCollapseCategories: false,
       },
+    },
+    // Algolia Search Configuration
+    algolia: {
+      appId: process.env.ALGOLIA_APP_ID || "XXX",
+      apiKey: process.env.ALGOLIA_API_KEY || "XXX",
+      indexName: "jan",
+      contextualSearch: false,
+      insights: true,
     },
     // SEO Docusarus
     metadata: [

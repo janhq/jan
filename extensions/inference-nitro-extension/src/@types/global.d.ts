@@ -1,5 +1,6 @@
 declare const MODULE: string;
 declare const INFERENCE_URL: string;
+declare const TROUBLESHOOTING_URL: string;
 
 /**
  * The parameters for the initModel function.

@@ -3,11 +3,6 @@ import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
 import { ContentType, MessageStatus, Model, ThreadMessage } from './../../../index'
 
-import fetch from 'node-fetch'
-import { ulid } from 'ulid'
-import request from 'request'
-
-const progress = require('request-progress')
 const os = require('os')
 
 const path = join(os.homedir(), 'jan')
@@ -209,6 +204,7 @@ export const createMessage = async (threadId: string, message: any) => {
   const threadMessagesFileName = 'messages.jsonl'
 
   try {
+    const { ulid } = require('ulid')
     const msgId = ulid()
     const createdAt = Date.now()
     const threadMessage: ThreadMessage = {
@@ -260,8 +256,10 @@ export const downloadModel = async (modelId: string) => {
 
   // path to model binary
   const modelBinaryPath = join(directoryPath, modelId)
-  const rq = request(model.source_url)
 
+  const request = require('request')
+  const rq = request(model.source_url)
+  const progress = require('request-progress')
   progress(rq, {})
     .on('progress', function (state: any) {
       console.log('progress', JSON.stringify(state, null, 2))
@@ -324,6 +322,7 @@ export const chatCompletions = async (request: any, reply: any) => {
   }
   console.debug(apiUrl)
   console.debug(JSON.stringify(headers))
+  const fetch = require('node-fetch')
   const response = await fetch(apiUrl, {
     method: 'POST',
     headers: headers,

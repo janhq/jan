@@ -6,7 +6,7 @@ import { createUserSpace } from './utils/path'
  * Managers
  **/
 import { WindowManager } from './managers/window'
-import { ExtensionManager, ModuleManager } from '@janhq/core/node'
+import { log, ModuleManager } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -17,14 +17,19 @@ import { handleFileMangerIPCs } from './handlers/fileManager'
 import { handleAppIPCs } from './handlers/app'
 import { handleAppUpdates } from './handlers/update'
 import { handleFsIPCs } from './handlers/fs'
+
+/**
+ * Utils
+ **/
 import { migrateExtensions } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
+import { setupExtensions } from './utils/extension'
 
 app
   .whenReady()
   .then(createUserSpace)
   .then(migrateExtensions)
-  .then(ExtensionManager.instance.setupExtensions)
+  .then(setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
@@ -93,5 +98,5 @@ function handleIPCs() {
 */
 process.on('uncaughtException', function (err) {
   // TODO: Write error to log file in #1447
-  console.error(err)
+  log(`Error: ${err}`)
 })

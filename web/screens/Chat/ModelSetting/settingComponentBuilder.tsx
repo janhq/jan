@@ -1,7 +1,7 @@
 /* eslint-disable no-case-declarations */
 import Checkbox from '@/containers/Checkbox'
 import ModelConfigInput from '@/containers/ModelConfigInput'
-import Slider from '@/containers/Slider'
+import SliderRightPanel from '@/containers/SliderRightPanel'
 
 export type ControllerType = 'slider' | 'checkbox' | 'input'
 
@@ -43,7 +43,7 @@ const settingComponentBuilder = (
         case 'slider':
           const { min, max, step, value } = data.controllerData as SliderData
           return (
-            <Slider
+            <SliderRightPanel
               key={data.name}
               title={data.title}
               description={data.description}
