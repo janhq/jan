@@ -61,6 +61,8 @@ export enum MessageStatus {
   Pending = 'pending',
   /** Message loaded with error. **/
   Error = 'error',
+  /** Message is cancelled streaming */
+  Stopped = "stopped"
 }
 
 /**

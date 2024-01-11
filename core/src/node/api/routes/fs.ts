@@ -1,6 +1,7 @@
 import { FileSystemRoute } from '../../../api'
 import { join } from 'path'
-import { HttpServer, userSpacePath } from '../../index'
+import { HttpServer } from '../HttpServer'
+import { userSpacePath } from '../../extension/manager'
 
 export const fsRouter = async (app: HttpServer) => {
   const moduleName = 'fs'

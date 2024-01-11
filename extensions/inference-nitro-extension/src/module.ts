@@ -1,18 +1,17 @@
 const fs = require("fs");
-const fsPromises = fs.promises;
 const path = require("path");
 const { exec, spawn } = require("child_process");
 const tcpPortUsed = require("tcp-port-used");
 const fetchRetry = require("fetch-retry")(global.fetch);
 const osUtils = require("os-utils");
 const { readFileSync, writeFileSync, existsSync } = require("fs");
+const { log } = require("@janhq/core/node");
 
 // The PORT to use for the Nitro subprocess
 const PORT = 3928;
 const LOCAL_HOST = "127.0.0.1";
 const NITRO_HTTP_SERVER_URL = `http://${LOCAL_HOST}:${PORT}`;
 const NITRO_HTTP_LOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/loadmodel`;
-const NITRO_HTTP_UNLOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/unloadModel`;
 const NITRO_HTTP_VALIDATE_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/modelstatus`;
 const NITRO_HTTP_KILL_URL = `${NITRO_HTTP_SERVER_URL}/processmanager/destroy`;
 const SUPPORTED_MODEL_FORMAT = ".gguf";
@@ -23,25 +22,12 @@ const NVIDIA_INFO_FILE = path.join(
   "settings.json"
 );
 
-const DEFALT_SETTINGS = {
-  notify: true,
-  run_mode: "cpu",
-  nvidia_driver: {
-    exist: false,
-    version: "",
-  },
-  cuda: {
-    exist: false,
-    version: "",
-  },
-  gpus: [],
-  gpu_highest_vram: "",
-};
-
 // The subprocess instance for Nitro
 let subprocess = undefined;
 let currentModelFile: string = undefined;
 let currentSettings = undefined;
+
+let nitroProcessInfo = undefined;
 
 /**
  * Stops a Nitro subprocess.
@@ -50,137 +36,6 @@ let currentSettings = undefined;
  */
 function stopModel(): Promise<void> {
   return killSubprocess();
-}
-
-/**
- * Validate nvidia and cuda for linux and windows
- */
-async function updateNvidiaDriverInfo(): Promise<void> {
-  exec(
-    "nvidia-smi --query-gpu=driver_version --format=csv,noheader",
-    (error, stdout) => {
-      let data;
-      try {
-        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-      } catch (error) {
-        data = DEFALT_SETTINGS;
-      }
-
-      if (!error) {
-        const firstLine = stdout.split("\n")[0].trim();
-        data["nvidia_driver"].exist = true;
-        data["nvidia_driver"].version = firstLine;
-      } else {
-        data["nvidia_driver"].exist = false;
-      }
-
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
-      Promise.resolve();
-    }
-  );
-}
-
-function checkFileExistenceInPaths(file: string, paths: string[]): boolean {
-  return paths.some((p) => existsSync(path.join(p, file)));
-}
-
-function updateCudaExistence() {
-  let filesCuda12: string[];
-  let filesCuda11: string[];
-  let paths: string[];
-  let cudaVersion: string = "";
-
-  if (process.platform === "win32") {
-    filesCuda12 = ["cublas64_12.dll", "cudart64_12.dll", "cublasLt64_12.dll"];
-    filesCuda11 = ["cublas64_11.dll", "cudart64_11.dll", "cublasLt64_11.dll"];
-    paths = process.env.PATH ? process.env.PATH.split(path.delimiter) : [];
-  } else {
-    filesCuda12 = ["libcudart.so.12", "libcublas.so.12", "libcublasLt.so.12"];
-    filesCuda11 = ["libcudart.so.11.0", "libcublas.so.11", "libcublasLt.so.11"];
-    paths = process.env.LD_LIBRARY_PATH
-      ? process.env.LD_LIBRARY_PATH.split(path.delimiter)
-      : [];
-    paths.push("/usr/lib/x86_64-linux-gnu/");
-  }
-
-  let cudaExists = filesCuda12.every(
-    (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
-  );
-
-  if (!cudaExists) {
-    cudaExists = filesCuda11.every(
-      (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
-    );
-    if (cudaExists) {
-      cudaVersion = "11";
-    }
-  } else {
-    cudaVersion = "12";
-  }
-
-  let data;
-  try {
-    data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-  } catch (error) {
-    data = DEFALT_SETTINGS;
-  }
-
-  data["cuda"].exist = cudaExists;
-  data["cuda"].version = cudaVersion;
-  if (cudaExists) {
-    data.run_mode = "gpu";
-  }
-  writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
-}
-
-async function updateGpuInfo(): Promise<void> {
-  exec(
-    "nvidia-smi --query-gpu=index,memory.total --format=csv,noheader,nounits",
-    (error, stdout) => {
-      let data;
-      try {
-        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-      } catch (error) {
-        data = DEFALT_SETTINGS;
-      }
-
-      if (!error) {
-        // Get GPU info and gpu has higher memory first
-        let highestVram = 0;
-        let highestVramId = "0";
-        let gpus = stdout
-          .trim()
-          .split("\n")
-          .map((line) => {
-            let [id, vram] = line.split(", ");
-            vram = vram.replace(/\r/g, "");
-            if (parseFloat(vram) > highestVram) {
-              highestVram = parseFloat(vram);
-              highestVramId = id;
-            }
-            return { id, vram };
-          });
-
-        data["gpus"] = gpus;
-        data["gpu_highest_vram"] = highestVramId;
-      } else {
-        data["gpus"] = [];
-      }
-
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
-      Promise.resolve();
-    }
-  );
-}
-
-async function updateNvidiaInfo() {
-  if (process.platform !== "darwin") {
-    await Promise.all([
-      updateNvidiaDriverInfo(),
-      updateCudaExistence(),
-      updateGpuInfo(),
-    ]);
-  }
 }
 
 /**
@@ -236,31 +91,28 @@ async function initModel(wrapper: any): Promise<ModelOperationResponse> {
 async function loadModel(nitroResourceProbe: any | undefined) {
   // Gather system information for CPU physical cores and memory
   if (!nitroResourceProbe) nitroResourceProbe = await getResourcesInfo();
-  return (
-    killSubprocess()
-      .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
-      // wait for 500ms to make sure the port is free for windows platform
-      .then(() => {
-        if (process.platform === "win32") {
-          return sleep(500);
-        } else {
-          return sleep(0);
-        }
-      })
-      .then(() => spawnNitroProcess(nitroResourceProbe))
-      .then(() => loadLLMModel(currentSettings))
-      .then(validateModelStatus)
-      .catch((err) => {
-        console.error("error: ", err);
-        // TODO: Broadcast error so app could display proper error message
-        return { error: err, currentModelFile };
-      })
-  );
-}
-
-// Add function sleep
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return killSubprocess()
+    .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
+    .then(() => {
+      /**
+       * There is a problem with Windows process manager
+       * Should wait for awhile to make sure the port is free and subprocess is killed
+       * The tested threshold is 500ms
+       **/
+      if (process.platform === "win32") {
+        return new Promise((resolve) => setTimeout(resolve, 500));
+      } else {
+        return Promise.resolve();
+      }
+    })
+    .then(() => spawnNitroProcess(nitroResourceProbe))
+    .then(() => loadLLMModel(currentSettings))
+    .then(validateModelStatus)
+    .catch((err) => {
+      log(`[NITRO]::Error: ${err}`);
+      // TODO: Broadcast error so app could display proper error message
+      return { error: err, currentModelFile };
+    });
 }
 
 function promptTemplateConverter(promptTemplate) {
@@ -310,6 +162,7 @@ function promptTemplateConverter(promptTemplate) {
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
 function loadLLMModel(settings): Promise<Response> {
+  log(`[NITRO]::Debug: Loading model with params ${settings}`);
   return fetchRetry(NITRO_HTTP_LOAD_MODEL_URL, {
     method: "POST",
     headers: {
@@ -318,6 +171,8 @@ function loadLLMModel(settings): Promise<Response> {
     body: JSON.stringify(settings),
     retries: 3,
     retryDelay: 500,
+  }).catch((err) => {
+    log(`[NITRO]::Error: Load model failed with error ${err}`);
   });
 }
 
@@ -358,7 +213,8 @@ async function validateModelStatus(): Promise<ModelOperationResponse> {
 async function killSubprocess(): Promise<void> {
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 5000);
-  console.debug("Start requesting to kill Nitro...");
+  log(`[NITRO]::Debug: Request to kill Nitro`);
+
   return fetch(NITRO_HTTP_KILL_URL, {
     method: "DELETE",
     signal: controller.signal,
@@ -369,20 +225,17 @@ async function killSubprocess(): Promise<void> {
     })
     .catch(() => {})
     .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
-    .then(() => console.debug("Nitro is killed"));
+    .then(() => log(`[NITRO]::Debug: Nitro process is terminated`));
 }
-/**
- * Look for the Nitro binary and execute it
- * Using child-process to spawn the process
- * Should run exactly platform specified Nitro binary version
- */
+
 /**
  * Spawns a Nitro subprocess.
  * @param nitroResourceProbe - The Nitro resource probe.
  * @returns A promise that resolves when the Nitro subprocess is started.
  */
 function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
-  console.debug("Starting Nitro subprocess...");
+  log(`[NITRO]::Debug: Spawning Nitro subprocess...`);
+
   return new Promise(async (resolve, reject) => {
     let binaryFolder = path.join(__dirname, "bin"); // Current directory by default
     let cudaVisibleDevices = "";
@@ -424,7 +277,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
 
     const binaryPath = path.join(binaryFolder, binaryName);
     // Execute the binary
-    subprocess = spawn(binaryPath, [1, LOCAL_HOST, PORT], {
+    subprocess = spawn(binaryPath, ["1", LOCAL_HOST, PORT.toString()], {
       cwd: binaryFolder,
       env: {
         ...process.env,
@@ -434,16 +287,15 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
 
     // Handle subprocess output
     subprocess.stdout.on("data", (data) => {
-      console.debug(`stdout: ${data}`);
+      log(`[NITRO]::Debug: ${data}`);
     });
 
     subprocess.stderr.on("data", (data) => {
-      console.error("subprocess error:" + data.toString());
-      console.error(`stderr: ${data}`);
+      log(`[NITRO]::Error: ${data}`);
     });
 
     subprocess.on("close", (code) => {
-      console.debug(`child process exited with code ${code}`);
+      log(`[NITRO]::Debug: Nitro exited with code: ${code}`);
       subprocess = null;
       reject(`child process exited with code ${code}`);
     });
@@ -461,7 +313,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
 function getResourcesInfo(): Promise<ResourcesInfo> {
   return new Promise(async (resolve) => {
     const cpu = await osUtils.cpuCount();
-    console.log("cpu: ", cpu);
+    log(`[NITRO]::CPU informations - ${cpu}`);
     const response: ResourcesInfo = {
       numCpuPhysicalCore: cpu,
       memAvailable: 0,
@@ -470,6 +322,35 @@ function getResourcesInfo(): Promise<ResourcesInfo> {
   });
 }
 
+/**
+ * This will retrive GPU informations and persist settings.json
+ * Will be called when the extension is loaded to turn on GPU acceleration if supported
+ */
+async function updateNvidiaInfo() {
+  if (process.platform !== "darwin") {
+    await Promise.all([
+      updateNvidiaDriverInfo(),
+      updateCudaExistence(),
+      updateGpuInfo(),
+    ]);
+  }
+}
+
+/**
+ * Retrieve current nitro process
+ */
+const getCurrentNitroProcessInfo = (): Promise<any> => {
+  nitroProcessInfo = {
+    isRunning: subprocess != null,
+  };
+  return nitroProcessInfo;
+};
+
+/**
+ * Every module should have a dispose function
+ * This will be called when the extension is unloaded and should clean up any resources
+ * Also called when app is closed
+ */
 function dispose() {
   // clean other registered resources here
   killSubprocess();
@@ -481,4 +362,5 @@ module.exports = {
   killSubprocess,
   dispose,
   updateNvidiaInfo,
+  getCurrentNitroProcessInfo,
 };

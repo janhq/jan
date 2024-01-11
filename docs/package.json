@@ -14,7 +14,10 @@
     "write-heading-ids": "docusaurus write-heading-ids"
   },
   "dependencies": {
+    "@docsearch/js": "3",
+    "@docsearch/react": "3",
     "@docusaurus/core": "^3.0.0",
+    "@docusaurus/plugin-client-redirects": "^3.0.0",
     "@docusaurus/plugin-content-docs": "^3.0.0",
     "@docusaurus/preset-classic": "^3.0.0",
     "@docusaurus/theme-live-codeblock": "^3.0.0",

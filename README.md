@@ -76,31 +76,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-135/jan-win-x64-0.4.3-135.exe'>
+      <a href='https://delta.jan.ai/0.4.3-139/jan-win-x64-0.4.3-139.exe'>
         <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-135/jan-mac-x64-0.4.3-135.dmg'>
+      <a href='https://delta.jan.ai/0.4.3-139/jan-mac-x64-0.4.3-139.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-135/jan-mac-arm64-0.4.3-135.dmg'>
+      <a href='https://delta.jan.ai/0.4.3-139/jan-mac-arm64-0.4.3-139.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-135/jan-linux-amd64-0.4.3-135.deb'>
+      <a href='https://delta.jan.ai/0.4.3-139/jan-linux-amd64-0.4.3-139.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-135/jan-linux-x86_64-0.4.3-135.AppImage'>
+      <a href='https://delta.jan.ai/0.4.3-139/jan-linux-x86_64-0.4.3-139.AppImage'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
@@ -165,6 +165,20 @@ To reset your installation:
    - Delete Jan extension from your `~/jan/extensions` folder
    - Delete all `node_modules` in current folder
    - Clear Application cache in `~/Library/Caches/jan`
+
+## Requirements for running Jan
+- MacOS: 13 or higher
+- Windows:
+  - Windows 10 or higher
+  - To enable GPU support:
+    - Nvidia GPU with CUDA Toolkit 11.4 or higher
+    - Nvidia driver 470.63.01 or higher
+- Linux:
+  - glibc 2.27 or higher (check with `ldd --version`)
+  - gcc 11, g++ 11, cpp 11 or higher, refer to this [link](https://jan.ai/guides/troubleshooting/gpu-not-used/#specific-requirements-for-linux) for more information
+  - To enable GPU support:
+    - Nvidia GPU with CUDA Toolkit 11.4 or higher
+    - Nvidia driver 470.63.01 or higher
 
 ## Contributing
 

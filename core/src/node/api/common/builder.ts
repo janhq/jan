@@ -1,13 +1,8 @@
 import fs from 'fs'
 import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
-import { Model, ThreadMessage } from './../../../index'
+import { ContentType, MessageStatus, Model, ThreadMessage } from './../../../index'
 
-import fetch from 'node-fetch'
-import { ulid } from 'ulid'
-import request from 'request'
-
-const progress = require('request-progress')
 const os = require('os')
 
 const path = join(os.homedir(), 'jan')
@@ -207,17 +202,28 @@ const generateThreadId = (assistantId: string) => {
 
 export const createMessage = async (threadId: string, message: any) => {
   const threadMessagesFileName = 'messages.jsonl'
-  // TODO: add validation
+
   try {
+    const { ulid } = require('ulid')
     const msgId = ulid()
     const createdAt = Date.now()
     const threadMessage: ThreadMessage = {
-      ...message,
       id: msgId,
       thread_id: threadId,
+      status: MessageStatus.Ready,
       created: createdAt,
       updated: createdAt,
       object: 'thread.message',
+      role: message.role,
+      content: [
+        {
+          type: ContentType.Text,
+          text: {
+            value: message.content,
+            annotations: [],
+          },
+        },
+      ],
     }
 
     const threadDirPath = join(path, 'threads', threadId)
@@ -250,8 +256,10 @@ export const downloadModel = async (modelId: string) => {
 
   // path to model binary
   const modelBinaryPath = join(directoryPath, modelId)
-  const rq = request(model.source_url)
 
+  const request = require('request')
+  const rq = request(model.source_url)
+  const progress = require('request-progress')
   progress(rq, {})
     .on('progress', function (state: any) {
       console.log('progress', JSON.stringify(state, null, 2))
@@ -312,8 +320,9 @@ export const chatCompletions = async (request: any, reply: any) => {
     headers['Authorization'] = `Bearer ${apiKey}`
     headers['api-key'] = apiKey
   }
-  console.log(apiUrl)
-  console.log(JSON.stringify(headers))
+  console.debug(apiUrl)
+  console.debug(JSON.stringify(headers))
+  const fetch = require('node-fetch')
   const response = await fetch(apiUrl, {
     method: 'POST',
     headers: headers,

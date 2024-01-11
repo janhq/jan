@@ -1,9 +1,9 @@
-import { app, ipcMain, shell, nativeTheme } from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import { join, basename } from 'path'
 import { WindowManager } from './../managers/window'
 import { getResourcePath, userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
-import { ExtensionManager, ModuleManager } from '@janhq/core/node'
+import { ModuleManager, init, log } from '@janhq/core/node'
 import { startServer, stopServer } from '@janhq/server'
 
 export function handleAppIPCs() {
@@ -59,7 +59,7 @@ export function handleAppIPCs() {
       app.isPackaged ? join(getResourcePath(), 'docs', 'openapi') : undefined
     )
   )
-  
+
   /**
    * Stop Jan API Server.
    */
@@ -82,8 +82,22 @@ export function handleAppIPCs() {
           require.resolve(join(userSpacePath, 'extensions', modulePath))
         ]
       }
-      ExtensionManager.instance.setupExtensions()
+      init({
+        // Function to check from the main process that user wants to install a extension
+        confirmInstall: async (_extensions: string[]) => {
+          return true
+        },
+        // Path to install extension to
+        extensionsPath: join(userSpacePath, 'extensions'),
+      })
       WindowManager.instance.currentWindow?.reload()
     }
   })
+
+  /**
+   * Log message to log file.
+   */
+  ipcMain.handle(AppRoute.log, async (_event, message, fileName) =>
+    log(message, fileName)
+  )
 }

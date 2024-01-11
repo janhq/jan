@@ -20,7 +20,7 @@ Jan's long-term technical endeavor is to build a cognitive framework for future 
 
 ## Quicklinks
 
-- Core product vision for [Jan Framework](http://localhost:3001/docs/)
+- Core product vision for [Jan Framework](../docs)
 - R&D and model training efforts [Discord](https://discord.gg/9NfUSyzp3y) (via our small data-center which is `free & open to all researchers who lack GPUs`!)
 - Current implementations of Jan Framework: [Jan Desktop](https://jan.ai/), [Nitro](https://nitro.jan.ai/)
 
