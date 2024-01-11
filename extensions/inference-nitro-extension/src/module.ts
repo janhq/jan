@@ -248,7 +248,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
         if (nvidiaInfo["cuda"].version === "12") {
           binaryFolder = path.join(binaryFolder, "win-cuda-12-0");
         } else {
-          binaryFolder = path.join(binaryFolder, "win-cuda-11-4");
+          binaryFolder = path.join(binaryFolder, "win-cuda-11-7");
         }
         cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];
       }
@@ -268,7 +268,7 @@ function spawnNitroProcess(nitroResourceProbe: any): Promise<any> {
         if (nvidiaInfo["cuda"].version === "12") {
           binaryFolder = path.join(binaryFolder, "linux-cuda-12-0");
         } else {
-          binaryFolder = path.join(binaryFolder, "linux-cuda-11-4");
+          binaryFolder = path.join(binaryFolder, "linux-cuda-11-7");
         }
         cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];
       }
