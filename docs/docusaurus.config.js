@@ -151,13 +151,12 @@ const config = {
         autoCollapseCategories: false,
       },
     },
-    // Agolia DocSearch
+    // Algolia DocSearch
     algolia: {
-      appId: process.env.ALGOLIA_APP_ID || "XXX",
-      apiKey: process.env.ALGOLIA_API_KEY || "XXX",
+      appId: process.env.ALGOLIA_APP_ID,
+      apiKey: process.env.ALGOLIA_API_KEY,
       indexName: "jan",
       insights: true,
-      debug: false,
     },
     // SEO Docusarus
     metadata: [
