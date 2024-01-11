@@ -10,7 +10,6 @@ import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import ImageUploadPreview from '../ImageUploadPreview'
@@ -18,7 +17,6 @@ import ImageUploadPreview from '../ImageUploadPreview'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
-  activeThreadStateAtom,
   getActiveThreadIdAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
@@ -29,10 +27,7 @@ const ChatInput: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
-  const activeThreadState = useAtomValue(activeThreadStateAtom)
   const { sendChatMessage } = useSendChatMessage()
-  const isWaitingForResponse = activeThreadState?.waitingForResponse ?? false
-  const disabled = currentPrompt.trim().length === 0 || isWaitingForResponse
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
@@ -40,12 +35,6 @@ const ChatInput: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
-
-  const { downloadedModels } = useGetDownloadedModels()
-  const currentModel = downloadedModels.find(
-    (model) => model.id === activeThread?.assistants[0].model.id
-  )
-  const isVisionModel = currentModel?.metadata.tags.includes('Vision')
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)

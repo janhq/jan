@@ -127,9 +127,10 @@ export default class JSONConversationalExtension
       ])
       if (!(await fs.existsSync(threadDirPath)))
         await fs.mkdirSync(threadDirPath)
+
       if (message.content[0].type === 'image') {
         const filesPath = await joinPath([threadDirPath, 'files'])
-        await fs.mkdirSync(filesPath)
+        if (!(await fs.existsSync(filesPath))) await fs.mkdirSync(filesPath)
 
         const imagePath = await joinPath([filesPath, `${message.id}.png`])
         const base64 = message.content[0].text.annotations[0]
@@ -138,7 +139,7 @@ export default class JSONConversationalExtension
 
       if (message.content[0].type === 'pdf') {
         const filesPath = await joinPath([threadDirPath, 'files'])
-        await fs.mkdirSync(filesPath)
+        if (!(await fs.existsSync(filesPath))) await fs.mkdirSync(filesPath)
 
         const filePath = await joinPath([filesPath, `${message.id}.pdf`])
         const blob = message.content[0].text.annotations[0]

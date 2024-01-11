@@ -63,4 +63,21 @@ export function handleFileMangerIPCs() {
       return fileStat
     }
   )
+  
+  ipcMain.handle(
+    FileManagerRoute.writeBlob,
+    async (_event, path: string, data: string): Promise<void> => {
+      const normalizedPath = path
+        .replace(`file://`, '')
+        .replace(`file:/`, '')
+        .replace(`file:\\\\`, '')
+        .replace(`file:\\`, '')
+      try {
+        const dataBuffer = Buffer.from(data, 'base64')
+        fs.writeFileSync(join(userSpacePath, normalizedPath), dataBuffer)
+      } catch (err) {
+        console.error(`writeFile ${normalizedPath} result: ${err}`)
+      }
+    }
+  )
 }

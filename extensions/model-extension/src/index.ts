@@ -226,7 +226,7 @@ export default class JanModelExtension implements ModelExtension {
         } else {
           // otherwise, we generate our own model file
           // TODO: we might have more than one binary file here. This will be addressed with new version of Model file
-          //  which is the PR from Hiro on branch Jan can see
+          // which is the PR from Hiro on branch Jan can see
           return this.generateModelMetadata(dirName)
         }
       })
