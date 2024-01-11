@@ -153,8 +153,8 @@ const config = {
     },
     // Algolia DocSearch
     algolia: {
-      appId: process.env.ALGOLIA_APP_ID,
-      apiKey: process.env.ALGOLIA_API_KEY,
+      appId: "Y8QU1SIVLP",
+      apiKey: "484787878bcf6f4a26834105f0855fa3",
       indexName: "jan",
       insights: true,
     },
