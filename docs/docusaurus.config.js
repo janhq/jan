@@ -187,7 +187,7 @@ const config = {
       },
       { property: "og:type", content: "website" },
       { property: "twitter:card", content: "summary_large_image" },
-      { property: "twitter:site", content: "@janhq_" },
+      { property: "twitter:site", content: "@janframework" },
       {
         property: "twitter:title",
         content: "Jan | Open-source ChatGPT Alternative",
