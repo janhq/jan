@@ -23,7 +23,7 @@ import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { toRuntimeParams, toSettingParams } from '@/utils/model_param'
+import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { useActiveModel } from './useActiveModel'
 

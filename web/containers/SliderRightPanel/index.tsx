@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 
 import {
   Slider,
@@ -14,10 +14,12 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { InfoIcon } from 'lucide-react'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
+import { useClickOutside } from '@/hooks/useClickOutside'
+
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/model_param'
+import { toSettingParams } from '@/utils/modelParam'
 
 import {
   engineParamsUpdateAtom,
@@ -56,6 +58,10 @@ const SliderRightPanel: React.FC<Props> = ({
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
 
   const { stopModel } = useActiveModel()
+
+  const [showTooltip, setShowTooltip] = useState({ max: false, min: false })
+
+  useClickOutside(() => setShowTooltip({ max: false, min: false }), null, [])
 
   const onValueChanged = (e: number[]) => {
     if (!threadId) return
@@ -97,25 +103,43 @@ const SliderRightPanel: React.FC<Props> = ({
           />
           <div className="relative mt-2 flex items-center justify-between text-gray-400">
             <p className="text-sm">{min}</p>
-            <p className="absolute left-1/2 -translate-x-1/2 text-sm">
-              {max / 2}
-            </p>
             <p className="text-sm">{max}</p>
           </div>
         </div>
-        <Input
-          className="-mt-4 h-8 w-16"
-          min={min}
-          max={max}
-          value={String(value)}
-          onChange={(e) => {
-            if (Number(e.target.value) >= max) {
-              onValueChanged([Number(max)])
-            } else {
-              onValueChanged([Number(e.target.value)])
-            }
-          }}
-        />
+        <Tooltip open={showTooltip.max || showTooltip.min}>
+          <TooltipTrigger asChild>
+            <Input
+              type="number"
+              className="-mt-4 h-8 w-20"
+              min={min}
+              max={max}
+              value={String(value)}
+              onChange={(e) => {
+                if (Number(e.target.value) > Number(max)) {
+                  onValueChanged([Number(max)])
+                  setShowTooltip({ max: true, min: false })
+                } else if (Number(e.target.value) < Number(min)) {
+                  onValueChanged([Number(min)])
+                  setShowTooltip({ max: false, min: true })
+                } else {
+                  onValueChanged([Number(e.target.value)])
+                  setShowTooltip({ max: false, min: false })
+                }
+              }}
+            />
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent className="max-w-[240px]" side="top">
+              {showTooltip.max && (
+                <span>Automatically set to the maximum allowed tokens</span>
+              )}
+              {showTooltip.min && (
+                <span>Automatically set to the minimum allowed tokens</span>
+              )}
+              <TooltipArrow />
+            </TooltipContent>
+          </TooltipPortal>
+        </Tooltip>
       </div>
     </div>
   )

@@ -8,7 +8,7 @@ import {
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { toRuntimeParams, toSettingParams } from '@/utils/model_param'
+import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { extensionManager } from '@/extension'
 import {

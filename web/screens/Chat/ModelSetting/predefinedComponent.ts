@@ -32,7 +32,7 @@ export const presetConfiguration: Record<string, SettingComponentData> = {
       min: 0,
       max: 4096,
       step: 128,
-      value: 1024,
+      value: 4096,
     },
   },
   max_tokens: {
@@ -42,10 +42,10 @@ export const presetConfiguration: Record<string, SettingComponentData> = {
       'The maximum number of tokens the model will generate in a single response.',
     controllerType: 'slider',
     controllerData: {
-      min: 128,
+      min: 100,
       max: 4096,
-      step: 128,
-      value: 2048,
+      step: 10,
+      value: 4096,
     },
   },
   ngl: {
