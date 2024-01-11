@@ -24,64 +24,57 @@ In this guide, we will show you how to integrate OpenRouter with Jan, enabling y
 
 ## Steps to Integrate OpenRouter with Jan
 
-### 1. Get the [OpenRouter API key](https://openrouter.ai/keys)
+### 1. Configure OpenRouter API key
 
-Optionally, you can configure `$OPENROUTER_API_KEY` as part of the enviroment variables so you can easily reference it.
+You can find your API keys in the [OpenRouter API Key](https://openrouter.ai/keys) and set the OpenRouter API key in `~/jan/engines/openai.json` file.
 
-### 2. Grab the `curl`, configure it to what you want to do, and test it in Terminal
-
-```bash
-curl https://openrouter.ai/api/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-  -d '{
-  "model": "cognitivecomputations/dolphin-mixtral-8x7b",
-  "messages": [
-    {"role": "user", "content": "What is the meaning of life?"}
-  ]
-}'
-```
-
-### 3. Modify OpenAI `~/jan/engines/openai.json`
-
-- Make sure the `curl` is using header with `Authorization: Bearer $OPENROUTER_API_KEY` or `api-key: $OPENROUTER_API_KEY`
-- Change full_url to `https://openrouter.ai/api/v1/chat/completion`
-- For the `apiKey` can paste the value as `$OPENROUTER_API_KEY`
-
-```json
-{"full_url":"https://openrouter.ai/api/v1/chat/completions","api_key":"sk-or-v1-openrouter-api-key"}
-```
-
-### 4. Clone `~/jan/models/gpt-4` and rename it to `openrouter-<model name>`
-
-- Modify `model.json` in `openrouter-<model name>`
-
-```json
+```json title="~/jan/engines/openai.json"
 {
-    "source_url": "https://openai.com",
-    "id": "cognitivecomputations/dolphin-mixtral-8x7b",
-    "object": "model",
-    "name": "Dolphin 2.6 Mixtral 8x7B",
-    "version": "1.0",
-    "description": "This is a 16k context fine-tune of Mixtral-8x7b. It excels in coding tasks due to extensive training with coding data and is known for its obedience, although it lacks DPO tuning. The model is uncensored and is stripped of alignment and bias. It requires an external alignment layer for ethical use. Users are cautioned to use this highly compliant model responsibly, as detailed in a blog post about uncensored models at erichartford.com/uncensored-models.",
-    "format": "api",
-    "settings": {},
-    "parameters": {},
-    "metadata": {
-      "author": "OpenAI",
-      "tags": ["General", "Big Context Length"]
-    },
-    "engine": "openai",
-    "state": "ready"
+  // highlight-start
+  "full_url": "https://openrouter.ai/api/v1/chat/completions",
+  "api_key": "sk-or-v1<your-openrouter-api-key-here>"
+  // highlight-end
 }
 ```
 
-### 4. Go to the Hub, Refresh, search and use the Model
+### 2. Mofidy a Model JSON
 
-In the **Search Bar**, type for example `Dolphin`, and click **Use Button**
+Navigate to the `~/jan/models` folder. Create a folder named `<openrouter-modelname>`, for example, `openrouter-dolphin-mixtral-8x7b` and create a `model.json` file inside the folder including the following configurations:
 
-![Dolphin OpenRouter Model](assets/01-openrouter-dolphin.png)
+- Ensure the filename must be `model.json`.
+- Ensure the `id` property is set to the model id from OpenRouter.
+- Ensure the `format` property is set to `api`.
+- Ensure the `engine` property is set to `openai`.
+- Ensure the `state` property is set to `ready`.
 
-### 5. Try out the integrated OpenRouter model in Jan
+```json title="~/jan/models/openrouter-dolphin-mixtral-8x7b/model.json"
+{
+  "source_url": "https://openrouter.ai/",
+  "id": "cognitivecomputations/dolphin-mixtral-8x7b",
+  "object": "model",
+  "name": "Dolphin 2.6 Mixtral 8x7B",
+  "version": "1.0",
+  "description": "This is a 16k context fine-tune of Mixtral-8x7b. It excels in coding tasks due to extensive training with coding data and is known for its obedience, although it lacks DPO tuning. The model is uncensored and is stripped of alignment and bias. It requires an external alignment layer for ethical use. Users are cautioned to use this highly compliant model responsibly, as detailed in a blog post about uncensored models at erichartford.com/uncensored-models.",
+  // highlight-next-line
+  "format": "api",
+  "settings": {},
+  "parameters": {},
+  "metadata": {
+    "tags": ["General", "Big Context Length"]
+  },
+  // highlight-start
+  "engine": "openai",
+  "state": "ready"
+  // highlight-end
+}
+```
 
-![Dolphin OpenRouter Model Trial](assets/01-openrouter-dolphin-trial.png)
+### 3. Start the Model
+
+Restart Jan and navigate to the Hub. Locate your model and click the Use button.
+
+![Dolphin OpenRouter Model](assets/02-openrouter-dolphin.png)
+
+### 4. Try Out the Integration of Jan and OpenRouter
+
+![Dolphin OpenRouter Model Trial](assets/02-openrouter-dolphin-trial.gif)
