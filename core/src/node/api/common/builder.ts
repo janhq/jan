@@ -241,7 +241,9 @@ export const createMessage = async (threadId: string, message: any) => {
   }
 }
 
-export const downloadModel = async (modelId: string, ignoreSSL: boolean) => {
+export const downloadModel = async (modelId: string, network?: { proxy?: string, ignoreSSL?: boolean }) => {
+  const strictSSL = !network?.ignoreSSL;
+  const proxy = network?.proxy?.startsWith('http') ? network.proxy : undefined;
   const model = await retrieveBuilder(JanApiRouteConfiguration.models, modelId)
   if (!model || model.object !== 'model') {
     return {
@@ -258,7 +260,7 @@ export const downloadModel = async (modelId: string, ignoreSSL: boolean) => {
   const modelBinaryPath = join(directoryPath, modelId)
 
   const request = require('request')
-  const rq = request({url: model.source_url, strictSSL: !ignoreSSL })
+  const rq = request({url: model.source_url, strictSSL, proxy })
   const progress = require('request-progress')
   progress(rq, {})
     .on('progress', function (state: any) {

@@ -18,7 +18,7 @@ import { useContext } from 'react'
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 export default function useDownloadModel() {
-  const { ignoreSSL } = useContext(FeatureToggleContext)
+  const { ignoreSSL, proxy } = useContext(FeatureToggleContext)
   const { setDownloadState } = useDownloadState()
   const addNewDownloadingModel = useSetAtom(addNewDownloadingModelAtom)
 
@@ -42,7 +42,7 @@ export default function useDownloadModel() {
 
     await extensionManager
       .get<ModelExtension>(ExtensionType.Model)
-      ?.downloadModel(model, ignoreSSL)
+      ?.downloadModel(model, { ignoreSSL, proxy })
   }
   const abortModelDownload = async (model: Model) => {
     await abortDownload(

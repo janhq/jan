@@ -3,15 +3,19 @@ import { createContext, ReactNode, useEffect, useState } from 'react'
 interface FeatureToggleContextType {
   experimentalFeature: boolean
   ignoreSSL: boolean
+  proxy: string
   setExperimentalFeature: (on: boolean) => void
   setIgnoreSSL: (on: boolean) => void
+  setProxy: (value: string) => void
 }
 
 const initialContext: FeatureToggleContextType = {
   experimentalFeature: false,
   ignoreSSL: false,
+  proxy: '',
   setExperimentalFeature: () => {},
   setIgnoreSSL: () => {},
+  setProxy: () => {},
 }
 
 export const FeatureToggleContext =
@@ -24,8 +28,10 @@ export default function FeatureToggleWrapper({
 }) {
   const EXPERIMENTAL_FEATURE = 'experimentalFeature'
   const IGNORE_SSL = 'ignoreSSLFeature'
+  const HTTPS_PROXY_FEATURE = 'httpsProxyFeature'
   const [experimentalFeature, directSetExperimentalFeature] = useState<boolean>(false)
   const [ignoreSSL, directSetIgnoreSSL] = useState<boolean>(false)
+  const [proxy, directSetProxy] = useState<string>('')
 
   useEffect(() => {
     directSetExperimentalFeature(
@@ -33,6 +39,9 @@ export default function FeatureToggleWrapper({
     )
     directSetIgnoreSSL(
       localStorage.getItem(IGNORE_SSL) === 'true'
+    )
+    directSetProxy(
+      localStorage.getItem(HTTPS_PROXY_FEATURE)
     )
   }, [])
 
@@ -46,13 +55,20 @@ export default function FeatureToggleWrapper({
     directSetIgnoreSSL(on)
   }
 
+  const setProxy = (proxy: string) => {
+    localStorage.setItem(HTTPS_PROXY_FEATURE, proxy)
+    directSetProxy(proxy)
+  }
+
   return (
     <FeatureToggleContext.Provider
       value={{
         experimentalFeature,
-        ignoreSSL, 
+        ignoreSSL,
+        proxy,
         setExperimentalFeature,
         setIgnoreSSL,
+        setProxy,
       }}
     >
       {children}

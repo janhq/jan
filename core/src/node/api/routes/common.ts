@@ -27,7 +27,7 @@ export const commonRouter = async (app: HttpServer) => {
 
   // Download Model Routes
   app.get(`/models/download/:modelId`, async (request: any) =>
-    downloadModel(request.params.modelId, request.query.ignoreSSL === 'true'),
+    downloadModel(request.params.modelId, { ignoreSSL: request.query.ignoreSSL === 'true', proxy: request.query.proxy }),
   )
 
   // Chat Completion Routes

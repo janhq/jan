@@ -80,10 +80,10 @@ export default class JanModelExtension implements ModelExtension {
   /**
    * Downloads a machine learning model.
    * @param model - The model to download.
-   * @param ignoreSSL - True if SSL certificates should not be checked.
+   * @param network - Optional object to specify proxy/whether to ignore SSL certificates.
    * @returns A Promise that resolves when the model is downloaded.
    */
-  async downloadModel(model: Model, ignoreSSL: boolean): Promise<void> {
+  async downloadModel(model: Model, network?: { ignoreSSL?: boolean; proxy?: string }): Promise<void> {
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
@@ -97,7 +97,7 @@ export default class JanModelExtension implements ModelExtension {
       ? extractedFileName
       : model.id
     const path = await joinPath([modelDirPath, fileName])
-    downloadFile(model.source_url, path, ignoreSSL)
+    downloadFile(model.source_url, path, network)
   }
 
   /**

@@ -1,12 +1,13 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 
-import { useContext, useEffect, useState } from 'react'
+import { useContext, useEffect, useState, useCallback, ChangeEvent } from 'react'
 
 import { fs } from '@janhq/core'
 import {
   Switch,
   Button,
+  Input,
   Modal,
   ModalContent,
   ModalHeader,
@@ -26,12 +27,23 @@ import { toaster } from '@/containers/Toast'
 const serverEnabledAtom = atom<boolean>(false)
 
 const Advanced = () => {
-  const { experimentalFeature, setExperimentalFeature, ignoreSSL, setIgnoreSSL } =
+  const { experimentalFeature, setExperimentalFeature, ignoreSSL, setIgnoreSSL, proxy, setProxy } =
     useContext(FeatureToggleContext)
+  const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
+  const onProxyChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value || ''
+    setPartialProxy(value)
+    if (value.startsWith('http')) {
+      setProxy(value)
+    }
+    else {
+      setProxy('')
+    }
+  }, [setPartialProxy, setProxy])
 
   useEffect(() => {
     readSettings().then((settings) => {
@@ -103,6 +115,24 @@ const Advanced = () => {
           }}
         />
       </div>
+      {/* Proxy */}
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">
+              HTTPS Proxy
+            </h6>
+          </div>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            Specify the HTTPS proxy or leave blank (proxy auto-configuration and SOCKS not supported).
+          </p>
+          <Input
+            placeholder={"http://<user>:<password>@<domain or IP>:<port>"}
+            value={partialProxy}
+            onChange={onProxyChange}
+          />
+        </div>
+      </div>
       {/* Ignore SSL certificates */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="w-4/5 flex-shrink-0 space-y-1.5">
@@ -112,7 +142,7 @@ const Advanced = () => {
             </h6>
           </div>
           <p className="whitespace-pre-wrap leading-relaxed">
-            Useful for coporate proxies that use self-signed certificates.
+            Allow self-signed or unverified certificates - may be required for certain proxies.
           </p>
         </div>
         <Switch
