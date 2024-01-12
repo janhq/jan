@@ -12,11 +12,6 @@ export const getConfigurationsData = (
 ) => {
   const componentData: SettingComponentData[] = []
 
-  const defaultValue = (value?: number) => {
-    if (value && value < 4096) return value
-    return 4096
-  }
-
   Object.keys(settings).forEach((key: string) => {
     const componentSetting = presetConfiguration[key]
 
@@ -32,16 +27,10 @@ export const getConfigurationsData = (
             case 'max_tokens':
               componentSetting.controllerData.max =
                 selectedModel?.parameters.max_tokens || 4096
-              componentSetting.controllerData.value = defaultValue(
-                selectedModel?.parameters.max_tokens
-              )
               break
             case 'ctx_len':
               componentSetting.controllerData.max =
                 selectedModel?.settings.ctx_len || 4096
-              componentSetting.controllerData.value = defaultValue(
-                selectedModel?.settings.ctx_len
-              )
               break
           }
         }
