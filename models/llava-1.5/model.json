@@ -13,7 +13,7 @@
   "object": "model",
   "name": "LlaVa 1.5",
   "version": "1.0",
-  "description": "This can bring vision understanding to Jan",
+  "description": "LlaVa 1.5 can bring vision understanding to Jan",
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
@@ -25,9 +25,9 @@
     "max_tokens": 4096
   },
   "metadata": {
-    "author": "The Bloke",
+    "author": "Mys",
     "tags": ["Vision"],
-    "size": 10000000000
+    "size": 6200000000
   },
   "engine": "nitro"
 }
