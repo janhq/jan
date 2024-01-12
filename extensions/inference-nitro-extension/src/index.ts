@@ -23,7 +23,6 @@ import {
   joinPath,
   InferenceExtension,
   log,
-  InferenceEngine,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
