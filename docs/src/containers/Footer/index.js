@@ -6,7 +6,7 @@ import { BiLogoDiscordAlt } from "react-icons/bi";
 const socials = [
   {
     icon: <AiOutlineTwitter className="text-xl text-black dark:text-white" />,
-    href: "https://twitter.com/janhq_",
+    href: "https://twitter.com/janframework",
   },
   {
     icon: <BiLogoDiscordAlt className="text-xl text-black dark:text-white" />,
@@ -56,7 +56,7 @@ const menus = [
       },
       {
         menu: "Twitter",
-        path: "https://twitter.com/janhq_",
+        path: "https://twitter.com/janframework",
         external: true,
       },
     ],
