@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { InferenceEngine, Model } from '@janhq/core'
+import {
+  InferenceEngine,
+  Model,
+  ModelRuntimeParams,
+  ModelSettingParams,
+} from '@janhq/core'
 import {
   Button,
   Select,
@@ -29,6 +34,7 @@ import useRecommendedModel from '@/hooks/useRecommendedModel'
 import { toGibibytes } from '@/utils/converter'
 
 import {
+  ModelParams,
   activeThreadAtom,
   getActiveThreadIdAtom,
   setThreadModelParamsAtom,
@@ -59,6 +65,15 @@ export default function DropdownListSidebar() {
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
+  /**
+   * Default value for max_tokens and ctx_len
+   * Its to avoid OOM issue since a model can set a big number for these settings
+   */
+  const defaultValue = (value?: number) => {
+    if (value && value < 4096) return value
+    return 4096
+  }
+
   useEffect(() => {
     setSelected(recommendedModel)
     setSelectedModel(recommendedModel)
@@ -66,9 +81,12 @@ export default function DropdownListSidebar() {
     if (activeThread) {
       const finishInit = threadStates[activeThread.id].isFinishInit ?? true
       if (finishInit) return
-      const modelParams = {
+      const modelParams: ModelParams = {
         ...recommendedModel?.parameters,
         ...recommendedModel?.settings,
+        // This is to set default value for these settings instead of maximum value
+        max_tokens: defaultValue(recommendedModel?.parameters.max_tokens),
+        ctx_len: defaultValue(recommendedModel?.settings.ctx_len),
       }
       setThreadModelParams(activeThread.id, modelParams)
     }
