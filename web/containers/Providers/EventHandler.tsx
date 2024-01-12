@@ -146,11 +146,51 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     [updateMessage, updateThreadWaiting]
   )
 
+  const onFirstPromptUpdate = useCallback(
+    (message: ThreadMessage) => {
+      updateMessage(
+        message.id,
+        message.thread_id,
+        message.content,
+        message.status
+      )
+
+      if (message.status !== MessageStatus.Pending) {
+        // Mark the thread as not waiting for response
+        updateThreadWaiting(message.thread_id, false)
+
+        const thread = threadsRef.current?.find(
+          (e) => e.id == message.thread_id
+        )
+
+        if (thread) {
+          const messageContent = message.content[0]?.text.value ?? ''
+          const metadata = {
+            ...thread.metadata,
+            lastMessage: messageContent,
+          }
+
+          // Update the Thread title with the response of the inference
+          thread.title = messageContent
+
+          extensionManager
+            .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+            ?.saveThread({
+              ...thread,
+              metadata,
+            })
+        }
+      }
+    },
+    [updateMessage, updateThreadWaiting]
+  )
+
   useEffect(() => {
     console.log('Registering events')
     if (window.core?.events) {
       events.on(MessageEvent.OnMessageResponse, onNewMessageResponse)
       events.on(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
+      events.on(MessageEvent.OnFirstPromptUpdate, onFirstPromptUpdate)
 
       events.on(ModelEvent.OnModelReady, onModelReady)
       events.on(ModelEvent.OnModelFail, onModelInitFailed)
@@ -159,6 +199,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   }, [
     onNewMessageResponse,
     onMessageResponseUpdate,
+    onFirstPromptUpdate,
     onModelReady,
     onModelInitFailed,
     onModelStopped,
@@ -168,7 +209,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     return () => {
       events.off(MessageEvent.OnMessageResponse, onNewMessageResponse)
       events.off(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
+      events.off(MessageEvent.OnFirstPromptUpdate, onFirstPromptUpdate)
     }
-  }, [onNewMessageResponse, onMessageResponseUpdate])
+  }, [onNewMessageResponse, onMessageResponseUpdate, onFirstPromptUpdate])
   return <>{children}</>
 }

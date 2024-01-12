@@ -142,6 +142,52 @@ export default function useSendChatMessage() {
     const runtimeParams = toRuntimeParams(activeModelParams)
     const settingParams = toSettingParams(activeModelParams)
 
+    let modelRequest = selectedModel ?? activeThread.assistants[0].model
+
+    // if the thread is not initialized, we need to initialize it first
+    if (
+      !activeThread.isFinishInit ||
+      activeThread.assistants[0].model.id !== selectedModel?.id
+    ) {
+      // This is the first time message comes in on a new thread
+      //  Summarize the first message, and make that the title of the Thread
+      // 1. Get the summary of the first prompt using whatever engine user is currently using
+      const firstPrompt = message.trim()
+      const summarizeFirstPrompt =
+        'Summarize "' + firstPrompt + '" in 5 words as a title'
+
+      // Prompt: Given this query from user {query}, return to me the summary in 5 words as the title
+      const msgId = ulid()
+      const messages: ChatCompletionMessage[] = [
+        {
+          role: ChatCompletionRole.User,
+          content: summarizeFirstPrompt,
+        } as ChatCompletionMessage,
+      ]
+
+      const firstPromptRequest: MessageRequest = {
+        id: msgId,
+        threadId: activeThread.id,
+        messages,
+        model: {
+          ...modelRequest,
+          settings: settingParams,
+          parameters: runtimeParams,
+        },
+      }
+
+      // Make sure the model is started so that we can summarize the first ever message
+      const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
+      if (activeModel?.id !== modelId) {
+        startModel(modelId)
+        await waitForModelStarting(modelId)
+      }
+
+      // 2. Update the title with the result of the inference
+      //      the title will be updated as part of the `EventName.OnFirstPromptUpdate`
+      events.emit(MessageEvent.OnFirstPrompt, firstPromptRequest)
+    }
+
     updateThreadWaiting(activeThread.id, true)
     const prompt = message.trim()
     setCurrentPrompt('')
@@ -191,7 +237,6 @@ export default function useSendChatMessage() {
           ])
       )
 
-    let modelRequest = selectedModel ?? activeThread.assistants[0].model
     if (runtimeParams.stream == null) {
       runtimeParams.stream = true
     }

@@ -85,7 +85,10 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
         // Update settings on changes
         if (settingsKey === settingsFilePath)
           JanInferenceOpenAIExtension.writeDefaultEngineSettings();
-      },
+    });
+    
+    events.on(MessageEvent.OnFirstPrompt, (firstPrompt) =>
+      JanInferenceOpenAIExtension.onFirstPrompt(firstPrompt, this)
     );
   }
 
@@ -137,6 +140,82 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
   ) {
     instance.isCancelled = true;
     instance.controller?.abort();
+  }
+
+  /**
+   * Handles the first prompt, making an inference of summarizing what's the first prompt is about.
+   *  Unlike the standard message prompt, we don't want this to be part of the Chat repsonse.
+   * Pass instance as a reference.
+   * @param {MessageRequest} firstPrompt - The data for the first prompt message request.
+   */
+  private static async onFirstPrompt(
+    firstPrompt: MessageRequest, 
+    instance: JanInferenceOpenAIExtension
+  ) {
+    if (firstPrompt.model.engine !== "openai") {
+      return;
+    }
+
+    const timestamp = Date.now();
+    const message: ThreadMessage = {
+      id: ulid(),
+      thread_id: firstPrompt.threadId,
+      assistant_id: firstPrompt.assistantId,
+      role: ChatCompletionRole.Assistant,
+      content: [],
+      status: MessageStatus.Pending,
+      created: timestamp,
+      updated: timestamp,
+      object: "thread.message",
+    };
+
+    instance.isCancelled = false;
+    instance.controller = new AbortController();
+
+    requestInference(
+      firstPrompt?.messages ?? [],
+      this._engineSettings,
+      {
+        ...JanInferenceOpenAIExtension._currentModel,
+        parameters: firstPrompt.model.parameters,
+      },
+      instance.controller
+    ).subscribe({
+      next: (content) => {
+        const messageContent: ThreadContent = {
+          type: ContentType.Text,
+          text: {
+            value: content.trim(),
+            annotations: [],
+          },
+        };
+        message.content = [messageContent];
+        events.emit(MessageEvent.OnFirstPromptUpdate, message);
+      },
+      complete: async () => {
+        message.status = message.content.length
+          ? MessageStatus.Ready
+          : MessageStatus.Error;
+        events.emit(MessageEvent.OnFirstPromptUpdate, message);
+      },
+      error: async (err) => {
+        if (instance.isCancelled || message.content.length > 0) {
+          message.status = MessageStatus.Error;
+          events.emit(MessageEvent.OnFirstPromptUpdate, message);
+          return;
+        }
+        const messageContent: ThreadContent = {
+          type: ContentType.Text,
+          text: {
+            value: "Error occurred: " + err.message,
+            annotations: [],
+          },
+        };
+        message.content = [messageContent];
+        message.status = MessageStatus.Ready;
+        events.emit(MessageEvent.OnFirstPromptUpdate, message);
+      },
+    });
   }
 
   /**

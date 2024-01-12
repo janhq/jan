@@ -112,6 +112,8 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       this.onInferenceStopped()
     );
 
+    events.on(MessageEvent.OnFirstPrompt, (firstPrompt: MessageRequest) => this.onFirstPrompt(firstPrompt));
+
     // Attempt to fetch nvidia info
     await executeOnMain(NODE, "updateNvidiaInfo", {});
   }
@@ -232,6 +234,68 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
           reject(err);
         },
       });
+    });
+  }
+
+  /**
+   * Handles the first prompt, making an inference of summarizing what's the first prompt is about.
+   *  Unlike the standard message prompt, we don't want this to be part of the Chat repsonse.
+   * Pass instance as a reference.
+   * @param {MessageRequest} firstPrompt - The data for the first prompt message request.
+   */
+  private async onFirstPrompt(firstPrompt: MessageRequest) {
+    if (firstPrompt.model?.engine !== InferenceEngine.nitro || !this._currentModel) {
+      return;
+    }
+
+    const timestamp = Date.now();
+    const message: ThreadMessage = {
+      id: ulid(),
+      thread_id: firstPrompt.threadId,
+      assistant_id: firstPrompt.assistantId,
+      role: ChatCompletionRole.Assistant,
+      content: [],
+      status: MessageStatus.Pending,
+      created: timestamp,
+      updated: timestamp,
+      object: "thread.message",
+    };
+
+    this.isCancelled = false;
+    this.controller = new AbortController();
+
+    requestInference(
+      firstPrompt.messages ?? [],
+      { ...this._currentModel, ...firstPrompt.model },
+      this.controller
+    ).subscribe({
+      next: (content) => {
+        const messageContent: ThreadContent = {
+          type: ContentType.Text,
+          text: {
+            value: content.trim(),
+            annotations: [],
+          },
+        };
+        message.content = [messageContent];
+        events.emit(MessageEvent.OnFirstPromptUpdate, message);
+      },
+      complete: async () => {
+        message.status = message.content.length
+          ? MessageStatus.Ready
+          : MessageStatus.Error;
+        events.emit(MessageEvent.OnFirstPromptUpdate, message);
+      },
+      error: async (err) => {
+        if (this.isCancelled || message.content.length) {
+          message.status = MessageStatus.Stopped;
+          events.emit(MessageEvent.OnFirstPromptUpdate, message);
+          return;
+        }
+        message.status = MessageStatus.Error;
+        events.emit(MessageEvent.OnFirstPromptUpdate, message);
+        log(`[APP]::Error: ${err.message}`);
+      },
     });
   }
 
