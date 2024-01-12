@@ -1,0 +1,29 @@
+{
+    "source_url": "https://huggingface.co/TheBloke/Starling-LM-7B-alpha-GGUF/resolve/main/starling-lm-7b-alpha.Q4_K_M.gguf",
+    "id": "stable-zephyr-3b",
+    "object": "model",
+    "name": "Stable Zephyr 3B Q8",
+    "version": "1.0",
+    "description": "StableLM Zephyr 3B is trained on a mix of publicly and synthetic datasets. It's focus on safety and reliability.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "prompt_template": "<|user|>{prompt}<|endoftext|><|assistant|>"
+    },
+    "parameters": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "stop": ["<|endoftext|>"],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "StabilityAI",
+      "tags": ["3B","Finetuned"],
+      "size": 2970000000
+    },
+    "engine": "nitro"
+  }
+  
