@@ -198,8 +198,8 @@ The Core API also provides functions to perform file operations. Here are a coup
 You can download a file from a specified URL and save it with a given file name using the core.downloadFile function.
 
 ```js
-function downloadModel(url: string, fileName: string) {
-  core.downloadFile(url, fileName);
+function downloadModel(url: string, fileName: string, ignoreSSL: boolean) {
+  core.downloadFile(url, fileName, ignoreSSL);
 }
 ```
 

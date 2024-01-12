@@ -9,7 +9,7 @@ export interface ModelInterface {
    * @param model - The model to download.
    * @returns A Promise that resolves when the model has been downloaded.
    */
-  downloadModel(model: Model): Promise<void>
+  downloadModel(model: Model, ignoreSSL: boolean): Promise<void>
 
   /**
    * Cancels the download of a specific model.

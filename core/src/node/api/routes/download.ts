@@ -21,7 +21,7 @@ export const downloadRouter = async (app: HttpServer) => {
     const request = require('request')
     const progress = require('request-progress')
     
-    const rq = request(normalizedArgs[0])
+    const rq = request({ url: normalizedArgs[0], strictSSL: req.query.ignoreSSL !== 'true' })
     progress(rq, {})
       .on('progress', function (state: any) {
         console.log('download onProgress', state)

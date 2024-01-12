@@ -54,7 +54,7 @@ export function handleDownloaderIPCs() {
    * @param url - The URL to download the file from.
    * @param fileName - The name to give the downloaded file.
    */
-  ipcMain.handle(DownloadRoute.downloadFile, async (_event, url, fileName) => {
+  ipcMain.handle(DownloadRoute.downloadFile, async (_event, url, fileName, ignoreSSL) => {
     const userDataPath = join(app.getPath('home'), 'jan')
     if (
       typeof fileName === 'string' &&
@@ -63,7 +63,7 @@ export function handleDownloaderIPCs() {
       fileName = fileName.replace('file:/', '').replace('file:\\', '')
     }
     const destination = resolve(userDataPath, fileName)
-    const rq = request(url)
+    const rq = request({ url, strictSSL: !ignoreSSL })
 
     // Put request to download manager instance
     DownloadManager.instance.setRequest(fileName, rq)

@@ -26,7 +26,7 @@ import { toaster } from '@/containers/Toast'
 const serverEnabledAtom = atom<boolean>(false)
 
 const Advanced = () => {
-  const { experimentalFeatureEnabed, setExperimentalFeatureEnabled } =
+  const { experimentalFeature, setExperimentalFeature, ignoreSSL, setIgnoreSSL } =
     useContext(FeatureToggleContext)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
@@ -93,12 +93,35 @@ const Advanced = () => {
           </p>
         </div>
         <Switch
-          checked={experimentalFeatureEnabed}
+          checked={experimentalFeature}
           onCheckedChange={(e) => {
             if (e === true) {
-              setExperimentalFeatureEnabled(true)
+              setExperimentalFeature(true)
             } else {
-              setExperimentalFeatureEnabled(false)
+              setExperimentalFeature(false)
+            }
+          }}
+        />
+      </div>
+      {/* Ignore SSL certificates */}
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">
+              Ignore SSL certificates
+            </h6>
+          </div>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            Useful for coporate proxies that use self-signed certificates.
+          </p>
+        </div>
+        <Switch
+          checked={ignoreSSL}
+          onCheckedChange={(e) => {
+            if (e === true) {
+              setIgnoreSSL(true)
+            } else {
+              setIgnoreSSL(false)
             }
           }}
         />
