@@ -22,7 +22,7 @@ export default function FeatureToggleWrapper({
 }: {
   children: ReactNode
 }) {
-  const EXPERIMENTAL_FEATURE = 'expermientalFeature'
+  const EXPERIMENTAL_FEATURE = 'experimentalFeature'
   const IGNORE_SSL = 'ignoreSSLFeature'
   const [experimentalFeature, directSetExperimentalFeature] = useState<boolean>(false)
   const [ignoreSSL, directSetIgnoreSSL] = useState<boolean>(false)

@@ -22,7 +22,7 @@
     "@fastify/static": "^6.12.0",
     "@fastify/swagger": "^8.13.0",
     "@fastify/swagger-ui": "^2.0.1",
-    "@janhq/core": "file:../core",
+    "@janhq/core": "link:./core",
     "dotenv": "^16.3.1",
     "fastify": "^4.24.3",
     "request": "^2.88.2",

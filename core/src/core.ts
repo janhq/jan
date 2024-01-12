@@ -19,7 +19,7 @@ const executeOnMain: (extension: string, method: string, ...args: any[]) => Prom
  * Downloads a file from a URL and saves it to the local file system.
  * @param {string} url - The URL of the file to download.
  * @param {string} fileName - The name to use for the downloaded file.
- * @param {boolean} ignoreSSL - Ignores SSL certificates if true.
+ * @param {boolean} ignoreSSL - Avoid strict SSL certificate checks if true.
  * @returns {Promise<any>} A promise that resolves when the file is downloaded.
  */
 const downloadFile: (url: string, fileName: string, ignoreSSL: boolean) => Promise<any> = (url, fileName, ignoreSSL) => {
