@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { InferenceEngine, Model } from '@janhq/core'
+import {
+  InferenceEngine,
+  Model,
+  ModelRuntimeParams,
+  ModelSettingParams,
+} from '@janhq/core'
 import {
   Button,
   Select,
@@ -10,15 +15,23 @@ import {
   SelectTrigger,
   SelectValue,
   Input,
+  Tooltip,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+  TooltipArrow,
+  Badge,
 } from '@janhq/uikit'
 
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
-import { MonitorIcon } from 'lucide-react'
+import { MonitorIcon, InfoIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
+
+import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { useEngineSettings } from '@/hooks/useEngineSettings'
 
@@ -28,7 +41,9 @@ import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import { toGibibytes } from '@/utils/converter'
 
+import { totalRamAtom, usedRamAtom } from '@/helpers/atoms/SystemBar.atom'
 import {
+  ModelParams,
   activeThreadAtom,
   getActiveThreadIdAtom,
   setThreadModelParamsAtom,
@@ -43,6 +58,7 @@ export default function DropdownListSidebar() {
   const threadStates = useAtomValue(threadStatesAtom)
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+  const { activeModel } = useActiveModel()
 
   const [selected, setSelected] = useState<Model | undefined>()
   const { setMainViewState } = useMainViewState()
@@ -50,6 +66,8 @@ export default function DropdownListSidebar() {
     { api_key: string } | undefined
   >(undefined)
   const { readOpenAISettings, saveOpenAISettings } = useEngineSettings()
+  const totalRam = useAtomValue(totalRamAtom)
+  const usedRam = useAtomValue(usedRamAtom)
 
   useEffect(() => {
     readOpenAISettings().then((settings) => {
@@ -59,6 +77,15 @@ export default function DropdownListSidebar() {
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
+  /**
+   * Default value for max_tokens and ctx_len
+   * Its to avoid OOM issue since a model can set a big number for these settings
+   */
+  const defaultValue = (value?: number) => {
+    if (value && value < 4096) return value
+    return 4096
+  }
+
   useEffect(() => {
     setSelected(recommendedModel)
     setSelectedModel(recommendedModel)
@@ -66,9 +93,12 @@ export default function DropdownListSidebar() {
     if (activeThread) {
       const finishInit = threadStates[activeThread.id].isFinishInit ?? true
       if (finishInit) return
-      const modelParams = {
+      const modelParams: ModelParams = {
         ...recommendedModel?.parameters,
         ...recommendedModel?.settings,
+        // This is to set default value for these settings instead of maximum value
+        max_tokens: defaultValue(recommendedModel?.parameters.max_tokens),
+        ctx_len: defaultValue(recommendedModel?.settings.ctx_len),
       }
       setThreadModelParams(activeThread.id, modelParams)
     }
@@ -101,6 +131,71 @@ export default function DropdownListSidebar() {
     return null
   }
 
+  const getLabel = (size: number) => {
+    const minimumRamModel = size * 1.25
+    const availableRam = totalRam - usedRam + (activeModel?.metadata.size ?? 0)
+    if (minimumRamModel > totalRam) {
+      return (
+        <Badge className="space-x-1 rounded-md" themes="danger">
+          <span>Not enough RAM</span>
+          <Tooltip>
+            <TooltipTrigger>
+              <InfoIcon size={16} />
+            </TooltipTrigger>
+            <TooltipPortal>
+              <TooltipContent
+                side="right"
+                sideOffset={10}
+                className="max-w-[300px]"
+              >
+                <span>
+                  {`This tag signals insufficient RAM for optimal model
+                  performance. It's dynamic and may change with your system's
+                  RAM availability.`}
+                </span>
+                <TooltipArrow />
+              </TooltipContent>
+            </TooltipPortal>
+          </Tooltip>
+        </Badge>
+      )
+    }
+    if (minimumRamModel < availableRam) {
+      return (
+        <Badge className="space-x-1 rounded-md" themes="success">
+          <span>Recommended</span>
+        </Badge>
+      )
+    }
+    if (minimumRamModel < totalRam && minimumRamModel > availableRam) {
+      return (
+        <Badge className="space-x-1 rounded-md" themes="warning">
+          <span>Slow on your device</span>
+          <Tooltip>
+            <TooltipTrigger>
+              <InfoIcon size={16} />
+            </TooltipTrigger>
+            <TooltipPortal>
+              <TooltipContent
+                side="right"
+                sideOffset={10}
+                className="max-w-[300px]"
+              >
+                <span>
+                  This tag indicates that your current RAM performance may
+                  affect model speed. It can change based on other active apps.
+                  To improve, consider closing unnecessary applications to free
+                  up RAM.
+                </span>
+                <TooltipArrow />
+              </TooltipContent>
+            </TooltipPortal>
+          </Tooltip>
+        </Badge>
+      )
+    }
+  }
+
   return (
     <>
       <Select value={selected?.id} onValueChange={onValueSelected}>
@@ -109,7 +204,7 @@ export default function DropdownListSidebar() {
             {downloadedModels.filter((x) => x.id === selected?.id)[0]?.name}
           </SelectValue>
         </SelectTrigger>
-        <SelectContent className="right-5 block w-full min-w-[300px] pr-0">
+        <SelectContent className="right-2 block w-full min-w-[450px] pr-0">
           <div className="flex w-full items-center space-x-2 px-4 py-2">
             <MonitorIcon size={20} className="text-muted-foreground" />
             <span>Local</span>
@@ -129,9 +224,13 @@ export default function DropdownListSidebar() {
                 >
                   <div className="flex w-full justify-between">
                     <span className="line-clamp-1 block">{x.name}</span>
-                    <span className="font-bold text-muted-foreground">
-                      {toGibibytes(x.metadata.size)}
-                    </span>
+                    <div className="space-x-2">
+                      <span className="font-bold text-muted-foreground">
+                        {toGibibytes(x.metadata.size)}
+                      </span>
+                      {x.engine == InferenceEngine.nitro &&
+                        getLabel(x.metadata.size)}
+                    </div>
                   </div>
                 </SelectItem>
               ))}
