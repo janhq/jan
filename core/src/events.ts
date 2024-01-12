@@ -21,6 +21,10 @@ export enum EventName {
   OnModelStopped = 'OnModelStopped',
   /** The `OnInferenceStopped` event is emitted when a inference is stopped. */
   OnInferenceStopped = 'OnInferenceStopped',
+  /** The `OnFirstPrompt` event is emitted when the first prompt is entered in a thread. */
+  OnFirstPrompt = 'OnFirstPrompt',
+/** The `OnFirstPrompt` event is emitted when the first prompt is updated. */
+  OnFirstPromptUpdate = 'OnFirstPromptUpdate',
 }
 
 /**

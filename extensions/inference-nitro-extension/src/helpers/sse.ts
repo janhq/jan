@@ -30,6 +30,8 @@ export function requestInference(
       signal: controller?.signal,
     })
       .then(async (response) => {
+        console.log("--------- HELPER SSE --------");
+        console.log(response);
         if (model.parameters.stream === false) {
           const data = await response.json();
           subscriber.next(data.choices[0]?.message?.content ?? "");

@@ -74,9 +74,14 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     events.on(EventName.OnModelStop, (model: OpenAIModel) => {
       JanInferenceOpenAIExtension.handleModelStop(model);
     });
+
     events.on(EventName.OnInferenceStopped, () => {
       JanInferenceOpenAIExtension.handleInferenceStopped(this);
     });
+
+    events.on(EventName.OnFirstPrompt, (firstPrompt) =>
+      JanInferenceOpenAIExtension.onFirstPrompt(firstPrompt)
+    );
   }
 
   /**
@@ -164,6 +169,11 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   ) {
     instance.isCancelled = true;
     instance.controller?.abort();
+  }
+
+  private static async onFirstPrompt(firstPrompt: string) {
+    console.log("------ ON FIRST PROMPT OPENAI ------");
+    console.log(firstPrompt);
   }
 
   /**
