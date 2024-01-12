@@ -25,6 +25,7 @@ import {
 import {
   updateThreadWaitingForResponseAtom,
   threadsAtom,
+  updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function EventHandler({ children }: { children: ReactNode }) {
@@ -113,6 +114,16 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     }
   }
 
+  async function handleFirstPromptUpdate(message: ThreadMessage) {
+    console.log("----- HANDLE FIRST PROMPT UPDATE -----");
+    console.log(message);
+    const thread = threadsRef.current?.find((e) => e.id == message.thread_id);
+    console.log(thread);
+    if (message.content.length > 0 && message.content[0].text) {
+      thread.title = message.content[0].text.value;
+    }
+  }
+
   useEffect(() => {
     if (window.core?.events) {
       events.on(EventName.OnMessageResponse, handleNewMessageResponse)
@@ -120,6 +131,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       events.on(EventName.OnModelReady, handleModelReady)
       events.on(EventName.OnModelFail, handleModelFail)
       events.on(EventName.OnModelStopped, handleModelStopped)
+      events.on(EventName.OnFirstPromptUpdate, handleFirstPromptUpdate)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

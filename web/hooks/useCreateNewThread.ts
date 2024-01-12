@@ -22,6 +22,8 @@ import {
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
+  console.log("----- REQUEST CREATE NEW THREAD ATOM ----");
+  console.log(newThread);
   // create thread state for this new thread
   const currentState = { ...get(threadStatesAtom) }
 
@@ -40,6 +42,7 @@ const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
 })
 
 export const useCreateNewThread = () => {
+  // console.log("----- USE CREATE NEW THREAD ----");
   const threadStates = useAtomValue(threadStatesAtom)
   const createNewThread = useSetAtom(createNewThreadAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
@@ -50,6 +53,7 @@ export const useCreateNewThread = () => {
     assistant: Assistant,
     model?: Model | undefined
   ) => {
+    console.log("----- REQUEST CREATE NEW THREAD ----");
     // loop through threads state and filter if there's any thread that is not finish init
     let unfinishedInitThreadId: string | undefined = undefined
     for (const key in threadStates) {

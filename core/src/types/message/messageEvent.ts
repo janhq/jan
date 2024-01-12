@@ -5,4 +5,8 @@ export enum MessageEvent {
   OnMessageResponse = 'OnMessageResponse',
   /** The `OnMessageUpdate` event is emitted when a message is updated. */
   OnMessageUpdate = 'OnMessageUpdate',
+
+  OnFirstPrompt = 'OnFirstPrompt',
+
+  OnFirstPromptUpdate = 'OnFirstPromptUpdate',
 }

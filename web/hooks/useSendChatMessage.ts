@@ -27,6 +27,8 @@ import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { useActiveModel } from './useActiveModel'
 
+import { requestInference } from "../helpers/sse";
+
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
   addNewMessageAtom,
@@ -135,9 +137,11 @@ export default function useSendChatMessage() {
   }
 
   const sendChatMessage = async () => {
+    console.log("----- SEND CHAT MESSAGE -----");
     if (!currentPrompt || currentPrompt.trim().length === 0) return
 
     if (!activeThread) {
+      console.log("----- SEND CHAT MESSAGE NO ACTIVE -----");
       console.error('No active thread')
       return
     }
@@ -148,11 +152,14 @@ export default function useSendChatMessage() {
     const runtimeParams = toRuntimeParams(activeModelParams)
     const settingParams = toSettingParams(activeModelParams)
 
+    const modelRequest = selectedModel ?? activeThread.assistants[0].model
+
     // if the thread is not initialized, we need to initialize it first
     if (
       !activeThreadState.isFinishInit ||
       activeThread.assistants[0].model.id !== selectedModel?.id
     ) {
+      console.log("---- INIT THREAD ---");
       if (!selectedModel) {
         toaster({ title: 'Please select a model' })
         return
@@ -177,8 +184,90 @@ export default function useSendChatMessage() {
           },
         ],
       }
+
       updateThreadInitSuccess(activeThread.id)
       updateThread(updatedThread)
+
+      console.log("---- UPDATE INIT SUCCESS ---");
+      console.log("---- ACTIVE THREAD ---");
+      console.log(activeThread);
+      console.log("---- UPDATED THREAD ---");
+      console.log(updatedThread);
+
+      // This is the first time message comes in on a new thread
+      // 1. Get the summary of the first prompt using whatever engine user is currently using
+      const firstPrompt = currentPrompt.trim();
+      const summarizeFirstPrompt = "Summarize '" + firstPrompt + "' in 5 words as a title";
+
+      // Prompt: Given this query from user {query}, return to me the summary in 5 words as the title
+      const msgId = ulid()
+      const messages: ChatCompletionMessage[] = []
+        .concat(
+          currentMessages
+            .map<ChatCompletionMessage>((msg) => ({
+              role: msg.role,
+              content: msg.content[0]?.text.value ?? '',
+            }))
+            .concat([
+              {
+                role: ChatCompletionRole.User,
+                content: summarizeFirstPrompt,
+              } as ChatCompletionMessage,
+            ])
+        )
+
+      const messageRequest: MessageRequest = {
+        id: msgId,
+        threadId: activeThread.id,
+        messages,
+        model: {
+          ...modelRequest,
+          settings: settingParams,
+          parameters: runtimeParams,
+        },
+      }
+
+      const timestamp = Date.now()
+      const threadMessage: ThreadMessage = {
+        id: msgId,
+        thread_id: activeThread.id,
+        role: ChatCompletionRole.User,
+        status: MessageStatus.Ready,
+        created: timestamp,
+        updated: timestamp,
+        object: 'thread.message',
+        content: [
+          {
+            type: ContentType.Text,
+            text: {
+              value: summarizeFirstPrompt,
+              annotations: [],
+            },
+          },
+        ],
+      }
+  
+      console.log("----- INIT THREAD MESSAGE -----");
+      console.log(threadMessage.content);
+  
+      // addNewMessage(threadMessage)
+  
+      await extensionManager
+        .get<ConversationalExtension>(ExtensionType.Conversational)
+        ?.addNewMessage(threadMessage)
+  
+      const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
+  
+      if (activeModel?.id !== modelId) {
+        setQueuedMessage(true)
+        startModel(modelId)
+        await WaitForModelStarting(modelId)
+        setQueuedMessage(false)
+      }
+
+      // 2. Update the title with the result of the inference
+      //      the title will be updated as part of the `EventName.OnFirstPromptUpdate`
+      events.emit(EventName.OnFirstPrompt, messageRequest);
 
       await extensionManager
         .get<ConversationalExtension>(ExtensionType.Conversational)
@@ -189,7 +278,14 @@ export default function useSendChatMessage() {
 
     const prompt = currentPrompt.trim()
     setCurrentPrompt('')
+    console.log("----- PROMPT ---");
+    console.log(prompt);
+    console.log("----- CURRENT MESSAGES -----");
+    console.log(currentMessages);
 
+    console.log("----- ACTIVE THREAD INSTRUCTIONS -----");
+    console.log(activeThread.assistants[0]?.instructions);
+    
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
     ]
@@ -215,8 +311,9 @@ export default function useSendChatMessage() {
           ])
       )
     const msgId = ulid()
+    console.log("------ MESSAGES ------");
+    console.log(messages);
 
-    const modelRequest = selectedModel ?? activeThread.assistants[0].model
     if (runtimeParams.stream == null) {
       runtimeParams.stream = true
     }
@@ -250,6 +347,9 @@ export default function useSendChatMessage() {
       ],
     }
 
+    console.log("----- THREAD MESSAGE -----");
+    console.log(threadMessage.content);
+
     addNewMessage(threadMessage)
 
     await extensionManager
@@ -265,7 +365,7 @@ export default function useSendChatMessage() {
       setQueuedMessage(false)
     }
 
-    events.emit(EventName.OnMessageSent, messageRequest)
+    events.emit(EventName.OnMessageSent, messageRequest);
 
     setReloadModel(false)
     setEngineParamsUpdate(false)

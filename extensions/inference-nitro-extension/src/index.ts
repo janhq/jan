@@ -89,6 +89,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     this.writeDefaultEngineSettings();
 
     // Events subscription
+    console.log("------ EVENT SUBSCRIPTION ---------");
     events.on(EventName.OnMessageSent, (data) => this.onMessageRequest(data));
 
     events.on(EventName.OnModelInit, (model: Model) => this.onModelInit(model));
@@ -96,6 +97,8 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     events.on(EventName.OnModelStop, (model: Model) => this.onModelStop(model));
 
     events.on(EventName.OnInferenceStopped, () => this.onInferenceStopped());
+
+    events.on(EventName.OnFirstPrompt, (firstPrompt) => this.onFirstPrompt(firstPrompt));
 
     // Attempt to fetch nvidia info
     await executeOnMain(MODULE, "updateNvidiaInfo", {});
@@ -215,6 +218,66 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     });
   }
 
+  private async onFirstPrompt(firstPrompt: MessageRequest) {
+    console.log("------ ON FIRST PROMPT NITRO ------");
+    console.log(firstPrompt);
+
+    if (firstPrompt.model.engine !== "nitro") return;
+
+    const timestamp = Date.now();
+    const message: ThreadMessage = {
+      id: ulid(),
+      thread_id: firstPrompt.threadId,
+      assistant_id: firstPrompt.assistantId,
+      role: ChatCompletionRole.Assistant,
+      content: [],
+      status: MessageStatus.Pending,
+      created: timestamp,
+      updated: timestamp,
+      object: "thread.message",
+    };
+    // events.emit(EventName.OnMessageResponse, message);
+
+    this.isCancelled = false;
+    this.controller = new AbortController();
+
+    requestInference(
+      firstPrompt.messages ?? [],
+      { ...this._currentModel, ...firstPrompt.model },
+      this.controller
+    ).subscribe({
+      next: (content) => {
+        const messageContent: ThreadContent = {
+          type: ContentType.Text,
+          text: {
+            value: content.trim(),
+            annotations: [],
+          },
+        };
+        message.content = [messageContent];
+        // events.emit(EventName.OnFirstPromptUpdate, message);
+      },
+      complete: async () => {
+        message.status = message.content.length
+          ? MessageStatus.Ready
+          : MessageStatus.Error;
+        console.log("------ REQ INFERENCE COMPLETE -----");
+        console.log(message);
+        events.emit(EventName.OnFirstPromptUpdate, message);
+      },
+      error: async (err) => {
+        if (this.isCancelled || message.content.length) {
+          message.status = MessageStatus.Stopped;
+          // events.emit(EventName.OnFirstPromptUpdate, message);
+          return;
+        }
+        message.status = MessageStatus.Error;
+        // events.emit(EventName.OnFirstPromptUpdate, message);
+        log(`[APP]::Error: ${err.message}`);
+      },
+    });
+  }
+
   /**
    * Handles a new message request by making an inference request and emitting events.
    * Function registered in event manager, should be static to avoid binding issues.
@@ -222,6 +285,9 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    * @param {MessageRequest} data - The data for the new message request.
    */
   private async onMessageRequest(data: MessageRequest) {
+    console.log("----- ON MESSAGE REQUEST -----");
+    console.log(data);
+    
     if (data.model.engine !== "nitro") return;
 
     const timestamp = Date.now();
@@ -261,6 +327,8 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
         message.status = message.content.length
           ? MessageStatus.Ready
           : MessageStatus.Error;
+        console.log("------ ON MESSAGE REQUEST INFERENCE COMPLETE -----");
+        console.log(message);
         events.emit(EventName.OnMessageUpdate, message);
       },
       error: async (err) => {
