@@ -23,7 +23,11 @@
   ],
   "dependencies": {
     "@janhq/core": "file:../../core",
+    "gguf": "^1.0.3",
     "path-browserify": "^1.0.1",
     "ts-loader": "^9.5.0"
-  }
+  },
+  "bundleDependencies": [
+    "gguf"
+  ]
 }
