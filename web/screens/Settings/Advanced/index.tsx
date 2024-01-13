@@ -6,16 +6,18 @@ import { useContext, useEffect, useState } from 'react'
 import { fs } from '@janhq/core'
 import { Switch, Button } from '@janhq/uikit'
 
-import { atom, useAtom } from 'jotai'
+import { useAtom } from 'jotai'
 
 import ShortcutModal from '@/containers/ShortcutModal'
+import { toaster } from '@/containers/Toast'
+
 import { toaster } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useSettings } from '@/hooks/useSettings'
 
-const serverEnabledAtom = atom<boolean>(false)
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 const Advanced = () => {
   const { experimentalFeatureEnabed, setExperimentalFeatureEnabled } =
@@ -96,7 +98,7 @@ const Advanced = () => {
         />
       </div>
       {/* Server */}
-      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+      {/* <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="w-4/5 flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
             <h6 className="text-sm font-semibold capitalize">
@@ -118,7 +120,7 @@ const Advanced = () => {
             setServerEnabled(e)
           }}
         />
-      </div>
+      </div> */}
       {window.electronAPI && (
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
           <div className="w-4/5 flex-shrink-0 space-y-1.5">

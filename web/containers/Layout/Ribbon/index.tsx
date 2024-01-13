@@ -6,6 +6,7 @@ import {
 } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 
+import { useAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
@@ -22,11 +23,15 @@ import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+
 export default function RibbonNav() {
   const { mainViewState, setMainViewState } = useMainViewState()
+  const [serverEnabled] = useAtom(serverEnabledAtom)
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
+    if (serverEnabled && state === MainViewState.Thread) return
     setMainViewState(state)
   }
 
@@ -119,10 +124,24 @@ export default function RibbonNav() {
                           />
                         )}
                       </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={10}>
-                        <span>{primary.name}</span>
-                        <TooltipArrow />
-                      </TooltipContent>
+                      {serverEnabled &&
+                      primary.state === MainViewState.Thread ? (
+                        <TooltipContent
+                          side="right"
+                          sideOffset={10}
+                          className="max-w-[180px]"
+                        >
+                          <span>
+                            Threads are disabled while the server is running
+                          </span>
+                          <TooltipArrow />
+                        </TooltipContent>
+                      ) : (
+                        <TooltipContent side="right" sideOffset={10}>
+                          <span>{primary.name}</span>
+                          <TooltipArrow />
+                        </TooltipContent>
+                      )}
                     </Tooltip>
                   </div>
                 )
