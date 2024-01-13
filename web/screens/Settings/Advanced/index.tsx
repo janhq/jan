@@ -37,8 +37,8 @@ const Advanced = () => {
   const onProxyChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value || ''
     setPartialProxy(value)
-    if (value.startsWith('http')) {
-      setProxy(value)
+    if (value.trim().startsWith('http')) {
+      setProxy(value.trim())
     }
     else {
       setProxy('')
