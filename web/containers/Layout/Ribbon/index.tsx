@@ -11,6 +11,7 @@ import {
   SettingsIcon,
   MonitorIcon,
   LayoutGridIcon,
+  SquareCodeIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -53,6 +54,16 @@ export default function RibbonNav() {
   ]
 
   const secondaryMenus = [
+    {
+      name: 'Local Server',
+      icon: (
+        <SquareCodeIcon
+          size={20}
+          className="flex-shrink-0 text-muted-foreground"
+        />
+      ),
+      state: MainViewState.LocalServer,
+    },
     {
       name: 'System Monitor',
       icon: (

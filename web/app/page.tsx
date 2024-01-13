@@ -9,6 +9,7 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 import ChatScreen from '@/screens/Chat'
 import ExploreModelsScreen from '@/screens/ExploreModels'
 
+import LocalServerScreen from '@/screens/LocalServer'
 import SettingsScreen from '@/screens/Settings'
 import SystemMonitorScreen from '@/screens/SystemMonitor'
 
@@ -27,6 +28,10 @@ export default function Page() {
 
     case MainViewState.SystemMonitor:
       children = <SystemMonitorScreen />
+      break
+
+    case MainViewState.LocalServer:
+      children = <LocalServerScreen />
       break
 
     default:
