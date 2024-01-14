@@ -1,6 +1,11 @@
-import { ExtensionType, fs, joinPath } from '@janhq/core'
-import { ConversationalExtension } from '@janhq/core'
-import { Thread, ThreadMessage } from '@janhq/core'
+import {
+  ExtensionType,
+  fs,
+  joinPath,
+  ConversationalExtension,
+  Thread,
+  ThreadMessage,
+} from '@janhq/core'
 
 /**
  * JSONConversationalExtension is a ConversationalExtension implementation that provides
@@ -83,9 +88,9 @@ export default class JSONConversationalExtension
         await fs.mkdirSync(threadDirPath)
       }
 
-      await fs.writeFileSync(threadJsonPath, JSON.stringify(thread))
-      Promise.resolve()
+      await fs.writeFileSync(threadJsonPath, JSON.stringify(thread, null, 2))
     } catch (err) {
+      console.error(err)
       Promise.reject(err)
     }
   }
@@ -212,7 +217,8 @@ export default class JSONConversationalExtension
       if (
         !files.includes(JSONConversationalExtension._threadMessagesFileName)
       ) {
-        throw Error(`${threadDirPath} not contains message file`)
+        console.debug(`${threadDirPath} not contains message file`)
+        return []
       }
 
       const messageFilePath = await joinPath([
