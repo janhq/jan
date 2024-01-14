@@ -59,7 +59,7 @@ export const retrieveBuilder = async (configuration: RouteConfiguration, id: str
   const filteredData = data.filter((d: any) => d.id === id)[0]
 
   if (!filteredData) {
-    return {}
+    return undefined
   }
 
   return filteredData
@@ -75,14 +75,14 @@ export const deleteBuilder = async (configuration: RouteConfiguration, id: strin
   const directoryPath = join(path, configuration.dirName)
   try {
     const data = await retrieveBuilder(configuration, id)
-    if (!data || !data.keys) {
+    if (!data) {
       return {
         message: 'Not found',
       }
     }
 
-    const myPath = join(directoryPath, id)
-    fs.rmdirSync(myPath, { recursive: true })
+    const objectPath = join(directoryPath, id)
+    fs.rmdirSync(objectPath, { recursive: true })
     return {
       id: id,
       object: configuration.delete.object,
