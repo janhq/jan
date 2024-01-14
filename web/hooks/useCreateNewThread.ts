@@ -19,6 +19,7 @@ import {
   setActiveThreadIdAtom,
   threadStatesAtom,
   updateThreadAtom,
+  updateThreadInitSuccessAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -41,9 +42,11 @@ const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
 
 export const useCreateNewThread = () => {
   const threadStates = useAtomValue(threadStatesAtom)
+  const updateThreadFinishInit = useSetAtom(updateThreadInitSuccessAtom)
   const createNewThread = useSetAtom(createNewThreadAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const updateThread = useSetAtom(updateThreadAtom)
+
   const { deleteThread } = useDeleteThread()
 
   const requestCreateNewThread = async (
@@ -96,11 +99,13 @@ export const useCreateNewThread = () => {
     updateThread(thread)
     const threadState = threadStates[thread.id]
     const isFinishInit = threadState?.isFinishInit ?? true
-    if (isFinishInit) {
-      extensionManager
+    if (!isFinishInit) {
+      updateThreadFinishInit(thread.id)
+    }
+
+    extensionManager
         .get<ConversationalExtension>(ExtensionType.Conversational)
         ?.saveThread(thread)
-    }
   }
 
   return {

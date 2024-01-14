@@ -19,12 +19,8 @@ export default function useGetAssistants() {
 
   useEffect(() => {
     getAssistants()
-      .then((data) => {
-        setAssistants(data)
-      })
-      .catch((err) => {
-        console.error(err)
-      })
+      .then((data) => setAssistants(data))
+      .catch((err) => console.error(err))
   }, [])
 
   return { assistants }

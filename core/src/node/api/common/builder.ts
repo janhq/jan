@@ -93,16 +93,21 @@ export const deleteBuilder = async (configuration: RouteConfiguration, id: strin
   }
 }
 
-export const getMessages = async (threadId: string) => {
+export const getMessages = async (threadId: string): Promise<ThreadMessage[]> => {
   const threadDirPath = join(path, 'threads', threadId)
   const messageFile = 'messages.jsonl'
   try {
     const files: string[] = fs.readdirSync(threadDirPath)
     if (!files.includes(messageFile)) {
-      throw Error(`${threadDirPath} not contains message file`)
+      console.error(`${threadDirPath} not contains message file`)
+      return []
     }
 
     const messageFilePath = join(threadDirPath, messageFile)
+    if (!fs.existsSync(messageFilePath)) {
+      console.debug('message file not found')
+      return []
+    }
 
     const lines = fs
       .readFileSync(messageFilePath, 'utf-8')
