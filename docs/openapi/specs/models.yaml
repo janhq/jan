@@ -377,15 +377,7 @@ components:
     DownloadModelResponse:
       type: object
       properties:
-        id:
+        message:
           type: string
-          description: The identifier of the model that was started.
-          example: model-zephyr-7B
-        object:
-          type: string
-          description: Type of the object, indicating it's a model.
-          default: model
-        state:
-          type: string
-          description: The current state of the model after the start operation.
-          example: downloaded
+          description: Message indicates Jan starting download corresponding model.
+          example: Starting download mistral-ins-7b-q4

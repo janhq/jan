@@ -112,6 +112,63 @@ components:
           type: object
           description: Metadata associated with the newly created thread.
           example: {}
+    CreateThreadObject:
+      type: object
+      properties:
+        object:
+          type: string
+          description: Type of the object, indicating it's a thread.
+          example: thread
+        title:
+          type: string
+          description: >
+            A brief summary or description of the thread, defaults to an empty
+            string.
+          example: funny physics joke
+        assistants:
+          type: array
+          description: assistant involved in the thread
+          items:
+            properties:
+              assistant_id:
+                type: string
+                description: |
+                  The identifier of assistant, defaults to "jan"
+                example: jan
+              assistant_name:
+                type: string
+                description: |
+                  The name of assistant, defaults to "Jan"
+                example: Jan
+              instructions:
+                type: string
+                description: |
+                  The instruction of assistant, defaults to "Be my grammar corrector"
+              model:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Model id
+                    example: mistral-ins-7b-q4
+                  settings:
+                    type: object
+                    description: >
+                      Defaults to and overrides assistant.json's "settings" (and if none,
+                      then model.json "settings")
+                  parameters:
+                    type: object
+                    description: >
+                      Defaults to and overrides assistant.json's "parameters" (and if
+                      none, then model.json "parameters")
+                  engine:
+                    type: string
+                    description: Engine id
+                    example: nitro
+        metadata:
+          type: object
+          description: |
+            Metadata associated with the thread, defaults to an empty object.
     ThreadMessageObject:
       type: object
       properties:
