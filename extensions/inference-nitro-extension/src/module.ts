@@ -180,7 +180,7 @@ function promptTemplateConverter(promptTemplate) {
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
 function loadLLMModel(settings): Promise<Response> {
-  log(`[NITRO]::Debug: Loading model with params ${settings}`);
+  log(`[NITRO]::Debug: Loading model with params ${JSON.stringify(settings)}`);
   return fetchRetry(NITRO_HTTP_LOAD_MODEL_URL, {
     method: "POST",
     headers: {

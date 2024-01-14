@@ -22,6 +22,7 @@ import {
   joinPath,
   InferenceExtension,
   log,
+  InferenceEngine,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
@@ -128,7 +129,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   }
 
   private async onModelInit(model: Model) {
-    if (model.engine !== "nitro") return;
+    if (model.engine !== InferenceEngine.nitro) return;
 
     const modelFullPath = await joinPath(["models", model.id]);
 
