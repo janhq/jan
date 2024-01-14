@@ -31,8 +31,10 @@ If applicable, add screenshots to help explain your issue.
 - Any additional relevant hardware specifics: [e.g., Graphics card, SSD/HDD]
 
 **Logs**
-- Go to`~/jan/logs` > `app.log`. Or, via UI, click on Settings > Advanced > Open App Directory > `app.log`
-- If you are using Jan local api server only, grab the `server.log` instead of `app.log`.
+If the cause of the error is not clear, kindly provide your usage logs:
+- `tail -n 50 ~/jan/logs/app.log` if you are using the UI
+- `tail -n 50 ~/jan/logs/server.log` if you are using the local api server
+Making sure to redact any private information.
 
 **Additional context**
 Add any other context or information that could be helpful in diagnosing the problem.
