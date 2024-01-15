@@ -5,15 +5,29 @@ import { ExternalLinkIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar from '@/containers/DropdownListSidebar'
 
+import { getConfigurationsData } from '@/utils/componentSettings'
+import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
+
+import EngineSetting from '../Chat/EngineSetting'
+import ModelSetting from '../Chat/ModelSetting'
+import settingComponentBuilder from '../Chat/ModelSetting/settingComponentBuilder'
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
 const LocalServerScreen = () => {
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const showing = useAtomValue(showRightSideBarAtom)
+  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+
+  const modelEngineParams = toSettingParams(activeModelParams)
+  const modelRuntimeParams = toRuntimeParams(activeModelParams)
+  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
+  const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
 
   return (
     <div className="flex h-full w-full">
@@ -72,12 +86,45 @@ const LocalServerScreen = () => {
             : 'w-0 translate-x-full opacity-0'
         )}
       >
-        <p>
-          Lorem, ipsum dolor sit amet consectetur adipisicing elit. Cumque earum
-          numquam fugit quia quisquam id quos aspernatur unde voluptatem neque,
-          officiis doloribus, laborum totam ad deserunt corporis impedit beatae
-          vitae?
-        </p>
+        <CardSidebar title="Model" hideMoreVerticalAction>
+          <div className="px-2">
+            <div className="mt-4">
+              <DropdownListSidebar />
+            </div>
+
+            {componentDataRuntimeSetting.length !== 0 && (
+              <div className="mt-6">
+                <CardSidebar title="Inference Parameters" asChild>
+                  <div className="px-2 py-4">
+                    <ModelSetting />
+                  </div>
+                </CardSidebar>
+              </div>
+            )}
+
+            {componentDataEngineSetting.filter(
+              (x) => x.name === 'prompt_template'
+            ).length !== 0 && (
+              <div className="mt-4">
+                <CardSidebar title="Model Parameters" asChild>
+                  <div className="px-2 py-4">
+                    {settingComponentBuilder(componentDataEngineSetting, true)}
+                  </div>
+                </CardSidebar>
+              </div>
+            )}
+
+            {componentDataEngineSetting.length !== 0 && (
+              <div className="my-4">
+                <CardSidebar title="Engine Parameters" asChild>
+                  <div className="px-2 py-4">
+                    <EngineSetting />
+                  </div>
+                </CardSidebar>
+              </div>
+            )}
+          </div>
+        </CardSidebar>
       </div>
     </div>
   )

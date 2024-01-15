@@ -19,8 +19,14 @@ interface Props {
   children: ReactNode
   title: string
   asChild?: boolean
+  hideMoreVerticalAction?: boolean
 }
-export default function CardSidebar({ children, title, asChild }: Props) {
+export default function CardSidebar({
+  children,
+  title,
+  asChild,
+  hideMoreVerticalAction,
+}: Props) {
   const [show, setShow] = useState(true)
   const [more, setMore] = useState(false)
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
@@ -52,15 +58,16 @@ export default function CardSidebar({ children, title, asChild }: Props) {
       >
         <span className="font-bold">{title}</span>
         <div className="flex">
-          {!asChild && (
-            <div
-              ref={setToggle}
-              className="cursor-pointer rounded-lg bg-zinc-100 p-2 pr-0 dark:bg-zinc-900"
-              onClick={() => setMore(!more)}
-            >
-              <MoreVerticalIcon className="h-5 w-5" />
-            </div>
-          )}
+          {!asChild ||
+            (hideMoreVerticalAction && (
+              <div
+                ref={setToggle}
+                className="cursor-pointer rounded-lg bg-zinc-100 p-2 pr-0 dark:bg-zinc-900"
+                onClick={() => setMore(!more)}
+              >
+                <MoreVerticalIcon className="h-5 w-5" />
+              </div>
+            ))}
           <button
             onClick={() => setShow(!show)}
             className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-900"
