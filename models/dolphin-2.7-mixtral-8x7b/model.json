@@ -21,7 +21,7 @@
     },
     "metadata": {
       "author": "Cognitive Computations, TheBloke",
-      "tags": ["70B", "Fintuned"],
+      "tags": ["70B", "Finetuned"],
       "size": 26440000000
     },
     "engine": "nitro"
