@@ -61,7 +61,7 @@ const LocalServerScreen = () => {
       setLogs(log.split(/\r?\n|\r|\n/g))
       // setLogs(JSON.stringify(log, null, 2))
     })
-  }, [])
+  }, [getServerLog, logs])
 
   // const marked: Marked = new Marked(
   //   markedHighlight({
