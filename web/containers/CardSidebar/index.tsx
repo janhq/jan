@@ -11,27 +11,22 @@ import { twMerge } from 'tailwind-merge'
 
 import { useClickOutside } from '@/hooks/useClickOutside'
 
+import { usePath } from '@/hooks/usePath'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 interface Props {
   children: ReactNode
   title: string
-  onRevealInFinderClick?: (type: string) => void
-  onViewJsonClick?: (type: string) => void
   asChild?: boolean
 }
-export default function CardSidebar({
-  children,
-  title,
-  onRevealInFinderClick,
-  onViewJsonClick,
-  asChild,
-}: Props) {
+export default function CardSidebar({ children, title, asChild }: Props) {
   const [show, setShow] = useState(true)
   const [more, setMore] = useState(false)
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   const activeThread = useAtomValue(activeThreadAtom)
+  const { onReviewInFinder, onViewJson } = usePath()
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
@@ -90,7 +85,7 @@ export default function CardSidebar({
                 title === 'Model' ? 'items-start' : 'items-center'
               )}
               onClick={() => {
-                onRevealInFinderClick && onRevealInFinderClick(title)
+                onReviewInFinder && onReviewInFinder(title)
                 setMore(false)
               }}
             >
@@ -121,7 +116,7 @@ export default function CardSidebar({
             <div
               className="flex cursor-pointer items-start space-x-2 px-4 py-2 hover:bg-secondary"
               onClick={() => {
-                onViewJsonClick && onViewJsonClick(title)
+                onViewJson && onViewJson(title)
                 setMore(false)
               }}
             >
