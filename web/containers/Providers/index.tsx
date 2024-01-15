@@ -21,13 +21,11 @@ import {
   setupBaseExtensions,
 } from '@/services/extensionService'
 
-import { instance } from '@/utils/posthog'
+import UmamiTracker from '@/utils/umami'
 
 import KeyListener from './KeyListener'
 
 import { extensionManager } from '@/extension'
-
-import Script from 'next/script'
 
 const Providers = (props: PropsWithChildren) => {
   const { children } = props
@@ -72,31 +70,22 @@ const Providers = (props: PropsWithChildren) => {
   }, [setupCore])
 
   return (
-    <PostHogProvider client={instance}>
-      <>
-        <Script
-          src="https://us.umami.is/script.js"
-          data-website-id="2b865781-227c-4efe-bfa8-700ad2722b95"
-        />
-      </>
-      <JotaiWrapper>
-        <ThemeWrapper>
-          {setupCore && activated && (
-            <KeyListener>
-              <FeatureToggleWrapper>
-                <EventListenerWrapper>
-                  <TooltipProvider delayDuration={0}>
-                    {children}
-                  </TooltipProvider>
-                  {!isMac && <GPUDriverPrompt />}
-                </EventListenerWrapper>
-                <Toaster position="top-right" />
-              </FeatureToggleWrapper>
-            </KeyListener>
-          )}
-        </ThemeWrapper>
-      </JotaiWrapper>
-    </PostHogProvider>
+    <JotaiWrapper>
+      <ThemeWrapper>
+        <UmamiTracker />
+        {setupCore && activated && (
+          <KeyListener>
+            <FeatureToggleWrapper>
+              <EventListenerWrapper>
+                <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+                {!isMac && <GPUDriverPrompt />}
+              </EventListenerWrapper>
+              <Toaster position="top-right" />
+            </FeatureToggleWrapper>
+          </KeyListener>
+        )}
+      </ThemeWrapper>
+    </JotaiWrapper>
   )
 }
 
