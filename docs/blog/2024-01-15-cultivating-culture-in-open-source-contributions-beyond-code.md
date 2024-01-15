@@ -1,34 +1,32 @@
 ---
-title: Cultivating Culture in Open Source- Contributions Beyond Code
+title: Cultivating Culture in Open Source Contributions Beyond Code
 description: Discover how to contribute to open-source projects without coding skills. This Jan post guides you through the essentials of non-code contributions, from documentation to community engagement. Learn practical ways to impact open-source initiatives, even if you're new to the field.
-keywords: how to contribute to opensource, open source, contributing to open source, jan ai, Jan framework
 slug: contributions
 authors:
   - name: Jan Team
 tags: [contribution, jan]
-image: https://i.imgur.com/mErPwqL.png
 hide_table_of_contents: false
 ---
 
-
-
 Ever wondered what ‘contribution’ really means in open-source communities? Calling back to John Picozzi’s presentation at DrupalCon 2022 and his article on [Opensource.com,](https://opensource.com/article/22/8/non-code-contribution-powers-open-source) we look at how his views on contributions align with ours at [Jan](https://jan.ai)
 
-![how to contribute opensource non-code](https://lh7-us.googleusercontent.com/ntKNvGi0l-Hj-ypq8JL7RL427_c0iN1T9MfcMQFoaJg2RHOeJaV_B52pVngAXcHClcqIIloRdzUkiiuKztnMZwqI5unuMYOX1h6cE-WLDBT0LYMzhlwZGGaue3HFvW-hI5EpQSjP-x-x1XVsh5pqo68)[jan.ai](https://jan.ai/about/#open-source)
+![how to contribute opensource non-code](./assets/01-how-to-contribute-to-open-source-non-code.png)
 
-#### Broadening the Definition of Contribution- how it benefits everyone
+[https://jan.ai/about/#open-source](https://jan.ai/about/#open-source)
 
-Contribution in open source isn’t just about coding, and Picozzi nails it with this point. 
+#### Broadening the Definition of Contribution - how it benefits everyone
 
-At Jan, we’re all about embracing different skills — because that’s what fuels innovation and growth. 
+Contribution in open source isn’t just about coding, and Picozzi nails it with this point.
+
+At Jan, we’re all about embracing different skills — because that’s what fuels innovation and growth.
 
 > Contribution? It’s when you take time to push forward ideas, vision, and awareness. Here are some solid ideas and how they’ve been executed before.
 
-#### Documentation- One Pillar of Contribution
+#### Documentation - One Pillar of Contribution
 
 Remember those ancient storytellers and their crucial role in history? That’s what modern documentation does in tech. It’s the backbone of knowledge transfer. Without it, we’d be lost in translating what our products are all about.
 
-![](https://lh7-us.googleusercontent.com/KCAnzoexzs6UoqyNAaQRsTC39utZ28ge2gc1VfUzY6_SmbYN00IfvFQ3plB1Gz8uKi_Cbs26Wr2jH6JeWot2-qU9FyGWHquMF7kosP1TPMLb-bCY6KSCMRA5c2ebEFzsUrkU7e5gPnLf3YG53h4IIVQ)credit- Janhq/jan repo
+![](./assets/01-credit-janhq-repo.png)credit- Janhq/jan repo
 
 #### Writing and Editing
 
@@ -44,27 +42,27 @@ Projects thrive on collective knowledge being shared. Maybe your way of contribu
 
 ### Spreading the Word- Storytelling and ‘Marketing
 
-In the OS world, marketing is more about storytelling and community building than selling. 
+In the OS world, marketing is more about storytelling and community building than selling.
 
 Here’s what can make an impact that isn’t code-
 
-* Social media, blogs, forums- When the folks running open source projects are knee-deep in code, spreading the word might slip their minds. Your tweets, blogs, and comments? They’re more impactful than you think.
+- Social media, blogs, forums- When the folks running open source projects are knee-deep in code, spreading the word might slip their minds. Your tweets, blogs, and comments? They’re more impactful than you think.
 
-- Content creation -If you’re into making videos or infographics, your skills can tell the project’s story in ways that really stick.
+* Content creation -If you’re into making videos or infographics, your skills can tell the project’s story in ways that really stick.
 
 #### Event Planning and Meetups
 
-Hosting online meetups or webinars? It’s a great way to share knowledge, connect people, and gather feedback as to how people are connecting with the project. 
+Hosting online meetups or webinars? It’s a great way to share knowledge, connect people, and gather feedback as to how people are connecting with the project.
 
 ### Contributing via ‘Dot Connecting’
 
-Know people who might be interested or can chip in? Bringing in new energy and ideas is what keeps open source buzzing. Spot an opportunity for a partnership? Go for it! 
+Know people who might be interested or can chip in? Bringing in new energy and ideas is what keeps open source buzzing. Spot an opportunity for a partnership? Go for it!
 
 Linking up with educational bodies, non-profits, or businesses can work wonders depending on the projects end goals.
 
 ### Why People Contribute to Open Source
 
-As Picozzi points out, it’s all about embracing every kind of skill. At Jan, we celebrate each team member’s unique contributions. 
+As Picozzi points out, it’s all about embracing every kind of skill. At Jan, we celebrate each team member’s unique contributions.
 
 It’s about being part of something bigger, honing new skills, and feeling that sense of belonging.
 
@@ -78,8 +76,8 @@ Imposter syndrome? We get it, and we’re tackling it by creating a welcoming sp
 
 #### How Do You Start Contributing to OpenSource?
 
-Just like Nike’s “just do it”, we’re all about making it easy for our team to dive into areas they’re passionate about. Here’s our [labelled issues for contributors](https://github.com/janhq/jan/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) 
+Just like Nike’s “just do it”, we’re all about making it easy for our team to dive into areas they’re passionate about. Here’s our [labelled issues for contributors](https://github.com/janhq/jan/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
 
-#### Here’s the [Jan readme](https://github.com/janhq/jan?tab=readme-ov-file#readme) —
+#### Here’s the [Jan readme](https://github.com/janhq/jan?tab=readme-ov-file#readme)
 
-####  [Join us on Discord](https://discord.gg/JPcNRaJyzJ)**
+#### [Join us on Discord](https://discord.gg/JPcNRaJyzJ)
