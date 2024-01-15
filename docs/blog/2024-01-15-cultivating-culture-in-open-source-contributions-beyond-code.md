@@ -2,6 +2,21 @@
 title: Cultivating Culture in Open Source Contributions Beyond Code
 description: Discover how to contribute to open-source projects without coding skills. This Jan post guides you through the essentials of non-code contributions, from documentation to community engagement. Learn practical ways to impact open-source initiatives, even if you're new to the field.
 slug: contributions
+keywords:
+  [
+    Jan framework,
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    how to contribute to opensource,
+    open source,
+    contributing to open source,
+  ]
 authors:
   - name: Jan Team
 tags: [contribution, jan]
