@@ -6,7 +6,7 @@ import { useContext, useEffect, useState } from 'react'
 import { fs } from '@janhq/core'
 import { Switch, Button } from '@janhq/uikit'
 
-import { useAtom } from 'jotai'
+// import { useAtom } from 'jotai'
 
 import ShortcutModal from '@/containers/ShortcutModal'
 import { toaster } from '@/containers/Toast'
@@ -17,13 +17,13 @@ import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useSettings } from '@/hooks/useSettings'
 
-import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+// import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 const Advanced = () => {
   const { experimentalFeatureEnabed, setExperimentalFeatureEnabled } =
     useContext(FeatureToggleContext)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
-  const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
+  // const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
 
