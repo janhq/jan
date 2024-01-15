@@ -6,8 +6,6 @@ import { Toaster } from 'react-hot-toast'
 
 import { TooltipProvider } from '@janhq/uikit'
 
-import { PostHogProvider } from 'posthog-js/react'
-
 import GPUDriverPrompt from '@/containers/GPUDriverPromptModal'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
@@ -21,7 +19,7 @@ import {
   setupBaseExtensions,
 } from '@/services/extensionService'
 
-import { instance } from '@/utils/posthog'
+import Umami from '@/utils/umami'
 
 import KeyListener from './KeyListener'
 
@@ -70,25 +68,22 @@ const Providers = (props: PropsWithChildren) => {
   }, [setupCore])
 
   return (
-    <PostHogProvider client={instance}>
-      <JotaiWrapper>
-        <ThemeWrapper>
-          {setupCore && activated && (
-            <KeyListener>
-              <FeatureToggleWrapper>
-                <EventListenerWrapper>
-                  <TooltipProvider delayDuration={0}>
-                    {children}
-                  </TooltipProvider>
-                  {!isMac && <GPUDriverPrompt />}
-                </EventListenerWrapper>
-                <Toaster position="top-right" />
-              </FeatureToggleWrapper>
-            </KeyListener>
-          )}
-        </ThemeWrapper>
-      </JotaiWrapper>
-    </PostHogProvider>
+    <JotaiWrapper>
+      <ThemeWrapper>
+        <Umami/>
+        {setupCore && activated && (
+          <KeyListener>
+            <FeatureToggleWrapper>
+              <EventListenerWrapper>
+                <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+                {!isMac && <GPUDriverPrompt />}
+              </EventListenerWrapper>
+              <Toaster position="top-right" />
+            </FeatureToggleWrapper>
+          </KeyListener>
+        )}
+      </ThemeWrapper>
+    </JotaiWrapper>
   )
 }
 
