@@ -96,9 +96,16 @@ export default function DropdownListSidebar() {
       const modelParams: ModelParams = {
         ...recommendedModel?.parameters,
         ...recommendedModel?.settings,
-        // This is to set default value for these settings instead of maximum value
-        max_tokens: defaultValue(recommendedModel?.parameters.max_tokens),
-        ctx_len: defaultValue(recommendedModel?.settings.ctx_len),
+        /**
+         * This is to set default value for these settings instead of maximum value
+         * Should only apply when model.json has these settings
+         */
+        ...(recommendedModel?.parameters.max_tokens && {
+          max_tokens: defaultValue(recommendedModel?.parameters.max_tokens),
+        }),
+        ...(recommendedModel?.settings.ctx_len && {
+          ctx_len: defaultValue(recommendedModel?.settings.ctx_len),
+        }),
       }
       setThreadModelParams(activeThread.id, modelParams)
     }
