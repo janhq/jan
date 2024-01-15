@@ -25,10 +25,14 @@ import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import { twMerge } from 'tailwind-merge'
+
 import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
+
+import DropdownListSidebar from '@/containers/DropdownListSidebar'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useServerLog } from '@/hooks/useServerLog'
@@ -39,6 +43,8 @@ import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 import EngineSetting from '../Chat/EngineSetting'
 import ModelSetting from '../Chat/ModelSetting'
 import settingComponentBuilder from '../Chat/ModelSetting/settingComponentBuilder'
+import { showRightSideBarAtom } from '../Chat/Sidebar'
+
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
 import Logs from './Logs'
