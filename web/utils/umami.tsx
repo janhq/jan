@@ -5,7 +5,7 @@ const UmamiTracker = () => {
   const appVersion = VERSION
 
   useEffect(() => {
-    const trackAppOpen = () => {
+    const ping = () => {
       // Check if umami is defined before tracking
       if (typeof umami !== 'undefined') {
         umami.track(appVersion, {
@@ -16,15 +16,15 @@ const UmamiTracker = () => {
 
     // Wait for umami to be defined before tracking
     if (typeof umami !== 'undefined') {
-      trackAppOpen()
+      ping()
     } else {
       // Listen for umami script load event
-      document.addEventListener('umami:loaded', trackAppOpen)
+      document.addEventListener('umami:loaded', ping)
     }
 
     // Cleanup function to remove event listener if the component unmounts
     return () => {
-      document.removeEventListener('umami:loaded', trackAppOpen)
+      document.removeEventListener('umami:loaded', ping)
     }
   }, [appVersion])
 
