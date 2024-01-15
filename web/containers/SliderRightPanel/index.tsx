@@ -114,17 +114,17 @@ const SliderRightPanel: React.FC<Props> = ({
               min={min}
               max={max}
               value={String(value)}
-              onChange={(e) => {
+              onBlur={(e) => {
                 if (Number(e.target.value) > Number(max)) {
                   onValueChanged([Number(max)])
                   setShowTooltip({ max: true, min: false })
                 } else if (Number(e.target.value) < Number(min)) {
                   onValueChanged([Number(min)])
                   setShowTooltip({ max: false, min: true })
-                } else {
-                  onValueChanged([Number(e.target.value)])
-                  setShowTooltip({ max: false, min: false })
                 }
+              }}
+              onChange={(e) => {
+                onValueChanged([Number(e.target.value)])
               }}
             />
           </TooltipTrigger>
