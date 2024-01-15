@@ -1,12 +1,35 @@
-import { Button } from '@janhq/uikit'
+/* eslint-disable @typescript-eslint/naming-convention */
+import { useEffect, useState } from 'react'
+
+import {
+  Button,
+  Switch,
+  Tooltip,
+  TooltipArrow,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  Input,
+  SelectTrigger,
+  SelectValue,
+} from '@janhq/uikit'
+// import hljs from 'highlight.js'
 import { useAtom, useAtomValue } from 'jotai'
 
-import { ExternalLinkIcon } from 'lucide-react'
+import { Paintbrush, CodeIcon } from 'lucide-react'
+import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 
+// import { Marked, Renderer } from 'marked'
+// import { markedHighlight } from 'marked-highlight'
 import { twMerge } from 'tailwind-merge'
 
 import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar from '@/containers/DropdownListSidebar'
+
+import { useServerLog } from '@/hooks/useServerLog'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
@@ -28,6 +51,37 @@ const LocalServerScreen = () => {
   const modelRuntimeParams = toRuntimeParams(activeModelParams)
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
   const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
+  const { getServerLog, openServerLog, clearServerLog } = useServerLog()
+  const [logs, setLogs] = useState([])
+
+  useEffect(() => {
+    getServerLog().then((log) => {
+      // setLogs(log)
+      // console.log(log)
+      setLogs(log.split(/\r?\n|\r|\n/g))
+      // setLogs(JSON.stringify(log, null, 2))
+    })
+  }, [])
+
+  // const marked: Marked = new Marked(
+  //   markedHighlight({
+  //     langPrefix: 'hljs',
+  //     highlight(code) {
+  //       return hljs.highlightAuto(code).value
+  //     },
+  //   }),
+  //   {
+  //     renderer: {
+  //       link: (href, title, text) => {
+  //         return Renderer.prototype.link
+  //           ?.apply(this, [href, title, text])
+  //           .replace('<a', "<a target='_blank'")
+  //       },
+  //     },
+  //   }
+  // )
+
+  // const parsedText = marked.parse(logs)
 
   return (
     <div className="flex h-full w-full">
@@ -63,17 +117,125 @@ const LocalServerScreen = () => {
             </Button>
           </div>
         </div>
+
+        <div className="space-y-4 p-4">
+          <div className="flex w-full flex-shrink-0 items-center gap-x-2">
+            <Select value="127.0.0.1" onValueChange={(e) => console.log(e)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="127.0.0.1">127.0.0.1</SelectItem>
+                <SelectItem value="0.0.0.0">0.0.0.0</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Input className="w-[60px] flex-shrink-0" value="1337" />
+          </div>
+          <div>
+            <label
+              id="cors"
+              className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
+            >
+              Cross-Origin-Resource-Sharing (CORS)
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <InfoIcon
+                    size={16}
+                    className="mt-0.5 flex-shrink-0 dark:text-gray-500"
+                  />
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent side="top" className="max-w-[240px]">
+                    <span>
+                      CORS (Cross-Origin Resource Sharing) manages resource
+                      access on this server from external domains. Enable for
+                      secure inter-website communication, regulating data
+                      sharing to bolster overall security.
+                    </span>
+                    <TooltipArrow />
+                  </TooltipContent>
+                </TooltipPortal>
+              </Tooltip>
+            </label>
+            <div className="flex items-center justify-between">
+              <Switch name="cors" />
+            </div>
+          </div>
+          <div>
+            <label
+              id="verbose"
+              className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
+            >
+              Verbose Server Logs
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <InfoIcon
+                    size={16}
+                    className="mt-0.5 flex-shrink-0 dark:text-gray-500"
+                  />
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent side="top" className="max-w-[240px]">
+                    <span>
+                      Verbose Server Logs provide extensive details about server
+                      activities. Enable to capture thorough records, aiding in
+                      troubleshooting and monitoring server performance
+                      effectively.
+                    </span>
+                    <TooltipArrow />
+                  </TooltipContent>
+                </TooltipPortal>
+              </Tooltip>
+            </label>
+            <div className="flex items-center justify-between">
+              <Switch name="verbose" />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Middle Bar */}
-      <div className="relative flex h-full w-full flex-col overflow-auto bg-background p-4">
-        <div className="flex h-full w-full flex-col justify-between">
-          <p>
-            Lorem ipsum dolor sit amet, consectetur adipisicing elit. Eius iusto
-            aspernatur blanditiis, culpa harum ex hic atque quae tempora eaque
-            obcaecati voluptas nulla error repellat aliquam minima laborum
-            corporis fuga.
-          </p>
+      <div className="relative flex h-full w-full flex-col overflow-auto bg-background">
+        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2">
+          <h2 className="font-bold">Server Logs</h2>
+          <div className="space-x-2">
+            <Button
+              size="sm"
+              themes="outline"
+              className="bg-white"
+              onClick={() => openServerLog()}
+            >
+              <CodeIcon size={16} className="mr-2" />
+              Open Logs
+            </Button>
+            <Button
+              size="sm"
+              themes="outline"
+              className="bg-white"
+              onClick={() => clearServerLog()}
+            >
+              <Paintbrush size={16} className="mr-2" />
+              Clear
+            </Button>
+          </div>
+        </div>
+        <div className="p-4">
+          <code className="text-xs">
+            {/* <div
+              dangerouslySetInnerHTML={{
+                __html: parsedText,
+              }}
+            /> */}
+
+            {logs.map((log, i) => {
+              return (
+                <p key={i} className="my-2 leading-relaxed">
+                  {log}
+                </p>
+              )
+            })}
+          </code>
         </div>
       </div>
 
