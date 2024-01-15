@@ -1,14 +1,19 @@
 import Script from 'next/script'
 import { useEffect } from 'react'
 
-/* global umami, VERSION */
+declare global {
+  interface Window {
+    umami: any
+  }
+}
+
 const Umami = () => {
   const appVersion = VERSION
 
   useEffect(() => {
     // Check if umami is defined before calling track
-    if (typeof umami !== 'undefined') {
-      umami.track(appVersion, {
+    if (typeof window.umami !== 'undefined') {
+      window.umami.track(appVersion, {
         version: appVersion,
       })
     }
