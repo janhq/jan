@@ -1,27 +1,15 @@
 import Script from 'next/script'
 import { useEffect } from 'react'
 
-// Declare umami as a global object to avoid linting errors
-declare global {
-  interface Window {
-    umami: {
-      track: (eventName: string, data: Record<string, any>) => void
-    }
-  }
-}
-
+/* global umami */
 const Umami = () => {
   const appVersion = VERSION
-
   useEffect(() => {
     const ping = () => {
-      // Now TypeScript should recognize umami as a global object
       umami.track(appVersion, {
         version: appVersion,
       })
     }
-
-    ping() // Call the ping function
   }, [appVersion])
 
   return (
