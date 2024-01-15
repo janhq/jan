@@ -14,7 +14,8 @@
     "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
   },
   "parameters": {
-    "max_tokens": 4096
+    "max_tokens": 4096,
+    "stop": ["<|im_end|>"]
   },
   "metadata": {
     "author": "Cognitive Computations, Microsoft, TheBloke",
