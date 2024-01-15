@@ -1,11 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 
-import {
-  InferenceEngine,
-  Model,
-  ModelRuntimeParams,
-  ModelSettingParams,
-} from '@janhq/core'
+import { InferenceEngine, Model } from '@janhq/core'
 import {
   Button,
   Select,
@@ -14,26 +9,15 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Input,
-  Tooltip,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
-  TooltipArrow,
-  Badge,
 } from '@janhq/uikit'
 
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
-import { MonitorIcon, InfoIcon } from 'lucide-react'
+import { MonitorIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
-
-import { useActiveModel } from '@/hooks/useActiveModel'
-
-import { useEngineSettings } from '@/hooks/useEngineSettings'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
@@ -41,7 +25,10 @@ import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import { toGibibytes } from '@/utils/converter'
 
-import { totalRamAtom, usedRamAtom } from '@/helpers/atoms/SystemBar.atom'
+import ModelLabel from '../ModelLabel'
+
+import OpenAiKeyInput from '../OpenAiKeyInput'
+
 import {
   ModelParams,
   activeThreadAtom,
@@ -56,25 +43,10 @@ export default function DropdownListSidebar() {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const threadStates = useAtomValue(threadStatesAtom)
-  const setSelectedModel = useSetAtom(selectedModelAtom)
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const { activeModel } = useActiveModel()
 
-  const [selected, setSelected] = useState<Model | undefined>()
   const { setMainViewState } = useMainViewState()
-  const [openAISettings, setOpenAISettings] = useState<
-    { api_key: string } | undefined
-  >(undefined)
-  const { readOpenAISettings, saveOpenAISettings } = useEngineSettings()
-  const totalRam = useAtomValue(totalRamAtom)
-  const usedRam = useAtomValue(usedRamAtom)
-
-  useEffect(() => {
-    readOpenAISettings().then((settings) => {
-      setOpenAISettings(settings)
-    })
-  }, [])
-
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   /**
@@ -87,7 +59,6 @@ export default function DropdownListSidebar() {
   }
 
   useEffect(() => {
-    setSelected(recommendedModel)
     setSelectedModel(recommendedModel)
 
     if (activeThread) {
@@ -113,7 +84,6 @@ export default function DropdownListSidebar() {
   const onValueSelected = useCallback(
     (modelId: string) => {
       const model = downloadedModels.find((m) => m.id === modelId)
-      setSelected(model)
       setSelectedModel(model)
 
       if (activeThreadId) {
@@ -131,78 +101,11 @@ export default function DropdownListSidebar() {
     return null
   }
 
-  const getLabel = (size: number) => {
-    const minimumRamModel = size * 1.25
-    const availableRam = totalRam - usedRam + (activeModel?.metadata.size ?? 0)
-    if (minimumRamModel > totalRam) {
-      return (
-        <Badge className="space-x-1 rounded-md" themes="danger">
-          <span>Not enough RAM</span>
-          <Tooltip>
-            <TooltipTrigger>
-              <InfoIcon size={16} />
-            </TooltipTrigger>
-            <TooltipPortal>
-              <TooltipContent
-                side="right"
-                sideOffset={10}
-                className="max-w-[300px]"
-              >
-                <span>
-                  {`This tag signals insufficient RAM for optimal model
-                  performance. It's dynamic and may change with your system's
-                  RAM availability.`}
-                </span>
-                <TooltipArrow />
-              </TooltipContent>
-            </TooltipPortal>
-          </Tooltip>
-        </Badge>
-      )
-    }
-    if (minimumRamModel < availableRam) {
-      return (
-        <Badge className="space-x-1 rounded-md" themes="success">
-          <span>Recommended</span>
-        </Badge>
-      )
-    }
-    if (minimumRamModel < totalRam && minimumRamModel > availableRam) {
-      return (
-        <Badge className="space-x-1 rounded-md" themes="warning">
-          <span>Slow on your device</span>
-          <Tooltip>
-            <TooltipTrigger>
-              <InfoIcon size={16} />
-            </TooltipTrigger>
-            <TooltipPortal>
-              <TooltipContent
-                side="right"
-                sideOffset={10}
-                className="max-w-[300px]"
-              >
-                <span>
-                  This tag indicates that your current RAM performance may
-                  affect model speed. It can change based on other active apps.
-                  To improve, consider closing unnecessary applications to free
-                  up RAM.
-                </span>
-                <TooltipArrow />
-              </TooltipContent>
-            </TooltipPortal>
-          </Tooltip>
-        </Badge>
-      )
-    }
-  }
-
   return (
     <>
-      <Select value={selected?.id} onValueChange={onValueSelected}>
+      <Select value={selectedModel?.id} onValueChange={onValueSelected}>
         <SelectTrigger className="w-full">
-          <SelectValue placeholder="Choose model to start">
-            {downloadedModels.filter((x) => x.id === selected?.id)[0]?.name}
-          </SelectValue>
+          <SelectValue placeholder="Choose model to start" />
         </SelectTrigger>
         <SelectContent className="right-2 block w-full min-w-[450px] pr-0">
           <div className="flex w-full items-center space-x-2 px-4 py-2">
@@ -220,7 +123,9 @@ export default function DropdownListSidebar() {
                 <SelectItem
                   key={i}
                   value={x.id}
-                  className={twMerge(x.id === selected?.id && 'bg-secondary')}
+                  className={twMerge(
+                    x.id === selectedModel?.id && 'bg-secondary'
+                  )}
                 >
                   <div className="flex w-full justify-between">
                     <span className="line-clamp-1 block">{x.name}</span>
@@ -228,8 +133,9 @@ export default function DropdownListSidebar() {
                       <span className="font-bold text-muted-foreground">
                         {toGibibytes(x.metadata.size)}
                       </span>
-                      {x.engine == InferenceEngine.nitro &&
-                        getLabel(x.metadata.size)}
+                      {x.engine == InferenceEngine.nitro && (
+                        <ModelLabel size={x.metadata.size} />
+                      )}
                     </div>
                   </div>
                 </SelectItem>
@@ -249,24 +155,7 @@ export default function DropdownListSidebar() {
         </SelectContent>
       </Select>
 
-      {selected?.engine === InferenceEngine.openai && (
-        <div className="mt-4">
-          <label
-            id="thread-title"
-            className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
-          >
-            API Key
-          </label>
-          <Input
-            id="assistant-instructions"
-            placeholder="Enter your API_KEY"
-            defaultValue={openAISettings?.api_key}
-            onChange={(e) => {
-              saveOpenAISettings({ apiKey: e.target.value })
-            }}
-          />
-        </div>
-      )}
+      <OpenAiKeyInput selectedModel={selectedModel} />
     </>
   )
 }
