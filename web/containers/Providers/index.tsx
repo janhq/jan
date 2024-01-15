@@ -27,6 +27,8 @@ import KeyListener from './KeyListener'
 
 import { extensionManager } from '@/extension'
 
+import Script from 'next/script'
+
 const Providers = (props: PropsWithChildren) => {
   const { children } = props
 
@@ -71,6 +73,12 @@ const Providers = (props: PropsWithChildren) => {
 
   return (
     <PostHogProvider client={instance}>
+      <>
+        <Script
+          src="https://us.umami.is/script.js"
+          data-website-id="2b865781-227c-4efe-bfa8-700ad2722b95"
+        />
+      </>
       <JotaiWrapper>
         <ThemeWrapper>
           {setupCore && activated && (
