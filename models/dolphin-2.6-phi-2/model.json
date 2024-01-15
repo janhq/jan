@@ -25,6 +25,5 @@
     ],
     "size": 1790000000
   },
-  "engine": "nitro",
-  "state": "ready"
+  "engine": "nitro"
 }
