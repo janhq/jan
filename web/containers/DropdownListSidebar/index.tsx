@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { InferenceEngine, Model } from '@janhq/core'
 import {
@@ -48,7 +49,7 @@ export default function DropdownListSidebar() {
   const threadStates = useAtomValue(threadStatesAtom)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const { activeModel, startModel } = useActiveModel()
+  const { activeModel, startModel, stateModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
   const { setMainViewState } = useMainViewState()
@@ -67,7 +68,6 @@ export default function DropdownListSidebar() {
   }, [])
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
-  const [first, setfirst] = useState(false)
 
   const selectedName =
     downloadedModels.filter((x) => x.id === selected?.id)[0]?.name ?? ''
@@ -80,8 +80,12 @@ export default function DropdownListSidebar() {
     return 4096
   }
 
+  const selectedRef = useRef(null)
+
   useEffect(() => {
     setSelectedModel(recommendedModel)
+    setSelected(activeModel || recommendedModel)
+    setSelectedModel(activeModel || recommendedModel)
 
     if (activeThread) {
       const finishInit = threadStates[activeThread.id].isFinishInit ?? true
@@ -109,6 +113,33 @@ export default function DropdownListSidebar() {
     setThreadModelParams,
     threadStates,
   ])
+
+  const [loader, setLoader] = useState(0)
+
+  // This is fake loader please fix this when we have realtime percentage when load model
+  useEffect(() => {
+    if (stateModel.loading) {
+      if (loader === 24) {
+        setTimeout(() => {
+          setLoader(loader + 1)
+        }, 250)
+      } else if (loader === 50) {
+        setTimeout(() => {
+          setLoader(loader + 1)
+        }, 250)
+      } else if (loader === 78) {
+        setTimeout(() => {
+          setLoader(loader + 1)
+        }, 250)
+      } else if (loader === 99) {
+        setLoader(99)
+      } else {
+        setLoader(loader + 1)
+      }
+    } else {
+      setLoader(0)
+    }
+  }, [stateModel.loading, loader])
 
   const onValueSelected = useCallback(
     (modelId: string) => {
@@ -150,14 +181,29 @@ export default function DropdownListSidebar() {
     <>
       <Select value={selectedModel?.id} onValueChange={onValueSelected}>
     <div className="relative">
+    <div
+      className={twMerge(
+        'relative w-full overflow-hidden rounded-md',
+        stateModel.loading && 'bg-blue-100'
+      )}
+    >
+      {stateModel.loading && (
+        <div
+          className="absolute left-0 top-0 z-10 h-full w-full rounded-md bg-blue-50/80"
+          style={{ width: `${loader}%` }}
+        />
+      )}
       <Select value={selected?.id} onValueChange={onValueSelected}>
         <SelectTrigger className="w-full">
-          <SelectValue placeholder="Choose model to start">
+          <SelectValue
+            placeholder="Choose model to start"
+            className="relative z-50"
+          >
             {selectedName}
           </SelectValue>
         </SelectTrigger>
         <SelectPortal>
-          <SelectContent className="right-2 block w-full min-w-[450px] pr-0">
+          <SelectContent className="right-2  block w-full min-w-[450px] pr-0">
             <div className="flex w-full items-center space-x-2 px-4 py-2">
               <MonitorIcon size={20} className="text-muted-foreground" />
               <span>Local</span>
@@ -191,10 +237,14 @@ export default function DropdownListSidebar() {
                 {downloadedModels.map((x, i) => (
                   <SelectItem
                     key={i}
+                    ref={selectedRef}
                     value={x.id}
                     className={twMerge(x.id === selected?.id && 'bg-secondary')}
+                    onClick={() => {
+                      x.id === selected?.id && console.log('huhft')
+                    }}
                   >
-                    <div className="z-50 flex w-full justify-between">
+                    <div className="flex w-full justify-between">
                       <span className="line-clamp-1 block">{x.name}</span>
                       <div className="space-x-2">
                         <span className="font-bold text-muted-foreground">
