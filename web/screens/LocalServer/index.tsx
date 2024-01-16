@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useState } from 'react'
 
 import {
   Button,
@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@janhq/uikit'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue } from 'jotai'
 
 import { Paintbrush, CodeIcon } from 'lucide-react'
 import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
@@ -47,6 +47,11 @@ import Logs from './Logs'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
+const corsEnabledAtom = atom(true)
+const verboseEnabledAtom = atom(true)
+const hostAtom = atom('127.0.0.1')
+const portAtom = atom('1337')
+
 const LocalServerScreen = () => {
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const showing = useAtomValue(showRightSideBarAtom)
@@ -57,9 +62,13 @@ const LocalServerScreen = () => {
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
   const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
   const { openServerLog, clearServerLog } = useServerLog()
-  const { activeModel, startModel } = useActiveModel()
-
+  const { activeModel, startModel, stateModel } = useActiveModel()
   const [selectedModel] = useAtom(selectedModelAtom)
+
+  const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
+  const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
+  const [host, setHost] = useAtom(hostAtom)
+  const [port, setPort] = useAtom(portAtom)
 
   return (
     <div className="flex h-full w-full">
@@ -76,6 +85,7 @@ const LocalServerScreen = () => {
             <Button
               block
               themes={serverEnabled ? 'danger' : 'success'}
+              disabled={stateModel.loading}
               onClick={() => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
@@ -84,7 +94,12 @@ const LocalServerScreen = () => {
                   if (!activeModel) {
                     startModel(String(selectedModel?.id))
                   }
-                  window.core?.api?.startServer()
+                  window.core?.api?.startServer(
+                    host,
+                    port,
+                    isCorsEnabled,
+                    isVerboseEnabled
+                  )
                   setServerEnabled(true)
                 }
               }}
@@ -101,7 +116,11 @@ const LocalServerScreen = () => {
 
         <div className="space-y-4 p-4">
           <div className="flex w-full flex-shrink-0 items-center gap-x-2">
-            <Select value="127.0.0.1" onValueChange={(e) => console.log(e)}>
+            <Select
+              value={host}
+              onValueChange={(e) => setHost(e)}
+              disabled={serverEnabled}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -113,7 +132,9 @@ const LocalServerScreen = () => {
 
             <Input
               className="w-[60px] flex-shrink-0"
-              value="1337"
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+              maxLength={4}
               disabled={serverEnabled}
             />
           </div>
@@ -144,7 +165,12 @@ const LocalServerScreen = () => {
               </Tooltip>
             </label>
             <div className="flex items-center justify-between">
-              <Switch name="cors" />
+              <Switch
+                checked={isCorsEnabled}
+                onCheckedChange={(e) => setIsCorsEnabled(e)}
+                name="cors"
+                disabled={serverEnabled}
+              />
             </div>
           </div>
           <div>
@@ -174,7 +200,12 @@ const LocalServerScreen = () => {
               </Tooltip>
             </label>
             <div className="flex items-center justify-between">
-              <Switch name="verbose" />
+              <Switch
+                checked={isVerboseEnabled}
+                onCheckedChange={(e) => setIsVerboseEnabled(e)}
+                name="verbose"
+                disabled={serverEnabled}
+              />
             </div>
           </div>
         </div>
