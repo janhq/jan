@@ -47,6 +47,20 @@ export default function DropdownListSidebar() {
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
 
   const { setMainViewState } = useMainViewState()
+  const [openAISettings, setOpenAISettings] = useState<
+    { api_key: string } | undefined
+  >(undefined)
+  const { readOpenAISettings, saveOpenAISettings } = useEngineSettings()
+  const totalRam = useAtomValue(totalRamAtom)
+  const usedRam = useAtomValue(usedRamAtom)
+
+  useEffect(() => {
+    readOpenAISettings().then((settings) => {
+      setOpenAISettings(settings)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   const selectedName =
