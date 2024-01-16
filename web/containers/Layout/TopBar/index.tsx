@@ -81,7 +81,10 @@ const TopBar = () => {
           <div className="absolute left-16 h-full w-60 border-r border-border">
             <div className="flex h-full w-full items-center justify-between">
               <div
-                className="unset-drag cursor-pointer"
+                className={twMerge(
+                  'unset-drag cursor-pointer',
+                  mainViewState !== MainViewState.Thread && 'invisible'
+                )}
                 onClick={() => setShowLeftSideBar((show) => !show)}
               >
                 <PanelRightCloseIcon
