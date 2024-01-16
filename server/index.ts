@@ -103,8 +103,8 @@ export const startServer = async (
     // Start listening for requests
     await server
       .listen({
-        port: hostSetting,
-        host: portSetting,
+        port: portSetting,
+        host: hostSetting,
       })
       .then(() => {
         // Log server listening
