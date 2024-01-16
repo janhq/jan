@@ -83,7 +83,7 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
       {
         label: 'Learn More',
         click: async () => {
-          await shell.openExternal('https://jan.ai/')
+          await shell.openExternal('https://jan.ai/guides/')
         },
       },
     ],
