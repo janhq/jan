@@ -6,6 +6,7 @@ import { toaster } from '@/containers/Toast'
 
 import { useGetDownloadedModels } from './useGetDownloadedModels'
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
