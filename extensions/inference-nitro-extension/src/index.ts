@@ -26,7 +26,6 @@ import {
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
-import { join } from "path";
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -43,7 +42,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    */
   private static readonly _intervalHealthCheck = 5 * 1000;
 
-  private _currentModel: Model;
+  private _currentModel: Model | undefined;
 
   private _engineSettings: EngineSettings = {
     ctx_len: 2048,
@@ -82,7 +81,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir))) {
       await fs
         .mkdirSync(JanInferenceNitroExtension._homeDir)
-        .catch((err) => console.debug(err));
+        .catch((err: Error) => console.debug(err));
     }
 
     if (!(await fs.existsSync(JanInferenceNitroExtension._settingsDir)))
@@ -90,7 +89,9 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     this.writeDefaultEngineSettings();
 
     // Events subscription
-    events.on(EventName.OnMessageSent, (data) => this.onMessageRequest(data));
+    events.on(EventName.OnMessageSent, (data: MessageRequest) =>
+      this.onMessageRequest(data)
+    );
 
     events.on(EventName.OnModelInit, (model: Model) => this.onModelInit(model));
 
@@ -99,7 +100,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     events.on(EventName.OnInferenceStopped, () => this.onInferenceStopped());
 
     // Attempt to fetch nvidia info
-    await executeOnMain(MODULE, "updateNvidiaInfo", {});
+    await executeOnMain(NODE, "updateNvidiaInfo", {});
   }
 
   /**
@@ -109,10 +110,10 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
 
   private async writeDefaultEngineSettings() {
     try {
-      const engineFile = join(
+      const engineFile = await joinPath([
         JanInferenceNitroExtension._homeDir,
-        JanInferenceNitroExtension._engineMetadataFileName
-      );
+        JanInferenceNitroExtension._engineMetadataFileName,
+      ]);
       if (await fs.existsSync(engineFile)) {
         const engine = await fs.readFileSync(engineFile, "utf-8");
         this._engineSettings =
@@ -133,12 +134,12 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
 
     const modelFullPath = await joinPath(["models", model.id]);
 
-    const nitroInitResult = await executeOnMain(MODULE, "initModel", {
-      modelFullPath: modelFullPath,
-      model: model,
+    const nitroInitResult = await executeOnMain(NODE, "runModel", {
+      modelFullPath,
+      model,
     });
 
-    if (nitroInitResult.error === null) {
+    if (nitroInitResult?.error) {
       events.emit(EventName.OnModelFail, model);
       return;
     }
@@ -155,12 +156,11 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
   private async onModelStop(model: Model) {
     if (model.engine !== "nitro") return;
 
-    await executeOnMain(MODULE, "stopModel");
+    await executeOnMain(NODE, "stopModel");
     events.emit(EventName.OnModelStopped, {});
 
     // stop the periocally health check
     if (this.getNitroProcesHealthIntervalId) {
-      console.debug("Stop calling Nitro process health check");
       clearInterval(this.getNitroProcesHealthIntervalId);
       this.getNitroProcesHealthIntervalId = undefined;
     }
@@ -170,7 +170,7 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    * Periodically check for nitro process's health.
    */
   private async periodicallyGetNitroHealth(): Promise<void> {
-    const health = await executeOnMain(MODULE, "getCurrentNitroProcessInfo");
+    const health = await executeOnMain(NODE, "getCurrentNitroProcessInfo");
 
     const isRunning = this.nitroProcessInfo?.isRunning ?? false;
     if (isRunning && health.isRunning === false) {
@@ -204,6 +204,8 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     };
 
     return new Promise(async (resolve, reject) => {
+      if (!this._currentModel) return Promise.reject("No model loaded");
+
       requestInference(data.messages ?? [], this._currentModel).subscribe({
         next: (_content) => {},
         complete: async () => {
@@ -223,7 +225,9 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    * @param {MessageRequest} data - The data for the new message request.
    */
   private async onMessageRequest(data: MessageRequest) {
-    if (data.model.engine !== "nitro") return;
+    if (data.model?.engine !== InferenceEngine.nitro || !this._currentModel) {
+      return;
+    }
 
     const timestamp = Date.now();
     const message: ThreadMessage = {
@@ -242,11 +246,12 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
     this.isCancelled = false;
     this.controller = new AbortController();
 
-    requestInference(
-      data.messages ?? [],
-      { ...this._currentModel, ...data.model },
-      this.controller
-    ).subscribe({
+    // @ts-ignore
+    const model: Model = {
+      ...(this._currentModel || {}),
+      ...(data.model || {}),
+    };
+    requestInference(data.messages ?? [], model, this.controller).subscribe({
       next: (content) => {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
