@@ -6,6 +6,7 @@ import {
   Select,
   SelectContent,
   SelectGroup,
+  SelectPortal,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -66,6 +67,7 @@ export default function DropdownListSidebar() {
   }, [])
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
+  const [first, setfirst] = useState(false)
 
   const selectedName =
     downloadedModels.filter((x) => x.id === selected?.id)[0]?.name ?? ''
@@ -147,20 +149,18 @@ export default function DropdownListSidebar() {
   return (
     <>
       <Select value={selectedModel?.id} onValueChange={onValueSelected}>
+    <div className="relative">
+      <Select value={selected?.id} onValueChange={onValueSelected}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder="Choose model to start">
             {selectedName}
           </SelectValue>
         </SelectTrigger>
-        <SelectContent className="right-2 block w-full min-w-[450px] pr-0">
-          <div className="flex w-full items-center space-x-2 px-4 py-2">
-            <MonitorIcon size={20} className="text-muted-foreground" />
-            <span>Local</span>
-          </div>
-          <div className="border-b border-border" />
-          {downloadedModels.length === 0 ? (
-            <div className="px-4 py-2">
-              <p>{`Oops, you don't have a model yet.`}</p>
+        <SelectPortal>
+          <SelectContent className="right-2 block w-full min-w-[450px] pr-0">
+            <div className="flex w-full items-center space-x-2 px-4 py-2">
+              <MonitorIcon size={20} className="text-muted-foreground" />
+              <span>Local</span>
             </div>
           ) : (
             <SelectGroup>
@@ -181,26 +181,67 @@ export default function DropdownListSidebar() {
                       {x.engine == InferenceEngine.nitro && (
                         <ModelLabel size={x.metadata.size} />
                       )}
+            <div className="border-b border-border" />
+            {downloadedModels.length === 0 ? (
+              <div className="px-4 py-2">
+                <p>{`Oops, you don't have a model yet.`}</p>
+              </div>
+            ) : (
+              <SelectGroup>
+                {downloadedModels.map((x, i) => (
+                  <SelectItem
+                    key={i}
+                    value={x.id}
+                    className={twMerge(x.id === selected?.id && 'bg-secondary')}
+                  >
+                    <div className="z-50 flex w-full justify-between">
+                      <span className="line-clamp-1 block">{x.name}</span>
+                      <div className="space-x-2">
+                        <span className="font-bold text-muted-foreground">
+                          {toGibibytes(x.metadata.size)}
+                        </span>
+                        {x.engine == InferenceEngine.nitro &&
+                          getLabel(x.metadata.size)}
+                      </div>
                     </div>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          )}
-          <div className="border-b border-border" />
-          <div className="w-full px-4 py-2">
-            <Button
-              block
-              className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
-              onClick={() => setMainViewState(MainViewState.Hub)}
-            >
-              Explore The Hub
-            </Button>
-          </div>
-        </SelectContent>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            <div className="border-b border-border" />
+            <div className="w-full px-4 py-2">
+              <Button
+                block
+                className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
+                onClick={() => setMainViewState(MainViewState.Hub)}
+              >
+                Explore The Hub
+              </Button>
+            </div>
+          </SelectContent>
+        </SelectPortal>
       </Select>
 
       <OpenAiKeyInput selectedModel={selectedModel} />
     </>
+      {selected?.engine === InferenceEngine.openai && (
+        <div className="mt-4">
+          <label
+            id="thread-title"
+            className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
+          >
+            API Key
+          </label>
+          <Input
+            id="assistant-instructions"
+            placeholder="Enter your API_KEY"
+            defaultValue={openAISettings?.api_key}
+            onChange={(e) => {
+              saveOpenAISettings({ apiKey: e.target.value })
+            }}
+          />
+        </div>
+      )}
+    </div>
   )
 }

@@ -17,6 +17,8 @@ const SelectGroup = SelectPrimitive.Group
 
 const SelectValue = SelectPrimitive.Value
 
+const SelectPortal = SelectPrimitive.Portal
+
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
@@ -129,6 +131,7 @@ export {
   Select,
   SelectGroup,
   SelectValue,
+  SelectPortal,
   SelectTrigger,
   SelectContent,
   SelectLabel,

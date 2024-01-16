@@ -47,7 +47,7 @@ const Logs = () => {
               r="55.9425"
               fill="#E7E7E7"
               stroke="white"
-              stroke-width="3.1151"
+              strokeWidth="3.1151"
             />
             <mask
               id="mask0_1206_120508"
@@ -146,8 +146,8 @@ const Logs = () => {
                 y2="114.947"
                 gradientUnits="userSpaceOnUse"
               >
-                <stop stop-color="#CFCFCF" />
-                <stop offset="1" stop-color="#C6C6C6" />
+                <stop stopColor="#CFCFCF" />
+                <stop offset="1" stopColor="#C6C6C6" />
               </linearGradient>
               <linearGradient
                 id="paint1_linear_1206_120508"
@@ -157,8 +157,8 @@ const Logs = () => {
                 y2="88.9801"
                 gradientUnits="userSpaceOnUse"
               >
-                <stop stop-color="#DDDDDD" />
-                <stop offset="1" stop-color="#B6B6B6" />
+                <stop stopColor="#DDDDDD" />
+                <stop offset="1" stopColor="#B6B6B6" />
               </linearGradient>
             </defs>
           </svg>
