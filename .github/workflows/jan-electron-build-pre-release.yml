@@ -10,18 +10,18 @@ on:
 
 jobs:
   delete-cloudflare-r2-folder:
-    uses: ./.github/workflows/templates/delete-cloudflare-r2-folder.yml@main
+    uses: ./.github/workflows/delete-cloudflare-r2-folder.yml
     with:
       environment: production
 
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
-    uses: ./.github/workflows/templates/get-update-version.yml@main
+    uses: ./.github/workflows/get-update-version.yml
     with:
       environment: production
 
   build-macos:
-    uses: ./.github/workflows/templates/build-macos.yml@main
+    uses: ./.github/workflows/build-macos.yml
     with:
       environment: production
       ref: refs/heads/main
@@ -30,7 +30,7 @@ jobs:
       upload_cloudflare_r2: true
 
   build-windows-x64:
-    uses: ./.github/workflows/templates/build-windows-x64.yml@main
+    uses: ./.github/workflows/build-windows-x64.yml
     with:
       environment: production
       ref: refs/heads/main
@@ -40,7 +40,7 @@ jobs:
 
           
   build-linux-x64:
-    uses: ./.github/workflows/templates/build-linux-x64.yml@main
+    uses: ./.github/workflows/build-linux-x64.yml
     with:
       environment: production
       ref: refs/heads/main
@@ -51,7 +51,7 @@ jobs:
   noti-discord-nightly-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
     if: github.event_name == 'push'
-    uses: ./.github/workflows/templates/noti-discord-and-update-url-readme.yml@main
+    uses: ./.github/workflows/noti-discord-and-update-url-readme.yml
     with:
       ref: refs/heads/main
       build_reason: Nightly
@@ -60,7 +60,7 @@ jobs:
   noti-discord-manual-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/templates/noti-discord-and-update-url-readme.yml@main
+    uses: ./.github/workflows/noti-discord-and-update-url-readme.yml
     with:
       ref: refs/heads/main
       build_reason: Manual
