@@ -16,14 +16,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@janhq/uikit'
-// import hljs from 'highlight.js'
+
 import { useAtom, useAtomValue } from 'jotai'
 
 import { Paintbrush, CodeIcon } from 'lucide-react'
 import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 
-// import { Marked, Renderer } from 'marked'
-// import { markedHighlight } from 'marked-highlight'
 import { twMerge } from 'tailwind-merge'
 
 import CardSidebar from '@/containers/CardSidebar'
@@ -56,32 +54,9 @@ const LocalServerScreen = () => {
 
   useEffect(() => {
     getServerLog().then((log) => {
-      // setLogs(log)
-      // console.log(log)
       setLogs(log.split(/\r?\n|\r|\n/g))
-      // setLogs(JSON.stringify(log, null, 2))
     })
   }, [getServerLog, logs])
-
-  // const marked: Marked = new Marked(
-  //   markedHighlight({
-  //     langPrefix: 'hljs',
-  //     highlight(code) {
-  //       return hljs.highlightAuto(code).value
-  //     },
-  //   }),
-  //   {
-  //     renderer: {
-  //       link: (href, title, text) => {
-  //         return Renderer.prototype.link
-  //           ?.apply(this, [href, title, text])
-  //           .replace('<a', "<a target='_blank'")
-  //       },
-  //     },
-  //   }
-  // )
-
-  // const parsedText = marked.parse(logs)
 
   return (
     <div className="flex h-full w-full">
@@ -222,12 +197,6 @@ const LocalServerScreen = () => {
         </div>
         <div className="p-4">
           <code className="text-xs">
-            {/* <div
-              dangerouslySetInnerHTML={{
-                __html: parsedText,
-              }}
-            /> */}
-
             {logs.map((log, i) => {
               return (
                 <p key={i} className="my-2 leading-relaxed">
