@@ -1,5 +1,6 @@
-/* eslint-disable @typescript-eslint/naming-convention */
-import { useEffect, useState } from 'react'
+'use client'
+
+import React from 'react'
 
 import {
   Button,
@@ -25,8 +26,11 @@ import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import CardSidebar from '@/containers/CardSidebar'
-import DropdownListSidebar from '@/containers/DropdownListSidebar'
+import DropdownListSidebar, {
+  selectedModelAtom,
+} from '@/containers/DropdownListSidebar'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { useServerLog } from '@/hooks/useServerLog'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
@@ -36,6 +40,8 @@ import EngineSetting from '../Chat/EngineSetting'
 import ModelSetting from '../Chat/ModelSetting'
 import settingComponentBuilder from '../Chat/ModelSetting/settingComponentBuilder'
 import { showRightSideBarAtom } from '../Chat/Sidebar'
+
+import Logs from './Logs'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
@@ -49,14 +55,10 @@ const LocalServerScreen = () => {
   const modelRuntimeParams = toRuntimeParams(activeModelParams)
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
   const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
-  const { getServerLog, openServerLog, clearServerLog } = useServerLog()
-  const [logs, setLogs] = useState([])
+  const { openServerLog, clearServerLog } = useServerLog()
+  const { activeModel, startModel } = useActiveModel()
 
-  useEffect(() => {
-    getServerLog().then((log) => {
-      setLogs(log.split(/\r?\n|\r|\n/g))
-    })
-  }, [getServerLog, logs])
+  const [selectedModel] = useAtom(selectedModelAtom)
 
   return (
     <div className="flex h-full w-full">
@@ -78,6 +80,9 @@ const LocalServerScreen = () => {
                   window.core?.api?.stopServer()
                   setServerEnabled(false)
                 } else {
+                  if (!activeModel) {
+                    startModel(String(selectedModel?.id))
+                  }
                   window.core?.api?.startServer()
                   setServerEnabled(true)
                 }
@@ -105,7 +110,11 @@ const LocalServerScreen = () => {
               </SelectContent>
             </Select>
 
-            <Input className="w-[60px] flex-shrink-0" value="1337" />
+            <Input
+              className="w-[60px] flex-shrink-0"
+              value="1337"
+              disabled={serverEnabled}
+            />
           </div>
           <div>
             <label
@@ -195,17 +204,7 @@ const LocalServerScreen = () => {
             </Button>
           </div>
         </div>
-        <div className="p-4">
-          <code className="text-xs">
-            {logs.map((log, i) => {
-              return (
-                <p key={i} className="my-2 leading-relaxed">
-                  {log}
-                </p>
-              )
-            })}
-          </code>
-        </div>
+        <Logs />
       </div>
 
       {/* Right bar */}

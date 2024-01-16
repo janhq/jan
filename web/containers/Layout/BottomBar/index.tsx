@@ -8,7 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@janhq/uikit'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { FaGithub, FaDiscord } from 'react-icons/fa'
 
@@ -32,6 +32,8 @@ import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+
 const menuLinks = [
   {
     name: 'Discord',
@@ -53,6 +55,7 @@ const BottomBar = () => {
   const { setMainViewState } = useMainViewState()
   const { downloadStates } = useDownloadState()
   const setShowSelectModelModal = useSetAtom(showSelectModelModalAtom)
+  const [serverEnabled] = useAtom(serverEnabledAtom)
 
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/80 px-3">
@@ -63,14 +66,16 @@ const BottomBar = () => {
           ) : null}
         </div>
 
-        <Badge
-          themes="secondary"
-          className="cursor-pointer rounded-md border-none font-medium"
-          onClick={() => setShowSelectModelModal((show) => !show)}
-        >
-          My Models
-          <ShortCut menu="E" />
-        </Badge>
+        {!serverEnabled && (
+          <Badge
+            themes="secondary"
+            className="cursor-pointer rounded-md border-none font-medium"
+            onClick={() => setShowSelectModelModal((show) => !show)}
+          >
+            My Models
+            <ShortCut menu="E" />
+          </Badge>
+        )}
 
         {stateModel.state === 'start' && stateModel.loading && (
           <SystemItem

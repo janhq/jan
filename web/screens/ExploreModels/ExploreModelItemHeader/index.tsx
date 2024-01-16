@@ -2,7 +2,15 @@
 import { useCallback, useMemo } from 'react'
 
 import { Model } from '@janhq/core'
-import { Badge, Button } from '@janhq/uikit'
+import {
+  Badge,
+  Button,
+  Tooltip,
+  TooltipArrow,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+} from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
 
@@ -23,6 +31,8 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGibibytes } from '@/utils/converter'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+
 import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
@@ -37,6 +47,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const { modelDownloadStateAtom, downloadStates } = useDownloadState()
   const { requestCreateNewThread } = useCreateNewThread()
   const totalRam = useAtomValue(totalRamAtom)
+  const serverEnabled = useAtomValue(serverEnabledAtom)
 
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[model.id]),
@@ -68,13 +79,26 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 
   if (isDownloaded) {
     downloadButton = (
-      <Button
-        themes="secondaryBlue"
-        className="min-w-[98px]"
-        onClick={onUseModelClick}
-      >
-        Use
-      </Button>
+      <Tooltip>
+        <TooltipTrigger>
+          <Button
+            themes="secondaryBlue"
+            className="min-w-[98px]"
+            onClick={onUseModelClick}
+            disabled={serverEnabled}
+          >
+            Use
+          </Button>
+        </TooltipTrigger>
+        {serverEnabled && (
+          <TooltipPortal>
+            <TooltipContent side="top">
+              <span>Threads are disabled while the server is running</span>
+              <TooltipArrow />
+            </TooltipContent>
+          </TooltipPortal>
+        )}
+      </Tooltip>
     )
   }
 
