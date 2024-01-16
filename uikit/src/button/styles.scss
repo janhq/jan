@@ -1,7 +1,7 @@
 .btn {
   @apply inline-flex items-center justify-center whitespace-nowrap rounded-lg font-semibold transition-colors;
   @apply cursor-pointer focus:outline-none focus-visible:outline-none focus-visible:ring-0;
-  @apply disabled:pointer-events-none disabled:opacity-50;
+  @apply disabled:pointer-events-none disabled:bg-zinc-100 disabled:text-zinc-400;
 
   &-primary {
     @apply bg-primary hover:bg-primary/90 text-white;

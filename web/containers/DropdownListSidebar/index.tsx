@@ -29,6 +29,8 @@ import ModelLabel from '../ModelLabel'
 
 import OpenAiKeyInput from '../OpenAiKeyInput'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import { totalRamAtom, usedRamAtom } from '@/helpers/atoms/SystemBar.atom'
 import {
   ModelParams,
   activeThreadAtom,
@@ -45,6 +47,8 @@ export default function DropdownListSidebar() {
   const threadStates = useAtomValue(threadStatesAtom)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+  const { activeModel, startModel } = useActiveModel()
+  const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
   const { setMainViewState } = useMainViewState()
   const [openAISettings, setOpenAISettings] = useState<
@@ -109,6 +113,15 @@ export default function DropdownListSidebar() {
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelectedModel(model)
 
+      if (activeModel?.id !== modelId) {
+        startModel(modelId)
+      }
+
+      if (serverEnabled) {
+        window.core?.api?.stopServer()
+        setServerEnabled(false)
+      }
+
       if (activeThreadId) {
         const modelParams = {
           ...model?.parameters,
@@ -117,7 +130,14 @@ export default function DropdownListSidebar() {
         setThreadModelParams(activeThreadId, modelParams)
       }
     },
-    [downloadedModels, activeThreadId, setSelectedModel, setThreadModelParams]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      downloadedModels,
+      serverEnabled,
+      activeThreadId,
+      setSelectedModel,
+      setThreadModelParams,
+    ]
   )
 
   if (!activeThread) {
