@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { app, Menu, dialog, shell } from 'electron'
 const isMac = process.platform === 'darwin'
-const { autoUpdater } = require('electron-updater')
+import { autoUpdater } from 'electron-updater'
 import { compareSemanticVersions } from './versionDiff'
 
 const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
@@ -12,16 +12,8 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
       {
         label: 'Check for Updates...',
         click: () =>
-          autoUpdater.checkForUpdatesAndNotify().then((e) => {
-            if (
-              !e ||
-              compareSemanticVersions(app.getVersion(), e.updateInfo.version) >=
-                0
-            )
-              dialog.showMessageBox({
-                message: `There are currently no updates available.`,
-              })
-          }),
+          // Check for updates and notify user if there are any
+          autoUpdater.checkForUpdatesAndNotify(),
       },
       { type: 'separator' },
       { role: 'services' },
