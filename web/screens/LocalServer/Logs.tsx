@@ -18,17 +18,19 @@ const Logs = () => {
   }, [logs])
 
   return (
-    <div className="p-4">
+    <div className="overflow-hidden">
       {logs.length > 1 ? (
-        <code className="text-xs">
-          {logs.map((log, i) => {
-            return (
-              <p key={i} className="my-2 leading-relaxed">
-                {log}
-              </p>
-            )
-          })}
-        </code>
+        <div className="h-full overflow-auto p-4">
+          <code className="text-xs">
+            {logs.map((log, i) => {
+              return (
+                <p key={i} className="my-2 leading-relaxed">
+                  {log}
+                </p>
+              )
+            })}
+          </code>
+        </div>
       ) : (
         <div className="mt-24 flex flex-col items-center justify-center">
           <svg
