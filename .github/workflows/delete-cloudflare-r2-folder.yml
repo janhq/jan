@@ -1,15 +1,15 @@
-name: build-windows-x64
+name: delete-cloudflare-r2-folder
 on:
   workflow_call:
-    secrets:
-      CLOUDFLARE_R2_BUCKET_NAME:
-        required: false
-      CLOUDFLARE_R2_ACCESS_KEY_ID:
-        required: false
-      CLOUDFLARE_R2_SECRET_ACCESS_KEY:
-        required: false
-      CLOUDFLARE_ACCOUNT_ID:
-        required: false
+    # secrets:
+    #   CLOUDFLARE_R2_BUCKET_NAME:
+    #     required: false
+    #   CLOUDFLARE_R2_ACCESS_KEY_ID:
+    #     required: false
+    #   CLOUDFLARE_R2_SECRET_ACCESS_KEY:
+    #     required: false
+    #   CLOUDFLARE_ACCOUNT_ID:
+    #     required: false
 
 jobs:
   delete-cloudflare-r2-folder:

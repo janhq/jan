@@ -1,6 +1,9 @@
-name: Jan Build Electron App Nightly or Manual
+name: Jan Build Electron App Manual
 
 on:
+  push:
+    branches:
+      - feature/update-ci-follow-gitflow
   workflow_dispatch:
     inputs:
       upload_cloudflare_r2:
@@ -10,8 +13,9 @@ on:
         default: false
 
 jobs:
-  delete-cloudflare-r2-folder:
-    uses: ./.github/workflows/delete-cloudflare-r2-folder.yml
+  # delete-cloudflare-r2-folder:
+  #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_cloudflare_r2 == 'true'
+  #   uses: ./.github/workflows/delete-cloudflare-r2-folder.yml
 
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
@@ -19,37 +23,42 @@ jobs:
 
   build-macos:
     uses: ./.github/workflows/build-macos.yml
-    needs: [delete-cloudflare-r2-folder, get-update-version]
+    # needs: [delete-cloudflare-r2-folder, get-update-version]
+    needs: [get-update-version]
+    # continue event if need jobs is skipped or success
     with:
       ref: refs/heads/main
       enable_condition: true
-      upload_cloudflare_r2: ${{ github.event.inputs.upload_cloudflare_r2 }}
-      new-version: ${{ needs.get-update-version.outputs.new-version }}
+      upload_cloudflare_r2: false
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
     uses: ./.github/workflows/build-windows-x64.yml
-    needs: [delete-cloudflare-r2-folder, get-update-version]
+    # needs: [delete-cloudflare-r2-folder, get-update-version]
+    needs: [get-update-version]
     with:
       ref: refs/heads/main
       enable_condition: true
-      upload_cloudflare_r2: ${{ github.event.inputs.upload_cloudflare_r2 }}
-      new-version: ${{ needs.get-update-version.outputs.new-version }}
+      upload_cloudflare_r2: false
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
     uses: ./.github/workflows/build-linux-x64.yml
-    needs: [delete-cloudflare-r2-folder, get-update-version]
+    # needs: [delete-cloudflare-r2-folder, get-update-version]
+    needs: [get-update-version]
     with:
       ref: refs/heads/main
       enable_condition: true
-      upload_cloudflare_r2: ${{ github.event.inputs.upload_cloudflare_r2 }}
-      new-version: ${{ needs.get-update-version.outputs.new-version }}
+      upload_cloudflare_r2: false
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-manual-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
+    # needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_cloudflare_r2 == 'true'
     uses: ./.github/workflows/noti-discord-and-update-url-readme.yml
     with:
       ref: refs/heads/main
       build_reason: Manual
       push_to_branch: main
-      new-version: ${{ needs.get-update-version.outputs.new-version }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}

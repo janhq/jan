@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     outputs:
-      new-version: ${{ steps.version_update.outputs.new-version }}
+      new_version: ${{ steps.version_update.outputs.new_version }}
     steps:
     - name: Install jq
       uses: dcarbone/install-jq-action@v2.0.1
@@ -38,6 +38,6 @@ jobs:
         LATEST_TAG=$(get_latest_tag)
         
         # Remove the 'v' and append the build number to the version
-        new-version="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
-        echo "New version: $new-version"
-        echo "::set-output name=new-version::$new-version"
+        new_version="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
+        echo "New version: $new_version"
+        echo "::set-output name=new_version::$new_version"

@@ -14,31 +14,31 @@ on:
         required: true
         type: boolean
         default: false
-      new-version:
+      new_version:
         required: true
         type: string
         default: ''
-    secrets:
-      CLOUDFLARE_R2_PUBLIC_URL:
-        required: false
-      CLOUDFLARE_R2_BUCKET_NAME:
-        required: false
-      CLOUDFLARE_R2_ACCESS_KEY_ID:
-        required: false
-      CLOUDFLARE_R2_SECRET_ACCESS_KEY:
-        required: false
-      CLOUDFLARE_ACCOUNT_ID:
-        required: false
-      AZURE_KEY_VAULT_URI:
-        required: false
-      AZURE_CLIENT_ID:
-        required: false
-      AZURE_TENANT_ID:
-        required: false
-      AZURE_CLIENT_SECRET:
-        required: false
-      AZURE_CERT_NAME:
-        required: false
+    # secrets:
+    #   CLOUDFLARE_R2_PUBLIC_URL:
+    #     required: false
+    #   CLOUDFLARE_R2_BUCKET_NAME:
+    #     required: false
+    #   CLOUDFLARE_R2_ACCESS_KEY_ID:
+    #     required: false
+    #   CLOUDFLARE_R2_SECRET_ACCESS_KEY:
+    #     required: false
+    #   CLOUDFLARE_ACCOUNT_ID:
+    #     required: false
+    #   AZURE_KEY_VAULT_URI:
+    #     required: false
+    #   AZURE_CLIENT_ID:
+    #     required: false
+    #   AZURE_TENANT_ID:
+    #     required: false
+    #   AZURE_CLIENT_SECRET:
+    #     required: false
+    #   AZURE_CERT_NAME:
+    #     required: false
 
 jobs:
   build-windows-x64:
@@ -64,10 +64,10 @@ jobs:
         shell: bash
         run: |
           # Update the version in electron/package.json
-          jq --arg version "${{ inputs.new-version }}" '.version = $version' electron/package.json > /tmp/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
-          jq --arg version "${{ inputs.new-version }}" '.version = $version' web/package.json > /tmp/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
           jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
@@ -93,7 +93,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-win-x64-${{ inputs.new-version }}
+          name: jan-win-x64-${{ inputs.new_version }}
           path: ./electron/dist/*.exe
       
       - name: put-object using awscli s3api
@@ -101,11 +101,11 @@ jobs:
         shell: bash
         run: |
           ls -al ./electron/dist
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-win-x64-${{ inputs.new-version }}.exe" --body "./electron/dist/jan-win-x64-${{ inputs.new-version }}.exe"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-win-x64-${{ inputs.new-version }}.exe.blockmap" --body "./electron/dist/jan-win-x64-${{ inputs.new-version }}.exe.blockmap"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new-version }}/jan-win-x64-${{ inputs.new-version }}.exe" --body "./electron/dist/jan-win-x64-${{ inputs.new-version }}.exe"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-win-x64-${{ inputs.new_version }}.exe" --body "./electron/dist/jan-win-x64-${{ inputs.new_version }}.exe"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-win-x64-${{ inputs.new_version }}.exe.blockmap" --body "./electron/dist/jan-win-x64-${{ inputs.new_version }}.exe.blockmap"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new_version }}/jan-win-x64-${{ inputs.new_version }}.exe" --body "./electron/dist/jan-win-x64-${{ inputs.new_version }}.exe"
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/latest.yml" --body "./electron/dist/latest.yml"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new-version }}/latest.yml" --body "./electron/dist/latest.yml"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new_version }}/latest.yml" --body "./electron/dist/latest.yml"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}

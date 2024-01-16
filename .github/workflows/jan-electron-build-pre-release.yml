@@ -1,4 +1,4 @@
-name: Jan Build Electron App Nightly or Manual
+name: Jan Build Electron Pre Release
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
       ref: refs/heads/main
       enable_condition: true
       upload_cloudflare_r2: true
-      new-version: ${{ needs.get-update-version.outputs.new-version }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
     uses: ./.github/workflows/build-windows-x64.yml
@@ -31,7 +31,7 @@ jobs:
       ref: refs/heads/main
       enable_condition: true
       upload_cloudflare_r2: true
-      new-version: ${{ needs.get-update-version.outputs.new-version }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
     uses: ./.github/workflows/build-linux-x64.yml
@@ -40,7 +40,7 @@ jobs:
       ref: refs/heads/main
       enable_condition: true
       upload_cloudflare_r2: true
-      new-version: ${{ needs.get-update-version.outputs.new-version }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-nightly-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
@@ -50,4 +50,4 @@ jobs:
       ref: refs/heads/main
       build_reason: Nightly
       push_to_branch: main
-      new-version: ${{ needs.get-update-version.outputs.new-version }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
