@@ -43,31 +43,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Stable (Recommended)</b></td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.3/jan-win-x64-0.4.3.exe'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-win-x64-0.4.4.exe'>
         <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.3/jan-mac-x64-0.4.3.dmg'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-mac-x64-0.4.4.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.3/jan-mac-arm64-0.4.3.dmg'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-mac-arm64-0.4.4.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.3/jan-linux-amd64-0.4.3.deb'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-linux-amd64-0.4.4.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.3/jan-linux-x86_64-0.4.3.AppImage'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-linux-x86_64-0.4.4.AppImage'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
@@ -76,31 +76,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-146/jan-win-x64-0.4.3-146.exe'>
+      <a href='https://delta.jan.ai/0.4.3-147/jan-win-x64-0.4.3-147.exe'>
         <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-146/jan-mac-x64-0.4.3-146.dmg'>
+      <a href='https://delta.jan.ai/0.4.3-147/jan-mac-x64-0.4.3-147.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-146/jan-mac-arm64-0.4.3-146.dmg'>
+      <a href='https://delta.jan.ai/0.4.3-147/jan-mac-arm64-0.4.3-147.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-146/jan-linux-amd64-0.4.3-146.deb'>
+      <a href='https://delta.jan.ai/0.4.3-147/jan-linux-amd64-0.4.3-147.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/0.4.3-146/jan-linux-x86_64-0.4.3-146.AppImage'>
+      <a href='https://delta.jan.ai/0.4.3-147/jan-linux-x86_64-0.4.3-147.AppImage'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
