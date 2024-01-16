@@ -77,6 +77,8 @@ export default function DropdownListSidebar() {
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
+  const selectedName =
+    downloadedModels.filter((x) => x.id === selected?.id)[0]?.name ?? ''
   /**
    * Default value for max_tokens and ctx_len
    * Its to avoid OOM issue since a model can set a big number for these settings
@@ -96,9 +98,16 @@ export default function DropdownListSidebar() {
       const modelParams: ModelParams = {
         ...recommendedModel?.parameters,
         ...recommendedModel?.settings,
-        // This is to set default value for these settings instead of maximum value
-        max_tokens: defaultValue(recommendedModel?.parameters.max_tokens),
-        ctx_len: defaultValue(recommendedModel?.settings.ctx_len),
+        /**
+         * This is to set default value for these settings instead of maximum value
+         * Should only apply when model.json has these settings
+         */
+        ...(recommendedModel?.parameters.max_tokens && {
+          max_tokens: defaultValue(recommendedModel?.parameters.max_tokens),
+        }),
+        ...(recommendedModel?.settings.ctx_len && {
+          ctx_len: defaultValue(recommendedModel?.settings.ctx_len),
+        }),
       }
       setThreadModelParams(activeThread.id, modelParams)
     }
@@ -201,7 +210,7 @@ export default function DropdownListSidebar() {
       <Select value={selected?.id} onValueChange={onValueSelected}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder="Choose model to start">
-            {downloadedModels.filter((x) => x.id === selected?.id)[0]?.name}
+            {selectedName}
           </SelectValue>
         </SelectTrigger>
         <SelectContent className="right-2 block w-full min-w-[450px] pr-0">

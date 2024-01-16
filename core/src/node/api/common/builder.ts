@@ -59,7 +59,7 @@ export const retrieveBuilder = async (configuration: RouteConfiguration, id: str
   const filteredData = data.filter((d: any) => d.id === id)[0]
 
   if (!filteredData) {
-    return {}
+    return undefined
   }
 
   return filteredData
@@ -75,14 +75,14 @@ export const deleteBuilder = async (configuration: RouteConfiguration, id: strin
   const directoryPath = join(path, configuration.dirName)
   try {
     const data = await retrieveBuilder(configuration, id)
-    if (!data || !data.keys) {
+    if (!data) {
       return {
         message: 'Not found',
       }
     }
 
-    const myPath = join(directoryPath, id)
-    fs.rmdirSync(myPath, { recursive: true })
+    const objectPath = join(directoryPath, id)
+    fs.rmdirSync(objectPath, { recursive: true })
     return {
       id: id,
       object: configuration.delete.object,
@@ -93,16 +93,21 @@ export const deleteBuilder = async (configuration: RouteConfiguration, id: strin
   }
 }
 
-export const getMessages = async (threadId: string) => {
+export const getMessages = async (threadId: string): Promise<ThreadMessage[]> => {
   const threadDirPath = join(path, 'threads', threadId)
   const messageFile = 'messages.jsonl'
   try {
     const files: string[] = fs.readdirSync(threadDirPath)
     if (!files.includes(messageFile)) {
-      throw Error(`${threadDirPath} not contains message file`)
+      console.error(`${threadDirPath} not contains message file`)
+      return []
     }
 
     const messageFilePath = join(threadDirPath, messageFile)
+    if (!fs.existsSync(messageFilePath)) {
+      console.debug('message file not found')
+      return []
+    }
 
     const lines = fs
       .readFileSync(messageFilePath, 'utf-8')

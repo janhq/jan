@@ -55,15 +55,12 @@ const TopBar = () => {
 
   const onCreateConversationClick = async () => {
     if (assistants.length === 0) {
-      await getAssistants().then((res) => {
-        if (res) {
-          if (res.length === 0) {
-            alert('No assistant available')
-            return
-          }
-          requestCreateNewThread(res[0])
-        }
-      })
+      const res = await getAssistants()
+      if (res.length === 0) {
+        alert('No assistant available')
+        return
+      }
+      requestCreateNewThread(res[0])
     } else {
       requestCreateNewThread(assistants[0])
     }
