@@ -1,5 +1,6 @@
 .select {
   @apply placeholder:text-muted-foreground border-border flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1;
+  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1;
 
   &-caret {
     @apply h-4 w-4 opacity-50;

@@ -1,6 +1,7 @@
 .btn {
   @apply inline-flex items-center justify-center whitespace-nowrap rounded-lg font-semibold transition-colors;
-  @apply cursor-pointer focus:outline-none focus-visible:outline-none focus-visible:ring-0;
+  @apply cursor-pointer;
+  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1;
   @apply disabled:pointer-events-none disabled:bg-zinc-100 disabled:text-zinc-400;
 
   &-primary {
