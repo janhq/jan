@@ -28,6 +28,7 @@
     "copy:assets": "cpx \"models/**\" \"electron/models/\" && cpx \"docs/openapi/**\" \"electron/docs/openapi\"",
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
     "dev:web": "yarn workspace jan-web dev",
+    "dev:server": "yarn workspace @janhq/server dev",
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "test-local": "yarn lint && yarn build:test && yarn test",
     "dev:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit dev",
