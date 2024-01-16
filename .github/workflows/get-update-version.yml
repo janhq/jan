@@ -1,14 +1,13 @@
+name: get-update-version
+on:
+  workflow_call:
+
 jobs:
   get-update-version:
-    inputs:
-      environment:
-        required: true
-        type: string
-        default: 'production'
     runs-on: ubuntu-latest
-    environment: ${{ parameters.environment }}
+    environment: production
     outputs:
-      new_version: ${{ steps.version_update.outputs.new_version }}
+      new-version: ${{ steps.version_update.outputs.new-version }}
     steps:
     - name: Install jq
       uses: dcarbone/install-jq-action@v2.0.1
@@ -39,6 +38,6 @@ jobs:
         LATEST_TAG=$(get_latest_tag)
         
         # Remove the 'v' and append the build number to the version
-        NEW_VERSION="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
-        echo "New version: $NEW_VERSION"
-        echo "::set-output name=new_version::$NEW_VERSION"
+        new-version="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
+        echo "New version: $new-version"
+        echo "::set-output name=new-version::$new-version"

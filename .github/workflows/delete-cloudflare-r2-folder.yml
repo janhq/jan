@@ -1,12 +1,20 @@
+name: build-windows-x64
+on:
+  workflow_call:
+    secrets:
+      CLOUDFLARE_R2_BUCKET_NAME:
+        required: false
+      CLOUDFLARE_R2_ACCESS_KEY_ID:
+        required: false
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
+
 jobs:
   delete-cloudflare-r2-folder:
-    inputs:
-      environment:
-        required: true
-        type: string
-        default: 'production'
     runs-on: ubuntu-latest
-    environment: ${{ parameters.environment }}
+    environment: production
     steps:
       - name: install-aws-cli-action
         uses: unfor19/install-aws-cli-action@v1

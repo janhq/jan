@@ -1,11 +1,13 @@
 name: Jan Build Electron App Nightly or Manual
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "!README.md"
+  workflow_dispatch:
+    inputs:
+      upload_cloudflare_r2:
+        description: 'Upload to Cloudflare R2'
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   delete-cloudflare-r2-folder:
@@ -21,7 +23,7 @@ jobs:
     with:
       ref: refs/heads/main
       enable_condition: true
-      upload_cloudflare_r2: true
+      upload_cloudflare_r2: ${{ github.event.inputs.upload_cloudflare_r2 }}
       new-version: ${{ needs.get-update-version.outputs.new-version }}
 
   build-windows-x64:
@@ -30,7 +32,7 @@ jobs:
     with:
       ref: refs/heads/main
       enable_condition: true
-      upload_cloudflare_r2: true
+      upload_cloudflare_r2: ${{ github.event.inputs.upload_cloudflare_r2 }}
       new-version: ${{ needs.get-update-version.outputs.new-version }}
 
   build-linux-x64:
@@ -39,15 +41,15 @@ jobs:
     with:
       ref: refs/heads/main
       enable_condition: true
-      upload_cloudflare_r2: true
+      upload_cloudflare_r2: ${{ github.event.inputs.upload_cloudflare_r2 }}
       new-version: ${{ needs.get-update-version.outputs.new-version }}
 
-  noti-discord-nightly-and-update-url-readme:
+  noti-discord-manual-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
-    if: github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_cloudflare_r2 == 'true'
     uses: ./.github/workflows/noti-discord-and-update-url-readme.yml
     with:
       ref: refs/heads/main
-      build_reason: Nightly
+      build_reason: Manual
       push_to_branch: main
       new-version: ${{ needs.get-update-version.outputs.new-version }}

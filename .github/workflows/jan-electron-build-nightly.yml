@@ -4,47 +4,56 @@ on:
   schedule:
     - cron: '0 20 * * 2,3,4' # At 8 PM UTC on Tuesday, Wednesday, and Thursday, which is 3 AM UTC+7
 
-  workflow_dispatch:
-
 jobs:
+  # Get condition to upload to cloudflare re
+  # get-condition-to-upload-cloudflare-r2:
+  #   runs-on: ubuntu-latest
+  #   outputs:
+  #     condition: ${{ steps.get-condition-to-upload-cloudflare-r2.outputs.condition }}
+  #   steps:
+  #     - name: Get condition to upload to cloudflare re
+  #       id: get-condition-to-upload-cloudflare-r2
+  #       run: |
+  #         if [ "${{ github.event_name }}" == "schedule" ]; then
+  #           echo "::set-output name=condition::true"
+  #         else
+  #           echo "::set-output name=condition::false"
+  #         fi
+
   delete-cloudflare-r2-folder:
     uses: ./.github/workflows/delete-cloudflare-r2-folder.yml
-    with:
-      environment: production
 
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
     uses: ./.github/workflows/get-update-version.yml
-    with:
-      environment: production
 
   build-macos:
     uses: ./.github/workflows/build-macos.yml
+    needs: [delete-cloudflare-r2-folder, get-update-version]
     with:
-      environment: production
       ref: refs/heads/dev
       enable_condition: true
-      condition: github.ref == 'refs/heads/dev'
       upload_cloudflare_r2: true
+      new-version: ${{ needs.get-update-version.outputs.new-version }}
 
   build-windows-x64:
     uses: ./.github/workflows/build-windows-x64.yml
+    needs: [delete-cloudflare-r2-folder, get-update-version]
     with:
-      environment: production
       ref: refs/heads/dev
       enable_condition: true
-      condition: github.ref == 'refs/heads/dev'
       upload_cloudflare_r2: true
+      new-version: ${{ needs.get-update-version.outputs.new-version }}
 
           
   build-linux-x64:
     uses: ./.github/workflows/build-linux-x64.yml
+    needs: [delete-cloudflare-r2-folder, get-update-version]
     with:
-      environment: production
       ref: refs/heads/dev
       enable_condition: true
-      condition: github.ref == 'refs/heads/dev'
       upload_cloudflare_r2: true
+      new-version: ${{ needs.get-update-version.outputs.new-version }}
 
   noti-discord-nightly-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
@@ -54,12 +63,4 @@ jobs:
       ref: refs/heads/dev
       build_reason: Nightly
       push_to_branch: main
-
-  noti-discord-manual-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'
-    uses: ./.github/workflows/noti-discord-and-update-url-readme.yml
-    with:
-      ref: refs/heads/dev
-      build_reason: Manual
-      push_to_branch: main
+      new-version: ${{ needs.get-update-version.outputs.new-version }}

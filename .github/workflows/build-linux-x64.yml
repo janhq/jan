@@ -1,5 +1,6 @@
-jobs:
-  delete-cloudflare-r2-folder:
+name: build-linux-x64
+on:
+  workflow_call:
     inputs:
       ref:
         required: true
@@ -9,15 +10,30 @@ jobs:
         required: true
         type: boolean
         default: false
-      condition:
-        required: false
-        type: string
-        default: 'github.ref == ''refs/heads/main'''
       upload_cloudflare_r2:
         required: true
         type: boolean
         default: false
+      new-version:
+        required: true
+        type: string
+        default: ''
+    secrets:
+      CLOUDFLARE_R2_PUBLIC_URL:
+        required: false
+      CLOUDFLARE_R2_BUCKET_NAME:
+        required: false
+      CLOUDFLARE_R2_ACCESS_KEY_ID:
+        required: false
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
+
+jobs:
+  build-linux-x64:
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: write
     steps:
@@ -38,9 +54,9 @@ jobs:
         id: version_update
         run: |
           # Update the version in electron/package.json
-          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
+          jq --arg version "${{ inputs.new-version }}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
-          jq --arg version "${{ needs.get-update-version.outputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
+          jq --arg version "${{ inputs.new-version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
           jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
@@ -54,25 +70,25 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}-deb
+          name: jan-linux-amd64-${{ inputs.new-version }}-deb
           path: ./electron/dist/*.deb
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}-AppImage
+          name: jan-linux-amd64-${{ inputs.new-version }}-AppImage
           path: ./electron/dist/*.AppImage
-      
-      ${{ if eq(parameters.upload_cloudflare_r2, true) }}- name: put-object using awscli s3api
-        ${{ if eq(parameters.enable_condition, true) }}if: ${{ parameters.condition }}
+
+      - name: put-object using awscli s3api
+        if: eq(${{ inputs.upload_cloudflare_r2 }}, true)
         run: |
           ls -al ./electron/dist
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --content-type "application/octet-stream"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb" --content-type "application/octet-stream"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-x86_64-${{ needs.get-update-version.outputs.new_version }}.AppImage" --body "./electron/dist/jan-linux-x86_64-${{ needs.get-update-version.outputs.new_version }}.AppImage" --content-type "application/octet-stream"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/jan-linux-x86_64-${{ needs.get-update-version.outputs.new_version }}.AppImage" --body "./electron/dist/jan-linux-x86_64-${{ needs.get-update-version.outputs.new_version }}.AppImage" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-amd64-${{ inputs.new-version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ inputs.new-version }}.deb" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new-version }}/jan-linux-amd64-${{ inputs.new-version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ inputs.new-version }}.deb" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-x86_64-${{ inputs.new-version }}.AppImage" --body "./electron/dist/jan-linux-x86_64-${{ inputs.new-version }}.AppImage" --content-type "application/octet-stream"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new-version }}/jan-linux-x86_64-${{ inputs.new-version }}.AppImage" --body "./electron/dist/jan-linux-x86_64-${{ inputs.new-version }}.AppImage" --content-type "application/octet-stream"
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/latest-linux.yml" --body "./electron/dist/latest-linux.yml" --content-type "text/yaml"
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ needs.get-update-version.outputs.new_version }}/latest-linux.yml" --body "./electron/dist/latest-linux.yml" --content-type "text/yaml"
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new-version }}/latest-linux.yml" --body "./electron/dist/latest-linux.yml" --content-type "text/yaml"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}

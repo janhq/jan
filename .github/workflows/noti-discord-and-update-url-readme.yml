@@ -1,5 +1,6 @@
-jobs:
-  delete-cloudflare-r2-folder:
+name: build-windows-x64
+on:
+  workflow_call:
     inputs:
       ref:
         required: true
@@ -13,6 +14,19 @@ jobs:
         required: true
         type: string
         default: 'main'
+      new-version:
+        required: true
+        type: string
+        default: ''
+    secrets:
+      PAT_SERVICE_ACCOUNT:
+        required: false
+      DISCORD_WEBHOOK:
+        required: false
+
+jobs:
+  delete-cloudflare-r2-folder:
+    environment: production
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -22,17 +36,17 @@ jobs:
         with:
           fetch-depth: "0"
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
-          ref: ${{ parameters.ref }}
+          ref: ${{ inputs.ref }}
 
       - name: Set version to environment variable
         run: |
-          echo "VERSION=${{ needs.get-update-version.outputs.new_version }}" >> $GITHUB_ENV
+          echo "VERSION=${{ inputs.new-version }}" >> $GITHUB_ENV
 
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
         with:
           args: |
-            Jan App ${{ parameters.build_reason }} build artifact version {{ VERSION }}:
+            Jan App ${{ inputs.build_reason }} build artifact version {{ VERSION }}:
             - Windows: https://delta.jan.ai/{{ VERSION }}/jan-win-x64-{{ VERSION }}.exe
             - macOS Intel: https://delta.jan.ai/{{ VERSION }}/jan-mac-x64-{{ VERSION }}.dmg
             - macOS Apple Silicon: https://delta.jan.ai/{{ VERSION }}/jan-mac-arm64-{{ VERSION }}.dmg
@@ -44,15 +58,15 @@ jobs:
 
       - name: Update README.md with artifact URL
         run: |
-          sed -i "s|<a href='https://delta.jan.ai/.*/jan-win-x64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-win-x64-${{ needs.get-update-version.outputs.new_version }}.exe'>|" README.md
-          sed -i "s|<a href='https://delta.jan.ai/.*/jan-mac-x64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-mac-x64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
-          sed -i "s|<a href='https://delta.jan.ai/.*/jan-mac-arm64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-mac-arm64-${{ needs.get-update-version.outputs.new_version }}.dmg'>|" README.md
-          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-amd64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-linux-amd64-${{ needs.get-update-version.outputs.new_version }}.deb'>|" README.md
-          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-x86_64-.*'>|<a href='https://delta.jan.ai/${{ needs.get-update-version.outputs.new_version }}/jan-linux-x86_64-${{ needs.get-update-version.outputs.new_version }}.AppImage'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/.*/jan-win-x64-.*'>|<a href='https://delta.jan.ai/${{ inputs.new-version }}/jan-win-x64-${{ inputs.new-version }}.exe'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/.*/jan-mac-x64-.*'>|<a href='https://delta.jan.ai/${{ inputs.new-version }}/jan-mac-x64-${{ inputs.new-version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/.*/jan-mac-arm64-.*'>|<a href='https://delta.jan.ai/${{ inputs.new-version }}/jan-mac-arm64-${{ inputs.new-version }}.dmg'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-amd64-.*'>|<a href='https://delta.jan.ai/${{ inputs.new-version }}/jan-linux-amd64-${{ inputs.new-version }}.deb'>|" README.md
+          sed -i "s|<a href='https://delta.jan.ai/.*/jan-linux-x86_64-.*'>|<a href='https://delta.jan.ai/${{ inputs.new-version }}/jan-linux-x86_64-${{ inputs.new-version }}.AppImage'>|" README.md
           git config --global user.email "service@jan.ai"
           git config --global user.name "Service Account"
           git add README.md
           git commit -m "${GITHUB_REPOSITORY}: Update README.md with nightly build artifact URL"
-          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:${{ parameters.push_to_branch }}
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:${{ inputs.push_to_branch }}
         env:
           GITHUB_RUN_ID: ${{ github.run_id }}
