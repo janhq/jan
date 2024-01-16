@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - main
+      - dev
     paths:
       - 'docs/**'
       - '.github/workflows/jan-docs.yml'
   pull_request:
     branches:
       - main
+      - dev
     paths:
       - 'docs/**'
       - '.github/workflows/jan-docs.yml'
@@ -60,31 +62,32 @@ jobs:
         working-directory: docs
 
       - name: Publish to Cloudflare Pages PR Preview and Staging
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main')
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main') || (github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'dev')
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
           directory: ./docs/build
+          branch: dev
           # Optional: Enable this if you want to have GitHub Deployments triggered
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
         id: deployCloudflarePages
 
       - uses: mshick/add-pr-comment@v2
-        if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
+        if: github.event_name == 'pull_request'
         with:
           message: |
               Preview URL: ${{ steps.deployCloudflarePages.outputs.url }}
 
       - name: Add Custome Domain file
-        if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.pull_request.head.repo.full_name != github.repository
         run: echo "${{ vars.DOCUSAURUS_DOMAIN }}" > ./docs/build/CNAME
 
       # Popular action to deploy to GitHub Pages:
       # Docs: https://github.com/peaceiris/actions-gh-pages#%EF%B8%8F-docusaurus
       - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && github.event.pull_request.head.repo.full_name != github.repository
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.pull_request.head.repo.full_name != github.repository
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

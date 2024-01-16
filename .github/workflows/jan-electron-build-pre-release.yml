@@ -1,9 +1,11 @@
 name: Jan Build Electron App Nightly or Manual
 
 on:
-  schedule:
-    - cron: '0 20 * * 2,3,4' # At 8 PM UTC on Tuesday, Wednesday, and Thursday, which is 3 AM UTC+7
-
+  push:
+    branches:
+      - main
+    paths:
+      - "!README.md"
   workflow_dispatch:
 
 jobs:
@@ -22,18 +24,18 @@ jobs:
     uses: ./.github/workflows/templates/build-macos.yml@main
     with:
       environment: production
-      ref: refs/heads/dev
+      ref: refs/heads/main
       enable_condition: true
-      condition: github.ref == 'refs/heads/dev'
+      condition: github.ref == 'refs/heads/main'
       upload_cloudflare_r2: true
 
   build-windows-x64:
     uses: ./.github/workflows/templates/build-windows-x64.yml@main
     with:
       environment: production
-      ref: refs/heads/dev
+      ref: refs/heads/main
       enable_condition: true
-      condition: github.ref == 'refs/heads/dev'
+      condition: github.ref == 'refs/heads/main'
       upload_cloudflare_r2: true
 
           
@@ -41,25 +43,25 @@ jobs:
     uses: ./.github/workflows/templates/build-linux-x64.yml@main
     with:
       environment: production
-      ref: refs/heads/dev
+      ref: refs/heads/main
       enable_condition: true
-      condition: github.ref == 'refs/heads/dev'
+      condition: github.ref == 'refs/heads/main'
       upload_cloudflare_r2: true
 
   noti-discord-nightly-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'push'
     uses: ./.github/workflows/templates/noti-discord-and-update-url-readme.yml@main
     with:
-      ref: refs/heads/dev
+      ref: refs/heads/main
       build_reason: Nightly
       push_to_branch: main
 
   noti-discord-manual-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/templates/noti-discord-and-update-url-readme.yml@main
     with:
-      ref: refs/heads/dev
+      ref: refs/heads/main
       build_reason: Manual
       push_to_branch: main
