@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { InferenceEngine, Model } from '@janhq/core'
 import {
@@ -80,8 +81,6 @@ export default function DropdownListSidebar() {
     return 4096
   }
 
-  const selectedRef = useRef(null)
-
   useEffect(() => {
     setSelectedModel(recommendedModel)
     setSelected(activeModel || recommendedModel)
@@ -106,6 +105,7 @@ export default function DropdownListSidebar() {
       }
       setThreadModelParams(activeThread.id, modelParams)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     recommendedModel,
     activeThread,
@@ -184,22 +184,26 @@ export default function DropdownListSidebar() {
     <div
       className={twMerge(
         'relative w-full overflow-hidden rounded-md',
-        stateModel.loading && 'bg-blue-100'
+        stateModel.loading && 'bg-blue-200 text-blue-600'
       )}
     >
-      {stateModel.loading && (
-        <div
-          className="absolute left-0 top-0 z-10 h-full w-full rounded-md bg-blue-50/80"
-          style={{ width: `${loader}%` }}
-        />
-      )}
       <Select value={selected?.id} onValueChange={onValueSelected}>
-        <SelectTrigger className="w-full">
-          <SelectValue
-            placeholder="Choose model to start"
-            className="relative z-50"
-          >
-            {selectedName}
+        <SelectTrigger className="relative w-full">
+          <SelectValue placeholder="Choose model to start">
+            {stateModel.loading && (
+              <div
+                className="z-5 absolute left-0 top-0 h-full w-full rounded-md bg-blue-100/80"
+                style={{ width: `${loader}%` }}
+              />
+            )}
+            <span
+              className={twMerge(
+                'relative z-20',
+                stateModel.loading && 'font-medium'
+              )}
+            >
+              {selectedName}
+            </span>
           </SelectValue>
         </SelectTrigger>
         <SelectPortal>
@@ -237,7 +241,6 @@ export default function DropdownListSidebar() {
                 {downloadedModels.map((x, i) => (
                   <SelectItem
                     key={i}
-                    ref={selectedRef}
                     value={x.id}
                     className={twMerge(x.id === selected?.id && 'bg-secondary')}
                     onClick={() => {

@@ -76,11 +76,14 @@ const LocalServerScreen = () => {
     useState<boolean>(false)
 
   useEffect(() => {
-    if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === null) {
+    if (
+      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === null ||
+      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === 'true'
+    ) {
       localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'true')
       setFirstTimeVisitAPIServer(true)
     }
-  }, [])
+  }, [firstTimeVisitAPIServer])
 
   return (
     <div className="flex h-full w-full">
@@ -97,7 +100,7 @@ const LocalServerScreen = () => {
             <Button
               block
               themes={serverEnabled ? 'danger' : 'success'}
-              disabled={stateModel.loading}
+              disabled={stateModel.loading || firstTimeVisitAPIServer}
               onClick={() => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
