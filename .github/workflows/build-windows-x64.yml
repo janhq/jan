@@ -63,6 +63,7 @@ jobs:
         id: version_update
         shell: bash
         run: |
+          echo "Version: ${{ inputs.new_version }}"
           # Update the version in electron/package.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
