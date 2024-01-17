@@ -7,10 +7,10 @@ import {
   EventName,
   InferenceEngine,
   Thread,
+  joinPath,
+  executeOnMain,
+  AssistantExtension,
 } from "@janhq/core";
-import { executeOnMain } from "@janhq/core";
-import { AssistantExtension } from "@janhq/core";
-import { join } from "path";
 
 export default class JanAssistantExtension implements AssistantExtension {
   private static readonly _homeDir = "file://assistants";
@@ -30,7 +30,7 @@ export default class JanAssistantExtension implements AssistantExtension {
       });
 
     // Events subscription
-    events.on(EventName.OnMessageSent, (data) =>
+    events.on(EventName.OnMessageSent, (data: MessageRequest) =>
       JanAssistantExtension.handleMessageRequest(data, this)
     );
 
@@ -38,7 +38,7 @@ export default class JanAssistantExtension implements AssistantExtension {
       JanAssistantExtension.handleInferenceStopped(this);
     });
 
-    events.on(EventName.OnThreadStarted, (thread) => {
+    events.on(EventName.OnThreadStarted, (thread: any) => {
       JanAssistantExtension.handleThreadStart(thread);
     });
   }
@@ -63,9 +63,11 @@ export default class JanAssistantExtension implements AssistantExtension {
       return;
     }
 
-    const retrievalResult = await executeOnMain(MODULE, "toolRetrievalQueryResult", {
-      messageRequest: data,
-    });
+    const retrievalResult = await executeOnMain(
+      NODE,
+      "toolRetrievalQueryResult",
+      data
+    );
 
     console.log("get back data", retrievalResult);
 
@@ -86,11 +88,17 @@ export default class JanAssistantExtension implements AssistantExtension {
   onUnload(): void {}
 
   async createAssistant(assistant: Assistant): Promise<void> {
-    const assistantDir = join(JanAssistantExtension._homeDir, assistant.id);
+    const assistantDir = await joinPath([
+      JanAssistantExtension._homeDir,
+      assistant.id,
+    ]);
     if (!(await fs.existsSync(assistantDir))) await fs.mkdirSync(assistantDir);
 
     // store the assistant metadata json
-    const assistantMetadataPath = join(assistantDir, "assistant.json");
+    const assistantMetadataPath = await joinPath([
+      assistantDir,
+      "assistant.json",
+    ]);
     try {
       await fs.writeFileSync(
         assistantMetadataPath,
@@ -109,7 +117,10 @@ export default class JanAssistantExtension implements AssistantExtension {
       JanAssistantExtension._homeDir
     );
     for (const fileName of allFileName) {
-      const filePath = join(JanAssistantExtension._homeDir, fileName);
+      const filePath = await joinPath([
+        JanAssistantExtension._homeDir,
+        fileName,
+      ]);
 
       if (filePath.includes(".DS_Store")) continue;
       const jsonFiles: string[] = (await fs.readdirSync(filePath)).filter(
@@ -122,7 +133,7 @@ export default class JanAssistantExtension implements AssistantExtension {
       }
 
       const content = await fs.readFileSync(
-        join(filePath, jsonFiles[0]),
+        await joinPath([filePath, jsonFiles[0]]),
         "utf-8"
       );
       const assistant: Assistant =
@@ -140,7 +151,10 @@ export default class JanAssistantExtension implements AssistantExtension {
     }
 
     // remove the directory
-    const assistantDir = join(JanAssistantExtension._homeDir, assistant.id);
+    const assistantDir = await joinPath([
+      JanAssistantExtension._homeDir,
+      assistant.id,
+    ]);
     await fs.rmdirSync(assistantDir);
     return Promise.resolve();
   }

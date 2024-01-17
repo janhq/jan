@@ -25,6 +25,7 @@
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-replace": "^5.0.5",
     "@types/node": "^20.11.4",
     "@types/tcp-port-used": "^1.0.4",
     "cpx": "^1.5.0",
@@ -39,7 +40,6 @@
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
-    "@rollup/plugin-replace": "^5.0.5",
     "@types/os-utils": "^0.0.4",
     "fetch-retry": "^5.0.6",
     "os-utils": "^0.0.14",

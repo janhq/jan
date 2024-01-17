@@ -1,15 +1,15 @@
-const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
-const { formatDocumentsAsString } = require("langchain/util/document");
-const { HNSWLib } = require("langchain/vectorstores/hnswlib");
-const { PDFLoader } = require("langchain/document_loaders/fs/pdf");
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { formatDocumentsAsString } from "langchain/util/document";
+import { HNSWLib } from "langchain/vectorstores/hnswlib";
+import { PDFLoader } from "langchain/document_loaders/fs/pdf";
 
-class Retrieval {
+export class Retrieval {
   private readonly chunkSize: number;
-  private readonly chunkOverlap: number;
+  private readonly chunkOverlap?: number;
   private retriever: any;
 
-  private embeddingModel = null;
-  private textSplitter = null;
+  private embeddingModel: any = null;
+  private textSplitter: any = null;
 
   constructor(embeddingModel: any, chunkSize: number) {
     this.chunkSize = chunkSize;
@@ -36,7 +36,7 @@ class Retrieval {
   };
 
   public ingestConversationalHistory = async (
-    conversationHistoryArray
+    conversationHistoryArray: any
   ): Promise<any> => {};
 
   public loadRetrievalAgent = async (memoryPath: string): Promise<any> => {

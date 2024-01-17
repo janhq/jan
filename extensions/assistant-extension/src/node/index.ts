@@ -1,8 +1,9 @@
-// const {
-//   HuggingFaceTransformersEmbeddings,
-// } = require("langchain/embeddings/hf_transformers");
+import { HuggingFaceTransformersEmbeddings } from "langchain/embeddings/hf_transformers";
 
-const { OpenAIEmbeddings } = require("langchain/embeddings/openai");
+import { MessageRequest } from "@janhq/core";
+
+// import { OpenAIEmbeddings } from "langchain/embeddings/openai";
+import { Retrieval } from "./tools/retrieval";
 
 process.env["OPENAI_API_KEY"] = "sk-";
 
@@ -78,7 +79,7 @@ const retrieval = new Retrieval(1000, 1000);
 
 // run();
 
-async function toolRetrievalIngestNewDocument(messageRequest) {
+export async function toolRetrievalIngestNewDocument(messageRequest: MessageRequest) {
   const uploadDocumentPath = "this";
   // await retrieval.ingestDocument(
   //   "/Users/hiro/Downloads/791610_Optimizing_and_Running_LLaMA2_on_Intel_CPU_Whitepaper__Rev1.0.pdf",
@@ -87,23 +88,18 @@ async function toolRetrievalIngestNewDocument(messageRequest) {
   return true;
 }
 
-async function toolRetrievalLoadThreadMemory(messageRequest) {
+export async function toolRetrievalLoadThreadMemory(messageRequest: MessageRequest) {
   const memoryPath = "this";
   // await retrieval.loadRetrievalAgent("/Users/hiro/jan/threads/testing_mem");
   return true;
 }
 
-async function toolRetrievalQueryResult(messageRequest) {
+export async function toolRetrievalQueryResult(messageRequest: MessageRequest) {
   const { messages } = messageRequest;
+  if (!messages) return;
   const latestMessage = messages[messages.length - 1];
   const response =
     "I am a response from the retrieval tool with query: " +
     latestMessage.content;
   return response;
 }
-
-module.exports = {
-  toolRetrievalQueryResult,
-  toolRetrievalIngestNewDocument,
-  toolRetrievalLoadThreadMemory,
-};
