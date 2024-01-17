@@ -110,7 +110,7 @@ const TopBar = () => {
             )}
           >
             <div className="flex h-full items-center">
-              <span className="truncate text-ellipsis text-sm font-bold">
+              <span className="unselect truncate text-ellipsis text-sm font-bold">
                 {titleScreen(mainViewState)}
               </span>
             </div>
@@ -125,7 +125,7 @@ const TopBar = () => {
               <div className="flex h-full w-52 items-center justify-between px-4">
                 {showing && (
                   <div className="relative flex h-full items-center">
-                    <span className="mr-2 text-sm font-bold">
+                    <span className="unselect mr-2 text-sm font-bold">
                       {mainViewState === MainViewState.Thread &&
                         'Threads Settings'}
                       {mainViewState === MainViewState.LocalServer &&
