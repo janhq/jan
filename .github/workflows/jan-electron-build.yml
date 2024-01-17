@@ -5,223 +5,39 @@ on:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
 
 jobs:
-  create-draft-release:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      version: ${{ steps.get_version.outputs.version }}
-    permissions:
-      contents: write
-    steps:
-      - name: Extract tag name without v prefix
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV && echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
-        env:
-          GITHUB_REF: ${{ github.ref }}
-      - name: Create Draft Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: "${{ env.VERSION }}"
-          draft: true
-          prerelease: false
+  # Job create Update app version based on latest release tag with build number and save to output
+  get-update-version:
+    uses: ./.github/workflows/template-get-update-version.yml
 
   build-macos:
-    runs-on: macos-latest
-    needs: create-draft-release
-    environment: production
-    permissions:
-      contents: write
-    steps:
-      - name: Getting the repo
-        uses: actions/checkout@v3
-
-      - name: Installing node
-        uses: actions/setup-node@v1
-        with:
-          node-version: 20
-
-      - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
-
-      - name: Get tag
-        id: tag
-        uses: dawidd6/action-get-tag@v1
-
-      - name: Update app version base on tag
-        run: |
-          if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Error: Tag is not valid!"
-              exit 1
-          fi
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
-          mv /tmp/package.json web/package.json
-        env:
-          VERSION_TAG: ${{ steps.tag.outputs.tag }}
-
-      - name: Get Cer for code signing
-        run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
-        shell: bash
-        env:
-          CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-
-      - uses: apple-actions/import-codesign-certs@v2
-        continue-on-error: true
-        with:
-          p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-          p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-
-      - name: Build and publish app
-        run: |
-          make build-and-publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: "/tmp/codesign.p12"
-          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APP_PATH: "."
-          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
-          ANALYTICS_ID: ${{ secrets.JAN_APP_POSTHOG_PROJECT_API_KEY }}
-          ANALYTICS_HOST: ${{ secrets.JAN_APP_POSTHOG_URL }}
+    uses: ./.github/workflows/template-build-macos.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
-    runs-on: windows-latest
-    needs: create-draft-release
-    permissions:
-      contents: write
-    steps:
-      - name: Getting the repo
-        uses: actions/checkout@v3
-
-      - name: Installing node
-        uses: actions/setup-node@v1
-        with:
-          node-version: 20
-
-      - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
-
-      - name: Get tag
-        id: tag
-        uses: dawidd6/action-get-tag@v1
-
-      - name: Update app version base on tag
-        shell: bash
-        run: |
-          if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Error: Tag is not valid!"
-              exit 1
-          fi
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
-          mv /tmp/package.json web/package.json
-          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
-        env:
-          VERSION_TAG: ${{ steps.tag.outputs.tag }}
-
-      - name: Install AzureSignTool
-        run: |
-          dotnet tool install --global AzureSignTool
-
-      - name: Build app
-        run: |
-          make build
-        env:
-          ANALYTICS_ID: ${{ secrets.JAN_APP_POSTHOG_PROJECT_API_KEY }}
-          ANALYTICS_HOST: ${{ secrets.JAN_APP_POSTHOG_URL }}
-          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
-
-      - uses: actions/upload-release-asset@v1.0.1
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
-          asset_path: ./electron/dist/jan-win-x64-${{ needs.create-draft-release.outputs.version }}.exe
-          asset_name: jan-win-x64-${{ needs.create-draft-release.outputs.version }}.exe
-          asset_content_type: application/octet-stream
-
-      - uses: actions/upload-release-asset@v1.0.1
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
-          asset_path: ./electron/dist/jan-win-x64-${{ needs.create-draft-release.outputs.version }}.exe.blockmap
-          asset_name: jan-win-x64-${{ needs.create-draft-release.outputs.version }}.exe.blockmap
-          asset_content_type: application/octet-stream
-
-      - uses: actions/upload-release-asset@v1.0.1
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
-          asset_path: ./electron/dist/latest.yml
-          asset_name: latest.yml
-          asset_content_type: text/yaml
+    uses: ./.github/workflows/template-build-windows-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
-    runs-on: ubuntu-latest
-    needs: create-draft-release
-    environment: production
-    env:
-      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_TOKEN }}
-    permissions:
-      contents: write
-    steps:
-      - name: Getting the repo
-        uses: actions/checkout@v3
-
-      - name: Installing node
-        uses: actions/setup-node@v1
-        with:
-          node-version: 20
-
-      - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
-
-      - name: Get tag
-        id: tag
-        uses: dawidd6/action-get-tag@v1
-
-      - name: Update app version base on tag
-        run: |
-          if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Error: Tag is not valid!"
-              exit 1
-          fi
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
-          mv /tmp/package.json web/package.json
-        env:
-          VERSION_TAG: ${{ steps.tag.outputs.tag }}
-
-      - name: Build and publish app
-        run: |
-          make build-and-publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANALYTICS_ID: ${{ secrets.JAN_APP_POSTHOG_PROJECT_API_KEY }}
-          ANALYTICS_HOST: ${{ secrets.JAN_APP_POSTHOG_URL }}
+    uses: ./.github/workflows/template-build-linux-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   update_release_draft:
-    needs: [build-macos, build-windows-x64, build-linux-x64, create-draft-release]
+    needs: [build-macos, build-windows-x64, build-linux-x64]
     permissions:
       # write permission is required to create a github release
       contents: write
