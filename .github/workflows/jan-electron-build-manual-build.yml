@@ -13,18 +13,11 @@ on:
         default: false
 
 jobs:
-  # delete-cloudflare-r2-folder:
-  #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_cloudflare_r2 == 'true'
-  #   uses: ./.github/workflows/template-delete-cloudflare-r2-folder.yml
-  #   secrets: inherit
-
-  # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
   build-macos:
     uses: ./.github/workflows/template-build-macos.yml
-    # needs: [delete-cloudflare-r2-folder, get-update-version]
     needs: [get-update-version]
     secrets: inherit
     with:
@@ -34,7 +27,6 @@ jobs:
 
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
-    # needs: [delete-cloudflare-r2-folder, get-update-version]
     needs: [get-update-version]
     secrets: inherit
     with:
@@ -44,7 +36,6 @@ jobs:
 
   build-linux-x64:
     uses: ./.github/workflows/template-build-linux-x64.yml
-    # needs: [delete-cloudflare-r2-folder, get-update-version]
     needs: [get-update-version]
     secrets: inherit
     with:

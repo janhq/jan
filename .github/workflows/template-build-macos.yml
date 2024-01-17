@@ -68,7 +68,7 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
-          jq '.build.publish = [{"provider": "s3", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "/jan-nightly-build", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "s3", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "/jan-nightly-build/", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
       - name: Get Cer for code signing
@@ -118,23 +118,4 @@ jobs:
         with:
           name: jan-mac-arm64-${{ inputs.new_version }}
           path: ./electron/dist/jan-mac-arm64-${{ inputs.new_version }}.dmg
-
-      # - name: put-object using awscli s3api
-      #   if: ${{ inputs.upload_cloudflare_r2 }}
-      #   continue-on-error: true
-      #   run: |
-      #     ls -al ./electron/dist
-      #     aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-x64-${{ inputs.new_version }}.dmg" --body "./electron/dist/jan-mac-x64-${{ inputs.new_version }}.dmg" --content-type "application/octet-stream"
-      #     aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-arm64-${{ inputs.new_version }}.dmg" --body "./electron/dist/jan-mac-arm64-${{ inputs.new_version }}.dmg" --content-type "application/octet-stream"
-      #     aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-x64-${{ inputs.new_version }}.zip" --body "./electron/dist/jan-mac-x64-${{ inputs.new_version }}.zip" --content-type "application/zip"
-      #     aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-mac-arm64-${{ inputs.new_version }}.zip" --body "./electron/dist/jan-mac-arm64-${{ inputs.new_version }}.zip" --content-type "application/zip"
-      #     aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new_version }}/jan-mac-x64-${{ inputs.new_version }}.dmg" --body "./electron/dist/jan-mac-x64-${{ inputs.new_version }}.dmg" --content-type "application/octet-stream"
-      #     aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new_version }}/jan-mac-arm64-${{ inputs.new_version }}.dmg" --body "./electron/dist/jan-mac-arm64-${{ inputs.new_version }}.dmg" --content-type "application/octet-stream"
-      #     aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "${{ inputs.new_version }}/latest-mac.yml" --body "./electron/dist/latest-mac.yml" --content-type "text/yaml"
-      #     aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/latest-mac.yml" --body "./electron/dist/latest-mac.yml" --content-type "text/yaml"
-      #   env:
-      #     AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
-      #     AWS_DEFAULT_REGION: auto
-      #     AWS_EC2_METADATA_DISABLED: "true"
 
