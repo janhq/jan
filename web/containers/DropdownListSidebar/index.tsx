@@ -1,5 +1,3 @@
-import { useCallback, useEffect } from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { InferenceEngine, Model } from '@janhq/core'
@@ -22,6 +20,8 @@ import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
+
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
@@ -29,11 +29,10 @@ import useRecommendedModel from '@/hooks/useRecommendedModel'
 import { toGibibytes } from '@/utils/converter'
 
 import ModelLabel from '../ModelLabel'
-
 import OpenAiKeyInput from '../OpenAiKeyInput'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
-import { totalRamAtom, usedRamAtom } from '@/helpers/atoms/SystemBar.atom'
+
 import {
   ModelParams,
   activeThreadAtom,
@@ -52,21 +51,7 @@ export default function DropdownListSidebar() {
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const { activeModel, startModel, stateModel, stopModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
-
   const { setMainViewState } = useMainViewState()
-  const [openAISettings, setOpenAISettings] = useState<
-    { api_key: string } | undefined
-  >(undefined)
-  const { readOpenAISettings, saveOpenAISettings } = useEngineSettings()
-  const totalRam = useAtomValue(totalRamAtom)
-  const usedRam = useAtomValue(usedRamAtom)
-
-  useEffect(() => {
-    readOpenAISettings().then((settings) => {
-      setOpenAISettings(settings)
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
@@ -82,8 +67,6 @@ export default function DropdownListSidebar() {
   }
 
   useEffect(() => {
-    setSelectedModel(recommendedModel)
-    setSelected(activeModel || recommendedModel)
     setSelectedModel(activeModel || recommendedModel)
 
     if (activeThread) {
@@ -181,16 +164,13 @@ export default function DropdownListSidebar() {
   }
 
   return (
-    <>
-      <Select value={selectedModel?.id} onValueChange={onValueSelected}>
-    <div className="relative">
     <div
       className={twMerge(
         'relative w-full overflow-hidden rounded-md',
         stateModel.loading && 'pointer-events-none bg-blue-200 text-blue-600'
       )}
     >
-      <Select value={selected?.id} onValueChange={onValueSelected}>
+      <Select value={selectedModel?.id} onValueChange={onValueSelected}>
         <SelectTrigger className="relative w-full">
           <SelectValue placeholder="Choose model to start">
             {stateModel.loading && (
@@ -215,25 +195,6 @@ export default function DropdownListSidebar() {
               <MonitorIcon size={20} className="text-muted-foreground" />
               <span>Local</span>
             </div>
-          ) : (
-            <SelectGroup>
-              {downloadedModels.map((x, i) => (
-                <SelectItem
-                  key={i}
-                  value={x.id}
-                  className={twMerge(
-                    x.id === selectedModel?.id && 'bg-secondary'
-                  )}
-                >
-                  <div className="flex w-full justify-between">
-                    <span className="line-clamp-1 block">{x.name}</span>
-                    <div className="space-x-2">
-                      <span className="font-bold text-muted-foreground">
-                        {toGibibytes(x.metadata.size)}
-                      </span>
-                      {x.engine == InferenceEngine.nitro && (
-                        <ModelLabel size={x.metadata.size} />
-                      )}
             <div className="border-b border-border" />
             {downloadedModels.length === 0 ? (
               <div className="px-4 py-2">
@@ -245,9 +206,11 @@ export default function DropdownListSidebar() {
                   <SelectItem
                     key={i}
                     value={x.id}
-                    className={twMerge(x.id === selected?.id && 'bg-secondary')}
+                    className={twMerge(
+                      x.id === selectedModel?.id && 'bg-secondary'
+                    )}
                     onPointerUp={() => {
-                      if (x.id === selected?.id) {
+                      if (x.id === selectedModel?.id) {
                         startModel(x.id)
                       }
                     }}
@@ -258,8 +221,9 @@ export default function DropdownListSidebar() {
                         <span className="font-bold text-muted-foreground">
                           {toGibibytes(x.metadata.size)}
                         </span>
-                        {x.engine == InferenceEngine.nitro &&
-                          getLabel(x.metadata.size)}
+                        {x.engine == InferenceEngine.nitro && (
+                          <ModelLabel size={x.metadata.size} />
+                        )}
                       </div>
                     </div>
                   </SelectItem>
@@ -281,25 +245,6 @@ export default function DropdownListSidebar() {
       </Select>
 
       <OpenAiKeyInput selectedModel={selectedModel} />
-    </>
-      {selected?.engine === InferenceEngine.openai && (
-        <div className="mt-4">
-          <label
-            id="thread-title"
-            className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
-          >
-            API Key
-          </label>
-          <Input
-            id="assistant-instructions"
-            placeholder="Enter your API_KEY"
-            defaultValue={openAISettings?.api_key}
-            onChange={(e) => {
-              saveOpenAISettings({ apiKey: e.target.value })
-            }}
-          />
-        </div>
-      )}
     </div>
   )
 }
