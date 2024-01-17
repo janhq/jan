@@ -1,66 +1,9 @@
-import { HuggingFaceTransformersEmbeddings } from "langchain/embeddings/hf_transformers";
-
 import { MessageRequest } from "@janhq/core";
 
 // import { OpenAIEmbeddings } from "langchain/embeddings/openai";
 import { Retrieval } from "./tools/retrieval";
 
-process.env["OPENAI_API_KEY"] = "sk-";
-
-// class Retrieval {
-//   private readonly chunkSize: number;
-//   private readonly chunkOverlap: number;
-//   private retriever: any;
-
-//   private embeddingModel = null;
-//   private textSplitter = null;
-
-//   constructor(chunkSize: number) {
-//     this.chunkSize = chunkSize;
-//     this.textSplitter = new RecursiveCharacterTextSplitter({
-//       chunkSize: this.chunkSize,
-//       chunkOverlap: this.chunkOverlap,
-//     });
-//     this.embeddingModel = new OpenAIEmbeddings();
-//   }
-
-//   public ingestDocument = async (
-//     documentPath: string,
-//     memoryPath: string
-//   ): Promise<any> => {
-//     const loader = new PDFLoader(documentPath, {
-//       splitPages: false,
-//       parsedItemSeparator: "",
-//     });
-
-//     const doc = await loader.load();
-//     const docs = await this.textSplitter.splitDocuments(doc);
-//     const vectorStore = await HNSWLib.fromDocuments(docs, this.embeddingModel);
-//     await vectorStore.save(memoryPath);
-//   };
-
-//   public ingestConversationalHistory = async (
-//     conversationHistoryArray
-//   ): Promise<any> => {};
-
-//   public loadRetrievalAgent = async (memoryPath: string): Promise<any> => {
-//     const vectorStore = await HNSWLib.load(memoryPath, this.embeddingModel);
-//     this.retriever = vectorStore.asRetriever(2);
-//   };
-
-//   public generateAnswer = async (query: string): Promise<string> => {
-//     // Fetch relevant docs and serialize to a string.
-//     const relevantDocs = await this.retriever.getRelevantDocuments(query);
-//     const serializedDoc = formatDocumentsAsString(relevantDocs);
-//     return serializedDoc;
-//   };
-
-//   public generateFollowUpQuestion = async (): Promise<any> => {
-//     return;
-//   };
-// }
-
-const retrieval = new Retrieval(1000, 1000);
+const retrieval = new Retrieval("", 1000);
 
 // const run = async () => {
 
@@ -79,27 +22,30 @@ const retrieval = new Retrieval(1000, 1000);
 
 // run();
 
-export async function toolRetrievalIngestNewDocument(messageRequest: MessageRequest) {
-  const uploadDocumentPath = "this";
-  // await retrieval.ingestDocument(
-  //   "/Users/hiro/Downloads/791610_Optimizing_and_Running_LLaMA2_on_Intel_CPU_Whitepaper__Rev1.0.pdf",
-  //   "/Users/hiro/jan/threads/testing_mem"
-  // );
-  return true;
+export async function toolRetrievalIngestNewDocument(
+  messageRequest: MessageRequest
+) {
+  const { messages } = messageRequest;
+  console.log("toolRetrievalIngestNewDocument", messages);
+  await retrieval.ingestDocument(
+    "/Users/hiro/Downloads/791610_Optimizing_and_Running_LLaMA2_on_Intel_CPU_Whitepaper__Rev1.0.pdf"
+  );
+  return Promise.resolve(true);
 }
 
-export async function toolRetrievalLoadThreadMemory(messageRequest: MessageRequest) {
-  const memoryPath = "this";
-  // await retrieval.loadRetrievalAgent("/Users/hiro/jan/threads/testing_mem");
-  return true;
+export async function toolRetrievalLoadThreadMemory(
+  messageRequest: MessageRequest
+) {
+  const { messages } = messageRequest;
+  console.log("toolRetrievalLoadThreadMemory", messages);
+  await retrieval.loadRetrievalAgent("/Users/hiro/jan/threads/testing_mem");
+  return Promise.resolve(true);
 }
 
 export async function toolRetrievalQueryResult(messageRequest: MessageRequest) {
   const { messages } = messageRequest;
   if (!messages) return;
-  const latestMessage = messages[messages.length - 1];
-  const response =
-    "I am a response from the retrieval tool with query: " +
-    latestMessage.content;
-  return response;
+  console.log("toolRetrievalQueryResult", messages);
+  const response = "I am a response from the retrieval tool with query: ";
+  return Promise.resolve(response);
 }

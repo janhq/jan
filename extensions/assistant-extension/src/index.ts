@@ -38,18 +38,61 @@ export default class JanAssistantExtension implements AssistantExtension {
       JanAssistantExtension.handleInferenceStopped(this);
     });
 
-    events.on(EventName.OnThreadStarted, (thread: any) => {
-      JanAssistantExtension.handleThreadStart(thread);
+    events.on(EventName.OnThreadStarted, (data: MessageRequest) => {
+      JanAssistantExtension.handleThreadStart(data, this);
     });
-  }
 
-  private static handleThreadStart(thread: Thread) {
-    // Ingest documents
+    events.on(EventName.OnFileUpload, (data: MessageRequest) => {
+      JanAssistantExtension.handleFileUpload(data, this);
+    });
   }
 
   private static async handleInferenceStopped(instance: JanAssistantExtension) {
     instance.isCancelled = true;
     instance.controller?.abort();
+  }
+
+  private static async handleThreadStart(
+    // thread: Thread,
+    data: MessageRequest,
+    instance: JanAssistantExtension
+  ) {
+    // Load thread vector store into memory
+    instance.isCancelled = false;
+    instance.controller = new AbortController();
+
+    if (data.model?.engine !== InferenceEngine.tool_retrieval_enabled) {
+      return;
+    }
+
+    const retrievalResult = await executeOnMain(
+      NODE,
+      "toolRetrievalLoadThreadMemory",
+      data
+    );
+    console.log(retrievalResult);
+  }
+
+  private static async handleFileUpload(
+    data: MessageRequest,
+    instance: JanAssistantExtension
+  ) {
+    instance.isCancelled = true;
+    instance.controller?.abort();
+
+    if (data.model?.engine !== InferenceEngine.tool_retrieval_enabled) {
+      return;
+    }
+
+    const ingestionResult = await executeOnMain(
+      NODE,
+      "toolRetrievalIngestDocument",
+      {
+        messageRequest: data,
+      }
+    );
+
+    console.log("get back data", ingestionResult);
   }
 
   private static async handleMessageRequest(

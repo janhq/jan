@@ -24,8 +24,9 @@
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
+    "@langchain/community": "0.0.13",
     "@xenova/transformers": "^2.13.0",
-    "hnswlib-node": "^2.1.0",
+    "hnswlib-node": "^1.4.2",
     "langchain": "^0.0.214",
     "path-browserify": "^1.0.1",
     "pdf-parse": "^1.1.1",
@@ -37,6 +38,7 @@
     "README.md"
   ],
   "bundleDependencies": [
+    "@langchain/community",
     "@xenova/transformers",
     "hnswlib-node",
     "langchain",
