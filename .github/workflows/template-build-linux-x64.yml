@@ -57,6 +57,7 @@ jobs:
           mv /tmp/package.json web/package.json
           jq '.build.publish = [{"provider": "s3", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "/jan-nightly-build/", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
+          cat electron/package.json
 
       - name: Build and publish app
         run: |

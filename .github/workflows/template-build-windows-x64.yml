@@ -72,6 +72,7 @@ jobs:
 
           jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
+          cat electron/package.json
 
       - name: Install AzureSignTool
         run: |
