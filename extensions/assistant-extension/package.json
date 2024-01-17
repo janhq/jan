@@ -16,6 +16,7 @@
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-replace": "^5.0.5",
     "@types/pdf-parse": "^1.1.4",
+    "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
     "rollup": "^2.38.5",
     "rollup-plugin-define": "^1.0.1",
@@ -46,6 +47,7 @@
     "langchain",
     "pdf-parse",
     "node-addon-api",
-    "onnxruntime-node"
+    "onnxruntime-node",
+    "sharp"
   ]
 }
