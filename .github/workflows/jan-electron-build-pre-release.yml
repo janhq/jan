@@ -21,7 +21,6 @@ jobs:
     needs: [delete-cloudflare-r2-folder, get-update-version]
     with:
       ref: refs/heads/main
-      enable_condition: true
       upload_cloudflare_r2: true
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
@@ -31,7 +30,6 @@ jobs:
     needs: [delete-cloudflare-r2-folder, get-update-version]
     with:
       ref: refs/heads/main
-      enable_condition: true
       upload_cloudflare_r2: true
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
@@ -41,7 +39,6 @@ jobs:
     needs: [delete-cloudflare-r2-folder, get-update-version]
     with:
       ref: refs/heads/main
-      enable_condition: true
       upload_cloudflare_r2: true
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
