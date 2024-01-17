@@ -103,7 +103,7 @@ export default class Extension {
       const pacote = await import('pacote')
       await pacote.extract(
         this.specifier,
-        join(ExtensionManager.instance.extensionsPath ?? '', this.name ?? ''),
+        join((await ExtensionManager.instance.getExtensionsPath()) ?? '', this.name ?? ''),
         this.installOptions,
       )
 
@@ -166,9 +166,9 @@ export default class Extension {
    * @returns the latest available version if a new version is available or false if not.
    */
   async isUpdateAvailable() {
-      return import('pacote').then((pacote) => {
-        if (this.origin) {
-        return pacote.manifest(this.origin).then((mnf) => { 
+    return import('pacote').then((pacote) => {
+      if (this.origin) {
+        return pacote.manifest(this.origin).then((mnf) => {
           return mnf.version !== this.version ? mnf.version : false
         })
       }
@@ -179,8 +179,9 @@ export default class Extension {
    * Remove extension and refresh renderers.
    * @returns {Promise}
    */
-  async uninstall() {
-    const extPath = resolve(ExtensionManager.instance.extensionsPath ?? '', this.name ?? '')
+  async uninstall(): Promise<void> {
+    const path = await ExtensionManager.instance.getExtensionsPath()
+    const extPath = resolve(path ?? '', this.name ?? '')
     await rmdirSync(extPath, { recursive: true })
 
     this.emitUpdate()

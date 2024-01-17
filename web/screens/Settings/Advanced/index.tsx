@@ -9,7 +9,7 @@ import {
   ChangeEvent,
 } from 'react'
 
-import { fs } from '@janhq/core'
+import { fs, AppConfiguration } from '@janhq/core'
 import { Switch, Button, Input } from '@janhq/uikit'
 
 import ShortcutModal from '@/containers/ShortcutModal'
@@ -46,6 +46,17 @@ const Advanced = () => {
     [setPartialProxy, setProxy]
   )
 
+  // TODO: remove me later.
+  const [currentPath, setCurrentPath] = useState('')
+
+  useEffect(() => {
+    window.core?.api
+      ?.getAppConfigurations()
+      ?.then((appConfig: AppConfiguration) => {
+        setCurrentPath(appConfig.data_folder)
+      })
+  }, [])
+
   useEffect(() => {
     readSettings().then((settings) => {
       setGpuEnabled(settings.run_mode === 'gpu')
@@ -60,6 +71,34 @@ const Advanced = () => {
       title: 'Logs cleared',
       description: 'All logs have been cleared.',
     })
+  }
+
+  const onJanVaultDirectoryClick = async () => {
+    const destFolder = await window.core?.api?.selectDirectory()
+    if (destFolder) {
+      console.debug(`Destination folder selected: ${destFolder}`)
+
+      try {
+        const appConfiguration: AppConfiguration =
+          await window.core?.api?.getAppConfigurations()
+        const currentJanDataFolder = appConfiguration.data_folder
+        if (currentJanDataFolder === destFolder) {
+          console.debug(
+            `Destination folder is the same as current folder. Ignore..`
+          )
+          return
+        }
+        appConfiguration.data_folder = destFolder
+
+        await fs.syncFile(currentJanDataFolder, destFolder)
+        await window.core?.api?.updateAppConfiguration(appConfiguration)
+        console.debug(
+          `File sync finished from ${currentJanDataFolder} to ${destFolder}`
+        )
+      } catch (e) {
+        console.error(`Error: ${e}`)
+      }
+    }
   }
 
   return (
@@ -190,6 +229,22 @@ const Advanced = () => {
         </div>
         <Button size="sm" themes="secondary" onClick={clearLogs}>
           Clear
+        </Button>
+      </div>
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">
+              Select Jan Data Folder
+            </h6>
+          </div>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            Select Jan&apos;s data folder. Current folder is located at
+            {` ${currentPath}`}
+          </p>
+        </div>
+        <Button size="sm" themes="secondary" onClick={onJanVaultDirectoryClick}>
+          Select
         </Button>
       </div>
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">

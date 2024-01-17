@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { ExtensionTypeEnum } from '@janhq/core'
-import { MonitoringExtension } from '@janhq/core'
+import { ExtensionTypeEnum, MonitoringExtension } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 

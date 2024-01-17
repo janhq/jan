@@ -35,17 +35,17 @@ async function registerExtensionProtocol() {
   let electron: any = undefined
 
   try {
-    const moduleName = "electron"
+    const moduleName = 'electron'
     electron = await import(moduleName)
   } catch (err) {
     console.error('Electron is not available')
   }
-  
+  const extensionPath = await ExtensionManager.instance.getExtensionsPath()
   if (electron) {
     return electron.protocol.registerFileProtocol('extension', (request: any, callback: any) => {
       const entry = request.url.substr('extension://'.length - 1)
 
-      const url = normalize(ExtensionManager.instance.extensionsPath + entry)
+      const url = normalize(extensionPath + entry)
       callback({ path: url })
     })
   }
@@ -57,7 +57,7 @@ async function registerExtensionProtocol() {
  * @param {string} extensionsPath Path to the extensions folder. Required if not yet set up.
  * @returns {extensionManager} A set of functions used to manage the extension lifecycle.
  */
-export function useExtensions(extensionsPath: string) {
+export async function useExtensions(extensionsPath: string) {
   if (!extensionsPath) throw Error('A path to the extensions folder is required to use extensions')
   // Store the path to the extensions folder
   ExtensionManager.instance.setExtensionsPath(extensionsPath)
@@ -120,7 +120,7 @@ function loadExtension(ext: any) {
  * @returns {extensionManager} A set of functions used to manage the extension lifecycle.
  */
 export function getStore() {
-  if (!ExtensionManager.instance.extensionsPath) {
+  if (!ExtensionManager.instance.getExtensionsFile()) {
     throw new Error(
       'The extension path has not yet been set up. Please run useExtensions before accessing the store',
     )

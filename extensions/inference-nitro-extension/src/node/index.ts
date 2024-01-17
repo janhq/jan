@@ -4,11 +4,10 @@ import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import tcpPortUsed from "tcp-port-used";
 import fetchRT from "fetch-retry";
 import osUtils from "os-utils";
-import { log } from "@janhq/core/node";
+import { log, getJanDataFolderPath } from "@janhq/core/node";
 import { getNitroProcessInfo, updateNvidiaInfo } from "./nvidia";
 import { Model, InferenceEngine, ModelSettingParams } from "@janhq/core";
 import { executableNitroFile } from "./execute";
-import { homedir } from "os";
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch);
 
@@ -86,7 +85,7 @@ async function runModel(
   }
 
   currentModelFile = wrapper.modelFullPath;
-  const janRoot = path.join(homedir(), "jan");
+  const janRoot = await getJanDataFolderPath();
   if (!currentModelFile.includes(janRoot)) {
     currentModelFile = path.join(janRoot, currentModelFile);
   }

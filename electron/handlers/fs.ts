@@ -1,9 +1,9 @@
 import { ipcMain } from 'electron'
 
 import { FileSystemRoute } from '@janhq/core'
-import { userSpacePath } from '../utils/path'
 import { join } from 'path'
-import { normalizeFilePath } from '@janhq/core/node'
+import { getJanDataFolderPath, normalizeFilePath } from '@janhq/core/node'
+
 /**
  * Handles file system operations.
  */
@@ -16,7 +16,7 @@ export function handleFsIPCs() {
           ...args.map((arg) =>
             typeof arg === 'string' &&
             (arg.includes(`file:/`) || arg.includes(`file:\\`))
-              ? join(userSpacePath, normalizeFilePath(arg))
+              ? join(getJanDataFolderPath(), normalizeFilePath(arg))
               : arg
           )
         )

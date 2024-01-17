@@ -1,9 +1,9 @@
-import { DownloadRoute } from "../../../api";
-import { join } from "path";
-import { userSpacePath } from "../../extension/manager";
-import { DownloadManager } from "../../download";
-import { HttpServer } from "../HttpServer";
-import { createWriteStream } from "fs";
+import { DownloadRoute } from '../../../api'
+import { join } from 'path'
+import { DownloadManager } from '../../download'
+import { HttpServer } from '../HttpServer'
+import { createWriteStream } from 'fs'
+import { getJanDataFolderPath } from '../../utils'
 import { normalizeFilePath } from "../../path";
 
 export const downloadRouter = async (app: HttpServer) => {
@@ -13,7 +13,7 @@ export const downloadRouter = async (app: HttpServer) => {
     const body = JSON.parse(req.body as any);
     const normalizedArgs = body.map((arg: any) => {
       if (typeof arg === "string") {
-        return join(userSpacePath, normalizeFilePath(arg));
+        return join(getJanDataFolderPath(), normalizeFilePath(arg));
       }
       return arg;
     });
@@ -44,7 +44,7 @@ export const downloadRouter = async (app: HttpServer) => {
     const body = JSON.parse(req.body as any);
     const normalizedArgs = body.map((arg: any) => {
       if (typeof arg === "string") {
-        return join(userSpacePath, normalizeFilePath(arg));
+        return join(getJanDataFolderPath(), normalizeFilePath(arg));
       }
       return arg;
     });
