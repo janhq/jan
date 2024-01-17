@@ -21,6 +21,7 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toSettingParams } from '@/utils/modelParam'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import {
   engineParamsUpdateAtom,
   getActiveThreadIdAtom,
@@ -48,6 +49,8 @@ const SliderRightPanel: React.FC<Props> = ({
 }) => {
   const { updateModelParameter } = useUpdateModelParameters()
   const threadId = useAtomValue(getActiveThreadIdAtom)
+
+  const serverEnabled = useAtomValue(serverEnabledAtom)
 
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
 
@@ -100,6 +103,7 @@ const SliderRightPanel: React.FC<Props> = ({
             min={min}
             max={max}
             step={step}
+            disabled={serverEnabled}
           />
           <div className="relative mt-2 flex items-center justify-between text-gray-400">
             <p className="text-sm">{min}</p>
@@ -114,6 +118,7 @@ const SliderRightPanel: React.FC<Props> = ({
               min={min}
               max={max}
               value={String(value)}
+              disabled={serverEnabled}
               onBlur={(e) => {
                 if (Number(e.target.value) > Number(max)) {
                   onValueChanged([Number(max)])

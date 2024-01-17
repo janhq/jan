@@ -3,6 +3,9 @@
 
   &-track {
     @apply relative h-1.5 w-full grow overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800;
+    [data-disabled] {
+      @apply cursor-not-allowed opacity-50;
+    }
   }
 
   &-range {

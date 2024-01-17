@@ -6,22 +6,18 @@ import { useContext, useEffect, useState } from 'react'
 import { fs } from '@janhq/core'
 import { Switch, Button } from '@janhq/uikit'
 
-import { atom, useAtom } from 'jotai'
-
 import ShortcutModal from '@/containers/ShortcutModal'
+
 import { toaster } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useSettings } from '@/hooks/useSettings'
 
-const serverEnabledAtom = atom<boolean>(false)
-
 const Advanced = () => {
   const { experimentalFeatureEnabed, setExperimentalFeatureEnabled } =
     useContext(FeatureToggleContext)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
-  const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
 
@@ -92,30 +88,6 @@ const Advanced = () => {
             } else {
               setExperimentalFeatureEnabled(false)
             }
-          }}
-        />
-      </div>
-      {/* Server */}
-      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="w-4/5 flex-shrink-0 space-y-1.5">
-          <div className="flex gap-x-2">
-            <h6 className="text-sm font-semibold capitalize">
-              Enable API Server
-            </h6>
-          </div>
-          <p className="whitespace-pre-wrap leading-relaxed">
-            Enable API server for Jan app.
-          </p>
-        </div>
-        <Switch
-          checked={serverEnabled}
-          onCheckedChange={(e: boolean) => {
-            if (e === true) {
-              window.core?.api?.startServer()
-            } else {
-              window.core?.api?.stopServer()
-            }
-            setServerEnabled(e)
           }}
         />
       </div>

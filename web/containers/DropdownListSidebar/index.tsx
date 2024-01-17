@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { InferenceEngine, Model } from '@janhq/core'
 import {
@@ -6,6 +6,7 @@ import {
   Select,
   SelectContent,
   SelectGroup,
+  SelectPortal,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -19,6 +20,8 @@ import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
+
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
@@ -26,8 +29,9 @@ import useRecommendedModel from '@/hooks/useRecommendedModel'
 import { toGibibytes } from '@/utils/converter'
 
 import ModelLabel from '../ModelLabel'
-
 import OpenAiKeyInput from '../OpenAiKeyInput'
+
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 import {
   ModelParams,
@@ -45,8 +49,10 @@ export default function DropdownListSidebar() {
   const threadStates = useAtomValue(threadStatesAtom)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-
+  const { activeModel, stateModel } = useActiveModel()
+  const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const { setMainViewState } = useMainViewState()
+
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   const selectedName =
@@ -61,7 +67,7 @@ export default function DropdownListSidebar() {
   }
 
   useEffect(() => {
-    setSelectedModel(recommendedModel)
+    setSelectedModel(activeModel || recommendedModel)
 
     if (activeThread) {
       const finishInit = threadStates[activeThread.id].isFinishInit ?? true
@@ -82,6 +88,7 @@ export default function DropdownListSidebar() {
       }
       setThreadModelParams(activeThread.id, modelParams)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     recommendedModel,
     activeThread,
@@ -90,10 +97,42 @@ export default function DropdownListSidebar() {
     threadStates,
   ])
 
+  const [loader, setLoader] = useState(0)
+
+  // This is fake loader please fix this when we have realtime percentage when load model
+  useEffect(() => {
+    if (stateModel.loading) {
+      if (loader === 24) {
+        setTimeout(() => {
+          setLoader(loader + 1)
+        }, 250)
+      } else if (loader === 50) {
+        setTimeout(() => {
+          setLoader(loader + 1)
+        }, 250)
+      } else if (loader === 78) {
+        setTimeout(() => {
+          setLoader(loader + 1)
+        }, 250)
+      } else if (loader === 85) {
+        setLoader(85)
+      } else {
+        setLoader(loader + 1)
+      }
+    } else {
+      setLoader(0)
+    }
+  }, [stateModel.loading, loader])
+
   const onValueSelected = useCallback(
-    (modelId: string) => {
+    async (modelId: string) => {
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelectedModel(model)
+
+      if (serverEnabled) {
+        window.core?.api?.stopServer()
+        setServerEnabled(false)
+      }
 
       if (activeThreadId) {
         const modelParams = {
@@ -103,7 +142,15 @@ export default function DropdownListSidebar() {
         setThreadModelParams(activeThreadId, modelParams)
       }
     },
-    [downloadedModels, activeThreadId, setSelectedModel, setThreadModelParams]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      downloadedModels,
+      serverEnabled,
+      activeThreadId,
+      activeModel,
+      setSelectedModel,
+      setThreadModelParams,
+    ]
   )
 
   if (!activeThread) {
@@ -111,62 +158,82 @@ export default function DropdownListSidebar() {
   }
 
   return (
-    <>
+    <div
+      className={twMerge(
+        'relative w-full overflow-hidden rounded-md',
+        stateModel.loading && 'pointer-events-none bg-blue-200 text-blue-600'
+      )}
+    >
       <Select value={selectedModel?.id} onValueChange={onValueSelected}>
-        <SelectTrigger className="w-full">
+        <SelectTrigger className="relative w-full">
           <SelectValue placeholder="Choose model to start">
-            {selectedName}
+            {stateModel.loading && (
+              <div
+                className="z-5 absolute left-0 top-0 h-full w-full rounded-md bg-blue-100/80"
+                style={{ width: `${loader}%` }}
+              />
+            )}
+            <span
+              className={twMerge(
+                'relative z-20',
+                stateModel.loading && 'font-medium'
+              )}
+            >
+              {selectedName}
+            </span>
           </SelectValue>
         </SelectTrigger>
-        <SelectContent className="right-2 block w-full min-w-[450px] pr-0">
-          <div className="flex w-full items-center space-x-2 px-4 py-2">
-            <MonitorIcon size={20} className="text-muted-foreground" />
-            <span>Local</span>
-          </div>
-          <div className="border-b border-border" />
-          {downloadedModels.length === 0 ? (
-            <div className="px-4 py-2">
-              <p>{`Oops, you don't have a model yet.`}</p>
+        <SelectPortal>
+          <SelectContent className="right-2  block w-full min-w-[450px] pr-0">
+            <div className="flex w-full items-center space-x-2 px-4 py-2">
+              <MonitorIcon size={20} className="text-muted-foreground" />
+              <span>Local</span>
             </div>
-          ) : (
-            <SelectGroup>
-              {downloadedModels.map((x, i) => (
-                <SelectItem
-                  key={i}
-                  value={x.id}
-                  className={twMerge(
-                    x.id === selectedModel?.id && 'bg-secondary'
-                  )}
-                >
-                  <div className="flex w-full justify-between">
-                    <span className="line-clamp-1 block">{x.name}</span>
-                    <div className="space-x-2">
-                      <span className="font-bold text-muted-foreground">
-                        {toGibibytes(x.metadata.size)}
-                      </span>
-                      {x.engine == InferenceEngine.nitro && (
-                        <ModelLabel size={x.metadata.size} />
-                      )}
+            <div className="border-b border-border" />
+            {downloadedModels.length === 0 ? (
+              <div className="px-4 py-2">
+                <p>{`Oops, you don't have a model yet.`}</p>
+              </div>
+            ) : (
+              <SelectGroup>
+                {downloadedModels.map((x, i) => (
+                  <SelectItem
+                    key={i}
+                    value={x.id}
+                    className={twMerge(
+                      x.id === selectedModel?.id && 'bg-secondary'
+                    )}
+                  >
+                    <div className="flex w-full justify-between">
+                      <span className="line-clamp-1 block">{x.name}</span>
+                      <div className="space-x-2">
+                        <span className="font-bold text-muted-foreground">
+                          {toGibibytes(x.metadata.size)}
+                        </span>
+                        {x.engine == InferenceEngine.nitro && (
+                          <ModelLabel size={x.metadata.size} />
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          )}
-          <div className="border-b border-border" />
-          <div className="w-full px-4 py-2">
-            <Button
-              block
-              className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
-              onClick={() => setMainViewState(MainViewState.Hub)}
-            >
-              Explore The Hub
-            </Button>
-          </div>
-        </SelectContent>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            <div className="border-b border-border" />
+            <div className="w-full px-4 py-2">
+              <Button
+                block
+                className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
+                onClick={() => setMainViewState(MainViewState.Hub)}
+              >
+                Explore The Hub
+              </Button>
+            </div>
+          </SelectContent>
+        </SelectPortal>
       </Select>
 
       <OpenAiKeyInput selectedModel={selectedModel} />
-    </>
+    </div>
   )
 }

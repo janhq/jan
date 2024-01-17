@@ -8,7 +8,7 @@ export default function ModelStart() {
 
   // This is fake loader please fix this when we have realtime percentage when load model
   useEffect(() => {
-    if (stateModel.loading) {
+    if (stateModel.loading && stateModel.state === 'start') {
       if (loader === 24) {
         setTimeout(() => {
           setLoader(loader + 1)
@@ -21,8 +21,8 @@ export default function ModelStart() {
         setTimeout(() => {
           setLoader(loader + 1)
         }, 250)
-      } else if (loader === 99) {
-        setLoader(99)
+      } else if (loader === 85) {
+        setLoader(85)
       } else {
         setLoader(loader + 1)
       }
