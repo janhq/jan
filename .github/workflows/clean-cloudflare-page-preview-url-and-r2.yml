@@ -49,5 +49,27 @@ jobs:
                         print(f"Deleted deployment: {deployment['id']}")
                     else:
                         print(f"Failed to delete deployment: {deployment['id']}")
-        
-  
+  clean-cloudflare-r2:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: install-aws-cli-action
+        uses: unfor19/install-aws-cli-action@v1
+      - name: Delete object older than 7 days
+        run: |
+          # Get the list of objects in the 'latest' folder
+          OBJECTS=$(aws s3api list-objects --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --query 'Contents[?LastModified<`'$(date -d "$current_date -30 days" -u +"%Y-%m-%dT%H:%M:%SZ")'`].{Key: Key}' --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com | jq -c .)
+          
+          # Create a JSON file for the delete operation
+          echo "{\"Objects\": $OBJECTS, \"Quiet\": false}" > delete.json
+          
+          # Delete the objects
+          echo q | aws s3api delete-objects --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --delete file://delete.json --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          
+          # Remove the JSON file
+          rm delete.json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
