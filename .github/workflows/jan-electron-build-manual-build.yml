@@ -21,7 +21,7 @@ jobs:
     needs: [get-update-version]
     secrets: inherit
     with:
-      ref: refs/heads/main
+      ref: ${{ github.ref }}
       upload_cloudflare_r2: true
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
@@ -30,7 +30,7 @@ jobs:
     needs: [get-update-version]
     secrets: inherit
     with:
-      ref: refs/heads/main
+      ref: ${{ github.ref }}
       upload_cloudflare_r2: true
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
@@ -39,7 +39,7 @@ jobs:
     needs: [get-update-version]
     secrets: inherit
     with:
-      ref: refs/heads/main
+      ref: ${{ github.ref }}
       upload_cloudflare_r2: true
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 

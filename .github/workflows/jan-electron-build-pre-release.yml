@@ -8,8 +8,6 @@ on:
       - "!README.md"
 
 jobs:
-  delete-cloudflare-r2-folder:
-    uses: ./.github/workflows/template-delete-cloudflare-r2-folder.yml
 
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
@@ -18,32 +16,32 @@ jobs:
   build-macos:
     uses: ./.github/workflows/template-build-macos.yml
     secrets: inherit
-    needs: [delete-cloudflare-r2-folder, get-update-version]
+    needs: [get-update-version]
     with:
-      ref: refs/heads/main
+      ref: ${{ github.ref }}
       upload_cloudflare_r2: true
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
     secrets: inherit
-    needs: [delete-cloudflare-r2-folder, get-update-version]
+    needs: [get-update-version]
     with:
-      ref: refs/heads/main
+      ref: ${{ github.ref }}
       upload_cloudflare_r2: true
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
     uses: ./.github/workflows/template-build-linux-x64.yml
     secrets: inherit
-    needs: [delete-cloudflare-r2-folder, get-update-version]
+    needs: [get-update-version]
     with:
-      ref: refs/heads/main
+      ref: ${{ github.ref }}
       upload_cloudflare_r2: true
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-nightly-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
     secrets: inherit
     if: github.event_name == 'push'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
