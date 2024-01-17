@@ -50,7 +50,7 @@ export default function DropdownListSidebar() {
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   const selectedName =
-    downloadedModels.filter((x) => x.id === selected?.id)[0]?.name ?? ''
+    downloadedModels.filter((x) => x.id === selectedModel?.id)[0]?.name ?? ''
   /**
    * Default value for max_tokens and ctx_len
    * Its to avoid OOM issue since a model can set a big number for these settings
