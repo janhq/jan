@@ -109,12 +109,12 @@ const LocalServerScreen = () => {
                   if (!activeModel) {
                     startModel(String(selectedModel?.id))
                   }
-                  window.core?.api?.startServer(
+                  window.core?.api?.startServer({
                     host,
                     port,
                     isCorsEnabled,
-                    isVerboseEnabled
-                  )
+                    isVerboseEnabled,
+                  })
                   setServerEnabled(true)
                   if (firstTimeVisitAPIServer) {
                     localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
