@@ -48,7 +48,7 @@ jobs:
   noti-discord-manual-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
     secrets: inherit
-    if: github.event_name == 'workflow_dispatch' && ${{ github.event.inputs.public_provider }} == 'cloudflare-r2'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'cloudflare-r2'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
     with:
       ref: refs/heads/main

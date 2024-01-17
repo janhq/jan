@@ -18,7 +18,7 @@ on:
       cloudflare_r2_path:
         required: false
         type: string
-        default: '/jan-nightly-build/'
+        default: '/latest/'
     secrets:
       CLOUDFLARE_R2_BUCKET_NAME:
         required: false
