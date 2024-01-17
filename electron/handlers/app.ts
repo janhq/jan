@@ -4,14 +4,7 @@ import { WindowManager } from './../managers/window'
 import { getResourcePath, userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
 import { ModuleManager, init, log } from '@janhq/core/node'
-import {
-  startServer,
-  stopServer,
-  isCorsEnabled,
-  isVerboseEnabled,
-  getHost,
-  getPort,
-} from '@janhq/server'
+import { startServer, stopServer } from '@janhq/server'
 
 export function handleAppIPCs() {
   /**
@@ -77,26 +70,6 @@ export function handleAppIPCs() {
    * Stop Jan API Server.
    */
   ipcMain.handle(AppRoute.stopServer, stopServer)
-
-  /**
-   * Check if CORS is enabled.
-   */
-  ipcMain.handle(AppRoute.isCorsEnabled, isCorsEnabled)
-
-  /**
-   * Check if verbose logging is enabled.
-   */
-  ipcMain.handle(AppRoute.isVerboseEnabled, isVerboseEnabled)
-
-  /**
-   * Get the host setting.
-   */
-  ipcMain.handle(AppRoute.getHost, getHost)
-
-  /**
-   * Get the port setting.
-   */
-  ipcMain.handle(AppRoute.getPort, getPort)
 
   /**
    * Relaunches the app in production - reload window in development.

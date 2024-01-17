@@ -12,10 +12,6 @@ export enum AppRoute {
   baseName = 'baseName',
   startServer = 'startServer',
   stopServer = 'stopServer',
-  isCorsEnabled = 'isCorsEnabled',
-  isVerboseEnabled = 'isVerboseEnabled',
-  getHost = 'getHost',
-  getPort = 'getPort',
   log = 'log'
 }
 
