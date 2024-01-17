@@ -24,7 +24,7 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.ref }}
-      public_provider: cloudflare-r2
+      public_provider: none
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
@@ -33,7 +33,7 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.ref }}
-      public_provider: cloudflare-r2
+      public_provider: none
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
@@ -42,7 +42,7 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.ref }}
-      public_provider: cloudflare-r2
+      public_provider: none
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-manual-and-update-url-readme:
