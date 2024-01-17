@@ -15,8 +15,6 @@ on:
         type: string
         default: ''
     secrets:
-      CLOUDFLARE_R2_PUBLIC_URL:
-        required: false
       CLOUDFLARE_R2_BUCKET_NAME:
         required: false
       CLOUDFLARE_R2_ACCESS_KEY_ID:
@@ -68,7 +66,7 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
-          jq '.build.publish = [{"provider": "s3", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "/jan-nightly-build/", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "s3", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "/jan-nightly-build/", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           cat electron/package.json
 
