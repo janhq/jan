@@ -1,0 +1,144 @@
+name: build-windows-x64
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      public_provider:
+        required: true
+        type: string
+        default: none
+        description: 'none: build only, github: build and publish to github, cloudflare: build and publish to cloudflare'
+      new_version:
+        required: true
+        type: string
+        default: ''
+      cloudflare_r2_path:
+        required: false
+        type: string
+        default: '/latest/'
+    secrets:
+      CLOUDFLARE_R2_BUCKET_NAME:
+        required: false
+      CLOUDFLARE_R2_ACCESS_KEY_ID:
+        required: false
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
+      AZURE_KEY_VAULT_URI:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_CERT_NAME:
+        required: false
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Update app version base on tag
+        if: inputs.public_provider != 'github'
+        id: version_update
+        shell: bash
+        run: |
+          echo "Version: ${{ inputs.new_version }}"
+          # Update the version in electron/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
+
+          jq '.build.publish = [{"provider": "s3", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "${{ inputs.cloudflare_r2_path }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+
+          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          cat electron/package.json
+
+      - name: Update app version base on tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
+        shell: bash
+        run: |
+          if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: Tag is not valid!"
+              exit 1
+          fi
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
+          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+        env:
+          VERSION_TAG: ${{ inputs.new_version }}
+
+      - name: Install AzureSignTool
+        run: |
+          dotnet tool install --global AzureSignTool
+
+      - name: Build and publish app to cloudflare r2 or github artifactory
+        shell: bash
+        if: inputs.public_provider != 'github'
+        run: |
+          # check public_provider is true or not
+          echo "public_provider is ${{ inputs.public_provider }}"
+          if [ "${{ inputs.public_provider }}" == "none" ]; then
+            make build    
+          else
+            make build-and-publish
+          fi
+        env:
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+
+      - name: Build app and publish app to github
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
+        run: |
+          make build-and-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANALYTICS_ID: ${{ secrets.JAN_APP_POSTHOG_PROJECT_API_KEY }}
+          ANALYTICS_HOST: ${{ secrets.JAN_APP_POSTHOG_URL }}
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+
+      - name: Upload Artifact
+        if: inputs.public_provider != 'github'
+        uses: actions/upload-artifact@v2
+        with:
+          name: jan-win-x64-${{ inputs.new_version }}
+          path: ./electron/dist/*.exe
+
