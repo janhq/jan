@@ -49,7 +49,7 @@ export default function DropdownListSidebar() {
   const threadStates = useAtomValue(threadStatesAtom)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const { activeModel, startModel, stateModel, stopModel } = useActiveModel()
+  const { activeModel, stateModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const { setMainViewState } = useMainViewState()
 
