@@ -22,47 +22,60 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  build-macos:
-    uses: ./.github/workflows/template-build-macos.yml
-    # needs: [delete-cloudflare-r2-folder, get-update-version]
-    needs: [get-update-version]
+  build-app:
+    strategy:
+      matrix:
+        target: [macos, windows-x64, linux-x64]
     secrets: inherit
+    needs: [get-update-version]
+    uses: ./.github/workflows/template-build-${{ matrix.target }}.yml
     with:
-      ref: refs/heads/main
-      enable_condition: true
+      ref: refs/heads/dev
       upload_cloudflare_r2: false
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+  
 
-  build-windows-x64:
-    uses: ./.github/workflows/template-build-windows-x64.yml
-    # needs: [delete-cloudflare-r2-folder, get-update-version]
-    needs: [get-update-version]
-    secrets: inherit
-    with:
-      ref: refs/heads/main
-      enable_condition: true
-      upload_cloudflare_r2: false
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
+  # build-macos:
+  #   uses: ./.github/workflows/template-build-macos.yml
+  #   # needs: [delete-cloudflare-r2-folder, get-update-version]
+  #   needs: [get-update-version]
+  #   secrets: inherit
+  #   with:
+  #     ref: refs/heads/main
+  #     enable_condition: true
+  #     upload_cloudflare_r2: false
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  build-linux-x64:
-    uses: ./.github/workflows/template-build-linux-x64.yml
-    # needs: [delete-cloudflare-r2-folder, get-update-version]
-    needs: [get-update-version]
-    secrets: inherit
-    with:
-      ref: refs/heads/main
-      enable_condition: true
-      upload_cloudflare_r2: false
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
+  # build-windows-x64:
+  #   uses: ./.github/workflows/template-build-windows-x64.yml
+  #   # needs: [delete-cloudflare-r2-folder, get-update-version]
+  #   needs: [get-update-version]
+  #   secrets: inherit
+  #   with:
+  #     ref: refs/heads/main
+  #     enable_condition: true
+  #     upload_cloudflare_r2: false
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  noti-discord-manual-and-update-url-readme:
-    # needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
-    secrets: inherit
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_cloudflare_r2 == 'true'
-    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
-    with:
-      ref: refs/heads/main
-      build_reason: Manual
-      push_to_branch: main
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
+  # build-linux-x64:
+  #   uses: ./.github/workflows/template-build-linux-x64.yml
+  #   # needs: [delete-cloudflare-r2-folder, get-update-version]
+  #   needs: [get-update-version]
+  #   secrets: inherit
+  #   with:
+  #     ref: refs/heads/main
+  #     enable_condition: true
+  #     upload_cloudflare_r2: false
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  # noti-discord-manual-and-update-url-readme:
+  #   # needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
+  #   needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
+  #   secrets: inherit
+  #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_cloudflare_r2 == 'true'
+  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+  #   with:
+  #     ref: refs/heads/main
+  #     build_reason: Manual
+  #     push_to_branch: main
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
