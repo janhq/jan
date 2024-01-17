@@ -42,19 +42,19 @@ jobs:
         run: |
           echo "VERSION=${{ inputs.new_version }}" >> $GITHUB_ENV
 
-      # - name: Notify Discord
-      #   uses: Ilshidur/action-discord@master
-      #   with:
-      #     args: |
-      #       Jan App ${{ inputs.build_reason }} build artifact version {{ VERSION }}:
-      #       - Windows: https://delta.jan.ai/latest/jan-win-x64-{{ VERSION }}.exe
-      #       - macOS Intel: https://delta.jan.ai/latest/jan-mac-x64-{{ VERSION }}.dmg
-      #       - macOS Apple Silicon: https://delta.jan.ai/latest/jan-mac-arm64-{{ VERSION }}.dmg
-      #       - Linux Deb: https://delta.jan.ai/latest/jan-linux-amd64-{{ VERSION }}.deb
-      #       - Linux AppImage: https://delta.jan.ai/latest/jan-linux-x86_64-{{ VERSION }}.AppImage
-      #       - Github action run: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}
-      #   env:
-      #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      - name: Notify Discord
+        uses: Ilshidur/action-discord@master
+        with:
+          args: |
+            Jan App ${{ inputs.build_reason }} build artifact version {{ VERSION }}:
+            - Windows: https://delta.jan.ai/latest/jan-win-x64-{{ VERSION }}.exe
+            - macOS Intel: https://delta.jan.ai/latest/jan-mac-x64-{{ VERSION }}.dmg
+            - macOS Apple Silicon: https://delta.jan.ai/latest/jan-mac-arm64-{{ VERSION }}.dmg
+            - Linux Deb: https://delta.jan.ai/latest/jan-linux-amd64-{{ VERSION }}.deb
+            - Linux AppImage: https://delta.jan.ai/latest/jan-linux-x86_64-{{ VERSION }}.AppImage
+            - Github action run: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
 
       - name: Update README.md with artifact URL
         run: |

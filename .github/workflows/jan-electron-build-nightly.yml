@@ -1,41 +1,63 @@
-name: Jan Build Electron App Nightly
+name: Jan Build Electron App Nightly or Manual
 
 on:
   schedule:
     - cron: '0 20 * * 2,3,4' # At 8 PM UTC on Tuesday, Wednesday, and Thursday, which is 3 AM UTC+7
+  workflow_dispatch:
+    inputs:
+      public_provider:
+        type: choice
+        description: 'Public Provider'
+        options:
+          - none
+          - cloudflare-r2
+        default: none
 
 jobs:
-
+  set-public-provider:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    outputs:
+      public_provider: ${{ steps.set-public-provider.outputs.public_provider }}
+    steps:
+      - name: Set public provider
+        id: set-public-provider
+        run: |
+          if [ "${{ github.event == 'workflow_dispatch' }}" ]; then
+            echo "::set-output name=public_provider::${{ github.event.inputs.public_provider }}"
+          else
+            echo "::set-output name=public_provider::cloudflare-r2"
+          fi
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
   build-macos:
     uses: ./.github/workflows/template-build-macos.yml
-    needs: [get-update-version]
+    needs: [get-update-version, set-public-provider]
     secrets: inherit
     with:
       ref: refs/heads/dev
-      public_provider: cloudflare-r2
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
     secrets: inherit
-    needs: [get-update-version]
+    needs: [get-update-version, set-public-provider]
     with:
       ref: refs/heads/dev
-      public_provider: cloudflare-r2
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
           
   build-linux-x64:
     uses: ./.github/workflows/template-build-linux-x64.yml
     secrets: inherit
-    needs: [get-update-version]
+    needs: [get-update-version, set-public-provider]
     with:
       ref: refs/heads/dev
-      public_provider: cloudflare-r2
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-nightly-and-update-url-readme:

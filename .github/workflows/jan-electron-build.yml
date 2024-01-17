@@ -36,17 +36,6 @@ jobs:
       public_provider: github
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  noti-discord-nightly-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
-    secrets: inherit
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
-    with:
-      ref: refs/heads/main
-      build_reason: Nightly
-      push_to_branch: main
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-
   update_release_draft:
     needs: [build-macos, build-windows-x64, build-linux-x64]
     permissions:
