@@ -98,7 +98,7 @@ jobs:
           path: ./electron/dist/*.exe
       
       - name: put-object using awscli s3api
-        if: eq(${{ inputs.upload_cloudflare_r2 }}, true)
+        if: ${{ inputs.upload_cloudflare_r2 }}
         shell: bash
         run: |
           ls -al ./electron/dist

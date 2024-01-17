@@ -81,7 +81,7 @@ jobs:
           path: ./electron/dist/*.AppImage
 
       - name: put-object using awscli s3api
-        if: eq(${{ inputs.upload_cloudflare_r2 }}, true)
+        if: ${{ inputs.upload_cloudflare_r2 }}
         run: |
           ls -al ./electron/dist
           aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/jan-linux-amd64-${{ inputs.new_version }}.deb" --body "./electron/dist/jan-linux-amd64-${{ inputs.new_version }}.deb" --content-type "application/octet-stream"

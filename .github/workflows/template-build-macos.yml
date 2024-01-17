@@ -113,7 +113,7 @@ jobs:
           path: ./electron/dist/jan-mac-arm64-${{ inputs.new_version }}.dmg
 
       - name: put-object using awscli s3api
-        if: eq(${{ inputs.upload_cloudflare_r2 }}, true)
+        if: ${{ inputs.upload_cloudflare_r2 }}
         continue-on-error: true
         run: |
           ls -al ./electron/dist
