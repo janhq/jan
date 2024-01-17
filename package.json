@@ -45,9 +45,17 @@
   "devDependencies": {
     "concurrently": "^8.2.1",
     "cpx": "^1.5.0",
+    "node-gyp": "^10.0.1",
     "rimraf": "^3.0.2",
-    "wait-on": "^7.0.1",
-    "run-script-os": "^1.1.6"
+    "run-script-os": "^1.1.6",
+    "wait-on": "^7.0.1"
   },
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=18.12.0"
+  },
+  "volta": {
+    "node": "20.11.0",
+    "yarn": "3.7.0"
+  }
 }

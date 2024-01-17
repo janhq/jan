@@ -3,6 +3,7 @@
 
 # Jan inference
 error.log
+.yarn
 node_modules
 *.tgz
 yarn.lock
