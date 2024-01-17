@@ -1,6 +1,10 @@
 name: get-update-version
 on:
   workflow_call:
+    outputs:
+      new_version:
+        description: 'The new version of the app'
+        value: ${{ jobs.get-update-version.outputs.new_version }}
 
 jobs:
   get-update-version:
