@@ -4,7 +4,7 @@ import { WindowManager } from './../managers/window'
 import { getResourcePath, userSpacePath } from './../utils/path'
 import { AppRoute } from '@janhq/core'
 import { ModuleManager, init, log } from '@janhq/core/node'
-import { startServer, stopServer } from '@janhq/server'
+import { ServerConfig, startServer, stopServer } from '@janhq/server'
 
 export function handleAppIPCs() {
   /**
@@ -51,19 +51,19 @@ export function handleAppIPCs() {
   /**
    * Start Jan API Server.
    */
-  ipcMain.handle(
-    AppRoute.startServer,
-    async (_event, host, port, isCorsEnabled, isVerbose) =>
-      startServer(
-        host,
-        port,
-        isCorsEnabled,
-        isVerbose,
-        app.isPackaged
-          ? join(getResourcePath(), 'docs', 'openapi', 'jan.yaml')
-          : undefined,
-        app.isPackaged ? join(getResourcePath(), 'docs', 'openapi') : undefined
-      )
+  ipcMain.handle(AppRoute.startServer, async (_event, configs?: ServerConfig) =>
+    startServer({
+      host: configs?.host,
+      port: configs?.port,
+      isCorsEnabled: configs?.isCorsEnabled,
+      isVerboseEnabled: configs?.isVerboseEnabled,
+      schemaPath: app.isPackaged
+        ? join(getResourcePath(), 'docs', 'openapi', 'jan.yaml')
+        : undefined,
+      baseDir: app.isPackaged
+        ? join(getResourcePath(), 'docs', 'openapi')
+        : undefined,
+    })
   )
 
   /**

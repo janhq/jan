@@ -21,7 +21,7 @@ let corsEnbaled: boolean = true;
 let isVerbose: boolean = true;
 
 /**
- * Function to start the server
+ * Server configurations
  * @param host - The host address for the server
  * @param port - The port number for the server
  * @param isCorsEnabled - Flag to enable or disable CORS
@@ -29,19 +29,25 @@ let isVerbose: boolean = true;
  * @param schemaPath - Path to the OpenAPI schema file
  * @param baseDir - Base directory for the OpenAPI schema file
  */
-export const startServer = async (
-  host?: string,
-  port?: number,
-  isCorsEnabled?: boolean,
-  isVerboseEnabled?: boolean,
-  schemaPath?: string,
-  baseDir?: string
-) => {
+export interface ServerConfig {
+  host?: string;
+  port?: number;
+  isCorsEnabled?: boolean;
+  isVerboseEnabled?: boolean;
+  schemaPath?: string;
+  baseDir?: string;
+}
+
+/**
+ * Function to start the server
+* @param configs - Server configurations
+ */
+export const startServer = async (configs?: ServerConfig) => {
   // Update server settings
-  isVerbose = isVerboseEnabled ?? true;
-  hostSetting = host ?? JAN_API_HOST;
-  portSetting = port ?? JAN_API_PORT;
-  corsEnbaled = isCorsEnabled ?? true;
+  isVerbose = configs?.isVerboseEnabled ?? true;
+  hostSetting = configs?.host ?? JAN_API_HOST;
+  portSetting = configs?.port ?? JAN_API_PORT;
+  corsEnbaled = configs?.isCorsEnabled ?? true;
 
   // Start the server
   try {
@@ -64,15 +70,15 @@ export const startServer = async (
     await server.register(require("@fastify/swagger"), {
       mode: "static",
       specification: {
-        path: schemaPath ?? "./../docs/openapi/jan.yaml",
-        baseDir: baseDir ?? "./../docs/openapi",
+        path: configs?.schemaPath ?? "./../docs/openapi/jan.yaml",
+        baseDir: configs?.baseDir ?? "./../docs/openapi",
       },
     });
 
     // Register Swagger UI
     await server.register(require("@fastify/swagger-ui"), {
       routePrefix: "/",
-      baseDir: baseDir ?? path.join(__dirname, "../..", "./docs/openapi"),
+      baseDir: configs?.baseDir ?? path.join(__dirname, "../..", "./docs/openapi"),
       uiConfig: {
         docExpansion: "full",
         deepLinking: false,
