@@ -1,6 +1,9 @@
 name: Jan Build Electron App Manual
 
 on:
+  push:
+    branches:
+      - feature/update-ci-follow-gitflow
   workflow_dispatch:
     inputs:
       public_provider:
@@ -21,7 +24,7 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.ref }}
-      public_provider: ${{ github.event.inputs.public_provider }}
+      public_provider: cloudflare-r2
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
@@ -30,7 +33,7 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.ref }}
-      public_provider: ${{ github.event.inputs.public_provider }}
+      public_provider: cloudflare-r2
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
@@ -39,7 +42,7 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.ref }}
-      public_provider: ${{ github.event.inputs.public_provider }}
+      public_provider: cloudflare-r2
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-manual-and-update-url-readme:
