@@ -133,27 +133,3 @@ export const stopServer = async () => {
     if (isVerbose) log(`[API]::Error: ${e}`);
   }
 };
-
-/**
- * Function to check if CORS is enabled
- * @returns - True if CORS is enabled, false otherwise
- */
-export const isCorsEnabled = () => corsEnbaled;
-
-/**
- * Function to check if verbose logging is enabled
- * @returns - True if verbose logging is enabled, false otherwise
- */
-export const isVerboseEnabled = () => isVerbose;
-
-/**
- * Function to get the host setting
- * @returns - The current host setting
- */
-export const getHost = () => hostSetting;
-
-/**
- * Function to get the port setting
- * @returns - The current port setting
- */
-export const getPort = () => portSetting;
