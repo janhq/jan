@@ -22,7 +22,6 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     env:
-      CLOUDFLARE_ACCOUNT_ID: 9707100ef42a1a25bd70e3ee2137bd0e
       CLOUDFLARE_PROJECT_NAME: jan
     runs-on: ubuntu-latest
     permissions:
@@ -66,7 +65,7 @@ jobs:
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
           directory: ./docs/build
           branch: dev
