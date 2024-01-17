@@ -86,7 +86,7 @@ export default function CardSidebar({
 
         {more && (
           <div
-            className="absolute right-4 top-8 z-20 w-72 rounded-lg border border-border bg-background shadow-lg"
+            className="absolute right-4 top-8 z-50 w-72 rounded-lg border border-border bg-background shadow-lg"
             ref={setMenu}
           >
             <div
