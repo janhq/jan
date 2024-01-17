@@ -37,7 +37,7 @@ import { getConfigurationsData } from '@/utils/componentSettings'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import EngineSetting from '../Chat/EngineSetting'
-import ModelSetting from '../Chat/ModelSetting'
+
 import settingComponentBuilder from '../Chat/ModelSetting/settingComponentBuilder'
 
 import { showRightSideBarAtom } from '../Chat/Sidebar'
@@ -312,16 +312,6 @@ const LocalServerScreen = () => {
             <div className="mt-4">
               <DropdownListSidebar />
             </div>
-
-            {componentDataRuntimeSetting.length !== 0 && (
-              <div className="mt-6">
-                <CardSidebar title="Inference Parameters" asChild>
-                  <div className="px-2 py-4">
-                    <ModelSetting />
-                  </div>
-                </CardSidebar>
-              </div>
-            )}
 
             {componentDataEngineSetting.filter(
               (x) => x.name === 'prompt_template'

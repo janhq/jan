@@ -203,9 +203,6 @@ const TopBar = () => {
                             <span className="font-medium text-black dark:text-muted-foreground">
                               Show in Finder
                             </span>
-                            <span className="mt-1 text-muted-foreground">
-                              Opens model.json
-                            </span>
                           </div>
                         </div>
                       </div>
