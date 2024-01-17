@@ -5,11 +5,13 @@ import { PDFLoader } from "langchain/document_loaders/fs/pdf";
 // import { Chroma } from "@langchain/community/vectorstores/chroma";
 import { HNSWLib } from "langchain/vectorstores/hnswlib";
 
-import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
+// import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
+// const embeddingModel = new HuggingFaceTransformersEmbeddings({
+//   modelName: "BAAI/bge-base-en-v1.5",
+// });
 
-const embeddingModel = new HuggingFaceTransformersEmbeddings({
-  // modelName: "BAAI/bge-base-en-v1.5",
-});
+import { OpenAIEmbeddings } from "langchain/embeddings/openai";
+const embeddingModel = new OpenAIEmbeddings({});
 
 console.log(embeddingModel);
 
