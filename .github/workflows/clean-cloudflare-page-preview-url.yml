@@ -3,9 +3,7 @@ on:
   schedule:
     - cron: "0 0 * * *" # every day at 00:00
   workflow_dispatch:
-  push:
-    branches:
-      - feature/clean-cloudflare-page-and-r2
+
 jobs:
   clean-cloudflare-pages-preview-urls:
     strategy:
