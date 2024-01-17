@@ -16,6 +16,7 @@ jobs:
   # delete-cloudflare-r2-folder:
   #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_cloudflare_r2 == 'true'
   #   uses: ./.github/workflows/delete-cloudflare-r2-folder.yml
+  #   secrets: inherit
 
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
@@ -25,7 +26,7 @@ jobs:
     uses: ./.github/workflows/build-macos.yml
     # needs: [delete-cloudflare-r2-folder, get-update-version]
     needs: [get-update-version]
-    # continue event if need jobs is skipped or success
+    secrets: inherit
     with:
       ref: refs/heads/main
       enable_condition: true
@@ -36,6 +37,7 @@ jobs:
     uses: ./.github/workflows/build-windows-x64.yml
     # needs: [delete-cloudflare-r2-folder, get-update-version]
     needs: [get-update-version]
+    secrets: inherit
     with:
       ref: refs/heads/main
       enable_condition: true
@@ -46,6 +48,7 @@ jobs:
     uses: ./.github/workflows/build-linux-x64.yml
     # needs: [delete-cloudflare-r2-folder, get-update-version]
     needs: [get-update-version]
+    secrets: inherit
     with:
       ref: refs/heads/main
       enable_condition: true
@@ -55,6 +58,7 @@ jobs:
   noti-discord-manual-and-update-url-readme:
     # needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
     needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
+    secrets: inherit
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_cloudflare_r2 == 'true'
     uses: ./.github/workflows/noti-discord-and-update-url-readme.yml
     with:

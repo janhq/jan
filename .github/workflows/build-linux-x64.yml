@@ -18,17 +18,17 @@ on:
         required: true
         type: string
         default: ''
-    # secrets:
-    #   CLOUDFLARE_R2_PUBLIC_URL:
-    #     required: false
-    #   CLOUDFLARE_R2_BUCKET_NAME:
-    #     required: false
-    #   CLOUDFLARE_R2_ACCESS_KEY_ID:
-    #     required: false
-    #   CLOUDFLARE_R2_SECRET_ACCESS_KEY:
-    #     required: false
-    #   CLOUDFLARE_ACCOUNT_ID:
-    #     required: false
+    secrets:
+      CLOUDFLARE_R2_PUBLIC_URL:
+        required: false
+      CLOUDFLARE_R2_BUCKET_NAME:
+        required: false
+      CLOUDFLARE_R2_ACCESS_KEY_ID:
+        required: false
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
 
 jobs:
   build-linux-x64:

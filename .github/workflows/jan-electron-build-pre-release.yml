@@ -17,6 +17,7 @@ jobs:
 
   build-macos:
     uses: ./.github/workflows/build-macos.yml
+    secrets: inherit
     needs: [delete-cloudflare-r2-folder, get-update-version]
     with:
       ref: refs/heads/main
@@ -26,6 +27,7 @@ jobs:
 
   build-windows-x64:
     uses: ./.github/workflows/build-windows-x64.yml
+    secrets: inherit
     needs: [delete-cloudflare-r2-folder, get-update-version]
     with:
       ref: refs/heads/main
@@ -35,6 +37,7 @@ jobs:
 
   build-linux-x64:
     uses: ./.github/workflows/build-linux-x64.yml
+    secrets: inherit
     needs: [delete-cloudflare-r2-folder, get-update-version]
     with:
       ref: refs/heads/main
@@ -44,6 +47,7 @@ jobs:
 
   noti-discord-nightly-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
+    secrets: inherit
     if: github.event_name == 'push'
     uses: ./.github/workflows/noti-discord-and-update-url-readme.yml
     with:
