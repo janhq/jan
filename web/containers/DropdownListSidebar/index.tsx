@@ -50,7 +50,7 @@ export default function DropdownListSidebar() {
   const threadStates = useAtomValue(threadStatesAtom)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const { activeModel, startModel, stateModel } = useActiveModel()
+  const { activeModel, startModel, stateModel, stopModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
   const { setMainViewState } = useMainViewState()
@@ -142,12 +142,14 @@ export default function DropdownListSidebar() {
   }, [stateModel.loading, loader])
 
   const onValueSelected = useCallback(
-    (modelId: string) => {
+    async (modelId: string) => {
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelectedModel(model)
 
+      await stopModel()
+
       if (activeModel?.id !== modelId) {
-        startModel(modelId)
+        await startModel(modelId)
       }
 
       if (serverEnabled) {
@@ -168,6 +170,7 @@ export default function DropdownListSidebar() {
       downloadedModels,
       serverEnabled,
       activeThreadId,
+      activeModel,
       setSelectedModel,
       setThreadModelParams,
     ]
@@ -184,7 +187,7 @@ export default function DropdownListSidebar() {
     <div
       className={twMerge(
         'relative w-full overflow-hidden rounded-md',
-        stateModel.loading && 'bg-blue-200 text-blue-600'
+        stateModel.loading && 'pointer-events-none bg-blue-200 text-blue-600'
       )}
     >
       <Select value={selected?.id} onValueChange={onValueSelected}>
@@ -244,7 +247,9 @@ export default function DropdownListSidebar() {
                     value={x.id}
                     className={twMerge(x.id === selected?.id && 'bg-secondary')}
                     onPointerUp={() => {
-                      startModel(x.id)
+                      if (x.id === selected?.id) {
+                        startModel(x.id)
+                      }
                     }}
                   >
                     <div className="flex w-full justify-between">
