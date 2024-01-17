@@ -23,7 +23,7 @@ jobs:
       - name: Set public provider
         id: set-public-provider
         run: |
-          if [ "${{ github.event == 'workflow_dispatch' }}" ]; then
+          if [ ${{ github.event == 'workflow_dispatch' }} ]; then
             echo "::set-output name=public_provider::${{ github.event.inputs.public_provider }}"
           else
             echo "::set-output name=public_provider::cloudflare-r2"
