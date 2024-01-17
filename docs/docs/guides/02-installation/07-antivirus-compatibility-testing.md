@@ -18,8 +18,6 @@ keywords:
 
 # Antivirus Compatibility Testing Documentation
 
-## Objective
-
 The purpose of this document is to outline the antivirus compatibility testing conducted for the Jan App v0.4.4 release. This documentation includes a matrix that correlates the Jan App version with the tested antivirus versions.
 
 ## Tested Antivirus Versions
@@ -32,7 +30,7 @@ The purpose of this document is to outline the antivirus compatibility testing c
 
 ## Testing Summary
 
-The Jan App v0.4.4 release has undergone automatically testing through CI with a selection of popular antivirus software to ensure compatibility and safety. The following summarizes the testing results:
+The Jan App v0.4.4 release has undergone automatic testing through CI with a selection of popular antivirus software to ensure compatibility and safety. The following summarizes the testing results:
 
 - **Compatible:** Bitdefender (v27.0.27.125), McAfee (v.4.21.0.0), Microsoft Defender (v1.403.2259.0)
 
