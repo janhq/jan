@@ -1,16 +1,15 @@
 name: Jan Build Electron App Manual
 
 on:
-  push:
-    branches:
-      - feature/update-ci-follow-gitflow
   workflow_dispatch:
     inputs:
-      upload_cloudflare_r2:
-        description: 'Upload to Cloudflare R2'
-        required: true
-        type: boolean
-        default: false
+      public_provider:
+        type: choice
+        description: 'Public Provider'
+        options:
+          - none
+          - cloudflare-r2
+        default: none
 
 jobs:
   get-update-version:
@@ -22,7 +21,7 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.ref }}
-      upload_cloudflare_r2: true
+      public_provider: ${{ github.event.inputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
@@ -31,7 +30,7 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.ref }}
-      upload_cloudflare_r2: true
+      public_provider: ${{ github.event.inputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
@@ -40,17 +39,16 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.ref }}
-      upload_cloudflare_r2: true
+      public_provider: ${{ github.event.inputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  # noti-discord-manual-and-update-url-readme:
-  #   # needs: [build-macos, build-windows-x64, build-linux-x64, delete-cloudflare-r2-folder, get-update-version]
-  #   needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
-  #   secrets: inherit
-  #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_cloudflare_r2 == 'true'
-  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
-  #   with:
-  #     ref: refs/heads/main
-  #     build_reason: Manual
-  #     push_to_branch: main
-  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  noti-discord-manual-and-update-url-readme:
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
+    secrets: inherit
+    if: github.event_name == 'workflow_dispatch' && ${{ github.event.inputs.public_provider }} == 'cloudflare-r2'
+    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+    with:
+      ref: refs/heads/main
+      build_reason: Manual
+      push_to_branch: main
+      new_version: ${{ needs.get-update-version.outputs.new_version }}

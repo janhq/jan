@@ -19,7 +19,7 @@ jobs:
     needs: [get-update-version]
     with:
       ref: ${{ github.ref }}
-      upload_cloudflare_r2: true
+      public_provider: cloudflare-r2
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
@@ -28,7 +28,7 @@ jobs:
     needs: [get-update-version]
     with:
       ref: ${{ github.ref }}
-      upload_cloudflare_r2: true
+      public_provider: cloudflare-r2
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
@@ -37,13 +37,13 @@ jobs:
     needs: [get-update-version]
     with:
       ref: ${{ github.ref }}
-      upload_cloudflare_r2: true
+      public_provider: cloudflare-r2
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-nightly-and-update-url-readme:
     needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
     secrets: inherit
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
     with:
       ref: refs/heads/main
