@@ -129,12 +129,6 @@ export default function DropdownListSidebar() {
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelectedModel(model)
 
-      await stopModel()
-
-      if (activeModel?.id !== modelId) {
-        await startModel(modelId)
-      }
-
       if (serverEnabled) {
         window.core?.api?.stopServer()
         setServerEnabled(false)
@@ -209,11 +203,6 @@ export default function DropdownListSidebar() {
                     className={twMerge(
                       x.id === selectedModel?.id && 'bg-secondary'
                     )}
-                    onPointerUp={() => {
-                      if (x.id === selectedModel?.id) {
-                        startModel(x.id)
-                      }
-                    }}
                   >
                     <div className="flex w-full justify-between">
                       <span className="line-clamp-1 block">{x.name}</span>

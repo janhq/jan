@@ -34,7 +34,7 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 import { useServerLog } from '@/hooks/useServerLog'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
+import { toSettingParams } from '@/utils/modelParam'
 
 import EngineSetting from '../Chat/EngineSetting'
 
@@ -58,9 +58,9 @@ const LocalServerScreen = () => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
 
   const modelEngineParams = toSettingParams(activeModelParams)
-  const modelRuntimeParams = toRuntimeParams(activeModelParams)
+
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
-  const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
+
   const { openServerLog, clearServerLog } = useServerLog()
   const { activeModel, startModel, stateModel } = useActiveModel()
   const [selectedModel] = useAtom(selectedModelAtom)
