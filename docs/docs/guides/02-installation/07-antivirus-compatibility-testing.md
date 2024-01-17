@@ -1,7 +1,7 @@
 ---
 title: Antivirus Compatibility Testing
 slug: /guides/install/antivirus-compatibility-testing
-description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+description: Antivirus compatibility testing documentation for the Jan App v0.4.4 release.
 keywords:
   [
     Jan AI,
