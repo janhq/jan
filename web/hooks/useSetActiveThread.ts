@@ -11,14 +11,17 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { extensionManager } from '@/extension'
 import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
+  ModelParams,
   getActiveThreadIdAtom,
   setActiveThreadIdAtom,
+  setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function useSetActiveThread() {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const setThreadMessage = useSetAtom(setConvoMessagesAtom)
+  const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
 
   const setActiveThread = async (thread: Thread) => {
     if (activeThreadId === thread.id) {
@@ -35,6 +38,11 @@ export default function useSetActiveThread() {
     setThreadMessage(thread.id, messages ?? [])
 
     setActiveThreadId(thread.id)
+    const modelParams: ModelParams = {
+      ...thread.assistants[0]?.model?.parameters,
+      ...thread.assistants[0]?.model?.settings,
+    }
+    setThreadModelParams(thread.id, modelParams)
   }
 
   return { activeThreadId, setActiveThread }

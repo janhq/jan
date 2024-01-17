@@ -125,9 +125,14 @@ const TopBar = () => {
               </div>
             </div>
           </div>
-          <div className="absolute left-80 h-full">
+          <div
+            className={twMerge(
+              'absolute left-80 right-10 h-full',
+              showing && 'right-80'
+            )}
+          >
             <div className="flex h-full items-center">
-              <span className="text-sm font-bold">
+              <span className="truncate text-ellipsis text-sm font-bold">
                 {titleScreen(mainViewState)}
               </span>
             </div>
