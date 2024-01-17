@@ -243,8 +243,10 @@ export default function DropdownListSidebar() {
                     key={i}
                     value={x.id}
                     className={twMerge(x.id === selected?.id && 'bg-secondary')}
-                    onClick={() => {
-                      x.id === selected?.id && console.log('huhft')
+                    onPointerUp={() => {
+                      if (x.id === selected?.id) {
+                        startModel(x.id)
+                      }
                     }}
                   >
                     <div className="flex w-full justify-between">
