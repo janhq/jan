@@ -1,45 +1,30 @@
-import { MessageRequest } from "@janhq/core";
-
-// import { OpenAIEmbeddings } from "langchain/embeddings/openai";
+import { MessageRequest, Thread } from "@janhq/core/.";
 import { Retrieval } from "./tools/retrieval";
+import os from "os";
+import path from "path";
 
-const retrieval = new Retrieval("", 1000);
+const userSpace = path.join(os.homedir(), "jan");
+const retrieval = new Retrieval();
 
-// const run = async () => {
-
-//   const retrieval = new Retrieval(embeddingModel, 1000);
-//   await retrieval.ingestDocument(
-//     "/Users/hiro/Downloads/791610_Optimizing_and_Running_LLaMA2_on_Intel_CPU_Whitepaper__Rev1.0.pdf",
-//     "/Users/hiro/jan/threads/testing_mem"
-//   );
-//   await retrieval.loadRetrievalAgent("/Users/hiro/jan/threads/testing_mem");
-
-//   const result = await retrieval.generateAnswer(
-//     "What is the best way to run LLaMA2 on Intel CPU?"
-//   );
-//   console.log(result);
-// };
-
-// run();
-
-export async function toolRetrievalIngestNewDocument(
-  messageRequest: MessageRequest
-) {
-  const { messages } = messageRequest;
-  console.log("toolRetrievalIngestNewDocument", messages);
-  await retrieval.ingestDocument(
-    "/Users/hiro/Downloads/791610_Optimizing_and_Running_LLaMA2_on_Intel_CPU_Whitepaper__Rev1.0.pdf"
+export async function toolRetrievalIngestNewDocument(data: any) {
+  const { memoryPath, filesPath, message_id } = data;
+  const reconstructedFilePath = path.join(
+    userSpace,
+    `${filesPath.slice(6, -1)}s`, // file:/threads/jan_1705485646/files -> threads/jan_1705485646/files
+    `${message_id}.pdf`
   );
-  return Promise.resolve(true);
+  await retrieval.ingestAgentKnowledge(reconstructedFilePath, memoryPath);
+  return Promise.resolve();
 }
 
-export async function toolRetrievalLoadThreadMemory(
-  messageRequest: MessageRequest
-) {
-  const { messages } = messageRequest;
-  console.log("toolRetrievalLoadThreadMemory", messages);
-  await retrieval.loadRetrievalAgent("/Users/hiro/jan/threads/testing_mem");
-  return Promise.resolve(true);
+export async function toolRetrievalLoadThreadMemory(thread: Thread) {
+  console.log(
+    "toolRetrievalLoadThreadMemory thread object",
+    JSON.stringify(thread)
+  );
+  console.log("toolRetrievalLoadThreadMemory", thread.id);
+  await retrieval.loadRetrievalAgent(path.join(thread.id, "memory"));
+  return Promise.resolve();
 }
 
 export async function toolRetrievalQueryResult(messageRequest: MessageRequest) {

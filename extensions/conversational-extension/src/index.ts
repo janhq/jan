@@ -5,6 +5,8 @@ import {
   ConversationalExtension,
   Thread,
   ThreadMessage,
+  EventName,
+  events,
 } from '@janhq/core'
 
 /**
@@ -135,6 +137,9 @@ export default class JSONConversationalExtension
         const imagePath = await joinPath([filesPath, `${message.id}.png`])
         const base64 = message.content[0].text.annotations[0]
         await this.storeImage(base64, imagePath)
+        // if (fs.existsSync(imagePath)) {
+        //   message.content[0].text.annotations[0] = imagePath
+        // }
       }
 
       if (message.content[0].type === 'pdf') {
@@ -144,6 +149,18 @@ export default class JSONConversationalExtension
         const filePath = await joinPath([filesPath, `${message.id}.pdf`])
         const blob = message.content[0].text.annotations[0]
         await this.storeFile(blob, filePath)
+
+        if (fs.existsSync(filePath)) {
+          const memoryPath = await joinPath([threadDirPath, 'memory'])
+          if (!(await fs.existsSync(memoryPath))) await fs.mkdirSync(memoryPath)
+
+          events.emit(EventName.OnFileUpload, {
+            memoryPath: memoryPath,
+            filesPath: filesPath,
+            message_id: message.id,
+          })
+          // message.content[0].text.annotations[0] = filePath
+        }
       }
 
       await fs.appendFileSync(threadMessagePath, JSON.stringify(message) + '\n')

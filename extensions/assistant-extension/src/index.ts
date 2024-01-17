@@ -38,11 +38,11 @@ export default class JanAssistantExtension implements AssistantExtension {
       JanAssistantExtension.handleInferenceStopped(this);
     });
 
-    events.on(EventName.OnThreadStarted, (data: MessageRequest) => {
-      JanAssistantExtension.handleThreadStart(data, this);
+    events.on(EventName.OnThreadStarted, (thread: Thread) => {
+      JanAssistantExtension.handleThreadStart(thread, this);
     });
 
-    events.on(EventName.OnFileUpload, (data: MessageRequest) => {
+    events.on(EventName.OnFileUpload, (data: any) => {
       JanAssistantExtension.handleFileUpload(data, this);
     });
   }
@@ -53,46 +53,42 @@ export default class JanAssistantExtension implements AssistantExtension {
   }
 
   private static async handleThreadStart(
-    // thread: Thread,
-    data: MessageRequest,
+    thread: Thread,
     instance: JanAssistantExtension
   ) {
     // Load thread vector store into memory
     instance.isCancelled = false;
     instance.controller = new AbortController();
 
-    if (data.model?.engine !== InferenceEngine.tool_retrieval_enabled) {
+    // if (data.model?.engine !== InferenceEngine.tool_retrieval_enabled) {
+    //   return;
+    // }
+
+    if (!thread.id) {
       return;
     }
 
     const retrievalResult = await executeOnMain(
       NODE,
       "toolRetrievalLoadThreadMemory",
-      data
+      thread
     );
-    console.log(retrievalResult);
+    return Promise.resolve(retrievalResult);
   }
 
   private static async handleFileUpload(
-    data: MessageRequest,
+    data: any,
     instance: JanAssistantExtension
   ) {
     instance.isCancelled = true;
     instance.controller?.abort();
 
-    if (data.model?.engine !== InferenceEngine.tool_retrieval_enabled) {
-      return;
-    }
-
     const ingestionResult = await executeOnMain(
       NODE,
-      "toolRetrievalIngestDocument",
-      {
-        messageRequest: data,
-      }
+      "toolRetrievalIngestNewDocument",
+      data
     );
-
-    console.log("get back data", ingestionResult);
+    return Promise.resolve(ingestionResult);
   }
 
   private static async handleMessageRequest(
