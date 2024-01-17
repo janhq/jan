@@ -100,7 +100,7 @@ const LocalServerScreen = () => {
             <Button
               block
               themes={serverEnabled ? 'danger' : 'success'}
-              disabled={stateModel.loading || firstTimeVisitAPIServer}
+              disabled={stateModel.loading}
               onClick={() => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
@@ -116,6 +116,10 @@ const LocalServerScreen = () => {
                     isVerboseEnabled
                   )
                   setServerEnabled(true)
+                  if (firstTimeVisitAPIServer) {
+                    localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
+                    setFirstTimeVisitAPIServer(false)
+                  }
                 }
               }}
             >
