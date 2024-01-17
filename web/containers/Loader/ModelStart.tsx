@@ -21,8 +21,8 @@ export default function ModelStart() {
         setTimeout(() => {
           setLoader(loader + 1)
         }, 250)
-      } else if (loader === 99) {
-        setLoader(99)
+      } else if (loader === 85) {
+        setLoader(85)
       } else {
         setLoader(loader + 1)
       }

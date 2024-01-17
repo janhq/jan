@@ -131,8 +131,8 @@ export default function DropdownListSidebar() {
         setTimeout(() => {
           setLoader(loader + 1)
         }, 250)
-      } else if (loader === 99) {
-        setLoader(99)
+      } else if (loader === 85) {
+        setLoader(85)
       } else {
         setLoader(loader + 1)
       }
@@ -244,9 +244,7 @@ export default function DropdownListSidebar() {
                     value={x.id}
                     className={twMerge(x.id === selected?.id && 'bg-secondary')}
                     onPointerUp={() => {
-                      if (x.id === selected?.id) {
-                        startModel(x.id)
-                      }
+                      startModel(x.id)
                     }}
                   >
                     <div className="flex w-full justify-between">
