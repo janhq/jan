@@ -17,12 +17,12 @@ import {
 
 import { atom, useAtom } from 'jotai'
 
-import ShortCut from '@/containers/Shortcut'
+import ShortcutModal from '@/containers/ShortcutModal'
+import { toaster } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useSettings } from '@/hooks/useSettings'
-import { toaster } from '@/containers/Toast'
 
 const serverEnabledAtom = atom<boolean>(false)
 
@@ -226,136 +226,7 @@ const Advanced = () => {
             Shortcuts that you might find useful in Jan app.
           </p>
         </div>
-        <Modal>
-          <ModalTrigger asChild>
-            <Button size="sm" themes="secondary">
-              Show
-            </Button>
-          </ModalTrigger>
-          <ModalContent className="max-w-2xl">
-            <ModalHeader>
-              <ModalTitle>Keyboard Shortcuts</ModalTitle>
-            </ModalHeader>
-            <div className="my-2 flex flex-col items-center justify-center gap-2">
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <h6>Combination</h6>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <h6>Description</h6>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <ShortCut menu="E" />
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Show list your models</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <ShortCut menu="K" />
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Show list navigation pages</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <ShortCut menu="B" />
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Toggle collapsible left panel</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <ShortCut menu="," />
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Navigate to setting page</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-                      <p>Enter</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Send a message</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-                      <p>Shift + Enter</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Insert new line in input box</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-                      <p>Arrow Up</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Navigate to previous option (within search dialog)</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-                      <p>Arrow Down</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Navigate to next option (within search dialog)</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </ModalContent>
-        </Modal>
+        <ShortcutModal />
       </div>
     </div>
   )

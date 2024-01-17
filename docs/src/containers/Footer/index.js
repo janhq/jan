@@ -24,7 +24,7 @@ const menus = [
     child: [
       {
         menu: "Documentation",
-        path: "/intro",
+        path: "/developer",
       },
       {
         menu: "Hardware",
