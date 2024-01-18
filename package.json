@@ -17,6 +17,9 @@
       "server"
     ]
   },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
   "scripts": {
     "lint": "yarn workspace jan lint && yarn workspace jan-web lint",
     "test:unit": "yarn workspace @janhq/core test",
@@ -54,8 +57,5 @@
   "engines": {
     "node": ">=18.12.0"
   },
-  "volta": {
-    "node": "20.11.0",
-    "yarn": "3.7.0"
-  }
+  "packageManager": "yarn@1.22.21"
 }

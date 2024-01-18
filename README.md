@@ -1,5 +1,7 @@
 # Jan - Bring AI to your Desktop
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/janhq/jan)
+
 ![Jan banner](https://github.com/janhq/jan/assets/89722390/35daac7d-b895-487c-a6ac-6663daaad78e)
 
 <p align="center">

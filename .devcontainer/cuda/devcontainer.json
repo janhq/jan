@@ -7,8 +7,16 @@
     // Add the 'devcontainer' feature. More info: https://aka.ms/devcontainers/feature
     "features": {
         // Add make
-        "ghcr.io/jungaretti/features/make:1": {}
+        "ghcr.io/jungaretti/features/make:1": {},
+        // Add cuda
+        "ghcr.io/devcontainers/features/nvidia-cuda:1": {
+            "installCudnn": true,
+        }
     },
+    // Use GPU
+    "runArgs": [
+        "--gpus=all"
+    ],
     // Use 'updateContentCommand' to run commands before the container is created.
     "updateContentCommand": "bash .devcontainer/install-dev-tools.sh",
     // Use 'postCreateCommand' to run commands after the container is created.
