@@ -2,16 +2,16 @@ import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { formatDocumentsAsString } from "langchain/util/document";
 import { PDFLoader } from "langchain/document_loaders/fs/pdf";
 
-// import { Chroma } from "@langchain/community/vectorstores/chroma";
-import { HNSWLib } from "langchain/vectorstores/hnswlib";
+// import { HNSWLib } from "langchain/vectorstores/hnswlib";
+const { FaissStore } = require("langchain/vectorstores/faiss");
 
-import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
-const embeddingModel = new HuggingFaceTransformersEmbeddings({
-  modelName: "BAAI/bge-base-en-v1.5",
-});
+// import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
+// const embeddingModel = new HuggingFaceTransformersEmbeddings({
+//   modelName: "BAAI/bge-base-en-v1.5",
+// });
 
-// import { OpenAIEmbeddings } from "langchain/embeddings/openai";
-// const embeddingModel = new OpenAIEmbeddings({});
+import { OpenAIEmbeddings } from "langchain/embeddings/openai";
+const embeddingModel = new OpenAIEmbeddings({});
 
 // console.log(embeddingModel);
 
@@ -41,14 +41,14 @@ export class Retrieval {
     });
     const doc = await loader.load();
     const docs = await this.textSplitter.splitDocuments(doc);
-    const vectorStore = await HNSWLib.fromDocuments(docs, this.embeddingModel);
-    await vectorStore.save(memoryPath);
+    // const vectorStore = await HNSWLib.fromDocuments(docs, this.embeddingModel);
+    // await vectorStore.save(memoryPath);
   };
 
   public loadRetrievalAgent = async (memoryPath: string): Promise<any> => {
-    const vectorStore = await HNSWLib.load(memoryPath, this.embeddingModel);
+    // const vectorStore = await HNSWLib.load(memoryPath, this.embeddingModel);
+    const vectorStore = await FaissStore.load(memoryPath);
     this.retriever = vectorStore.asRetriever(2);
-    await vectorStore.save(memoryPath);
     return Promise.resolve();
   };
 

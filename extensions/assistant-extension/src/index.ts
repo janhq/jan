@@ -114,8 +114,8 @@ export default class JanAssistantExtension implements AssistantExtension {
       ...data,
       model: {
         ...data.model,
-        // engine: data.model.proxyEngine,
-        engine: InferenceEngine.testing,
+        engine: data.model.proxyEngine,
+        // engine: InferenceEngine.testing,
       },
     };
     events.emit(EventName.OnMessageSent, output);

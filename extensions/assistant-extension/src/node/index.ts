@@ -13,7 +13,8 @@ export async function toolRetrievalIngestNewDocument(data: any) {
     `${filesPath.slice(6, -1)}s`, // file:/threads/jan_1705485646/files -> threads/jan_1705485646/files
     `${message_id}.pdf`
   );
-  await retrieval.ingestAgentKnowledge(reconstructedFilePath, memoryPath);
+  console.log("toolRetrievalIngestNewDocument", reconstructedFilePath);
+  // await retrieval.ingestAgentKnowledge(reconstructedFilePath, memoryPath);
   return Promise.resolve();
 }
 
@@ -22,8 +23,7 @@ export async function toolRetrievalLoadThreadMemory(thread: Thread) {
     "toolRetrievalLoadThreadMemory thread object",
     JSON.stringify(thread)
   );
-  console.log("toolRetrievalLoadThreadMemory", thread.id);
-  await retrieval.loadRetrievalAgent(path.join(thread.id, "memory"));
+  // await retrieval.loadRetrievalAgent(path.join(thread.id, "memory"));
   return Promise.resolve();
 }
 
