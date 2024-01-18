@@ -15,6 +15,7 @@ on:
   push:
     branches:
       - main
+      - dev
     paths:
       - "electron/**"
       - .github/workflows/jan-electron-linter-and-test.yml
@@ -31,6 +32,7 @@ on:
   pull_request:
     branches:
       - main
+      - dev
     paths:
       - "electron/**"
       - .github/workflows/jan-electron-linter-and-test.yml

@@ -1,11 +1,22 @@
-import { ScrollArea, Progress, Badge, Button } from '@janhq/uikit'
+import {
+  ScrollArea,
+  Progress,
+  Badge,
+  Button,
+  Tooltip,
+  TooltipArrow,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+} from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { toGibibytes } from '@/utils/converter'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import {
   cpuUsageAtom,
   totalRamAtom,
@@ -19,6 +30,7 @@ export default function SystemMonitorScreen() {
   const usedRam = useAtomValue(usedRamAtom)
   const cpuUsage = useAtomValue(cpuUsageAtom)
   const { activeModel, stateModel, stopModel } = useActiveModel()
+  const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
   return (
     <div className="flex h-full w-full bg-background dark:bg-background">
@@ -94,17 +106,38 @@ export default function SystemMonitorScreen() {
                         <Badge themes="secondary">v{activeModel.version}</Badge>
                       </td>
                       <td className="px-6 py-2 text-center">
-                        <Button
-                          block
-                          themes={
-                            stateModel.state === 'stop' ? 'danger' : 'primary'
-                          }
-                          className="w-16"
-                          loading={stateModel.loading}
-                          onClick={() => stopModel()}
-                        >
-                          Stop
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger className="w-full">
+                            <Button
+                              block
+                              themes={
+                                stateModel.state === 'stop'
+                                  ? 'danger'
+                                  : 'primary'
+                              }
+                              className="w-16"
+                              loading={stateModel.loading}
+                              onClick={() => {
+                                stopModel()
+                                window.core?.api?.stopServer()
+                                setServerEnabled(false)
+                              }}
+                            >
+                              Stop
+                            </Button>
+                          </TooltipTrigger>
+                          {serverEnabled && (
+                            <TooltipPortal>
+                              <TooltipContent side="top">
+                                <span>
+                                  The API server is running, stop the model will
+                                  also stop the server
+                                </span>
+                                <TooltipArrow />
+                              </TooltipContent>
+                            </TooltipPortal>
+                          )}
+                        </Tooltip>
                       </td>
                     </tr>
                   </tbody>

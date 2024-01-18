@@ -17,18 +17,17 @@ import Models from '@/screens/Settings/Models'
 import { formatExtensionsName } from '@/utils/converter'
 
 const SettingsScreen = () => {
-  const [activeStaticMenu, setActiveStaticMenu] = useState('Appearance')
+  const [activeStaticMenu, setActiveStaticMenu] = useState('My Models')
   const [menus, setMenus] = useState<any[]>([])
   const [preferenceItems, setPreferenceItems] = useState<any[]>([])
   const [preferenceValues, setPreferenceValues] = useState<any[]>([])
 
   useEffect(() => {
-    const menu = ['Appearance']
+    const menu = ['My Models', 'My Settings', 'Advanced Settings']
 
     if (typeof window !== 'undefined' && window.electronAPI) {
       menu.push('Extensions')
     }
-    menu.push('Advanced')
     setMenus(menu)
   }, [])
 
@@ -45,13 +44,13 @@ const SettingsScreen = () => {
       case 'Extensions':
         return <ExtensionCatalog />
 
-      case 'Appearance':
+      case 'My Settings':
         return <AppearanceOptions />
 
-      case 'Advanced':
+      case 'Advanced Settings':
         return <Advanced />
 
-      case 'Models':
+      case 'My Models':
         return <Models />
 
       default:
@@ -69,12 +68,9 @@ const SettingsScreen = () => {
     <div className="flex h-full bg-background">
       <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <ScrollArea className="h-full w-full">
-          <div className="p-4">
+          <div className="px-6 py-4">
             <div className="flex-shrink-0">
-              <label className="font-bold uppercase text-muted-foreground">
-                General
-              </label>
-              <div className="mt-2 font-medium">
+              <div className="font-medium">
                 {menus.map((menu, i) => {
                   const isActive = activeStaticMenu === menu
                   return (
@@ -138,37 +134,6 @@ const SettingsScreen = () => {
                     </div>
                   )
                 })}
-              </div>
-            </div>
-
-            <div className="flex-shrink-0">
-              <label className="font-bold uppercase text-muted-foreground">
-                Core extensions
-              </label>
-              <div className="mt-2 font-medium">
-                <div className="relative my-0.5 block py-1.5">
-                  <div
-                    onClick={() => {
-                      setActiveStaticMenu('Models')
-                      setActivePreferenceExtension('')
-                    }}
-                    className="block w-full cursor-pointer"
-                  >
-                    <span
-                      className={twMerge(
-                        activeStaticMenu === 'Models' && 'relative z-10'
-                      )}
-                    >
-                      Models
-                    </span>
-                  </div>
-                  {activeStaticMenu === 'Models' && (
-                    <m.div
-                      className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/50"
-                      layoutId="active-static-core-extentions"
-                    />
-                  )}
-                </div>
               </div>
             </div>
           </div>

@@ -9,7 +9,9 @@ export default function AppearanceOptions() {
           <h6 className="text-sm font-semibold capitalize">
             Base color scheme
           </h6>
-          <p className="leading-relaxed ">Choose between light and dark modes.</p>
+          <p className="leading-relaxed ">
+            Choose between light and dark modes.
+          </p>
         </div>
         <ToggleTheme />
       </div>
