@@ -194,12 +194,31 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           <BubbleLoader />
         ) : (
           <>
-            {props.content[0]?.type === ContentType.Pdf && (
-              <div className="group relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg bg-secondary p-4">
-                <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 backdrop-blur-sm group-hover:inline-block" />
+            {props.content[0]?.type === ContentType.Image && (
+              <div className="group/image relative mb-2 inline-flex overflow-hidden rounded-xl">
+                <img
+                  className="aspect-auto h-[300px]"
+                  alt={props.content[0]?.text.name}
+                  src={props.content[0]?.text.annotations[0]}
+                />
+                <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 group-hover/image:inline-block" />
                 <div
-                  className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover:flex"
-                  onClick={() => onViewFile(`${props.id}.pdf`)}
+                  className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover/image:flex"
+                  onClick={() => onViewFile(`${props.id}.png`)}
+                >
+                  <FolderOpenIcon size={20} />
+                </div>
+              </div>
+            )}
+
+            {props.content[0]?.type === ContentType.Pdf && (
+              <div className="group/file relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg bg-secondary p-4">
+                <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 backdrop-blur-sm group-hover/file:inline-block" />
+                <div
+                  className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover/file:flex"
+                  onClick={() =>
+                    onViewFile(`${props.id}.${props.content[0]?.type}`)
+                  }
                 >
                   <FolderOpenIcon size={20} />
                 </div>
@@ -224,14 +243,6 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               // eslint-disable-next-line @typescript-eslint/naming-convention
               dangerouslySetInnerHTML={{ __html: parsedText }}
             />
-
-            {props.content[0]?.type === ContentType.Image && (
-              <img
-                className="aspect-auto h-[300px] rounded-xl"
-                alt={props.content[0]?.text.annotations[0]}
-                src={props.content[0]?.text.annotations[0]}
-              />
-            )}
           </>
         )}
       </div>

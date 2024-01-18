@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react'
 import { useState } from 'react'
 
-import { useAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
+
+import { XIcon } from 'lucide-react'
 
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
@@ -13,7 +15,7 @@ type Props = {
 
 const ImageUploadPreview: React.FC<Props> = ({ file }) => {
   const [base64, setBase64] = useState<string | undefined>()
-  const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
+  const setFileUpload = useSetAtom(fileUploadAtom)
 
   useEffect(() => {
     getBase64(file)
@@ -30,9 +32,22 @@ const ImageUploadPreview: React.FC<Props> = ({ file }) => {
   }
 
   return (
-    <div className="flex flex-col">
-      <div onClick={onDeleteClick}>Delete</div>
-      <img src={base64} alt="" />
+    // <div className="flex flex-col">
+    //   <div onClick={onDeleteClick}>Delete</div>
+    //   <img src={base64} alt="" />
+    // </div>
+    <div className="flex flex-col rounded-t-lg border border-b-0 border-border p-4">
+      <div className="relative w-60 rounded-lg bg-secondary p-4">
+        {/* <Icon type={fileUpload[0].type} /> */}
+        <img src={base64} alt={file.name} className="object-cover" />
+        <h6 className="mt-2 font-medium">{file.name}</h6>
+        <div
+          className="absolute -right-2 -top-2 cursor-pointer rounded-full bg-foreground p-0.5"
+          onClick={onDeleteClick}
+        >
+          <XIcon size={14} className="text-background" />
+        </div>
+      </div>
     </div>
   )
 }
