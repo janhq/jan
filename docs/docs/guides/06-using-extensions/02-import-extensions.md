@@ -26,4 +26,4 @@ You need to prepare the extension file in `.tgz` format to install.
 
 ![Manual Installation](./assets/02-import-extensions.gif)
 
-If you want to build your own extension, please refer to [Developer Guide - Build Your First Extension](/developer/build-extension/your-first-extension/).
+If you want to build your own extension, please refer to the [Build Your First Extension | Developer Documentation](/developer/build-extension/your-first-extension/).
