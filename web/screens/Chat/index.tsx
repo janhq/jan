@@ -67,8 +67,8 @@ const ChatScreen: React.FC = () => {
               </span>
             </div>
           )}
+          <ChatInput />
         </div>
-        <ChatInput />
       </div>
       {/* Right side bar */}
       {activeThread && <Sidebar />}

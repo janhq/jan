@@ -76,8 +76,25 @@ export const usePath = () => {
     openFileExplorer(fullPath)
   }
 
+  const onViewFile = async (id: string) => {
+    if (!activeThread) return
+    const activeThreadState = threadStates[activeThread.id]
+    if (!activeThreadState.isFinishInit) {
+      alert('Thread is not started yet')
+      return
+    }
+
+    const userSpace = await getUserSpace()
+    let filePath = undefined
+    filePath = await joinPath(['threads', `${activeThread.id}/files`, `${id}`])
+    if (!filePath) return
+    const fullPath = await joinPath([userSpace, filePath])
+    openFileExplorer(fullPath)
+  }
+
   return {
     onReviewInFinder,
     onViewJson,
+    onViewFile,
   }
 }

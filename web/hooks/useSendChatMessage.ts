@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
 import {
@@ -25,8 +26,8 @@ import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 import { getBase64 } from '@/utils/base64'
+import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { useActiveModel } from './useActiveModel'
 
@@ -305,6 +306,8 @@ export default function useSendChatMessage() {
         text: {
           value: prompt,
           annotations: [base64Blob],
+          name: fileUpload[0].file.name,
+          size: fileUpload[0].file.size,
         },
       })
     }

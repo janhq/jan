@@ -10,6 +10,7 @@ import {
 import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
+import { FolderOpenIcon } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
 
 import { markedHighlight } from 'marked-highlight'
@@ -22,8 +23,12 @@ import BubbleLoader from '@/containers/Loader/Bubble'
 
 import { useClipboard } from '@/hooks/useClipboard'
 
+import { usePath } from '@/hooks/usePath'
+
+import { toGibibytes } from '@/utils/converter'
 import { displayDate } from '@/utils/datetime'
 
+import Icon from '../FileUploadPreview/Icon'
 import MessageToolbar from '../MessageToolbar'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
@@ -34,6 +39,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     text = props.content[0]?.text?.value ?? ''
   }
   const clipboard = useClipboard({ timeout: 1000 })
+  const { onViewFile } = usePath()
 
   const marked: Marked = new Marked(
     markedHighlight({
@@ -188,6 +194,26 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           <BubbleLoader />
         ) : (
           <>
+            {props.content[0]?.type === ContentType.Pdf && (
+              <div className="group relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg bg-secondary p-4">
+                <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 backdrop-blur-sm group-hover:inline-block" />
+                <div
+                  className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover:flex"
+                  onClick={() => onViewFile(`${props.id}.pdf`)}
+                >
+                  <FolderOpenIcon size={20} />
+                </div>
+                <Icon type={props.content[0].type} />
+
+                <div>
+                  <h6 className="font-medium">{props.content[0].text.name}</h6>
+                  <p className="text-muted-foreground">
+                    {toGibibytes(Number(props.content[0].text.size))}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div
               className={twMerge(
                 'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
@@ -198,9 +224,11 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               // eslint-disable-next-line @typescript-eslint/naming-convention
               dangerouslySetInnerHTML={{ __html: parsedText }}
             />
+
             {props.content[0]?.type === ContentType.Image && (
               <img
                 className="aspect-auto h-[300px] rounded-xl"
+                alt={props.content[0]?.text.annotations[0]}
                 src={props.content[0]?.text.annotations[0]}
               />
             )}

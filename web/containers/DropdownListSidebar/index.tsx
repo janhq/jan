@@ -160,7 +160,7 @@ export default function DropdownListSidebar() {
   return (
     <div
       className={twMerge(
-        'relative w-full overflow-hidden rounded-md',
+        'relative w-full rounded-md',
         stateModel.loading && 'pointer-events-none bg-blue-200 text-blue-600'
       )}
     >
