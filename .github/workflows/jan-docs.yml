@@ -22,7 +22,6 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     env:
-      CLOUDFLARE_ACCOUNT_ID: 9707100ef42a1a25bd70e3ee2137bd0e
       CLOUDFLARE_PROJECT_NAME: jan
     runs-on: ubuntu-latest
     permissions:
@@ -62,14 +61,25 @@ jobs:
         working-directory: docs
 
       - name: Publish to Cloudflare Pages PR Preview and Staging
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main') || (github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'dev')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
           directory: ./docs/build
-          branch: dev
+          branch: main
+          # Optional: Enable this if you want to have GitHub Deployments triggered
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to Cloudflare Pages PR Preview and Staging
+        if: github.event_name == 'pull_request'
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
+          directory: ./docs/build
           # Optional: Enable this if you want to have GitHub Deployments triggered
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
         id: deployCloudflarePages
