@@ -19,14 +19,17 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     outputs:
       public_provider: ${{ steps.set-public-provider.outputs.public_provider }}
+      ref: ${{ steps.set-public-provider.outputs.ref }}
     steps:
       - name: Set public provider
         id: set-public-provider
         run: |
           if [ ${{ github.event == 'workflow_dispatch' }} ]; then
             echo "::set-output name=public_provider::${{ github.event.inputs.public_provider }}"
+            echo "::set-output name=ref::${{ github.ref }}"
           else
             echo "::set-output name=public_provider::cloudflare-r2"
+            echo "::set-output name=ref::refs/heads/dev"
           fi
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
@@ -37,7 +40,7 @@ jobs:
     needs: [get-update-version, set-public-provider]
     secrets: inherit
     with:
-      ref: refs/heads/dev
+      ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
@@ -46,7 +49,7 @@ jobs:
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
-      ref: refs/heads/dev
+      ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
@@ -56,17 +59,28 @@ jobs:
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
-      ref: refs/heads/dev
+      ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-nightly-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version]
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider]
     secrets: inherit
     if: github.event_name == 'schedule'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
     with:
-      ref: refs/heads/dev
+      ref: ${{ needs.set-public-provider.outputs.ref }}
       build_reason: Nightly
+      push_to_branch: main
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  noti-discord-manual-and-update-url-readme:
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider]
+    secrets: inherit
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'cloudflare-r2'
+    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      build_reason: Manual
       push_to_branch: main
       new_version: ${{ needs.get-update-version.outputs.new_version }}
