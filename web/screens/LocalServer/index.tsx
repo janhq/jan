@@ -126,7 +126,7 @@ const LocalServerScreen = () => {
               {serverEnabled ? 'Stop' : 'Start'} Server
             </Button>
             <Button block themes="secondaryBlue" asChild>
-              <a href="https://jan.ai/api-reference/" target="_blank">
+              <a href="http://localhost:1337/static/index.html" target="_blank">
                 API Reference <ExternalLinkIcon size={20} className="ml-2" />
               </a>
             </Button>
