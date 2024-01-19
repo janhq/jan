@@ -41,7 +41,7 @@ export default function FeatureToggleWrapper({
       localStorage.getItem(IGNORE_SSL) === 'true'
     )
     directSetProxy(
-      localStorage.getItem(HTTPS_PROXY_FEATURE)
+      localStorage.getItem(HTTPS_PROXY_FEATURE) ?? ""
     )
   }, [])
 
