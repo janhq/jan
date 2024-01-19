@@ -1,10 +1,19 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 
-import { useContext, useEffect, useState } from 'react'
+import { useContext, useEffect, useState, useCallback, ChangeEvent } from 'react'
 
 import { fs } from '@janhq/core'
-import { Switch, Button } from '@janhq/uikit'
+import {
+  Switch,
+  Button,
+  Input,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@janhq/uikit'
 
 import ShortcutModal from '@/containers/ShortcutModal'
 
@@ -15,11 +24,22 @@ import { FeatureToggleContext } from '@/context/FeatureToggle'
 import { useSettings } from '@/hooks/useSettings'
 
 const Advanced = () => {
-  const { experimentalFeatureEnabed, setExperimentalFeatureEnabled } =
+  const { experimentalFeature, setExperimentalFeature, ignoreSSL, setIgnoreSSL, proxy, setProxy } =
     useContext(FeatureToggleContext)
+  const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
+  const onProxyChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value || ''
+    setPartialProxy(value)
+    if (value.trim().startsWith('http')) {
+      setProxy(value.trim())
+    }
+    else {
+      setProxy('')
+    }
+  }, [setPartialProxy, setProxy])
 
   useEffect(() => {
     readSettings().then((settings) => {
@@ -81,12 +101,53 @@ const Advanced = () => {
           </p>
         </div>
         <Switch
-          checked={experimentalFeatureEnabed}
+          checked={experimentalFeature}
           onCheckedChange={(e) => {
             if (e === true) {
-              setExperimentalFeatureEnabled(true)
+              setExperimentalFeature(true)
             } else {
-              setExperimentalFeatureEnabled(false)
+              setExperimentalFeature(false)
+            }
+          }}
+        />
+      </div>
+      {/* Proxy */}
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">
+              HTTPS Proxy
+            </h6>
+          </div>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            Specify the HTTPS proxy or leave blank (proxy auto-configuration and SOCKS not supported).
+          </p>
+          <Input
+            placeholder={"http://<user>:<password>@<domain or IP>:<port>"}
+            value={partialProxy}
+            onChange={onProxyChange}
+          />
+        </div>
+      </div>
+      {/* Ignore SSL certificates */}
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">
+              Ignore SSL certificates
+            </h6>
+          </div>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            Allow self-signed or unverified certificates - may be required for certain proxies.
+          </p>
+        </div>
+        <Switch
+          checked={ignoreSSL}
+          onCheckedChange={(e) => {
+            if (e === true) {
+              setIgnoreSSL(true)
+            } else {
+              setIgnoreSSL(false)
             }
           }}
         />
