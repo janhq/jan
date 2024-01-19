@@ -19,6 +19,8 @@ const DEFALT_SETTINGS = {
   },
   gpus: [],
   gpu_highest_vram: "",
+  gpus_in_use: "",
+  is_initial: true,
 };
 
 /**
@@ -48,11 +50,15 @@ export interface NitroProcessInfo {
  */
 export async function updateNvidiaInfo() {
   if (process.platform !== "darwin") {
-    await Promise.all([
-      updateNvidiaDriverInfo(),
-      updateCudaExistence(),
-      updateGpuInfo(),
-    ]);
+    let data;
+    try {
+      data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
+    } catch (error) {
+      data = DEFALT_SETTINGS;
+      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
+    }
+    updateNvidiaDriverInfo();
+    updateGpuInfo();
   }
 }
 
@@ -73,12 +79,7 @@ export async function updateNvidiaDriverInfo(): Promise<void> {
   exec(
     "nvidia-smi --query-gpu=driver_version --format=csv,noheader",
     (error, stdout) => {
-      let data;
-      try {
-        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-      } catch (error) {
-        data = DEFALT_SETTINGS;
-      }
+      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
 
       if (!error) {
         const firstLine = stdout.split("\n")[0].trim();
@@ -107,7 +108,7 @@ export function checkFileExistenceInPaths(
 /**
  * Validate cuda for linux and windows
  */
-export function updateCudaExistence() {
+export function updateCudaExistence(data: Record<string, any> = DEFALT_SETTINGS): Record<string, any> {
   let filesCuda12: string[];
   let filesCuda11: string[];
   let paths: string[];
@@ -141,19 +142,14 @@ export function updateCudaExistence() {
     cudaVersion = "12";
   }
 
-  let data;
-  try {
-    data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-  } catch (error) {
-    data = DEFALT_SETTINGS;
-  }
-
   data["cuda"].exist = cudaExists;
   data["cuda"].version = cudaVersion;
-  if (cudaExists) {
+  console.log(data["is_initial"], data["gpus_in_use"]);
+  if (cudaExists && data["is_initial"] && data["gpus_in_use"] !== "") {
     data.run_mode = "gpu";
   }
-  writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
+  data.is_initial = false;
+  return data;
 }
 
 /**
@@ -163,12 +159,7 @@ export async function updateGpuInfo(): Promise<void> {
   exec(
     "nvidia-smi --query-gpu=index,memory.total --format=csv,noheader,nounits",
     (error, stdout) => {
-      let data;
-      try {
-        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-      } catch (error) {
-        data = DEFALT_SETTINGS;
-      }
+      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
 
       if (!error) {
         // Get GPU info and gpu has higher memory first
@@ -187,12 +178,18 @@ export async function updateGpuInfo(): Promise<void> {
             return { id, vram };
           });
 
-        data["gpus"] = gpus;
-        data["gpu_highest_vram"] = highestVramId;
+        data.gpus = gpus;
+        data.gpu_highest_vram = highestVramId;
       } else {
-        data["gpus"] = [];
+        data.gpus = [];
+        data.gpu_highest_vram = "";
       }
 
+      if (!data["gpus_in_use"] || data["gpus_in_use"] === "") {
+        data.gpus_in_use = data["gpu_highest_vram"];
+      }
+
+      data = updateCudaExistence(data);
       writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
       Promise.resolve();
     }

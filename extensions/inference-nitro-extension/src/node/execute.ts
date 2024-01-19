@@ -26,11 +26,11 @@ export const executableNitroFile = (): NitroExecutableOptions => {
       binaryFolder = path.join(binaryFolder, "win-cpu");
     } else {
       if (nvidiaInfo["cuda"].version === "12") {
-        binaryFolder = path.join(binaryFolder, "win-cuda-12-0");
-      } else {
         binaryFolder = path.join(binaryFolder, "win-cuda-11-7");
+      } else {
+        binaryFolder = path.join(binaryFolder, "win-cuda-12-0");
       }
-      cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];
+      cudaVisibleDevices = nvidiaInfo["gpus_in_use"];
     }
     binaryName = "nitro.exe";
   } else if (process.platform === "darwin") {
@@ -51,11 +51,11 @@ export const executableNitroFile = (): NitroExecutableOptions => {
       binaryFolder = path.join(binaryFolder, "linux-cpu");
     } else {
       if (nvidiaInfo["cuda"].version === "12") {
-        binaryFolder = path.join(binaryFolder, "linux-cuda-12-0");
-      } else {
         binaryFolder = path.join(binaryFolder, "linux-cuda-11-7");
+      } else {
+        binaryFolder = path.join(binaryFolder, "linux-cuda-12-0");
       }
-      cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];
+      cudaVisibleDevices = nvidiaInfo["gpus_in_use"];
     }
   }
   return {
