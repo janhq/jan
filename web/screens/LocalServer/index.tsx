@@ -125,11 +125,13 @@ const LocalServerScreen = () => {
             >
               {serverEnabled ? 'Stop' : 'Start'} Server
             </Button>
-            <Button block themes="secondaryBlue" asChild>
-              <a href={`http://localhost:${port}`} target="_blank">
-                API Reference <ExternalLinkIcon size={20} className="ml-2" />
-              </a>
-            </Button>
+            {serverEnabled && (
+              <Button block themes="secondaryBlue" asChild>
+                <a href={`http://localhost:${port}`} target="_blank">
+                  API Reference <ExternalLinkIcon size={20} className="ml-2" />
+                </a>
+              </Button>
+            )}
           </div>
         </div>
 
