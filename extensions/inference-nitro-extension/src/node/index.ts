@@ -123,7 +123,7 @@ async function runModel(
       llama_model_path: currentModelFile,
       ...wrapper.model.settings,
       // This is critical and requires real system information
-      cpu_threads: nitroResourceProbe.numCpuPhysicalCore,
+      cpu_threads: Math.max(1, Math.round(nitroResourceProbe.numCpuPhysicalCore / 2)),
     };
     return runNitroAndLoadModel();
   }
