@@ -1,5 +1,10 @@
 {
-    "source_url": "https://huggingface.co/NeverSleep/Noromaid-7b-v0.1.1-GGUF/resolve/main/Noromaid-7b-v0.1.1.q5_k_m.gguf",
+    "source": [
+      {
+        "filename": "Noromaid-7b-v0.1.1.q5_k_m.gguf",
+        "url": "https://huggingface.co/NeverSleep/Noromaid-7b-v0.1.1-GGUF/resolve/main/Noromaid-7b-v0.1.1.q5_k_m.gguf"
+      }
+    ],
     "id": "noromaid-7b",
     "object": "model",
     "name": "Noromaid 7B Q5",

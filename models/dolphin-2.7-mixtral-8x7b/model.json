@@ -1,5 +1,10 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/dolphin-2.7-mixtral-8x7b-GGUF/resolve/main/dolphin-2.7-mixtral-8x7b.Q4_K_M.gguf",
+    "source": [
+      {
+        "filename": "dolphin-2.7-mixtral-8x7b.Q4_K_M.gguf",
+        "url": "https://huggingface.co/TheBloke/dolphin-2.7-mixtral-8x7b-GGUF/resolve/main/dolphin-2.7-mixtral-8x7b.Q4_K_M.gguf"
+      }
+    ],
     "id": "dolphin-2.7-mixtral-8x7b",
     "object": "model",
     "name": "Dolphin 8x7B Q4",

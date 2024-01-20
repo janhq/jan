@@ -31,7 +31,6 @@ In this section, we will show you how to import a GGUF model from [HuggingFace](
 
 ## Manually Importing a Downloaded Model (nightly versions and v0.4.4+)
 
-
 ### 1. Create a Model Folder
 
 Navigate to the `~/jan/models` folder. You can find this folder by going to `App Settings` > `Advanced` > `Open App Directory`.
@@ -92,7 +91,7 @@ Drag and drop your model binary into this folder, ensuring the `modelname.gguf` 
 
 #### 3. Voila
 
-If your model doesn't show up in the Model Selector in conversations, please restart the app. 
+If your model doesn't show up in the Model Selector in conversations, please restart the app.
 
 If that doesn't work, please feel free to join our [Discord community](https://discord.gg/Dt7MxDyNNZ) for support, updates, and discussions.
 
@@ -190,14 +189,19 @@ Edit `model.json` and include the following configurations:
 - Ensure the filename must be `model.json`.
 - Ensure the `id` property matches the folder name you created.
 - Ensure the GGUF filename should match the `id` property exactly.
-- Ensure the `source_url` property is the direct binary download link ending in `.gguf`. In HuggingFace, you can find the direct links in the `Files and versions` tab.
+- Ensure the `source.url` property is the direct binary download link ending in `.gguf`. In HuggingFace, you can find the direct links in the `Files and versions` tab.
 - Ensure you are using the correct `prompt_template`. This is usually provided in the HuggingFace model's description page.
 - Ensure the `state` property is set to `ready`.
 
 ```json title="model.json"
 {
   // highlight-start
-  "source_url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf",
+  "source": [
+    {
+      "filename": "trinity-v1.Q4_K_M.gguf",
+      "url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf"
+    }
+  ]
   "id": "trinity-v1-7b",
   // highlight-end
   "object": "model",
@@ -208,7 +212,8 @@ Edit `model.json` and include the following configurations:
   "settings": {
     "ctx_len": 4096,
     // highlight-next-line
-    "prompt_template": "{system_message}\n### Instruction:\n{prompt}\n### Response:"
+    "prompt_template": "{system_message}\n### Instruction:\n{prompt}\n### Response:",
+    "llama_model_path": "trinity-v1.Q4_K_M.gguf"
   },
   "parameters": {
     "max_tokens": 4096

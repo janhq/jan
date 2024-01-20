@@ -49,7 +49,12 @@ Navigate to the `~/jan/models` folder. Create a folder named `<openrouter-modeln
 
 ```json title="~/jan/models/openrouter-dolphin-mixtral-8x7b/model.json"
 {
-  "source_url": "https://openrouter.ai/",
+  "source": [
+    {
+      "filename": "openrouter",
+      "url": "https://openrouter.ai/"
+    }
+  ],
   "id": "cognitivecomputations/dolphin-mixtral-8x7b",
   "object": "model",
   "name": "Dolphin 2.6 Mixtral 8x7B",

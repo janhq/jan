@@ -56,7 +56,6 @@ jan/                               # Jan root folder
 
 - Each `model` folder contains a `model.json` file, which is a representation of a model.
 - `model.json` contains metadata and default parameters used to run a model.
-- The only required field is `source_url`.
 
 ### Example
 
@@ -66,7 +65,12 @@ Here's a standard example `model.json` for a GGUF model.
 {
 "id": "zephyr-7b",                  // Defaults to foldername
 "object": "model",                  // Defaults to "model"
-"source_url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf",
+"source": [
+    {
+        "filename": "zephyr-7b-beta.Q4_K_M.gguf",
+        "url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf"
+    }
+]
 "name": "Zephyr 7B",                // Defaults to foldername
 "owned_by": "you",                  // Defaults to "you"
 "version": "1",                     // Defaults to 1
@@ -76,14 +80,14 @@ Here's a standard example `model.json` for a GGUF model.
 "format": "ggufv3",                 // Defaults to "ggufv3"
 "engine": "nitro",                // engine_id specified in jan/engine folder
 "engine_parameters": {              // Engine parameters inside model.json can override
-    "ctx_len": 2048,                // the value inside the base engine.json
+    "ctx_len": 4096,                // the value inside the base engine.json
     "ngl": 100,
     "embedding": true,
     "n_parallel": 4,
 },
 "model_parameters": {                     // Models are called parameters
     "stream": true,
-    "max_tokens": 2048,
+    "max_tokens": 4096,
     "stop": ["<endofstring>"],      // This usually can be left blank, only used with specific need from model author
     "frequency_penalty": 0,
     "presence_penalty": 0,

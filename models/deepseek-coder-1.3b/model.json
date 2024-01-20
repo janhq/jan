@@ -1,6 +1,10 @@
-
 {
-    "source_url": "https://huggingface.co/TheBloke/deepseek-coder-1.3b-instruct-GGUF/resolve/main/deepseek-coder-1.3b-instruct.Q8_0.gguf",
+    "source": [
+      {
+        "filename": "deepseek-coder-1.3b-instruct.Q8_0.gguf",
+        "url": "https://huggingface.co/TheBloke/deepseek-coder-1.3b-instruct-GGUF/resolve/main/deepseek-coder-1.3b-instruct.Q8_0.gguf"
+      }
+    ],
     "id": "deepseek-coder-1.3b",
     "object": "model",
     "name": "Deepseek Coder 1.3B Q8",
@@ -9,7 +13,8 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "prompt_template": "### Instruction:\n{prompt}\n### Response:"
+      "prompt_template": "### Instruction:\n{prompt}\n### Response:",
+      "llama_model_path": "deepseek-coder-1.3b-instruct.Q8_0.gguf"
     },
     "parameters": {
       "temperature": 0.7,

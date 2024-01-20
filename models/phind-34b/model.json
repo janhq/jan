@@ -1,5 +1,10 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/Phind-CodeLlama-34B-v2-GGUF/resolve/main/phind-codellama-34b-v2.Q5_K_M.gguf",
+  "source": [
+    {
+      "filename": "phind-codellama-34b-v2.Q5_K_M.gguf",
+      "url": "https://huggingface.co/TheBloke/Phind-CodeLlama-34B-v2-GGUF/resolve/main/phind-codellama-34b-v2.Q5_K_M.gguf"
+    }
+  ],
     "id": "phind-34b",
     "object": "model",
     "name": "Phind 34B Q5",

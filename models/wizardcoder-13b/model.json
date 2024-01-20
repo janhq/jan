@@ -1,5 +1,10 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/WizardCoder-Python-13B-V1.0-GGUF/resolve/main/wizardcoder-python-13b-v1.0.Q5_K_M.gguf",
+    "source": [
+      {
+        "filename": "wizardcoder-python-13b-v1.0.Q5_K_M.gguf",
+        "url": "https://huggingface.co/TheBloke/WizardCoder-Python-13B-V1.0-GGUF/resolve/main/wizardcoder-python-13b-v1.0.Q5_K_M.gguf"
+      }
+    ],
     "id": "wizardcoder-13b",
     "object": "model",
     "name": "Wizard Coder Python 13B Q5",
@@ -8,7 +13,8 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "prompt_template": "### Instruction:\n{prompt}\n### Response:"
+      "prompt_template": "### Instruction:\n{prompt}\n### Response:",
+      "llama_model_path": "wizardcoder-python-13b-v1.0.Q5_K_M.gguf"
     },
     "parameters": {
       "temperature": 0.7,

@@ -2,7 +2,12 @@
   "object": "model",
   "version": 1,
   "format": "gguf",
-  "source_url": "N/A",
+  "source": [
+    {
+      "url": "N/A",
+      "filename": "N/A"
+    }
+  ],
   "id": "N/A",
   "name": "N/A",
   "created": 0,

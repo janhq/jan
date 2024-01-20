@@ -119,11 +119,19 @@ async function runModel(
       wrapper.model.settings.ai_prompt = prompt.ai_prompt;
     }
 
+    const modelFolderPath = path.join(janRoot, "models", wrapper.model.id);
+    const modelPath = wrapper.model.settings.llama_model_path
+      ? path.join(modelFolderPath, wrapper.model.settings.llama_model_path)
+      : currentModelFile;
+
     currentSettings = {
-      llama_model_path: currentModelFile,
+      llama_model_path: modelPath,
       ...wrapper.model.settings,
       // This is critical and requires real CPU physical core count (or performance core)
       cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
+      ...(wrapper.model.settings.mmproj && {
+        mmproj: path.join(modelFolderPath, wrapper.model.settings.mmproj),
+      }),
     };
     console.log(currentSettings);
     return runNitroAndLoadModel();

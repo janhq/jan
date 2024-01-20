@@ -1,5 +1,10 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_K_M.gguf",
+    "source": [
+      {
+        "filename": "llama-2-7b-chat.Q4_K_M.gguf",
+        "url": "https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_K_M.gguf"
+      }
+    ],
     "id": "llama2-chat-7b-q4",
     "object": "model",
     "name": "Llama 2 Chat 7B Q4",
@@ -8,7 +13,8 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "prompt_template": "[INST] <<SYS>>\n{system_message}<</SYS>>\n{prompt}[/INST]"
+      "prompt_template": "[INST] <<SYS>>\n{system_message}<</SYS>>\n{prompt}[/INST]",
+      "llama_model_path": "llama-2-7b-chat.Q4_K_M.gguf"
     },
     "parameters": {
       "temperature": 0.7,

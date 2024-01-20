@@ -1,5 +1,10 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/openchat-3.5-1210-GGUF/resolve/main/openchat-3.5-1210.Q4_K_M.gguf",
+    "source": [
+      {
+        "filename": "openchat-3.5-1210.Q4_K_M.gguf",
+        "url": "https://huggingface.co/TheBloke/openchat-3.5-1210-GGUF/resolve/main/openchat-3.5-1210.Q4_K_M.gguf"
+      }
+    ],
     "id": "openchat-3.5-7b",
     "object": "model",
     "name": "Openchat-3.5 7B Q4",
