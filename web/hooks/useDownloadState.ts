@@ -38,6 +38,9 @@ const setDownloadStateFailedAtom = atom(
       console.debug(`Cannot find download state for ${modelId}`)
       return
     }
+    if (error.includes('certificate')) {
+      error += '. To fix enable "Ignore SSL Certificates" in Advanced settings.'
+    }
     toaster({
       title: 'Download Failed',
       description: `Model ${modelId} download failed: ${error}`,

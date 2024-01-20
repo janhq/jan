@@ -15,7 +15,7 @@ const ExtensionCatalog = () => {
   const [activeExtensions, setActiveExtensions] = useState<any[]>([])
   const [extensionCatalog, setExtensionCatalog] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const { experimentalFeatureEnabed } = useContext(FeatureToggleContext)
+  const { experimentalFeature } = useContext(FeatureToggleContext)
   /**
    * Loads the extension catalog module from a CDN and sets it as the extension catalog state.
    */
@@ -27,11 +27,11 @@ const ExtensionCatalog = () => {
     // Get extension manifest
     import(/* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`).then(
       (data) => {
-        if (Array.isArray(data.default) && experimentalFeatureEnabed)
+        if (Array.isArray(data.default) && experimentalFeature)
           setExtensionCatalog(data.default)
       }
     )
-  }, [experimentalFeatureEnabed])
+  }, [experimentalFeature])
 
   /**
    * Fetches the active extensions and their preferences from the `extensions` and `preferences` modules.
