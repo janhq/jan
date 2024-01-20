@@ -49,7 +49,6 @@ export default class JanModelExtension implements ModelExtension {
 
   private async copyModelsToHomeDir() {
     try {
-      
       // Check for migration conditions
       if (
         localStorage.getItem(`${EXTENSION_NAME}-version`) === VERSION &&
@@ -83,21 +82,33 @@ export default class JanModelExtension implements ModelExtension {
    * @param network - Optional object to specify proxy/whether to ignore SSL certificates.
    * @returns A Promise that resolves when the model is downloaded.
    */
-  async downloadModel(model: Model, network?: { ignoreSSL?: boolean; proxy?: string }): Promise<void> {
+  async downloadModel(
+    model: Model,
+    network?: { ignoreSSL?: boolean; proxy?: string }
+  ): Promise<void> {
+    const ignoreSSL = !network?.ignoreSSL
+    const proxy = network?.proxy?.startsWith('http') ? network.proxy : undefined
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
-
-    // try to retrieve the download file name from the source url
-    // if it fails, use the model ID as the file name
-    const extractedFileName = await model.source_url.split('/').pop()
-    const fileName = extractedFileName
-      .toLowerCase()
-      .endsWith(JanModelExtension._supportedModelFormat)
-      ? extractedFileName
-      : model.id
-    const path = await joinPath([modelDirPath, fileName])
-    downloadFile(model.source_url, path, network)
+    if (model.source.length > 1) {
+      // path to model binaries
+      for (const modelFile of model.source) {
+        const path = await joinPath([modelDirPath, modelFile.filename])
+        downloadFile(modelFile.url, path, { proxy, ignoreSSL })
+      }
+    } else {
+      // try to retrieve the download file name from the source url
+      // if it fails, use the model ID as the file name
+      const extractedFileName = model.source[0]?.url.split('/').pop()
+      const fileName = extractedFileName
+        .toLowerCase()
+        .endsWith(JanModelExtension._supportedModelFormat)
+        ? extractedFileName
+        : model.id
+      const path = await joinPath([modelDirPath, fileName])
+      downloadFile(model.source[0]?.url, path, { proxy, ignoreSSL })
+    }
   }
 
   /**
@@ -106,6 +117,7 @@ export default class JanModelExtension implements ModelExtension {
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   async cancelModelDownload(modelId: string): Promise<void> {
+    const model = await this.getConfiguredModels()
     return abortDownload(
       await joinPath([JanModelExtension._homeDir, modelId, modelId])
     ).then(async () => {
@@ -120,6 +132,7 @@ export default class JanModelExtension implements ModelExtension {
    * @param filePath - The path to the model file to delete.
    * @returns A Promise that resolves when the model is deleted.
    */
+  // TODO: Fix for cancel/ delete multiple model binaries
   async deleteModel(modelId: string): Promise<void> {
     try {
       const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
@@ -206,7 +219,6 @@ export default class JanModelExtension implements ModelExtension {
 
       const readJsonPromises = allDirectories.map(async (dirName) => {
         // filter out directories that don't match the selector
-
         // read model.json
         const jsonPath = await joinPath([
           JanModelExtension._homeDir,
@@ -234,7 +246,20 @@ export default class JanModelExtension implements ModelExtension {
       const modelData = results.map((result) => {
         if (result.status === 'fulfilled') {
           try {
-            return result.value as Model
+            const tmpModel =
+              typeof result.value === 'object'
+                ? result.value
+                : JSON.parse(result.value)
+            if (tmpModel['source_url'] != null) {
+              tmpModel['source'] = [
+                {
+                  filename: tmpModel.id,
+                  url: tmpModel['source_url'],
+                },
+              ]
+            }
+
+            return tmpModel as Model
           } catch {
             console.debug(`Unable to parse model metadata: ${result.value}`)
             return undefined
