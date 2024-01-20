@@ -3,12 +3,12 @@
  * @stored
  */
 export type ModelInfo = {
-  id: string
-  settings: ModelSettingParams
-  parameters: ModelRuntimeParams
-  engine?: InferenceEngine
-  proxyEngine?: InferenceEngine
-}
+  id: string;
+  settings: ModelSettingParams;
+  parameters: ModelRuntimeParams;
+  engine?: InferenceEngine;
+  proxyEngine?: InferenceEngine;
+};
 
 /**
  * Represents the inference engine.
@@ -16,13 +16,18 @@ export type ModelInfo = {
  */
 
 export enum InferenceEngine {
-  nitro = 'nitro',
-  openai = 'openai',
-  triton_trtllm = 'triton_trtllm',
+  nitro = "nitro",
+  openai = "openai",
+  triton_trtllm = "triton_trtllm",
 
-  tool_retrieval_enabled = 'tool_retrieval_enabled',
-  testing = 'testing',
+  tool_retrieval_enabled = "tool_retrieval_enabled",
+  testing = "testing",
 }
+
+export type ModelArtifact = {
+  filename: string;
+  url: string;
+};
 
 /**
  * Model type defines the shape of a model object.
@@ -33,104 +38,106 @@ export type Model = {
    * The type of the object.
    * Default: "model"
    */
-  object: string
+  object: string;
 
   /**
    * The version of the model.
    */
-  version: number
+  version: number;
 
   /**
    * The format of the model.
    */
-  format: string
+  format: string;
 
   /**
    * The model download source. It can be an external url or a local filepath.
    */
-  source_url: string
+  source: ModelArtifact[];
 
   /**
    * The model identifier, which can be referenced in the API endpoints.
    */
-  id: string
+  id: string;
 
   /**
    * Human-readable name that is used for UI.
    */
-  name: string
+  name: string;
 
   /**
    * The Unix timestamp (in seconds) for when the model was created
    */
-  created: number
+  created: number;
 
   /**
    * Default: "A cool model from Huggingface"
    */
-  description: string
+  description: string;
 
   /**
    * The model settings.
    */
-  settings: ModelSettingParams
+  settings: ModelSettingParams;
 
   /**
    * The model runtime parameters.
    */
-  parameters: ModelRuntimeParams
+  parameters: ModelRuntimeParams;
 
   /**
    * Metadata of the model.
    */
-  metadata: ModelMetadata
+  metadata: ModelMetadata;
   /**
    * The model engine.
    */
-  engine: InferenceEngine
+  engine: InferenceEngine;
 
-  proxyEngine?: InferenceEngine
+  proxyEngine?: InferenceEngine;
 
   /**
    * Is multimodal or not.
    */
-  visionModel?: boolean
-}
+  visionModel?: boolean;
+};
 
 export type ModelMetadata = {
-  author: string
-  tags: string[]
-  size: number
-  cover?: string
-}
+  author: string;
+  tags: string[];
+  size: number;
+  cover?: string;
+};
 
 /**
  * The available model settings.
  */
 export type ModelSettingParams = {
-  ctx_len?: number
-  ngl?: number
-  embedding?: boolean
-  n_parallel?: number
-  cpu_threads?: number
-  prompt_template?: string
-  system_prompt?: string
-  ai_prompt?: string
-  user_prompt?: string
-}
+  ctx_len?: number;
+  ngl?: number;
+  embedding?: boolean;
+  n_parallel?: number;
+  cpu_threads?: number;
+  prompt_template?: string;
+  system_prompt?: string;
+  ai_prompt?: string;
+  user_prompt?: string;
+  llama_model_path?: string;
+  mmproj?: string;
+};
 
 /**
  * The available model runtime parameters.
  */
 export type ModelRuntimeParams = {
-  temperature?: number
-  token_limit?: number
-  top_k?: number
-  top_p?: number
-  stream?: boolean
-  max_tokens?: number
-  stop?: string[]
-  frequency_penalty?: number
-  presence_penalty?: number
-  engine?: string
-}
+  temperature?: number;
+  token_limit?: number;
+  top_k?: number;
+  top_p?: number;
+  stream?: boolean;
+  max_tokens?: number;
+  stop?: string[];
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  engine?: string;
+};
