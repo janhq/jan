@@ -1,38 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 
-import React, { useState, useEffect, useRef, useContext } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
 import { Button } from '@janhq/uikit'
-
-import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { formatExtensionsName } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
+import Extension from '@/extension/Extension'
 
 const ExtensionCatalog = () => {
-  const [activeExtensions, setActiveExtensions] = useState<any[]>([])
-  const [extensionCatalog, setExtensionCatalog] = useState<any[]>([])
+  const [activeExtensions, setActiveExtensions] = useState<Extension[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const { experimentalFeature } = useContext(FeatureToggleContext)
-  /**
-   * Loads the extension catalog module from a CDN and sets it as the extension catalog state.
-   */
-  useEffect(() => {
-    if (!window.electronAPI) {
-      return
-    }
-
-    // Get extension manifest
-    import(/* webpackIgnore: true */ PLUGIN_CATALOG + `?t=${Date.now()}`).then(
-      (data) => {
-        if (Array.isArray(data.default) && experimentalFeature)
-          setExtensionCatalog(data.default)
-      }
-    )
-  }, [experimentalFeature])
-
   /**
    * Fetches the active extensions and their preferences from the `extensions` and `preferences` modules.
    * If the `experimentComponent` extension point is available, it executes the extension point and
@@ -90,57 +69,28 @@ const ExtensionCatalog = () => {
 
   return (
     <div className="block w-full">
-      {extensionCatalog
-        .concat(
-          activeExtensions.filter(
-            (e) => !(extensionCatalog ?? []).some((p) => p.name === e.name)
-          ) ?? []
-        )
-        .map((item, i) => {
-          const isActiveExtension = activeExtensions.some(
-            (x) => x.name === item.name
-          )
-          const installedExtension = activeExtensions.filter(
-            (p) => p.name === item.name
-          )[0]
-          const updateVersionExtensions = Number(
-            installedExtension?.version.replaceAll('.', '')
-          )
-
-          const hasUpdateVersionExtensions =
-            item.version.replaceAll('.', '') > updateVersionExtensions
-
-          return (
-            <div
-              key={i}
-              className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none"
-            >
-              <div className="w-4/5 flex-shrink-0 space-y-1.5">
-                <div className="flex gap-x-2">
-                  <h6 className="text-sm font-semibold capitalize">
-                    {formatExtensionsName(item.name)}
-                  </h6>
-                  <p className="whitespace-pre-wrap font-semibold leading-relaxed ">
-                    v{item.version}
-                  </p>
-                </div>
-                <p className="whitespace-pre-wrap leading-relaxed ">
-                  {item.description}
+      {activeExtensions.map((item, i) => {
+        return (
+          <div
+            key={i}
+            className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none"
+          >
+            <div className="w-4/5 flex-shrink-0 space-y-1.5">
+              <div className="flex gap-x-2">
+                <h6 className="text-sm font-semibold capitalize">
+                  {formatExtensionsName(item.name ?? item.description ?? '')}
+                </h6>
+                <p className="whitespace-pre-wrap font-semibold leading-relaxed ">
+                  v{item.version}
                 </p>
-                {isActiveExtension && (
-                  <div className="flex items-center gap-x-2">
-                    <p className="whitespace-pre-wrap leading-relaxed ">
-                      Installed{' '}
-                      {hasUpdateVersionExtensions
-                        ? `v${installedExtension.version}`
-                        : 'the latest version'}
-                    </p>
-                  </div>
-                )}
               </div>
+              <p className="whitespace-pre-wrap leading-relaxed ">
+                {item.description}
+              </p>
             </div>
-          )
-        })}
+          </div>
+        )
+      })}
       {/* Manual Installation */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="w-4/5 flex-shrink-0 space-y-1.5">

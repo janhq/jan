@@ -29,7 +29,8 @@ export default function FeatureToggleWrapper({
   const EXPERIMENTAL_FEATURE = 'experimentalFeature'
   const IGNORE_SSL = 'ignoreSSLFeature'
   const HTTPS_PROXY_FEATURE = 'httpsProxyFeature'
-  const [experimentalFeature, directSetExperimentalFeature] = useState<boolean>(false)
+  const [experimentalFeature, directSetExperimentalFeature] =
+    useState<boolean>(false)
   const [ignoreSSL, directSetIgnoreSSL] = useState<boolean>(false)
   const [proxy, directSetProxy] = useState<string>('')
 
@@ -37,12 +38,8 @@ export default function FeatureToggleWrapper({
     directSetExperimentalFeature(
       localStorage.getItem(EXPERIMENTAL_FEATURE) === 'true'
     )
-    directSetIgnoreSSL(
-      localStorage.getItem(IGNORE_SSL) === 'true'
-    )
-    directSetProxy(
-      localStorage.getItem(HTTPS_PROXY_FEATURE) ?? ""
-    )
+    directSetIgnoreSSL(localStorage.getItem(IGNORE_SSL) === 'true')
+    directSetProxy(localStorage.getItem(HTTPS_PROXY_FEATURE) ?? '')
   }, [])
 
   const setExperimentalFeature = (on: boolean) => {

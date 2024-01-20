@@ -104,8 +104,8 @@ export const useCreateNewThread = () => {
     }
 
     extensionManager
-        .get<ConversationalExtension>(ExtensionType.Conversational)
-        ?.saveThread(thread)
+      .get<ConversationalExtension>(ExtensionType.Conversational)
+      ?.saveThread(thread)
   }
 
   return {

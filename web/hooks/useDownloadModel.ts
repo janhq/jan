@@ -1,3 +1,5 @@
+import { useContext } from 'react'
+
 import {
   Model,
   ExtensionType,
@@ -8,14 +10,14 @@ import {
 
 import { useSetAtom } from 'jotai'
 
+import { FeatureToggleContext } from '@/context/FeatureToggle'
+
 import { modelBinFileName } from '@/utils/model'
 
 import { useDownloadState } from './useDownloadState'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import { addNewDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
-import { useContext } from 'react'
-import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 export default function useDownloadModel() {
   const { ignoreSSL, proxy } = useContext(FeatureToggleContext)

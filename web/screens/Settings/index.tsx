@@ -9,8 +9,7 @@ import { twMerge } from 'tailwind-merge'
 
 import Advanced from '@/screens/Settings/Advanced'
 import AppearanceOptions from '@/screens/Settings/Appearance'
-import ExtensionCatalog from '@/screens/Settings/CoreExtensions/ExtensionsCatalog'
-import PreferenceExtensions from '@/screens/Settings/CoreExtensions/PreferenceExtensions'
+import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 
 import Models from '@/screens/Settings/Models'
 
@@ -19,8 +18,6 @@ import { formatExtensionsName } from '@/utils/converter'
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('My Models')
   const [menus, setMenus] = useState<any[]>([])
-  const [preferenceItems, setPreferenceItems] = useState<any[]>([])
-  const [preferenceValues, setPreferenceValues] = useState<any[]>([])
 
   useEffect(() => {
     const menu = ['My Models', 'My Settings', 'Advanced Settings']
@@ -30,12 +27,6 @@ const SettingsScreen = () => {
     }
     setMenus(menu)
   }, [])
-
-  const preferenceExtensions = preferenceItems
-    .map((x) => x.extensionnName)
-    .filter((x, i) => {
-      //     return prefere/nceItems.map((x) => x.extensionName).indexOf(x) === i
-    })
 
   const [activePreferenceExtension, setActivePreferenceExtension] = useState('')
 
@@ -52,15 +43,6 @@ const SettingsScreen = () => {
 
       case 'My Models':
         return <Models />
-
-      default:
-        return (
-          <PreferenceExtensions
-            extensionName={menu}
-            preferenceItems={preferenceItems}
-            preferenceValues={preferenceValues}
-          />
-        )
     }
   }
 
@@ -92,45 +74,6 @@ const SettingsScreen = () => {
                           layoutId="active-static-menu"
                         />
                       )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="mt-5 flex-shrink-0">
-              {preferenceExtensions.length > 0 && (
-                <label className="font-bold uppercase text-muted-foreground">
-                  Core Extensions
-                </label>
-              )}
-              <div className="mt-2 font-medium">
-                {preferenceExtensions.map((menu, i) => {
-                  const isActive = activePreferenceExtension === menu
-                  return (
-                    <div key={i} className="relative my-0.5 block py-1.5">
-                      <div
-                        onClick={() => {
-                          setActivePreferenceExtension(menu)
-                          setActiveStaticMenu('')
-                        }}
-                        className="block w-full cursor-pointer"
-                      >
-                        <span
-                          className={twMerge(
-                            'capitalize',
-                            isActive && 'relative z-10'
-                          )}
-                        >
-                          {formatExtensionsName(String(menu))}
-                        </span>
-                      </div>
-                      {isActive ? (
-                        <m.div
-                          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/50"
-                          layoutId="active-static-menu"
-                        />
-                      ) : null}
                     </div>
                   )
                 })}
