@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { BaseExtension, ExtensionType } from '@janhq/core'
+import { BaseExtension, ExtensionTypeEnum } from '@janhq/core'
 
 import Extension from './Extension'
 
@@ -23,7 +23,7 @@ export class ExtensionManager {
    * @param type - The type of the extension to retrieve.
    * @returns The extension, if found.
    */
-  get<T extends BaseExtension>(type: ExtensionType): T | undefined {
+  get<T extends BaseExtension>(type: ExtensionTypeEnum): T | undefined {
     return this.extensions.get(type) as T | undefined
   }
 

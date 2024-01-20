@@ -1,6 +1,6 @@
 import {
   EventName,
-  ExtensionType,
+  ExtensionTypeEnum,
   Thread,
   events,
   ConversationalExtension,
@@ -33,7 +33,7 @@ export default function useSetActiveThread() {
 
     // load the corresponding messages
     const messages = await extensionManager
-      .get<ConversationalExtension>(ExtensionType.Conversational)
+      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.getAllMessages(thread.id)
     setThreadMessage(thread.id, messages ?? [])
 

@@ -12,7 +12,6 @@ import {
   EventName,
   MessageRequest,
   MessageStatus,
-  ExtensionType,
   ThreadContent,
   ThreadMessage,
   events,
@@ -32,7 +31,7 @@ import { ulid } from "ulid";
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceNitroExtension implements InferenceExtension {
+export default class JanInferenceNitroExtension extends InferenceExtension {
   private static readonly _homeDir = "file://engines";
   private static readonly _settingsDir = "file://settings";
   private static readonly _engineMetadataFileName = "nitro.json";
@@ -65,14 +64,6 @@ export default class JanInferenceNitroExtension implements InferenceExtension {
    * Tracking the current state of nitro process.
    */
   private nitroProcessInfo: any = undefined;
-
-  /**
-   * Returns the type of the extension.
-   * @returns {ExtensionType} The type of the extension.
-   */
-  type(): ExtensionType {
-    return ExtensionType.Inference;
-  }
 
   /**
    * Subscribes to events emitted by the @janhq/core package.

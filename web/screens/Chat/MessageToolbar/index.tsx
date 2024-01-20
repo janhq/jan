@@ -1,6 +1,6 @@
 import {
   MessageStatus,
-  ExtensionType,
+  ExtensionTypeEnum,
   ThreadMessage,
   ChatCompletionRole,
 } from '@janhq/core'
@@ -31,7 +31,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
     deleteMessage(message.id ?? '')
     if (thread) {
       await extensionManager
-        .get<ConversationalExtension>(ExtensionType.Conversational)
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.writeMessages(
           thread.id,
           messages.filter((msg) => msg.id !== message.id)

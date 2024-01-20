@@ -7,7 +7,7 @@ import {
   EventName,
   MessageRequest,
   MessageStatus,
-  ExtensionType,
+  ExtensionTypeEnum,
   Thread,
   ThreadMessage,
   events,
@@ -181,7 +181,7 @@ export default function useSendChatMessage() {
       updateThread(updatedThread)
 
       await extensionManager
-        .get<ConversationalExtension>(ExtensionType.Conversational)
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.saveThread(updatedThread)
     }
 
@@ -253,7 +253,7 @@ export default function useSendChatMessage() {
     addNewMessage(threadMessage)
 
     await extensionManager
-      .get<ConversationalExtension>(ExtensionType.Conversational)
+      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.addNewMessage(threadMessage)
 
     const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id

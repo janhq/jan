@@ -12,13 +12,12 @@ import {
   EventName,
   MessageRequest,
   MessageStatus,
-  ExtensionType,
   ThreadContent,
   ThreadMessage,
   events,
   fs,
+  BaseExtension,
 } from "@janhq/core";
-import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
 import { join } from "path";
@@ -28,7 +27,7 @@ import { join } from "path";
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceOpenAIExtension implements InferenceExtension {
+export default class JanInferenceOpenAIExtension extends BaseExtension {
   private static readonly _homeDir = "file://engines";
   private static readonly _engineMetadataFileName = "openai.json";
 
@@ -42,14 +41,6 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   controller = new AbortController();
   isCancelled = false;
 
-  /**
-   * Returns the type of the extension.
-   * @returns {ExtensionType} The type of the extension.
-   */
-  // TODO: To fix
-  type(): ExtensionType {
-    return undefined;
-  }
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
@@ -104,43 +95,6 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
       console.error(err);
     }
   }
-
-  /**
-   * Makes a single response inference request.
-   * @param {MessageRequest} data - The data for the inference request.
-   * @returns {Promise<any>} A promise that resolves with the inference response.
-   */
-  async inference(data: MessageRequest): Promise<ThreadMessage> {
-    const timestamp = Date.now();
-
-    const message: ThreadMessage = {
-      thread_id: data.threadId,
-      created: timestamp,
-      updated: timestamp,
-      status: MessageStatus.Ready,
-      id: "",
-      role: ChatCompletionRole.Assistant,
-      object: "thread.message",
-      content: [],
-    };
-
-    return new Promise(async (resolve, reject) => {
-      requestInference(
-        data.messages ?? [],
-        JanInferenceOpenAIExtension._engineSettings,
-        JanInferenceOpenAIExtension._currentModel
-      ).subscribe({
-        next: (_content) => {},
-        complete: async () => {
-          resolve(message);
-        },
-        error: async (err) => {
-          reject(err);
-        },
-      });
-    });
-  }
-
   private static async handleModelInit(model: OpenAIModel) {
     if (model.engine !== "openai") {
       return;

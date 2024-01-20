@@ -1,7 +1,7 @@
 import {
   Assistant,
   ConversationalExtension,
-  ExtensionType,
+  ExtensionTypeEnum,
   Thread,
   ThreadAssistantInfo,
   ThreadState,
@@ -104,8 +104,8 @@ export const useCreateNewThread = () => {
     }
 
     extensionManager
-        .get<ConversationalExtension>(ExtensionType.Conversational)
-        ?.saveThread(thread)
+      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+      ?.saveThread(thread)
   }
 
   return {

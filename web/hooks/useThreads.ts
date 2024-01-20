@@ -1,5 +1,5 @@
 import {
-  ExtensionType,
+  ExtensionTypeEnum,
   Thread,
   ThreadState,
   ConversationalExtension,
@@ -99,7 +99,7 @@ const useThreads = () => {
 
 const getLocalThreads = async (): Promise<Thread[]> =>
   (await extensionManager
-    .get<ConversationalExtension>(ExtensionType.Conversational)
+    .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
     ?.getThreads()) ?? []
 
 export default useThreads

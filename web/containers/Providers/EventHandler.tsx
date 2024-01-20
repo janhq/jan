@@ -5,7 +5,7 @@ import {
   events,
   EventName,
   ThreadMessage,
-  ExtensionType,
+  ExtensionTypeEnum,
   MessageStatus,
   Model,
   ConversationalExtension,
@@ -100,14 +100,14 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           lastMessage: messageContent,
         }
         extensionManager
-          .get<ConversationalExtension>(ExtensionType.Conversational)
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.saveThread({
             ...thread,
             metadata,
           })
 
         extensionManager
-          .get<ConversationalExtension>(ExtensionType.Conversational)
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.addNewMessage(message)
       }
     }
