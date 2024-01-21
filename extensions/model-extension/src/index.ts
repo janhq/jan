@@ -79,24 +79,35 @@ export default class JanModelExtension extends ModelExtension {
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
+
     if (model.source.length > 1) {
       // path to model binaries
       for (const modelFile of model.source) {
-        const path = await joinPath([modelDirPath, modelFile.filename])
+        let path = this.extractFileName(modelFile.url)
+        if (modelFile.filename) {
+          path = await joinPath([modelDirPath, modelFile.filename])
+        }
+
         downloadFile(modelFile.url, path, network)
       }
     } else {
-      // try to retrieve the download file name from the source url
-      // if it fails, use the model ID as the file name
-      const extractedFileName = model.source[0]?.url.split('/').pop()
-      const fileName = extractedFileName
-        .toLowerCase()
-        .endsWith(JanModelExtension._supportedModelFormat)
-        ? extractedFileName
-        : model.id
+      const fileName = this.extractFileName(model.source[0]?.url)
       const path = await joinPath([modelDirPath, fileName])
       downloadFile(model.source[0]?.url, path, network)
     }
+  }
+
+  /**
+   *  try to retrieve the download file name from the source url
+   */
+  private extractFileName(url: string): string {
+    const extractedFileName = url.split('/').pop()
+    const fileName = extractedFileName
+      .toLowerCase()
+      .endsWith(JanModelExtension._supportedModelFormat)
+      ? extractedFileName
+      : extractedFileName + JanModelExtension._supportedModelFormat
+    return fileName
   }
 
   /**
