@@ -1,34 +1,32 @@
 {
-    "source": [
-      {
-        "filename": "Noromaid-7b-v0.1.1.q5_k_m.gguf",
-        "url": "https://huggingface.co/NeverSleep/Noromaid-7b-v0.1.1-GGUF/resolve/main/Noromaid-7b-v0.1.1.q5_k_m.gguf"
-      }
-    ],
-    "id": "noromaid-7b",
-    "object": "model",
-    "name": "Noromaid 7B Q5",
-    "version": "1.0",
-    "description": "The Noromaid 7b model is designed for role-playing with human-like behavior.",
-    "format": "gguf",
-    "settings": {
-      "ctx_len": 4096,
-      "prompt_template": "### Instruction:{prompt}\n### Response:"
-    },
-    "parameters": {
-      "temperature": 0.7,
-      "top_p": 0.95,
-      "stream": true,
-      "max_tokens": 4096,
-      "stop": [],
-      "frequency_penalty": 0,
-      "presence_penalty": 0
-    },
-    "metadata": {
-      "author": "NeverSleep",
-      "tags": ["7B", "Merged"],
-      "size": 4370000000
-    },
-    "engine": "nitro"
-  }
-  
+  "source": [
+    {
+      "url": "https://huggingface.co/NeverSleep/Noromaid-7b-v0.1.1-GGUF/resolve/main/Noromaid-7b-v0.1.1.q5_k_m.gguf"
+    }
+  ],
+  "id": "noromaid-7b",
+  "object": "model",
+  "name": "Noromaid 7B Q5",
+  "version": "1.0",
+  "description": "The Noromaid 7b model is designed for role-playing with human-like behavior.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "### Instruction:{prompt}\n### Response:"
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 4096,
+    "stop": [],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "NeverSleep",
+    "tags": ["7B", "Merged"],
+    "size": 4370000000
+  },
+  "engine": "nitro"
+}
