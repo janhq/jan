@@ -125,8 +125,8 @@ async function runModel(
       : currentModelFile;
 
     currentSettings = {
-      llama_model_path: modelPath,
       ...wrapper.model.settings,
+      llama_model_path: modelPath,
       // This is critical and requires real CPU physical core count (or performance core)
       cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
       ...(wrapper.model.settings.mmproj && {

@@ -182,15 +182,16 @@ export default class JanModelExtension extends ModelExtension {
           .then((files: string[]) => {
             // or model binary exists in the directory
             // model binary name can match model ID or be a .gguf file and not be an incompleted model file
+            // TODO: Check diff between urls, filenames
             return (
               files.includes(modelDir) ||
-              files.some(
+              files.filter(
                 (file) =>
                   file
                     .toLowerCase()
                     .includes(JanModelExtension._supportedModelFormat) &&
                   !file.endsWith(JanModelExtension._incompletedModelFileName)
-              )
+              )?.length >= model.source.length
             )
           })
       }
