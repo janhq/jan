@@ -17,6 +17,5 @@
     "author": "OpenAI",
     "tags": ["General", "Big Context Length"]
   },
-  "engine": "openai",
-  "state": "ready"
+  "engine": "openai"
 }

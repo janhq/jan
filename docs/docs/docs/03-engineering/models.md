@@ -63,41 +63,43 @@ Here's a standard example `model.json` for a GGUF model.
 
 ```js
 {
-"id": "zephyr-7b",                  // Defaults to foldername
-"object": "model",                  // Defaults to "model"
-"source": [
+  "id": "zephyr-7b",        // Defaults to foldername
+  "object": "model",        // Defaults to "model"
+  "source": [
     {
-        "filename": "zephyr-7b-beta.Q4_K_M.gguf",
-        "url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf"
+      "filename": "zephyr-7b-beta.Q4_K_M.gguf",
+      "url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf"
     }
-]
-"name": "Zephyr 7B",                // Defaults to foldername
-"owned_by": "you",                  // Defaults to "you"
-"version": "1",                     // Defaults to 1
-"created": 1231231,                 // Defaults to file creation time
-"description": null,                // Defaults to null
-"state": enum[null, "ready"]
-"format": "ggufv3",                 // Defaults to "ggufv3"
-"engine": "nitro",                // engine_id specified in jan/engine folder
-"engine_parameters": {              // Engine parameters inside model.json can override
-    "ctx_len": 4096,                // the value inside the base engine.json
+  ],
+  "name": "Zephyr 7B",      // Defaults to foldername
+  "owned_by": "you",        // Defaults to "you"
+  "version": "1",           // Defaults to 1
+  "created": 1231231,       // Defaults to file creation time
+  "description": null,      // Defaults to null
+  "format": "ggufv3",       // Defaults to "ggufv3"
+  "engine": "nitro",        // engine_id specified in jan/engine folder
+  "engine_parameters": {
+    // Engine parameters inside model.json can override
+    "ctx_len": 4096,        // the value inside the base engine.json
     "ngl": 100,
     "embedding": true,
-    "n_parallel": 4,
-},
-"model_parameters": {                     // Models are called parameters
+    "n_parallel": 4
+  },
+  "model_parameters": {
+    // Models are called parameters
     "stream": true,
     "max_tokens": 4096,
-    "stop": ["<endofstring>"],      // This usually can be left blank, only used with specific need from model author
+    "stop": ["<endofstring>"], // This usually can be left blank, only used with specific need from model author
     "frequency_penalty": 0,
     "presence_penalty": 0,
     "temperature": 0.7,
     "top_p": 0.95
-},
-"metadata": {},                     // Defaults to {}
-"assets": [                         // Defaults to current dir
-    "file://.../zephyr-7b-q4_k_m.bin",
-]
+  },
+  "metadata": {},           // Defaults to {}
+  "assets": [
+    // Defaults to current dir
+    "file://.../zephyr-7b-q4_k_m.bin"
+  ]
 }
 ```
 
