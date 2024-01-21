@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { EventName, events, Model } from '@janhq/core'
+import { events, Model, ModelEvent } from '@janhq/core'
 import { atom, useAtom, useAtomValue } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -64,14 +63,14 @@ export function useActiveModel() {
     }
 
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
-    events.emit(EventName.OnModelInit, model)
+    events.emit(ModelEvent.OnModelInit, model)
   }
 
   const stopModel = async () => {
     if (activeModel) {
       setActiveModel(undefined)
       setStateModel({ state: 'stop', loading: true, model: activeModel.id })
-      events.emit(EventName.OnModelStop, activeModel)
+      events.emit(ModelEvent.OnModelStop, activeModel)
     }
   }
 

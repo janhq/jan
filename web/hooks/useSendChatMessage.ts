@@ -4,7 +4,6 @@ import {
   ChatCompletionMessage,
   ChatCompletionRole,
   ContentType,
-  EventName,
   MessageRequest,
   MessageStatus,
   ExtensionTypeEnum,
@@ -13,6 +12,7 @@ import {
   events,
   Model,
   ConversationalExtension,
+  MessageEvent,
 } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -116,7 +116,7 @@ export default function useSendChatMessage() {
       await WaitForModelStarting(modelId)
       setQueuedMessage(false)
     }
-    events.emit(EventName.OnMessageSent, messageRequest)
+    events.emit(MessageEvent.OnMessageSent, messageRequest)
   }
 
   // TODO: Refactor @louis
@@ -265,7 +265,7 @@ export default function useSendChatMessage() {
       setQueuedMessage(false)
     }
 
-    events.emit(EventName.OnMessageSent, messageRequest)
+    events.emit(MessageEvent.OnMessageSent, messageRequest)
 
     setReloadModel(false)
     setEngineParamsUpdate(false)

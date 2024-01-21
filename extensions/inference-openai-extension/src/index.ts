@@ -9,7 +9,6 @@
 import {
   ChatCompletionRole,
   ContentType,
-  EventName,
   MessageRequest,
   MessageStatus,
   ThreadContent,
@@ -17,6 +16,9 @@ import {
   events,
   fs,
   BaseExtension,
+  MessageEvent,
+  ModelEvent,
+  InferenceEvent,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
@@ -54,18 +56,18 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
     JanInferenceOpenAIExtension.writeDefaultEngineSettings();
 
     // Events subscription
-    events.on(EventName.OnMessageSent, (data) =>
+    events.on(MessageEvent.OnMessageSent, (data) =>
       JanInferenceOpenAIExtension.handleMessageRequest(data, this)
     );
 
-    events.on(EventName.OnModelInit, (model: OpenAIModel) => {
+    events.on(ModelEvent.OnModelInit, (model: OpenAIModel) => {
       JanInferenceOpenAIExtension.handleModelInit(model);
     });
 
-    events.on(EventName.OnModelStop, (model: OpenAIModel) => {
+    events.on(ModelEvent.OnModelStop, (model: OpenAIModel) => {
       JanInferenceOpenAIExtension.handleModelStop(model);
     });
-    events.on(EventName.OnInferenceStopped, () => {
+    events.on(InferenceEvent.OnInferenceStopped, () => {
       JanInferenceOpenAIExtension.handleInferenceStopped(this);
     });
   }
@@ -102,7 +104,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       JanInferenceOpenAIExtension._currentModel = model;
       JanInferenceOpenAIExtension.writeDefaultEngineSettings();
       // Todo: Check model list with API key
-      events.emit(EventName.OnModelReady, model);
+      events.emit(ModelEvent.OnModelReady, model);
     }
   }
 
@@ -110,7 +112,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
     if (model.engine !== "openai") {
       return;
     }
-    events.emit(EventName.OnModelStopped, model);
+    events.emit(ModelEvent.OnModelStopped, model);
   }
 
   private static async handleInferenceStopped(
@@ -146,7 +148,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       updated: timestamp,
       object: "thread.message",
     };
-    events.emit(EventName.OnMessageResponse, message);
+    events.emit(MessageEvent.OnMessageResponse, message);
 
     instance.isCancelled = false;
     instance.controller = new AbortController();
@@ -169,18 +171,18 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
           },
         };
         message.content = [messageContent];
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
       complete: async () => {
         message.status = message.content.length
           ? MessageStatus.Ready
           : MessageStatus.Error;
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
       error: async (err) => {
         if (instance.isCancelled || message.content.length > 0) {
           message.status = MessageStatus.Error;
-          events.emit(EventName.OnMessageUpdate, message);
+          events.emit(MessageEvent.OnMessageUpdate, message);
           return;
         }
         const messageContent: ThreadContent = {
@@ -192,7 +194,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
         };
         message.content = [messageContent];
         message.status = MessageStatus.Ready;
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
     });
   }

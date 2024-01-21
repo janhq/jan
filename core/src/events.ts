@@ -1,28 +1,3 @@
-// TODO: refactor EventName to use the events defined in /types
-/**
- * The `EventName` enumeration contains the names of all the available events in the Jan platform.
- */
-export enum EventName {
-  /** The `OnMessageSent` event is emitted when a message is sent. */
-  OnMessageSent = 'OnMessageSent',
-  /** The `OnMessageResponse` event is emitted when a message is received. */
-  OnMessageResponse = 'OnMessageResponse',
-  /** The `OnMessageUpdate` event is emitted when a message is updated. */
-  OnMessageUpdate = 'OnMessageUpdate',
-  /** The `OnModelInit` event is emitted when a model inits. */
-  OnModelInit = 'OnModelInit',
-  /** The `OnModelReady` event is emitted when a model ready. */
-  OnModelReady = 'OnModelReady',
-  /** The `OnModelFail` event is emitted when a model fails loading. */
-  OnModelFail = 'OnModelFail',
-  /** The `OnModelStop` event is emitted when a model start to stop. */
-  OnModelStop = 'OnModelStop',
-  /** The `OnModelStopped` event is emitted when a model stopped ok. */
-  OnModelStopped = 'OnModelStopped',
-  /** The `OnInferenceStopped` event is emitted when a inference is stopped. */
-  OnInferenceStopped = 'OnInferenceStopped',
-}
-
 /**
  * Adds an observer for an event.
  *

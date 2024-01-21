@@ -33,7 +33,7 @@ import * as node from "@janhq/core/node";
       export default class MyExtension extends BaseExtension {
         // On extension load
         onLoad() {
-          core.events.on(EventName.OnMessageSent, (data) => MyExtension.inference(data, this));
+          core.events.on(MessageEvent.OnMessageSent, (data) => MyExtension.inference(data, this));
         }
 
         // Customized inference logic

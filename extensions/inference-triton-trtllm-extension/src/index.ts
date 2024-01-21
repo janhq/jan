@@ -9,7 +9,6 @@
 import {
   ChatCompletionRole,
   ContentType,
-  EventName,
   MessageRequest,
   MessageStatus,
   ModelSettingParams,
@@ -19,6 +18,8 @@ import {
   fs,
   Model,
   BaseExtension,
+  MessageEvent,
+  ModelEvent,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
@@ -53,15 +54,15 @@ export default class JanInferenceTritonTrtLLMExtension
       JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings();
 
     // Events subscription
-    events.on(EventName.OnMessageSent, (data) =>
+    events.on(MessageEvent.OnMessageSent, (data) =>
       JanInferenceTritonTrtLLMExtension.handleMessageRequest(data, this)
     );
 
-    events.on(EventName.OnModelInit, (model: Model) => {
+    events.on(ModelEvent.OnModelInit, (model: Model) => {
       JanInferenceTritonTrtLLMExtension.handleModelInit(model);
     });
 
-    events.on(EventName.OnModelStop, (model: Model) => {
+    events.on(ModelEvent.OnModelStop, (model: Model) => {
       JanInferenceTritonTrtLLMExtension.handleModelStop(model);
     });
   }
@@ -129,8 +130,7 @@ export default class JanInferenceTritonTrtLLMExtension
       JanInferenceTritonTrtLLMExtension._currentModel = model;
       JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings();
       // Todo: Check model list with API key
-      events.emit(EventName.OnModelReady, model);
-      // events.emit(EventName.OnModelFail, model)
+      events.emit(ModelEvent.OnModelReady, model);
     }
   }
 
@@ -138,7 +138,7 @@ export default class JanInferenceTritonTrtLLMExtension
     if (model.engine !== "triton_trtllm") {
       return;
     }
-    events.emit(EventName.OnModelStopped, model);
+    events.emit(ModelEvent.OnModelStopped, model);
   }
 
   /**
@@ -167,7 +167,7 @@ export default class JanInferenceTritonTrtLLMExtension
       updated: timestamp,
       object: "thread.message",
     };
-    events.emit(EventName.OnMessageResponse, message);
+    events.emit(MessageEvent.OnMessageResponse, message);
 
     instance.isCancelled = false;
     instance.controller = new AbortController();
@@ -190,18 +190,18 @@ export default class JanInferenceTritonTrtLLMExtension
           },
         };
         message.content = [messageContent];
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
       complete: async () => {
         message.status = message.content.length
           ? MessageStatus.Ready
           : MessageStatus.Error;
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
       error: async (err) => {
         if (instance.isCancelled || message.content.length) {
           message.status = MessageStatus.Error;
-          events.emit(EventName.OnMessageUpdate, message);
+          events.emit(MessageEvent.OnMessageUpdate, message);
           return;
         }
         const messageContent: ThreadContent = {
@@ -213,7 +213,7 @@ export default class JanInferenceTritonTrtLLMExtension
         };
         message.content = [messageContent];
         message.status = MessageStatus.Ready;
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
     });
   }

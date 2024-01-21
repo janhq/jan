@@ -3,12 +3,13 @@ import { ReactNode, useEffect, useRef } from 'react'
 
 import {
   events,
-  EventName,
   ThreadMessage,
   ExtensionTypeEnum,
   MessageStatus,
   Model,
   ConversationalExtension,
+  MessageEvent,
+  ModelEvent,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -115,19 +116,19 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (window.core?.events) {
-      events.on(EventName.OnMessageResponse, handleNewMessageResponse)
-      events.on(EventName.OnMessageUpdate, handleMessageResponseUpdate)
-      events.on(EventName.OnModelReady, handleModelReady)
-      events.on(EventName.OnModelFail, handleModelFail)
-      events.on(EventName.OnModelStopped, handleModelStopped)
+      events.on(MessageEvent.OnMessageResponse, handleNewMessageResponse)
+      events.on(MessageEvent.OnMessageUpdate, handleMessageResponseUpdate)
+      events.on(ModelEvent.OnModelReady, handleModelReady)
+      events.on(ModelEvent.OnModelFail, handleModelFail)
+      events.on(ModelEvent.OnModelStopped, handleModelStopped)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     return () => {
-      events.off(EventName.OnMessageResponse, handleNewMessageResponse)
-      events.off(EventName.OnMessageUpdate, handleMessageResponseUpdate)
+      events.off(MessageEvent.OnMessageResponse, handleNewMessageResponse)
+      events.off(MessageEvent.OnMessageUpdate, handleMessageResponseUpdate)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

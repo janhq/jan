@@ -1,5 +1,5 @@
 import {
-  EventName,
+  InferenceEvent,
   ExtensionTypeEnum,
   Thread,
   events,
@@ -29,7 +29,7 @@ export default function useSetActiveThread() {
       return
     }
 
-    events.emit(EventName.OnInferenceStopped, thread.id)
+    events.emit(InferenceEvent.OnInferenceStopped, thread.id)
 
     // load the corresponding messages
     const messages = await extensionManager
