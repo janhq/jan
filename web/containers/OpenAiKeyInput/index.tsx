@@ -20,6 +20,7 @@ const OpenAiKeyInput: React.FC<Props> = ({ selectedModel, serverEnabled }) => {
     readOpenAISettings().then((settings) => {
       setOpenAISettings(settings)
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (!selectedModel || selectedModel.engine !== InferenceEngine.openai) {

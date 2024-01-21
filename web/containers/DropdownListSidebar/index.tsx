@@ -158,85 +158,87 @@ export default function DropdownListSidebar() {
   }
 
   return (
-    <div
-      className={twMerge(
-        'relative w-full overflow-hidden rounded-md',
-        stateModel.loading && 'pointer-events-none bg-blue-200 text-blue-600'
-      )}
-    >
-      <Select value={selectedModel?.id} onValueChange={onValueSelected}>
-        <SelectTrigger className="relative w-full">
-          <SelectValue placeholder="Choose model to start">
-            {stateModel.loading && (
-              <div
-                className="z-5 absolute left-0 top-0 h-full w-full rounded-md bg-blue-100/80"
-                style={{ width: `${loader}%` }}
-              />
-            )}
-            <span
-              className={twMerge(
-                'relative z-20',
-                stateModel.loading && 'font-medium'
+    <>
+      <div
+        className={twMerge(
+          'relative w-full overflow-hidden rounded-md',
+          stateModel.loading && 'pointer-events-none bg-blue-200 text-blue-600'
+        )}
+      >
+        <Select value={selectedModel?.id} onValueChange={onValueSelected}>
+          <SelectTrigger className="relative w-full">
+            <SelectValue placeholder="Choose model to start">
+              {stateModel.loading && (
+                <div
+                  className="z-5 absolute left-0 top-0 h-full w-full rounded-md bg-blue-100/80"
+                  style={{ width: `${loader}%` }}
+                />
               )}
-            >
-              {selectedName}
-            </span>
-          </SelectValue>
-        </SelectTrigger>
-        <SelectPortal>
-          <SelectContent className="right-2  block w-full min-w-[450px] pr-0">
-            <div className="flex w-full items-center space-x-2 px-4 py-2">
-              <MonitorIcon size={20} className="text-muted-foreground" />
-              <span>Local</span>
-            </div>
-            <div className="border-b border-border" />
-            {downloadedModels.length === 0 ? (
-              <div className="px-4 py-2">
-                <p>{`Oops, you don't have a model yet.`}</p>
-              </div>
-            ) : (
-              <SelectGroup>
-                {downloadedModels.map((x, i) => (
-                  <SelectItem
-                    key={i}
-                    value={x.id}
-                    className={twMerge(
-                      x.id === selectedModel?.id && 'bg-secondary'
-                    )}
-                  >
-                    <div className="flex w-full justify-between">
-                      <span className="line-clamp-1 block">{x.name}</span>
-                      <div className="space-x-2">
-                        <span className="font-bold text-muted-foreground">
-                          {toGibibytes(x.metadata.size)}
-                        </span>
-                        {x.engine == InferenceEngine.nitro && (
-                          <ModelLabel size={x.metadata.size} />
-                        )}
-                      </div>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            )}
-            <div className="border-b border-border" />
-            <div className="w-full px-4 py-2">
-              <Button
-                block
-                className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
-                onClick={() => setMainViewState(MainViewState.Hub)}
+              <span
+                className={twMerge(
+                  'relative z-20',
+                  stateModel.loading && 'font-medium'
+                )}
               >
-                Explore The Hub
-              </Button>
-            </div>
-          </SelectContent>
-        </SelectPortal>
-      </Select>
+                {selectedName}
+              </span>
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPortal>
+            <SelectContent className="right-2  block w-full min-w-[450px] pr-0">
+              <div className="flex w-full items-center space-x-2 px-4 py-2">
+                <MonitorIcon size={20} className="text-muted-foreground" />
+                <span>Local</span>
+              </div>
+              <div className="border-b border-border" />
+              {downloadedModels.length === 0 ? (
+                <div className="px-4 py-2">
+                  <p>{`Oops, you don't have a model yet.`}</p>
+                </div>
+              ) : (
+                <SelectGroup>
+                  {downloadedModels.map((x, i) => (
+                    <SelectItem
+                      key={i}
+                      value={x.id}
+                      className={twMerge(
+                        x.id === selectedModel?.id && 'bg-secondary'
+                      )}
+                    >
+                      <div className="flex w-full justify-between">
+                        <span className="line-clamp-1 block">{x.name}</span>
+                        <div className="space-x-2">
+                          <span className="font-bold text-muted-foreground">
+                            {toGibibytes(x.metadata.size)}
+                          </span>
+                          {x.engine == InferenceEngine.nitro && (
+                            <ModelLabel size={x.metadata.size} />
+                          )}
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+              <div className="border-b border-border" />
+              <div className="w-full px-4 py-2">
+                <Button
+                  block
+                  className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
+                  onClick={() => setMainViewState(MainViewState.Hub)}
+                >
+                  Explore The Hub
+                </Button>
+              </div>
+            </SelectContent>
+          </SelectPortal>
+        </Select>
+      </div>
 
       <OpenAiKeyInput
         selectedModel={selectedModel}
         serverEnabled={serverEnabled}
       />
-    </div>
+    </>
   )
 }
