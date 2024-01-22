@@ -39,6 +39,7 @@ lint: check-file-counts
 # Testing
 test: lint
 	yarn build:test
+	yarn test:unit
 	yarn test
 
 # Builds and publishes the app

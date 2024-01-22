@@ -12,7 +12,8 @@
   "module": "dist/core.es5.js",
   "typings": "dist/types/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "types"
   ],
   "author": "Jan <service@jan.ai>",
   "exports": {
@@ -38,18 +39,23 @@
   },
   "scripts": {
     "lint": "tslint  --project tsconfig.json -t codeFrame 'src/**/*.ts' 'test/**/*.ts'",
+    "test": "jest",
     "prebuild": "rimraf dist",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
     "start": "rollup -c rollup.config.ts -w"
   },
   "devDependencies": {
+    "jest": "^25.4.0",
+    "@types/jest": "^29.5.11",
     "@types/node": "^12.0.2",
+    "eslint-plugin-jest": "^23.8.2",
     "rollup": "^2.38.5",
     "rollup-plugin-commonjs": "^9.1.8",
     "rollup-plugin-json": "^3.1.0",
     "rollup-plugin-node-resolve": "^5.2.0",
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.36.0",
+    "ts-jest": "^26.1.1",
     "tslib": "^2.6.2",
     "typescript": "^5.2.2"
   }
