@@ -47,7 +47,7 @@ const menuLinks = [
 
 const BottomBar = () => {
   const { activeModel, stateModel } = useActiveModel()
-  const { ram, cpu, nvidiaGpuUtilization, nvidiaVramUtilization } = useGetSystemResources()
+  const { ram, cpu, nvidiaGpuUsed, nvidiaVramUsed } = useGetSystemResources()
   const progress = useAtomValue(appDownloadProgress)
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
@@ -116,10 +116,10 @@ const BottomBar = () => {
         <div className="flex items-center gap-x-2">
           <SystemItem name="CPU:" value={`${cpu}%`} />
           <SystemItem name="Mem:" value={`${ram}%`} />
-          {nvidiaGpuUtilization || nvidiaVramUtilization ? (
+          {nvidiaGpuUsed || nvidiaVramUsed ? (
             <div>
-              <SystemItem name="GPU:" value={`${nvidiaGpuUtilization}%`} />
-              <SystemItem name="VRAM:" value={`${nvidiaVramUtilization}%`} />
+              <SystemItem name="GPU:" value={`${nvidiaGpuUsed}%`} />
+              <SystemItem name="VRAM:" value={`${nvidiaVramUsed}%`} />
             </div>
           ) : ""}
         </div>
