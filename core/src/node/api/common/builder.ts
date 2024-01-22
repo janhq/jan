@@ -317,6 +317,7 @@ export const chatCompletions = async (request: any, reply: any) => {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
+    "Access-Control-Allow-Origin": "*"
   })
 
   const headers: Record<string, any> = {
