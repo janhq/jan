@@ -15,7 +15,8 @@
   "settings": {
     "ctx_len": 4096,
     "embedding": false,
-    "prompt_template": "{system_message}\n### Instruction: {prompt}\n### Response:"
+    "prompt_template": "{system_message}\n### Instruction: {prompt}\n### Response:",
+    "llama_model_path": "N/A"
   },
   "parameters": {
     "temperature": 0.7,
