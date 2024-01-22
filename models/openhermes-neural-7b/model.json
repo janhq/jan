@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "openhermes-2.5-neural-chat-v3-3-slerp.Q4_K_M.gguf",
       "url": "https://huggingface.co/janhq/openhermes-2.5-neural-chat-v3-3-slerp-GGUF/resolve/main/openhermes-2.5-neural-chat-v3-3-slerp.Q4_K_M.gguf"
     }
   ],
@@ -12,7 +13,8 @@
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
-    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
+    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+    "llama_model_path": "openhermes-2.5-neural-chat-v3-3-slerp.Q4_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
