@@ -264,12 +264,6 @@ const config = {
         },
         // Navbar right
         {
-          type: "docSidebar",
-          position: "right",
-          sidebarId: "communitySidebar",
-          label: "Community",
-        },
-        {
           to: "blog",
           label: "Blog",
           position: "right",
