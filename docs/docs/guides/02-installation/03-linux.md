@@ -17,6 +17,18 @@ keywords:
 
 # Installing Jan on Linux
 
+## Requirements
+
+Ensure that your system meets the following requirements:
+
+- glibc 2.27 or higher (check with `ldd --version`)
+- gcc 11, g++ 11, cpp 11, or higher, refer to this [link](https://jan.ai/guides/troubleshooting/gpu-not-used/#specific-requirements-for-linux) for more information.
+
+To enable GPU support, you will need:
+
+- NVIDIA GPU with CUDA Toolkit 11.7 or higher
+- NVIDIA driver 470.63.01 or higher
+
 ## Installation
 
 Jan is available for download via our homepage, [https://jan.ai](https://jan.ai/).
@@ -66,7 +78,8 @@ jan-linux-amd64-{version}.deb
 # AppImage
 jan-linux-x86_64-{version}.AppImage
 ```
-```
+
+````
 
 ## Uninstall Jan
 
@@ -75,7 +88,7 @@ To uninstall Jan on Linux, you should use your package manager's uninstall or re
 ```bash
 sudo apt-get remove jan
 # where jan is the name of Jan package
-```
+````
 
 For other Linux distributions, if you installed Jan via the `.AppImage` file, you can uninstall Jan by deleting the `.AppImage` file.
 

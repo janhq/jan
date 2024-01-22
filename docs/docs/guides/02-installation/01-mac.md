@@ -17,6 +17,10 @@ keywords:
 
 # Installing Jan on MacOS
 
+## Requirements
+
+Ensure that your MacOS version is 13 or higher to run Jan.
+
 ## Installation
 
 Jan is available for download via our homepage, [https://jan.ai/](https://jan.ai/).

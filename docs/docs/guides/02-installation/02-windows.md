@@ -17,6 +17,17 @@ keywords:
 
 # Installing Jan on Windows
 
+## System Requirements
+
+Ensure that your system meets the following requirements:
+
+- Windows 10 or higher is required to run Jan.
+
+To enable GPU support, you will need:
+
+- NVIDIA GPU with CUDA Toolkit 11.7 or higher
+- NVIDIA driver 470.63.01 or higher
+
 ## Installation
 
 Jan is available for download via our homepage, [https://jan.ai](https://jan.ai/).
@@ -59,13 +70,3 @@ To remove all user data associated with Jan, you can delete the `/jan` directory
 cd C:\Users\%USERNAME%\AppData\Roaming
 rmdir /S jan
 ```
-
-## Troubleshooting
-
-### Microsoft Defender
-
-**Error: "Microsoft Defender SmartScreen prevented an unrecognized app from starting"**
-
-Windows Defender may display the above warning when running the Jan Installer, as a standard security measure.
-
-To proceed, select the "More info" option and select the "Run Anyway" option to continue with the installation.
