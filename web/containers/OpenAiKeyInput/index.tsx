@@ -7,7 +7,7 @@ import { useEngineSettings } from '@/hooks/useEngineSettings'
 
 type Props = {
   selectedModel?: Model
-  serverEnabled?: boolean
+  serverEnabled: boolean
 }
 
 const OpenAiKeyInput: React.FC<Props> = ({ selectedModel, serverEnabled }) => {
