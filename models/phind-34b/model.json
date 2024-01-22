@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "phind-codellama-34b-v2.Q5_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/Phind-CodeLlama-34B-v2-GGUF/resolve/main/phind-codellama-34b-v2.Q5_K_M.gguf"
     }
   ],
@@ -12,7 +13,8 @@
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
-    "prompt_template": "### System Prompt\n{system_message}\n### User Message\n{prompt}\n### Assistant"
+    "prompt_template": "### System Prompt\n{system_message}\n### User Message\n{prompt}\n### Assistant",
+    "llama_model_path": "phind-codellama-34b-v2.Q5_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
