@@ -11,7 +11,7 @@ const Logs = () => {
 
   useEffect(() => {
     getServerLog().then((log) => {
-      setLogs(log.split(/\r?\n|\r|\n/g))
+      if (typeof log?.split === 'function') setLogs(log.split(/\r?\n|\r|\n/g))
     })
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
