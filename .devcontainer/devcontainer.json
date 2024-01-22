@@ -1,7 +1,4 @@
 {
   "name": "jan",
-  "image": "node:20",
-  "extensions": [
-    "dev-docs.dev-docs"
-  ]
+  "image": "node:20"
 }
