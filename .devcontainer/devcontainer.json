@@ -1,38 +1,19 @@
 {
-    "name": "Jan",
-    "image": "mcr.microsoft.com/devcontainers/javascript-node:0-20",
-    "settings": { 
-        "terminal.integrated.shell.linux": "/bin/bash"
-    },
-    "postCreateCommand": "yarn install",
-    "extensions": [
-        "dbaeumer.vscode-eslint"
-    ],
-    "remoteUser": "node",
-    "runArgs": [
-        "--cap-add=SYS_PTRACE", 
-        "--security-opt", 
-        "seccomp=unconfined"
-    ],
-    "mounts": [
-        "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
-    ],
-    "customizations": {
-        "vscode": {
-            "settings": {
-                "terminal.integrated.shell.linux": null
-            }
-        }
-    },
-    "features": {
-        "ghcr.io/devcontainers/features/node:1": {
-            "version": "20"
-        },
-        "ghcr.io/devcontainers/features/yarn:1": {
-            "version": "1.22.0"
-        },
-        "ghcr.io/devcontainers/features/make:1": {
-            "version": "3.81"
-        }
+  "name": "jan",
+  "image": "node:20",
+  "workspaceFolder": "/workspaces/openaidevday-dev-docs-playground",
+  "extensions": [
+    "dev-docs.dev-docs"
+  ],
+  "customizations": {
+    "codespaces": {
+      "openFiles": [
+        "javascript/quickstart/vision.js"
+      ]
     }
+  },
+   "containerEnv": {
+    "TUTORIAL": "javascript/quickstart",
+    "TUTORIAL_FILE": "javascript/quickstart/vision.js"
+  }
 }
