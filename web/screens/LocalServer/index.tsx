@@ -127,7 +127,7 @@ const LocalServerScreen = () => {
             </Button>
             {serverEnabled && (
               <Button block themes="secondaryBlue" asChild>
-                <a href={`http://127.0.0.1:${port}`} target="_blank">
+                <a href={`http://${host}:${port}`} target="_blank">
                   API Reference <ExternalLinkIcon size={20} className="ml-2" />
                 </a>
               </Button>
