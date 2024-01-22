@@ -1,4 +1,4 @@
-import { dialog, ipcMain, app, BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 /**
  * Managers

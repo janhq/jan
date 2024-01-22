@@ -95,6 +95,7 @@ const Advanced = () => {
         console.debug(
           `File sync finished from ${currentJanDataFolder} to ${destFolder}`
         )
+        await window.core?.api?.relaunch()
       } catch (e) {
         console.error(`Error: ${e}`)
       }

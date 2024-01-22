@@ -4,10 +4,8 @@ import { join } from 'path'
 import { ContentType, MessageStatus, Model, ThreadMessage } from './../../../index'
 import { getJanDataFolderPath } from '../../utils'
 
-const janDataFolder = getJanDataFolderPath()
-
 export const getBuilder = async (configuration: RouteConfiguration) => {
-  const directoryPath = join(janDataFolder, configuration.dirName)
+  const directoryPath = join(getJanDataFolderPath(), configuration.dirName)
   try {
     if (!fs.existsSync(directoryPath)) {
       console.debug('model folder not found')
@@ -71,7 +69,7 @@ export const deleteBuilder = async (configuration: RouteConfiguration, id: strin
     }
   }
 
-  const directoryPath = join(janDataFolder, configuration.dirName)
+  const directoryPath = join(getJanDataFolderPath(), configuration.dirName)
   try {
     const data = await retrieveBuilder(configuration, id)
     if (!data) {
@@ -93,7 +91,7 @@ export const deleteBuilder = async (configuration: RouteConfiguration, id: strin
 }
 
 export const getMessages = async (threadId: string): Promise<ThreadMessage[]> => {
-  const threadDirPath = join(janDataFolder, 'threads', threadId)
+  const threadDirPath = join(getJanDataFolderPath(), 'threads', threadId)
   const messageFile = 'messages.jsonl'
   try {
     const files: string[] = fs.readdirSync(threadDirPath)
@@ -154,7 +152,7 @@ export const createThread = async (thread: any) => {
       created: Date.now(),
       updated: Date.now(),
     }
-    const threadDirPath = join(janDataFolder, 'threads', updatedThread.id)
+    const threadDirPath = join(getJanDataFolderPath(), 'threads', updatedThread.id)
     const threadJsonPath = join(threadDirPath, threadMetadataFileName)
 
     if (!fs.existsSync(threadDirPath)) {
@@ -188,7 +186,7 @@ export const updateThread = async (threadId: string, thread: any) => {
     updated: Date.now(),
   }
   try {
-    const threadDirPath = join(janDataFolder, 'threads', updatedThread.id)
+    const threadDirPath = join(getJanDataFolderPath(), 'threads', updatedThread.id)
     const threadJsonPath = join(threadDirPath, threadMetadataFileName)
 
     await fs.writeFileSync(threadJsonPath, JSON.stringify(updatedThread, null, 2))
@@ -230,7 +228,7 @@ export const createMessage = async (threadId: string, message: any) => {
       ],
     }
 
-    const threadDirPath = join(janDataFolder, 'threads', threadId)
+    const threadDirPath = join(getJanDataFolderPath(), 'threads', threadId)
     const threadMessagePath = join(threadDirPath, threadMessagesFileName)
 
     if (!fs.existsSync(threadDirPath)) {
@@ -245,9 +243,12 @@ export const createMessage = async (threadId: string, message: any) => {
   }
 }
 
-export const downloadModel = async (modelId: string, network?: { proxy?: string, ignoreSSL?: boolean }) => {
-  const strictSSL = !network?.ignoreSSL;
-  const proxy = network?.proxy?.startsWith('http') ? network.proxy : undefined;
+export const downloadModel = async (
+  modelId: string,
+  network?: { proxy?: string; ignoreSSL?: boolean }
+) => {
+  const strictSSL = !network?.ignoreSSL
+  const proxy = network?.proxy?.startsWith('http') ? network.proxy : undefined
   const model = await retrieveBuilder(JanApiRouteConfiguration.models, modelId)
   if (!model || model.object !== 'model') {
     return {
@@ -255,7 +256,7 @@ export const downloadModel = async (modelId: string, network?: { proxy?: string,
     }
   }
 
-  const directoryPath = join(janDataFolder, 'models', modelId)
+  const directoryPath = join(getJanDataFolderPath(), 'models', modelId)
   if (!fs.existsSync(directoryPath)) {
     fs.mkdirSync(directoryPath)
   }
@@ -264,7 +265,7 @@ export const downloadModel = async (modelId: string, network?: { proxy?: string,
   const modelBinaryPath = join(directoryPath, modelId)
 
   const request = require('request')
-  const rq = request({url: model.source_url, strictSSL, proxy })
+  const rq = request({ url: model.source_url, strictSSL, proxy })
   const progress = require('request-progress')
   progress(rq, {})
     .on('progress', function (state: any) {
@@ -315,7 +316,7 @@ export const chatCompletions = async (request: any, reply: any) => {
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
+    'Connection': 'keep-alive',
   })
 
   const headers: Record<string, any> = {
@@ -346,7 +347,7 @@ const getEngineConfiguration = async (engineId: string) => {
   if (engineId !== 'openai') {
     return undefined
   }
-  const directoryPath = join(janDataFolder, 'engines')
+  const directoryPath = join(getJanDataFolderPath(), 'engines')
   const filePath = join(directoryPath, `${engineId}.json`)
   const data = await fs.readFileSync(filePath, 'utf-8')
   return JSON.parse(data)

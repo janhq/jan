@@ -3,96 +3,96 @@
  * @description Enum of all the routes exposed by the app
  */
 export enum AppRoute {
-  appDataPath = "appDataPath",
-  openExternalUrl = "openExternalUrl",
-  openAppDirectory = "openAppDirectory",
-  openFileExplore = "openFileExplorer",
-  selectDirectory = "selectDirectory",
-  getAppConfigurations = "getAppConfigurations",
-  updateAppConfiguration = "updateAppConfiguration",
-  relaunch = "relaunch",
-  joinPath = "joinPath",
-  baseName = "baseName",
-  startServer = "startServer",
-  stopServer = "stopServer",
-  log = "log",
-  logServer = "logServer",
+  appDataPath = 'appDataPath',
+  openExternalUrl = 'openExternalUrl',
+  openAppDirectory = 'openAppDirectory',
+  openFileExplore = 'openFileExplorer',
+  selectDirectory = 'selectDirectory',
+  getAppConfigurations = 'getAppConfigurations',
+  updateAppConfiguration = 'updateAppConfiguration',
+  relaunch = 'relaunch',
+  joinPath = 'joinPath',
+  baseName = 'baseName',
+  startServer = 'startServer',
+  stopServer = 'stopServer',
+  log = 'log',
+  logServer = 'logServer',
 }
 
 export enum AppEvent {
-  onAppUpdateDownloadUpdate = "onAppUpdateDownloadUpdate",
-  onAppUpdateDownloadError = "onAppUpdateDownloadError",
-  onAppUpdateDownloadSuccess = "onAppUpdateDownloadSuccess",
+  onAppUpdateDownloadUpdate = 'onAppUpdateDownloadUpdate',
+  onAppUpdateDownloadError = 'onAppUpdateDownloadError',
+  onAppUpdateDownloadSuccess = 'onAppUpdateDownloadSuccess',
 }
 
 export enum DownloadRoute {
-  abortDownload = "abortDownload",
-  downloadFile = "downloadFile",
-  pauseDownload = "pauseDownload",
-  resumeDownload = "resumeDownload",
+  abortDownload = 'abortDownload',
+  downloadFile = 'downloadFile',
+  pauseDownload = 'pauseDownload',
+  resumeDownload = 'resumeDownload',
 }
 
 export enum DownloadEvent {
-  onFileDownloadUpdate = "onFileDownloadUpdate",
-  onFileDownloadError = "onFileDownloadError",
-  onFileDownloadSuccess = "onFileDownloadSuccess",
+  onFileDownloadUpdate = 'onFileDownloadUpdate',
+  onFileDownloadError = 'onFileDownloadError',
+  onFileDownloadSuccess = 'onFileDownloadSuccess',
 }
 
 export enum ExtensionRoute {
-  baseExtensions = "baseExtensions",
-  getActiveExtensions = "getActiveExtensions",
-  installExtension = "installExtension",
-  invokeExtensionFunc = "invokeExtensionFunc",
-  updateExtension = "updateExtension",
-  uninstallExtension = "uninstallExtension",
+  baseExtensions = 'baseExtensions',
+  getActiveExtensions = 'getActiveExtensions',
+  installExtension = 'installExtension',
+  invokeExtensionFunc = 'invokeExtensionFunc',
+  updateExtension = 'updateExtension',
+  uninstallExtension = 'uninstallExtension',
 }
 export enum FileSystemRoute {
-  appendFileSync = "appendFileSync",
-  copyFileSync = "copyFileSync",
-  unlinkSync = "unlinkSync",
-  existsSync = "existsSync",
-  readdirSync = "readdirSync",
-  mkdirSync = "mkdirSync",
-  readFileSync = "readFileSync",
-  rmdirSync = "rmdirSync",
-  writeFileSync = "writeFileSync",
+  appendFileSync = 'appendFileSync',
+  copyFileSync = 'copyFileSync',
+  unlinkSync = 'unlinkSync',
+  existsSync = 'existsSync',
+  readdirSync = 'readdirSync',
+  mkdirSync = 'mkdirSync',
+  readFileSync = 'readFileSync',
+  rmdirSync = 'rmdirSync',
+  writeFileSync = 'writeFileSync',
 }
 export enum FileManagerRoute {
-  syncFile = "syncFile",
-  getJanDataFolderPath = "getJanDataFolderPath",
-  getResourcePath = "getResourcePath",
-  fileStat = "fileStat",
+  syncFile = 'syncFile',
+  getJanDataFolderPath = 'getJanDataFolderPath',
+  getResourcePath = 'getResourcePath',
+  fileStat = 'fileStat',
 }
 
-export type ApiFunction = (...args: any[]) => any;
+export type ApiFunction = (...args: any[]) => any
 
 export type AppRouteFunctions = {
-  [K in AppRoute]: ApiFunction;
-};
+  [K in AppRoute]: ApiFunction
+}
 
 export type AppEventFunctions = {
-  [K in AppEvent]: ApiFunction;
-};
+  [K in AppEvent]: ApiFunction
+}
 
 export type DownloadRouteFunctions = {
-  [K in DownloadRoute]: ApiFunction;
-};
+  [K in DownloadRoute]: ApiFunction
+}
 
 export type DownloadEventFunctions = {
-  [K in DownloadEvent]: ApiFunction;
-};
+  [K in DownloadEvent]: ApiFunction
+}
 
 export type ExtensionRouteFunctions = {
-  [K in ExtensionRoute]: ApiFunction;
-};
+  [K in ExtensionRoute]: ApiFunction
+}
 
 export type FileSystemRouteFunctions = {
-  [K in FileSystemRoute]: ApiFunction;
-};
+  [K in FileSystemRoute]: ApiFunction
+}
 
 export type FileManagerRouteFunctions = {
-  [K in FileManagerRoute]: ApiFunction;
-};
+  [K in FileManagerRoute]: ApiFunction
+}
 
 export type APIFunctions = AppRouteFunctions &
   AppEventFunctions &
@@ -100,7 +100,7 @@ export type APIFunctions = AppRouteFunctions &
   DownloadEventFunctions &
   ExtensionRouteFunctions &
   FileSystemRouteFunctions &
-  FileManagerRoute;
+  FileManagerRoute
 
 export const APIRoutes = [
   ...Object.values(AppRoute),
@@ -108,5 +108,5 @@ export const APIRoutes = [
   ...Object.values(ExtensionRoute),
   ...Object.values(FileSystemRoute),
   ...Object.values(FileManagerRoute),
-];
-export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)];
+]
+export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]
