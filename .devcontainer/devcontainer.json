@@ -1,6 +1,6 @@
 {
     "name": "Jan",
-    "image": "mcr.microsoft.com/vscode/devcontainers/javascript-node:0-20",
+    "image": "mcr.microsoft.com/devcontainers/javascript-node:0-20",
     "settings": { 
         "terminal.integrated.shell.linux": "/bin/bash"
     },
