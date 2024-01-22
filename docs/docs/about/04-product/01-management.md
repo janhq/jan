@@ -1,9 +1,9 @@
 ---
-title: Roadmap
-slug: /product/roadmap
+title: Project Management
+slug: /product/management
 ---
 
-We use the [Jan Monorepo Project](https://github.com/orgs/janhq/projects/5) in Github to manage our roadmap.
+We use the [Jan Monorepo Project](https://github.com/orgs/janhq/projects/5) in Github to manage our roadmap and sprint Kanbans.
 
 As much as possible, everyone owns their respective `epics` and `tasks`.
 
