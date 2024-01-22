@@ -12,12 +12,13 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
+    installation guide,
   ]
 ---
 
 # Installing Jan on Linux
 
-## Requirements
+## System Requirements
 
 Ensure that your system meets the following requirements:
 
@@ -79,8 +80,6 @@ jan-linux-amd64-{version}.deb
 jan-linux-x86_64-{version}.AppImage
 ```
 
-````
-
 ## Uninstall Jan
 
 To uninstall Jan on Linux, you should use your package manager's uninstall or remove option. For Debian/Ubuntu-based distributions, if you installed Jan via the `.deb` package, you can uninstall Jan using the following command:
@@ -88,7 +87,7 @@ To uninstall Jan on Linux, you should use your package manager's uninstall or re
 ```bash
 sudo apt-get remove jan
 # where jan is the name of Jan package
-````
+```
 
 For other Linux distributions, if you installed Jan via the `.AppImage` file, you can uninstall Jan by deleting the `.AppImage` file.
 

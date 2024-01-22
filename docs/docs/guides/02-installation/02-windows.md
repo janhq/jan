@@ -12,6 +12,7 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
+    installation guide,
   ]
 ---
 
