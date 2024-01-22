@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "dolphin-2.7-mixtral-8x7b.Q4_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/dolphin-2.7-mixtral-8x7b-GGUF/resolve/main/dolphin-2.7-mixtral-8x7b.Q4_K_M.gguf"
     }
   ],
@@ -12,7 +13,8 @@
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
-    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
+    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+    "llama_model_path": "dolphin-2.7-mixtral-8x7b.Q4_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
