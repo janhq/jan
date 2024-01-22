@@ -8,17 +8,17 @@ import { useSetAtom } from 'jotai'
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
   cpuUsageAtom,
-  nvidiaTotalVramAtom,
-  nvidiaUtilizationVramAtom,
   totalRamAtom,
   usedRamAtom,
+  nvidiaTotalVramAtom,
+  nvidiaUsedVramAtom,
 } from '@/helpers/atoms/SystemBar.atom'
 
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
   const [cpu, setCPU] = useState<number>(0)
-  const [nvidiaGpuUtilization, setNvidiaGpuUtilization] = useState<number>(0)
-  const [nvidiaVramUtilization, setNvidiaVramUtilization] = useState<number>(0)
+  const [nvidiaGpuUsed, setNvidiaGpuUsed] = useState<number>(0)
+  const [nvidiaVramUsed, setNvidiaVramUsed] = useState<number>(0)
 
   const setTotalRam = useSetAtom(totalRamAtom)
   const setUsedRam = useSetAtom(usedRamAtom)
@@ -26,7 +26,7 @@ export default function useGetSystemResources() {
   const setCpuUsage = useSetAtom(cpuUsageAtom)
 
   const setTotalNvidiaVram = useSetAtom(nvidiaTotalVramAtom)
-  const setUtilizationNvidiaVram = useSetAtom(nvidiaUtilizationVramAtom)
+  const setUsedNvidiaVram = useSetAtom(nvidiaUsedVramAtom)
 
   const getSystemResources = async () => {
     if (
@@ -51,17 +51,15 @@ export default function useGetSystemResources() {
     if (currentLoadInfor?.nvidia?.vram_total)
       setTotalNvidiaVram(currentLoadInfor.nvidia.vram_total)
     if (currentLoadInfor?.nvidia?.vram_utilization)
-      setUtilizationNvidiaVram(currentLoadInfor.nvidia.vram_utilization)
+      setUsedNvidiaVram(currentLoadInfor.nvidia.vram_utilization)
 
     setRam(Math.round(ram * 100))
 
     setCPU(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
     setCpuUsage(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
 
-    setNvidiaGpuUtilization(
-      Math.round(currentLoadInfor?.nvidia?.gpu_utilization ?? 0)
-    )
-    setNvidiaVramUtilization(
+    setNvidiaGpuUsed(Math.round(currentLoadInfor?.nvidia?.gpu_utilization ?? 0))
+    setNvidiaVramUsed(
       Math.round(currentLoadInfor?.nvidia?.vram_utilization ?? 0)
     )
   }
@@ -85,7 +83,7 @@ export default function useGetSystemResources() {
     totalRamAtom,
     ram,
     cpu,
-    nvidiaGpuUtilization,
-    nvidiaVramUtilization,
+    nvidiaGpuUsed,
+    nvidiaVramUsed,
   }
 }

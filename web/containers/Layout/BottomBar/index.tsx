@@ -118,8 +118,8 @@ const BottomBar = () => {
           <SystemItem name="Mem:" value={`${ram}%`} />
           {nvidiaGpuUtilization || nvidiaVramUtilization ? (
             <div>
-              <SystemItem name="N-GPU:" value={`${nvidiaGpuUtilization}%`} />
-              <SystemItem name="N-VRAM:" value={`${nvidiaVramUtilization}%`} />
+              <SystemItem name="GPU:" value={`${nvidiaGpuUtilization}%`} />
+              <SystemItem name="VRAM:" value={`${nvidiaVramUtilization}%`} />
             </div>
           ) : ""}
         </div>

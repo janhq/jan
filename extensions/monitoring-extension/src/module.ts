@@ -71,15 +71,15 @@ const getCurrentLoad = () =>
     response.cpu.usage = cpuPercentage;
 
     // Get platform specific accelerator information
-    if (platform == "darwin") {
+    if (platform === "darwin") {
       // Check Metal with powermetrics
-    } else if (platform == "linux") {
+    } else if (platform === "linux") {
       const hasNvidia = await checkNvidiaDriverExist();
       if (hasNvidia) {
         const nvidiaInfo = await getNvidiaInfo();
         response.nvidia = nvidiaInfo;
       }
-    } else if (platform == "win32") {
+    } else if (platform === "win32") {
       const hasNvidia = await checkNvidiaDriverExist();
       if (hasNvidia) {
         const nvidiaInfo = await getNvidiaInfo();

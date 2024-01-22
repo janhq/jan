@@ -6,4 +6,4 @@ export const usedRamAtom = atom<number>(0)
 export const cpuUsageAtom = atom<number>(0)
 
 export const nvidiaTotalVramAtom = atom<number>(0)
-export const nvidiaUtilizationVramAtom = atom<number>(0)
+export const nvidiaUsedVramAtom = atom<number>(0)
