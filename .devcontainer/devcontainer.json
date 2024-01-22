@@ -1,19 +1,7 @@
 {
   "name": "jan",
   "image": "node:20",
-  "workspaceFolder": "/workspaces/openaidevday-dev-docs-playground",
   "extensions": [
     "dev-docs.dev-docs"
-  ],
-  "customizations": {
-    "codespaces": {
-      "openFiles": [
-        "javascript/quickstart/vision.js"
-      ]
-    }
-  },
-   "containerEnv": {
-    "TUTORIAL": "javascript/quickstart",
-    "TUTORIAL_FILE": "javascript/quickstart/vision.js"
-  }
+  ]
 }
