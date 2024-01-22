@@ -3,7 +3,6 @@ import { useCallback, useMemo } from 'react'
 
 import { Model } from '@janhq/core'
 import {
-  Badge,
   Button,
   Tooltip,
   TooltipArrow,
