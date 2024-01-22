@@ -19,7 +19,7 @@ const JAN_API_PORT = Number.parseInt(process.env.JAN_API_PORT || "1337");
 let server: any | undefined = undefined;
 let hostSetting: string = JAN_API_HOST;
 let portSetting: number = JAN_API_PORT;
-let corsEnbaled: boolean = true;
+let corsEnabled: boolean = true;
 let isVerbose: boolean = true;
 
 /**
@@ -49,7 +49,7 @@ export const startServer = async (configs?: ServerConfig) => {
   isVerbose = configs?.isVerboseEnabled ?? true;
   hostSetting = configs?.host ?? JAN_API_HOST;
   portSetting = configs?.port ?? JAN_API_PORT;
-  corsEnbaled = configs?.isCorsEnabled ?? true;
+  corsEnabled = configs?.isCorsEnabled ?? true;
   const serverLogPath = getServerLogPath();
 
   // Start the server
@@ -66,7 +66,7 @@ export const startServer = async (configs?: ServerConfig) => {
     });
 
     // Register CORS if enabled
-    if (corsEnbaled) await server.register(require("@fastify/cors"), {});
+    if (corsEnabled) await server.register(require("@fastify/cors"), {});
 
     // Register Swagger for API documentation
     await server.register(require("@fastify/swagger"), {
