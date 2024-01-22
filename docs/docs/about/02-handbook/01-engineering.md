@@ -1,6 +1,7 @@
 ---
 title: Engineering
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+slug: /handbook/engineering
 keywords:
   [
     Jan AI,

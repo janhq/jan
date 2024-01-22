@@ -1,5 +1,6 @@
 ---
 title: About Jan
+slug: /about
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
 keywords:
   [

@@ -1,7 +1,7 @@
 ---
-title: Trial by Fire
-slug: /handbook/what-we-do/trial-by-fire
-description: Trial by Fire
+title: Events
+slug: /events
+description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
 keywords:
   [
     Jan AI,
@@ -12,6 +12,5 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
-    handbook,
   ]
 ---

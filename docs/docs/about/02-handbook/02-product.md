@@ -1,5 +1,6 @@
 ---
 title: Product
+slug: /handbook/product
 ---
 
 We use the [Jan Monorepo Project](https://github.com/orgs/janhq/projects/5) in Github for 100% of our product / project management.

@@ -1,6 +1,6 @@
 ---
-title: Engineering Excellence
-slug: /handbook/engineering-exellence
+title: Careers
+slug: /careers
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
 keywords:
   [
@@ -12,10 +12,9 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
-    handbook,
   ]
 ---
 
-import DocCardList from "@theme/DocCardList";
+## We're hiring
 
-<DocCardList className="DocCardList--no-description" />
+[Careers on Bamboo](https://janai.bamboohr.com/careers)
