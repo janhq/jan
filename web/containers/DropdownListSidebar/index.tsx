@@ -233,7 +233,10 @@ export default function DropdownListSidebar() {
         </SelectPortal>
       </Select>
 
-      <OpenAiKeyInput selectedModel={selectedModel} />
+      <OpenAiKeyInput
+        selectedModel={selectedModel}
+        serverEnabled={serverEnabled}
+      />
     </div>
   )
 }

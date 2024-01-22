@@ -307,35 +307,33 @@ const LocalServerScreen = () => {
             : 'w-0 translate-x-full opacity-0'
         )}
       >
-        <CardSidebar title="Model" hideMoreVerticalAction>
-          <div className="px-2">
-            <div className="mt-4">
-              <DropdownListSidebar />
-            </div>
-
-            {componentDataEngineSetting.filter(
-              (x) => x.name === 'prompt_template'
-            ).length !== 0 && (
-              <div className="mt-4">
-                <CardSidebar title="Model Parameters" asChild>
-                  <div className="px-2 py-4">
-                    {settingComponentBuilder(componentDataEngineSetting, true)}
-                  </div>
-                </CardSidebar>
-              </div>
-            )}
-
-            {componentDataEngineSetting.length !== 0 && (
-              <div className="my-4">
-                <CardSidebar title="Engine Parameters" asChild>
-                  <div className="px-2 py-4">
-                    <EngineSetting />
-                  </div>
-                </CardSidebar>
-              </div>
-            )}
+        <div className="px-4">
+          <div className="mt-4">
+            <DropdownListSidebar />
           </div>
-        </CardSidebar>
+
+          {componentDataEngineSetting.filter(
+            (x) => x.name === 'prompt_template'
+          ).length !== 0 && (
+            <div className="mt-4">
+              <CardSidebar title="Model Parameters" asChild>
+                <div className="px-2 py-4">
+                  {settingComponentBuilder(componentDataEngineSetting, true)}
+                </div>
+              </CardSidebar>
+            </div>
+          )}
+
+          {componentDataEngineSetting.length !== 0 && (
+            <div className="my-4">
+              <CardSidebar title="Engine Parameters" asChild>
+                <div className="px-2 py-4">
+                  <EngineSetting />
+                </div>
+              </CardSidebar>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
