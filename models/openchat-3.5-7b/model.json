@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "openchat-3.5-1210.Q4_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/openchat-3.5-1210-GGUF/resolve/main/openchat-3.5-1210.Q4_K_M.gguf"
     }
   ],
@@ -12,7 +13,8 @@
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
-    "prompt_template": "GPT4 Correct User: {prompt}<|end_of_turn|>GPT4 Correct Assistant:"
+    "prompt_template": "GPT4 Correct User: {prompt}<|end_of_turn|>GPT4 Correct Assistant:",
+    "llama_model_path": "openchat-3.5-1210.Q4_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
