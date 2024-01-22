@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "Noromaid-7b-v0.1.1.q5_k_m.gguf",
       "url": "https://huggingface.co/NeverSleep/Noromaid-7b-v0.1.1-GGUF/resolve/main/Noromaid-7b-v0.1.1.q5_k_m.gguf"
     }
   ],
@@ -12,7 +13,8 @@
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
-    "prompt_template": "### Instruction:{prompt}\n### Response:"
+    "prompt_template": "### Instruction:{prompt}\n### Response:",
+    "llama_model_path": "Noromaid-7b-v0.1.1.q5_k_m.gguf"
   },
   "parameters": {
     "temperature": 0.7,
