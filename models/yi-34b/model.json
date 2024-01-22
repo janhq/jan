@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "yi-34b-chat.Q5_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/Yi-34B-Chat-GGUF/resolve/main/yi-34b-chat.Q5_K_M.gguf"
     }
   ],
