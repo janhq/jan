@@ -2,7 +2,7 @@ import { useContext } from 'react'
 
 import {
   Model,
-  ExtensionType,
+  ExtensionTypeEnum,
   ModelExtension,
   abortDownload,
   joinPath,
@@ -43,7 +43,7 @@ export default function useDownloadModel() {
     addNewDownloadingModel(model)
 
     await extensionManager
-      .get<ModelExtension>(ExtensionType.Model)
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
       ?.downloadModel(model, { ignoreSSL, proxy })
   }
   const abortModelDownload = async (model: Model) => {

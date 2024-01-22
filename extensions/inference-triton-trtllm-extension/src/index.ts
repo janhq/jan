@@ -9,18 +9,18 @@
 import {
   ChatCompletionRole,
   ContentType,
-  EventName,
   MessageRequest,
   MessageStatus,
   ModelSettingParams,
-  ExtensionType,
   ThreadContent,
   ThreadMessage,
   events,
   fs,
   Model,
+  BaseExtension,
+  MessageEvent,
+  ModelEvent,
 } from "@janhq/core";
-import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
 import { join } from "path";
@@ -32,7 +32,7 @@ import { EngineSettings } from "./@types/global";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceTritonTrtLLMExtension
-  implements InferenceExtension
+  extends BaseExtension
 {
   private static readonly _homeDir = "file://engines";
   private static readonly _engineMetadataFileName = "triton_trtllm.json";
@@ -47,14 +47,6 @@ export default class JanInferenceTritonTrtLLMExtension
   isCancelled = false;
 
   /**
-   * Returns the type of the extension.
-   * @returns {ExtensionType} The type of the extension.
-   */
-  // TODO: To fix
-  type(): ExtensionType {
-    return undefined;
-  }
-  /**
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
@@ -62,15 +54,15 @@ export default class JanInferenceTritonTrtLLMExtension
       JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings();
 
     // Events subscription
-    events.on(EventName.OnMessageSent, (data) =>
+    events.on(MessageEvent.OnMessageSent, (data) =>
       JanInferenceTritonTrtLLMExtension.handleMessageRequest(data, this)
     );
 
-    events.on(EventName.OnModelInit, (model: Model) => {
+    events.on(ModelEvent.OnModelInit, (model: Model) => {
       JanInferenceTritonTrtLLMExtension.handleModelInit(model);
     });
 
-    events.on(EventName.OnModelStop, (model: Model) => {
+    events.on(ModelEvent.OnModelStop, (model: Model) => {
       JanInferenceTritonTrtLLMExtension.handleModelStop(model);
     });
   }
@@ -131,41 +123,6 @@ export default class JanInferenceTritonTrtLLMExtension
     this.controller?.abort();
   }
 
-  /**
-   * Makes a single response inference request.
-   * @param {MessageRequest} data - The data for the inference request.
-   * @returns {Promise<any>} A promise that resolves with the inference response.
-   */
-  async inference(data: MessageRequest): Promise<ThreadMessage> {
-    const timestamp = Date.now();
-    const message: ThreadMessage = {
-      thread_id: data.threadId,
-      created: timestamp,
-      updated: timestamp,
-      status: MessageStatus.Ready,
-      id: "",
-      role: ChatCompletionRole.Assistant,
-      object: "thread.message",
-      content: [],
-    };
-
-    return new Promise(async (resolve, reject) => {
-      requestInference(
-        data.messages ?? [],
-        JanInferenceTritonTrtLLMExtension._engineSettings,
-        JanInferenceTritonTrtLLMExtension._currentModel
-      ).subscribe({
-        next: (_content) => {},
-        complete: async () => {
-          resolve(message);
-        },
-        error: async (err) => {
-          reject(err);
-        },
-      });
-    });
-  }
-
   private static async handleModelInit(model: Model) {
     if (model.engine !== "triton_trtllm") {
       return;
@@ -173,8 +130,7 @@ export default class JanInferenceTritonTrtLLMExtension
       JanInferenceTritonTrtLLMExtension._currentModel = model;
       JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings();
       // Todo: Check model list with API key
-      events.emit(EventName.OnModelReady, model);
-      // events.emit(EventName.OnModelFail, model)
+      events.emit(ModelEvent.OnModelReady, model);
     }
   }
 
@@ -182,7 +138,7 @@ export default class JanInferenceTritonTrtLLMExtension
     if (model.engine !== "triton_trtllm") {
       return;
     }
-    events.emit(EventName.OnModelStopped, model);
+    events.emit(ModelEvent.OnModelStopped, model);
   }
 
   /**
@@ -211,7 +167,7 @@ export default class JanInferenceTritonTrtLLMExtension
       updated: timestamp,
       object: "thread.message",
     };
-    events.emit(EventName.OnMessageResponse, message);
+    events.emit(MessageEvent.OnMessageResponse, message);
 
     instance.isCancelled = false;
     instance.controller = new AbortController();
@@ -234,18 +190,18 @@ export default class JanInferenceTritonTrtLLMExtension
           },
         };
         message.content = [messageContent];
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
       complete: async () => {
         message.status = message.content.length
           ? MessageStatus.Ready
           : MessageStatus.Error;
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
       error: async (err) => {
         if (instance.isCancelled || message.content.length) {
           message.status = MessageStatus.Error;
-          events.emit(EventName.OnMessageUpdate, message);
+          events.emit(MessageEvent.OnMessageUpdate, message);
           return;
         }
         const messageContent: ThreadContent = {
@@ -257,7 +213,7 @@ export default class JanInferenceTritonTrtLLMExtension
         };
         message.content = [messageContent];
         message.status = MessageStatus.Ready;
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
     });
   }

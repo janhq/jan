@@ -1,5 +1,4 @@
 import {
-  ExtensionType,
   fs,
   downloadFile,
   abortDownload,
@@ -14,7 +13,7 @@ import {
 /**
  * A extension for models
  */
-export default class JanModelExtension implements ModelExtension {
+export default class JanModelExtension extends ModelExtension {
   private static readonly _homeDir = 'file://models'
   private static readonly _modelMetadataFileName = 'model.json'
   private static readonly _supportedModelFormat = '.gguf'
@@ -23,15 +22,6 @@ export default class JanModelExtension implements ModelExtension {
 
   private static readonly _configDirName = 'config'
   private static readonly _defaultModelFileName = 'default-model.json'
-
-  /**
-   * Implements type from JanExtension.
-   * @override
-   * @returns The type of the extension.
-   */
-  type(): ExtensionType {
-    return ExtensionType.Model
-  }
 
   /**
    * Called when the extension is loaded.

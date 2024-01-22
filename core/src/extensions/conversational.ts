@@ -1,5 +1,5 @@
 import { Thread, ThreadInterface, ThreadMessage, MessageInterface } from '../index'
-import { BaseExtension } from '../extension'
+import { BaseExtension, ExtensionTypeEnum } from '../extension'
 
 /**
  * Conversational extension. Persists and retrieves conversations.
@@ -10,6 +10,13 @@ export abstract class ConversationalExtension
   extends BaseExtension
   implements ThreadInterface, MessageInterface
 {
+  /**
+   * Conversation extension type.
+   */
+  type(): ExtensionTypeEnum | undefined {
+    return ExtensionTypeEnum.Conversational;
+  }
+
   abstract getThreads(): Promise<Thread[]>
   abstract saveThread(thread: Thread): Promise<void>
   abstract deleteThread(threadId: string): Promise<void>
