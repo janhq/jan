@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "tulu-2-dpo-70b.Q4_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/tulu-2-dpo-70B-GGUF/resolve/main/tulu-2-dpo-70b.Q4_K_M.gguf"
     }
   ],
@@ -12,7 +13,8 @@
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
-    "prompt_template": "<|user|>\n{prompt}\n<|assistant|>"
+    "prompt_template": "<|user|>\n{prompt}\n<|assistant|>",
+    "llama_model_path": "tulu-2-dpo-70b.Q4_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
