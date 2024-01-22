@@ -1,7 +1,7 @@
 ---
-title: Engineering
+title: MLOps
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
-slug: /handbook/engineering
+slug: /engineering/mlops
 keywords:
   [
     Jan AI,
@@ -16,6 +16,8 @@ keywords:
 ---
 
 ## Connecting to Rigs
+
+We have a small data rig you can remote into for R&D and CI.
 
 ### Pritunl Setup
 
@@ -138,7 +140,7 @@ cd examples/llama && rm -rf ./llama/7B && mkdir -p ./llama/7B && git clone https
 python build.py --model_dir ./llama/7B/ --dtype float16 --remove_input_padding --use_gpt_attention_plugin float16 --enable_context_fmha --use_gemm_plugin float16 --use_weight_only --output_dir ./llama/7B/trt_engines/weight_only/1-gpu/
 ```
 
-4. Run Inference:
+4. **Run Inference:**
 
 ```bash
 python3 run.py --max_output_len=2048 --tokenizer_dir ./llama/7B/ --engine_dir=./llama/7B/trt_engines/weight_only/1-gpu/ --input_text "Writing a thesis proposal can be done in 10 simple steps:\nStep 1:"

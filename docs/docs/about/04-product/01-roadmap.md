@@ -1,9 +1,9 @@
 ---
-title: Product
-slug: /handbook/product
+title: Roadmap
+slug: /product/roadmap
 ---
 
-We use the [Jan Monorepo Project](https://github.com/orgs/janhq/projects/5) in Github for 100% of our product / project management.
+We use the [Jan Monorepo Project](https://github.com/orgs/janhq/projects/5) in Github to manage our roadmap.
 
 As much as possible, everyone owns their respective `epics` and `tasks`.
 

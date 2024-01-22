@@ -1,7 +1,7 @@
 ---
-title: Handbook
+title: Onboarding
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
-slug: /handbook
+slug: /onboarding
 keywords:
   [
     Jan AI,
