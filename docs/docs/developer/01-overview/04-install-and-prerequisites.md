@@ -35,7 +35,7 @@ keywords:
 
 ## Instructions
 
-1. Clone the repository and install dependencies
+1. **Clone the Repository:**
 
 ```bash
 git clone https://github.com/janhq/jan
@@ -43,19 +43,19 @@ cd jan
 git checkout -b DESIRED_BRANCH
 ```
 
-2. Install dependencies
+2. **Install Dependencie:s**
 
 ```bash
 yarn install
 ```
 
-3. Run development and use Jan Desktop
+3. **Run Development and Use Jan Desktop**
 
 ```bash
 make dev
 ```
 
-This will start the development server and open the Jan Desktop app.
+This command starts the development server and opens the Jan Desktop app.
 
 ## For Production Build
 
@@ -65,4 +65,8 @@ This will start the development server and open the Jan Desktop app.
 make build
 ```
 
-This will build the app MacOS (M1/M2/M3) for production (with code signing already done) and put the result in `dist` folder.
+This will build the app MacOS (M1/M2/M3) for production (with code signing already done) and place the result in `/electron/dist` folder.
+
+## Troubleshooting
+
+If you run into any issues due to a broken build, please check the [Stuck on a Broken Build](../../troubleshooting/stuck-on-broken-build) guide.
