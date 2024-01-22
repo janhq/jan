@@ -7,9 +7,10 @@ import { useEngineSettings } from '@/hooks/useEngineSettings'
 
 type Props = {
   selectedModel?: Model
+  serverEnabled: boolean
 }
 
-const OpenAiKeyInput: React.FC<Props> = ({ selectedModel }) => {
+const OpenAiKeyInput: React.FC<Props> = ({ selectedModel, serverEnabled }) => {
   const [openAISettings, setOpenAISettings] = useState<
     { api_key: string } | undefined
   >(undefined)
@@ -34,6 +35,7 @@ const OpenAiKeyInput: React.FC<Props> = ({ selectedModel }) => {
         API Key
       </label>
       <Input
+        disabled={serverEnabled}
         id="assistant-instructions"
         placeholder="Enter your API_KEY"
         defaultValue={openAISettings?.api_key}
