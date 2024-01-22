@@ -1,15 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
-import { ExtensionType } from '@janhq/core'
+import { ExtensionTypeEnum } from '@janhq/core'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 
 export const isCoreExtensionInstalled = () => {
-  if (!extensionManager.get(ExtensionType.Conversational)) {
+  if (!extensionManager.get(ExtensionTypeEnum.Conversational)) {
     return false
   }
-  if (!extensionManager.get(ExtensionType.Inference)) return false
-  if (!extensionManager.get(ExtensionType.Model)) {
+  if (!extensionManager.get(ExtensionTypeEnum.Inference)) return false
+  if (!extensionManager.get(ExtensionTypeEnum.Model)) {
     return false
   }
   return true
@@ -21,9 +21,9 @@ export const setupBaseExtensions = async () => {
   const baseExtensions = await window.core?.api.baseExtensions()
 
   if (
-    !extensionManager.get(ExtensionType.Conversational) ||
-    !extensionManager.get(ExtensionType.Inference) ||
-    !extensionManager.get(ExtensionType.Model)
+    !extensionManager.get(ExtensionTypeEnum.Conversational) ||
+    !extensionManager.get(ExtensionTypeEnum.Inference) ||
+    !extensionManager.get(ExtensionTypeEnum.Model)
   ) {
     const installed = await extensionManager.install(baseExtensions)
     if (installed) {

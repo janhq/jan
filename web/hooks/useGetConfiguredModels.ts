@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { ExtensionType, ModelExtension } from '@janhq/core'
+import { ExtensionTypeEnum, ModelExtension } from '@janhq/core'
 import { Model } from '@janhq/core'
 
 import { extensionManager } from '@/extension/ExtensionManager'
@@ -11,7 +11,7 @@ export function useGetConfiguredModels() {
 
   const getConfiguredModels = async (): Promise<Model[]> => {
     const models = await extensionManager
-      .get<ModelExtension>(ExtensionType.Model)
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
       ?.getConfiguredModels()
     return models ?? []
   }

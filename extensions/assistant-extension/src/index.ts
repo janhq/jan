@@ -1,13 +1,9 @@
-import { ExtensionType, fs, Assistant } from "@janhq/core";
+import { fs, Assistant } from "@janhq/core";
 import { AssistantExtension } from "@janhq/core";
 import { join } from "path";
 
-export default class JanAssistantExtension implements AssistantExtension {
+export default class JanAssistantExtension extends AssistantExtension {
   private static readonly _homeDir = "file://assistants";
-
-  type(): ExtensionType {
-    return ExtensionType.Assistant;
-  }
 
   async onLoad() {
     // making the assistant directory

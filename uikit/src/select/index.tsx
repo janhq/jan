@@ -3,7 +3,6 @@
 import * as React from 'react'
 import {
   CaretSortIcon,
-  // CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
 } from '@radix-ui/react-icons'
@@ -17,6 +16,8 @@ const Select = SelectPrimitive.Root
 const SelectGroup = SelectPrimitive.Group
 
 const SelectValue = SelectPrimitive.Value
+
+const SelectPortal = SelectPrimitive.Portal
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
@@ -116,11 +117,6 @@ const SelectItem = React.forwardRef<
     className={twMerge('select-item', className)}
     {...props}
   >
-    {/* <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
-      <SelectPrimitive.ItemIndicator>
-        <CheckIcon className="h-4 w-4" />
-      </SelectPrimitive.ItemIndicator>
-    </span> */}
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
   </SelectPrimitive.Item>
 ))
@@ -130,6 +126,7 @@ export {
   Select,
   SelectGroup,
   SelectValue,
+  SelectPortal,
   SelectTrigger,
   SelectContent,
   SelectLabel,

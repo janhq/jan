@@ -1,31 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import {
-  InferenceEngine,
-  Model,
-  ModelRuntimeParams,
-  ModelSettingParams,
-} from '@janhq/core'
+import { InferenceEngine, Model } from '@janhq/core'
 import {
   Button,
   Select,
   SelectContent,
   SelectGroup,
+  SelectPortal,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Input,
-  Tooltip,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
-  TooltipArrow,
-  Badge,
 } from '@janhq/uikit'
 
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
-import { MonitorIcon, InfoIcon } from 'lucide-react'
+import { MonitorIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -33,15 +22,17 @@ import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
-import { useEngineSettings } from '@/hooks/useEngineSettings'
-
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import { toGibibytes } from '@/utils/converter'
 
-import { totalRamAtom, usedRamAtom } from '@/helpers/atoms/SystemBar.atom'
+import ModelLabel from '../ModelLabel'
+import OpenAiKeyInput from '../OpenAiKeyInput'
+
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+
 import {
   ModelParams,
   activeThreadAtom,
@@ -56,29 +47,16 @@ export default function DropdownListSidebar() {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const threadStates = useAtomValue(threadStatesAtom)
-  const setSelectedModel = useSetAtom(selectedModelAtom)
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const { activeModel } = useActiveModel()
-
-  const [selected, setSelected] = useState<Model | undefined>()
+  const { activeModel, stateModel } = useActiveModel()
+  const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const { setMainViewState } = useMainViewState()
-  const [openAISettings, setOpenAISettings] = useState<
-    { api_key: string } | undefined
-  >(undefined)
-  const { readOpenAISettings, saveOpenAISettings } = useEngineSettings()
-  const totalRam = useAtomValue(totalRamAtom)
-  const usedRam = useAtomValue(usedRamAtom)
-
-  useEffect(() => {
-    readOpenAISettings().then((settings) => {
-      setOpenAISettings(settings)
-    })
-  }, [])
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   const selectedName =
-    downloadedModels.filter((x) => x.id === selected?.id)[0]?.name ?? ''
+    downloadedModels.filter((x) => x.id === selectedModel?.id)[0]?.name ?? ''
   /**
    * Default value for max_tokens and ctx_len
    * Its to avoid OOM issue since a model can set a big number for these settings
@@ -89,8 +67,7 @@ export default function DropdownListSidebar() {
   }
 
   useEffect(() => {
-    setSelected(recommendedModel)
-    setSelectedModel(recommendedModel)
+    setSelectedModel(activeModel || recommendedModel)
 
     if (activeThread) {
       const finishInit = threadStates[activeThread.id].isFinishInit ?? true
@@ -111,6 +88,7 @@ export default function DropdownListSidebar() {
       }
       setThreadModelParams(activeThread.id, modelParams)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     recommendedModel,
     activeThread,
@@ -119,11 +97,42 @@ export default function DropdownListSidebar() {
     threadStates,
   ])
 
+  const [loader, setLoader] = useState(0)
+
+  // This is fake loader please fix this when we have realtime percentage when load model
+  useEffect(() => {
+    if (stateModel.loading) {
+      if (loader === 24) {
+        setTimeout(() => {
+          setLoader(loader + 1)
+        }, 250)
+      } else if (loader === 50) {
+        setTimeout(() => {
+          setLoader(loader + 1)
+        }, 250)
+      } else if (loader === 78) {
+        setTimeout(() => {
+          setLoader(loader + 1)
+        }, 250)
+      } else if (loader === 85) {
+        setLoader(85)
+      } else {
+        setLoader(loader + 1)
+      }
+    } else {
+      setLoader(0)
+    }
+  }, [stateModel.loading, loader])
+
   const onValueSelected = useCallback(
-    (modelId: string) => {
+    async (modelId: string) => {
       const model = downloadedModels.find((m) => m.id === modelId)
-      setSelected(model)
       setSelectedModel(model)
+
+      if (serverEnabled) {
+        window.core?.api?.stopServer()
+        setServerEnabled(false)
+      }
 
       if (activeThreadId) {
         const modelParams = {
@@ -133,149 +142,98 @@ export default function DropdownListSidebar() {
         setThreadModelParams(activeThreadId, modelParams)
       }
     },
-    [downloadedModels, activeThreadId, setSelectedModel, setThreadModelParams]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      downloadedModels,
+      serverEnabled,
+      activeThreadId,
+      activeModel,
+      setSelectedModel,
+      setThreadModelParams,
+    ]
   )
 
   if (!activeThread) {
     return null
   }
 
-  const getLabel = (size: number) => {
-    const minimumRamModel = size * 1.25
-    const availableRam = totalRam - usedRam + (activeModel?.metadata.size ?? 0)
-    if (minimumRamModel > totalRam) {
-      return (
-        <Badge className="space-x-1 rounded-md" themes="danger">
-          <span>Not enough RAM</span>
-          <Tooltip>
-            <TooltipTrigger>
-              <InfoIcon size={16} />
-            </TooltipTrigger>
-            <TooltipPortal>
-              <TooltipContent
-                side="right"
-                sideOffset={10}
-                className="max-w-[300px]"
-              >
-                <span>
-                  {`This tag signals insufficient RAM for optimal model
-                  performance. It's dynamic and may change with your system's
-                  RAM availability.`}
-                </span>
-                <TooltipArrow />
-              </TooltipContent>
-            </TooltipPortal>
-          </Tooltip>
-        </Badge>
-      )
-    }
-    if (minimumRamModel < availableRam) {
-      return (
-        <Badge className="space-x-1 rounded-md" themes="success">
-          <span>Recommended</span>
-        </Badge>
-      )
-    }
-    if (minimumRamModel < totalRam && minimumRamModel > availableRam) {
-      return (
-        <Badge className="space-x-1 rounded-md" themes="warning">
-          <span>Slow on your device</span>
-          <Tooltip>
-            <TooltipTrigger>
-              <InfoIcon size={16} />
-            </TooltipTrigger>
-            <TooltipPortal>
-              <TooltipContent
-                side="right"
-                sideOffset={10}
-                className="max-w-[300px]"
-              >
-                <span>
-                  This tag indicates that your current RAM performance may
-                  affect model speed. It can change based on other active apps.
-                  To improve, consider closing unnecessary applications to free
-                  up RAM.
-                </span>
-                <TooltipArrow />
-              </TooltipContent>
-            </TooltipPortal>
-          </Tooltip>
-        </Badge>
-      )
-    }
-  }
-
   return (
-    <>
-      <Select value={selected?.id} onValueChange={onValueSelected}>
-        <SelectTrigger className="w-full">
+    <div
+      className={twMerge(
+        'relative w-full overflow-hidden rounded-md',
+        stateModel.loading && 'pointer-events-none bg-blue-200 text-blue-600'
+      )}
+    >
+      <Select value={selectedModel?.id} onValueChange={onValueSelected}>
+        <SelectTrigger className="relative w-full">
           <SelectValue placeholder="Choose model to start">
-            {selectedName}
+            {stateModel.loading && (
+              <div
+                className="z-5 absolute left-0 top-0 h-full w-full rounded-md bg-blue-100/80"
+                style={{ width: `${loader}%` }}
+              />
+            )}
+            <span
+              className={twMerge(
+                'relative z-20',
+                stateModel.loading && 'font-medium'
+              )}
+            >
+              {selectedName}
+            </span>
           </SelectValue>
         </SelectTrigger>
-        <SelectContent className="right-2 block w-full min-w-[450px] pr-0">
-          <div className="flex w-full items-center space-x-2 px-4 py-2">
-            <MonitorIcon size={20} className="text-muted-foreground" />
-            <span>Local</span>
-          </div>
-          <div className="border-b border-border" />
-          {downloadedModels.length === 0 ? (
-            <div className="px-4 py-2">
-              <p>{`Oops, you don't have a model yet.`}</p>
+        <SelectPortal>
+          <SelectContent className="right-2  block w-full min-w-[450px] pr-0">
+            <div className="flex w-full items-center space-x-2 px-4 py-2">
+              <MonitorIcon size={20} className="text-muted-foreground" />
+              <span>Local</span>
             </div>
-          ) : (
-            <SelectGroup>
-              {downloadedModels.map((x, i) => (
-                <SelectItem
-                  key={i}
-                  value={x.id}
-                  className={twMerge(x.id === selected?.id && 'bg-secondary')}
-                >
-                  <div className="flex w-full justify-between">
-                    <span className="line-clamp-1 block">{x.name}</span>
-                    <div className="space-x-2">
-                      <span className="font-bold text-muted-foreground">
-                        {toGibibytes(x.metadata.size)}
-                      </span>
-                      {x.engine == InferenceEngine.nitro &&
-                        getLabel(x.metadata.size)}
+            <div className="border-b border-border" />
+            {downloadedModels.length === 0 ? (
+              <div className="px-4 py-2">
+                <p>{`Oops, you don't have a model yet.`}</p>
+              </div>
+            ) : (
+              <SelectGroup>
+                {downloadedModels.map((x, i) => (
+                  <SelectItem
+                    key={i}
+                    value={x.id}
+                    className={twMerge(
+                      x.id === selectedModel?.id && 'bg-secondary'
+                    )}
+                  >
+                    <div className="flex w-full justify-between">
+                      <span className="line-clamp-1 block">{x.name}</span>
+                      <div className="space-x-2">
+                        <span className="font-bold text-muted-foreground">
+                          {toGibibytes(x.metadata.size)}
+                        </span>
+                        {x.engine == InferenceEngine.nitro && (
+                          <ModelLabel size={x.metadata.size} />
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          )}
-          <div className="border-b border-border" />
-          <div className="w-full px-4 py-2">
-            <Button
-              block
-              className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
-              onClick={() => setMainViewState(MainViewState.Hub)}
-            >
-              Explore The Hub
-            </Button>
-          </div>
-        </SelectContent>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            <div className="border-b border-border" />
+            <div className="w-full px-4 py-2">
+              <Button
+                block
+                className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
+                onClick={() => setMainViewState(MainViewState.Hub)}
+              >
+                Explore The Hub
+              </Button>
+            </div>
+          </SelectContent>
+        </SelectPortal>
       </Select>
 
-      {selected?.engine === InferenceEngine.openai && (
-        <div className="mt-4">
-          <label
-            id="thread-title"
-            className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
-          >
-            API Key
-          </label>
-          <Input
-            id="assistant-instructions"
-            placeholder="Enter your API_KEY"
-            defaultValue={openAISettings?.api_key}
-            onChange={(e) => {
-              saveOpenAISettings({ apiKey: e.target.value })
-            }}
-          />
-        </div>
-      )}
-    </>
+      <OpenAiKeyInput selectedModel={selectedModel} />
+    </div>
   )
 }

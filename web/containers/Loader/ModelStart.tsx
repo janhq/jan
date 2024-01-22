@@ -21,14 +21,15 @@ export default function ModelStart() {
         setTimeout(() => {
           setLoader(loader + 1)
         }, 250)
-      } else if (loader === 99) {
-        setLoader(99)
+      } else if (loader === 85) {
+        setLoader(85)
       } else {
         setLoader(loader + 1)
       }
     } else {
       setLoader(0)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateModel.loading, loader])
 
   if (!stateModel.loading) return null
@@ -40,7 +41,11 @@ export default function ModelStart() {
           className="absolute left-0 top-0 h-full bg-blue-200"
           style={{ width: `${loader}%` }}
         />
-        <span className="relative z-10">Starting model {stateModel.model}</span>
+        <span className="relative z-10">
+          {stateModel.state === 'start' ? 'Starting' : 'Stopping'}
+          &nbsp;model&nbsp;
+          {stateModel.model}
+        </span>
       </div>
     </div>
   )

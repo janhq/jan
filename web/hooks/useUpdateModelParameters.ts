@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   ConversationalExtension,
-  ExtensionType,
+  ExtensionTypeEnum,
   Thread,
   ThreadAssistantInfo,
 } from '@janhq/core'
@@ -73,7 +73,7 @@ export default function useUpdateModelParameters() {
     }
 
     await extensionManager
-      .get<ConversationalExtension>(ExtensionType.Conversational)
+      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.saveThread(updatedThread)
   }
 

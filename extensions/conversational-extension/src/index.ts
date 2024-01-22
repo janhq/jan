@@ -1,5 +1,4 @@
 import {
-  ExtensionType,
   fs,
   joinPath,
   ConversationalExtension,
@@ -12,18 +11,11 @@ import {
  * functionality for managing threads.
  */
 export default class JSONConversationalExtension
-  implements ConversationalExtension
+  extends ConversationalExtension
 {
   private static readonly _homeDir = 'file://threads'
   private static readonly _threadInfoFileName = 'thread.json'
   private static readonly _threadMessagesFileName = 'messages.jsonl'
-
-  /**
-   * Returns the type of the extension.
-   */
-  type(): ExtensionType {
-    return ExtensionType.Conversational
-  }
 
   /**
    * Called when the extension is loaded.

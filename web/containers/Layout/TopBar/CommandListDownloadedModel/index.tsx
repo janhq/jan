@@ -22,10 +22,13 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+
 export default function CommandListDownloadedModel() {
   const { setMainViewState } = useMainViewState()
   const { downloadedModels } = useGetDownloadedModels()
   const { activeModel, startModel, stopModel } = useActiveModel()
+  const [serverEnabled] = useAtom(serverEnabledAtom)
   const [showSelectModelModal, setShowSelectModelModal] = useAtom(
     showSelectModelModalAtom
   )
@@ -39,7 +42,7 @@ export default function CommandListDownloadedModel() {
   }
 
   const isNotDownloadedModel = downloadedModels.length === 0
-  if (isNotDownloadedModel) return null
+  if (isNotDownloadedModel || serverEnabled) return null
 
   return (
     <Fragment>

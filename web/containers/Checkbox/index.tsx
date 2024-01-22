@@ -18,6 +18,7 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toSettingParams } from '@/utils/modelParam'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import {
   engineParamsUpdateAtom,
   getActiveThreadIdAtom,
@@ -42,6 +43,8 @@ const Checkbox: React.FC<Props> = ({ name, title, checked, description }) => {
   const engineParams = getConfigurationsData(modelSettingParams)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
+
+  const serverEnabled = useAtomValue(serverEnabledAtom)
 
   const { stopModel } = useActiveModel()
 
@@ -74,7 +77,11 @@ const Checkbox: React.FC<Props> = ({ name, title, checked, description }) => {
           </TooltipPortal>
         </Tooltip>
       </div>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={serverEnabled}
+      />
     </div>
   )
 }

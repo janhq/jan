@@ -1,13 +1,21 @@
 import { createContext, ReactNode, useEffect, useState } from 'react'
 
 interface FeatureToggleContextType {
-  experimentalFeatureEnabed: boolean
-  setExperimentalFeatureEnabled: (on: boolean) => void
+  experimentalFeature: boolean
+  ignoreSSL: boolean
+  proxy: string
+  setExperimentalFeature: (on: boolean) => void
+  setIgnoreSSL: (on: boolean) => void
+  setProxy: (value: string) => void
 }
 
 const initialContext: FeatureToggleContextType = {
-  experimentalFeatureEnabed: false,
-  setExperimentalFeatureEnabled: () => {},
+  experimentalFeature: false,
+  ignoreSSL: false,
+  proxy: '',
+  setExperimentalFeature: () => {},
+  setIgnoreSSL: () => {},
+  setProxy: () => {},
 }
 
 export const FeatureToggleContext =
@@ -18,25 +26,46 @@ export default function FeatureToggleWrapper({
 }: {
   children: ReactNode
 }) {
-  const EXPERIMENTAL_FEATURE_ENABLED = 'expermientalFeatureEnabled'
-  const [experimentalEnabed, setExperimentalEnabled] = useState<boolean>(false)
+  const EXPERIMENTAL_FEATURE = 'experimentalFeature'
+  const IGNORE_SSL = 'ignoreSSLFeature'
+  const HTTPS_PROXY_FEATURE = 'httpsProxyFeature'
+  const [experimentalFeature, directSetExperimentalFeature] =
+    useState<boolean>(false)
+  const [ignoreSSL, directSetIgnoreSSL] = useState<boolean>(false)
+  const [proxy, directSetProxy] = useState<string>('')
 
   useEffect(() => {
-    setExperimentalEnabled(
-      localStorage.getItem(EXPERIMENTAL_FEATURE_ENABLED) === 'true'
+    directSetExperimentalFeature(
+      localStorage.getItem(EXPERIMENTAL_FEATURE) === 'true'
     )
+    directSetIgnoreSSL(localStorage.getItem(IGNORE_SSL) === 'true')
+    directSetProxy(localStorage.getItem(HTTPS_PROXY_FEATURE) ?? '')
   }, [])
 
   const setExperimentalFeature = (on: boolean) => {
-    localStorage.setItem(EXPERIMENTAL_FEATURE_ENABLED, on ? 'true' : 'false')
-    setExperimentalEnabled(on)
+    localStorage.setItem(EXPERIMENTAL_FEATURE, on ? 'true' : 'false')
+    directSetExperimentalFeature(on)
+  }
+
+  const setIgnoreSSL = (on: boolean) => {
+    localStorage.setItem(IGNORE_SSL, on ? 'true' : 'false')
+    directSetIgnoreSSL(on)
+  }
+
+  const setProxy = (proxy: string) => {
+    localStorage.setItem(HTTPS_PROXY_FEATURE, proxy)
+    directSetProxy(proxy)
   }
 
   return (
     <FeatureToggleContext.Provider
       value={{
-        experimentalFeatureEnabed: experimentalEnabed,
-        setExperimentalFeatureEnabled: setExperimentalFeature,
+        experimentalFeature,
+        ignoreSSL,
+        proxy,
+        setExperimentalFeature,
+        setIgnoreSSL,
+        setProxy,
       }}
     >
       {children}

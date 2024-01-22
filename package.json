@@ -11,23 +11,20 @@
     ],
     "nohoist": [
       "uikit",
-      "uikit/*",
       "core",
-      "core/*",
       "electron",
-      "electron/**",
       "web",
-      "web/**",
-      "server",
-      "server/**"
+      "server"
     ]
   },
   "scripts": {
     "lint": "yarn workspace jan lint && yarn workspace jan-web lint",
+    "test:unit": "yarn workspace @janhq/core test",
     "test": "yarn workspace jan test:e2e",
     "copy:assets": "cpx \"models/**\" \"electron/models/\" && cpx \"docs/openapi/**\" \"electron/docs/openapi\"",
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
     "dev:web": "yarn workspace jan-web dev",
+    "dev:server": "yarn workspace @janhq/server dev",
     "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
     "test-local": "yarn lint && yarn build:test && yarn test",
     "dev:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit dev",

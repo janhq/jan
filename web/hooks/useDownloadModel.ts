@@ -1,12 +1,16 @@
+import { useContext } from 'react'
+
 import {
   Model,
-  ExtensionType,
+  ExtensionTypeEnum,
   ModelExtension,
   abortDownload,
   joinPath,
 } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { modelBinFileName } from '@/utils/model'
 
@@ -16,6 +20,7 @@ import { extensionManager } from '@/extension/ExtensionManager'
 import { addNewDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useDownloadModel() {
+  const { ignoreSSL, proxy } = useContext(FeatureToggleContext)
   const { setDownloadState } = useDownloadState()
   const addNewDownloadingModel = useSetAtom(addNewDownloadingModelAtom)
 
@@ -38,8 +43,8 @@ export default function useDownloadModel() {
     addNewDownloadingModel(model)
 
     await extensionManager
-      .get<ModelExtension>(ExtensionType.Model)
-      ?.downloadModel(model)
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
+      ?.downloadModel(model, { ignoreSSL, proxy })
   }
   const abortModelDownload = async (model: Model) => {
     await abortDownload(

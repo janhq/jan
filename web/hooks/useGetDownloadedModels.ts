@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import { ExtensionType, ModelExtension, Model } from '@janhq/core'
+import { ExtensionTypeEnum, ModelExtension, Model } from '@janhq/core'
 
 import { atom, useAtom } from 'jotai'
 
@@ -22,5 +22,5 @@ export function useGetDownloadedModels() {
 
 export const getDownloadedModels = async (): Promise<Model[]> =>
   extensionManager
-    .get<ModelExtension>(ExtensionType.Model)
+    .get<ModelExtension>(ExtensionTypeEnum.Model)
     ?.getDownloadedModels() ?? []

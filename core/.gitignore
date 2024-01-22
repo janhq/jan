@@ -6,7 +6,4 @@ coverage
 .vscode
 .idea
 dist
-compiled
-.awcache
-.rpt2_cache
 docs

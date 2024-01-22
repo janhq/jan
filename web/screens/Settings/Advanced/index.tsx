@@ -1,37 +1,50 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 
-import { useContext, useEffect, useState } from 'react'
+import {
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  ChangeEvent,
+} from 'react'
 
 import { fs } from '@janhq/core'
-import {
-  Switch,
-  Button,
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalTitle,
-  ModalTrigger,
-} from '@janhq/uikit'
+import { Switch, Button, Input } from '@janhq/uikit'
 
-import { atom, useAtom } from 'jotai'
+import ShortcutModal from '@/containers/ShortcutModal'
 
-import ShortCut from '@/containers/Shortcut'
+import { toaster } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useSettings } from '@/hooks/useSettings'
-import { toaster } from '@/containers/Toast'
-
-const serverEnabledAtom = atom<boolean>(false)
 
 const Advanced = () => {
-  const { experimentalFeatureEnabed, setExperimentalFeatureEnabled } =
-    useContext(FeatureToggleContext)
+  const {
+    experimentalFeature,
+    setExperimentalFeature,
+    ignoreSSL,
+    setIgnoreSSL,
+    proxy,
+    setProxy,
+  } = useContext(FeatureToggleContext)
+  const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
-  const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
+  const onProxyChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const value = event.target.value || ''
+      setPartialProxy(value)
+      if (value.trim().startsWith('http')) {
+        setProxy(value.trim())
+      } else {
+        setProxy('')
+      }
+    },
+    [setPartialProxy, setProxy]
+  )
 
   useEffect(() => {
     readSettings().then((settings) => {
@@ -93,37 +106,54 @@ const Advanced = () => {
           </p>
         </div>
         <Switch
-          checked={experimentalFeatureEnabed}
+          checked={experimentalFeature}
           onCheckedChange={(e) => {
             if (e === true) {
-              setExperimentalFeatureEnabled(true)
+              setExperimentalFeature(true)
             } else {
-              setExperimentalFeatureEnabled(false)
+              setExperimentalFeature(false)
             }
           }}
         />
       </div>
-      {/* Server */}
+      {/* Proxy */}
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">HTTPS Proxy</h6>
+          </div>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            Specify the HTTPS proxy or leave blank (proxy auto-configuration and
+            SOCKS not supported).
+          </p>
+          <Input
+            placeholder={'http://<user>:<password>@<domain or IP>:<port>'}
+            value={partialProxy}
+            onChange={onProxyChange}
+          />
+        </div>
+      </div>
+      {/* Ignore SSL certificates */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="w-4/5 flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
             <h6 className="text-sm font-semibold capitalize">
-              Enable API Server
+              Ignore SSL certificates
             </h6>
           </div>
           <p className="whitespace-pre-wrap leading-relaxed">
-            Enable API server for Jan app.
+            Allow self-signed or unverified certificates - may be required for
+            certain proxies.
           </p>
         </div>
         <Switch
-          checked={serverEnabled}
-          onCheckedChange={(e: boolean) => {
+          checked={ignoreSSL}
+          onCheckedChange={(e) => {
             if (e === true) {
-              window.core?.api?.startServer()
+              setIgnoreSSL(true)
             } else {
-              window.core?.api?.stopServer()
+              setIgnoreSSL(false)
             }
-            setServerEnabled(e)
           }}
         />
       </div>
@@ -173,136 +203,7 @@ const Advanced = () => {
             Shortcuts that you might find useful in Jan app.
           </p>
         </div>
-        <Modal>
-          <ModalTrigger asChild>
-            <Button size="sm" themes="secondary">
-              Show
-            </Button>
-          </ModalTrigger>
-          <ModalContent className="max-w-2xl">
-            <ModalHeader>
-              <ModalTitle>Keyboard Shortcuts</ModalTitle>
-            </ModalHeader>
-            <div className="my-2 flex flex-col items-center justify-center gap-2">
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <h6>Combination</h6>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <h6>Description</h6>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <ShortCut menu="E" />
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Show list your models</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <ShortCut menu="K" />
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Show list navigation pages</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <ShortCut menu="B" />
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Toggle collapsible left panel</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <ShortCut menu="," />
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Navigate to setting page</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-                      <p>Enter</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Send a message</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-                      <p>Shift + Enter</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Insert new line in input box</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 border-b border-border pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-                      <p>Arrow Up</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Navigate to previous option (within search dialog)</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex w-full gap-4 pb-2">
-                <div className="w-1/2">
-                  <div className="py-2">
-                    <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-                      <p>Arrow Down</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full">
-                  <div className="py-2">
-                    <p>Navigate to next option (within search dialog)</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </ModalContent>
-        </Modal>
+        <ShortcutModal />
       </div>
     </div>
   )

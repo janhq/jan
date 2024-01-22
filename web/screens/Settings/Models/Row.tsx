@@ -1,8 +1,16 @@
 import { useState } from 'react'
 
 import { InferenceEngine, Model } from '@janhq/core'
-import { Badge } from '@janhq/uikit'
+import {
+  Badge,
+  Tooltip,
+  TooltipArrow,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+} from '@janhq/uikit'
 
+import { useAtom } from 'jotai'
 import {
   MoreVerticalIcon,
   Trash2Icon,
@@ -10,12 +18,16 @@ import {
   StopCircleIcon,
 } from 'lucide-react'
 
+import { twMerge } from 'tailwind-merge'
+
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useClickOutside } from '@/hooks/useClickOutside'
 
 import useDeleteModel from '@/hooks/useDeleteModel'
 
 import { toGibibytes } from '@/utils/converter'
+
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 type RowModelProps = {
   data: Model
@@ -33,6 +45,8 @@ export default function RowModel(props: RowModelProps) {
 
   const isActiveModel = stateModel.model === props.data.id
 
+  const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
+
   const isRemoteModel =
     props.data.engine === InferenceEngine.openai ||
     props.data.engine === InferenceEngine.triton_trtllm
@@ -40,8 +54,12 @@ export default function RowModel(props: RowModelProps) {
   const onModelActionClick = (modelId: string) => {
     if (activeModel && activeModel.id === modelId) {
       stopModel()
+      window.core?.api?.stopServer()
+      setServerEnabled(false)
     } else {
-      startModel(modelId)
+      if (serverEnabled) {
+        startModel(modelId)
+      }
     }
   }
 
@@ -113,23 +131,49 @@ export default function RowModel(props: RowModelProps) {
             className="absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-border bg-background py-2 shadow-lg"
             ref={setMenu}
           >
-            <div
-              className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
-              onClick={() => {
-                onModelActionClick(props.data.id)
-                setMore(false)
-              }}
-            >
-              {activeModel && activeModel.id === props.data.id ? (
-                <StopCircleIcon size={16} className="text-muted-foreground" />
-              ) : (
-                <PlayIcon size={16} className="text-muted-foreground" />
+            <Tooltip>
+              <TooltipTrigger className="w-full">
+                <div
+                  className={twMerge(
+                    'flex items-center space-x-2 px-4 py-2 hover:bg-secondary',
+                    serverEnabled &&
+                      activeModel &&
+                      activeModel.id !== props.data.id &&
+                      'pointer-events-none cursor-not-allowed opacity-40'
+                  )}
+                  onClick={() => {
+                    onModelActionClick(props.data.id)
+                    setMore(false)
+                  }}
+                >
+                  {activeModel && activeModel.id === props.data.id ? (
+                    <StopCircleIcon
+                      size={16}
+                      className="text-muted-foreground"
+                    />
+                  ) : (
+                    <PlayIcon size={16} className="text-muted-foreground" />
+                  )}
+                  <span className="text-bold capitalize text-black dark:text-muted-foreground">
+                    {isActiveModel ? stateModel.state : 'Start'}
+                    &nbsp;Model
+                  </span>
+                </div>
+              </TooltipTrigger>
+              {serverEnabled && (
+                <TooltipPortal>
+                  <TooltipContent side="top">
+                    <span>
+                      {activeModel && activeModel.id === props.data.id
+                        ? 'The API server is running, change model will stop the server'
+                        : 'Threads are disabled while the server is running'}
+                    </span>
+                    <TooltipArrow />
+                  </TooltipContent>
+                </TooltipPortal>
               )}
-              <span className="text-bold capitalize text-black dark:text-muted-foreground">
-                {isActiveModel ? stateModel.state : 'Start'}
-                &nbsp;Model
-              </span>
-            </div>
+            </Tooltip>
+
             <div
               className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
               onClick={() => {

@@ -11,27 +11,28 @@ import { twMerge } from 'tailwind-merge'
 
 import { useClickOutside } from '@/hooks/useClickOutside'
 
+import { usePath } from '@/hooks/usePath'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 interface Props {
   children: ReactNode
   title: string
-  onRevealInFinderClick?: (type: string) => void
-  onViewJsonClick?: (type: string) => void
   asChild?: boolean
+  hideMoreVerticalAction?: boolean
 }
 export default function CardSidebar({
   children,
   title,
-  onRevealInFinderClick,
-  onViewJsonClick,
   asChild,
+  hideMoreVerticalAction,
 }: Props) {
   const [show, setShow] = useState(true)
   const [more, setMore] = useState(false)
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   const activeThread = useAtomValue(activeThreadAtom)
+  const { onReviewInFinder, onViewJson } = usePath()
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
@@ -58,13 +59,17 @@ export default function CardSidebar({
         <span className="font-bold">{title}</span>
         <div className="flex">
           {!asChild && (
-            <div
-              ref={setToggle}
-              className="cursor-pointer rounded-lg bg-zinc-100 p-2 pr-0 dark:bg-zinc-900"
-              onClick={() => setMore(!more)}
-            >
-              <MoreVerticalIcon className="h-5 w-5" />
-            </div>
+            <>
+              {!hideMoreVerticalAction && (
+                <div
+                  ref={setToggle}
+                  className="cursor-pointer rounded-lg bg-zinc-100 p-2 pr-0 dark:bg-zinc-900"
+                  onClick={() => setMore(!more)}
+                >
+                  <MoreVerticalIcon className="h-5 w-5" />
+                </div>
+              )}
+            </>
           )}
           <button
             onClick={() => setShow(!show)}
@@ -81,7 +86,7 @@ export default function CardSidebar({
 
         {more && (
           <div
-            className="absolute right-4 top-8 z-20 w-72 rounded-lg border border-border bg-background shadow-lg"
+            className="absolute right-4 top-8 z-50 w-72 rounded-lg border border-border bg-background shadow-lg"
             ref={setMenu}
           >
             <div
@@ -90,7 +95,7 @@ export default function CardSidebar({
                 title === 'Model' ? 'items-start' : 'items-center'
               )}
               onClick={() => {
-                onRevealInFinderClick && onRevealInFinderClick(title)
+                onReviewInFinder && onReviewInFinder(title)
                 setMore(false)
               }}
             >
@@ -121,7 +126,7 @@ export default function CardSidebar({
             <div
               className="flex cursor-pointer items-start space-x-2 px-4 py-2 hover:bg-secondary"
               onClick={() => {
-                onViewJsonClick && onViewJsonClick(title)
+                onViewJson && onViewJson(title)
                 setMore(false)
               }}
             >
