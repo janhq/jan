@@ -69,7 +69,7 @@ jobs:
     if: github.event_name == 'schedule'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
     with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
+      ref: refs/heads/main
       build_reason: Nightly
       push_to_branch: main
       new_version: ${{ needs.get-update-version.outputs.new_version }}
@@ -80,7 +80,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'cloudflare-r2'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
     with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
+      ref: refs/heads/main
       build_reason: Manual
       push_to_branch: main
       new_version: ${{ needs.get-update-version.outputs.new_version }}
