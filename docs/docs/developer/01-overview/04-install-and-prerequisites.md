@@ -18,7 +18,7 @@ keywords:
   ]
 ---
 
-## Requirements:
+## Requirements
 
 - [Hardware Requirements](../../guides/02-installation/06-hardware.md)
 
@@ -28,8 +28,6 @@ keywords:
   - [Linux](../../install/linux/#system-requirements)
 
 ## Prerequisites
-
-Before installing Jan, make sure you have the following installed on your computer:
 
 - [Node.js](https://nodejs.org/en/) (version 20.0.0 or higher)
 - [yarn](https://yarnpkg.com/) (version 1.22.0 or higher)
@@ -43,10 +41,15 @@ Before installing Jan, make sure you have the following installed on your comput
 git clone https://github.com/janhq/jan
 cd jan
 git checkout -b DESIRED_BRANCH
+```
+
+2. Install dependencies
+
+```bash
 yarn install
 ```
 
-2. Run development and use Jan Desktop
+3. Run development and use Jan Desktop
 
 ```bash
 make dev
@@ -62,4 +65,4 @@ This will start the development server and open the Jan Desktop app.
 make build
 ```
 
-This will build the app MacOS (M1/M2/M3) for production (with code signing already done) and put the result in dist folder.
+This will build the app MacOS (M1/M2/M3) for production (with code signing already done) and put the result in `dist` folder.
