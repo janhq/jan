@@ -14,7 +14,13 @@ import {
 
 import { atom, useAtomValue } from 'jotai'
 
-import { ChevronDownIcon } from 'lucide-react'
+import { 
+  ChevronDownIcon, 
+  CheckCircle2, 
+  AlertCircle, 
+  DownloadIcon,
+  ArrowRight
+} from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -64,7 +70,19 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
 
   let downloadButton = (
-    <Button onClick={() => onDownloadClick()}>Download</Button>
+    <Tooltip>
+      <TooltipTrigger>
+        <Button themes="ghost" onClick={() => onDownloadClick()}>
+          <DownloadIcon />
+        </Button>
+      </TooltipTrigger>
+      <TooltipPortal>
+        <TooltipContent side="top">
+          <span>Download</span>
+          <TooltipArrow />
+        </TooltipContent>
+      </TooltipPortal>
+    </Tooltip>
   )
 
   const onUseModelClick = useCallback(async () => {
@@ -82,11 +100,12 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
       <Tooltip>
         <TooltipTrigger>
           <Button
-            themes="secondaryBlue"
-            className="min-w-[98px]"
+            themes="ghost"
+            className="min-w-[98px] gap-2"
             onClick={onUseModelClick}
             disabled={serverEnabled}
           >
+            <ArrowRight />
             Use
           </Button>
         </TooltipTrigger>
@@ -109,15 +128,31 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const getLabel = (size: number) => {
     if (size * 1.25 >= totalRam) {
       return (
-        <Badge className="rounded-md" themes="danger">
-          Not enough RAM
-        </Badge>
+        <Tooltip>
+          <TooltipTrigger>
+            <AlertCircle className='text-red-500 dark:text-red-400'/>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent side="top">
+              <span>Not enough RAM</span>
+              <TooltipArrow />
+            </TooltipContent>
+          </TooltipPortal>
+        </Tooltip>
       )
     } else {
       return (
-        <Badge className="rounded-md" themes="success">
-          Recommended
-        </Badge>
+        <Tooltip>
+          <TooltipTrigger>
+            <CheckCircle2 className='text-green-600 dark:text-green-400'/>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent side="top">
+              <span>Recommended</span>
+              <TooltipArrow />
+            </TooltipContent>
+          </TooltipPortal>
+        </Tooltip>
       )
     }
   }
@@ -139,12 +174,12 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-2">
           <span className="font-bold">{model.name}</span>
+          {getLabel(model.metadata.size)}
         </div>
         <div className="inline-flex items-center space-x-2">
-          <span className="mr-4 font-semibold text-muted-foreground">
+          <span className="mr-2 font-semibold text-muted-foreground">
             {toGibibytes(model.metadata.size)}
           </span>
-          {getLabel(model.metadata.size)}
 
           {downloadButton}
           <ChevronDownIcon
