@@ -1,11 +1,11 @@
-import { app, ipcMain } from 'electron'
-import { resolve, join } from 'path'
+import { ipcMain } from 'electron'
+import { resolve } from 'path'
 import { WindowManager } from './../managers/window'
 import request from 'request'
 import { createWriteStream, renameSync } from 'fs'
 import { DownloadEvent, DownloadRoute } from '@janhq/core'
 const progress = require('request-progress')
-import { DownloadManager, normalizeFilePath } from '@janhq/core/node'
+import { DownloadManager, getJanDataFolderPath, normalizeFilePath } from '@janhq/core/node'
 
 export function handleDownloaderIPCs() {
   /**
@@ -61,11 +61,11 @@ export function handleDownloaderIPCs() {
       const proxy = network?.proxy?.startsWith('http')
         ? network.proxy
         : undefined
-      const userDataPath = join(app.getPath('home'), 'jan')
+
       if (typeof fileName === 'string') {
         fileName = normalizeFilePath(fileName)
       }
-      const destination = resolve(userDataPath, fileName)
+      const destination = resolve(getJanDataFolderPath(), fileName)
       const rq = request({ url, strictSSL, proxy })
 
       // Put request to download manager instance

@@ -1,7 +1,7 @@
 import { writeFileSync, existsSync, readFileSync } from "fs";
 import { exec } from "child_process";
 import path from "path";
-import { homedir } from "os";
+import { getJanDataFolderPath } from "@janhq/core/node";
 
 /**
  * Default GPU settings
@@ -25,8 +25,7 @@ const DEFALT_SETTINGS = {
  * Path to the settings file
  **/
 export const NVIDIA_INFO_FILE = path.join(
-  homedir(),
-  "jan",
+  getJanDataFolderPath(),
   "settings",
   "settings.json"
 );
@@ -40,7 +39,7 @@ let nitroProcessInfo: NitroProcessInfo | undefined = undefined;
  * Nitro process info
  */
 export interface NitroProcessInfo {
-  isRunning: boolean
+  isRunning: boolean;
 }
 
 /**

@@ -7,10 +7,11 @@ import {
   getExtension,
   removeExtension,
   getActiveExtensions,
-  ModuleManager
+  ModuleManager,
+  getJanExtensionsPath,
 } from '@janhq/core/node'
 
-import { getResourcePath, userSpacePath } from './../utils/path'
+import { getResourcePath } from './../utils/path'
 import { ExtensionRoute } from '@janhq/core'
 
 export function handleExtensionIPCs() {
@@ -27,7 +28,7 @@ export function handleExtensionIPCs() {
     ExtensionRoute.invokeExtensionFunc,
     async (_event, modulePath, method, ...args) => {
       const module = require(
-        /* webpackIgnore: true */ join(userSpacePath, 'extensions', modulePath)
+        /* webpackIgnore: true */ join(getJanExtensionsPath(), modulePath)
       )
       ModuleManager.instance.setModule(modulePath, module)
 

@@ -1,4 +1,4 @@
-import { getUserSpace, openFileExplorer, joinPath } from '@janhq/core'
+import { openFileExplorer, joinPath, getJanDataFolderPath } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
@@ -18,7 +18,7 @@ export const usePath = () => {
       return
     }
 
-    const userSpace = await getUserSpace()
+    const userSpace = await getJanDataFolderPath()
     let filePath = undefined
     const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {
@@ -51,7 +51,7 @@ export const usePath = () => {
       return
     }
 
-    const userSpace = await getUserSpace()
+    const userSpace = await getJanDataFolderPath()
     let filePath = undefined
     const assistantId = activeThread.assistants[0]?.assistant_id
     switch (type) {

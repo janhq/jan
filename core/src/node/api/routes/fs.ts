@@ -1,7 +1,7 @@
 import { FileSystemRoute } from '../../../api'
 import { join } from 'path'
 import { HttpServer } from '../HttpServer'
-import { userSpacePath } from '../../extension/manager'
+import { getJanDataFolderPath } from '../../utils'
 
 export const fsRouter = async (app: HttpServer) => {
   const moduleName = 'fs'
@@ -14,7 +14,7 @@ export const fsRouter = async (app: HttpServer) => {
           return mdl[route](
             ...body.map((arg: any) =>
               typeof arg === 'string' && arg.includes('file:/')
-                ? join(userSpacePath, arg.replace('file:/', ''))
+                ? join(getJanDataFolderPath(), arg.replace('file:/', ''))
                 : arg,
             ),
           )

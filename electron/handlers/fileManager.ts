@@ -2,12 +2,11 @@ import { ipcMain } from 'electron'
 // @ts-ignore
 import reflect from '@alumna/reflect'
 
-import { FileManagerRoute } from '@janhq/core'
-import { userSpacePath, getResourcePath } from './../utils/path'
+import { FileManagerRoute, FileStat } from '@janhq/core'
+import { getResourcePath } from './../utils/path'
 import fs from 'fs'
 import { join } from 'path'
-import { FileStat } from '@janhq/core'
-import { normalizeFilePath } from '@janhq/core/node'
+import { getJanDataFolderPath, normalizeFilePath } from '@janhq/core/node'
 
 /**
  * Handles file system extensions operations.
@@ -28,10 +27,10 @@ export function handleFileMangerIPCs() {
     }
   )
 
-  // Handles the 'getUserSpace' IPC event. This event is triggered to get the user space path.
+  // Handles the 'getJanDataFolderPath' IPC event. This event is triggered to get the user space path.
   ipcMain.handle(
-    FileManagerRoute.getUserSpace,
-    (): Promise<string> => Promise.resolve(userSpacePath)
+    FileManagerRoute.getJanDataFolderPath,
+    (): Promise<string> => Promise.resolve(getJanDataFolderPath())
   )
 
   // Handles the 'getResourcePath' IPC event. This event is triggered to get the resource path.
@@ -45,7 +44,7 @@ export function handleFileMangerIPCs() {
     async (_event, path: string): Promise<FileStat | undefined> => {
       const normalizedPath = normalizeFilePath(path)
 
-      const fullPath = join(userSpacePath, normalizedPath)
+      const fullPath = join(getJanDataFolderPath(), normalizedPath)
       const isExist = fs.existsSync(fullPath)
       if (!isExist) return undefined
 

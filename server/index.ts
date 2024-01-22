@@ -1,9 +1,12 @@
 import fastify from "fastify";
 import dotenv from "dotenv";
-import { log, v1Router } from "@janhq/core/node";
-import path from "path";
-
-import os from "os";
+import {
+  getServerLogPath,
+  v1Router,
+  logServer,
+  getJanExtensionsPath,
+} from "@janhq/core/node";
+import { join } from "path";
 
 // Load environment variables
 dotenv.config();
@@ -11,7 +14,6 @@ dotenv.config();
 // Define default settings
 const JAN_API_HOST = process.env.JAN_API_HOST || "127.0.0.1";
 const JAN_API_PORT = Number.parseInt(process.env.JAN_API_PORT || "1337");
-const serverLogPath = path.join(os.homedir(), "jan", "logs", "server.log");
 
 // Initialize server settings
 let server: any | undefined = undefined;
@@ -40,7 +42,7 @@ export interface ServerConfig {
 
 /**
  * Function to start the server
-* @param configs - Server configurations
+ * @param configs - Server configurations
  */
 export const startServer = async (configs?: ServerConfig) => {
   // Update server settings
@@ -48,12 +50,12 @@ export const startServer = async (configs?: ServerConfig) => {
   hostSetting = configs?.host ?? JAN_API_HOST;
   portSetting = configs?.port ?? JAN_API_PORT;
   corsEnbaled = configs?.isCorsEnabled ?? true;
+  const serverLogPath = getServerLogPath();
 
   // Start the server
   try {
     // Log server start
-    if (isVerbose)
-      log(`[API]::Debug: Starting JAN API server...`, "server.log");
+    if (isVerbose) logServer(`Debug: Starting JAN API server...`);
 
     // Initialize Fastify server with logging
     server = fastify({
@@ -78,7 +80,7 @@ export const startServer = async (configs?: ServerConfig) => {
     // Register Swagger UI
     await server.register(require("@fastify/swagger-ui"), {
       routePrefix: "/",
-      baseDir: configs?.baseDir ?? path.join(__dirname, "../..", "./docs/openapi"),
+      baseDir: configs?.baseDir ?? join(__dirname, "../..", "./docs/openapi"),
       uiConfig: {
         docExpansion: "full",
         deepLinking: false,
@@ -92,9 +94,7 @@ export const startServer = async (configs?: ServerConfig) => {
     await server.register(
       (childContext: any, _: any, done: any) => {
         childContext.register(require("@fastify/static"), {
-          root:
-            process.env.EXTENSION_ROOT ||
-            path.join(require("os").homedir(), "jan", "extensions"),
+          root: getJanExtensionsPath(),
           wildcard: false,
         });
 
@@ -115,13 +115,13 @@ export const startServer = async (configs?: ServerConfig) => {
       .then(() => {
         // Log server listening
         if (isVerbose)
-          log(
-            `[API]::Debug: JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`
+          logServer(
+            `Debug: JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`
           );
       });
   } catch (e) {
     // Log any errors
-    if (isVerbose) log(`[API]::Error: ${e}`);
+    if (isVerbose) logServer(`Error: ${e}`);
   }
 };
 
@@ -131,11 +131,11 @@ export const startServer = async (configs?: ServerConfig) => {
 export const stopServer = async () => {
   try {
     // Log server stop
-    if (isVerbose) log(`[API]::Debug: Server stopped`, "server.log");
+    if (isVerbose) logServer(`Debug: Server stopped`);
     // Stop the server
     await server.close();
   } catch (e) {
     // Log any errors
-    if (isVerbose) log(`[API]::Error: ${e}`);
+    if (isVerbose) logServer(`Error: ${e}`);
   }
 };

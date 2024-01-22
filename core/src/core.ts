@@ -35,10 +35,11 @@ const abortDownload: (fileName: string) => Promise<any> = (fileName) =>
   global.core.api?.abortDownload(fileName)
 
 /**
- * Gets the user space path.
- * @returns {Promise<any>} A Promise that resolves with the user space path.
+ * Gets Jan's data folder path.
+ *
+ * @returns {Promise<string>} A Promise that resolves with Jan's data folder path.
  */
-const getUserSpace = (): Promise<string> => global.core.api?.getUserSpace()
+const getJanDataFolderPath = (): Promise<string> => global.core.api?.getJanDataFolderPath()
 
 /**
  * Opens the file explorer at a specific path.
@@ -103,12 +104,12 @@ export {
   executeOnMain,
   downloadFile,
   abortDownload,
-  getUserSpace,
+  getJanDataFolderPath,
   openFileExplorer,
   getResourcePath,
   joinPath,
   openExternalUrl,
   baseName,
   log,
-  FileStat
+  FileStat,
 }

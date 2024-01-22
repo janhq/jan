@@ -1,20 +1,20 @@
 import { join, extname } from 'path'
 import { ExtensionRoute } from '../../../api/index'
-import { userSpacePath } from '../../extension/manager'
 import { ModuleManager } from '../../module'
 import { getActiveExtensions, installExtensions } from '../../extension/store'
 import { HttpServer } from '../HttpServer'
 
 import { readdirSync } from 'fs'
+import { getJanExtensionsPath } from '../../utils'
 
 export const extensionRouter = async (app: HttpServer) => {
   // TODO: Share code between node projects
-  app.post(`/${ExtensionRoute.getActiveExtensions}`, async (req, res) => {
+  app.post(`/${ExtensionRoute.getActiveExtensions}`, async (_req, res) => {
     const activeExtensions = await getActiveExtensions()
     res.status(200).send(activeExtensions)
   })
 
-  app.post(`/${ExtensionRoute.baseExtensions}`, async (req, res) => {
+  app.post(`/${ExtensionRoute.baseExtensions}`, async (_req, res) => {
     const baseExtensionPath = join(__dirname, '..', '..', '..', 'pre-install')
     const extensions = readdirSync(baseExtensionPath)
       .filter((file) => extname(file) === '.tgz')
@@ -23,7 +23,7 @@ export const extensionRouter = async (app: HttpServer) => {
     res.status(200).send(extensions)
   })
 
-  app.post(`/${ExtensionRoute.installExtension}`, async (req, res) => {
+  app.post(`/${ExtensionRoute.installExtension}`, async (req) => {
     const extensions = req.body as any
     const installed = await installExtensions(JSON.parse(extensions)[0])
     return JSON.parse(JSON.stringify(installed))
@@ -32,7 +32,7 @@ export const extensionRouter = async (app: HttpServer) => {
   app.post(`/${ExtensionRoute.invokeExtensionFunc}`, async (req, res) => {
     const args = JSON.parse(req.body as any)
     console.debug(args)
-    const module = await import(join(userSpacePath, 'extensions', args[0]))
+    const module = await import(join(getJanExtensionsPath(), args[0]))
 
     ModuleManager.instance.setModule(args[0], module)
     const method = args[1]

@@ -7,12 +7,16 @@ export enum AppRoute {
   openExternalUrl = 'openExternalUrl',
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
+  selectDirectory = 'selectDirectory',
+  getAppConfigurations = 'getAppConfigurations',
+  updateAppConfiguration = 'updateAppConfiguration',
   relaunch = 'relaunch',
   joinPath = 'joinPath',
   baseName = 'baseName',
   startServer = 'startServer',
   stopServer = 'stopServer',
-  log = 'log'
+  log = 'log',
+  logServer = 'logServer',
 }
 
 export enum AppEvent {
@@ -55,7 +59,7 @@ export enum FileSystemRoute {
 }
 export enum FileManagerRoute {
   syncFile = 'syncFile',
-  getUserSpace = 'getUserSpace',
+  getJanDataFolderPath = 'getJanDataFolderPath',
   getResourcePath = 'getResourcePath',
   fileStat = 'fileStat',
 }

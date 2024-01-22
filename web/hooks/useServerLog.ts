@@ -1,4 +1,9 @@
-import { fs, joinPath, openFileExplorer, getUserSpace } from '@janhq/core'
+import {
+  fs,
+  joinPath,
+  openFileExplorer,
+  getJanDataFolderPath,
+} from '@janhq/core'
 
 export const useServerLog = () => {
   const getServerLog = async () => {
@@ -12,8 +17,8 @@ export const useServerLog = () => {
     return logs
   }
   const openServerLog = async () => {
-    const userSpace = await getUserSpace()
-    const fullPath = await joinPath([userSpace, 'logs', 'server.log'])
+    const janDataFolderPath = await getJanDataFolderPath()
+    const fullPath = await joinPath([janDataFolderPath, 'logs', 'server.log'])
     return openFileExplorer(fullPath)
   }
 
