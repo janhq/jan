@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react'
 
+import ScrollToBottom from 'react-scroll-to-bottom'
+
 import {
   Button,
   Switch,
@@ -99,7 +101,7 @@ const LocalServerScreen = () => {
           <div className="space-y-3 px-4">
             <Button
               block
-              themes={serverEnabled ? 'danger' : 'success'}
+              themes={serverEnabled ? 'danger' : 'primary'}
               disabled={stateModel.loading}
               onClick={() => {
                 if (serverEnabled) {
@@ -135,105 +137,124 @@ const LocalServerScreen = () => {
           </div>
         </div>
 
-        <div className="space-y-4 p-4">
-          <div className="flex w-full flex-shrink-0 items-center gap-x-2">
-            <Select
-              value={host}
-              onValueChange={(e) => setHost(e)}
-              disabled={serverEnabled}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="127.0.0.1">127.0.0.1</SelectItem>
-                <SelectItem value="0.0.0.0">0.0.0.0</SelectItem>
-              </SelectContent>
-            </Select>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="space-y-4 p-4">
+              <div>
+                <p className="mb-2 block text-sm font-semibold text-zinc-500 dark:text-gray-300">
+                  Server Options
+                </p>
+                <div className="flex w-full flex-shrink-0 items-center gap-x-2">
+                  <Select
+                    value={host}
+                    onValueChange={(e) => setHost(e)}
+                    disabled={serverEnabled}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="127.0.0.1">127.0.0.1</SelectItem>
+                      <SelectItem value="0.0.0.0">0.0.0.0</SelectItem>
+                    </SelectContent>
+                  </Select>
 
-            <Input
-              className="w-[60px] flex-shrink-0"
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              maxLength={4}
-              disabled={serverEnabled}
-            />
-          </div>
-          <div>
-            <label
-              id="cors"
-              className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
-            >
-              Cross-Origin-Resource-Sharing (CORS)
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <InfoIcon
-                    size={16}
-                    className="mt-0.5 flex-shrink-0 dark:text-gray-500"
+                  <Input
+                    className="w-[60px] flex-shrink-0"
+                    value={port}
+                    onChange={(e) => setPort(e.target.value)}
+                    maxLength={4}
+                    disabled={serverEnabled}
                   />
-                </TooltipTrigger>
-                <TooltipPortal>
-                  <TooltipContent side="top" className="max-w-[240px]">
-                    <span>
-                      CORS (Cross-Origin Resource Sharing) manages resource
-                      access on this server from external domains. Enable for
-                      secure inter-website communication, regulating data
-                      sharing to bolster overall security.
-                    </span>
-                    <TooltipArrow />
-                  </TooltipContent>
-                </TooltipPortal>
-              </Tooltip>
-            </label>
-            <div className="flex items-center justify-between">
-              <Switch
-                checked={isCorsEnabled}
-                onCheckedChange={(e) => setIsCorsEnabled(e)}
-                name="cors"
-                disabled={serverEnabled}
-              />
-            </div>
-          </div>
-          <div>
-            <label
-              id="verbose"
-              className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
-            >
-              Verbose Server Logs
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <InfoIcon
-                    size={16}
-                    className="mt-0.5 flex-shrink-0 dark:text-gray-500"
+                </div>
+              </div>
+              <div>
+                <label
+                  id="cors"
+                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
+                >
+                  Cross-Origin-Resource-Sharing (CORS)
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <InfoIcon
+                        size={16}
+                        className="mt-0.5 flex-shrink-0 dark:text-gray-500"
+                      />
+                    </TooltipTrigger>
+                    <TooltipPortal>
+                      <TooltipContent side="top" className="max-w-[240px]">
+                        <span>
+                          CORS (Cross-Origin Resource Sharing) manages resource
+                          access on this server from external domains. Enable
+                          for secure inter-website communication, regulating
+                          data sharing to bolster overall security.
+                        </span>
+                        <TooltipArrow />
+                      </TooltipContent>
+                    </TooltipPortal>
+                  </Tooltip>
+                </label>
+                <div className="flex items-center justify-between">
+                  <Switch
+                    checked={isCorsEnabled}
+                    onCheckedChange={(e) => setIsCorsEnabled(e)}
+                    name="cors"
+                    disabled={serverEnabled}
                   />
-                </TooltipTrigger>
-                <TooltipPortal>
-                  <TooltipContent side="top" className="max-w-[240px]">
-                    <span>
-                      Verbose Server Logs provide extensive details about server
-                      activities. Enable to capture thorough records, aiding in
-                      troubleshooting and monitoring server performance
-                      effectively.
-                    </span>
-                    <TooltipArrow />
-                  </TooltipContent>
-                </TooltipPortal>
-              </Tooltip>
-            </label>
-            <div className="flex items-center justify-between">
-              <Switch
-                checked={isVerboseEnabled}
-                onCheckedChange={(e) => setIsVerboseEnabled(e)}
-                name="verbose"
-                disabled={serverEnabled}
-              />
+                </div>
+              </div>
+              <div>
+                <label
+                  id="verbose"
+                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
+                >
+                  Verbose Server Logs
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <InfoIcon
+                        size={16}
+                        className="mt-0.5 flex-shrink-0 dark:text-gray-500"
+                      />
+                    </TooltipTrigger>
+                    <TooltipPortal>
+                      <TooltipContent side="top" className="max-w-[240px]">
+                        <span>
+                          Verbose Server Logs provide extensive details about
+                          server activities. Enable to capture thorough records,
+                          aiding in troubleshooting and monitoring server
+                          performance effectively.
+                        </span>
+                        <TooltipArrow />
+                      </TooltipContent>
+                    </TooltipPortal>
+                  </Tooltip>
+                </label>
+                <div className="flex items-center justify-between">
+                  <Switch
+                    checked={isVerboseEnabled}
+                    onCheckedChange={(e) => setIsVerboseEnabled(e)}
+                    name="verbose"
+                    disabled={serverEnabled}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </TooltipTrigger>
+          <TooltipPortal>
+            {serverEnabled && (
+              <TooltipContent side="bottom" className="max-w-[200px]">
+                <span>
+                  Settings cannot be modified while the server is running
+                </span>
+                <TooltipArrow />
+              </TooltipContent>
+            )}
+          </TooltipPortal>
+        </Tooltip>
       </div>
 
       {/* Middle Bar */}
-      <div className="relative flex h-full w-full flex-col overflow-auto bg-background">
+      <ScrollToBottom className="relative flex h-full w-full flex-col overflow-auto bg-background">
         <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-secondary/30">
           <h2 className="font-bold">Server Logs</h2>
           <div className="space-x-2">
@@ -279,8 +300,8 @@ const LocalServerScreen = () => {
 
                 <div>
                   <h6 className="font-medium text-black">
-                    You cannot chat with your assistant while the server is
-                    running.
+                    Once you start the server, you cannot chat with your
+                    assistant.
                   </h6>
                   <Button
                     className="mt-4"
@@ -298,7 +319,7 @@ const LocalServerScreen = () => {
         ) : (
           <Logs />
         )}
-      </div>
+      </ScrollToBottom>
 
       {/* Right bar */}
       <div

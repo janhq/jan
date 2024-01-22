@@ -162,7 +162,11 @@ export default function DropdownListSidebar() {
           stateModel.loading && 'pointer-events-none bg-blue-200 text-blue-600'
         )}
       >
-        <Select value={selectedModel?.id} onValueChange={onValueSelected}>
+        <Select
+          value={selectedModel?.id}
+          onValueChange={onValueSelected}
+          disabled={serverEnabled}
+        >
           <SelectTrigger className="relative w-full">
             <SelectValue placeholder="Choose model to start">
               {stateModel.loading && (

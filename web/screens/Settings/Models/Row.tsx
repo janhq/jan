@@ -175,11 +175,17 @@ export default function RowModel(props: RowModelProps) {
             </Tooltip>
 
             <div
-              className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
+              className={twMerge(
+                'flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary',
+                serverEnabled &&
+                  'pointer-events-none cursor-not-allowed opacity-40'
+              )}
               onClick={() => {
                 setTimeout(async () => {
-                  await stopModel()
-                  deleteModel(props.data)
+                  if (serverEnabled) {
+                    await stopModel()
+                    deleteModel(props.data)
+                  }
                 }, 500)
                 setMore(false)
               }}

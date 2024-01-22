@@ -49,6 +49,9 @@ const TopBar = () => {
       case MainViewState.Thread:
         return activeThread ? activeThread?.title : 'New Thread'
 
+      case MainViewState.LocalServer:
+        return 'Local API Server'
+
       default:
         return MainViewState[viewStateName]?.replace(/([A-Z])/g, ' $1').trim()
     }
@@ -78,34 +81,36 @@ const TopBar = () => {
         </div>
       ) : (
         <div className="relative w-full">
-          <div className="absolute left-16 h-full w-60 border-r border-border">
-            <div className="flex h-full w-full items-center justify-between">
-              <div
-                className={twMerge(
-                  'unset-drag cursor-pointer',
-                  mainViewState !== MainViewState.Thread && 'invisible'
-                )}
-                onClick={() => setShowLeftSideBar((show) => !show)}
-              >
-                <PanelRightCloseIcon
-                  size={20}
-                  className={twMerge(
-                    'ml-4 text-muted-foreground',
-                    showLeftSideBar && 'rotate-180'
-                  )}
-                />
-              </div>
-              <div
-                className="unset-drag cursor-pointer pr-4"
-                onClick={onCreateConversationClick}
-              >
-                <PenSquareIcon size={20} className="text-muted-foreground" />
+          {mainViewState == MainViewState.Thread && (
+            <div className="absolute left-16 h-full w-60 border-r border-border">
+              <div className="flex h-full w-full items-center justify-between">
+                <div
+                  className={twMerge('unset-drag cursor-pointer')}
+                  onClick={() => setShowLeftSideBar((show) => !show)}
+                >
+                  <PanelRightCloseIcon
+                    size={20}
+                    className={twMerge(
+                      'ml-4 text-muted-foreground',
+                      showLeftSideBar && 'rotate-180'
+                    )}
+                  />
+                </div>
+                <div
+                  className="unset-drag cursor-pointer pr-4"
+                  onClick={onCreateConversationClick}
+                >
+                  <PenSquareIcon size={20} className="text-muted-foreground" />
+                </div>
               </div>
             </div>
-          </div>
+          )}
           <div
             className={twMerge(
-              'absolute left-80 right-10 h-full',
+              'absolute right-10 h-full',
+              mainViewState == MainViewState.Thread
+                ? 'left-80'
+                : 'left-16 pl-6',
               showing && 'right-80'
             )}
           >
