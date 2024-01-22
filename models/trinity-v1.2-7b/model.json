@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "trinity-v1.2.Q4_K_M.gguf",
       "url": "https://huggingface.co/janhq/trinity-v1.2-GGUF/resolve/main/trinity-v1.2.Q4_K_M.gguf"
     }
   ],
@@ -12,7 +13,8 @@
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
-    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
+    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+    "llama_model_path": "trinity-v1.2.Q4_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
