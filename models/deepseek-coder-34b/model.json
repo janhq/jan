@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "deepseek-coder-33b-instruct.Q5_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/deepseek-coder-33B-instruct-GGUF/resolve/main/deepseek-coder-33b-instruct.Q5_K_M.gguf"
     }
   ],
