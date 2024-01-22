@@ -7,6 +7,7 @@ import { userSpacePath, getResourcePath } from './../utils/path'
 import fs from 'fs'
 import { join } from 'path'
 import { FileStat } from '@janhq/core'
+import { normalizeFilePath } from '@janhq/core/node'
 
 /**
  * Handles file system extensions operations.
@@ -42,11 +43,7 @@ export function handleFileMangerIPCs() {
   ipcMain.handle(
     FileManagerRoute.fileStat,
     async (_event, path: string): Promise<FileStat | undefined> => {
-      const normalizedPath = path
-        .replace(`file://`, '')
-        .replace(`file:/`, '')
-        .replace(`file:\\\\`, '')
-        .replace(`file:\\`, '')
+      const normalizedPath = normalizeFilePath(path)
 
       const fullPath = join(userSpacePath, normalizedPath)
       const isExist = fs.existsSync(fullPath)

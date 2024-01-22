@@ -11,19 +11,15 @@
     ],
     "nohoist": [
       "uikit",
-      "uikit/*",
       "core",
-      "core/*",
       "electron",
-      "electron/**",
       "web",
-      "web/**",
-      "server",
-      "server/**"
+      "server"
     ]
   },
   "scripts": {
     "lint": "yarn workspace jan lint && yarn workspace jan-web lint",
+    "test:unit": "yarn workspace @janhq/core test",
     "test": "yarn workspace jan test:e2e",
     "copy:assets": "cpx \"models/**\" \"electron/models/\" && cpx \"docs/openapi/**\" \"electron/docs/openapi\"",
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
