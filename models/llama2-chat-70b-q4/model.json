@@ -1,6 +1,7 @@
 {
   "source": [
     {
+      "filename": "llama-2-70b-chat.Q4_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/Llama-2-70B-Chat-GGUF/resolve/main/llama-2-70b-chat.Q4_K_M.gguf"
     }
   ],
