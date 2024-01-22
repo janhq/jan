@@ -103,7 +103,7 @@ export default class Extension {
       const pacote = await import('pacote')
       await pacote.extract(
         this.specifier,
-        join((await ExtensionManager.instance.getExtensionsPath()) ?? '', this.name ?? ''),
+        join(ExtensionManager.instance.getExtensionsPath() ?? '', this.name ?? ''),
         this.installOptions,
       )
 
@@ -180,7 +180,7 @@ export default class Extension {
    * @returns {Promise}
    */
   async uninstall(): Promise<void> {
-    const path = await ExtensionManager.instance.getExtensionsPath()
+    const path = ExtensionManager.instance.getExtensionsPath()
     const extPath = resolve(path ?? '', this.name ?? '')
     await rmdirSync(extPath, { recursive: true })
 

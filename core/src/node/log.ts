@@ -23,7 +23,7 @@ export const log = function (message: string) {
 export const logServer = function (message: string) {
   const serverLogPath = getServerLogPath()
   if (!message.startsWith('[')) {
-    message = `[APP]::${message}`
+    message = `[SERVER]::${message}`
   }
 
   message = `${new Date().toISOString()} ${message}`

@@ -55,7 +55,7 @@ export const startServer = async (configs?: ServerConfig) => {
   // Start the server
   try {
     // Log server start
-    if (isVerbose) logServer(`[API]::Debug: Starting JAN API server...`);
+    if (isVerbose) logServer(`Debug: Starting JAN API server...`);
 
     // Initialize Fastify server with logging
     server = fastify({
@@ -116,12 +116,12 @@ export const startServer = async (configs?: ServerConfig) => {
         // Log server listening
         if (isVerbose)
           logServer(
-            `[API]::Debug: JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`
+            `Debug: JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`
           );
       });
   } catch (e) {
     // Log any errors
-    if (isVerbose) logServer(`[API]::Error: ${e}`);
+    if (isVerbose) logServer(`Error: ${e}`);
   }
 };
 
@@ -131,11 +131,11 @@ export const startServer = async (configs?: ServerConfig) => {
 export const stopServer = async () => {
   try {
     // Log server stop
-    if (isVerbose) logServer(`[API]::Debug: Server stopped`);
+    if (isVerbose) logServer(`Debug: Server stopped`);
     // Stop the server
     await server.close();
   } catch (e) {
     // Log any errors
-    if (isVerbose) logServer(`[API]::Error: ${e}`);
+    if (isVerbose) logServer(`Error: ${e}`);
   }
 };

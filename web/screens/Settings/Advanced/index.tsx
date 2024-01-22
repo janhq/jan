@@ -232,22 +232,31 @@ const Advanced = () => {
           Clear
         </Button>
       </div>
-      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="w-4/5 flex-shrink-0 space-y-1.5">
-          <div className="flex gap-x-2">
-            <h6 className="text-sm font-semibold capitalize">
-              Select Jan Data Folder
-            </h6>
+      {experimentalFeature && (
+        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+          <div className="w-4/5 flex-shrink-0 space-y-1.5">
+            <div className="flex gap-x-2">
+              <h6 className="text-sm font-semibold capitalize">
+                Jan Data Folder
+              </h6>
+            </div>
+            <p className="whitespace-pre-wrap leading-relaxed">
+              Where messages, model configurations, and other user data is
+              placed.
+            </p>
+            <p className="whitespace-pre-wrap leading-relaxed text-gray-500">
+              {`${currentPath}`}
+            </p>
           </div>
-          <p className="whitespace-pre-wrap leading-relaxed">
-            Select Jan&apos;s data folder. Current folder is located at
-            {` ${currentPath}`}
-          </p>
+          <Button
+            size="sm"
+            themes="secondary"
+            onClick={onJanVaultDirectoryClick}
+          >
+            Select
+          </Button>
         </div>
-        <Button size="sm" themes="secondary" onClick={onJanVaultDirectoryClick}>
-          Select
-        </Button>
-      </div>
+      )}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="w-4/5 flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
