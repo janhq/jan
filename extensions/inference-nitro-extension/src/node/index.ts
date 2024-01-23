@@ -125,6 +125,7 @@ async function runModel(
       // This is critical and requires real CPU physical core count (or performance core)
       cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
     };
+    console.log(currentSettings);
     return runNitroAndLoadModel();
   }
 }
