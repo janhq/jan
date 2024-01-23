@@ -61,8 +61,8 @@ const Advanced = () => {
       if (settings.gpus) {
         setGpuList(settings.gpus)
       }
+      setUseGpuIfPossible()
     }
-    setUseGpuIfPossible()
   }, [readSettings])
 
   const clearLogs = async () => {
@@ -154,10 +154,8 @@ const Advanced = () => {
           />
         </div>
       )}
-
       {/* Directory */}
       <DataFolder />
-
       {gpuEnabled && (
         <div className="mt-4">
           <label className="block text-sm font-medium text-gray-700">
