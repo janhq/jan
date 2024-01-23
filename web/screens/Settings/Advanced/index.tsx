@@ -107,11 +107,11 @@ const Advanced = () => {
       {/* CPU / GPU switching */}
       {!isMac && (
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex-shrink-0 space-y-1.5">
             <div className="flex gap-x-2">
               <h6 className="text-sm font-semibold capitalize">NVidia GPU</h6>
             </div>
-            <p className="whitespace-pre-wrap leading-relaxed">
+            <p className="leading-relaxed">
               Enable GPU acceleration for NVidia GPUs.
             </p>
           </div>
@@ -135,13 +135,13 @@ const Advanced = () => {
       )}
       {/* Experimental */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+        <div className="flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
             <h6 className="text-sm font-semibold capitalize">
               Experimental Mode
             </h6>
           </div>
-          <p className="whitespace-pre-wrap leading-relaxed">
+          <p className="leading-relaxed">
             Enable experimental features that may be unstable tested.
           </p>
         </div>
@@ -158,11 +158,11 @@ const Advanced = () => {
       </div>
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+        <div className="flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
             <h6 className="text-sm font-semibold capitalize">HTTPS Proxy</h6>
           </div>
-          <p className="whitespace-pre-wrap leading-relaxed">
+          <p className="leading-relaxed">
             Specify the HTTPS proxy or leave blank (proxy auto-configuration and
             SOCKS not supported).
           </p>
@@ -175,13 +175,13 @@ const Advanced = () => {
       </div>
       {/* Ignore SSL certificates */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+        <div className="flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
             <h6 className="text-sm font-semibold capitalize">
               Ignore SSL certificates
             </h6>
           </div>
-          <p className="whitespace-pre-wrap leading-relaxed">
+          <p className="leading-relaxed">
             Allow self-signed or unverified certificates - may be required for
             certain proxies.
           </p>
@@ -199,20 +199,19 @@ const Advanced = () => {
       </div>
       {window.electronAPI && (
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex-shrink-0 space-y-1.5">
             <div className="flex gap-x-2">
               <h6 className="text-sm font-semibold capitalize">
                 Open App Directory
               </h6>
             </div>
-            <p className="whitespace-pre-wrap leading-relaxed">
+            <p className="leading-relaxed">
               Open the directory where your app data, like conversation history
               and model configurations, is located.
             </p>
           </div>
           <Button
-            size="sm"
-            themes="secondary"
+            themes="secondaryBlue"
             onClick={() => window.electronAPI.openAppDirectory()}
           >
             Open
@@ -220,51 +219,45 @@ const Advanced = () => {
         </div>
       )}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+        <div className="flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
             <h6 className="text-sm font-semibold capitalize">Clear logs</h6>
           </div>
-          <p className="whitespace-pre-wrap leading-relaxed">
-            Clear all logs from Jan app.
-          </p>
+          <p className="leading-relaxed">Clear all logs from Jan app.</p>
         </div>
-        <Button size="sm" themes="secondary" onClick={clearLogs}>
+        <Button themes="secondaryBlue" onClick={clearLogs}>
           Clear
         </Button>
       </div>
       {experimentalFeature && (
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex-shrink-0 space-y-1.5">
             <div className="flex gap-x-2">
               <h6 className="text-sm font-semibold capitalize">
                 Jan Data Folder
               </h6>
             </div>
-            <p className="whitespace-pre-wrap leading-relaxed">
+            <p className="leading-relaxed">
               Where messages, model configurations, and other user data is
               placed.
             </p>
-            <p className="whitespace-pre-wrap leading-relaxed text-gray-500">
-              {`${currentPath}`}
-            </p>
           </div>
-          <Button
-            size="sm"
-            themes="secondary"
-            onClick={onJanVaultDirectoryClick}
-          >
-            Select
-          </Button>
+          <div className="flex items-center gap-x-3">
+            <Input value={currentPath} className="w-[200px]" disabled />
+            <Button themes="secondaryBlue" onClick={onJanVaultDirectoryClick}>
+              Select
+            </Button>
+          </div>
         </div>
       )}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+        <div className="flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
             <h6 className="text-sm font-semibold capitalize">
               Keyboard Shortcuts
             </h6>
           </div>
-          <p className="whitespace-pre-wrap leading-relaxed">
+          <p className="leading-relaxed">
             Shortcuts that you might find useful in Jan app.
           </p>
         </div>
