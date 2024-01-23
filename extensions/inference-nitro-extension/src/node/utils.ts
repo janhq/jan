@@ -39,7 +39,7 @@ export async function physicalCpuCount(): Promise<number> {
             .split(os.EOL)
             .map((line: string) => parseInt(line))
             .filter((value: number) => !isNaN(value))
-            .reduce((sum: number, number: number) => sum + number, 0);
+            .reduce((sum: number, number: number) => sum + number, 1);
           resolve(amount);
         })
         .catch(reject);
