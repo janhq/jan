@@ -9,10 +9,8 @@ import {
   ChangeEvent,
 } from 'react'
 
-import { fs, AppConfiguration } from '@janhq/core'
+import { fs } from '@janhq/core'
 import { Switch, Button, Input } from '@janhq/uikit'
-
-import { PencilIcon } from 'lucide-react'
 
 import ShortcutModal from '@/containers/ShortcutModal'
 
@@ -21,6 +19,8 @@ import { toaster } from '@/containers/Toast'
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useSettings } from '@/hooks/useSettings'
+
+import DataFolder from './DataFolder'
 
 const Advanced = () => {
   const {
@@ -33,6 +33,7 @@ const Advanced = () => {
   } = useContext(FeatureToggleContext)
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
+
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
   const onProxyChange = useCallback(
@@ -47,17 +48,6 @@ const Advanced = () => {
     },
     [setPartialProxy, setProxy]
   )
-
-  // TODO: remove me later.
-  const [currentPath, setCurrentPath] = useState('')
-
-  useEffect(() => {
-    window.core?.api
-      ?.getAppConfigurations()
-      ?.then((appConfig: AppConfiguration) => {
-        setCurrentPath(appConfig.data_folder)
-      })
-  }, [])
 
   useEffect(() => {
     readSettings().then((settings) => {
@@ -75,37 +65,47 @@ const Advanced = () => {
     })
   }
 
-  const onJanVaultDirectoryClick = async () => {
-    const destFolder = await window.core?.api?.selectDirectory()
-    if (destFolder) {
-      console.debug(`Destination folder selected: ${destFolder}`)
-
-      try {
-        const appConfiguration: AppConfiguration =
-          await window.core?.api?.getAppConfigurations()
-        const currentJanDataFolder = appConfiguration.data_folder
-        if (currentJanDataFolder === destFolder) {
-          console.debug(
-            `Destination folder is the same as current folder. Ignore..`
-          )
-          return
-        }
-        appConfiguration.data_folder = destFolder
-
-        await fs.syncFile(currentJanDataFolder, destFolder)
-        await window.core?.api?.updateAppConfiguration(appConfiguration)
-        console.debug(
-          `File sync finished from ${currentJanDataFolder} to ${destFolder}`
-        )
-        await window.core?.api?.relaunch()
-      } catch (e) {
-        console.error(`Error: ${e}`)
-      }
-    }
-  }
-
   return (
     <div className="block w-full">
+      {/* Keyboard shortcut  */}
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">
+              Keyboard Shortcuts
+            </h6>
+          </div>
+          <p className="leading-relaxed">
+            Shortcuts that you might find useful in Jan app.
+          </p>
+        </div>
+        <ShortcutModal />
+      </div>
+
+      {/* Experimental */}
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">
+              Experimental Mode
+            </h6>
+          </div>
+          <p className="leading-relaxed">
+            Enable experimental features that may be unstable tested.
+          </p>
+        </div>
+        <Switch
+          checked={experimentalFeature}
+          onCheckedChange={(e) => {
+            if (e === true) {
+              setExperimentalFeature(true)
+            } else {
+              setExperimentalFeature(false)
+            }
+          }}
+        />
+      </div>
+
       {/* CPU / GPU switching */}
       {!isMac && (
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
@@ -135,29 +135,10 @@ const Advanced = () => {
           />
         </div>
       )}
-      {/* Experimental */}
-      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="flex-shrink-0 space-y-1.5">
-          <div className="flex gap-x-2">
-            <h6 className="text-sm font-semibold capitalize">
-              Experimental Mode
-            </h6>
-          </div>
-          <p className="leading-relaxed">
-            Enable experimental features that may be unstable tested.
-          </p>
-        </div>
-        <Switch
-          checked={experimentalFeature}
-          onCheckedChange={(e) => {
-            if (e === true) {
-              setExperimentalFeature(true)
-            } else {
-              setExperimentalFeature(false)
-            }
-          }}
-        />
-      </div>
+
+      {/* Directory */}
+      <DataFolder />
+
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1.5">
@@ -175,6 +156,7 @@ const Advanced = () => {
           />
         </div>
       </div>
+
       {/* Ignore SSL certificates */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1.5">
@@ -199,28 +181,8 @@ const Advanced = () => {
           }}
         />
       </div>
-      {window.electronAPI && (
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="flex-shrink-0 space-y-1.5">
-            <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">
-                Open App Directory
-              </h6>
-            </div>
-            <p className="leading-relaxed">
-              Open the directory where your app data, like conversation history
-              and model configurations, is located.
-            </p>
-          </div>
-          <Button
-            themes="secondaryBlue"
-            size="sm"
-            onClick={() => window.electronAPI.openAppDirectory()}
-          >
-            Open
-          </Button>
-        </div>
-      )}
+
+      {/* Claer log */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
@@ -228,48 +190,9 @@ const Advanced = () => {
           </div>
           <p className="leading-relaxed">Clear all logs from Jan app.</p>
         </div>
-        <Button size="sm" themes="secondaryBlue" onClick={clearLogs}>
+        <Button size="sm" themes="secondaryDanger" onClick={clearLogs}>
           Clear
         </Button>
-      </div>
-      {experimentalFeature && (
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="flex-shrink-0 space-y-1.5">
-            <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">
-                Jan Data Folder
-              </h6>
-            </div>
-            <p className="leading-relaxed">
-              Where messages, model configurations, and other user data is
-              placed.
-            </p>
-          </div>
-          <div className="flex items-center gap-x-3">
-            <Input value={currentPath} className="w-[200px]" disabled />
-            <Button
-              size="sm"
-              themes="outline"
-              className="h-9 w-9 p-0"
-              onClick={onJanVaultDirectoryClick}
-            >
-              <PencilIcon size={16} />
-            </Button>
-          </div>
-        </div>
-      )}
-      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="flex-shrink-0 space-y-1.5">
-          <div className="flex gap-x-2">
-            <h6 className="text-sm font-semibold capitalize">
-              Keyboard Shortcuts
-            </h6>
-          </div>
-          <p className="leading-relaxed">
-            Shortcuts that you might find useful in Jan app.
-          </p>
-        </div>
-        <ShortcutModal />
       </div>
     </div>
   )
