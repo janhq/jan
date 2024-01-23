@@ -70,7 +70,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
       {message.status === MessageStatus.Error && (
         <div key={message.id} className="mt-10 flex flex-col items-center">
           <span className="mb-3 text-center text-sm font-medium text-gray-500">
-            {Number(activeModel?.metadata.size) * 1.25 > totalRam ? (
+            {Number(activeModel?.metadata.size) > totalRam ? (
               <>
                 Oops! Model size exceeds available RAM. Consider selecting a
                 smaller model or upgrading your RAM for smoother performance.
