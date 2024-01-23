@@ -108,9 +108,7 @@ const LocalServerScreen = () => {
                   window.core?.api?.stopServer()
                   setServerEnabled(false)
                 } else {
-                  if (!activeModel) {
-                    startModel(String(selectedModel?.id))
-                  }
+                  startModel(String(selectedModel?.id))
                   window.core?.api?.startServer({
                     host,
                     port,
