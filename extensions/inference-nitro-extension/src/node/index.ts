@@ -3,11 +3,12 @@ import path from "path";
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import tcpPortUsed from "tcp-port-used";
 import fetchRT from "fetch-retry";
-import osUtils from "os-utils";
 import { log, getJanDataFolderPath } from "@janhq/core/node";
 import { getNitroProcessInfo, updateNvidiaInfo } from "./nvidia";
 import { Model, InferenceEngine, ModelSettingParams } from "@janhq/core";
 import { executableNitroFile } from "./execute";
+import { physicalCpuCount } from "./utils";
+
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch);
 
@@ -121,8 +122,8 @@ async function runModel(
     currentSettings = {
       llama_model_path: currentModelFile,
       ...wrapper.model.settings,
-      // This is critical and requires real system information
-      cpu_threads: Math.max(1, Math.round(nitroResourceProbe.numCpuPhysicalCore / 2)),
+      // This is critical and requires real CPU physical core count (or performance core)
+      cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
     };
     return runNitroAndLoadModel();
   }
@@ -348,7 +349,7 @@ function spawnNitroProcess(): Promise<any> {
  */
 function getResourcesInfo(): Promise<ResourcesInfo> {
   return new Promise(async (resolve) => {
-    const cpu = await osUtils.cpuCount();
+    const cpu = await physicalCpuCount();
     log(`[NITRO]::CPU informations - ${cpu}`);
     const response: ResourcesInfo = {
       numCpuPhysicalCore: cpu,
