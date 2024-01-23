@@ -25,12 +25,12 @@ export const executableNitroFile = (): NitroExecutableOptions => {
     if (nvidiaInfo["run_mode"] === "cpu") {
       binaryFolder = path.join(binaryFolder, "win-cpu");
     } else {
-      if (nvidiaInfo["cuda"].version === "12") {
+      if (nvidiaInfo["cuda"].version === "11") {
         binaryFolder = path.join(binaryFolder, "win-cuda-11-7");
       } else {
         binaryFolder = path.join(binaryFolder, "win-cuda-12-0");
       }
-      cudaVisibleDevices = nvidiaInfo["gpus_in_use"];
+      cudaVisibleDevices = nvidiaInfo["gpus_in_use"].join(",");
     }
     binaryName = "nitro.exe";
   } else if (process.platform === "darwin") {
@@ -50,12 +50,12 @@ export const executableNitroFile = (): NitroExecutableOptions => {
     if (nvidiaInfo["run_mode"] === "cpu") {
       binaryFolder = path.join(binaryFolder, "linux-cpu");
     } else {
-      if (nvidiaInfo["cuda"].version === "12") {
+      if (nvidiaInfo["cuda"].version === "11") {
         binaryFolder = path.join(binaryFolder, "linux-cuda-11-7");
       } else {
         binaryFolder = path.join(binaryFolder, "linux-cuda-12-0");
       }
-      cudaVisibleDevices = nvidiaInfo["gpus_in_use"];
+      cudaVisibleDevices = nvidiaInfo["gpus_in_use"].join(",");
     }
   }
   return {

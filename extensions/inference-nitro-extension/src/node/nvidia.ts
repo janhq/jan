@@ -19,7 +19,7 @@ const DEFALT_SETTINGS = {
   },
   gpus: [],
   gpu_highest_vram: "",
-  gpus_in_use: "",
+  gpus_in_use: [],
   is_initial: true,
 };
 
@@ -145,7 +145,7 @@ export function updateCudaExistence(data: Record<string, any> = DEFALT_SETTINGS)
   data["cuda"].exist = cudaExists;
   data["cuda"].version = cudaVersion;
   console.log(data["is_initial"], data["gpus_in_use"]);
-  if (cudaExists && data["is_initial"] && data["gpus_in_use"] !== "") {
+  if (cudaExists && data["is_initial"] && data["gpus_in_use"].length > 0) {
     data.run_mode = "gpu";
   }
   data.is_initial = false;
@@ -157,7 +157,7 @@ export function updateCudaExistence(data: Record<string, any> = DEFALT_SETTINGS)
  */
 export async function updateGpuInfo(): Promise<void> {
   exec(
-    "nvidia-smi --query-gpu=index,memory.total --format=csv,noheader,nounits",
+    "nvidia-smi --query-gpu=index,memory.total,name --format=csv,noheader,nounits",
     (error, stdout) => {
       let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
 
@@ -169,13 +169,13 @@ export async function updateGpuInfo(): Promise<void> {
           .trim()
           .split("\n")
           .map((line) => {
-            let [id, vram] = line.split(", ");
+            let [id, vram, name] = line.split(", ");
             vram = vram.replace(/\r/g, "");
             if (parseFloat(vram) > highestVram) {
               highestVram = parseFloat(vram);
               highestVramId = id;
             }
-            return { id, vram };
+            return { id, vram, name };
           });
 
         data.gpus = gpus;
@@ -185,8 +185,8 @@ export async function updateGpuInfo(): Promise<void> {
         data.gpu_highest_vram = "";
       }
 
-      if (!data["gpus_in_use"] || data["gpus_in_use"] === "") {
-        data.gpus_in_use = data["gpu_highest_vram"];
+      if (!data["gpus_in_use"] || data["gpus_in_use"].length === 0) {
+        data.gpus_in_use = [data["gpu_highest_vram"]];
       }
 
       data = updateCudaExistence(data);

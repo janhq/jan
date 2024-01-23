@@ -33,7 +33,10 @@ const Advanced = () => {
   } = useContext(FeatureToggleContext)
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
-
+  const [gpuList, setGpuList] = useState([
+    { id: 'none', vram: null, name: 'none' },
+  ])
+  const [gpusInUse, setGpusInUse] = useState<string[]>([])
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
 
@@ -54,6 +57,10 @@ const Advanced = () => {
     const setUseGpuIfPossible = async () => {
       const settings = await readSettings()
       setGpuEnabled(settings.run_mode === 'gpu')
+      setGpusInUse(settings.gpus_in_use || [])
+      if (settings.gpus) {
+        setGpuList(settings.gpus)
+      }
     }
     setUseGpuIfPossible()
   }, [readSettings])
@@ -67,6 +74,20 @@ const Advanced = () => {
       description: 'All logs have been cleared.',
       type: 'success',
     })
+  }
+
+  const handleGPUChange = (gpuId: string) => {
+    let updatedGpusInUse = [...gpusInUse]
+    if (updatedGpusInUse.includes(gpuId)) {
+      updatedGpusInUse = updatedGpusInUse.filter((id) => id !== gpuId)
+      if (gpuEnabled && updatedGpusInUse.length === 0) {
+        updatedGpusInUse.push(gpuId)
+      }
+    } else {
+      updatedGpusInUse.push(gpuId)
+    }
+    setGpusInUse(updatedGpusInUse)
+    saveSettings({ gpusInUse: updatedGpusInUse })
   }
 
   return (
@@ -137,6 +158,37 @@ const Advanced = () => {
       {/* Directory */}
       <DataFolder />
 
+      {gpuEnabled && (
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-gray-700">
+            Select GPU(s)
+          </label>
+          <div className="mt-2 space-y-2">
+            {gpuList.map((gpu) => (
+              <div key={gpu.id}>
+                <input
+                  type="checkbox"
+                  id={`gpu-${gpu.id}`}
+                  name="gpu"
+                  value={gpu.id}
+                  checked={gpusInUse.includes(gpu.id)}
+                  onChange={() => handleGPUChange(gpu.id)}
+                />
+                <label htmlFor={`gpu-${gpu.id}`}>
+                  {' '}
+                  {gpu.name} (VRAM: {gpu.vram} MB)
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Warning message */}
+      {gpuEnabled && gpusInUse.length > 1 && (
+        <p className="mt-2 italic text-red-500">
+          If enabling multi-GPU without the same GPU model or without NVLink, it may affect token speed.
+        </p>
+      )}
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1.5">
