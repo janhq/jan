@@ -9,7 +9,6 @@
   "description": "User self import model",
   "settings": {
     "ctx_len": 4096,
-    "ngl": 0,
     "embedding": false,
     "prompt_template": "{system_message}\n### Instruction: {prompt}\n### Response:"
   },
