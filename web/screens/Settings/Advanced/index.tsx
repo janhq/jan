@@ -12,6 +12,8 @@ import {
 import { fs, AppConfiguration } from '@janhq/core'
 import { Switch, Button, Input } from '@janhq/uikit'
 
+import { PencilIcon } from 'lucide-react'
+
 import ShortcutModal from '@/containers/ShortcutModal'
 
 import { toaster } from '@/containers/Toast'
@@ -212,6 +214,7 @@ const Advanced = () => {
           </div>
           <Button
             themes="secondaryBlue"
+            size="sm"
             onClick={() => window.electronAPI.openAppDirectory()}
           >
             Open
@@ -225,7 +228,7 @@ const Advanced = () => {
           </div>
           <p className="leading-relaxed">Clear all logs from Jan app.</p>
         </div>
-        <Button themes="secondaryBlue" onClick={clearLogs}>
+        <Button size="sm" themes="secondaryBlue" onClick={clearLogs}>
           Clear
         </Button>
       </div>
@@ -244,8 +247,13 @@ const Advanced = () => {
           </div>
           <div className="flex items-center gap-x-3">
             <Input value={currentPath} className="w-[200px]" disabled />
-            <Button themes="secondaryBlue" onClick={onJanVaultDirectoryClick}>
-              Select
+            <Button
+              size="sm"
+              themes="outline"
+              className="h-9 w-9 p-0"
+              onClick={onJanVaultDirectoryClick}
+            >
+              <PencilIcon size={16} />
             </Button>
           </div>
         </div>

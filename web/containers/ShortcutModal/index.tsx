@@ -51,7 +51,7 @@ const availableShortcuts = [
 const ShortcutModal: React.FC = () => (
   <Modal>
     <ModalTrigger asChild>
-      <Button size="sm" themes="secondary">
+      <Button size="sm" themes="secondaryBlue">
         Show
       </Button>
     </ModalTrigger>
