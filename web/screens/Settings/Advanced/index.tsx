@@ -186,7 +186,8 @@ const Advanced = () => {
       {/* Warning message */}
       {gpuEnabled && gpusInUse.length > 1 && (
         <p className="mt-2 italic text-red-500">
-          If enabling multi-GPU without the same GPU model or without NVLink, it may affect token speed.
+          If enabling multi-GPU without the same GPU model or without NVLink, it
+          may affect token speed.
         </p>
       )}
       {/* Proxy */}
