@@ -116,7 +116,7 @@ export const startServer = async (configs?: ServerConfig) => {
         // Log server listening
         if (isVerbose)
           logServer(
-            `Debug: JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`
+            `Debug: JAN API listening at: http://${hostSetting}:${portSetting}`
           );
       });
   } catch (e) {
