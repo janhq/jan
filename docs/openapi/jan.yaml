@@ -68,7 +68,7 @@ paths:
         - lang: cURL
           source: |
             curl -X 'POST' \
-              'http://127.0.0.1:1337/v1/chat/completions' \
+              'http://localhost:1337/v1/chat/completions' \
               -H 'accept: application/json' \
               -H 'Content-Type: application/json' \
               -d '{
@@ -115,7 +115,7 @@ paths:
         - lang: cURL
           source: |
             curl -X 'GET' \
-              'http://127.0.0.1:1337/v1/models' \
+              'http://localhost:1337/v1/models' \
               -H 'accept: application/json'
   "/models/download/{model_id}":
     get:
@@ -145,7 +145,7 @@ paths:
         - lang: cURL
           source: |
             curl -X 'GET' \
-              'http://127.0.0.1:1337/v1/models/download/{model_id}' \
+              'http://localhost:1337/v1/models/download/{model_id}' \
               -H 'accept: application/json'
   "/models/{model_id}":
     get:
@@ -178,7 +178,7 @@ paths:
         - lang: cURL
           source: |
             curl -X 'GET' \
-              'http://127.0.0.1:1337/v1/models/{model_id}' \
+              'http://localhost:1337/v1/models/{model_id}' \
               -H 'accept: application/json'
     delete:
       operationId: deleteModel
@@ -209,7 +209,7 @@ paths:
         - lang: cURL
           source: |
             curl -X 'DELETE' \
-              'http://127.0.0.1:1337/v1/models/{model_id}' \
+              'http://localhost:1337/v1/models/{model_id}' \
               -H 'accept: application/json'
   /threads:
     post:
