@@ -16,8 +16,7 @@ components:
         stream:
           type: boolean
           default: true
-          description:
-            Enables continuous output generation, allowing for streaming of
+          description: Enables continuous output generation, allowing for streaming of
             model responses.
         model:
           type: string
@@ -26,27 +25,23 @@ components:
         max_tokens:
           type: number
           default: 2048
-          description:
-            The maximum number of tokens the model will generate in a single
+          description: The maximum number of tokens the model will generate in a single
             response.
         stop:
           type: arrays
           example:
             - hello
-          description:
-            Defines specific tokens or phrases at which the model will stop
+          description: Defines specific tokens or phrases at which the model will stop
             generating further output/
         frequency_penalty:
           type: number
           default: 0
-          description:
-            Adjusts the likelihood of the model repeating words or phrases in
+          description: Adjusts the likelihood of the model repeating words or phrases in
             its output.
         presence_penalty:
           type: number
           default: 0
-          description:
-            Influences the generation of new and varied concepts in the model's
+          description: Influences the generation of new and varied concepts in the model's
             output.
         temperature:
           type: number

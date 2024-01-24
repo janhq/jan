@@ -43,7 +43,9 @@ components:
         description:
           type: string
           description: Description of the model.
-          example: Trinity is an experimental model merge using the Slerp method. Recommended for daily assistance purposes.
+          example:
+            Trinity is an experimental model merge using the Slerp method.
+            Recommended for daily assistance purposes.
         format:
           type: string
           description: State format of the model, distinct from the engine.
@@ -82,11 +84,14 @@ components:
             type: string
             example: Jan
           tags:
-            example: ["7B", "Merged", "Featured"]
+            example:
+              - 7B
+              - Merged
+              - Featured
           size:
             example: 4370000000,
           cover:
-            example: "https://raw.githubusercontent.com/janhq/jan/main/models/trinity-v1.2-7b/cover.png"
+            example: https://raw.githubusercontent.com/janhq/jan/main/models/trinity-v1.2-7b/cover.png
         engine:
           example: nitro
     ModelObject:
@@ -141,7 +146,9 @@ components:
         description:
           type: string
           description: Description of the model.
-          example: Trinity is an experimental model merge using the Slerp method. Recommended for daily assistance purposes.
+          example:
+            Trinity is an experimental model merge using the Slerp method.
+            Recommended for daily assistance purposes.
         format:
           type: string
           description: State format of the model, distinct from the engine.
@@ -180,11 +187,14 @@ components:
             type: string
             example: MistralAI
           tags:
-            example: ["7B", "Featured", "Foundation Model"]
+            example:
+              - 7B
+              - Featured
+              - Foundation Model
           size:
             example: 4370000000,
           cover:
-            example: "https://raw.githubusercontent.com/janhq/jan/main/models/mistral-ins-7b-q4/cover.png"
+            example: https://raw.githubusercontent.com/janhq/jan/main/models/mistral-ins-7b-q4/cover.png
         engine:
           example: nitro
     DeleteModelResponse:

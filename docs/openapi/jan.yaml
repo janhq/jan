@@ -72,27 +72,27 @@ paths:
               -H 'accept: application/json' \
               -H 'Content-Type: application/json' \
               -d '{
-              "messages": [
-                {
-                  "content": "You are a helpful assistant.",
-                  "role": "system"
-                },
-                {
-                  "content": "Hello!",
-                  "role": "user"
-                }
-              ],
-              "model": "tinyllama-1.1b",
-              "stream": true,
-              "max_tokens": 2048,
-              "stop": [
-                "hello"
-              ],
-              "frequency_penalty": 0,
-              "presence_penalty": 0,
-              "temperature": 0.7,
-              "top_p": 0.95
-            }'
+                "messages": [
+                  {
+                    "content": "You are a helpful assistant.",
+                    "role": "system"
+                  },
+                  {
+                    "content": "Hello!",
+                    "role": "user"
+                  }
+                ],
+                "model": "tinyllama-1.1b",
+                "stream": true,
+                "max_tokens": 2048,
+                "stop": [
+                  "hello"
+                ],
+                "frequency_penalty": 0,
+                "presence_penalty": 0,
+                "temperature": 0.7,
+                "top_p": 0.95
+              }'
   /models:
     get:
       operationId: listModels

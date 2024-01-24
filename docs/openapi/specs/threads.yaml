@@ -142,7 +142,7 @@ components:
                 example: Jan
               instructions:
                 type: string
-                description: |
+                description: >
                   The instruction of assistant, defaults to "Be my grammar corrector"
               model:
                 type: object
