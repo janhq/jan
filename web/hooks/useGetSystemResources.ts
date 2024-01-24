@@ -15,6 +15,8 @@ import {
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
   const [cpu, setCPU] = useState<number>(0)
+
+  const [gpus, setGPUs] = useState<Record<string, never>[]>([])
   const setTotalRam = useSetAtom(totalRamAtom)
   const setUsedRam = useSetAtom(usedRamAtom)
   const setAvailableRam = useSetAtom(availableRamAtom)
@@ -48,6 +50,7 @@ export default function useGetSystemResources() {
       )
     setCPU(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
     setCpuUsage(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
+    setGPUs(currentLoadInfor?.gpu ?? [])
   }
 
   useEffect(() => {
@@ -69,5 +72,6 @@ export default function useGetSystemResources() {
     totalRamAtom,
     ram,
     cpu,
+    gpus,
   }
 }
