@@ -72,7 +72,10 @@ export default class JanModelExtension extends ModelExtension {
    * @param network - Optional object to specify proxy/whether to ignore SSL certificates.
    * @returns A Promise that resolves when the model is downloaded.
    */
-  async downloadModel(model: Model, network?: { ignoreSSL?: boolean; proxy?: string }): Promise<void> {
+  async downloadModel(
+    model: Model,
+    network?: { ignoreSSL?: boolean; proxy?: string }
+  ): Promise<void> {
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
@@ -294,6 +297,11 @@ export default class JanModelExtension extends ModelExtension {
       name: dirName,
       created: Date.now(),
       description: `${dirName} - user self import model`,
+      metadata: {
+        size: binaryFileSize,
+        author: 'User',
+        tags: [],
+      },
     }
 
     const modelFilePath = await joinPath([

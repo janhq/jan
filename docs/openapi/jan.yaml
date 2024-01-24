@@ -14,7 +14,7 @@ license:
   name: AGPLv3
   url: https://github.com/janhq/nitro/blob/main/LICENSE
 servers:
-  - url: http://localhost:1337/v1/
+  - url: /v1
 tags:
   - name: Models
     description: List and describe the various models available in the API.
