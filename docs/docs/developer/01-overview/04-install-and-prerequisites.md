@@ -50,7 +50,7 @@ cd jan
 git checkout -b DESIRED_BRANCH
 ```
 
-2. **Install Dependencie:s**
+2. **Install Dependencies**
 
 ```bash
 yarn install
