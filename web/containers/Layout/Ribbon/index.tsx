@@ -41,7 +41,10 @@ export default function RibbonNav() {
       icon: (
         <MessageCircleIcon
           size={20}
-          className="flex-shrink-0 text-muted-foreground"
+          className={twMerge(
+            'flex-shrink-0 text-muted-foreground',
+            serverEnabled && 'text-gray-300 dark:text-gray-700'
+          )}
         />
       ),
       state: MainViewState.Thread,
@@ -60,7 +63,7 @@ export default function RibbonNav() {
 
   const secondaryMenus = [
     {
-      name: 'Local Server',
+      name: 'Local API Server',
       icon: (
         <SquareCodeIcon
           size={20}
