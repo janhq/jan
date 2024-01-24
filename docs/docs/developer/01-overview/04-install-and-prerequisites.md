@@ -20,12 +20,19 @@ keywords:
 
 ## Requirements
 
+### Hardware Requirements
+
+Ensure your system meets the following specifications to guarantee a smooth development experience:
+
 - [Hardware Requirements](../../guides/02-installation/06-hardware.md)
 
-- System Requirements:
-  - [Windows](../../install/windows/#system-requirements)
-  - [MacOS](../../install/mac/#system-requirements)
-  - [Linux](../../install/linux/#system-requirements)
+### System Requirements
+
+Make sure your operating system meets the specific requirements for Jan development:
+
+- [Windows](../../install/windows/#system-requirements)
+- [MacOS](../../install/mac/#system-requirements)
+- [Linux](../../install/linux/#system-requirements)
 
 ## Prerequisites
 
