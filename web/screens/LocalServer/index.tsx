@@ -78,14 +78,13 @@ const LocalServerScreen = () => {
   const [firstTimeVisitAPIServer, setFirstTimeVisitAPIServer] =
     useState<boolean>(false)
 
-  const handleChangePort = (e: any) => {
-    const value = e.target.value
+  const handleChangePort = (value: any) => {
     if (Number(value) <= 0 || Number(value) >= 65536) {
       setErrorRangePort(true)
     } else {
       setErrorRangePort(false)
     }
-    setPort(e.target.value)
+    setPort(value)
   }
 
   useEffect(() => {
@@ -97,6 +96,10 @@ const LocalServerScreen = () => {
       setFirstTimeVisitAPIServer(true)
     }
   }, [firstTimeVisitAPIServer])
+
+  useEffect(() => {
+    handleChangePort(port)
+  }, [])
 
   return (
     <div className="flex h-full w-full">
@@ -175,7 +178,7 @@ const LocalServerScreen = () => {
                     )}
                     value={port}
                     onChange={(e) => {
-                      handleChangePort(e)
+                      handleChangePort(e.target.value)
                     }}
                     maxLength={5}
                     disabled={serverEnabled}
