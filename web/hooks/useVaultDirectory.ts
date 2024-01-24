@@ -4,14 +4,19 @@ import { fs, AppConfiguration } from '@janhq/core'
 
 import { atom, useAtom } from 'jotai'
 
+import { useMainViewState } from './useMainViewState'
+
 const isSameDirectoryAtom = atom(false)
 const isDirectoryConfirmAtom = atom(false)
 const isErrorSetNewDestAtom = atom(false)
 const currentPathAtom = atom('')
 const newDestinationPathAtom = atom('')
 
+export const SUCCESS_SET_NEW_DESTINATION = 'successSetNewDestination'
+
 export function useVaultDirectory() {
   const [isSameDirectory, setIsSameDirectory] = useAtom(isSameDirectoryAtom)
+  const { setMainViewState } = useMainViewState()
   const [isDirectoryConfirm, setIsDirectoryConfirm] = useAtom(
     isDirectoryConfirmAtom
   )
@@ -75,8 +80,10 @@ export function useVaultDirectory() {
       console.debug(
         `File sync finished from ${currentPath} to ${newDestinationPath}`
       )
-      await window.core?.api?.relaunch()
+
       setIsErrorSetNewDest(false)
+      localStorage.setItem(SUCCESS_SET_NEW_DESTINATION, 'true')
+      await window.core?.api?.relaunch()
     } catch (e) {
       console.error(`Error: ${e}`)
       setIsErrorSetNewDest(true)
