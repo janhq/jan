@@ -1,5 +1,10 @@
 {
-    "source_url": "https://huggingface.co/TheBloke/stablelm-zephyr-3b-GGUF/resolve/main/stablelm-zephyr-3b.Q8_0.gguf",
+    "source": [
+      {
+        "url": "https://huggingface.co/TheBloke/stablelm-zephyr-3b-GGUF/resolve/main/stablelm-zephyr-3b.Q8_0.gguf",
+        "filename": "stablelm-zephyr-3b.Q8_0.gguf"
+      }
+    ],
     "id": "stable-zephyr-3b",
     "object": "model",
     "name": "Stable Zephyr 3B Q8",
@@ -8,7 +13,8 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "prompt_template": "<|user|>\n{prompt}<|endoftext|>\n<|assistant|>"
+      "prompt_template": "<|user|>\n{prompt}<|endoftext|>\n<|assistant|>",
+      "llama_model_path": "stablelm-zephyr-3b.Q8_0.gguf"
     },
     "parameters": {
       "temperature": 0.7,
