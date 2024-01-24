@@ -25,7 +25,7 @@ const DataFolder = () => {
         </div>
         <div className="flex items-center gap-x-3">
           <div className="relative">
-            <Input value={currentPath} className="w-[240px]" disabled />
+            <Input value={currentPath} className="w-[240px] pr-8" disabled />
             <FolderOpenIcon
               size={16}
               className="absolute right-2 top-1/2 -translate-y-1/2"
