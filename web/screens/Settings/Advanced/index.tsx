@@ -18,6 +18,7 @@ import { toaster } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
+import useFactoryReset from '@/hooks/useFactoryReset'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
@@ -36,6 +37,7 @@ const Advanced = () => {
 
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
+  const { resetAll } = useFactoryReset()
   const onProxyChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const value = event.target.value || ''
@@ -64,6 +66,8 @@ const Advanced = () => {
       description: 'All logs have been cleared.',
     })
   }
+
+  const onFactoryResetClick = useCallback(() => resetAll(), [])
 
   return (
     <div className="block w-full">
@@ -139,6 +143,30 @@ const Advanced = () => {
       {/* Directory */}
       <DataFolder />
 
+      {/* Factory Reset */}
+      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+        <div className="w-4/5 flex-shrink-0 space-y-1.5">
+          <div className="flex gap-x-2">
+            <h6 className="text-sm font-semibold capitalize">
+              Reset to Factory Default
+            </h6>
+          </div>
+          <p className="whitespace-pre-wrap leading-relaxed">
+            Reset the application to its original state, deleting all your usage
+            data, including model customizations and conversation history. This
+            action is irreversible and recommended only if the application is in
+            a corrupted state.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          themes="secondaryDanger"
+          onClick={onFactoryResetClick}
+        >
+          Reset
+        </Button>
+      </div>
+
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1.5">
@@ -170,16 +198,7 @@ const Advanced = () => {
             certain proxies.
           </p>
         </div>
-        <Switch
-          checked={ignoreSSL}
-          onCheckedChange={(e) => {
-            if (e === true) {
-              setIgnoreSSL(true)
-            } else {
-              setIgnoreSSL(false)
-            }
-          }}
-        />
+        <Switch checked={ignoreSSL} onCheckedChange={(e) => setIgnoreSSL(e)} />
       </div>
 
       {/* Open app directory */}
@@ -206,7 +225,7 @@ const Advanced = () => {
         </div>
       )}
 
-      {/* Claer log */}
+      {/* Clear log */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">

@@ -35,7 +35,7 @@
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.36.0",
     "run-script-os": "^1.1.6",
-    "typescript": "^5.3.3"
+    "typescript": "^5.2.2"
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
