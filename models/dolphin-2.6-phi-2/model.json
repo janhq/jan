@@ -1,5 +1,10 @@
 {
-  "source_url": "https://huggingface.co/TheBloke/dolphin-2_6-phi-2-GGUF/resolve/main/dolphin-2_6-phi-2.Q4_K_M.gguf",
+  "source": [
+    {
+      "url": "https://huggingface.co/TheBloke/dolphin-2_6-phi-2-GGUF/resolve/main/dolphin-2_6-phi-2.Q4_K_M.gguf",
+      "filename": "dolphin-2_6-phi-2.Q4_K_M.gguf"
+    }
+  ],
   "id": "dolphin-2.6-phi-2",
   "object": "model",
   "name": "Dolphin 2.6 Phi-2 2.7B Q4",
@@ -8,7 +13,8 @@
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
-    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
+    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n",
+    "llama_model_path": "dolphin-2_6-phi-2.Q4_K_M.gguf"
   },
   "parameters": {
     "max_tokens": 4096,
