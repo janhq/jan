@@ -16,7 +16,6 @@ on:
 jobs:
   set-public-provider:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
     outputs:
       public_provider: ${{ steps.set-public-provider.outputs.public_provider }}
       ref: ${{ steps.set-public-provider.outputs.ref }}
