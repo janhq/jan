@@ -190,8 +190,18 @@ components:
     DeleteModelResponse:
       type: object
       properties:
-        message:
-          example: Not found
+        id:
+          type: string
+          description: The identifier of the model that was deleted.
+          example: mistral-ins-7b-q4
+        object:
+          type: string
+          description: Type of the object, indicating it's a model.
+          default: model
+        deleted:
+          type: boolean
+          description: Indicates whether the model was successfully deleted.
+          example: true
     StartModelResponse:
       type: object
       properties:
