@@ -60,7 +60,7 @@ export default function RibbonNav() {
 
   const secondaryMenus = [
     {
-      name: 'Local Server',
+      name: 'Local API Server',
       icon: (
         <SquareCodeIcon
           size={20}
