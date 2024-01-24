@@ -9,11 +9,15 @@
   }
 
   &-secondary-blue {
-    @apply bg-blue-200 text-blue-600 hover:bg-blue-500/80;
+    @apply bg-blue-200 text-blue-600 hover:bg-blue-500/50;
   }
 
   &-danger {
     @apply bg-danger text-danger-foreground hover:bg-danger/90;
+  }
+
+  &-secondary-danger {
+    @apply bg-red-200 text-red-600 hover:bg-red-500/50;
   }
 
   &-outline {
