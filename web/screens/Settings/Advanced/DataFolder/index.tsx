@@ -20,7 +20,8 @@ const DataFolder = () => {
             </h6>
           </div>
           <p className="leading-relaxed">
-            Where messages, model configurations, and other user data is placed.
+            Where messages, model configurations, and other user data are
+            placed.
           </p>
         </div>
         <div className="flex items-center gap-x-3">

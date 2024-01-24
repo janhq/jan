@@ -34,7 +34,7 @@ const ModalChangeDirectory = () => {
           Are you sure you want to relocate Jan data folder to{' '}
           <span className="font-medium text-foreground">
             {newDestinationPath}
-          </span>{' '}
+          </span>
           ? A restart will be required afterward.
         </p>
         <ModalFooter>
