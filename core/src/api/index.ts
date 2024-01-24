@@ -3,7 +3,6 @@
  * @description Enum of all the routes exposed by the app
  */
 export enum AppRoute {
-  appDataPath = 'appDataPath',
   openExternalUrl = 'openExternalUrl',
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
@@ -62,6 +61,7 @@ export enum FileManagerRoute {
   syncFile = 'syncFile',
   getJanDataFolderPath = 'getJanDataFolderPath',
   getResourcePath = 'getResourcePath',
+  getUserHomePath = 'getUserHomePath',
   fileStat = 'fileStat',
   writeBlob = 'writeBlob',
 }
