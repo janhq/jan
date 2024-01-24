@@ -96,7 +96,7 @@ components:
           type: string
           description: |
             The identifier of the model.
-          example: ztrinity-v1.2-7b
+          example: trinity-v1.2-7b
         object:
           type: string
           description: |
