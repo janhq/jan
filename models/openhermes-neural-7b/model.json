@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "openhermes-2.5-neural-chat-v3-3-slerp.Q4_K_M.gguf",
       "url": "https://huggingface.co/janhq/openhermes-2.5-neural-chat-v3-3-slerp-GGUF/resolve/main/openhermes-2.5-neural-chat-v3-3-slerp.Q4_K_M.gguf"

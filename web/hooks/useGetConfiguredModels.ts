@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { ExtensionTypeEnum, ModelExtension } from '@janhq/core'
-import { Model } from '@janhq/core'
+import { ExtensionTypeEnum, ModelExtension, Model } from '@janhq/core'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 
@@ -25,6 +24,7 @@ export function useGetConfiguredModels() {
 
   useEffect(() => {
     fetchModels()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return { loading, models }

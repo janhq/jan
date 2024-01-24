@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "nous-capybara-34b.Q5_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/Nous-Capybara-34B-GGUF/resolve/main/nous-capybara-34b.Q5_K_M.gguf"

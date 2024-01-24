@@ -6,7 +6,7 @@ import {
   ModelExtension,
   abortDownload,
   joinPath,
-  ModelArtifact
+  ModelArtifact,
 } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
@@ -27,7 +27,7 @@ export default function useDownloadModel() {
 
   const downloadModel = async (model: Model) => {
     const childrenDownloadProgress: DownloadState[] = []
-    model.source.forEach((source: ModelArtifact) => {
+    model.sources.forEach((source: ModelArtifact) => {
       childrenDownloadProgress.push({
         modelId: source.filename,
         time: {
@@ -65,6 +65,7 @@ export default function useDownloadModel() {
       .get<ModelExtension>(ExtensionTypeEnum.Model)
       ?.downloadModel(model, { ignoreSSL, proxy })
   }
+
   const abortModelDownload = async (model: Model) => {
     await abortDownload(
       await joinPath(['models', model.id, modelBinFileName(model)])

@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "deepseek-coder-1.3b-instruct.Q8_0.gguf",
       "url": "https://huggingface.co/TheBloke/deepseek-coder-1.3b-instruct-GGUF/resolve/main/deepseek-coder-1.3b-instruct.Q8_0.gguf"

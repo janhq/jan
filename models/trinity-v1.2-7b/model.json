@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "trinity-v1.2.Q4_K_M.gguf",
       "url": "https://huggingface.co/janhq/trinity-v1.2-GGUF/resolve/main/trinity-v1.2.Q4_K_M.gguf"

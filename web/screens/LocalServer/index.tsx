@@ -64,7 +64,7 @@ const LocalServerScreen = () => {
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
   const { openServerLog, clearServerLog } = useServerLog()
-  const { activeModel, startModel, stateModel } = useActiveModel()
+  const { startModel, stateModel } = useActiveModel()
   const [selectedModel] = useAtom(selectedModelAtom)
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)

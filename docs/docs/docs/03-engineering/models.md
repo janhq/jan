@@ -65,7 +65,7 @@ Here's a standard example `model.json` for a GGUF model.
 {
   "id": "zephyr-7b",        // Defaults to foldername
   "object": "model",        // Defaults to "model"
-  "source": [
+  "sources": [
     {
       "filename": "zephyr-7b-beta.Q4_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf"

@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "starling-lm-7b-alpha.Q4_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/Starling-LM-7B-alpha-GGUF/resolve/main/starling-lm-7b-alpha.Q4_K_M.gguf"

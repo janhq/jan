@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "url": "https://huggingface.co/TheBloke/Yarn-Mistral-7B-128k-GGUF/resolve/main/yarn-mistral-7b-128k.Q4_K_M.gguf"
     }

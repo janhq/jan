@@ -13,8 +13,6 @@ import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 
 import Models from '@/screens/Settings/Models'
 
-import { formatExtensionsName } from '@/utils/converter'
-
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('My Models')
   const [menus, setMenus] = useState<any[]>([])

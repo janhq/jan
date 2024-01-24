@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "stealth-v1.3.Q4_K_M.gguf",
       "url": "https://huggingface.co/janhq/stealth-v1.3-GGUF/resolve/main/stealth-v1.3.Q4_K_M.gguf"

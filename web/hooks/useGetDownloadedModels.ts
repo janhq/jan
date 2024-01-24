@@ -15,6 +15,7 @@ export function useGetDownloadedModels() {
     getDownloadedModels().then((downloadedModels) => {
       setDownloadedModels(downloadedModels)
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return { downloadedModels, setDownloadedModels }

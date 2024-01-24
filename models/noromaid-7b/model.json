@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "Noromaid-7b-v0.1.1.q5_k_m.gguf",
       "url": "https://huggingface.co/NeverSleep/Noromaid-7b-v0.1.1-GGUF/resolve/main/Noromaid-7b-v0.1.1.q5_k_m.gguf"

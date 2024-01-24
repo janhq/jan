@@ -2,7 +2,7 @@
   "object": "model",
   "version": 1,
   "format": "gguf",
-  "source": [
+  "sources": [
     {
       "url": "N/A",
       "filename": "N/A"

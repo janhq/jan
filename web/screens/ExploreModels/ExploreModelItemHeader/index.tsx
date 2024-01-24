@@ -24,12 +24,12 @@ import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
+import { useDownloadState } from '@/hooks/useDownloadState'
 import { getAssistants } from '@/hooks/useGetAssistants'
 import { downloadedModelsAtom } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGibibytes } from '@/utils/converter'
-import { useDownloadState } from '@/hooks/useDownloadState'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 

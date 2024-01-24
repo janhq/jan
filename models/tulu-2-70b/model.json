@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "tulu-2-dpo-70b.Q4_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/tulu-2-dpo-70B-GGUF/resolve/main/tulu-2-dpo-70b.Q4_K_M.gguf"

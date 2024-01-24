@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "solar-10.7b-slerp.Q4_K_M.gguf",
       "url": "https://huggingface.co/janhq/Solar-10.7B-SLERP-GGUF/resolve/main/solar-10.7b-slerp.Q4_K_M.gguf"

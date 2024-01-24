@@ -50,7 +50,7 @@ export type Model = {
   /**
    * The model download source. It can be an external url or a local filepath.
    */
-  source: ModelArtifact[]
+  sources: ModelArtifact[]
 
   /**
    * The model identifier, which can be referenced in the API endpoints.

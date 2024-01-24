@@ -80,20 +80,20 @@ export default class JanModelExtension extends ModelExtension {
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
 
-    if (model.source.length > 1) {
+    if (model.sources.length > 1) {
       // path to model binaries
-      for (const modelFile of model.source) {
-        let path = this.extractFileName(modelFile.url)
-        if (modelFile.filename) {
-          path = await joinPath([modelDirPath, modelFile.filename])
+      for (const source of model.sources) {
+        let path = this.extractFileName(source.url)
+        if (source.filename) {
+          path = await joinPath([modelDirPath, source.filename])
         }
 
-        downloadFile(modelFile.url, path, network)
+        downloadFile(source.url, path, network)
       }
     } else {
-      const fileName = this.extractFileName(model.source[0]?.url)
+      const fileName = this.extractFileName(model.sources[0]?.url)
       const path = await joinPath([modelDirPath, fileName])
-      downloadFile(model.source[0]?.url, path, network)
+      downloadFile(model.sources[0]?.url, path, network)
     }
   }
 
@@ -191,7 +191,7 @@ export default class JanModelExtension extends ModelExtension {
                     .toLowerCase()
                     .includes(JanModelExtension._supportedModelFormat) &&
                   !file.endsWith(JanModelExtension._incompletedModelFileName)
-              )?.length >= model.source.length
+              )?.length >= model.sources.length
             )
           })
       }

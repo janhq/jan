@@ -1,5 +1,5 @@
 {
-  "source": [
+  "sources": [
     {
       "filename": "mixtral-8x7b-instruct-v0.1.Q4_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF/resolve/main/mixtral-8x7b-instruct-v0.1.Q4_K_M.gguf"
