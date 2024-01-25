@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
   schedule:
     - cron: '0 20 * * 2,3,4' # At 8 PM UTC on Tuesday, Wednesday, and Thursday, which is 3 AM UTC+7
   workflow_dispatch:
