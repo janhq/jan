@@ -17,17 +17,3 @@ interface EngineSettings {
   cont_batching: boolean;
   embedding: boolean;
 }
-
-/**
- * The response from the initModel function.
- * @property error - An error message if the model fails to load.
- */
-interface ModelOperationResponse {
-  error?: any;
-  modelFile?: string;
-}
-
-interface ResourcesInfo {
-  numCpuPhysicalCore: number;
-  memAvailable: number;
-}

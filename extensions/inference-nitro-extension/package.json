@@ -3,32 +3,24 @@
   "version": "1.0.0",
   "description": "This extension embeds Nitro, a lightweight (3mb) inference engine written in C++. See nitro.jan.ai",
   "main": "dist/index.js",
-  "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
-    "downloadnitro:linux": "NITRO_VERSION=$(cat ./bin/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64.tar.gz -e --strip 1 -o ./bin/linux-cpu && chmod +x ./bin/linux-cpu/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda-12-0.tar.gz -e --strip 1 -o ./bin/linux-cuda-12-0 && chmod +x ./bin/linux-cuda-12-0/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda-11-7.tar.gz -e --strip 1 -o ./bin/linux-cuda-11-7 && chmod +x ./bin/linux-cuda-11-7/nitro",
-    "downloadnitro:darwin": "NITRO_VERSION=$(cat ./bin/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-arm64.tar.gz -e --strip 1 -o ./bin/mac-arm64 && chmod +x ./bin/mac-arm64/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-amd64.tar.gz -e --strip 1 -o ./bin/mac-x64 && chmod +x ./bin/mac-x64/nitro",
-    "downloadnitro:win32": "download.bat",
-    "downloadnitro": "run-script-os",
-    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../electron/pre-install",
-    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../electron/pre-install",
-    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" &&  npm pack && cpx *.tgz ../../electron/pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && ../../.github/scripts/auto-sign.sh npm pack && cpx *.tgz ../../electron/pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install",
+    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install",
     "build:publish": "run-script-os"
   },
   "exports": {
-    ".": "./dist/index.js",
-    "./main": "./dist/node/index.cjs.js"
+    ".": "./dist/index.js"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@types/node": "^20.11.4",
-    "@types/tcp-port-used": "^1.0.4",
     "cpx": "^1.5.0",
-    "download-cli": "^1.1.1",
     "rimraf": "^3.0.2",
     "rollup": "^2.38.5",
     "rollup-plugin-define": "^1.0.1",
@@ -39,12 +31,10 @@
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
+    "@janhq/nitro-node": "https://gitpkg.now.sh/InNoobWeTrust/nitro/nitro-node?feat/1635/decouple-nitro-inference-engine-into-a-library",
     "@rollup/plugin-replace": "^5.0.5",
-    "@types/os-utils": "^0.0.4",
-    "fetch-retry": "^5.0.6",
     "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",
-    "tcp-port-used": "^1.0.2",
     "ulid": "^2.3.0"
   },
   "engines": {
@@ -56,8 +46,7 @@
     "README.md"
   ],
   "bundleDependencies": [
-    "tcp-port-used",
-    "fetch-retry",
-    "@janhq/core"
+    "@janhq/core",
+    "@janhq/nitro-node"
   ]
 }
