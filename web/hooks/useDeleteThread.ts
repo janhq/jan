@@ -49,6 +49,14 @@ export default function useDeleteThread() {
             threadId,
             messages.filter((msg) => msg.role === ChatCompletionRole.System)
           )
+
+        thread.metadata = {
+          ...thread.metadata,
+          lastMessage: undefined,
+        }
+        await extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.saveThread(thread)
         updateThreadLastMessage(threadId, undefined)
       }
     }
