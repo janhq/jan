@@ -1,32 +1,15 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import { fs, AppConfiguration } from '@janhq/core'
-
-import { atom, useAtom } from 'jotai'
-
-import { useMainViewState } from './useMainViewState'
-
-const isSameDirectoryAtom = atom(false)
-const isDirectoryConfirmAtom = atom(false)
-const isErrorSetNewDestAtom = atom(false)
-const currentPathAtom = atom('')
-const newDestinationPathAtom = atom('')
 
 export const SUCCESS_SET_NEW_DESTINATION = 'successSetNewDestination'
 
 export function useVaultDirectory() {
-  const [isSameDirectory, setIsSameDirectory] = useAtom(isSameDirectoryAtom)
-  const { setMainViewState } = useMainViewState()
-  const [isDirectoryConfirm, setIsDirectoryConfirm] = useAtom(
-    isDirectoryConfirmAtom
-  )
-  const [isErrorSetNewDest, setIsErrorSetNewDest] = useAtom(
-    isErrorSetNewDestAtom
-  )
-  const [currentPath, setCurrentPath] = useAtom(currentPathAtom)
-  const [newDestinationPath, setNewDestinationPath] = useAtom(
-    newDestinationPathAtom
-  )
+  const [isSameDirectory, setIsSameDirectory] = useState(false)
+  const [isDirectoryConfirm, setIsDirectoryConfirm] = useState(false)
+  const [isErrorSetNewDest, setIsErrorSetNewDest] = useState(false)
+  const [currentPath, setCurrentPath] = useState('')
+  const [newDestinationPath, setNewDestinationPath] = useState('')
 
   useEffect(() => {
     window.core?.api
@@ -34,7 +17,6 @@ export function useVaultDirectory() {
       ?.then((appConfig: AppConfiguration) => {
         setCurrentPath(appConfig.data_folder)
       })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const setNewDestination = async () => {
