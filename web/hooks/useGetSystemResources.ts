@@ -10,6 +10,7 @@ import {
   cpuUsageAtom,
   totalRamAtom,
   usedRamAtom,
+  nvidiaTotalVramAtom,
 } from '@/helpers/atoms/SystemBar.atom'
 
 export default function useGetSystemResources() {
@@ -21,6 +22,7 @@ export default function useGetSystemResources() {
   const setUsedRam = useSetAtom(usedRamAtom)
   const setAvailableRam = useSetAtom(availableRamAtom)
   const setCpuUsage = useSetAtom(cpuUsageAtom)
+  const setTotalNvidiaVram = useSetAtom(nvidiaTotalVramAtom)
 
   const getSystemResources = async () => {
     if (
@@ -50,7 +52,19 @@ export default function useGetSystemResources() {
       )
     setCPU(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
     setCpuUsage(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
-    setGPUs(currentLoadInfor?.gpu ?? [])
+
+    const gpus = currentLoadInfor?.gpu ?? []
+    setGPUs(gpus)
+
+    let totalNvidiaVram = 0
+    if (gpus.length > 0) {
+      totalNvidiaVram = gpus.reduce(
+        (total: number, gpu: { memoryTotal: string }) =>
+          total + Number(gpu.memoryTotal),
+        0
+      )
+    }
+    setTotalNvidiaVram(totalNvidiaVram)
   }
 
   useEffect(() => {
