@@ -2,38 +2,36 @@ import fs from 'fs'
 import util from 'util'
 import { getAppLogPath, getServerLogPath } from './utils'
 
-export const log = function (message: string) {
-  const appLogPath = getAppLogPath()
+export const log = (message: string) => {
+  const path = getAppLogPath()
   if (!message.startsWith('[')) {
     message = `[APP]::${message}`
   }
 
   message = `${new Date().toISOString()} ${message}`
 
-  if (fs.existsSync(appLogPath)) {
-    var log_file = fs.createWriteStream(appLogPath, {
-      flags: 'a',
-    })
-    log_file.write(util.format(message) + '\n')
-    log_file.close()
-    console.debug(message)
-  }
+  writeLog(message, path)
 }
 
-export const logServer = function (message: string) {
-  const serverLogPath = getServerLogPath()
+export const logServer = (message: string) => {
+  const path = getServerLogPath()
   if (!message.startsWith('[')) {
     message = `[SERVER]::${message}`
   }
 
   message = `${new Date().toISOString()} ${message}`
+  writeLog(message, path)
+}
 
-  if (fs.existsSync(serverLogPath)) {
-    var log_file = fs.createWriteStream(serverLogPath, {
+const writeLog = (message: string, logPath: string) => {
+  if (!fs.existsSync(logPath)) {
+    fs.writeFileSync(logPath, message)
+  } else {
+    const logFile = fs.createWriteStream(logPath, {
       flags: 'a',
     })
-    log_file.write(util.format(message) + '\n')
-    log_file.close()
+    logFile.write(util.format(message) + '\n')
+    logFile.close()
     console.debug(message)
   }
 }
