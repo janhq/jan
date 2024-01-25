@@ -182,6 +182,30 @@ const Advanced = () => {
         />
       </div>
 
+      {/* Open app directory */}
+      {window.electronAPI && (
+        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+          <div className="w-4/5 flex-shrink-0 space-y-1.5">
+            <div className="flex gap-x-2">
+              <h6 className="text-sm font-semibold capitalize">
+                Open App Directory
+              </h6>
+            </div>
+            <p className="whitespace-pre-wrap leading-relaxed">
+              Open the directory where your app data, like conversation history
+              and model configurations, is located.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            themes="secondaryBlue"
+            onClick={() => window.core?.api?.openAppDirectory()}
+          >
+            Open
+          </Button>
+        </div>
+      )}
+
       {/* Claer log */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1.5">
