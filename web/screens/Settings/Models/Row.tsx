@@ -56,10 +56,8 @@ export default function RowModel(props: RowModelProps) {
       stopModel()
       window.core?.api?.stopServer()
       setServerEnabled(false)
-    } else {
-      if (serverEnabled) {
-        startModel(modelId)
-      }
+    } else if (!serverEnabled) {
+      startModel(modelId)
     }
   }
 
