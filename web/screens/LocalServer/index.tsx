@@ -176,6 +176,7 @@ const LocalServerScreen = () => {
                       'w-[70px] flex-shrink-0',
                       errorRangePort && 'border-danger'
                     )}
+                    type="number"
                     value={port}
                     onChange={(e) => {
                       handleChangePort(e.target.value)
