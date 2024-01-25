@@ -180,7 +180,7 @@ export default function RowModel(props: RowModelProps) {
               )}
               onClick={() => {
                 setTimeout(async () => {
-                  if (serverEnabled) {
+                  if (!serverEnabled) {
                     await stopModel()
                     deleteModel(props.data)
                   }
