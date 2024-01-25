@@ -74,6 +74,9 @@ const ChatScreen = () => {
   }
 
   useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
     if (isWaitingToSend && activeThreadId) {
       setIsWaitingToSend(false)
       sendChatMessage()
@@ -85,6 +88,7 @@ const ChatScreen = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+      textareaRef.current.focus()
     }
   }, [currentPrompt])
 
