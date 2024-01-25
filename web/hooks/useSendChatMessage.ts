@@ -4,15 +4,15 @@ import {
   ChatCompletionMessage,
   ChatCompletionRole,
   ContentType,
-  EventName,
   MessageRequest,
   MessageStatus,
-  ExtensionType,
+  ExtensionTypeEnum,
   Thread,
   ThreadMessage,
   events,
   Model,
   ConversationalExtension,
+  MessageEvent,
 } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -116,7 +116,7 @@ export default function useSendChatMessage() {
       await WaitForModelStarting(modelId)
       setQueuedMessage(false)
     }
-    events.emit(EventName.OnMessageSent, messageRequest)
+    events.emit(MessageEvent.OnMessageSent, messageRequest)
   }
 
   // TODO: Refactor @louis
@@ -181,7 +181,7 @@ export default function useSendChatMessage() {
       updateThread(updatedThread)
 
       await extensionManager
-        .get<ConversationalExtension>(ExtensionType.Conversational)
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.saveThread(updatedThread)
     }
 
@@ -253,7 +253,7 @@ export default function useSendChatMessage() {
     addNewMessage(threadMessage)
 
     await extensionManager
-      .get<ConversationalExtension>(ExtensionType.Conversational)
+      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.addNewMessage(threadMessage)
 
     const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
@@ -265,7 +265,7 @@ export default function useSendChatMessage() {
       setQueuedMessage(false)
     }
 
-    events.emit(EventName.OnMessageSent, messageRequest)
+    events.emit(MessageEvent.OnMessageSent, messageRequest)
 
     setReloadModel(false)
     setEngineParamsUpdate(false)

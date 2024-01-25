@@ -46,7 +46,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
     with:
-      ref: refs/heads/main
+      ref: refs/heads/dev
       build_reason: Nightly
-      push_to_branch: main
+      push_to_branch: dev
       new_version: ${{ needs.get-update-version.outputs.new_version }}

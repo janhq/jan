@@ -104,6 +104,9 @@ export type ModelSettingParams = {
   n_parallel?: number
   cpu_threads?: number
   prompt_template?: string
+  system_prompt?: string
+  ai_prompt?: string
+  user_prompt?: string
 }
 
 /**

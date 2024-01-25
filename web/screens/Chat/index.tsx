@@ -1,6 +1,6 @@
 import { ChangeEvent, Fragment, KeyboardEvent, useEffect, useRef } from 'react'
 
-import { EventName, MessageStatus, events } from '@janhq/core'
+import { InferenceEvent, MessageStatus, events } from '@janhq/core'
 import { Button, Textarea } from '@janhq/uikit'
 
 import { useAtom, useAtomValue } from 'jotai'
@@ -104,7 +104,7 @@ const ChatScreen = () => {
   )
 
   const onStopInferenceClick = async () => {
-    events.emit(EventName.OnInferenceStopped, {})
+    events.emit(InferenceEvent.OnInferenceStopped, {})
   }
 
   return (

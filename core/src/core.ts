@@ -19,10 +19,12 @@ const executeOnMain: (extension: string, method: string, ...args: any[]) => Prom
  * Downloads a file from a URL and saves it to the local file system.
  * @param {string} url - The URL of the file to download.
  * @param {string} fileName - The name to use for the downloaded file.
+ * @param {object} network - Optional object to specify proxy/whether to ignore SSL certificates.
  * @returns {Promise<any>} A promise that resolves when the file is downloaded.
  */
-const downloadFile: (url: string, fileName: string) => Promise<any> = (url, fileName) =>
-  global.core?.api?.downloadFile(url, fileName)
+const downloadFile: (url: string, fileName: string, network?: { proxy?: string, ignoreSSL?: boolean }) => Promise<any> = (url, fileName, network) => {
+  return global.core?.api?.downloadFile(url, fileName, network)
+}
 
 /**
  * Aborts the download of a specific file.
@@ -33,10 +35,11 @@ const abortDownload: (fileName: string) => Promise<any> = (fileName) =>
   global.core.api?.abortDownload(fileName)
 
 /**
- * Gets the user space path.
- * @returns {Promise<any>} A Promise that resolves with the user space path.
+ * Gets Jan's data folder path.
+ *
+ * @returns {Promise<string>} A Promise that resolves with Jan's data folder path.
  */
-const getUserSpace = (): Promise<string> => global.core.api?.getUserSpace()
+const getJanDataFolderPath = (): Promise<string> => global.core.api?.getJanDataFolderPath()
 
 /**
  * Opens the file explorer at a specific path.
@@ -101,12 +104,12 @@ export {
   executeOnMain,
   downloadFile,
   abortDownload,
-  getUserSpace,
+  getJanDataFolderPath,
   openFileExplorer,
   getResourcePath,
   joinPath,
   openExternalUrl,
   baseName,
   log,
-  FileStat
+  FileStat,
 }

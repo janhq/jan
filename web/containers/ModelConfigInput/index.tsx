@@ -18,6 +18,7 @@ import { getConfigurationsData } from '@/utils/componentSettings'
 
 import { toSettingParams } from '@/utils/modelParam'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import {
   engineParamsUpdateAtom,
   getActiveThreadIdAtom,
@@ -52,6 +53,8 @@ const ModelConfigInput: React.FC<Props> = ({
 
   const { stopModel } = useActiveModel()
 
+  const serverEnabled = useAtomValue(serverEnabledAtom)
+
   const onValueChanged = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     if (!threadId) return
     if (engineParams.some((x) => x.name.includes(name))) {
@@ -85,6 +88,7 @@ const ModelConfigInput: React.FC<Props> = ({
         placeholder={placeholder}
         onChange={onValueChanged}
         value={value}
+        disabled={serverEnabled}
       />
     </div>
   )

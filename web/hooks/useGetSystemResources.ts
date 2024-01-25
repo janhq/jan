@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { ExtensionType } from '@janhq/core'
-import { MonitoringExtension } from '@janhq/core'
+import { ExtensionTypeEnum, MonitoringExtension } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
@@ -21,12 +20,14 @@ export default function useGetSystemResources() {
 
   const getSystemResources = async () => {
     if (
-      !extensionManager.get<MonitoringExtension>(ExtensionType.SystemMonitoring)
+      !extensionManager.get<MonitoringExtension>(
+        ExtensionTypeEnum.SystemMonitoring
+      )
     ) {
       return
     }
     const monitoring = extensionManager.get<MonitoringExtension>(
-      ExtensionType.SystemMonitoring
+      ExtensionTypeEnum.SystemMonitoring
     )
     const resourceInfor = await monitoring?.getResourcesInfo()
     const currentLoadInfor = await monitoring?.getCurrentLoad()

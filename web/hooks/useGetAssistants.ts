@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 
-import { Assistant, ExtensionType, AssistantExtension } from '@janhq/core'
+import { Assistant, ExtensionTypeEnum, AssistantExtension } from '@janhq/core'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 
 export const getAssistants = async (): Promise<Assistant[]> =>
   extensionManager
-    .get<AssistantExtension>(ExtensionType.Assistant)
+    .get<AssistantExtension>(ExtensionTypeEnum.Assistant)
     ?.getAssistants() ?? []
 
 /**

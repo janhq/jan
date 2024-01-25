@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react'
 
-import { getUserSpace, openFileExplorer, joinPath } from '@janhq/core'
-
 import { Input, Textarea } from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
@@ -12,9 +10,7 @@ import { twMerge } from 'tailwind-merge'
 import LogoMark from '@/containers/Brand/Logo/Mark'
 import CardSidebar from '@/containers/CardSidebar'
 
-import DropdownListSidebar, {
-  selectedModelAtom,
-} from '@/containers/DropdownListSidebar'
+import DropdownListSidebar from '@/containers/DropdownListSidebar'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
@@ -29,7 +25,6 @@ import settingComponentBuilder from '../ModelSetting/settingComponentBuilder'
 import {
   activeThreadAtom,
   getActiveThreadModelParamsAtom,
-  threadStatesAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export const showRightSideBarAtom = atom<boolean>(true)
@@ -38,81 +33,13 @@ const Sidebar: React.FC = () => {
   const showing = useAtomValue(showRightSideBarAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-  const selectedModel = useAtomValue(selectedModelAtom)
-  const { updateThreadMetadata } = useCreateNewThread()
 
-  const threadStates = useAtomValue(threadStatesAtom)
+  const { updateThreadMetadata } = useCreateNewThread()
 
   const modelEngineParams = toSettingParams(activeModelParams)
   const modelRuntimeParams = toRuntimeParams(activeModelParams)
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
   const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
-
-  const onReviewInFinderClick = async (type: string) => {
-    if (!activeThread) return
-    const activeThreadState = threadStates[activeThread.id]
-    if (!activeThreadState.isFinishInit) {
-      alert('Thread is not started yet')
-      return
-    }
-
-    const userSpace = await getUserSpace()
-    let filePath = undefined
-    const assistantId = activeThread.assistants[0]?.assistant_id
-    switch (type) {
-      case 'Engine':
-      case 'Thread':
-        filePath = await joinPath(['threads', activeThread.id])
-        break
-      case 'Model':
-        if (!selectedModel) return
-        filePath = await joinPath(['models', selectedModel.id])
-        break
-      case 'Assistant':
-        if (!assistantId) return
-        filePath = await joinPath(['assistants', assistantId])
-        break
-      default:
-        break
-    }
-
-    if (!filePath) return
-    const fullPath = await joinPath([userSpace, filePath])
-    openFileExplorer(fullPath)
-  }
-
-  const onViewJsonClick = async (type: string) => {
-    if (!activeThread) return
-    const activeThreadState = threadStates[activeThread.id]
-    if (!activeThreadState.isFinishInit) {
-      alert('Thread is not started yet')
-      return
-    }
-
-    const userSpace = await getUserSpace()
-    let filePath = undefined
-    const assistantId = activeThread.assistants[0]?.assistant_id
-    switch (type) {
-      case 'Engine':
-      case 'Thread':
-        filePath = await joinPath(['threads', activeThread.id, 'thread.json'])
-        break
-      case 'Model':
-        if (!selectedModel) return
-        filePath = await joinPath(['models', selectedModel.id, 'model.json'])
-        break
-      case 'Assistant':
-        if (!assistantId) return
-        filePath = await joinPath(['assistants', assistantId, 'assistant.json'])
-        break
-      default:
-        break
-    }
-
-    if (!filePath) return
-    const fullPath = await joinPath([userSpace, filePath])
-    openFileExplorer(fullPath)
-  }
 
   return (
     <div
@@ -162,11 +89,7 @@ const Sidebar: React.FC = () => {
           </div>
         </div>
 
-        <CardSidebar
-          title="Assistant"
-          onRevealInFinderClick={onReviewInFinderClick}
-          onViewJsonClick={onViewJsonClick}
-        >
+        <CardSidebar title="Assistant">
           <div className="flex flex-col space-y-4 p-2">
             <div className="flex items-center space-x-2">
               <LogoMark width={24} height={24} />
@@ -216,11 +139,7 @@ const Sidebar: React.FC = () => {
               </div> */}
           </div>
         </CardSidebar>
-        <CardSidebar
-          title="Model"
-          onRevealInFinderClick={onReviewInFinderClick}
-          onViewJsonClick={onViewJsonClick}
-        >
+        <CardSidebar title="Model">
           <div className="px-2">
             <div className="mt-4">
               <DropdownListSidebar />
@@ -250,12 +169,7 @@ const Sidebar: React.FC = () => {
 
             {componentDataEngineSetting.length !== 0 && (
               <div className="my-4">
-                <CardSidebar
-                  title="Engine Parameters"
-                  onRevealInFinderClick={onReviewInFinderClick}
-                  onViewJsonClick={onViewJsonClick}
-                  asChild
-                >
+                <CardSidebar title="Engine Parameters" asChild>
                   <div className="px-2 py-4">
                     <EngineSetting />
                   </div>

@@ -1,4 +1,4 @@
-export enum ExtensionType {
+export enum ExtensionTypeEnum {
   Assistant = "assistant",
   Conversational = "conversational",
   Inference = "inference",
@@ -6,17 +6,22 @@ export enum ExtensionType {
   SystemMonitoring = "systemMonitoring",
 }
 
+export interface ExtensionType {
+  type(): ExtensionTypeEnum | undefined;
+}
 /**
  * Represents a base extension.
  * This class should be extended by any class that represents an extension.
  */
-export abstract class BaseExtension {
+export abstract class BaseExtension implements ExtensionType {
   /**
    * Returns the type of the extension.
    * @returns {ExtensionType} The type of the extension
    * Undefined means its not extending any known extension by the application.
    */
-  abstract type(): ExtensionType | undefined;
+  type(): ExtensionTypeEnum | undefined {
+    return undefined;
+  }
   /**
    * Called when the extension is loaded.
    * Any initialization logic for the extension should be put here.

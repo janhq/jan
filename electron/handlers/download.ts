@@ -1,11 +1,11 @@
-import { app, ipcMain } from 'electron'
-import { resolve, join } from 'path'
+import { ipcMain } from 'electron'
+import { resolve } from 'path'
 import { WindowManager } from './../managers/window'
 import request from 'request'
 import { createWriteStream, renameSync } from 'fs'
 import { DownloadEvent, DownloadRoute } from '@janhq/core'
 const progress = require('request-progress')
-import { DownloadManager } from '@janhq/core/node'
+import { DownloadManager, getJanDataFolderPath, normalizeFilePath } from '@janhq/core/node'
 
 export function handleDownloaderIPCs() {
   /**
@@ -54,64 +54,68 @@ export function handleDownloaderIPCs() {
    * @param url - The URL to download the file from.
    * @param fileName - The name to give the downloaded file.
    */
-  ipcMain.handle(DownloadRoute.downloadFile, async (_event, url, fileName) => {
-    const userDataPath = join(app.getPath('home'), 'jan')
-    if (
-      typeof fileName === 'string' &&
-      (fileName.includes('file:/') || fileName.includes('file:\\'))
-    ) {
-      fileName = fileName.replace('file:/', '').replace('file:\\', '')
-    }
-    const destination = resolve(userDataPath, fileName)
-    const rq = request(url)
+  ipcMain.handle(
+    DownloadRoute.downloadFile,
+    async (_event, url, fileName, network) => {
+      const strictSSL = !network?.ignoreSSL
+      const proxy = network?.proxy?.startsWith('http')
+        ? network.proxy
+        : undefined
 
-    // Put request to download manager instance
-    DownloadManager.instance.setRequest(fileName, rq)
+      if (typeof fileName === 'string') {
+        fileName = normalizeFilePath(fileName)
+      }
+      const destination = resolve(getJanDataFolderPath(), fileName)
+      const rq = request({ url, strictSSL, proxy })
 
-    // Downloading file to a temp file first
-    const downloadingTempFile = `${destination}.download`
+      // Put request to download manager instance
+      DownloadManager.instance.setRequest(fileName, rq)
 
-    progress(rq, {})
-      .on('progress', function (state: any) {
-        WindowManager?.instance.currentWindow?.webContents.send(
-          DownloadEvent.onFileDownloadUpdate,
-          {
-            ...state,
-            fileName,
-          }
-        )
-      })
-      .on('error', function (err: Error) {
-        WindowManager?.instance.currentWindow?.webContents.send(
-          DownloadEvent.onFileDownloadError,
-          {
-            fileName,
-            err,
-          }
-        )
-      })
-      .on('end', function () {
-        if (DownloadManager.instance.networkRequests[fileName]) {
-          // Finished downloading, rename temp file to actual file
-          renameSync(downloadingTempFile, destination)
+      // Downloading file to a temp file first
+      const downloadingTempFile = `${destination}.download`
 
+      progress(rq, {})
+        .on('progress', function (state: any) {
           WindowManager?.instance.currentWindow?.webContents.send(
-            DownloadEvent.onFileDownloadSuccess,
+            DownloadEvent.onFileDownloadUpdate,
             {
+              ...state,
               fileName,
             }
           )
-          DownloadManager.instance.setRequest(fileName, undefined)
-        } else {
+        })
+        .on('error', function (err: Error) {
           WindowManager?.instance.currentWindow?.webContents.send(
             DownloadEvent.onFileDownloadError,
             {
               fileName,
-              err: { message: 'aborted' },
+              err,
             }
           )
-        }
-      })
-      .pipe(createWriteStream(downloadingTempFile))
-  })
+        })
+        .on('end', function () {
+          if (DownloadManager.instance.networkRequests[fileName]) {
+            // Finished downloading, rename temp file to actual file
+            renameSync(downloadingTempFile, destination)
+
+            WindowManager?.instance.currentWindow?.webContents.send(
+              DownloadEvent.onFileDownloadSuccess,
+              {
+                fileName,
+              }
+            )
+            DownloadManager.instance.setRequest(fileName, undefined)
+          } else {
+            WindowManager?.instance.currentWindow?.webContents.send(
+              DownloadEvent.onFileDownloadError,
+              {
+                fileName,
+                err: { message: 'aborted' },
+              }
+            )
+          }
+        })
+        .pipe(createWriteStream(downloadingTempFile))
+    }
+  )
 }

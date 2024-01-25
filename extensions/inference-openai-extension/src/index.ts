@@ -9,16 +9,17 @@
 import {
   ChatCompletionRole,
   ContentType,
-  EventName,
   MessageRequest,
   MessageStatus,
-  ExtensionType,
   ThreadContent,
   ThreadMessage,
   events,
   fs,
+  BaseExtension,
+  MessageEvent,
+  ModelEvent,
+  InferenceEvent,
 } from "@janhq/core";
-import { InferenceExtension } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
 import { join } from "path";
@@ -28,7 +29,7 @@ import { join } from "path";
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceOpenAIExtension implements InferenceExtension {
+export default class JanInferenceOpenAIExtension extends BaseExtension {
   private static readonly _homeDir = "file://engines";
   private static readonly _engineMetadataFileName = "openai.json";
 
@@ -43,14 +44,6 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
   isCancelled = false;
 
   /**
-   * Returns the type of the extension.
-   * @returns {ExtensionType} The type of the extension.
-   */
-  // TODO: To fix
-  type(): ExtensionType {
-    return undefined;
-  }
-  /**
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
@@ -63,18 +56,18 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     JanInferenceOpenAIExtension.writeDefaultEngineSettings();
 
     // Events subscription
-    events.on(EventName.OnMessageSent, (data) =>
+    events.on(MessageEvent.OnMessageSent, (data) =>
       JanInferenceOpenAIExtension.handleMessageRequest(data, this)
     );
 
-    events.on(EventName.OnModelInit, (model: OpenAIModel) => {
+    events.on(ModelEvent.OnModelInit, (model: OpenAIModel) => {
       JanInferenceOpenAIExtension.handleModelInit(model);
     });
 
-    events.on(EventName.OnModelStop, (model: OpenAIModel) => {
+    events.on(ModelEvent.OnModelStop, (model: OpenAIModel) => {
       JanInferenceOpenAIExtension.handleModelStop(model);
     });
-    events.on(EventName.OnInferenceStopped, () => {
+    events.on(InferenceEvent.OnInferenceStopped, () => {
       JanInferenceOpenAIExtension.handleInferenceStopped(this);
     });
   }
@@ -104,43 +97,6 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
       console.error(err);
     }
   }
-
-  /**
-   * Makes a single response inference request.
-   * @param {MessageRequest} data - The data for the inference request.
-   * @returns {Promise<any>} A promise that resolves with the inference response.
-   */
-  async inference(data: MessageRequest): Promise<ThreadMessage> {
-    const timestamp = Date.now();
-
-    const message: ThreadMessage = {
-      thread_id: data.threadId,
-      created: timestamp,
-      updated: timestamp,
-      status: MessageStatus.Ready,
-      id: "",
-      role: ChatCompletionRole.Assistant,
-      object: "thread.message",
-      content: [],
-    };
-
-    return new Promise(async (resolve, reject) => {
-      requestInference(
-        data.messages ?? [],
-        JanInferenceOpenAIExtension._engineSettings,
-        JanInferenceOpenAIExtension._currentModel
-      ).subscribe({
-        next: (_content) => {},
-        complete: async () => {
-          resolve(message);
-        },
-        error: async (err) => {
-          reject(err);
-        },
-      });
-    });
-  }
-
   private static async handleModelInit(model: OpenAIModel) {
     if (model.engine !== "openai") {
       return;
@@ -148,7 +104,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
       JanInferenceOpenAIExtension._currentModel = model;
       JanInferenceOpenAIExtension.writeDefaultEngineSettings();
       // Todo: Check model list with API key
-      events.emit(EventName.OnModelReady, model);
+      events.emit(ModelEvent.OnModelReady, model);
     }
   }
 
@@ -156,7 +112,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
     if (model.engine !== "openai") {
       return;
     }
-    events.emit(EventName.OnModelStopped, model);
+    events.emit(ModelEvent.OnModelStopped, model);
   }
 
   private static async handleInferenceStopped(
@@ -192,7 +148,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
       updated: timestamp,
       object: "thread.message",
     };
-    events.emit(EventName.OnMessageResponse, message);
+    events.emit(MessageEvent.OnMessageResponse, message);
 
     instance.isCancelled = false;
     instance.controller = new AbortController();
@@ -215,18 +171,18 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
           },
         };
         message.content = [messageContent];
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
       complete: async () => {
         message.status = message.content.length
           ? MessageStatus.Ready
           : MessageStatus.Error;
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
       error: async (err) => {
         if (instance.isCancelled || message.content.length > 0) {
           message.status = MessageStatus.Error;
-          events.emit(EventName.OnMessageUpdate, message);
+          events.emit(MessageEvent.OnMessageUpdate, message);
           return;
         }
         const messageContent: ThreadContent = {
@@ -238,7 +194,7 @@ export default class JanInferenceOpenAIExtension implements InferenceExtension {
         };
         message.content = [messageContent];
         message.status = MessageStatus.Ready;
-        events.emit(EventName.OnMessageUpdate, message);
+        events.emit(MessageEvent.OnMessageUpdate, message);
       },
     });
   }

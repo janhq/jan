@@ -1,6 +1,6 @@
 import {
   ChatCompletionRole,
-  ExtensionType,
+  ExtensionTypeEnum,
   ConversationalExtension,
 } from '@janhq/core'
 
@@ -44,7 +44,7 @@ export default function useDeleteThread() {
 
       if (thread) {
         await extensionManager
-          .get<ConversationalExtension>(ExtensionType.Conversational)
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.writeMessages(
             threadId,
             messages.filter((msg) => msg.role === ChatCompletionRole.System)
@@ -61,7 +61,7 @@ export default function useDeleteThread() {
     }
     try {
       await extensionManager
-        .get<ConversationalExtension>(ExtensionType.Conversational)
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.deleteThread(threadId)
       const availableThreads = threads.filter((c) => c.id !== threadId)
       setThreads(availableThreads)

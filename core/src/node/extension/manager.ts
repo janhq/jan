@@ -1,44 +1,45 @@
-import { join, resolve } from "path";
+import { join, resolve } from 'path'
 
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { homedir } from "os"
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
+
 /**
  * Manages extension installation and migration.
  */
 
-export const userSpacePath = join(homedir(), "jan");
-
 export class ExtensionManager {
-  public static instance: ExtensionManager = new ExtensionManager();
+  public static instance: ExtensionManager = new ExtensionManager()
 
-  extensionsPath: string | undefined = join(userSpacePath, "extensions");
+  private extensionsPath: string | undefined
 
   constructor() {
     if (ExtensionManager.instance) {
-      return ExtensionManager.instance;
+      return ExtensionManager.instance
     }
+  }
+
+  getExtensionsPath(): string | undefined {
+    return this.extensionsPath
   }
 
   setExtensionsPath(extPath: string) {
     // Create folder if it does not exist
-    let extDir;
+    let extDir
     try {
-      extDir = resolve(extPath);
-      if (extDir.length < 2) throw new Error();
+      extDir = resolve(extPath)
+      if (extDir.length < 2) throw new Error()
 
-      if (!existsSync(extDir)) mkdirSync(extDir);
+      if (!existsSync(extDir)) mkdirSync(extDir)
 
-      const extensionsJson = join(extDir, "extensions.json");
-      if (!existsSync(extensionsJson))
-        writeFileSync(extensionsJson, "{}");
+      const extensionsJson = join(extDir, 'extensions.json')
+      if (!existsSync(extensionsJson)) writeFileSync(extensionsJson, '{}')
 
-      this.extensionsPath = extDir;
+      this.extensionsPath = extDir
     } catch (error) {
-      throw new Error("Invalid path provided to the extensions folder");
+      throw new Error('Invalid path provided to the extensions folder')
     }
   }
 
   getExtensionsFile() {
-    return join(this.extensionsPath ?? "", "extensions.json");
+    return join(this.extensionsPath ?? '', 'extensions.json')
   }
 }

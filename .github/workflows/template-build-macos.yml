@@ -1,4 +1,4 @@
-name: build-linux-x64
+name: build-macos
 on:
   workflow_call:
     inputs:
@@ -70,7 +70,7 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
-          jq '.build.publish = [{"provider": "s3", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "${{ inputs.cloudflare_r2_path }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}, {"provider": "s3", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "${{ inputs.cloudflare_r2_path }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           cat electron/package.json
 

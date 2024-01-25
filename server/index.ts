@@ -1,40 +1,86 @@
 import fastify from "fastify";
 import dotenv from "dotenv";
-import { log, v1Router } from "@janhq/core/node";
-import path from "path";
+import {
+  getServerLogPath,
+  v1Router,
+  logServer,
+  getJanExtensionsPath,
+} from "@janhq/core/node";
+import { join } from "path";
 
-import os from "os";
-
+// Load environment variables
 dotenv.config();
 
+// Define default settings
 const JAN_API_HOST = process.env.JAN_API_HOST || "127.0.0.1";
 const JAN_API_PORT = Number.parseInt(process.env.JAN_API_PORT || "1337");
-const serverLogPath = path.join(os.homedir(), "jan", "logs", "server.log");
 
+// Initialize server settings
 let server: any | undefined = undefined;
+let hostSetting: string = JAN_API_HOST;
+let portSetting: number = JAN_API_PORT;
+let corsEnabled: boolean = true;
+let isVerbose: boolean = true;
 
-export const startServer = async (schemaPath?: string, baseDir?: string) => {
+/**
+ * Server configurations
+ * @param host - The host address for the server
+ * @param port - The port number for the server
+ * @param isCorsEnabled - Flag to enable or disable CORS
+ * @param isVerboseEnabled - Flag to enable or disable verbose logging
+ * @param schemaPath - Path to the OpenAPI schema file
+ * @param baseDir - Base directory for the OpenAPI schema file
+ */
+export interface ServerConfig {
+  host?: string;
+  port?: number;
+  isCorsEnabled?: boolean;
+  isVerboseEnabled?: boolean;
+  schemaPath?: string;
+  baseDir?: string;
+}
+
+/**
+ * Function to start the server
+ * @param configs - Server configurations
+ */
+export const startServer = async (configs?: ServerConfig) => {
+  // Update server settings
+  isVerbose = configs?.isVerboseEnabled ?? true;
+  hostSetting = configs?.host ?? JAN_API_HOST;
+  portSetting = configs?.port ?? JAN_API_PORT;
+  corsEnabled = configs?.isCorsEnabled ?? true;
+  const serverLogPath = getServerLogPath();
+
+  // Start the server
   try {
-    log(`[API]::Debug: Starting JAN API server...`, "server.log")
+    // Log server start
+    if (isVerbose) logServer(`Debug: Starting JAN API server...`);
+
+    // Initialize Fastify server with logging
     server = fastify({
       logger: {
         level: "info",
         file: serverLogPath,
       },
     });
-    await server.register(require("@fastify/cors"), {});
 
+    // Register CORS if enabled
+    if (corsEnabled) await server.register(require("@fastify/cors"), {});
+
+    // Register Swagger for API documentation
     await server.register(require("@fastify/swagger"), {
       mode: "static",
       specification: {
-        path: schemaPath ?? "./../docs/openapi/jan.yaml",
-        baseDir: baseDir ?? "./../docs/openapi",
+        path: configs?.schemaPath ?? "./../docs/openapi/jan.yaml",
+        baseDir: configs?.baseDir ?? "./../docs/openapi",
       },
     });
 
+    // Register Swagger UI
     await server.register(require("@fastify/swagger-ui"), {
       routePrefix: "/",
-      baseDir: baseDir ?? path.join(__dirname, "../..", "./docs/openapi"),
+      baseDir: configs?.baseDir ?? join(__dirname, "../..", "./docs/openapi"),
       uiConfig: {
         docExpansion: "full",
         deepLinking: false,
@@ -43,12 +89,12 @@ export const startServer = async (schemaPath?: string, baseDir?: string) => {
       transformSpecificationClone: true,
     });
 
+    // Register static file serving for extensions
+    // TODO: Watch extension files changes and reload
     await server.register(
       (childContext: any, _: any, done: any) => {
         childContext.register(require("@fastify/static"), {
-          root:
-            process.env.EXTENSION_ROOT ||
-            path.join(require("os").homedir(), "jan", "extensions"),
+          root: getJanExtensionsPath(),
           wildcard: false,
         });
 
@@ -56,25 +102,40 @@ export const startServer = async (schemaPath?: string, baseDir?: string) => {
       },
       { prefix: "extensions" }
     );
+
+    // Register API routes
     await server.register(v1Router, { prefix: "/v1" });
+
+    // Start listening for requests
     await server
       .listen({
-        port: JAN_API_PORT,
-        host: JAN_API_HOST,
+        port: portSetting,
+        host: hostSetting,
       })
       .then(() => {
-        log(`[API]::Debug: JAN API listening at: http://${JAN_API_HOST}:${JAN_API_PORT}`);
+        // Log server listening
+        if (isVerbose)
+          logServer(
+            `Debug: JAN API listening at: http://${hostSetting}:${portSetting}`
+          );
       });
   } catch (e) {
-    log(`[API]::Error: ${e}`);
+    // Log any errors
+    if (isVerbose) logServer(`Error: ${e}`);
   }
 };
 
+/**
+ * Function to stop the server
+ */
 export const stopServer = async () => {
   try {
-    log(`[API]::Debug: Server stopped`, "server.log")
+    // Log server stop
+    if (isVerbose) logServer(`Debug: Server stopped`);
+    // Stop the server
     await server.close();
   } catch (e) {
-    log(`[API]::Error: ${e}`);
+    // Log any errors
+    if (isVerbose) logServer(`Error: ${e}`);
   }
 };

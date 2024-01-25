@@ -1,11 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { EventName, events, Model } from '@janhq/core'
+import { events, Model, ModelEvent } from '@janhq/core'
 import { atom, useAtom, useAtomValue } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
 import { useGetDownloadedModels } from './useGetDownloadedModels'
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
@@ -63,14 +63,14 @@ export function useActiveModel() {
     }
 
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
-    events.emit(EventName.OnModelInit, model)
+    events.emit(ModelEvent.OnModelInit, model)
   }
 
   const stopModel = async () => {
     if (activeModel) {
       setActiveModel(undefined)
       setStateModel({ state: 'stop', loading: true, model: activeModel.id })
-      events.emit(EventName.OnModelStop, activeModel)
+      events.emit(ModelEvent.OnModelStop, activeModel)
     }
   }
 

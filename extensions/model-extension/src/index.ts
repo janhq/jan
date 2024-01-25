@@ -1,20 +1,19 @@
 import {
-  ExtensionType,
   fs,
   downloadFile,
   abortDownload,
   getResourcePath,
-  getUserSpace,
   InferenceEngine,
   joinPath,
   ModelExtension,
   Model,
+  getJanDataFolderPath,
 } from '@janhq/core'
 
 /**
  * A extension for models
  */
-export default class JanModelExtension implements ModelExtension {
+export default class JanModelExtension extends ModelExtension {
   private static readonly _homeDir = 'file://models'
   private static readonly _modelMetadataFileName = 'model.json'
   private static readonly _supportedModelFormat = '.gguf'
@@ -23,15 +22,6 @@ export default class JanModelExtension implements ModelExtension {
 
   private static readonly _configDirName = 'config'
   private static readonly _defaultModelFileName = 'default-model.json'
-
-  /**
-   * Implements type from JanExtension.
-   * @override
-   * @returns The type of the extension.
-   */
-  type(): ExtensionType {
-    return ExtensionType.Model
-  }
 
   /**
    * Called when the extension is loaded.
@@ -49,7 +39,6 @@ export default class JanModelExtension implements ModelExtension {
 
   private async copyModelsToHomeDir() {
     try {
-      
       // Check for migration conditions
       if (
         localStorage.getItem(`${EXTENSION_NAME}-version`) === VERSION &&
@@ -63,8 +52,8 @@ export default class JanModelExtension implements ModelExtension {
       const resourePath = await getResourcePath()
       const srcPath = await joinPath([resourePath, 'models'])
 
-      const userSpace = await getUserSpace()
-      const destPath = await joinPath([userSpace, 'models'])
+      const janDataFolderPath = await getJanDataFolderPath()
+      const destPath = await joinPath([janDataFolderPath, 'models'])
 
       await fs.syncFile(srcPath, destPath)
 
@@ -80,9 +69,13 @@ export default class JanModelExtension implements ModelExtension {
   /**
    * Downloads a machine learning model.
    * @param model - The model to download.
+   * @param network - Optional object to specify proxy/whether to ignore SSL certificates.
    * @returns A Promise that resolves when the model is downloaded.
    */
-  async downloadModel(model: Model): Promise<void> {
+  async downloadModel(
+    model: Model,
+    network?: { ignoreSSL?: boolean; proxy?: string }
+  ): Promise<void> {
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
@@ -96,7 +89,7 @@ export default class JanModelExtension implements ModelExtension {
       ? extractedFileName
       : model.id
     const path = await joinPath([modelDirPath, fileName])
-    downloadFile(model.source_url, path)
+    downloadFile(model.source_url, path, network)
   }
 
   /**
@@ -304,6 +297,11 @@ export default class JanModelExtension implements ModelExtension {
       name: dirName,
       created: Date.now(),
       description: `${dirName} - user self import model`,
+      metadata: {
+        size: binaryFileSize,
+        author: 'User',
+        tags: [],
+      },
     }
 
     const modelFilePath = await joinPath([

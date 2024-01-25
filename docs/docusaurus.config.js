@@ -155,8 +155,8 @@ const config = {
     algolia: {
       appId: process.env.ALGOLIA_APP_ID || "XXX",
       apiKey: process.env.ALGOLIA_API_KEY || "XXX",
-      indexName: "jan",
-      contextualSearch: false,
+      indexName: "jan_docs",
+      contextualSearch: true,
       insights: true,
     },
     // SEO Docusarus
@@ -263,12 +263,6 @@ const config = {
           label: "Framework",
         },
         // Navbar right
-        {
-          type: "docSidebar",
-          position: "right",
-          sidebarId: "communitySidebar",
-          label: "Community",
-        },
         {
           to: "blog",
           label: "Blog",

@@ -1,7 +1,7 @@
 import {
   ChatCompletionRole,
   ConversationalExtension,
-  ExtensionType,
+  ExtensionTypeEnum,
   MessageStatus,
   ThreadMessage,
 } from '@janhq/core'
@@ -9,6 +9,7 @@ import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { extensionManager } from '@/extension'
@@ -16,6 +17,7 @@ import {
   deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
+import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
@@ -23,6 +25,8 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const thread = useAtomValue(activeThreadAtom)
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const { resendChatMessage } = useSendChatMessage()
+  const { activeModel } = useActiveModel()
+  const totalRam = useAtomValue(totalRamAtom)
 
   const regenerateMessage = async () => {
     const lastMessageIndex = messages.length - 1
@@ -32,7 +36,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
       deleteMessage(message.id ?? '')
       if (thread) {
         await extensionManager
-          .get<ConversationalExtension>(ExtensionType.Conversational)
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.writeMessages(
             thread.id,
             messages.filter((msg) => msg.id !== message.id)
@@ -66,24 +70,33 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
       {message.status === MessageStatus.Error && (
         <div key={message.id} className="mt-10 flex flex-col items-center">
           <span className="mb-3 text-center text-sm font-medium text-gray-500">
-            <p>Apologies, something&apos;s amiss!</p>
-            Jan&apos;s in beta. Find troubleshooting guides{' '}
-            <a
-              href="https://jan.ai/guides/troubleshooting"
-              target="_blank"
-              className="text-blue-600 hover:underline dark:text-blue-300"
-            >
-              here
-            </a>{' '}
-            or reach out to us on{' '}
-            <a
-              href="https://discord.gg/AsJ8krTT3N"
-              target="_blank"
-              className="text-blue-600 hover:underline dark:text-blue-300"
-            >
-              Discord
-            </a>{' '}
-            for assistance.
+            {Number(activeModel?.metadata.size) > totalRam ? (
+              <>
+                Oops! Model size exceeds available RAM. Consider selecting a
+                smaller model or upgrading your RAM for smoother performance.
+              </>
+            ) : (
+              <>
+                <p>Apologies, something&apos;s amiss!</p>
+                Jan&apos;s in beta. Find troubleshooting guides{' '}
+                <a
+                  href="https://jan.ai/guides/troubleshooting"
+                  target="_blank"
+                  className="text-blue-600 hover:underline dark:text-blue-300"
+                >
+                  here
+                </a>{' '}
+                or reach out to us on{' '}
+                <a
+                  href="https://discord.gg/AsJ8krTT3N"
+                  target="_blank"
+                  className="text-blue-600 hover:underline dark:text-blue-300"
+                >
+                  Discord
+                </a>{' '}
+                for assistance.
+              </>
+            )}
           </span>
         </div>
       )}

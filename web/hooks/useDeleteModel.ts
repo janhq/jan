@@ -1,4 +1,4 @@
-import { ExtensionType, ModelExtension, Model } from '@janhq/core'
+import { ExtensionTypeEnum, ModelExtension, Model } from '@janhq/core'
 
 import { toaster } from '@/containers/Toast'
 
@@ -11,7 +11,7 @@ export default function useDeleteModel() {
 
   const deleteModel = async (model: Model) => {
     await extensionManager
-      .get<ModelExtension>(ExtensionType.Model)
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
       ?.deleteModel(model.id)
 
     // reload models

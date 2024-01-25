@@ -1,12 +1,10 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
-import { setupMenu } from './utils/menu'
-import { createUserSpace } from './utils/path'
 /**
  * Managers
  **/
 import { WindowManager } from './managers/window'
-import { log, ModuleManager } from '@janhq/core/node'
+import { log } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -21,12 +19,16 @@ import { handleFsIPCs } from './handlers/fs'
 /**
  * Utils
  **/
+import { setupMenu } from './utils/menu'
+import { createUserSpace } from './utils/path'
 import { migrateExtensions } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
 import { setupExtensions } from './utils/extension'
+import { setupCore } from './utils/setup'
 
 app
   .whenReady()
+  .then(setupCore)
   .then(createUserSpace)
   .then(migrateExtensions)
   .then(setupExtensions)
@@ -94,9 +96,8 @@ function handleIPCs() {
 }
 
 /*
-** Suppress Node error messages
-*/
+ ** Suppress Node error messages
+ */
 process.on('uncaughtException', function (err) {
-  // TODO: Write error to log file in #1447
   log(`Error: ${err}`)
 })
