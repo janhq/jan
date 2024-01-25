@@ -70,12 +70,12 @@ export default function useGetSystemResources() {
   useEffect(() => {
     getSystemResources()
 
-    // Fetch interval - every 0.5s
+    // Fetch interval - every 2s
     // TODO: Will we really need this?
     // There is a possibility that this will be removed and replaced by the process event hook?
     const intervalId = setInterval(() => {
       getSystemResources()
-    }, 500)
+    }, 2000)
 
     // clean up interval
     return () => clearInterval(intervalId)
