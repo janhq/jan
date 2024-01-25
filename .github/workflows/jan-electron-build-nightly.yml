@@ -29,14 +29,14 @@ jobs:
       - name: Set public provider
         id: set-public-provider
         run: |
-          if [ ${{ github.event == 'workflow_dispatch' }} ]; then
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "::set-output name=public_provider::${{ github.event.inputs.public_provider }}"
             echo "::set-output name=ref::${{ github.ref }}"
           else
-            if [ ${{ github.event_name == 'schedule' }} ]; then
+            if [ "${{ github.event_name }}" == "schedule" ]; then
               echo "::set-output name=public_provider::cloudflare-r2"
               echo "::set-output name=ref::refs/heads/dev"
-            else if [ ${{ github.event_name == 'push' }} ]; then
+            elif [ "${{ github.event_name }}" == "push" ]; then
               echo "::set-output name=public_provider::cloudflare-r2"
               echo "::set-output name=ref::${{ github.ref }}"
             else
