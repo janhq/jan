@@ -13,6 +13,8 @@ import { useClickOutside } from '@/hooks/useClickOutside'
 
 import { usePath } from '@/hooks/usePath'
 
+import { openFileTitle } from '@/utils/titleUtils'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 interface Props {
@@ -35,13 +37,6 @@ export default function CardSidebar({
   const { onReviewInFinder, onViewJson } = usePath()
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
-
-  let openFolderTitle: string = 'Open Containing Folder'
-  if (isMac) {
-    openFolderTitle = 'Show in Finder'
-  } else if (isWindows) {
-    openFolderTitle = 'Show in File Explorer'
-  }
 
   return (
     <div
@@ -110,7 +105,7 @@ export default function CardSidebar({
                 {title === 'Model' ? (
                   <div className="flex flex-col">
                     <span className="font-medium text-black dark:text-muted-foreground">
-                      {openFolderTitle}
+                      {openFileTitle()}
                     </span>
                     <span className="mt-1 text-muted-foreground">
                       Opens thread.json. Changes affect this thread only.
@@ -118,7 +113,7 @@ export default function CardSidebar({
                   </div>
                 ) : (
                   <span className="text-bold text-black dark:text-muted-foreground">
-                    Show in Finder
+                    {openFileTitle()}
                   </span>
                 )}
               </>
