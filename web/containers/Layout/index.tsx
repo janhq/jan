@@ -9,17 +9,26 @@ import RibbonNav from '@/containers/Layout/Ribbon'
 
 import TopBar from '@/containers/Layout/TopBar'
 
+import { MainViewState } from '@/constants/screens'
+
 import { useMainViewState } from '@/hooks/useMainViewState'
+import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
-  const { mainViewState } = useMainViewState()
+  const { mainViewState, setMainViewState } = useMainViewState()
 
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
     setTheme(theme as string)
   }, [setTheme, theme])
+
+  useEffect(() => {
+    if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
+      setMainViewState(MainViewState.Settings)
+    }
+  }, [])
 
   return (
     <div className="flex h-screen w-screen flex-1 overflow-hidden">

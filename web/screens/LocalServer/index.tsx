@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import React, { useEffect, useState } from 'react'
@@ -55,16 +56,16 @@ const hostAtom = atom('127.0.0.1')
 const portAtom = atom('1337')
 
 const LocalServerScreen = () => {
+  const [errorRangePort, setErrorRangePort] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const showing = useAtomValue(showRightSideBarAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
 
   const modelEngineParams = toSettingParams(activeModelParams)
-
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
   const { openServerLog, clearServerLog } = useServerLog()
-  const { activeModel, startModel, stateModel } = useActiveModel()
+  const { startModel, stateModel } = useActiveModel()
   const [selectedModel] = useAtom(selectedModelAtom)
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
@@ -77,6 +78,15 @@ const LocalServerScreen = () => {
   const [firstTimeVisitAPIServer, setFirstTimeVisitAPIServer] =
     useState<boolean>(false)
 
+  const handleChangePort = (value: any) => {
+    if (Number(value) <= 0 || Number(value) >= 65536) {
+      setErrorRangePort(true)
+    } else {
+      setErrorRangePort(false)
+    }
+    setPort(value)
+  }
+
   useEffect(() => {
     if (
       localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === null ||
@@ -86,6 +96,10 @@ const LocalServerScreen = () => {
       setFirstTimeVisitAPIServer(true)
     }
   }, [firstTimeVisitAPIServer])
+
+  useEffect(() => {
+    handleChangePort(port)
+  }, [])
 
   return (
     <div className="flex h-full w-full">
@@ -102,7 +116,7 @@ const LocalServerScreen = () => {
             <Button
               block
               themes={serverEnabled ? 'danger' : 'primary'}
-              disabled={stateModel.loading}
+              disabled={stateModel.loading || errorRangePort}
               onClick={() => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
@@ -158,13 +172,21 @@ const LocalServerScreen = () => {
                   </Select>
 
                   <Input
-                    className="w-[60px] flex-shrink-0"
+                    className={twMerge(
+                      'w-[70px] flex-shrink-0',
+                      errorRangePort && 'border-danger'
+                    )}
                     value={port}
-                    onChange={(e) => setPort(e.target.value)}
-                    maxLength={4}
+                    onChange={(e) => {
+                      handleChangePort(e.target.value)
+                    }}
+                    maxLength={5}
                     disabled={serverEnabled}
                   />
                 </div>
+                {errorRangePort && (
+                  <p className="mt-2 text-xs text-danger">{`The port range should be from 0 to 65536`}</p>
+                )}
               </div>
               <div>
                 <label

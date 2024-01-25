@@ -4,6 +4,8 @@ type DownloadState = {
   speed: number
   percent: number
   size: DownloadSize
+  isFinished?: boolean
+  children?: DownloadState[]
   error?: string
 }
 
