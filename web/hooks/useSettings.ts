@@ -13,6 +13,7 @@ export const useSettings = () => {
 
   useEffect(() => {
     setTimeout(() => validateSettings, 3000)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const validateSettings = async () => {

@@ -265,19 +265,22 @@ export const downloadModel = async (
   const modelBinaryPath = join(directoryPath, modelId)
 
   const request = require('request')
-  const rq = request({ url: model.source_url, strictSSL, proxy })
   const progress = require('request-progress')
-  progress(rq, {})
-    .on('progress', function (state: any) {
-      console.log('progress', JSON.stringify(state, null, 2))
-    })
-    .on('error', function (err: Error) {
-      console.error('error', err)
-    })
-    .on('end', function () {
-      console.log('end')
-    })
-    .pipe(fs.createWriteStream(modelBinaryPath))
+
+  for (const source of model.sources) {
+    const rq = request({ url: source, strictSSL, proxy })
+    progress(rq, {})
+      .on('progress', function (state: any) {
+        console.debug('progress', JSON.stringify(state, null, 2))
+      })
+      .on('error', function (err: Error) {
+        console.error('error', err)
+      })
+      .on('end', function () {
+        console.debug('end')
+      })
+      .pipe(fs.createWriteStream(modelBinaryPath))
+  }
 
   return {
     message: `Starting download ${modelId}`,

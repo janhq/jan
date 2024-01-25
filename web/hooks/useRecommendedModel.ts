@@ -110,6 +110,7 @@ export default function useRecommendedModel() {
 
     console.debug(`Using last used model ${lastUsedModel.id}`)
     setRecommendedModel(lastUsedModel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getAndSortDownloadedModels, activeThread])
 
   useEffect(() => {

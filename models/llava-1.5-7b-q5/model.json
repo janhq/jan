@@ -1,0 +1,33 @@
+{
+  "sources": [
+    {
+      "filename": "ggml-model-q5_k.gguf",
+      "url": "https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/ggml-model-q5_k.gguf"
+    },
+    {
+      "filename": "mmproj-model-f16.gguf",
+      "url": "https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/mmproj-model-f16.gguf"
+    }
+  ],
+  "id": "llava-1.5-7b-q5",
+  "object": "model",
+  "name": "LlaVa 1.5 7B Q5 K",
+  "version": "1.0",
+  "description": "LlaVa 1.5 can bring vision understanding to Jan",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "\n### Instruction:\n{prompt}\n### Response:\n",
+    "llama_model_path": "ggml-model-q5_k.gguf",
+    "mmproj": "mmproj-model-f16.gguf"
+  },
+  "parameters": {
+    "max_tokens": 4096
+  },
+  "metadata": {
+    "author": "Mys",
+    "tags": ["Vision"],
+    "size": 5400000000
+  },
+  "engine": "nitro"
+}

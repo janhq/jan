@@ -21,6 +21,11 @@ export enum InferenceEngine {
   hf_endpoint = 'hf_endpoint',
 }
 
+export type ModelArtifact = {
+  filename: string
+  url: string
+}
+
 /**
  * Model type defines the shape of a model object.
  * @stored
@@ -45,7 +50,7 @@ export type Model = {
   /**
    * The model download source. It can be an external url or a local filepath.
    */
-  source_url: string
+  sources: ModelArtifact[]
 
   /**
    * The model identifier, which can be referenced in the API endpoints.
@@ -107,6 +112,8 @@ export type ModelSettingParams = {
   system_prompt?: string
   ai_prompt?: string
   user_prompt?: string
+  llama_model_path?: string
+  mmproj?: string
 }
 
 /**
