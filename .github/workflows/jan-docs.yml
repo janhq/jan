@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - dev
+      - docs
     paths:
       - 'docs/**'
       - '.github/workflows/jan-docs.yml'
@@ -12,6 +13,7 @@ on:
     branches:
       - main
       - dev
+      - docs
     paths:
       - 'docs/**'
       - '.github/workflows/jan-docs.yml'
@@ -91,13 +93,13 @@ jobs:
               Preview URL: ${{ steps.deployCloudflarePages.outputs.url }}
 
       - name: Add Custome Domain file
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.pull_request.head.repo.full_name != github.repository
+        if: github.event_name == 'push' && github.ref == 'refs/heads/docs' && github.event.pull_request.head.repo.full_name != github.repository
         run: echo "${{ vars.DOCUSAURUS_DOMAIN }}" > ./docs/build/CNAME
 
       # Popular action to deploy to GitHub Pages:
       # Docs: https://github.com/peaceiris/actions-gh-pages#%EF%B8%8F-docusaurus
       - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.pull_request.head.repo.full_name != github.repository
+        if: github.event_name == 'push' && github.ref == 'refs/heads/docs' && github.event.pull_request.head.repo.full_name != github.repository
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
