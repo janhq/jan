@@ -235,3 +235,6 @@ Jan builds on top of other open-source projects:
 ## License
 
 Jan is free and open source, under the AGPLv3 license.
+
+
+
