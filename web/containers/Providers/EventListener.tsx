@@ -105,6 +105,7 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       })
     }
     return () => {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (

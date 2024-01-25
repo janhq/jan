@@ -7,13 +7,13 @@ import { motion as m } from 'framer-motion'
 
 import { twMerge } from 'tailwind-merge'
 
+import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
+
 import Advanced from '@/screens/Settings/Advanced'
 import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 
 import Models from '@/screens/Settings/Models'
-
-import { formatExtensionsName } from '@/utils/converter'
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('My Models')
@@ -45,6 +45,12 @@ const SettingsScreen = () => {
         return <Models />
     }
   }
+
+  useEffect(() => {
+    if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
+      setActiveStaticMenu('Advanced Settings')
+    }
+  }, [])
 
   return (
     <div className="flex h-full bg-background">

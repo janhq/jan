@@ -2,7 +2,12 @@
   "object": "model",
   "version": 1,
   "format": "gguf",
-  "source_url": "N/A",
+  "sources": [
+    {
+      "url": "N/A",
+      "filename": "N/A"
+    }
+  ],
   "id": "N/A",
   "name": "N/A",
   "created": 0,
@@ -10,7 +15,8 @@
   "settings": {
     "ctx_len": 4096,
     "embedding": false,
-    "prompt_template": "{system_message}\n### Instruction: {prompt}\n### Response:"
+    "prompt_template": "{system_message}\n### Instruction: {prompt}\n### Response:",
+    "llama_model_path": "N/A"
   },
   "parameters": {
     "temperature": 0.7,

@@ -111,7 +111,7 @@ const ExtensionCatalog = () => {
             onChange={handleFileChange}
           />
           <Button
-            themes="secondary"
+            themes="secondaryBlue"
             size="sm"
             onClick={() => fileInputRef.current?.click()}
           >

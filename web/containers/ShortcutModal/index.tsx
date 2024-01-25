@@ -50,10 +50,12 @@ const availableShortcuts = [
 
 const ShortcutModal: React.FC = () => (
   <Modal>
-    <ModalTrigger asChild>
-      <Button size="sm" themes="secondary">
-        Show
-      </Button>
+    <ModalTrigger>
+      <div>
+        <Button size="sm" themes="secondaryBlue">
+          Show
+        </Button>
+      </div>
     </ModalTrigger>
     <ModalContent className="max-w-2xl">
       <ModalHeader>

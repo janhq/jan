@@ -86,11 +86,17 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       this.onMessageRequest(data)
     );
 
-    events.on(ModelEvent.OnModelInit, (model: Model) => this.onModelInit(model));
+    events.on(ModelEvent.OnModelInit, (model: Model) =>
+      this.onModelInit(model)
+    );
 
-    events.on(ModelEvent.OnModelStop, (model: Model) => this.onModelStop(model));
+    events.on(ModelEvent.OnModelStop, (model: Model) =>
+      this.onModelStop(model)
+    );
 
-    events.on(InferenceEvent.OnInferenceStopped, () => this.onInferenceStopped());
+    events.on(InferenceEvent.OnInferenceStopped, () =>
+      this.onInferenceStopped()
+    );
 
     // Attempt to fetch nvidia info
     await executeOnMain(NODE, "updateNvidiaInfo", {});
@@ -200,11 +206,11 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       if (!this._currentModel) return Promise.reject("No model loaded");
 
       requestInference(data.messages ?? [], this._currentModel).subscribe({
-        next: (_content) => {},
+        next: (_content: any) => {},
         complete: async () => {
           resolve(message);
         },
-        error: async (err) => {
+        error: async (err: any) => {
           reject(err);
         },
       });
@@ -245,7 +251,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       ...(data.model || {}),
     };
     requestInference(data.messages ?? [], model, this.controller).subscribe({
-      next: (content) => {
+      next: (content: any) => {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
           text: {
@@ -262,7 +268,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
           : MessageStatus.Error;
         events.emit(MessageEvent.OnMessageUpdate, message);
       },
-      error: async (err) => {
+      error: async (err: any) => {
         if (this.isCancelled || message.content.length) {
           message.status = MessageStatus.Stopped;
           events.emit(MessageEvent.OnMessageUpdate, message);

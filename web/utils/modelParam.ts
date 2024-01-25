@@ -40,6 +40,8 @@ export const toSettingParams = (
     n_parallel: undefined,
     cpu_threads: undefined,
     prompt_template: undefined,
+    llama_model_path: undefined,
+    mmproj: undefined,
   }
   const settingParams: ModelSettingParams = {}
 

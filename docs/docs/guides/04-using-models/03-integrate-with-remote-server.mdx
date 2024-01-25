@@ -40,7 +40,12 @@ Navigate to the `~/jan/models` folder. Create a folder named `gpt-3.5-turbo-16k`
 
 ```json title="~/jan/models/gpt-3.5-turbo-16k/model.json"
 {
-  "source_url": "https://openai.com",
+  "sources": [
+    {
+      "filename": "openai",
+      "url": "https://openai.com"
+    }
+  ],
   // highlight-next-line
   "id": "gpt-3.5-turbo-16k",
   "object": "model",
@@ -55,8 +60,7 @@ Navigate to the `~/jan/models` folder. Create a folder named `gpt-3.5-turbo-16k`
     "author": "OpenAI",
     "tags": ["General", "Big Context Length"]
   },
-  "engine": "openai",
-  "state": "ready"
+  "engine": "openai"
   // highlight-end
 }
 ```
@@ -118,7 +122,12 @@ Navigate to the `~/jan/models` folder. Create a folder named `mistral-ins-7b-q4`
 
 ```json title="~/jan/models/mistral-ins-7b-q4/model.json"
 {
-  "source_url": "https://jan.ai",
+  "sources": [
+    {
+      "filename": "janai",
+      "url": "https://jan.ai"
+    }
+  ],
   // highlight-next-line
   "id": "mistral-ins-7b-q4",
   "object": "model",
@@ -134,8 +143,7 @@ Navigate to the `~/jan/models` folder. Create a folder named `mistral-ins-7b-q4`
     "tags": ["remote", "awesome"]
   },
   // highlight-start
-  "engine": "openai",
-  "state": "ready"
+  "engine": "openai"
   // highlight-end
 }
 ```
