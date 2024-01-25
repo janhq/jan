@@ -1,5 +1,4 @@
-import { MonitoringExtension } from "@janhq/core";
-import { executeOnMain } from "@janhq/core";
+import { MonitoringExtension, executeOnMain } from "@janhq/core";
 
 /**
  * JanMonitoringExtension is a extension that provides system monitoring functionality.

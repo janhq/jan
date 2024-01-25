@@ -1,5 +1,4 @@
-import { fs, Assistant } from "@janhq/core";
-import { AssistantExtension } from "@janhq/core";
+import { fs, Assistant, AssistantExtension } from "@janhq/core";
 import { join } from "path";
 
 export default class JanAssistantExtension extends AssistantExtension {

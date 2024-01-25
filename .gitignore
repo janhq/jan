@@ -12,6 +12,8 @@ build
 electron/renderer
 electron/models
 electron/docs
+electron/engines/
+server/pre-install/
 package-lock.json
 
 *.log
@@ -26,3 +28,4 @@ extensions/inference-nitro-extension/bin/*/*.exp
 extensions/inference-nitro-extension/bin/*/*.lib
 extensions/inference-nitro-extension/bin/saved-*
 extensions/inference-nitro-extension/bin/*.tar.gz
+
