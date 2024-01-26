@@ -2,6 +2,13 @@
  * Assistant type defines the shape of an assistant object.
  * @stored
  */
+
+export type AssistantTool = {
+  type: string
+  enabled: boolean
+  settings: any
+}
+
 export type Assistant = {
   /** Represents the avatar of the user. */
   avatar: string
@@ -22,7 +29,7 @@ export type Assistant = {
   /** Represents the instructions for the object. */
   instructions?: string
   /** Represents the tools associated with the object. */
-  tools?: any
+  tools?: AssistantTool[]
   /** Represents the file identifiers associated with the object. */
   file_ids: string[]
   /** Represents the metadata of the object. */

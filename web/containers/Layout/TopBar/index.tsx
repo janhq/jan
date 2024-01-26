@@ -120,13 +120,13 @@ const TopBar = () => {
               </span>
             </div>
           </div>
-          <div
-            className={twMerge(
-              'absolute right-0 h-full w-80',
-              showing && 'border-l border-border'
-            )}
-          >
-            {activeThread && (
+          {activeThread && (
+            <div
+              className={twMerge(
+                'absolute right-0 h-full w-80',
+                showing && 'border-l border-border'
+              )}
+            >
               <div className="flex h-full w-52 items-center justify-between px-4">
                 {showing && (
                   <div className="relative flex h-full items-center">
@@ -227,8 +227,8 @@ const TopBar = () => {
                   />
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
       <CommandSearch />

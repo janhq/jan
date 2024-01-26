@@ -22,6 +22,7 @@ import { extensionManager } from '@/extension'
 import {
   addNewMessageAtom,
   updateMessageAtom,
+  generateResponseAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   updateThreadWaitingForResponseAtom,
@@ -34,6 +35,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const { downloadedModels } = useGetDownloadedModels()
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
+  const setGenerateResponse = useSetAtom(generateResponseAtom)
 
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const threads = useAtomValue(threadsAtom)
@@ -50,6 +52,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   const onNewMessageResponse = useCallback(
     (message: ThreadMessage) => {
+      setGenerateResponse(false)
       addNewMessage(message)
     },
     [addNewMessage]
@@ -93,6 +96,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   const onMessageResponseUpdate = useCallback(
     (message: ThreadMessage) => {
+      setGenerateResponse(false)
       updateMessage(
         message.id,
         message.thread_id,
@@ -102,7 +106,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       if (message.status === MessageStatus.Pending) {
         return
       }
-
       // Mark the thread as not waiting for response
       updateThreadWaiting(message.thread_id, false)
 

@@ -1,15 +1,151 @@
-import { fs, Assistant, AssistantExtension } from "@janhq/core";
-import { join } from "path";
+import {
+  fs,
+  Assistant,
+  MessageRequest,
+  events,
+  InferenceEngine,
+  MessageEvent,
+  InferenceEvent,
+  joinPath,
+  executeOnMain,
+  AssistantExtension,
+} from "@janhq/core";
 
 export default class JanAssistantExtension extends AssistantExtension {
   private static readonly _homeDir = "file://assistants";
 
+  controller = new AbortController();
+  isCancelled = false;
+  retrievalThreadId: string | undefined = undefined;
+
   async onLoad() {
     // making the assistant directory
-    if (!(await fs.existsSync(JanAssistantExtension._homeDir)))
-      fs.mkdirSync(JanAssistantExtension._homeDir).then(() => {
-        this.createJanAssistant();
-      });
+    const assistantDirExist = await fs.existsSync(
+      JanAssistantExtension._homeDir,
+    );
+    if (
+      localStorage.getItem(`${EXTENSION_NAME}-version`) !== VERSION ||
+      !assistantDirExist
+    ) {
+      if (!assistantDirExist)
+        await fs.mkdirSync(JanAssistantExtension._homeDir);
+
+      // Write assistant metadata
+      this.createJanAssistant();
+      // Finished migration
+      localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION);
+    }
+
+    // Events subscription
+    events.on(MessageEvent.OnMessageSent, (data: MessageRequest) =>
+      JanAssistantExtension.handleMessageRequest(data, this),
+    );
+
+    events.on(InferenceEvent.OnInferenceStopped, () => {
+      JanAssistantExtension.handleInferenceStopped(this);
+    });
+  }
+
+  private static async handleInferenceStopped(instance: JanAssistantExtension) {
+    instance.isCancelled = true;
+    instance.controller?.abort();
+  }
+
+  private static async handleMessageRequest(
+    data: MessageRequest,
+    instance: JanAssistantExtension,
+  ) {
+    instance.isCancelled = false;
+    instance.controller = new AbortController();
+
+    if (
+      data.model?.engine !== InferenceEngine.tool_retrieval_enabled ||
+      !data.messages ||
+      !data.thread?.assistants[0]?.tools
+    ) {
+      return;
+    }
+
+    const latestMessage = data.messages[data.messages.length - 1];
+
+    // Ingest the document if needed
+    if (
+      latestMessage &&
+      latestMessage.content &&
+      typeof latestMessage.content !== "string"
+    ) {
+      const docFile = latestMessage.content[1]?.doc_url?.url;
+      if (docFile) {
+        await executeOnMain(
+          NODE,
+          "toolRetrievalIngestNewDocument",
+          docFile,
+          data.model?.proxyEngine,
+        );
+      }
+    }
+
+    // Load agent on thread changed
+    if (instance.retrievalThreadId !== data.threadId) {
+      await executeOnMain(NODE, "toolRetrievalLoadThreadMemory", data.threadId);
+
+      instance.retrievalThreadId = data.threadId;
+
+      // Update the text splitter
+      await executeOnMain(
+        NODE,
+        "toolRetrievalUpdateTextSplitter",
+        data.thread.assistants[0].tools[0]?.settings?.chunk_size ?? 4000,
+        data.thread.assistants[0].tools[0]?.settings?.chunk_overlap ?? 200,
+      );
+    }
+
+    if (latestMessage.content) {
+      const prompt =
+        typeof latestMessage.content === "string"
+          ? latestMessage.content
+          : latestMessage.content[0].text;
+      // Retrieve the result
+      console.debug("toolRetrievalQuery", latestMessage.content);
+      const retrievalResult = await executeOnMain(
+        NODE,
+        "toolRetrievalQueryResult",
+        prompt,
+      );
+
+      // Update the message content
+      // Using the retrieval template with the result and query
+      if (data.thread?.assistants[0].tools)
+        data.messages[data.messages.length - 1].content =
+          data.thread.assistants[0].tools[0].settings?.retrieval_template
+            ?.replace("{CONTEXT}", retrievalResult)
+            .replace("{QUESTION}", prompt);
+    }
+
+    // Filter out all the messages that are not text
+    data.messages = data.messages.map((message) => {
+      if (
+        message.content &&
+        typeof message.content !== "string" &&
+        (message.content.length ?? 0) > 0
+      ) {
+        return {
+          ...message,
+          content: [message.content[0]],
+        };
+      }
+      return message;
+    });
+
+    // Reroute the result to inference engine
+    const output = {
+      ...data,
+      model: {
+        ...data.model,
+        engine: data.model.proxyEngine,
+      },
+    };
+    events.emit(MessageEvent.OnMessageSent, output);
   }
 
   /**
@@ -18,15 +154,21 @@ export default class JanAssistantExtension extends AssistantExtension {
   onUnload(): void {}
 
   async createAssistant(assistant: Assistant): Promise<void> {
-    const assistantDir = join(JanAssistantExtension._homeDir, assistant.id);
+    const assistantDir = await joinPath([
+      JanAssistantExtension._homeDir,
+      assistant.id,
+    ]);
     if (!(await fs.existsSync(assistantDir))) await fs.mkdirSync(assistantDir);
 
     // store the assistant metadata json
-    const assistantMetadataPath = join(assistantDir, "assistant.json");
+    const assistantMetadataPath = await joinPath([
+      assistantDir,
+      "assistant.json",
+    ]);
     try {
       await fs.writeFileSync(
         assistantMetadataPath,
-        JSON.stringify(assistant, null, 2)
+        JSON.stringify(assistant, null, 2),
       );
     } catch (err) {
       console.error(err);
@@ -38,14 +180,17 @@ export default class JanAssistantExtension extends AssistantExtension {
     // get all the assistant metadata json
     const results: Assistant[] = [];
     const allFileName: string[] = await fs.readdirSync(
-      JanAssistantExtension._homeDir
+      JanAssistantExtension._homeDir,
     );
     for (const fileName of allFileName) {
-      const filePath = join(JanAssistantExtension._homeDir, fileName);
+      const filePath = await joinPath([
+        JanAssistantExtension._homeDir,
+        fileName,
+      ]);
 
       if (filePath.includes(".DS_Store")) continue;
       const jsonFiles: string[] = (await fs.readdirSync(filePath)).filter(
-        (file: string) => file === "assistant.json"
+        (file: string) => file === "assistant.json",
       );
 
       if (jsonFiles.length !== 1) {
@@ -54,8 +199,8 @@ export default class JanAssistantExtension extends AssistantExtension {
       }
 
       const content = await fs.readFileSync(
-        join(filePath, jsonFiles[0]),
-        "utf-8"
+        await joinPath([filePath, jsonFiles[0]]),
+        "utf-8",
       );
       const assistant: Assistant =
         typeof content === "object" ? content : JSON.parse(content);
@@ -72,7 +217,10 @@ export default class JanAssistantExtension extends AssistantExtension {
     }
 
     // remove the directory
-    const assistantDir = join(JanAssistantExtension._homeDir, assistant.id);
+    const assistantDir = await joinPath([
+      JanAssistantExtension._homeDir,
+      assistant.id,
+    ]);
     await fs.rmdirSync(assistantDir);
     return Promise.resolve();
   }
@@ -88,7 +236,24 @@ export default class JanAssistantExtension extends AssistantExtension {
       description: "A default assistant that can use all downloaded models",
       model: "*",
       instructions: "",
-      tools: undefined,
+      tools: [
+        {
+          type: "retrieval",
+          enabled: false,
+          settings: {
+            top_k: 2,
+            chunk_size: 1024,
+            chunk_overlap: 64,
+            retrieval_template: `Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
+            ----------------
+            CONTEXT: {CONTEXT}
+            ----------------
+            QUESTION: {QUESTION}
+            ----------------
+            Helpful Answer:`,
+          },
+        },
+      ],
       file_ids: [],
       metadata: undefined,
     };

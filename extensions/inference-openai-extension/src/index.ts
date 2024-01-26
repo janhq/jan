@@ -15,6 +15,7 @@ import {
   ThreadMessage,
   events,
   fs,
+  InferenceEngine,
   BaseExtension,
   MessageEvent,
   ModelEvent,
@@ -57,7 +58,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
 
     // Events subscription
     events.on(MessageEvent.OnMessageSent, (data) =>
-      JanInferenceOpenAIExtension.handleMessageRequest(data, this)
+      JanInferenceOpenAIExtension.handleMessageRequest(data, this),
     );
 
     events.on(ModelEvent.OnModelInit, (model: OpenAIModel) => {
@@ -81,7 +82,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
     try {
       const engineFile = join(
         JanInferenceOpenAIExtension._homeDir,
-        JanInferenceOpenAIExtension._engineMetadataFileName
+        JanInferenceOpenAIExtension._engineMetadataFileName,
       );
       if (await fs.existsSync(engineFile)) {
         const engine = await fs.readFileSync(engineFile, "utf-8");
@@ -90,7 +91,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       } else {
         await fs.writeFileSync(
           engineFile,
-          JSON.stringify(JanInferenceOpenAIExtension._engineSettings, null, 2)
+          JSON.stringify(JanInferenceOpenAIExtension._engineSettings, null, 2),
         );
       }
     } catch (err) {
@@ -98,7 +99,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
     }
   }
   private static async handleModelInit(model: OpenAIModel) {
-    if (model.engine !== "openai") {
+    if (model.engine !== InferenceEngine.openai) {
       return;
     } else {
       JanInferenceOpenAIExtension._currentModel = model;
@@ -116,7 +117,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
   }
 
   private static async handleInferenceStopped(
-    instance: JanInferenceOpenAIExtension
+    instance: JanInferenceOpenAIExtension,
   ) {
     instance.isCancelled = true;
     instance.controller?.abort();
@@ -130,7 +131,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
    */
   private static async handleMessageRequest(
     data: MessageRequest,
-    instance: JanInferenceOpenAIExtension
+    instance: JanInferenceOpenAIExtension,
   ) {
     if (data.model.engine !== "openai") {
       return;
@@ -160,7 +161,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
         ...JanInferenceOpenAIExtension._currentModel,
         parameters: data.model.parameters,
       },
-      instance.controller
+      instance.controller,
     ).subscribe({
       next: (content) => {
         const messageContent: ThreadContent = {

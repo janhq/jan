@@ -62,6 +62,7 @@ export enum FileManagerRoute {
   getJanDataFolderPath = 'getJanDataFolderPath',
   getResourcePath = 'getResourcePath',
   fileStat = 'fileStat',
+  writeBlob = 'writeBlob',
 }
 
 export type ApiFunction = (...args: any[]) => any

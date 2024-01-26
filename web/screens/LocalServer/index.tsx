@@ -41,7 +41,7 @@ import { toSettingParams } from '@/utils/modelParam'
 
 import EngineSetting from '../Chat/EngineSetting'
 
-import settingComponentBuilder from '../Chat/ModelSetting/settingComponentBuilder'
+import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
 
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
@@ -361,7 +361,11 @@ const LocalServerScreen = () => {
             <div className="mt-4">
               <CardSidebar title="Model Parameters" asChild>
                 <div className="px-2 py-4">
-                  {settingComponentBuilder(componentDataEngineSetting, true)}
+                  <SettingComponentBuilder
+                    enabled={!serverEnabled}
+                    componentData={componentDataEngineSetting}
+                    selector={(x) => x.name === 'prompt_template'}
+                  />
                 </div>
               </CardSidebar>
             </div>
@@ -371,7 +375,7 @@ const LocalServerScreen = () => {
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting />
+                  <EngineSetting enabled={!serverEnabled} />
                 </div>
               </CardSidebar>
             </div>
