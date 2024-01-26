@@ -2,7 +2,7 @@ name: Jan Build Electron App Nightly or Manual
 
 on:
   schedule:
-    - cron: '0 20 * * 2,3,4' # At 8 PM UTC on Tuesday, Wednesday, and Thursday, which is 3 AM UTC+7
+    - cron: '0 20 * * 1,2,3' # At 8 PM UTC on Monday, Tuesday, and Wednesday which is 3 AM UTC+7 Tuesday, Wednesday, and Thursday
   workflow_dispatch:
     inputs:
       public_provider:
