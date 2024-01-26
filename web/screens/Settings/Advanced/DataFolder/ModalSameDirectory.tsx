@@ -11,16 +11,15 @@ import {
   Button,
 } from '@janhq/uikit'
 
-import { useVaultDirectory } from '@/hooks/useVaultDirectory'
+import { atom, useAtom } from 'jotai'
+
+export const showSamePathModalAtom = atom(false)
 
 const ModalSameDirectory = () => {
-  const { isSameDirectory, setIsSameDirectory, setNewDestination } =
-    useVaultDirectory()
+  const [show, setShow] = useAtom(showSamePathModalAtom)
+
   return (
-    <Modal
-      open={isSameDirectory}
-      onOpenChange={() => setIsSameDirectory(false)}
-    >
+    <Modal open={show} onOpenChange={setShow}>
       <ModalPortal />
       <ModalContent>
         <ModalHeader>
@@ -31,11 +30,11 @@ const ModalSameDirectory = () => {
         </p>
         <ModalFooter>
           <div className="flex gap-x-2">
-            <ModalClose asChild onClick={() => setIsSameDirectory(false)}>
+            <ModalClose asChild onClick={() => setShow(false)}>
               <Button themes="ghost">Cancel</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button themes="danger" onClick={setNewDestination} autoFocus>
+              <Button themes="danger" onClick={() => setShow(false)} autoFocus>
                 Choose a different folder
               </Button>
             </ModalClose>
