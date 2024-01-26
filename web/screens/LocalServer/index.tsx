@@ -276,7 +276,7 @@ const LocalServerScreen = () => {
 
       {/* Middle Bar */}
       <ScrollToBottom className="relative flex h-full w-full flex-col overflow-auto bg-background">
-        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-secondary/30">
+        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-zinc-600">
           <h2 className="font-bold">Server Logs</h2>
           <div className="space-x-2">
             <Button
