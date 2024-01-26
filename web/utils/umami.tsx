@@ -4,7 +4,7 @@ import Script from 'next/script'
 
 declare global {
   interface Window {
-    umami: unknown
+    umami: unknown | null
   }
 }
 
@@ -16,7 +16,7 @@ const Umami = () => {
   useEffect(() => {
     const ping = () => {
       // Check if umami is defined before ping
-      if (typeof window.umami !== 'undefined') {
+      if (window.umami !== null && typeof window.umami !== 'undefined') {
         window.umami.track(appVersion, {
           version: appVersion,
         })
