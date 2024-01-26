@@ -44,18 +44,17 @@ const DataFolder = () => {
   }, [janDataFolderPath, setShowSameDirectory, setShowDirectoryConfirm])
 
   const onUserConfirmed = useCallback(async () => {
-    const destination = destinationPath
-    if (!destination) return
+    if (!destinationPath) return
     try {
       const appConfiguration: AppConfiguration =
         await window.core?.api?.getAppConfigurations()
       const currentJanDataFolder = appConfiguration.data_folder
-      appConfiguration.data_folder = destination
-      await fs.syncFile(currentJanDataFolder, destination)
+      appConfiguration.data_folder = destinationPath
+      await fs.syncFile(currentJanDataFolder, destinationPath)
       await window.core?.api?.updateAppConfiguration(appConfiguration)
 
       console.debug(
-        `File sync finished from ${currentJanDataFolder} to ${destination}`
+        `File sync finished from ${currentJanDataFolder} to ${destinationPath}`
       )
 
       localStorage.setItem(SUCCESS_SET_NEW_DESTINATION, 'true')
