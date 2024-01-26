@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react'
 
-import { InferenceEngine, Model } from '@janhq/core'
+import { InferenceEngine } from '@janhq/core'
 import { Input } from '@janhq/uikit'
+
+import { useAtomValue } from 'jotai'
 
 import { useEngineSettings } from '@/hooks/useEngineSettings'
 
-type Props = {
-  selectedModel?: Model
-  serverEnabled: boolean
-}
+import { selectedModelAtom } from '../DropdownListSidebar'
 
-const OpenAiKeyInput: React.FC<Props> = ({ selectedModel, serverEnabled }) => {
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+
+const OpenAiKeyInput: React.FC = () => {
+  const selectedModel = useAtomValue(selectedModelAtom)
+  const serverEnabled = useAtomValue(serverEnabledAtom)
   const [openAISettings, setOpenAISettings] = useState<
     { api_key: string } | undefined
   >(undefined)
@@ -20,8 +23,7 @@ const OpenAiKeyInput: React.FC<Props> = ({ selectedModel, serverEnabled }) => {
     readOpenAISettings().then((settings) => {
       setOpenAISettings(settings)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [readOpenAISettings])
 
   if (!selectedModel || selectedModel.engine !== InferenceEngine.openai) {
     return null

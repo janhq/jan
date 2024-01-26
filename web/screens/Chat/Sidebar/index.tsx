@@ -140,10 +140,8 @@ const Sidebar: React.FC = () => {
           </div>
         </CardSidebar>
         <CardSidebar title="Model">
-          <div className="px-2">
-            <div className="mt-4">
-              <DropdownListSidebar />
-            </div>
+          <div className="px-2 pt-4">
+            <DropdownListSidebar />
 
             {componentDataRuntimeSetting.length !== 0 && (
               <div className="mt-6">

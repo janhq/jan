@@ -43,9 +43,7 @@ export default function useRecommendedModel() {
     Model | undefined
   > => {
     const models = await getAndSortDownloadedModels()
-    if (!activeThread) {
-      return
-    }
+    if (!activeThread) return
 
     const finishInit = threadStates[activeThread.id].isFinishInit ?? true
     if (finishInit) {

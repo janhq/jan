@@ -29,6 +29,7 @@ import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import CardSidebar from '@/containers/CardSidebar'
+
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
@@ -66,7 +67,7 @@ const LocalServerScreen = () => {
 
   const { openServerLog, clearServerLog } = useServerLog()
   const { startModel, stateModel } = useActiveModel()
-  const [selectedModel] = useAtom(selectedModelAtom)
+  const selectedModel = useAtomValue(selectedModelAtom)
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
@@ -351,10 +352,8 @@ const LocalServerScreen = () => {
             : 'w-0 translate-x-full opacity-0'
         )}
       >
-        <div className="px-4">
-          <div className="mt-4">
-            <DropdownListSidebar />
-          </div>
+        <div className="px-4 pt-4">
+          <DropdownListSidebar />
 
           {componentDataEngineSetting.filter(
             (x) => x.name === 'prompt_template'
