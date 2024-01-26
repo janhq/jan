@@ -2,9 +2,18 @@ import { useEffect } from 'react'
 
 import Script from 'next/script'
 
+// Define the type for the umami data object
+interface UmamiData {
+  version: string
+}
+
 declare global {
   interface Window {
-    umami: unknown | null
+    umami:
+      | {
+          track: (event: string, data?: UmamiData) => void
+        }
+      | undefined
   }
 }
 
@@ -24,7 +33,7 @@ const Umami = () => {
     }
 
     // Wait for umami to be defined before ping
-    if (typeof window.umami !== 'undefined') {
+    if (window.umami !== null && typeof window.umami !== 'undefined') {
       ping()
     } else {
       // Listen for umami script load event
