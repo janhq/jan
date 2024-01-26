@@ -12,8 +12,8 @@ build
 electron/renderer
 electron/models
 electron/docs
-electron/engines/
-server/pre-install/
+electron/engines
+server/pre-install
 package-lock.json
 
 *.log
