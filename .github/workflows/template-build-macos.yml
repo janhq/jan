@@ -137,8 +137,8 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_PATH: "."
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
-          ANALYTICS_ID: ${{ secrets.JAN_APP_POSTHOG_PROJECT_API_KEY }}
-          ANALYTICS_HOST: ${{ secrets.JAN_APP_POSTHOG_URL }}
+          ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
+          ANALYTICS_HOST: ${{ secrets.JAN_APP_UMAMI_URL }}
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
