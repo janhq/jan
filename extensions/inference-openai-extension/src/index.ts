@@ -146,7 +146,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
    */
   private static async handleMessageRequest(
     data: MessageRequest,
-    instance: JanInferenceOpenAIExtension
+    instance: JanInferenceOpenAIExtension,
   ) {
     if (data.model.engine !== "openai") {
       return;
@@ -176,7 +176,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
         ...JanInferenceOpenAIExtension._currentModel,
         parameters: data.model.parameters,
       },
-      instance.controller
+      instance.controller,
     ).subscribe({
       next: (content) => {
         const messageContent: ThreadContent = {
@@ -197,7 +197,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       },
       error: async (err) => {
         if (instance.isCancelled || message.content.length > 0) {
-          message.status = MessageStatus.Error;
+          message.status = MessageStatus.Stopped;
           events.emit(MessageEvent.OnMessageUpdate, message);
           return;
         }
@@ -209,7 +209,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
           },
         };
         message.content = [messageContent];
-        message.status = MessageStatus.Ready;
+        message.status = MessageStatus.Error;
         events.emit(MessageEvent.OnMessageUpdate, message);
       },
     });
