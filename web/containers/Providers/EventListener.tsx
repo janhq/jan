@@ -105,12 +105,14 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       })
     }
     return () => {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [
+    setDownloadState,
+    setDownloadStateCancelled,
+    setDownloadStateFailed,
+    setDownloadStateSuccess,
+    setDownloadedModels,
+    setProgress,
+  ])
 
-  return (
-    <div id="eventlistener">
-      <EventHandler>{children}</EventHandler>
-    </div>
-  )
+  return <EventHandler>{children}</EventHandler>
 }
