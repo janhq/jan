@@ -59,7 +59,7 @@ const portAtom = atom('1337')
 const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
-  const showing = useAtomValue(showRightSideBarAtom)
+  const showRightSideBar = useAtomValue(showRightSideBarAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
 
   const modelEngineParams = toSettingParams(activeModelParams)
@@ -117,7 +117,7 @@ const LocalServerScreen = () => {
             <Button
               block
               themes={serverEnabled ? 'danger' : 'primary'}
-              disabled={stateModel.loading || errorRangePort}
+              disabled={stateModel.loading || errorRangePort || !selectedModel}
               onClick={() => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
@@ -347,13 +347,13 @@ const LocalServerScreen = () => {
       <div
         className={twMerge(
           'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background transition-all duration-100 dark:bg-background/20',
-          showing
+          showRightSideBar
             ? 'w-80 translate-x-0 opacity-100'
             : 'w-0 translate-x-full opacity-0'
         )}
       >
         <div className="px-4 pt-4">
-          <DropdownListSidebar />
+          <DropdownListSidebar strictedThread={false} />
 
           {componentDataEngineSetting.filter(
             (x) => x.name === 'prompt_template'

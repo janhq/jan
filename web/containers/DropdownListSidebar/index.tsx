@@ -42,7 +42,12 @@ import {
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
 
-const DropdownListSidebar: React.FC = () => {
+// TODO: Move all of the unscoped logics outside of the component
+const DropdownListSidebar = ({
+  strictedThread = true,
+}: {
+  strictedThread?: boolean
+}) => {
   const activeThread = useAtomValue(activeThreadAtom)
   const threadStates = useAtomValue(threadStatesAtom)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
@@ -152,7 +157,7 @@ const DropdownListSidebar: React.FC = () => {
     ]
   )
 
-  if (!activeThread) {
+  if (strictedThread && !activeThread) {
     return null
   }
 
