@@ -1,9 +1,9 @@
-import Script from 'next/script'
 import { useEffect } from 'react'
+import Script from 'next/script'
 
 declare global {
   interface Window {
-    umami: any
+    umami: unknown
   }
 }
 
