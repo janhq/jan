@@ -11,20 +11,23 @@ export const usePath = () => {
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const onReviewInFinder = async (type: string) => {
-    if (!activeThread) return
-    const activeThreadState = threadStates[activeThread.id]
-    if (!activeThreadState.isFinishInit) {
-      alert('Thread is not started yet')
-      return
+    // TODO: this logic should be refactored.
+    if (type !== 'Model') {
+      if (!activeThread) return
+      const activeThreadState = threadStates[activeThread.id]
+      if (!activeThreadState.isFinishInit) {
+        alert('Thread is not started yet')
+        return
+      }
     }
 
     const userSpace = await getJanDataFolderPath()
     let filePath = undefined
-    const assistantId = activeThread.assistants[0]?.assistant_id
+    const assistantId = activeThread?.assistants[0]?.assistant_id
     switch (type) {
       case 'Engine':
       case 'Thread':
-        filePath = await joinPath(['threads', activeThread.id])
+        filePath = await joinPath(['threads', activeThread?.id ?? ''])
         break
       case 'Model':
         if (!selectedModel) return
@@ -44,20 +47,27 @@ export const usePath = () => {
   }
 
   const onViewJson = async (type: string) => {
-    if (!activeThread) return
-    const activeThreadState = threadStates[activeThread.id]
-    if (!activeThreadState.isFinishInit) {
-      alert('Thread is not started yet')
-      return
+    // TODO: this logic should be refactored.
+    if (type !== 'Model') {
+      if (!activeThread) return
+      const activeThreadState = threadStates[activeThread.id]
+      if (!activeThreadState.isFinishInit) {
+        alert('Thread is not started yet')
+        return
+      }
     }
 
     const userSpace = await getJanDataFolderPath()
     let filePath = undefined
-    const assistantId = activeThread.assistants[0]?.assistant_id
+    const assistantId = activeThread?.assistants[0]?.assistant_id
     switch (type) {
       case 'Engine':
       case 'Thread':
-        filePath = await joinPath(['threads', activeThread.id, 'thread.json'])
+        filePath = await joinPath([
+          'threads',
+          activeThread?.id ?? '',
+          'thread.json',
+        ])
         break
       case 'Model':
         if (!selectedModel) return
