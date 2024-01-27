@@ -3,35 +3,36 @@
   "version": "1.0.0",
   "description": "This extension embeds Nitro, a lightweight (3mb) inference engine written in C++. See nitro.jan.ai",
   "main": "dist/index.js",
+  "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
-    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && ../../.github/scripts/auto-sign.sh npm pack && cpx *.tgz ../../electron/pre-install",
-    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install",
-    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install",
+    "build:publish:darwin": "npm run build && ../../.github/scripts/auto-sign.sh && npm pack --pack-destination \"../../electron/pre-install\"",
+    "build:publish:win32": "npm run build && npm pack --pack-destination \"../../electron/pre-install\"",
+    "build:publish:linux": "npm run build && npm pack --pack-destination \"../../electron/pre-install\"",
     "build:publish": "run-script-os"
   },
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./main": "./dist/node/index.cjs.js"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@types/node": "^20.11.4",
-    "cpx": "^1.5.0",
-    "rimraf": "^3.0.2",
     "rollup": "^2.38.5",
     "rollup-plugin-define": "^1.0.1",
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.36.0",
     "run-script-os": "^1.1.6",
+    "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
-    "@janhq/nitro-node": "https://gitpkg.now.sh/InNoobWeTrust/nitro/nitro-node?feat/1635/decouple-nitro-inference-engine-into-a-library",
+    "@janhq/nitro-node": "../../../nitro/nitro-node/janhq-nitro-node-1.0.0.tgz",
     "@rollup/plugin-replace": "^5.0.5",
     "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",

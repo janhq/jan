@@ -35,7 +35,9 @@ import { ulid } from "ulid";
  */
 export default class JanInferenceNitroExtension extends InferenceExtension {
   private static readonly _homeDir = "file://engines";
+  private static readonly _binDir = "file://bin";
   private static readonly _settingsDir = "file://settings";
+  private static readonly _modelsDir = "file://models";
   private static readonly _engineMetadataFileName = "nitro.json";
 
   /**
@@ -71,14 +73,18 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
-    if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir))) {
-      await fs
-        .mkdirSync(JanInferenceNitroExtension._homeDir)
-        .catch((err: Error) => console.debug(err));
-    }
+    await Promise.all(
+      [
+        JanInferenceNitroExtension._homeDir,
+        JanInferenceNitroExtension._settingsDir,
+        JanInferenceNitroExtension._binDir,
+      ].map(async (dir: string): Promise<void> => {
+        if (!(await fs.existsSync(dir))) {
+          await fs.mkdirSync(dir).catch((err: Error) => console.debug(err));
+        }
+      }),
+    );
 
-    if (!(await fs.existsSync(JanInferenceNitroExtension._settingsDir)))
-      await fs.mkdirSync(JanInferenceNitroExtension._settingsDir);
     this.writeDefaultEngineSettings();
 
     // Events subscription
@@ -131,11 +137,25 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
   private async onModelInit(model: Model) {
     if (model.engine !== InferenceEngine.nitro) return;
 
-    const modelFullPath = await joinPath(["models", model.id]);
+    const modelFullPath = await joinPath([
+      JanInferenceNitroExtension._modelsDir,
+      model.id,
+    ]);
+
+    // Set bin path for nitro binaries download during runtime
+    const nitroSetBinPathResult = await executeOnMain(
+      NODE,
+      "setBinPath",
+      JanInferenceNitroExtension._binDir,
+    );
+    if (nitroSetBinPathResult?.error) {
+      events.emit(ModelEvent.OnModelFail, model);
+      return;
+    }
 
     const nitroInitResult = await executeOnMain(NODE, "runModel", {
       modelFullPath,
-      model,
+      promptTemplate: model.settings.prompt_template,
     });
 
     if (nitroInitResult?.error) {
@@ -146,6 +166,10 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     this._currentModel = model;
     events.emit(ModelEvent.OnModelReady, model);
 
+    // Make sure to clear the health check interval if it's already running
+    if (this.getNitroProcesHealthIntervalId) {
+      clearInterval(this.getNitroProcesHealthIntervalId);
+    }
     this.getNitroProcesHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
       JanInferenceNitroExtension._intervalHealthCheck,
@@ -155,7 +179,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
   private async onModelStop(model: Model) {
     if (model.engine !== "nitro") return;
 
-    await executeOnMain(NODE, "stopModel");
+    await executeOnMain(NODE, "stopModel", {});
     events.emit(ModelEvent.OnModelStopped, {});
 
     // stop the periocally health check
@@ -169,7 +193,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
    * Periodically check for nitro process's health.
    */
   private async periodicallyGetNitroHealth(): Promise<void> {
-    const health = await executeOnMain(NODE, "getCurrentNitroProcessInfo");
+    const health = await executeOnMain(NODE, "getCurrentNitroProcessInfo", {});
 
     const isRunning = this.nitroProcessInfo?.isRunning ?? false;
     if (isRunning && health.isRunning === false) {
@@ -195,19 +219,35 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       thread_id: data.threadId,
       created: timestamp,
       updated: timestamp,
-      status: MessageStatus.Ready,
+      status: MessageStatus.Pending,
       id: "",
       role: ChatCompletionRole.Assistant,
       object: "thread.message",
       content: [],
     };
+    events.emit(MessageEvent.OnMessageResponse, message);
 
     return new Promise(async (resolve, reject) => {
       if (!this._currentModel) return Promise.reject("No model loaded");
 
+      let lastMessage = "";
       requestInference(data.messages ?? [], this._currentModel).subscribe({
-        next: (_content: any) => {},
+        next: (content: any) => {
+          lastMessage = content;
+        },
         complete: async () => {
+          const messageContent: ThreadContent = {
+            type: ContentType.Text,
+            text: {
+              value: lastMessage.trim(),
+              annotations: [],
+            },
+          };
+          message.content = [messageContent];
+          message.status = message.content.length
+            ? MessageStatus.Ready
+            : MessageStatus.Error;
+          events.emit(MessageEvent.OnMessageUpdate, message);
           resolve(message);
         },
         error: async (err: any) => {
