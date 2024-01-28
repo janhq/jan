@@ -66,6 +66,9 @@ const ChatInput: React.FC = () => {
       setIsWaitingToSend(false)
       sendChatMessage()
     }
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitingToSendMessage, activeThreadId])
 
@@ -73,6 +76,7 @@ const ChatInput: React.FC = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+      textareaRef.current.focus()
     }
   }, [currentPrompt])
 
