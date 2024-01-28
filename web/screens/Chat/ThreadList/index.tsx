@@ -84,7 +84,6 @@ export default function ThreadList() {
         threads.map((thread, i) => {
           const lastMessage =
             threadStates[thread.id]?.lastMessage ?? 'No new message'
-
           return (
             <div
               key={i}
@@ -96,13 +95,10 @@ export default function ThreadList() {
               }}
             >
               <div className="relative z-10 p-4 py-4">
-                <div className="flex justify-between">
-                  <h2 className="line-clamp-1 font-bold">{thread.title}</h2>
-                  <p className="mb-1 line-clamp-1 text-xs leading-5 text-muted-foreground">
-                    {thread.updated &&
-                      displayDate(new Date(thread.updated).getTime())}
-                  </p>
-                </div>
+                <p className="line-clamp-1 text-xs leading-5 text-muted-foreground">
+                  {thread.updated && displayDate(thread.updated)}
+                </p>
+                <h2 className="line-clamp-1 font-bold">{thread.title}</h2>
                 <p className="mt-1 line-clamp-1 text-xs text-gray-700 group-hover/message:max-w-[160px] dark:text-gray-300">
                   {lastMessage || 'No new message'}
                 </p>
@@ -161,9 +157,9 @@ export default function ThreadList() {
                       <div className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary">
                         <Trash2Icon
                           size={16}
-                          className="text-muted-foreground"
+                          className="text-red-600 dark:text-red-300"
                         />
-                        <span className="text-bold text-black dark:text-muted-foreground">
+                        <span className="text-bold text-red-600 dark:text-red-300">
                           Delete thread
                         </span>
                       </div>
