@@ -64,26 +64,33 @@ const ChatInput: React.FC = () => {
   useEffect(() => {
     if (isWaitingToSend && activeThreadId) {
       setIsWaitingToSend(false)
-      sendChatMessage()
+      sendChatMessage(currentPrompt)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waitingToSendMessage, activeThreadId])
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [
+    activeThreadId,
+    isWaitingToSend,
+    currentPrompt,
+    setIsWaitingToSend,
+    sendChatMessage,
+  ])
 
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+      textareaRef.current.focus()
     }
   }, [currentPrompt])
 
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter') {
-      if (!e.shiftKey) {
-        e.preventDefault()
-        if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
-          sendChatMessage()
-        else onStopInferenceClick()
-      }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
+        sendChatMessage(currentPrompt)
+      else onStopInferenceClick()
     }
   }
 
@@ -233,7 +240,7 @@ const ChatInput: React.FC = () => {
           }
           themes="primary"
           className="min-w-[100px]"
-          onClick={sendChatMessage}
+          onClick={() => sendChatMessage(currentPrompt)}
         >
           Send
         </Button>

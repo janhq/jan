@@ -15,7 +15,7 @@ import ModelStart from '@/containers/Loader/ModelStart'
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
-import useSendChatMessage from '@/hooks/useSendChatMessage'
+import { queuedMessageAtom, reloadModelAtom } from '@/hooks/useSendChatMessage'
 
 import ChatBody from '@/screens/Chat/ChatBody'
 
@@ -30,20 +30,37 @@ import {
   engineParamsUpdateAtom,
 } from '@/helpers/atoms/Thread.atom'
 
+const renderError = (code: string) => {
+  switch (code) {
+    case 'multiple-upload':
+      return 'Currently, we only support 1 attachment at the same time'
+
+    case 'retrieval-off':
+      return 'Turn on Retrieval in Assistant Settings to use this feature'
+
+    case 'file-invalid-type':
+      return 'We do not support this file type'
+
+    default:
+      return 'Oops, something error, please try again.'
+  }
+}
+
 const ChatScreen: React.FC = () => {
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const showLeftSideBar = useAtomValue(showLeftSideBarAtom)
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
-  const { queuedMessage, reloadModel } = useSendChatMessage()
   const [dragOver, setDragOver] = useState(false)
+
+  const queuedMessage = useAtomValue(queuedMessageAtom)
+  const reloadModel = useAtomValue(reloadModelAtom)
   const [dragRejected, setDragRejected] = useState({ code: '' })
   const setFileUpload = useSetAtom(fileUploadAtom)
   const { getRootProps, isDragReject } = useDropzone({
     noClick: true,
     multiple: false,
     accept: {
-      // 'image/*': ['.png', '.jpg', '.jpeg'],
       'application/pdf': ['.pdf'],
     },
 
@@ -103,22 +120,6 @@ const ChatScreen: React.FC = () => {
       }
     }, 2000)
   }, [dragRejected.code])
-
-  const renderError = (code: string) => {
-    switch (code) {
-      case 'multiple-upload':
-        return 'Currently, we only support 1 attachment at the same time'
-
-      case 'retrieval-off':
-        return 'Turn on Retrieval in Assistant Settings to use this feature'
-
-      case 'file-invalid-type':
-        return 'We do not support this file type'
-
-      default:
-        return 'Oops, something error, please try again.'
-    }
-  }
 
   return (
     <div className="flex h-full w-full">
@@ -216,6 +217,7 @@ const ChatScreen: React.FC = () => {
           <ChatInput />
         </div>
       </div>
+
       {/* Right side bar */}
       {activeThread && <Sidebar />}
     </div>
