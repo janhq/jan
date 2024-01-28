@@ -40,6 +40,7 @@
   "dependencies": {
     "@janhq/core": "file:../../core",
     "@rollup/plugin-replace": "^5.0.5",
+    "@types/os-utils": "^0.0.4",
     "fetch-retry": "^5.0.6",
     "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",

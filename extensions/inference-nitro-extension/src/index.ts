@@ -50,7 +50,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     ngl: 100,
     cpu_threads: 1,
     cont_batching: false,
-    embedding: false,
+    embedding: true,
   };
 
   controller = new AbortController();
@@ -83,19 +83,19 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
     // Events subscription
     events.on(MessageEvent.OnMessageSent, (data: MessageRequest) =>
-      this.onMessageRequest(data)
+      this.onMessageRequest(data),
     );
 
     events.on(ModelEvent.OnModelInit, (model: Model) =>
-      this.onModelInit(model)
+      this.onModelInit(model),
     );
 
     events.on(ModelEvent.OnModelStop, (model: Model) =>
-      this.onModelStop(model)
+      this.onModelStop(model),
     );
 
     events.on(InferenceEvent.OnInferenceStopped, () =>
-      this.onInferenceStopped()
+      this.onInferenceStopped(),
     );
 
     // Attempt to fetch nvidia info
@@ -120,7 +120,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       } else {
         await fs.writeFileSync(
           engineFile,
-          JSON.stringify(this._engineSettings, null, 2)
+          JSON.stringify(this._engineSettings, null, 2),
         );
       }
     } catch (err) {
@@ -148,7 +148,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
     this.getNitroProcesHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
-      JanInferenceNitroExtension._intervalHealthCheck
+      JanInferenceNitroExtension._intervalHealthCheck,
     );
   }
 

@@ -80,16 +80,34 @@ export default class JanModelExtension extends ModelExtension {
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
 
-    // try to retrieve the download file name from the source url
-    // if it fails, use the model ID as the file name
-    const extractedFileName = await model.source_url.split('/').pop()
+    if (model.sources.length > 1) {
+      // path to model binaries
+      for (const source of model.sources) {
+        let path = this.extractFileName(source.url)
+        if (source.filename) {
+          path = await joinPath([modelDirPath, source.filename])
+        }
+
+        downloadFile(source.url, path, network)
+      }
+    } else {
+      const fileName = this.extractFileName(model.sources[0]?.url)
+      const path = await joinPath([modelDirPath, fileName])
+      downloadFile(model.sources[0]?.url, path, network)
+    }
+  }
+
+  /**
+   *  try to retrieve the download file name from the source url
+   */
+  private extractFileName(url: string): string {
+    const extractedFileName = url.split('/').pop()
     const fileName = extractedFileName
       .toLowerCase()
       .endsWith(JanModelExtension._supportedModelFormat)
       ? extractedFileName
-      : model.id
-    const path = await joinPath([modelDirPath, fileName])
-    downloadFile(model.source_url, path, network)
+      : extractedFileName + JanModelExtension._supportedModelFormat
+    return fileName
   }
 
   /**
@@ -98,6 +116,7 @@ export default class JanModelExtension extends ModelExtension {
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   async cancelModelDownload(modelId: string): Promise<void> {
+    const model = await this.getConfiguredModels()
     return abortDownload(
       await joinPath([JanModelExtension._homeDir, modelId, modelId])
     ).then(async () => {
@@ -163,15 +182,16 @@ export default class JanModelExtension extends ModelExtension {
           .then((files: string[]) => {
             // or model binary exists in the directory
             // model binary name can match model ID or be a .gguf file and not be an incompleted model file
+            // TODO: Check diff between urls, filenames
             return (
               files.includes(modelDir) ||
-              files.some(
+              files.filter(
                 (file) =>
                   file
                     .toLowerCase()
                     .includes(JanModelExtension._supportedModelFormat) &&
                   !file.endsWith(JanModelExtension._incompletedModelFileName)
-              )
+              )?.length >= model.sources.length
             )
           })
       }
@@ -198,7 +218,6 @@ export default class JanModelExtension extends ModelExtension {
 
       const readJsonPromises = allDirectories.map(async (dirName) => {
         // filter out directories that don't match the selector
-
         // read model.json
         const jsonPath = await joinPath([
           JanModelExtension._homeDir,
@@ -226,7 +245,21 @@ export default class JanModelExtension extends ModelExtension {
       const modelData = results.map((result) => {
         if (result.status === 'fulfilled') {
           try {
-            return result.value as Model
+            // This to ensure backward compatibility with `model.json` with `source_url`
+            const tmpModel =
+              typeof result.value === 'object'
+                ? result.value
+                : JSON.parse(result.value)
+            if (tmpModel['source_url'] != null) {
+              tmpModel['source'] = [
+                {
+                  filename: tmpModel.id,
+                  url: tmpModel['source_url'],
+                },
+              ]
+            }
+
+            return tmpModel as Model
           } catch {
             console.debug(`Unable to parse model metadata: ${result.value}`)
             return undefined

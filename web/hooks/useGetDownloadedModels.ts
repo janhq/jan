@@ -6,7 +6,7 @@ import { atom, useAtom } from 'jotai'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 
-const downloadedModelsAtom = atom<Model[]>([])
+export const downloadedModelsAtom = atom<Model[]>([])
 
 export function useGetDownloadedModels() {
   const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelsAtom)
@@ -15,7 +15,8 @@ export function useGetDownloadedModels() {
     getDownloadedModels().then((downloadedModels) => {
       setDownloadedModels(downloadedModels)
     })
-  }, [setDownloadedModels])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return { downloadedModels, setDownloadedModels }
 }

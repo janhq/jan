@@ -84,6 +84,7 @@ export default function ThreadList() {
         threads.map((thread, i) => {
           const lastMessage =
             threadStates[thread.id]?.lastMessage ?? 'No new message'
+
           return (
             <div
               key={i}

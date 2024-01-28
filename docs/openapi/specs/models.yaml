@@ -59,18 +59,26 @@ components:
           type: string
           description: State format of the model, distinct from the engine.
           example: ggufv3
-        source_url:
-          type: string
-          format: uri
-          description: URL to the source of the model.
-          example: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
+        source:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                format: uri
+                description: URL to the source of the model.
+                example: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
+              filename:
+                type: string
+                description: Filename of the model.
+                example: zephyr-7b-beta.Q4_K_M.gguf
         settings:
           type: object
           properties:
             ctx_len:
               type: string
               description: Context length.
-              example: "2048"
+              example: "4096"
             ngl:
               type: string
               description: Number of layers.
@@ -94,7 +102,7 @@ components:
             token_limit:
               type: string
               description: Token limit for the model.
-              example: "2048"
+              example: "4096"
             top_k:
               type: string
               description: Top-k setting for the model.
@@ -117,7 +125,7 @@ components:
             type: string
           description: List of assets related to the model.
       required:
-        - source_url
+        - source
     ModelObject:
       type: object
       properties:
@@ -169,11 +177,19 @@ components:
             - running
             - stopped
           description: The current state of the model.
-        source_url:
-          type: string
-          format: uri
-          description: URL to the source of the model.
-          example: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
+        source:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                format: uri
+                description: URL to the source of the model.
+                example: https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/blob/main/zephyr-7b-beta.Q4_K_M.gguf
+              filename:
+                type: string
+                description: Filename of the model.
+                example: zephyr-7b-beta.Q4_K_M.gguf
         engine_parameters:
           type: object
           properties:
@@ -208,8 +224,8 @@ components:
                 model.
               minimum: 128
               maximum: 4096
-              default: 2048
-              example: 2048
+              default: 4096
+              example: 4096
             n_parallel:
               type: integer
               description: Number of parallel operations, relevant when continuous batching is
@@ -241,8 +257,8 @@ components:
               description: Maximum context length the model can handle.
               minimum: 0
               maximum: 4096
-              default: 2048
-              example: 2048
+              default: 4096
+              example: 4096
             ngl:
               type: integer
               description: Number of layers in the neural network.
@@ -276,8 +292,8 @@ components:
                 response.
               minimum: 1
               maximum: 4096
-              default: 2048
-              example: 2048
+              default: 4096
+              example: 4096
             top_k:
               type: integer
               description: Limits the model to consider only the top k most likely next tokens
@@ -318,7 +334,7 @@ components:
         - created
         - owned_by
         - state
-        - source_url
+        - source
         - parameters
         - metadata
     DeleteModelResponse:

@@ -8,7 +8,7 @@ import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toRuntimeParams } from '@/utils/modelParam'
 
-import settingComponentBuilder from './settingComponentBuilder'
+import SettingComponentBuilder from './SettingComponent'
 
 import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -27,7 +27,10 @@ const ModelSetting = () => {
 
   return (
     <div className="flex flex-col">
-      {settingComponentBuilder(componentData)}
+      <SettingComponentBuilder
+        componentData={componentData}
+        selector={(e) => e.name !== 'prompt_template'}
+      />
     </div>
   )
 }

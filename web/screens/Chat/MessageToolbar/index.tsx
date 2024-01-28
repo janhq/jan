@@ -3,8 +3,8 @@ import {
   ExtensionTypeEnum,
   ThreadMessage,
   ChatCompletionRole,
+  ConversationalExtension,
 } from '@janhq/core'
-import { ConversationalExtension } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw, CopyIcon, Trash2Icon, CheckIcon } from 'lucide-react'
 

@@ -105,11 +105,14 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       })
     }
     return () => {}
-  }, [])
+  }, [
+    setDownloadState,
+    setDownloadStateCancelled,
+    setDownloadStateFailed,
+    setDownloadStateSuccess,
+    setDownloadedModels,
+    setProgress,
+  ])
 
-  return (
-    <div id="eventlistener">
-      <EventHandler>{children}</EventHandler>
-    </div>
-  )
+  return <EventHandler>{children}</EventHandler>
 }

@@ -28,7 +28,7 @@ const BaseLayout = (props: PropsWithChildren) => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
       setMainViewState(MainViewState.Settings)
     }
-  }, [])
+  }, [setMainViewState])
 
   return (
     <div className="flex h-screen w-screen flex-1 overflow-hidden">

@@ -59,7 +59,12 @@ Navigate to the `~/jan/models` folder. Create a folder named `<your-deployment-n
 
 ```json title="~/jan/models/gpt-35-hieu-jan/model.json"
 {
-  "source_url": "https://hieujan.openai.azure.com",
+  "sources": [
+    {
+      "filename": "azure_openai",
+      "url": "https://hieujan.openai.azure.com"
+    }
+  ],
   // highlight-next-line
   "id": "gpt-35-hieu-jan",
   "object": "model",
@@ -75,8 +80,7 @@ Navigate to the `~/jan/models` folder. Create a folder named `<your-deployment-n
     "tags": ["General", "Big Context Length"]
   },
   // highlight-start
-  "engine": "openai",
-  "state": "ready"
+  "engine": "openai"
   // highlight-end
 }
 ```
