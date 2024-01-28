@@ -46,6 +46,7 @@ const ChatScreen: React.FC = () => {
       // 'image/*': ['.png', '.jpg', '.jpeg'],
       'application/pdf': ['.pdf'],
     },
+
     onDragOver: (e) => {
       if (
         e.dataTransfer.items.length === 1 &&
