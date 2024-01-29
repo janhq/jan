@@ -53,7 +53,10 @@ const SettingsScreen = () => {
   }, [])
 
   return (
-    <div className="flex h-full bg-background">
+    <div
+      className="flex h-full bg-background"
+      data-testid="testid-setting-description"
+    >
       <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <ScrollArea className="h-full w-full">
           <div className="px-6 py-4">
