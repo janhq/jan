@@ -128,7 +128,8 @@ const TopBar = () => {
               showing && 'border-l border-border'
             )}
           >
-            {activeThread && (
+            {((activeThread && mainViewState === MainViewState.Thread) ||
+              mainViewState === MainViewState.LocalServer) && (
               <div className="flex h-full w-52 items-center justify-between px-4">
                 {showing && (
                   <div className="relative flex h-full items-center">
