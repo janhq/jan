@@ -1,0 +1,64 @@
+
+  
+   # **getBuilder**
+
+## About the JAN Server and API Endpoints
+
+Jan endpoints are endpoints from the JAN node js libary that run on port 1337.
+  
+## Why should I use this API Endpoint
+The `getBuilder` endpoint is used to retrieve a list of models, assistants, or threads from the JAN server. This can be useful for getting a list of all the available models, assistants, or threads, or for getting a list of the models, assistants, or threads that are associated with a particular project.
+
+## What is the query or body params required?
+
+The `getBuilder` endpoint does not require any query or body parameters.
+
+## Prequsites
+  
+## What is an example Curl to this endpoint.
+
+```
+curl -X GET http://localhost:1337/getBuilder
+```
+
+## Response
+
+The `getBuilder` endpoint returns a JSON object with the following structure:
+
+```
+{
+  "models": [
+    {
+      "id": "model-id",
+      "name": "model-name",
+      "description": "model-description",
+      "version": "model-version"
+    },
+    ...
+  ],
+  "assistants": [
+    {
+      "id": "assistant-id",
+      "name": "assistant-name",
+      "description": "assistant-description",
+      "version": "assistant-version"
+    },
+    ...
+  ],
+  "threads": [
+    {
+      "id": "thread-id",
+      "name": "thread-name",
+      "description": "thread-description",
+      "version": "thread-version"
+    },
+    ...
+  ]
+}
+```
+
+## Why and How
+
+The `getBuilder` endpoint is a useful tool for getting a list of the available models, assistants, or threads on the JAN server. This information can be used to build applications that interact with the JAN server, such as model training applications or chatbots.
+  
+  
