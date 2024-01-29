@@ -66,9 +66,6 @@ const ChatInput: React.FC = () => {
       setIsWaitingToSend(false)
       sendChatMessage(currentPrompt)
     }
-    if (textareaRef.current) {
-      textareaRef.current.focus()
-    }
   }, [
     activeThreadId,
     isWaitingToSend,
@@ -79,9 +76,14 @@ const ChatInput: React.FC = () => {
 
   useEffect(() => {
     if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [activeThreadId])
+
+  useEffect(() => {
+    if (textareaRef.current) {
       textareaRef.current.style.height = '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
-      textareaRef.current.focus()
     }
   }, [currentPrompt])
 
