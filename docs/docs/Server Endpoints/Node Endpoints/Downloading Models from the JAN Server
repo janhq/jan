@@ -1,0 +1,49 @@
+
+  
+   # **downloadModel**
+
+## About the JAN Server and API Endpoints
+
+Jan endpoints are endpoints from the JAN node js libary that run on port 1337.
+
+## Why should I use this API Endpoint
+The `/models/download/:modelId` endpoint is used to download a model from the JAN server. This can be useful for getting a model that you have trained or for sharing models with others.
+
+## What is the query or body params required?
+
+The following query parameters are required:
+
+* `modelId`: The ID of the model to download.
+
+## Prequsites
+
+* You must have a JAN server running on port 1337.
+* You must have a model trained and saved on the JAN server.
+
+## What is an example Curl to this endpoint.
+
+The following curl command will download the model with the ID `my-model` from the JAN server:
+
+```
+curl -X GET "http://localhost:1337/models/download/my-model" -o my-model.zip
+```
+
+## Why and How
+The `downloadModel` endpoint is a simple GET endpoint that returns a zip file containing the model files. The model files are stored in a subdirectory of the zip file named after the model ID.
+
+The following is an example of the contents of a model zip file:
+
+```
+my-model.zip
+├── my-model
+│   ├── model.json
+│   └── model.bin
+└── metadata.json
+```
+
+The `model.json` file contains the model metadata, such as the model name, version, and training parameters. The `model.bin` file contains the model weights. The `metadata.json` file contains information about the model, such as the author, license, and description.
+
+## Conclusion
+The `downloadModel` endpoint is a useful tool for getting models from the JAN server. This can be useful for getting a model that you have trained or for sharing models with others.
+  
+  
