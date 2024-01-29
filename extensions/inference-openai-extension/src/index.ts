@@ -31,7 +31,7 @@ import { join } from "path";
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceOpenAIExtension extends BaseExtension {
-  private static readonly _homeDir = "file://engines";
+  private static readonly _engineDir = "file://engines";
   private static readonly _engineMetadataFileName = "openai.json";
 
   private static _currentModel: OpenAIModel;
@@ -48,9 +48,9 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
-    if (!(await fs.existsSync(JanInferenceOpenAIExtension._homeDir))) {
+    if (!(await fs.existsSync(JanInferenceOpenAIExtension._engineDir))) {
       await fs
-        .mkdirSync(JanInferenceOpenAIExtension._homeDir)
+        .mkdirSync(JanInferenceOpenAIExtension._engineDir)
         .catch((err) => console.debug(err));
     }
 
@@ -81,7 +81,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
   static async writeDefaultEngineSettings() {
     try {
       const engineFile = join(
-        JanInferenceOpenAIExtension._homeDir,
+        JanInferenceOpenAIExtension._engineDir,
         JanInferenceOpenAIExtension._engineMetadataFileName,
       );
       if (await fs.existsSync(engineFile)) {
