@@ -10,6 +10,7 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  Modal,
 } from '@janhq/uikit'
 
 import { SearchIcon } from 'lucide-react'
@@ -21,6 +22,7 @@ import { useGetConfiguredModels } from '@/hooks/useGetConfiguredModels'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import ExploreModelList from './ExploreModelList'
+import { HuggingFaceModal } from './HuggingFaceModal'
 
 const ExploreModelsScreen = () => {
   const { loading, models } = useGetConfiguredModels()
@@ -28,6 +30,7 @@ const ExploreModelsScreen = () => {
   const { downloadedModels } = useGetDownloadedModels()
   const [sortSelected, setSortSelected] = useState('All Models')
   const sortMenu = ['All Models', 'Recommended', 'Downloaded']
+  const [showHuggingFaceModal, setShowHuggingFaceModal] = useState(false)
 
   const filteredModels = models.filter((x) => {
     if (sortSelected === 'Downloaded') {
@@ -49,12 +52,20 @@ const ExploreModelsScreen = () => {
     openExternalUrl('https://jan.ai/guides/using-models/import-manually/')
   }
 
+  const onHuggingFaceConverterClick = () => {
+    setShowHuggingFaceModal(true)
+  }
+
   if (loading) return <Loader description="loading ..." />
 
   return (
     <div className="flex h-full w-full overflow-y-auto bg-background">
       <div className="h-full w-full p-4">
         <div className="h-full" data-test-id="testid-explore-models">
+          <HuggingFaceModal
+            open={showHuggingFaceModal}
+            onOpenChange={setShowHuggingFaceModal}
+          />
           <ScrollArea>
             <div className="relative">
               <img
@@ -82,6 +93,15 @@ const ExploreModelsScreen = () => {
                     className="cursor-pointer font-semibold text-white underline"
                   >
                     How to manually import models
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-white">or</p>
+                  <p
+                    onClick={onHuggingFaceConverterClick}
+                    className="cursor-pointer font-semibold text-white underline"
+                  >
+                    Convert from Hugging Face
                   </p>
                 </div>
               </div>

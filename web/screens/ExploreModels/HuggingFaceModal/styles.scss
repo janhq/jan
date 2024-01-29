@@ -1,0 +1,13 @@
+// Copied from command modal scss
+
+.hugging-face {
+    @apply bg-background/80 text-muted-foreground flex h-full w-full flex-col overflow-hidden rounded-md text-left;
+  
+    &-modal-content {
+      @apply overflow-hidden p-0;
+      > .modal-close {
+        top: 12px;
+      }
+    }
+  }
+  
