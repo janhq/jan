@@ -86,7 +86,7 @@ const useThreads = () => {
       setThreadStates(localThreadStates)
       setThreads(allThreads)
       setThreadModelRuntimeParams(threadModelParams)
-      if (allThreads.length > 0 && !activeThread) {
+      if (allThreads.length && !activeThread) {
         setActiveThread(allThreads[0])
       }
     } catch (error) {
