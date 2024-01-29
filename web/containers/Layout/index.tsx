@@ -27,7 +27,6 @@ const BaseLayout = (props: PropsWithChildren) => {
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
       setMainViewState(MainViewState.Settings)
-      localStorage.removeItem(SUCCESS_SET_NEW_DESTINATION)
     }
   }, [setMainViewState])
 

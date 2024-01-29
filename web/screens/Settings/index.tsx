@@ -49,6 +49,7 @@ const SettingsScreen = () => {
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
       setActiveStaticMenu('Advanced Settings')
+      localStorage.removeItem(SUCCESS_SET_NEW_DESTINATION)
     }
   }, [])
 

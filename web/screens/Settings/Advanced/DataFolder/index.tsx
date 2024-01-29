@@ -5,6 +5,8 @@ import { Button, Input } from '@janhq/uikit'
 import { useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
+import Loader from '@/containers/Loader'
+
 import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
 
 import ModalChangeDirectory, {
@@ -13,10 +15,12 @@ import ModalChangeDirectory, {
 import ModalErrorSetDestGlobal, {
   showChangeFolderErrorAtom,
 } from './ModalErrorSetDestGlobal'
+
 import ModalSameDirectory, { showSamePathModalAtom } from './ModalSameDirectory'
 
 const DataFolder = () => {
   const [janDataFolderPath, setJanDataFolderPath] = useState('')
+  const [showLoader, setShowLoader] = useState(false)
   const setShowDirectoryConfirm = useSetAtom(showDirectoryConfirmModalAtom)
   const setShowSameDirectory = useSetAtom(showSamePathModalAtom)
   const setShowChangeFolderError = useSetAtom(showChangeFolderErrorAtom)
@@ -46,18 +50,20 @@ const DataFolder = () => {
   const onUserConfirmed = useCallback(async () => {
     if (!destinationPath) return
     try {
+      setShowLoader(true)
       const appConfiguration: AppConfiguration =
         await window.core?.api?.getAppConfigurations()
       const currentJanDataFolder = appConfiguration.data_folder
       appConfiguration.data_folder = destinationPath
       await fs.syncFile(currentJanDataFolder, destinationPath)
       await window.core?.api?.updateAppConfiguration(appConfiguration)
-
       console.debug(
         `File sync finished from ${currentJanDataFolder} to ${destinationPath}`
       )
-
       localStorage.setItem(SUCCESS_SET_NEW_DESTINATION, 'true')
+      setTimeout(() => {
+        setShowLoader(false)
+      }, 1200)
       await window.core?.api?.relaunch()
     } catch (e) {
       console.error(`Error: ${e}`)
@@ -107,6 +113,7 @@ const DataFolder = () => {
         onUserConfirmed={onUserConfirmed}
       />
       <ModalErrorSetDestGlobal />
+      {showLoader && <Loader description="Relocating Jan Data Folder..." />}
     </Fragment>
   )
 }
