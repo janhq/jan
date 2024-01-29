@@ -1,0 +1,54 @@
+
+  
+   ## Using the JAN Server and API Endpoints
+
+## About the JAN Server and API Endpoints
+
+Jan endpoints are endpoints from the JAN node js library that run on port 1337. These endpoints provide a way to interact with the JAN server and its various features, such as creating and managing models, assistants, and threads.
+
+## Why should I use this API Endpoint
+
+The `/chat/completions` endpoint is a powerful tool that allows you to generate human-like text based on a given prompt. This can be used for a variety of purposes, such as creating chatbots, generating product descriptions, or writing creative content.
+
+## What is the query or body params required?
+
+The `/chat/completions` endpoint requires the following query or body parameters:
+
+* `model`: The ID of the model to use for generation.
+* `prompt`: The text prompt to use for generation.
+
+## Prerequisites
+
+Before you can use the `/chat/completions` endpoint, you will need to:
+
+1. Create a JAN account and obtain an API key.
+2. Install the JAN CLI.
+3. Create a model.
+
+## What is an example Curl to this endpoint to have content and information on the method or class covered in the code above.
+
+The following curl command will send a request to the `/chat/completions` endpoint and generate text based on the specified prompt:
+
+```
+curl -X POST \
+  -H "Authorization: Bearer {{API_KEY}}" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{MODEL_ID}}", "prompt": "{{PROMPT}}"}' \
+  http://localhost:1337/chat/completions
+```
+
+## Why and How
+
+The `chatCompletions` function is a POST request that takes a model ID and a prompt as input. The model ID specifies which model to use for generation, and the prompt specifies the text that the model will use to generate a response.
+
+The function first checks if the specified model exists. If the model does not exist, it returns an error.
+
+If the model exists, the function then sends a request to the Nitro API, which is a cloud-based service that provides text generation capabilities. The request includes the model ID and the prompt, and the Nitro API returns a JSON response containing the generated text.
+
+The function then parses the JSON response and returns the generated text.
+
+## Conclusion
+
+The `/chat/completions` endpoint is a powerful tool that can be used to generate human-like text for a variety of purposes. By following the steps outlined in this document, you can easily use this endpoint to add text generation capabilities to your own applications.
+  
+  
