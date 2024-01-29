@@ -1,0 +1,41 @@
+
+  
+   ## **downloadFile**
+
+## About the JAN Server and API Endpoints
+
+Jan endpoints are endpoints from the JAN node js libary that run on port 1337.
+  
+## Why should I use this API Endpoint
+The `downloadFile` endpoint allows you to download a file from a specified URL and save it to a specified location on your computer. This can be useful for downloading files that are not available for direct download, or for downloading files that you want to keep a local copy of.
+
+## What is the query or body params required?
+
+The `downloadFile` endpoint requires the following query parameters:
+
+* `url`: The URL of the file that you want to download.
+* `path`: The path to the location on your computer where you want to save the file.
+
+## Prequsites
+  
+## What is an example Curl to this endpoint.
+
+The following curl command will download the file `https://example.com/file.zip` and save it to the file `~/Downloads/file.zip` on your computer:
+
+```
+curl -L -o ~/Downloads/file.zip https://example.com/file.zip
+```
+
+## Make sure explain the why and how in the documentation.
+
+The `-L` option tells curl to follow redirects, and the `-o` option tells curl to save the output to the specified file.
+
+## If you see anything inside of a **{{}}**, it is a placeholder, please replace accordingly with the right content properly
+
+## Most importantly do not generate any information that does not reflect the current code and CONTEXT provided above, this is the most important rule
+
+The code you provided is a Node.js script that uses the `request` and `progress` modules to download a file from a specified URL and save it to a specified location on the computer. The script also uses the `createWriteStream` function to create a writable stream to the specified file, and the `on` method to listen for events on the stream.
+
+The `progress` module is used to track the progress of the download, and the `onProgress` function is used to display the progress in the console. The `onError` function is used to handle any errors that occur during the download, and the `onEnd` function is used to perform any necessary cleanup after the download is complete.
+  
+  
