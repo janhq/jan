@@ -168,7 +168,7 @@ export default function useSendChatMessage() {
       const instructions = activeThread.assistants[0].instructions ?? ''
       const tools = activeThread.assistants[0].tools ?? []
 
-      const updatedThread: Thread = {
+      const initThread: Thread = {
         ...activeThread,
         assistants: [
           {
@@ -185,12 +185,13 @@ export default function useSendChatMessage() {
           },
         ],
       }
+
       updateThreadInitSuccess(activeThread.id)
-      updateThread(updatedThread)
+      updateThread(initThread)
 
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread(updatedThread)
+        ?.saveThread(initThread)
     }
 
     updateThreadWaiting(activeThread.id, true)
@@ -321,6 +322,14 @@ export default function useSendChatMessage() {
     if (base64Blob) {
       setFileUpload([])
     }
+
+    const updatedThread: Thread = {
+      ...activeThread,
+      updated: timestamp,
+    }
+
+    // change last update thread when send message
+    updateThread(updatedThread)
 
     await extensionManager
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
