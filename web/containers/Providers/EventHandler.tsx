@@ -100,6 +100,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         message.status
       )
       if (message.status === MessageStatus.Pending) {
+        if (message.content.length)
+          updateThreadWaiting(message.thread_id, false)
         return
       }
       // Mark the thread as not waiting for response
