@@ -1,0 +1,39 @@
+
+  
+   # **`app.post(`/app/${FileManagerRoute.syncFile}`, async (request: any, reply: any) => {})`**
+
+## About the JAN Server and API Endpoints
+
+Jan endpoints are endpoints from the JAN node js libary that run on port 1337.
+  
+## Why should I use this API Endpoint
+This endpoint is used to sync a file from the local file system to the Jan server. This can be useful for keeping files up-to-date between multiple devices or for backing up files to the cloud.
+
+## What is the query or body params required?
+The following query or body params are required:
+
+* `file`: The path to the file that you want to sync.
+* `name`: The name of the file that you want to sync to.
+
+## Prequsites
+Before you can use this API endpoint, you must have the following:
+
+* A Jan server running on port 1337.
+* A file that you want to sync.
+
+## What is an example Curl to this endpoint.
+The following is an example curl command that you can use to sync a file from the local file system to the Jan server:
+
+```
+curl -X POST http://localhost:1337/app/syncFile -F file=@/path/to/file -F name=file.txt
+```
+
+## Explanation
+The above curl command will send a POST request to the `/app/syncFile` endpoint on the Jan server. The `-F file=@/path/to/file` option specifies the path to the file that you want to sync. The `-F name=file.txt` option specifies the name of the file that you want to sync to.
+
+The Jan server will then sync the file from the local file system to the server. The file will be stored in the `files` directory on the server.
+
+## Conclusion
+The `/app/syncFile` endpoint is a useful tool for keeping files up-to-date between multiple devices or for backing up files to the cloud.
+  
+  
