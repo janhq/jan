@@ -17,13 +17,13 @@ import {
   executeOnMain,
   fs,
   Model,
-  joinPath,
   InferenceExtension,
   log,
   InferenceEngine,
   MessageEvent,
   ModelEvent,
   InferenceEvent,
+  joinPath,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
@@ -141,6 +141,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       JanInferenceNitroExtension._modelsDir,
       model.id,
     ]);
+    log(`[APP]::Debug: Initializing Nitro model: ${modelFullPath}`);
 
     // Set bin path for nitro binaries download during runtime
     const nitroSetBinPathResult = await executeOnMain(

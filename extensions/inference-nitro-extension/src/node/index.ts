@@ -1,5 +1,5 @@
-import { fileURLToPath } from "node:url";
-import { log } from "@janhq/core/node";
+import path from "node:path";
+import { getJanDataFolderPath, log, normalizeFilePath } from "@janhq/core/node";
 import {
   setLogger,
   setBinPath as nitroSetBinPath,
@@ -9,7 +9,7 @@ import {
 } from "@janhq/nitro-node";
 
 import { getCurrentNitroProcessInfo } from "@janhq/nitro-node";
-import { debugInspector } from "./debugInspector";
+import { debugInspector, debugInspectorSync } from "./debugInspector";
 
 /**
  * Update nvidia driver info
@@ -17,29 +17,21 @@ import { debugInspector } from "./debugInspector";
 const updateNvidiaInfo = async (): Promise<any> =>
   await sanitizePromise(nitroUpdateNvidiaInfo());
 
-// FIXME: currently using current directory of the process as base path
-let basePath = process.cwd();
-
-/**
- * Set absolute system path for working directory
- */
-const setBasePath = (absPath: string) => (basePath = absPath);
-
 /**
  * Resolve file url path from string
  */
-const resolvePath = (fileURL: string) => {
-  if (process.env.DEBUG) {
-    log(`Resolving path ${fileURL}`);
-  }
-  const absPath = fileURLToPath(
-    fileURL.replace(/^file:\/\//, `file://${basePath}/`),
-  );
-  if (process.env.DEBUG) {
-    log(`Resolved path ${fileURL} to ${absPath}`);
-  }
+const _resolvePath = (fileURL: string) => {
+  const absPath = path.join(getJanDataFolderPath(), normalizeFilePath(fileURL));
   return absPath;
 };
+/**
+ * Resolve file url path from string
+ * Also with possibility to show debug information
+ */
+const resolvePath = (fileURL: string) =>
+  process.env.DEBUG
+    ? debugInspectorSync(_resolvePath)(fileURL)
+    : _resolvePath(fileURL);
 
 /**
  * Strip any non-serializable properties from an object or array
@@ -77,7 +69,6 @@ setLogger(log);
 export default {
   getCurrentNitroProcessInfo,
   updateNvidiaInfo,
-  setBasePath: process.env.DEBUG ? debugInspector(setBasePath) : setBasePath,
   setBinPath: process.env.DEBUG ? debugInspector(setBinPath) : setBinPath,
   runModel: process.env.DEBUG ? debugInspector(runModel) : runModel,
 };
