@@ -1,0 +1,37 @@
+
+  
+   # **deleteModel**
+
+## About the JAN Server and API Endpoints
+
+Jan endpoints are endpoints from the JAN node js libary that run on port 1337.
+  
+## Why should I use this API Endpoint
+The deleteModel endpoint is used to delete a model from the JAN server. This can be useful if you have a model that you no longer need or if you want to free up space on the server.
+
+## What is the query or body params required?
+The deleteModel endpoint requires the following query or body params:
+
+* **modelId**: The ID of the model to be deleted.
+
+## Prequsites
+Before you can use the deleteModel endpoint, you must first create a model on the JAN server. You can do this using the createModel endpoint.
+
+## What is an example Curl to this endpoint.
+```
+curl -X DELETE "http://localhost:1337/models/{{modelId}}"
+```
+
+## Explanation
+The above curl command will send a DELETE request to the deleteModel endpoint on the JAN server. The modelId parameter will be replaced with the ID of the model that you want to delete.
+
+If the request is successful, the server will return a 200 OK status code and the model will be deleted.
+
+## Why and How
+The deleteModel endpoint is a useful tool for managing models on the JAN server. It can be used to delete models that you no longer need or to free up space on the server.
+
+To use the deleteModel endpoint, you must first create a model on the JAN server using the createModel endpoint. Once you have created a model, you can delete it using the deleteModel endpoint.
+
+The deleteModel endpoint is a simple and straightforward way to delete models from the JAN server. It is a useful tool for managing models and keeping your server organized.
+  
+  
