@@ -15,23 +15,21 @@ import { MainViewState } from '@/constants/screens'
 import { activeModelAtom } from '@/hooks/useActiveModel'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
+import useInference from '@/hooks/useInference'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import ChatItem from '../ChatItem'
 
 import ErrorMessage from '../ErrorMessage'
 
-import {
-  generateResponseAtom,
-  getCurrentChatMessagesAtom,
-} from '@/helpers/atoms/ChatMessage.atom'
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const activeModel = useAtomValue(activeModelAtom)
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
-  const generateResponse = useAtomValue(generateResponseAtom)
+  const { isGeneratingResponse } = useInference()
 
   if (downloadedModels.length === 0)
     return (
@@ -101,7 +99,7 @@ const ChatBody: React.FC = () => {
           ))}
 
           {activeModel &&
-            (generateResponse ||
+            (isGeneratingResponse ||
               (messages.length &&
                 messages[messages.length - 1].status ===
                   MessageStatus.Pending &&
