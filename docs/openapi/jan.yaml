@@ -67,20 +67,31 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl http://localhost:1337/v1/chat/completions \
-              -H "Content-Type: application/json" \
+            curl -X 'POST' \
+              'http://localhost:1337/v1/chat/completions' \
+              -H 'accept: application/json' \
+              -H 'Content-Type: application/json' \
               -d '{
-                "model": "tinyllama-1.1b",
                 "messages": [
                   {
-                    "role": "system",
-                    "content": "You are a helpful assistant."
+                    "content": "You are a helpful assistant.",
+                    "role": "system"
                   },
                   {
-                    "role": "user",
-                    "content": "Hello!"
+                    "content": "Hello!",
+                    "role": "user"
                   }
-                ]
+                ],
+                "model": "tinyllama-1.1b",
+                "stream": true,
+                "max_tokens": 2048,
+                "stop": [
+                  "hello"
+                ],
+                "frequency_penalty": 0,
+                "presence_penalty": 0,
+                "temperature": 0.7,
+                "top_p": 0.95
               }'
   /models:
     get:
@@ -103,7 +114,9 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl http://localhost:1337/v1/models
+            curl -X 'GET' \
+              'http://localhost:1337/v1/models' \
+              -H 'accept: application/json'
   "/models/download/{model_id}":
     get:
       operationId: downloadModel
@@ -131,7 +144,9 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl -X POST http://localhost:1337/v1/models/download/{model_id}
+            curl -X 'GET' \
+              'http://localhost:1337/v1/models/download/{model_id}' \
+              -H 'accept: application/json'
   "/models/{model_id}":
     get:
       operationId: retrieveModel
@@ -162,7 +177,9 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl http://localhost:1337/v1/models/{model_id}
+            curl -X 'GET' \
+              'http://localhost:1337/v1/models/{model_id}' \
+              -H 'accept: application/json'
     delete:
       operationId: deleteModel
       tags:
@@ -191,7 +208,9 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl -X DELETE http://localhost:1337/v1/models/{model_id}
+            curl -X 'DELETE' \
+              'http://localhost:1337/v1/models/{model_id}' \
+              -H 'accept: application/json'
   /threads:
     post:
       operationId: createThread
