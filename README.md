@@ -43,31 +43,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Stable (Recommended)</b></td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-win-x64-0.4.4.exe'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-win-x64-0.4.5.exe'>
         <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-mac-x64-0.4.4.dmg'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-mac-x64-0.4.5.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-mac-arm64-0.4.4.dmg'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-mac-arm64-0.4.5.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-linux-amd64-0.4.4.deb'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-linux-amd64-0.4.5.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.4/jan-linux-x86_64-0.4.4.AppImage'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-linux-x86_64-0.4.5.AppImage'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
