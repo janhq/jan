@@ -9,7 +9,7 @@
     "object": "model",
     "name": "Stable Zephyr 3B Q8",
     "version": "1.0",
-    "description": "StableLM Zephyr 3B is trained on a mix of publicly and synthetic datasets. It's focus on safety and reliability.",
+    "description": "StableLM Zephyr 3B is trained for safe and reliable chatting.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
