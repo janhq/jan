@@ -74,6 +74,8 @@ const LocalServerScreen = () => {
   const [host, setHost] = useAtom(hostAtom)
   const [port, setPort] = useAtom(portAtom)
 
+  const hostOptions = ['127.0.0.1', '0.0.0.0']
+
   const FIRST_TIME_VISIT_API_SERVER = 'firstTimeVisitAPIServer'
 
   const [firstTimeVisitAPIServer, setFirstTimeVisitAPIServer] =
@@ -167,8 +169,19 @@ const LocalServerScreen = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="127.0.0.1">127.0.0.1</SelectItem>
-                      <SelectItem value="0.0.0.0">0.0.0.0</SelectItem>
+                      {hostOptions.map((option, i) => {
+                        return (
+                          <SelectItem
+                            key={i}
+                            value={option}
+                            className={twMerge(
+                              host === option && 'bg-secondary'
+                            )}
+                          >
+                            {option}
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
 
