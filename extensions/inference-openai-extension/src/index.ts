@@ -20,6 +20,8 @@ import {
   MessageEvent,
   ModelEvent,
   InferenceEvent,
+  AppConfigurationEventName,
+  joinPath,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
@@ -71,6 +73,20 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
     events.on(InferenceEvent.OnInferenceStopped, () => {
       JanInferenceOpenAIExtension.handleInferenceStopped(this);
     });
+
+    const settingsFilePath = await joinPath([
+      JanInferenceOpenAIExtension._engineDir,
+      JanInferenceOpenAIExtension._engineMetadataFileName,
+    ]);
+
+    events.on(
+      AppConfigurationEventName.OnConfigurationUpdate,
+      (settingsKey: string) => {
+        // Update settings on changes
+        if (settingsKey === settingsFilePath)
+          JanInferenceOpenAIExtension.writeDefaultEngineSettings();
+      },
+    );
   }
 
   /**
@@ -182,7 +198,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       },
       error: async (err) => {
         if (instance.isCancelled || message.content.length > 0) {
-          message.status = MessageStatus.Error;
+          message.status = MessageStatus.Stopped;
           events.emit(MessageEvent.OnMessageUpdate, message);
           return;
         }
@@ -194,7 +210,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
           },
         };
         message.content = [messageContent];
-        message.status = MessageStatus.Ready;
+        message.status = MessageStatus.Error;
         events.emit(MessageEvent.OnMessageUpdate, message);
       },
     });

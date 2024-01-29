@@ -40,6 +40,19 @@ export default function SystemMonitorScreen() {
             <div className="rounded-xl border border-border p-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-base font-bold uppercase">
+                  cpu ({cpuUsage}%)
+                </h4>
+                <span className="text-xs text-muted-foreground">
+                  {cpuUsage}% of 100%
+                </span>
+              </div>
+              <div className="mt-2">
+                <Progress className="mb-2 h-10 rounded-md" value={cpuUsage} />
+              </div>
+            </div>
+            <div className="rounded-xl border border-border p-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-base font-bold uppercase">
                   ram ({Math.round((usedRam / totalRam) * 100)}%)
                 </h4>
                 <span className="text-xs text-muted-foreground">
@@ -51,19 +64,6 @@ export default function SystemMonitorScreen() {
                   className="mb-2 h-10 rounded-md"
                   value={Math.round((usedRam / totalRam) * 100)}
                 />
-              </div>
-            </div>
-            <div className="rounded-xl border border-border p-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-base font-bold uppercase">
-                  cpu ({cpuUsage}%)
-                </h4>
-                <span className="text-xs text-muted-foreground">
-                  {cpuUsage}% of 100%
-                </span>
-              </div>
-              <div className="mt-2">
-                <Progress className="mb-2 h-10 rounded-md" value={cpuUsage} />
               </div>
             </div>
           </div>

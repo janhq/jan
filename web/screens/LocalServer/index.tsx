@@ -29,6 +29,7 @@ import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import CardSidebar from '@/containers/CardSidebar'
+
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
@@ -58,7 +59,7 @@ const portAtom = atom('1337')
 const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
-  const showing = useAtomValue(showRightSideBarAtom)
+  const showRightSideBar = useAtomValue(showRightSideBarAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
 
   const modelEngineParams = toSettingParams(activeModelParams)
@@ -66,7 +67,7 @@ const LocalServerScreen = () => {
 
   const { openServerLog, clearServerLog } = useServerLog()
   const { startModel, stateModel } = useActiveModel()
-  const [selectedModel] = useAtom(selectedModelAtom)
+  const selectedModel = useAtomValue(selectedModelAtom)
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
@@ -116,7 +117,7 @@ const LocalServerScreen = () => {
             <Button
               block
               themes={serverEnabled ? 'danger' : 'primary'}
-              disabled={stateModel.loading || errorRangePort}
+              disabled={stateModel.loading || errorRangePort || !selectedModel}
               onClick={() => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
@@ -176,6 +177,7 @@ const LocalServerScreen = () => {
                       'w-[70px] flex-shrink-0',
                       errorRangePort && 'border-danger'
                     )}
+                    type="number"
                     value={port}
                     onChange={(e) => {
                       handleChangePort(e.target.value)
@@ -275,7 +277,7 @@ const LocalServerScreen = () => {
 
       {/* Middle Bar */}
       <ScrollToBottom className="relative flex h-full w-full flex-col overflow-auto bg-background">
-        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-secondary/30">
+        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-zinc-600">
           <h2 className="font-bold">Server Logs</h2>
           <div className="space-x-2">
             <Button
@@ -345,15 +347,13 @@ const LocalServerScreen = () => {
       <div
         className={twMerge(
           'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background transition-all duration-100 dark:bg-background/20',
-          showing
+          showRightSideBar
             ? 'w-80 translate-x-0 opacity-100'
             : 'w-0 translate-x-full opacity-0'
         )}
       >
-        <div className="px-4">
-          <div className="mt-4">
-            <DropdownListSidebar />
-          </div>
+        <div className="px-4 pt-4">
+          <DropdownListSidebar strictedThread={false} />
 
           {componentDataEngineSetting.filter(
             (x) => x.name === 'prompt_template'
