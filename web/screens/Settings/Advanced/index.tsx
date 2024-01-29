@@ -137,7 +137,7 @@ const Advanced = () => {
       )}
 
       {/* Directory */}
-      {experimentalFeature && <DataFolder />}
+      <DataFolder />
 
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
