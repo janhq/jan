@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
 import ScrollToBottom from 'react-scroll-to-bottom'
 
@@ -81,14 +80,17 @@ const LocalServerScreen = () => {
   const [firstTimeVisitAPIServer, setFirstTimeVisitAPIServer] =
     useState<boolean>(false)
 
-  const handleChangePort = (value: any) => {
-    if (Number(value) <= 0 || Number(value) >= 65536) {
-      setErrorRangePort(true)
-    } else {
-      setErrorRangePort(false)
-    }
-    setPort(value)
-  }
+  const handleChangePort = useCallback(
+    (value: string) => {
+      if (Number(value) <= 0 || Number(value) >= 65536) {
+        setErrorRangePort(true)
+      } else {
+        setErrorRangePort(false)
+      }
+      setPort(value)
+    },
+    [setPort]
+  )
 
   useEffect(() => {
     if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) == null) {
@@ -98,7 +100,7 @@ const LocalServerScreen = () => {
 
   useEffect(() => {
     handleChangePort(port)
-  }, [])
+  }, [handleChangePort, port])
 
   return (
     <div className="flex h-full w-full">

@@ -10,6 +10,8 @@ import {
 } from '../common/builder'
 
 import { JanApiRouteConfiguration } from '../common/configuration'
+import { startModel, stopModel } from '../common/startStopModel'
+import { ModelSettingParams } from '../../../types'
 
 export const commonRouter = async (app: HttpServer) => {
   // Common Routes
@@ -17,18 +19,32 @@ export const commonRouter = async (app: HttpServer) => {
     app.get(`/${key}`, async (_request) => getBuilder(JanApiRouteConfiguration[key]))
 
     app.get(`/${key}/:id`, async (request: any) =>
-      retrieveBuilder(JanApiRouteConfiguration[key], request.params.id),
+      retrieveBuilder(JanApiRouteConfiguration[key], request.params.id)
     )
 
     app.delete(`/${key}/:id`, async (request: any) =>
-      deleteBuilder(JanApiRouteConfiguration[key], request.params.id),
+      deleteBuilder(JanApiRouteConfiguration[key], request.params.id)
     )
   })
 
   // Download Model Routes
   app.get(`/models/download/:modelId`, async (request: any) =>
-    downloadModel(request.params.modelId, { ignoreSSL: request.query.ignoreSSL === 'true', proxy: request.query.proxy }),
+    downloadModel(request.params.modelId, {
+      ignoreSSL: request.query.ignoreSSL === 'true',
+      proxy: request.query.proxy,
+    })
   )
+
+  app.put(`/models/:modelId/start`, async (request: any) => {
+    let settingParams: ModelSettingParams | undefined = undefined
+    if (Object.keys(request.body).length !== 0) {
+      settingParams = JSON.parse(request.body) as ModelSettingParams
+    }
+
+    return startModel(request.params.modelId, settingParams)
+  })
+
+  app.put(`/models/:modelId/stop`, async (request: any) => stopModel(request.params.modelId))
 
   // Chat Completion Routes
   app.post(`/chat/completions`, async (request: any, reply: any) => chatCompletions(request, reply))

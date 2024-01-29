@@ -7,7 +7,7 @@ import {
   ThreadState,
   Model,
 } from '@janhq/core'
-import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
@@ -48,7 +48,8 @@ export const useCreateNewThread = () => {
   const createNewThread = useSetAtom(createNewThreadAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const updateThread = useSetAtom(updateThreadAtom)
-  const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
+
+  const setFileUpload = useSetAtom(fileUploadAtom)
   const { deleteThread } = useDeleteThread()
 
   const requestCreateNewThread = async (
