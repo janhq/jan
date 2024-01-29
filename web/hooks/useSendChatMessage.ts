@@ -332,7 +332,7 @@ export default function useSendChatMessage() {
       updated: timestamp,
     }
 
-    // cheange last update thread when send message
+    // change last update thread when send message
     updateThread(updatedThread)
 
     await extensionManager
