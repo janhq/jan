@@ -1,0 +1,38 @@
+
+  
+   # **app.post(`/app/${AppRoute.joinPath}`)**
+
+## About the JAN Server and API Endpoints
+
+Jan endpoints are endpoints from the JAN node js libary that run on port 1337.
+  
+## Why should I use this API Endpoint
+This endpoint is used to join two or more arrays together.
+
+## What is the query or body params required?
+The body of the request should be an array of arrays.
+
+## Prequsites
+None
+
+## What is an example Curl to this endpoint.
+```
+curl -X POST http://localhost:1337/app/joinPath -H 'Content-Type: application/json' -d '[[1, 2, 3], [4, 5, 6]]'
+```
+
+## Explanation
+The above curl command will send a POST request to the `/app/joinPath` endpoint with the following body:
+
+```
+[[1, 2, 3], [4, 5, 6]]
+```
+
+The endpoint will then join the two arrays together and return the result as a JSON string.
+
+In this example, the result will be:
+
+```
+[1, 2, 3, 4, 5, 6]
+```
+  
+  
