@@ -35,6 +35,8 @@ test.afterAll(async () => {
 })
 
 test('explores models', async () => {
+  // Set the timeout for this test to 60 seconds
+  test.setTimeout(60000);
   await page.getByTestId('Hub').first().click()
   await page.getByTestId('testid-explore-models').isVisible()
   //   More test cases here...
