@@ -67,14 +67,18 @@
 [type='submit'] {
   &.btn-primary {
     @apply bg-primary hover:bg-primary/90;
+    @apply disabled:pointer-events-none disabled:bg-zinc-100 disabled:text-zinc-400;
   }
   &.btn-secondary {
     @apply bg-secondary hover:bg-secondary/80;
+    @apply disabled:pointer-events-none disabled:bg-zinc-100 disabled:text-zinc-400;
   }
   &.btn-secondary-blue {
     @apply bg-blue-200 text-blue-900 hover:bg-blue-200/80;
+    @apply disabled:pointer-events-none disabled:bg-zinc-100 disabled:text-zinc-400;
   }
   &.btn-danger {
     @apply bg-danger hover:bg-danger/90;
+    @apply disabled:pointer-events-none disabled:bg-zinc-100 disabled:text-zinc-400;
   }
 }

@@ -1,8 +1,7 @@
 'use client'
 
-import React, { useCallback, useEffect } from 'react'
+import React, { useCallback, useState } from 'react'
 
-import { AppConfiguration } from '@janhq/core/.'
 import {
   Modal,
   ModalPortal,
@@ -24,6 +23,7 @@ const ModalConfirmReset = () => {
   const [modalValidation, setModalValidation] = useAtom(modalValidationAtom)
   const { resetAll } = useFactoryReset()
   const onFactoryResetClick = useCallback(() => resetAll(), [])
+  const [inputValue, setInputValue] = useState('')
 
   return (
     <Modal
@@ -42,8 +42,16 @@ const ModalConfirmReset = () => {
           usage data, including model customizations and conversation history.
           This action is irreversible.
         </p>
-        <p className="mt-1 text-muted-foreground">{`To confirm, please enter the word "RESET" below:`}</p>
-        <Input placeholder='Enter "RESET"' />
+        <div>
+          <p className="mb-2 mt-1 text-muted-foreground">{`To confirm, please enter the word "RESET" below:`}</p>
+          <Input
+            placeholder='Enter "RESET"'
+            onChange={(e) => setInputValue(e.target.value)}
+          />
+        </div>
+        <div>
+          <input type="checkbox" />
+        </div>
         <ModalFooter>
           <div className="flex gap-x-2">
             <ModalClose asChild onClick={() => setModalValidation(false)}>
@@ -53,7 +61,7 @@ const ModalConfirmReset = () => {
               <Button
                 autoFocus
                 themes="danger"
-                disabled
+                disabled={inputValue !== 'RESET'}
                 onClick={onFactoryResetClick}
               >
                 Reset Now
