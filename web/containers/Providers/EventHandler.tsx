@@ -50,9 +50,10 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   const onNewMessageResponse = useCallback(
     (message: ThreadMessage) => {
+      updateThreadWaiting(message.thread_id, false)
       addNewMessage(message)
     },
-    [addNewMessage]
+    [addNewMessage, updateThreadWaiting]
   )
 
   const onModelReady = useCallback(
