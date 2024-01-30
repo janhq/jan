@@ -7,7 +7,7 @@ import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
 import Loader from '@/containers/Loader'
 
-import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
+export const SUCCESS_SET_NEW_DESTINATION = 'successSetNewDestination'
 
 import ModalChangeDirectory, {
   showDirectoryConfirmModalAtom,
@@ -67,6 +67,7 @@ const DataFolder = () => {
       await window.core?.api?.relaunch()
     } catch (e) {
       console.error(`Error: ${e}`)
+      setShowLoader(false)
       setShowChangeFolderError(true)
     }
   }, [destinationPath, setShowChangeFolderError])
@@ -107,7 +108,7 @@ const DataFolder = () => {
           </Button>
         </div>
       </div>
-      <ModalSameDirectory />
+      <ModalSameDirectory onChangeFolderClick={onChangeFolderClick} />
       <ModalChangeDirectory
         destinationPath={destinationPath ?? ''}
         onUserConfirmed={onUserConfirmed}
