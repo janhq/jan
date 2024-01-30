@@ -57,7 +57,7 @@ const AssistantSetting = ({
                   tools: [
                     {
                       type: 'retrieval',
-                      enabled: false,
+                      enabled: true,
                       settings: {
                         ...(activeThread.assistants[0].tools &&
                           activeThread.assistants[0].tools[0]?.settings),
