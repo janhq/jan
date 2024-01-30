@@ -1,6 +1,6 @@
-'use client'
+import React, { useCallback, useEffect, useState } from 'react'
 
-import React, { useCallback, useState } from 'react'
+import { fs, AppConfiguration, joinPath, getUserHomePath } from '@janhq/core'
 
 import {
   Modal,
@@ -11,19 +11,24 @@ import {
   ModalFooter,
   ModalClose,
   Button,
+  Checkbox,
   Input,
 } from '@janhq/uikit'
 import { atom, useAtom } from 'jotai'
 
 import useFactoryReset from '@/hooks/useFactoryReset'
 
-export const modalValidationAtom = atom(true)
+export const modalValidationAtom = atom(false)
 
 const ModalConfirmReset = () => {
   const [modalValidation, setModalValidation] = useAtom(modalValidationAtom)
-  const { resetAll } = useFactoryReset()
-  const onFactoryResetClick = useCallback(() => resetAll(), [])
+  const { resetAll, defaultJanDataFolder } = useFactoryReset()
   const [inputValue, setInputValue] = useState('')
+  const [currentDirectoryChecked, setCurrentDirectoryChecked] = useState(true)
+  const onFactoryResetClick = useCallback(
+    () => resetAll(currentDirectoryChecked),
+    [currentDirectoryChecked, resetAll]
+  )
 
   return (
     <Modal
@@ -49,8 +54,25 @@ const ModalConfirmReset = () => {
             onChange={(e) => setInputValue(e.target.value)}
           />
         </div>
-        <div>
-          <input type="checkbox" />
+        <div className="flex flex-shrink-0 items-start space-x-2">
+          <Checkbox
+            id="currentDirectory"
+            checked={currentDirectoryChecked}
+            onCheckedChange={(e) => setCurrentDirectoryChecked(Boolean(e))}
+          />
+          <div className="mt-0.5 flex flex-col">
+            <label
+              htmlFor="currentDirectory"
+              className="cursor-pointer text-sm font-medium leading-none"
+            >
+              Keep the current app data location
+            </label>
+            <p className="mt-2 leading-relaxed">
+              Otherwise it will reset back to its original location at:
+              {/* TODO should be from system */}
+              <span className="font-medium">{defaultJanDataFolder}</span>
+            </p>
+          </div>
         </div>
         <ModalFooter>
           <div className="flex gap-x-2">
