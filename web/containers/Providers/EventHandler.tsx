@@ -61,6 +61,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       toaster({
         title: 'Success!',
         description: `Model ${model.id} has been started.`,
+        type: 'success',
       })
       setStateModel(() => ({
         state: 'stop',

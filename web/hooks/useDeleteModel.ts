@@ -19,6 +19,7 @@ export default function useDeleteModel() {
     toaster({
       title: 'Model Deletion Successful',
       description: `The model ${model.id} has been successfully deleted.`,
+      type: 'success',
     })
   }
 
