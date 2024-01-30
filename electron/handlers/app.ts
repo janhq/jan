@@ -1,5 +1,5 @@
 import { app, ipcMain, dialog, shell } from 'electron'
-import { join, basename } from 'path'
+import { join, basename, relative as getRelative, isAbsolute } from 'path'
 import { WindowManager } from './../managers/window'
 import { getResourcePath } from './../utils/path'
 import { AppRoute, AppConfiguration } from '@janhq/core'
@@ -48,6 +48,27 @@ export function handleAppIPCs() {
    */
   ipcMain.handle(AppRoute.joinPath, async (_event, paths: string[]) =>
     join(...paths)
+  )
+
+  /**
+   * Checks if the given path is a subdirectory of the given directory.
+   *
+   * @param _event - The IPC event object.
+   * @param from - The path to check.
+   * @param to - The directory to check against.
+   *
+   * @returns {Promise<boolean>} - A promise that resolves with the result.
+   */
+  ipcMain.handle(
+    AppRoute.isSubdirectory,
+    async (_event, from: string, to: string) => {
+      const relative = getRelative(from, to)
+      const isSubdir =
+        relative && !relative.startsWith('..') && !isAbsolute(relative)
+
+      if (isSubdir === '') return false
+      else return isSubdir
+    }
   )
 
   /**

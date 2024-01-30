@@ -10,15 +10,12 @@ import {
   ModalClose,
   Button,
 } from '@janhq/uikit'
-import { atom, useAtom, useAtomValue } from 'jotai'
-
-import { errorAtom } from '.'
+import { atom, useAtom } from 'jotai'
 
 export const showChangeFolderErrorAtom = atom(false)
 
 const ModalErrorSetDestGlobal = () => {
   const [show, setShow] = useAtom(showChangeFolderErrorAtom)
-  const error = useAtomValue(errorAtom)
   return (
     <Modal open={show} onOpenChange={setShow}>
       <ModalPortal />
@@ -30,7 +27,6 @@ const ModalErrorSetDestGlobal = () => {
           Oops! Something went wrong. Jan data folder remains the same. Please
           try again.
         </p>
-        <p className="text-muted-foreground">{error}</p>
         <ModalFooter>
           <div className="flex gap-x-2">
             <ModalClose asChild onClick={() => setShow(false)}>

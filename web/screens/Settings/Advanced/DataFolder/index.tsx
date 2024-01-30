@@ -1,8 +1,8 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 
-import { fs, AppConfiguration } from '@janhq/core'
+import { fs, AppConfiguration, isSubdirectory } from '@janhq/core'
 import { Button, Input } from '@janhq/uikit'
-import { atom, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
 import Loader from '@/containers/Loader'
@@ -18,8 +18,6 @@ import ModalErrorSetDestGlobal, {
 
 import ModalSameDirectory, { showSamePathModalAtom } from './ModalSameDirectory'
 
-export const errorAtom = atom('')
-
 const DataFolder = () => {
   const [janDataFolderPath, setJanDataFolderPath] = useState('')
   const [showLoader, setShowLoader] = useState(false)
@@ -27,7 +25,6 @@ const DataFolder = () => {
   const setShowSameDirectory = useSetAtom(showSamePathModalAtom)
   const setShowChangeFolderError = useSetAtom(showChangeFolderErrorAtom)
   const [destinationPath, setDestinationPath] = useState(undefined)
-  const setError = useSetAtom(errorAtom)
 
   useEffect(() => {
     window.core?.api
@@ -42,6 +39,15 @@ const DataFolder = () => {
     if (!destFolder) return
 
     if (destFolder === janDataFolderPath) {
+      setShowSameDirectory(true)
+      return
+    }
+
+    const appConfiguration: AppConfiguration =
+      await window.core?.api?.getAppConfigurations()
+    const currentJanDataFolder = appConfiguration.data_folder
+
+    if (await isSubdirectory(currentJanDataFolder, destFolder)) {
       setShowSameDirectory(true)
       return
     }
@@ -68,14 +74,12 @@ const DataFolder = () => {
         setShowLoader(false)
       }, 1200)
       await window.core?.api?.relaunch()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (e: any) {
+    } catch (e) {
       console.error(`Error: ${e}`)
-      setError(e.message)
       setShowLoader(false)
       setShowChangeFolderError(true)
     }
-  }, [destinationPath, setError, setShowChangeFolderError])
+  }, [destinationPath, setShowChangeFolderError])
 
   return (
     <Fragment>

@@ -12,6 +12,7 @@ export enum AppRoute {
   updateAppConfiguration = 'updateAppConfiguration',
   relaunch = 'relaunch',
   joinPath = 'joinPath',
+  isSubdirectory = 'isSubdirectory',
   baseName = 'baseName',
   startServer = 'startServer',
   stopServer = 'stopServer',

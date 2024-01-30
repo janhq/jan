@@ -22,7 +22,11 @@ const executeOnMain: (extension: string, method: string, ...args: any[]) => Prom
  * @param {object} network - Optional object to specify proxy/whether to ignore SSL certificates.
  * @returns {Promise<any>} A promise that resolves when the file is downloaded.
  */
-const downloadFile: (url: string, fileName: string, network?: { proxy?: string, ignoreSSL?: boolean }) => Promise<any> = (url, fileName, network) => {
+const downloadFile: (
+  url: string,
+  fileName: string,
+  network?: { proxy?: string; ignoreSSL?: boolean }
+) => Promise<any> = (url, fileName, network) => {
   return global.core?.api?.downloadFile(url, fileName, network)
 }
 
@@ -88,13 +92,24 @@ const log: (message: string, fileName?: string) => void = (message, fileName) =>
   global.core.api?.log(message, fileName)
 
 /**
+ * Check whether the path is a subdirectory of another path.
+ *
+ * @param from - The path to check.
+ * @param to - The path to check against.
+ *
+ * @returns {Promise<boolean>} - A promise that resolves with a boolean indicating whether the path is a subdirectory.
+ */
+const isSubdirectory: (from: string, to: string) => Promise<boolean> = (from: string, to: string) =>
+  global.core.api?.isSubdirectory(from, to)
+
+/**
  * Register extension point function type definition
  */
 export type RegisterExtensionPoint = (
   extensionName: string,
   extensionId: string,
   method: Function,
-  priority?: number,
+  priority?: number
 ) => void
 
 /**
@@ -111,5 +126,6 @@ export {
   openExternalUrl,
   baseName,
   log,
+  isSubdirectory,
   FileStat,
 }
