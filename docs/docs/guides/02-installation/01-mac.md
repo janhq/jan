@@ -12,10 +12,15 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
+    installation guide,
   ]
 ---
 
 # Installing Jan on MacOS
+
+## System Requirements
+
+Ensure that your MacOS version is 13 or higher to run Jan.
 
 ## Installation
 
