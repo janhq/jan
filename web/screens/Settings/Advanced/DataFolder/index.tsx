@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 
 import { fs, AppConfiguration } from '@janhq/core'
 import { Button, Input } from '@janhq/uikit'
-import { useSetAtom } from 'jotai'
+import { atom, useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
 import Loader from '@/containers/Loader'
@@ -18,6 +18,8 @@ import ModalErrorSetDestGlobal, {
 
 import ModalSameDirectory, { showSamePathModalAtom } from './ModalSameDirectory'
 
+export const errorAtom = atom('')
+
 const DataFolder = () => {
   const [janDataFolderPath, setJanDataFolderPath] = useState('')
   const [showLoader, setShowLoader] = useState(false)
@@ -25,6 +27,7 @@ const DataFolder = () => {
   const setShowSameDirectory = useSetAtom(showSamePathModalAtom)
   const setShowChangeFolderError = useSetAtom(showChangeFolderErrorAtom)
   const [destinationPath, setDestinationPath] = useState(undefined)
+  const setError = useSetAtom(errorAtom)
 
   useEffect(() => {
     window.core?.api
@@ -65,8 +68,10 @@ const DataFolder = () => {
         setShowLoader(false)
       }, 1200)
       await window.core?.api?.relaunch()
-    } catch (e) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
       console.error(`Error: ${e}`)
+      setError(e.message)
       setShowLoader(false)
       setShowChangeFolderError(true)
     }
