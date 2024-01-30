@@ -75,7 +75,7 @@ const DataFolder = () => {
       setShowLoader(false)
       setShowChangeFolderError(true)
     }
-  }, [destinationPath, setShowChangeFolderError])
+  }, [destinationPath, setError, setShowChangeFolderError])
 
   return (
     <Fragment>

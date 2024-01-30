@@ -30,7 +30,7 @@ const ModalErrorSetDestGlobal = () => {
           Oops! Something went wrong. Jan data folder remains the same. Please
           try again.
         </p>
-        <p>{error}</p>
+        <p className="text-muted-foreground">{error}</p>
         <ModalFooter>
           <div className="flex gap-x-2">
             <ModalClose asChild onClick={() => setShow(false)}>
