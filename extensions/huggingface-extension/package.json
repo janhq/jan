@@ -1,0 +1,34 @@
+{
+  "name": "@janhq/huggingface-extension",
+  "version": "1.0.0",
+  "description": "Hugging Face extension for converting HF models to GGUF",
+  "main": "dist/index.js",
+  "node": "dist/node/index.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "build": "tsc -b . && webpack --config webpack.config.js",
+    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.5",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@janhq/core": "file:../../core",
+    "python-shell": "^5.0.0",
+    "ts-loader": "^9.5.0"
+  },
+  "bundledDependencies": [
+    "python-shell"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ]
+}
