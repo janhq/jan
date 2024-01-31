@@ -104,7 +104,8 @@ const DataFolder = () => {
             />
             <FolderOpenIcon
               size={16}
-              className="absolute right-2 top-1/2 -translate-y-1/2"
+              className="absolute right-2 top-1/2 z-10 -translate-y-1/2 cursor-pointer"
+              onClick={() => window.core?.api?.openAppDirectory()}
             />
           </div>
           <Button
