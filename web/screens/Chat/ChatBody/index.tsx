@@ -98,14 +98,7 @@ const ChatBody: React.FC = () => {
             </div>
           ))}
 
-          {activeModel &&
-            (isGeneratingResponse ||
-              (messages.length &&
-                messages[messages.length - 1].status ===
-                  MessageStatus.Pending &&
-                !messages[messages.length - 1].content.length)) && (
-              <GenerateResponse />
-            )}
+          {activeModel && isGeneratingResponse && <GenerateResponse />}
         </ScrollToBottom>
       )}
     </Fragment>

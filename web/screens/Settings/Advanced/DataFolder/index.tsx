@@ -1,13 +1,13 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 
-import { fs, AppConfiguration } from '@janhq/core'
+import { fs, AppConfiguration, isSubdirectory } from '@janhq/core'
 import { Button, Input } from '@janhq/uikit'
 import { useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
 import Loader from '@/containers/Loader'
 
-import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
+export const SUCCESS_SET_NEW_DESTINATION = 'successSetNewDestination'
 
 import ModalChangeDirectory, {
   showDirectoryConfirmModalAtom,
@@ -43,6 +43,15 @@ const DataFolder = () => {
       return
     }
 
+    const appConfiguration: AppConfiguration =
+      await window.core?.api?.getAppConfigurations()
+    const currentJanDataFolder = appConfiguration.data_folder
+
+    if (await isSubdirectory(currentJanDataFolder, destFolder)) {
+      setShowSameDirectory(true)
+      return
+    }
+
     setDestinationPath(destFolder)
     setShowDirectoryConfirm(true)
   }, [janDataFolderPath, setShowSameDirectory, setShowDirectoryConfirm])
@@ -67,6 +76,7 @@ const DataFolder = () => {
       await window.core?.api?.relaunch()
     } catch (e) {
       console.error(`Error: ${e}`)
+      setShowLoader(false)
       setShowChangeFolderError(true)
     }
   }, [destinationPath, setShowChangeFolderError])
@@ -107,7 +117,7 @@ const DataFolder = () => {
           </Button>
         </div>
       </div>
-      <ModalSameDirectory />
+      <ModalSameDirectory onChangeFolderClick={onChangeFolderClick} />
       <ModalChangeDirectory
         destinationPath={destinationPath ?? ''}
         onUserConfirmed={onUserConfirmed}

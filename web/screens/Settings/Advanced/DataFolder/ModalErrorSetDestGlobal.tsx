@@ -16,7 +16,6 @@ export const showChangeFolderErrorAtom = atom(false)
 
 const ModalErrorSetDestGlobal = () => {
   const [show, setShow] = useAtom(showChangeFolderErrorAtom)
-
   return (
     <Modal open={show} onOpenChange={setShow}>
       <ModalPortal />

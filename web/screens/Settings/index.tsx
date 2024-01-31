@@ -7,13 +7,13 @@ import { motion as m } from 'framer-motion'
 
 import { twMerge } from 'tailwind-merge'
 
-import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
-
 import Advanced from '@/screens/Settings/Advanced'
 import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 
 import Models from '@/screens/Settings/Models'
+
+import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('My Models')
@@ -54,7 +54,10 @@ const SettingsScreen = () => {
   }, [])
 
   return (
-    <div className="flex h-full bg-background">
+    <div
+      className="flex h-full bg-background"
+      data-testid="testid-setting-description"
+    >
       <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <ScrollArea className="h-full w-full">
           <div className="px-6 py-4">

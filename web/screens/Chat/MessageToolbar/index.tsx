@@ -4,6 +4,7 @@ import {
   ThreadMessage,
   ChatCompletionRole,
   ConversationalExtension,
+  ContentType,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw, CopyIcon, Trash2Icon, CheckIcon } from 'lucide-react'
@@ -53,7 +54,9 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
     <div className={twMerge('flex flex-row items-center')}>
       <div className="flex overflow-hidden rounded-md border border-border bg-background/20">
         {message.id === messages[messages.length - 1]?.id &&
-          messages[messages.length - 1].status !== MessageStatus.Error && (
+          messages[messages.length - 1].status !== MessageStatus.Error &&
+          messages[messages.length - 1].content[0]?.type !==
+            ContentType.Pdf && (
             <div
               className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
               onClick={onRegenerateClick}

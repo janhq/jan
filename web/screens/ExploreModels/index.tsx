@@ -52,9 +52,12 @@ const ExploreModelsScreen = () => {
   if (loading) return <Loader description="loading ..." />
 
   return (
-    <div className="flex h-full w-full overflow-y-auto bg-background">
+    <div
+      className="flex h-full w-full overflow-y-auto bg-background"
+      data-testid="hub-container-test-id"
+    >
       <div className="h-full w-full p-4">
-        <div className="h-full" data-test-id="testid-explore-models">
+        <div className="h-full">
           <ScrollArea>
             <div className="relative">
               <img
