@@ -15,7 +15,11 @@ import { atom, useAtom } from 'jotai'
 
 export const showSamePathModalAtom = atom(false)
 
-const ModalSameDirectory = () => {
+type Props = {
+  onChangeFolderClick: () => void
+}
+
+const ModalSameDirectory = ({ onChangeFolderClick }: Props) => {
   const [show, setShow] = useAtom(showSamePathModalAtom)
 
   return (
@@ -34,7 +38,14 @@ const ModalSameDirectory = () => {
               <Button themes="ghost">Cancel</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button themes="danger" onClick={() => setShow(false)} autoFocus>
+              <Button
+                themes="danger"
+                onClick={() => {
+                  setShow(false)
+                  onChangeFolderClick()
+                }}
+                autoFocus
+              >
                 Choose a different folder
               </Button>
             </ModalClose>

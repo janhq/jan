@@ -7,13 +7,13 @@ import { motion as m } from 'framer-motion'
 
 import { twMerge } from 'tailwind-merge'
 
-import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
-
 import Advanced from '@/screens/Settings/Advanced'
 import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 
 import Models from '@/screens/Settings/Models'
+
+import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
 
 const SettingsScreen = () => {
   const [activeStaticMenu, setActiveStaticMenu] = useState('My Models')
