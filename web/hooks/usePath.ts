@@ -12,14 +12,7 @@ export const usePath = () => {
 
   const onReviewInFinder = async (type: string) => {
     // TODO: this logic should be refactored.
-    if (type !== 'Model') {
-      if (!activeThread) return
-      const activeThreadState = threadStates[activeThread.id]
-      if (!activeThreadState.isFinishInit) {
-        alert('Thread is not started yet')
-        return
-      }
-    }
+    if (type !== 'Model' && !activeThread) return
 
     const userSpace = await getJanDataFolderPath()
     let filePath = undefined
@@ -48,14 +41,7 @@ export const usePath = () => {
 
   const onViewJson = async (type: string) => {
     // TODO: this logic should be refactored.
-    if (type !== 'Model') {
-      if (!activeThread) return
-      const activeThreadState = threadStates[activeThread.id]
-      if (!activeThreadState.isFinishInit) {
-        alert('Thread is not started yet')
-        return
-      }
-    }
+    if (type !== 'Model' && !activeThread) return
 
     const userSpace = await getJanDataFolderPath()
     let filePath = undefined
@@ -88,11 +74,6 @@ export const usePath = () => {
 
   const onViewFile = async (id: string) => {
     if (!activeThread) return
-    const activeThreadState = threadStates[activeThread.id]
-    if (!activeThreadState.isFinishInit) {
-      alert('Thread is not started yet')
-      return
-    }
 
     const userSpace = await getJanDataFolderPath()
     let filePath = undefined

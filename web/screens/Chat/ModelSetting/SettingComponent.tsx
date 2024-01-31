@@ -56,7 +56,7 @@ const SettingComponent = ({
   updater?: (
     threadId: string,
     name: string,
-    value: string | number | boolean
+    value: string | number | boolean | string[]
   ) => void
 }) => {
   const { updateModelParameter } = useUpdateModelParameters()
@@ -73,7 +73,10 @@ const SettingComponent = ({
 
   const { stopModel } = useActiveModel()
 
-  const onValueChanged = (name: string, value: string | number | boolean) => {
+  const onValueChanged = (
+    name: string,
+    value: string | number | boolean | string[]
+  ) => {
     if (!threadId) return
     if (engineParams.some((x) => x.name.includes(name))) {
       setEngineParamsUpdate(true)
@@ -83,7 +86,13 @@ const SettingComponent = ({
     }
     if (updater) updater(threadId, name, value)
     else {
-      updateModelParameter(threadId, name, value)
+      // Convert stop string to array
+      if (name === 'stop' && typeof value === 'string') {
+        value = [value]
+      }
+      updateModelParameter(threadId, {
+        params: { [name]: value },
+      })
     }
   }
 

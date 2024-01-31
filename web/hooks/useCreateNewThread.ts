@@ -13,7 +13,7 @@ import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { generateThreadId } from '@/utils/thread'
 
-import useDeleteThread from './useDeleteThread'
+import useRecommendedModel from './useRecommendedModel'
 
 import { extensionManager } from '@/extension'
 import {
@@ -21,7 +21,6 @@ import {
   setActiveThreadIdAtom,
   threadStatesAtom,
   updateThreadAtom,
-  updateThreadInitSuccessAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -32,7 +31,6 @@ const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
     hasMore: false,
     waitingForResponse: false,
     lastMessage: undefined,
-    isFinishInit: false,
   }
   currentState[newThread.id] = threadState
   set(threadStatesAtom, currentState)
@@ -43,44 +41,28 @@ const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
 })
 
 export const useCreateNewThread = () => {
-  const threadStates = useAtomValue(threadStatesAtom)
-  const updateThreadFinishInit = useSetAtom(updateThreadInitSuccessAtom)
   const createNewThread = useSetAtom(createNewThreadAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const updateThread = useSetAtom(updateThreadAtom)
-
   const setFileUpload = useSetAtom(fileUploadAtom)
+  const { recommendedModel, downloadedModels } = useRecommendedModel()
   const { deleteThread } = useDeleteThread()
 
   const requestCreateNewThread = async (
     assistant: Assistant,
     model?: Model | undefined
   ) => {
-    // loop through threads state and filter if there's any thread that is not finish init
-    let unfinishedInitThreadId: string | undefined = undefined
-    for (const key in threadStates) {
-      const isFinishInit = threadStates[key].isFinishInit ?? true
-      if (!isFinishInit) {
-        unfinishedInitThreadId = key
-        break
-      }
-    }
-
-    if (unfinishedInitThreadId) {
-      await deleteThread(unfinishedInitThreadId)
-    }
-
-    const modelId = model ? model.id : '*'
+    const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
       assistant_name: assistant.name,
       tools: assistant.tools,
       model: {
-        id: modelId,
-        settings: {},
-        parameters: {},
-        engine: undefined,
+        id: defaultModel?.id ?? '*',
+        settings: defaultModel?.settings ?? {},
+        parameters: defaultModel?.parameters ?? {},
+        engine: defaultModel?.engine,
       },
       instructions: assistant.instructions,
     }
@@ -100,15 +82,11 @@ export const useCreateNewThread = () => {
 
     // Delete the file upload state
     setFileUpload([])
+    updateThreadMetadata(thread)
   }
 
   function updateThreadMetadata(thread: Thread) {
     updateThread(thread)
-    const threadState = threadStates[thread.id]
-    const isFinishInit = threadState?.isFinishInit ?? true
-    if (!isFinishInit) {
-      updateThreadFinishInit(thread.id)
-    }
 
     extensionManager
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)

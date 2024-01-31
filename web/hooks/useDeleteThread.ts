@@ -74,22 +74,16 @@ export default function useDeleteThread() {
       const availableThreads = threads.filter((c) => c.id !== threadId)
       setThreads(availableThreads)
 
-      const deletingThreadState = threadStates[threadId]
-      const isFinishInit = deletingThreadState?.isFinishInit ?? true
-
       // delete the thread state
       deleteThreadState(threadId)
 
-      if (isFinishInit) {
-        deleteMessages(threadId)
-        setCurrentPrompt('')
-        toaster({
-          title: 'Thread successfully deleted.',
-          description: `Thread ${threadId} has been successfully deleted.`,
-          type: 'success',
-        })
-      }
-
+      deleteMessages(threadId)
+      setCurrentPrompt('')
+      toaster({
+        title: 'Thread successfully deleted.',
+        description: `Thread ${threadId} has been successfully deleted.`,
+        type: 'success',
+      })
       if (availableThreads.length > 0) {
         setActiveThreadId(availableThreads[0].id)
       } else {

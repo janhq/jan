@@ -41,9 +41,7 @@ import {
   activeThreadAtom,
   engineParamsUpdateAtom,
   getActiveThreadModelParamsAtom,
-  threadStatesAtom,
   updateThreadAtom,
-  updateThreadInitSuccessAtom,
   updateThreadWaitingForResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -64,8 +62,6 @@ export default function useSendChatMessage() {
   const setQueuedMessage = useSetAtom(queuedMessageAtom)
 
   const modelRef = useRef<Model | undefined>()
-  const threadStates = useAtomValue(threadStatesAtom)
-  const updateThreadInitSuccess = useSetAtom(updateThreadInitSuccessAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
 
@@ -150,51 +146,8 @@ export default function useSendChatMessage() {
 
     if (engineParamsUpdate) setReloadModel(true)
 
-    const activeThreadState = threadStates[activeThread.id]
     const runtimeParams = toRuntimeParams(activeModelParams)
     const settingParams = toSettingParams(activeModelParams)
-
-    // if the thread is not initialized, we need to initialize it first
-    if (
-      !activeThreadState.isFinishInit ||
-      activeThread.assistants[0].model.id !== selectedModel?.id
-    ) {
-      if (!selectedModel) {
-        toaster({ title: 'Please select a model', type: 'warning' })
-        return
-      }
-      const assistantId = activeThread.assistants[0].assistant_id ?? ''
-      const assistantName = activeThread.assistants[0].assistant_name ?? ''
-      const instructions = activeThread.assistants[0].instructions ?? ''
-      const tools = activeThread.assistants[0].tools ?? []
-
-      const initThread: Thread = {
-        ...activeThread,
-        assistants: [
-          {
-            assistant_id: assistantId,
-            assistant_name: assistantName,
-            instructions: instructions,
-            tools: tools,
-            model: {
-              id: selectedModel.id,
-              settings: settingParams,
-              parameters: runtimeParams,
-              engine: selectedModel.engine,
-            },
-          },
-        ],
-      }
-
-      updateThreadInitSuccess(activeThread.id)
-      updateThread(initThread)
-
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread(initThread)
-    }
-
-    updateThreadWaiting(activeThread.id, true)
 
     const prompt = message.trim()
     setCurrentPrompt('')
