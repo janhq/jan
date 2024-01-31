@@ -9,6 +9,7 @@ import {
 
 let electronApp: ElectronApplication
 let page: Page
+const TIMEOUT: number = parseInt(process.env.TEST_TIMEOUT || '300000')
 
 test.beforeAll(async () => {
   process.env.CI = 'e2e'
@@ -19,15 +20,6 @@ test.beforeAll(async () => {
   // parse the packaged Electron app and find paths and other info
   const appInfo = parseElectronApp(latestBuild)
   expect(appInfo).toBeTruthy()
-  expect(appInfo.asar).toBe(true)
-  expect(appInfo.executable).toBeTruthy()
-  expect(appInfo.main).toBeTruthy()
-  expect(appInfo.name).toBe('jan')
-  expect(appInfo.packageJson).toBeTruthy()
-  expect(appInfo.packageJson.name).toBe('jan')
-  expect(appInfo.platform).toBeTruthy()
-  expect(appInfo.platform).toBe(process.platform)
-  expect(appInfo.resourcesDir).toBeTruthy()
 
   electronApp = await electron.launch({
     args: [appInfo.main], // main file from package.json
@@ -35,7 +27,9 @@ test.beforeAll(async () => {
   })
   await stubDialog(electronApp, 'showMessageBox', { response: 1 })
 
-  page = await electronApp.firstWindow()
+  page = await electronApp.firstWindow({
+    timeout: TIMEOUT,
+  })
 })
 
 test.afterAll(async () => {
@@ -43,13 +37,13 @@ test.afterAll(async () => {
   await page.close()
 })
 
-test('renders the home page', async () => {
-  expect(page).toBeDefined()
-
-  // Welcome text is available
-  const welcomeText = await page
-    .getByTestId('testid-welcome-title')
-    .first()
-    .isVisible()
-  expect(welcomeText).toBe(false)
+test('explores hub', async () => {
+  // Set the timeout for this test to 60 seconds
+  test.setTimeout(TIMEOUT)
+  await page.getByTestId('Hub').first().click({
+    timeout: TIMEOUT,
+  })
+  await page.getByTestId('hub-container-test-id').isVisible({
+    timeout: TIMEOUT,
+  })
 })

@@ -35,7 +35,7 @@ export default function SystemMonitorScreen() {
   return (
     <div className="flex h-full w-full bg-background dark:bg-background">
       <ScrollArea className="h-full w-full">
-        <div className="h-full p-8" data-test-id="testid-system-monitor">
+        <div className="h-full p-8" data-testid="testid-system-monitor">
           <div className="grid grid-cols-2 gap-8 lg:grid-cols-3">
             <div className="rounded-xl border border-border p-4">
               <div className="flex items-center justify-between">

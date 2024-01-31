@@ -99,6 +99,7 @@
     "@typescript-eslint/parser": "^6.7.3",
     "electron": "28.0.0",
     "electron-builder": "^24.9.1",
+    "electron-devtools-installer": "^3.2.0",
     "electron-playwright-helpers": "^1.6.0",
     "eslint-plugin-react": "^7.33.2",
     "run-script-os": "^1.1.6"

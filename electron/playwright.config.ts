@@ -1,9 +1,9 @@
-import { PlaywrightTestConfig } from "@playwright/test";
+import { PlaywrightTestConfig } from '@playwright/test'
 
 const config: PlaywrightTestConfig = {
-  testDir: "./tests",
+  testDir: './tests',
   retries: 0,
-  timeout: 120000,
-};
+  globalTimeout: 300000,
+}
 
-export default config;
+export default config

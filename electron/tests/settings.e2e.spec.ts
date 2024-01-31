@@ -9,6 +9,7 @@ import {
 
 let electronApp: ElectronApplication
 let page: Page
+const TIMEOUT: number = parseInt(process.env.TEST_TIMEOUT || '300000')
 
 test.beforeAll(async () => {
   process.env.CI = 'e2e'
@@ -26,7 +27,9 @@ test.beforeAll(async () => {
   })
   await stubDialog(electronApp, 'showMessageBox', { response: 1 })
 
-  page = await electronApp.firstWindow()
+  page = await electronApp.firstWindow({
+    timeout: TIMEOUT,
+  })
 })
 
 test.afterAll(async () => {
@@ -35,6 +38,7 @@ test.afterAll(async () => {
 })
 
 test('shows settings', async () => {
-  await page.getByTestId('Settings').first().click()
-  await page.getByTestId('testid-setting-description').isVisible()
+  await page.getByTestId('Settings').first().click({ timeout: TIMEOUT })
+  const settingDescription = page.getByTestId('testid-setting-description')
+  expect(settingDescription).toBeVisible({ timeout: TIMEOUT })
 })
