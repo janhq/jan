@@ -237,6 +237,55 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     });
   }
 
+  private async requestPromptInference(
+      prompt: MessageRequest, 
+      thread: ThreadMessage, 
+      updateEvent: MessageEvent
+    ) {
+    this.isCancelled = false;
+    this.controller = new AbortController();
+
+    // @ts-ignore
+    const model: Model = {
+      ...(this._currentModel || {}),
+      ...(prompt.model || {}),
+    };
+    requestInference(
+      this.inferenceUrl,
+      prompt.messages ?? [],
+      model,
+      this.controller
+    ).subscribe({
+      next: (content: any) => {
+        const messageContent: ThreadContent = {
+          type: ContentType.Text,
+          text: {
+            value: content.trim(),
+            annotations: [],
+          },
+        };
+        thread.content = [messageContent];
+        events.emit(updateEvent, thread);
+      },
+      complete: async () => {
+        thread.status = thread.content.length
+          ? MessageStatus.Ready
+          : MessageStatus.Error;
+        events.emit(updateEvent, thread);
+      },
+      error: async (err: any) => {
+        if (this.isCancelled || thread.content.length) {
+          thread.status = MessageStatus.Stopped;
+          events.emit(updateEvent, thread);
+          return;
+        }
+        thread.status = MessageStatus.Error;
+        events.emit(updateEvent, thread);
+        log(`[APP]::Error: ${err.message}`);
+      },
+    });
+  }
+
   /**
    * Handles the first prompt, making an inference of summarizing what's the first prompt is about.
    *  Unlike the standard message prompt, we don't want this to be part of the Chat repsonse.
@@ -260,43 +309,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       updated: timestamp,
       object: "thread.message",
     };
-
-    this.isCancelled = false;
-    this.controller = new AbortController();
-
-    requestInference(
-      firstPrompt.messages ?? [],
-      { ...this._currentModel, ...firstPrompt.model },
-      this.controller
-    ).subscribe({
-      next: (content) => {
-        const messageContent: ThreadContent = {
-          type: ContentType.Text,
-          text: {
-            value: content.trim(),
-            annotations: [],
-          },
-        };
-        message.content = [messageContent];
-        events.emit(MessageEvent.OnFirstPromptUpdate, message);
-      },
-      complete: async () => {
-        message.status = message.content.length
-          ? MessageStatus.Ready
-          : MessageStatus.Error;
-        events.emit(MessageEvent.OnFirstPromptUpdate, message);
-      },
-      error: async (err) => {
-        if (this.isCancelled || message.content.length) {
-          message.status = MessageStatus.Stopped;
-          events.emit(MessageEvent.OnFirstPromptUpdate, message);
-          return;
-        }
-        message.status = MessageStatus.Error;
-        events.emit(MessageEvent.OnFirstPromptUpdate, message);
-        log(`[APP]::Error: ${err.message}`);
-      },
-    });
+    this.requestPromptInference(firstPrompt, message, MessageEvent.OnFirstPromptUpdate)
   }
 
   /**
@@ -326,48 +339,6 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       object: "thread.message",
     };
     events.emit(MessageEvent.OnMessageResponse, message);
-
-    this.isCancelled = false;
-    this.controller = new AbortController();
-
-    // @ts-ignore
-    const model: Model = {
-      ...(this._currentModel || {}),
-      ...(data.model || {}),
-    };
-    requestInference(
-      this.inferenceUrl,
-      data.messages ?? [],
-      model,
-      this.controller
-    ).subscribe({
-      next: (content: any) => {
-        const messageContent: ThreadContent = {
-          type: ContentType.Text,
-          text: {
-            value: content.trim(),
-            annotations: [],
-          },
-        };
-        message.content = [messageContent];
-        events.emit(MessageEvent.OnMessageUpdate, message);
-      },
-      complete: async () => {
-        message.status = message.content.length
-          ? MessageStatus.Ready
-          : MessageStatus.Error;
-        events.emit(MessageEvent.OnMessageUpdate, message);
-      },
-      error: async (err: any) => {
-        if (this.isCancelled || message.content.length) {
-          message.status = MessageStatus.Stopped;
-          events.emit(MessageEvent.OnMessageUpdate, message);
-          return;
-        }
-        message.status = MessageStatus.Error;
-        events.emit(MessageEvent.OnMessageUpdate, message);
-        log(`[APP]::Error: ${err.message}`);
-      },
-    });
+    this.requestPromptInference(data, message, MessageEvent.OnMessageUpdate)
   }
 }

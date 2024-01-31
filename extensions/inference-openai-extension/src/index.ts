@@ -142,6 +142,61 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
     instance.controller?.abort();
   }
 
+  private static async requestPromptInference(
+      instance: JanInferenceOpenAIExtension, 
+      prompt: MessageRequest, 
+      thread: ThreadMessage, 
+      updateEvent: MessageEvent
+    ) {
+    instance.isCancelled = false;
+    instance.controller = new AbortController();
+
+    requestInference(
+      prompt?.messages ?? [],
+      this._engineSettings,
+      {
+        ...JanInferenceOpenAIExtension._currentModel,
+        parameters: prompt.model.parameters,
+      },
+      instance.controller
+    ).subscribe({
+      next: (content) => {
+        const messageContent: ThreadContent = {
+          type: ContentType.Text,
+          text: {
+            value: content.trim(),
+            annotations: [],
+          },
+        };
+        thread.content = [messageContent];
+        events.emit(updateEvent, thread);
+      },
+      complete: async () => {
+        thread.status = thread.content.length
+          ? MessageStatus.Ready
+          : MessageStatus.Error;
+        events.emit(updateEvent, thread);
+      },
+      error: async (err) => {
+        if (instance.isCancelled || thread.content.length > 0) {
+          thread.status = MessageStatus.Error;
+          events.emit(updateEvent, thread);
+          return;
+        }
+        const messageContent: ThreadContent = {
+          type: ContentType.Text,
+          text: {
+            value: "Error occurred: " + err.message,
+            annotations: [],
+          },
+        };
+        thread.content = [messageContent];
+        thread.status = MessageStatus.Ready;
+        events.emit(updateEvent, thread);
+      },
+    });
+  }
+
   /**
    * Handles the first prompt, making an inference of summarizing what's the first prompt is about.
    *  Unlike the standard message prompt, we don't want this to be part of the Chat repsonse.
@@ -156,7 +211,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       return;
     }
 
-    const timestamp = Date.now();
+    const timestamp = Date.now()
     const message: ThreadMessage = {
       id: ulid(),
       thread_id: firstPrompt.threadId,
@@ -167,55 +222,8 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       created: timestamp,
       updated: timestamp,
       object: "thread.message",
-    };
-
-    instance.isCancelled = false;
-    instance.controller = new AbortController();
-
-    requestInference(
-      firstPrompt?.messages ?? [],
-      this._engineSettings,
-      {
-        ...JanInferenceOpenAIExtension._currentModel,
-        parameters: firstPrompt.model.parameters,
-      },
-      instance.controller
-    ).subscribe({
-      next: (content) => {
-        const messageContent: ThreadContent = {
-          type: ContentType.Text,
-          text: {
-            value: content.trim(),
-            annotations: [],
-          },
-        };
-        message.content = [messageContent];
-        events.emit(MessageEvent.OnFirstPromptUpdate, message);
-      },
-      complete: async () => {
-        message.status = message.content.length
-          ? MessageStatus.Ready
-          : MessageStatus.Error;
-        events.emit(MessageEvent.OnFirstPromptUpdate, message);
-      },
-      error: async (err) => {
-        if (instance.isCancelled || message.content.length > 0) {
-          message.status = MessageStatus.Error;
-          events.emit(MessageEvent.OnFirstPromptUpdate, message);
-          return;
-        }
-        const messageContent: ThreadContent = {
-          type: ContentType.Text,
-          text: {
-            value: "Error occurred: " + err.message,
-            annotations: [],
-          },
-        };
-        message.content = [messageContent];
-        message.status = MessageStatus.Ready;
-        events.emit(MessageEvent.OnFirstPromptUpdate, message);
-      },
-    });
+    }
+    this.requestPromptInference(instance, firstPrompt, message, MessageEvent.OnFirstPromptUpdate)
   }
 
   /**
@@ -232,7 +240,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       return;
     }
 
-    const timestamp = Date.now();
+    const timestamp = Date.now()
     const message: ThreadMessage = {
       id: ulid(),
       thread_id: data.threadId,
@@ -244,54 +252,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       updated: timestamp,
       object: "thread.message",
     };
-    events.emit(MessageEvent.OnMessageResponse, message);
-
-    instance.isCancelled = false;
-    instance.controller = new AbortController();
-
-    requestInference(
-      data?.messages ?? [],
-      this._engineSettings,
-      {
-        ...JanInferenceOpenAIExtension._currentModel,
-        parameters: data.model.parameters,
-      },
-      instance.controller,
-    ).subscribe({
-      next: (content) => {
-        const messageContent: ThreadContent = {
-          type: ContentType.Text,
-          text: {
-            value: content.trim(),
-            annotations: [],
-          },
-        };
-        message.content = [messageContent];
-        events.emit(MessageEvent.OnMessageUpdate, message);
-      },
-      complete: async () => {
-        message.status = message.content.length
-          ? MessageStatus.Ready
-          : MessageStatus.Error;
-        events.emit(MessageEvent.OnMessageUpdate, message);
-      },
-      error: async (err) => {
-        if (instance.isCancelled || message.content.length > 0) {
-          message.status = MessageStatus.Stopped;
-          events.emit(MessageEvent.OnMessageUpdate, message);
-          return;
-        }
-        const messageContent: ThreadContent = {
-          type: ContentType.Text,
-          text: {
-            value: "Error occurred: " + err.message,
-            annotations: [],
-          },
-        };
-        message.content = [messageContent];
-        message.status = MessageStatus.Error;
-        events.emit(MessageEvent.OnMessageUpdate, message);
-      },
-    });
+    events.emit(MessageEvent.OnMessageResponse, message)
+    this.requestPromptInference(instance, data, message, MessageEvent.OnMessageUpdate)
   }
 }

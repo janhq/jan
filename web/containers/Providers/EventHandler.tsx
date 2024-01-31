@@ -167,7 +167,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           const messageContent = message.content[0]?.text.value ?? ''
           const metadata = {
             ...thread.metadata,
-            lastMessage: messageContent,
           }
 
           // Update the Thread title with the response of the inference
