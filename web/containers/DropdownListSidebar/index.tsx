@@ -36,10 +36,8 @@ import OpenAiKeyInput from '../OpenAiKeyInput'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 import {
-  ModelParams,
   activeThreadAtom,
   setThreadModelParamsAtom,
-  threadStatesAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
@@ -51,7 +49,6 @@ const DropdownListSidebar = ({
   strictedThread?: boolean
 }) => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
 
@@ -61,15 +58,6 @@ const DropdownListSidebar = ({
   const [loader, setLoader] = useState(0)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
   const { updateModelParameter } = useUpdateModelParameters()
-
-  /**
-   * Default value for max_tokens and ctx_len
-   * Its to avoid OOM issue since a model can set a big number for these settings
-   */
-  const defaultValue = (value?: number) => {
-    if (value && value < 4096) return value
-    return 4096
-  }
 
   useEffect(() => {
     if (!activeThread) return
@@ -81,14 +69,7 @@ const DropdownListSidebar = ({
       model = recommendedModel
     }
     setSelectedModel(model)
-  }, [
-    recommendedModel,
-    activeThread,
-    threadStates,
-    downloadedModels,
-    setThreadModelParams,
-    setSelectedModel,
-  ])
+  }, [recommendedModel, activeThread, downloadedModels, setSelectedModel])
 
   // This is fake loader please fix this when we have realtime percentage when load model
   useEffect(() => {

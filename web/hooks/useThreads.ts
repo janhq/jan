@@ -5,7 +5,7 @@ import {
   ConversationalExtension,
 } from '@janhq/core'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import useSetActiveThread from './useSetActiveThread'
 
@@ -19,11 +19,9 @@ import {
 } from '@/helpers/atoms/Thread.atom'
 
 const useThreads = () => {
-  const [threadStates, setThreadStates] = useAtom(threadStatesAtom)
-  const [threads, setThreads] = useAtom(threadsAtom)
-  const [threadModelRuntimeParams, setThreadModelRuntimeParams] = useAtom(
-    threadModelParamsAtom
-  )
+  const setThreadStates = useSetAtom(threadStatesAtom)
+  const setThreads = useSetAtom(threadsAtom)
+  const setThreadModelRuntimeParams = useSetAtom(threadModelParamsAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const { setActiveThread } = useSetActiveThread()
 

@@ -21,7 +21,6 @@ import {
   threadsAtom,
   setActiveThreadIdAtom,
   deleteThreadStateAtom,
-  threadStatesAtom,
   updateThreadStateLastMessageAtom,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -34,7 +33,6 @@ export default function useDeleteThread() {
   const deleteMessages = useSetAtom(deleteChatMessagesAtom)
   const cleanMessages = useSetAtom(cleanChatMessagesAtom)
   const deleteThreadState = useSetAtom(deleteThreadStateAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
   const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
 
   const cleanThread = async (threadId: string) => {

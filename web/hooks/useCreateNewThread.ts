@@ -9,18 +9,21 @@ import {
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
+import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { generateThreadId } from '@/utils/thread'
 
 import useRecommendedModel from './useRecommendedModel'
 
+import useSetActiveThread from './useSetActiveThread'
+
 import { extensionManager } from '@/extension'
 import {
   threadsAtom,
-  setActiveThreadIdAtom,
   threadStatesAtom,
   updateThreadAtom,
+  setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -42,17 +45,20 @@ const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
 
 export const useCreateNewThread = () => {
   const createNewThread = useSetAtom(createNewThreadAtom)
-  const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
+  const { setActiveThread } = useSetActiveThread()
   const updateThread = useSetAtom(updateThreadAtom)
   const setFileUpload = useSetAtom(fileUploadAtom)
+  const setSelectedModel = useSetAtom(selectedModelAtom)
+  const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+
   const { recommendedModel, downloadedModels } = useRecommendedModel()
-  const { deleteThread } = useDeleteThread()
 
   const requestCreateNewThread = async (
     assistant: Assistant,
     model?: Model | undefined
   ) => {
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
+
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
@@ -66,6 +72,7 @@ export const useCreateNewThread = () => {
       },
       instructions: assistant.instructions,
     }
+
     const threadId = generateThreadId(assistant.id)
     const thread: Thread = {
       id: threadId,
@@ -77,18 +84,27 @@ export const useCreateNewThread = () => {
     }
 
     // add the new thread on top of the thread list to the state
+    //TODO: Why do we have thread list then thread states? Should combine them
     createNewThread(thread)
-    setActiveThreadId(thread.id)
+
+    setSelectedModel(defaultModel)
+    setThreadModelParams(thread.id, {
+      ...defaultModel?.settings,
+      ...defaultModel?.parameters,
+    })
 
     // Delete the file upload state
     setFileUpload([])
-    updateThreadMetadata(thread)
+    // Update thread metadata
+    await updateThreadMetadata(thread)
+
+    setActiveThread(thread)
   }
 
-  function updateThreadMetadata(thread: Thread) {
+  async function updateThreadMetadata(thread: Thread) {
     updateThread(thread)
 
-    extensionManager
+    await extensionManager
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.saveThread(thread)
   }

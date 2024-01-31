@@ -149,6 +149,7 @@ export default function useSendChatMessage() {
     const runtimeParams = toRuntimeParams(activeModelParams)
     const settingParams = toSettingParams(activeModelParams)
 
+    updateThreadWaiting(activeThread.id, true)
     const prompt = message.trim()
     setCurrentPrompt('')
 
