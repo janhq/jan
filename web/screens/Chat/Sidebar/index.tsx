@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React from 'react'
+import React, { useContext } from 'react'
 
 import { InferenceEngine } from '@janhq/core'
 import { Input, Textarea, Switch } from '@janhq/uikit'
@@ -14,6 +14,8 @@ import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
@@ -39,6 +41,7 @@ const Sidebar: React.FC = () => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
+  const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const modelEngineParams = toSettingParams(activeModelParams)
   const modelRuntimeParams = toRuntimeParams(activeModelParams)
@@ -131,71 +134,74 @@ const Sidebar: React.FC = () => {
                 }}
               />
             </div>
-
-            <div>
-              {activeThread?.assistants[0]?.tools &&
-                componentDataAssistantSetting.length > 0 && (
-                  <div className="mt-2">
-                    <CardSidebar
-                      title="Retrieval"
-                      asChild
-                      rightAction={
-                        <Switch
-                          name="retrieval"
-                          className="mr-2"
-                          checked={activeThread?.assistants[0].tools[0].enabled}
-                          onCheckedChange={(e) => {
-                            if (activeThread)
-                              updateThreadMetadata({
-                                ...activeThread,
-                                assistants: [
-                                  {
-                                    ...activeThread.assistants[0],
-                                    tools: [
-                                      {
-                                        type: 'retrieval',
-                                        enabled: e,
-                                        settings:
-                                          (activeThread.assistants[0].tools &&
-                                            activeThread.assistants[0].tools[0]
-                                              ?.settings) ??
-                                          {},
-                                      },
-                                    ],
-                                  },
-                                ],
-                              })
-                          }}
-                        />
-                      }
-                    >
-                      {activeThread?.assistants[0]?.tools[0].enabled && (
-                        <div className="px-2 py-4">
-                          <div className="mb-4">
-                            <label
-                              id="tool-title"
-                              className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
-                            >
-                              Embedding Engine
-                            </label>
-                            <div className="flex items-center justify-between">
-                              <label className="font-medium text-zinc-500 dark:text-gray-300">
-                                {selectedModel?.engine ===
-                                InferenceEngine.openai
-                                  ? 'OpenAI'
-                                  : 'Nitro'}
-                              </label>
-                            </div>
-                          </div>
-                          <AssistantSetting
-                            componentData={componentDataAssistantSetting}
+            {experimentalFeature && (
+              <div>
+                {activeThread?.assistants[0]?.tools &&
+                  componentDataAssistantSetting.length > 0 && (
+                    <div className="mt-2">
+                      <CardSidebar
+                        title="Retrieval"
+                        asChild
+                        rightAction={
+                          <Switch
+                            name="retrieval"
+                            className="mr-2"
+                            checked={
+                              activeThread?.assistants[0].tools[0].enabled
+                            }
+                            onCheckedChange={(e) => {
+                              if (activeThread)
+                                updateThreadMetadata({
+                                  ...activeThread,
+                                  assistants: [
+                                    {
+                                      ...activeThread.assistants[0],
+                                      tools: [
+                                        {
+                                          type: 'retrieval',
+                                          enabled: e,
+                                          settings:
+                                            (activeThread.assistants[0].tools &&
+                                              activeThread.assistants[0]
+                                                .tools[0]?.settings) ??
+                                            {},
+                                        },
+                                      ],
+                                    },
+                                  ],
+                                })
+                            }}
                           />
-                        </div>
-                      )}
-                    </CardSidebar>
-                  </div>
-                )}
-            </div>
+                        }
+                      >
+                        {activeThread?.assistants[0]?.tools[0].enabled && (
+                          <div className="px-2 py-4">
+                            <div className="mb-4">
+                              <label
+                                id="tool-title"
+                                className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
+                              >
+                                Embedding Engine
+                              </label>
+                              <div className="flex items-center justify-between">
+                                <label className="font-medium text-zinc-500 dark:text-gray-300">
+                                  {selectedModel?.engine ===
+                                  InferenceEngine.openai
+                                    ? 'OpenAI'
+                                    : 'Nitro'}
+                                </label>
+                              </div>
+                            </div>
+                            <AssistantSetting
+                              componentData={componentDataAssistantSetting}
+                            />
+                          </div>
+                        )}
+                      </CardSidebar>
+                    </div>
+                  )}
+              </div>
+            )}
           </div>
         </CardSidebar>
         <CardSidebar title="Model">

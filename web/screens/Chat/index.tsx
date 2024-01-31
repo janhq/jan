@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import React, { useEffect, useState } from 'react'
+import React, { useContext, useEffect, useState } from 'react'
 
 import { useDropzone } from 'react-dropzone'
 
@@ -16,6 +16,8 @@ import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
 import { snackbar } from '@/containers/Toast'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { queuedMessageAtom, reloadModelAtom } from '@/hooks/useSendChatMessage'
 
@@ -59,6 +61,8 @@ const ChatScreen: React.FC = () => {
   const reloadModel = useAtomValue(reloadModelAtom)
   const [dragRejected, setDragRejected] = useState({ code: '' })
   const setFileUpload = useSetAtom(fileUploadAtom)
+  const { experimentalFeature } = useContext(FeatureToggleContext)
+
   const { getRootProps, isDragReject } = useDropzone({
     noClick: true,
     multiple: false,
@@ -67,6 +71,8 @@ const ChatScreen: React.FC = () => {
     },
 
     onDragOver: (e) => {
+      // Retrieval file drag and drop is experimental feature
+      if (!experimentalFeature) return
       if (
         e.dataTransfer.items.length === 1 &&
         activeThread?.assistants[0].tools &&
@@ -84,6 +90,8 @@ const ChatScreen: React.FC = () => {
     },
     onDragLeave: () => setDragOver(false),
     onDrop: (files, rejectFiles) => {
+      // Retrieval file drag and drop is experimental feature
+      if (!experimentalFeature) return
       if (
         !files ||
         files.length !== 1 ||

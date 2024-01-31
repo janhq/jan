@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 
 import { InferenceEvent, MessageStatus, events } from '@janhq/core'
 
@@ -23,6 +23,8 @@ import {
 import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useClickOutside } from '@/hooks/useClickOutside'
@@ -53,7 +55,8 @@ const ChatInput: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
-  const [ShowAttacmentMenus, setShowAttacmentMenus] = useState(false)
+  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
+  const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)
@@ -147,50 +150,52 @@ const ChatInput: React.FC = () => {
           value={currentPrompt}
           onChange={onPromptChange}
         />
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <PaperclipIcon
-              size={20}
-              className="absolute bottom-2 right-4 cursor-pointer text-muted-foreground"
-              onClick={(e) => {
-                if (
-                  fileUpload.length > 0 ||
-                  (activeThread?.assistants[0].tools &&
-                    !activeThread?.assistants[0].tools[0]?.enabled)
-                ) {
-                  e.stopPropagation()
-                } else {
-                  setShowAttacmentMenus(!ShowAttacmentMenus)
-                }
-              }}
-            />
-          </TooltipTrigger>
-          <TooltipPortal>
-            {fileUpload.length > 0 ||
-              (activeThread?.assistants[0].tools &&
-                !activeThread?.assistants[0].tools[0]?.enabled && (
-                  <TooltipContent side="top" className="max-w-[154px] px-3">
-                    {fileUpload.length !== 0 && (
-                      <span>
-                        Currently, we only support 1 attachment at the same time
-                      </span>
-                    )}
-                    {activeThread?.assistants[0].tools &&
-                      activeThread?.assistants[0].tools[0]?.enabled ===
-                        false && (
+        {experimentalFeature && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PaperclipIcon
+                size={20}
+                className="absolute bottom-2 right-4 cursor-pointer text-muted-foreground"
+                onClick={(e) => {
+                  if (
+                    fileUpload.length > 0 ||
+                    (activeThread?.assistants[0].tools &&
+                      !activeThread?.assistants[0].tools[0]?.enabled)
+                  ) {
+                    e.stopPropagation()
+                  } else {
+                    setShowAttacmentMenus(!showAttacmentMenus)
+                  }
+                }}
+              />
+            </TooltipTrigger>
+            <TooltipPortal>
+              {fileUpload.length > 0 ||
+                (activeThread?.assistants[0].tools &&
+                  !activeThread?.assistants[0].tools[0]?.enabled && (
+                    <TooltipContent side="top" className="max-w-[154px] px-3">
+                      {fileUpload.length !== 0 && (
                         <span>
-                          Turn on Retrieval in Assistant Settings to use this
-                          feature
+                          Currently, we only support 1 attachment at the same
+                          time
                         </span>
                       )}
-                    <TooltipArrow />
-                  </TooltipContent>
-                ))}
-          </TooltipPortal>
-        </Tooltip>
+                      {activeThread?.assistants[0].tools &&
+                        activeThread?.assistants[0].tools[0]?.enabled ===
+                          false && (
+                          <span>
+                            Turn on Retrieval in Assistant Settings to use this
+                            feature
+                          </span>
+                        )}
+                      <TooltipArrow />
+                    </TooltipContent>
+                  ))}
+            </TooltipPortal>
+          </Tooltip>
+        )}
 
-        {ShowAttacmentMenus && (
+        {showAttacmentMenus && (
           <div
             ref={refAttachmentMenus}
             className="absolute bottom-10 right-0 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
