@@ -86,6 +86,7 @@ export default function useDeleteThread() {
         toaster({
           title: 'Thread successfully deleted.',
           description: `Thread ${threadId} has been successfully deleted.`,
+          type: 'success',
         })
       }
 

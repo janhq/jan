@@ -65,6 +65,7 @@ const Advanced = () => {
     toaster({
       title: 'Logs cleared',
       description: 'All logs have been cleared.',
+      type: 'success',
     })
   }
 

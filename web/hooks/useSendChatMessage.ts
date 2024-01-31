@@ -160,7 +160,7 @@ export default function useSendChatMessage() {
       activeThread.assistants[0].model.id !== selectedModel?.id
     ) {
       if (!selectedModel) {
-        toaster({ title: 'Please select a model' })
+        toaster({ title: 'Please select a model', type: 'warning' })
         return
       }
       const assistantId = activeThread.assistants[0].assistant_id ?? ''

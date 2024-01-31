@@ -82,7 +82,7 @@ const Providers = (props: PropsWithChildren) => {
                   </TooltipProvider>
                   {!isMac && <GPUDriverPrompt />}
                 </EventListenerWrapper>
-                <Toaster position="top-right" />
+                <Toaster />
               </FeatureToggleWrapper>
             </KeyListener>
           )}

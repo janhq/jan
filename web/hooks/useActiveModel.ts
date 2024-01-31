@@ -42,6 +42,7 @@ export function useActiveModel() {
       toaster({
         title: `Model ${modelId} not found!`,
         description: `Please download the model first.`,
+        type: 'warning',
       })
       setStateModel(() => ({
         state: 'start',
