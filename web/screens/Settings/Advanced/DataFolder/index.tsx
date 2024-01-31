@@ -12,6 +12,9 @@ export const SUCCESS_SET_NEW_DESTINATION = 'successSetNewDestination'
 import ModalChangeDirectory, {
   showDirectoryConfirmModalAtom,
 } from './ModalChangeDirectory'
+import ModalChangeDestNotEmpty, {
+  showDestNotEmptyConfirmAtom,
+} from './ModalConfirmDestNotEmpty'
 import ModalErrorSetDestGlobal, {
   showChangeFolderErrorAtom,
 } from './ModalErrorSetDestGlobal'
@@ -24,6 +27,7 @@ const DataFolder = () => {
   const setShowDirectoryConfirm = useSetAtom(showDirectoryConfirmModalAtom)
   const setShowSameDirectory = useSetAtom(showSamePathModalAtom)
   const setShowChangeFolderError = useSetAtom(showChangeFolderErrorAtom)
+  const showDestNotEmptyConfirm = useSetAtom(showDestNotEmptyConfirmAtom)
   const [destinationPath, setDestinationPath] = useState(undefined)
 
   useEffect(() => {
@@ -52,9 +56,24 @@ const DataFolder = () => {
       return
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const newDestChildren: any[] = await fs.readdirSync(destFolder)
+    const isNotEmpty =
+      newDestChildren.filter((x) => x !== '.DS_Store').length > 0
+
+    if (isNotEmpty) {
+      showDestNotEmptyConfirm(true)
+      return
+    }
+
     setDestinationPath(destFolder)
     setShowDirectoryConfirm(true)
-  }, [janDataFolderPath, setShowSameDirectory, setShowDirectoryConfirm])
+  }, [
+    janDataFolderPath,
+    setShowDirectoryConfirm,
+    setShowSameDirectory,
+    showDestNotEmptyConfirm,
+  ])
 
   const onUserConfirmed = useCallback(async () => {
     if (!destinationPath) return
@@ -124,6 +143,7 @@ const DataFolder = () => {
         onUserConfirmed={onUserConfirmed}
       />
       <ModalErrorSetDestGlobal />
+      <ModalChangeDestNotEmpty onUserConfirmed={onUserConfirmed} />
       {showLoader && <Loader description="Relocating Jan Data Folder..." />}
     </Fragment>
   )
