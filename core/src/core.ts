@@ -84,6 +84,12 @@ const openExternalUrl: (url: string) => Promise<any> = (url) =>
 const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
 
 /**
+ * Gets the user's home path.
+ * @returns return user's home path
+ */
+const getUserHomePath = (): Promise<string> => global.core.api?.getUserHomePath()
+
+/**
  * Log to file from browser processes.
  *
  * @param message - Message to log.
@@ -127,5 +133,6 @@ export {
   baseName,
   log,
   isSubdirectory,
+  getUserHomePath,
   FileStat,
 }

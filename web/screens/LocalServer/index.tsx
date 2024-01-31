@@ -91,11 +91,7 @@ const LocalServerScreen = () => {
   }
 
   useEffect(() => {
-    if (
-      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === null ||
-      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === 'true'
-    ) {
-      localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'true')
+    if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) == null) {
       setFirstTimeVisitAPIServer(true)
     }
   }, [firstTimeVisitAPIServer])
