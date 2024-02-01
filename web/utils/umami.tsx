@@ -23,6 +23,7 @@ const Umami = () => {
   const analyticsId = ANALYTICS_ID
 
   useEffect(() => {
+    if (!appVersion || !analyticsHost || !analyticsId) return
     const ping = () => {
       // Check if umami is defined before ping
       if (window.umami !== null && typeof window.umami !== 'undefined') {
@@ -44,17 +45,19 @@ const Umami = () => {
     return () => {
       document.removeEventListener('umami:loaded', ping)
     }
-  }, [appVersion])
+  }, [appVersion, analyticsHost, analyticsId])
 
   return (
     <>
-      <Script
-        src={analyticsHost}
-        data-website-id={analyticsId}
-        data-cache="true"
-        defer
-        onLoad={() => document.dispatchEvent(new Event('umami:loaded'))}
-      />
+      {appVersion && analyticsHost && analyticsId && (
+        <Script
+          src={analyticsHost}
+          data-website-id={analyticsId}
+          data-cache="true"
+          defer
+          onLoad={() => document.dispatchEvent(new Event('umami:loaded'))}
+        />
+      )}
     </>
   )
 }
