@@ -58,7 +58,7 @@ export default function useGetSystemResources() {
     // There is a possibility that this will be removed and replaced by the process event hook?
     const intervalId = setInterval(() => {
       getSystemResources()
-    }, 500)
+    }, 5000)
 
     // clean up interval
     return () => clearInterval(intervalId)
