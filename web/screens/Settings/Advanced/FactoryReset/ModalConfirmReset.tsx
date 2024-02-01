@@ -66,7 +66,7 @@ const ModalConfirmReset = () => {
               Keep the current app data location
             </label>
             <p className="mt-2 leading-relaxed">
-              Otherwise it will reset back to its original location at:
+              Otherwise it will reset back to its original location at:{' '}
               {/* TODO should be from system */}
               <span className="font-medium">{defaultJanDataFolder}</span>
             </p>
