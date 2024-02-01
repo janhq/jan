@@ -24,6 +24,7 @@ import {
   MessageEvent,
   ModelEvent,
   InferenceEvent,
+  ModelSettingParams,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
@@ -45,7 +46,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
   private _currentModel: Model | undefined;
 
-  private _engineSettings: EngineSettings = {
+  private _engineSettings: ModelSettingParams = {
     ctx_len: 2048,
     ngl: 100,
     cpu_threads: 1,

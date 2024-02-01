@@ -26,6 +26,8 @@
     "dotenv": "^16.3.1",
     "fastify": "^4.24.3",
     "request": "^2.88.2",
+    "fetch-retry": "^5.0.6",
+    "tcp-port-used": "^1.0.2",
     "request-progress": "^3.0.0"
   },
   "devDependencies": {
@@ -35,6 +37,7 @@
     "@typescript-eslint/parser": "^6.7.3",
     "eslint-plugin-react": "^7.33.2",
     "run-script-os": "^1.1.6",
+    "@types/tcp-port-used": "^1.0.4",
     "typescript": "^5.2.2"
   }
 }

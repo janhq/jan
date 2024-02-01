@@ -1,6 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
-
-import { fs, AppConfiguration, joinPath, getUserHomePath } from '@janhq/core'
+import React, { useCallback, useState } from 'react'
 
 import {
   Modal,

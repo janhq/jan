@@ -3,11 +3,19 @@ import path from "path";
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import tcpPortUsed from "tcp-port-used";
 import fetchRT from "fetch-retry";
-import { log, getJanDataFolderPath } from "@janhq/core/node";
+import {
+  log,
+  getJanDataFolderPath,
+  getSystemResourceInfo,
+} from "@janhq/core/node";
 import { getNitroProcessInfo, updateNvidiaInfo } from "./nvidia";
-import { Model, InferenceEngine, ModelSettingParams } from "@janhq/core";
+import {
+  Model,
+  InferenceEngine,
+  ModelSettingParams,
+  PromptTemplate,
+} from "@janhq/core";
 import { executableNitroFile } from "./execute";
-import { physicalCpuCount } from "./utils";
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch);
@@ -18,16 +26,6 @@ const fetchRetry = fetchRT(fetch);
 interface ModelInitOptions {
   modelFullPath: string;
   model: Model;
-}
-
-/**
- * The response object of Prompt Template parsing.
- */
-interface PromptTemplate {
-  system_prompt?: string;
-  ai_prompt?: string;
-  user_prompt?: string;
-  error?: string;
 }
 
 /**
@@ -78,7 +76,7 @@ function stopModel(): Promise<void> {
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  */
 async function runModel(
-  wrapper: ModelInitOptions,
+  wrapper: ModelInitOptions
 ): Promise<ModelOperationResponse | void> {
   if (wrapper.model.engine !== InferenceEngine.nitro) {
     // Not a nitro model
@@ -96,7 +94,7 @@ async function runModel(
   const ggufBinFile = files.find(
     (file) =>
       file === path.basename(currentModelFile) ||
-      file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT),
+      file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT)
   );
 
   if (!ggufBinFile) return Promise.reject("No GGUF model file found");
@@ -106,7 +104,7 @@ async function runModel(
   if (wrapper.model.engine !== InferenceEngine.nitro) {
     return Promise.reject("Not a nitro model");
   } else {
-    const nitroResourceProbe = await getResourcesInfo();
+    const nitroResourceProbe = await getSystemResourceInfo();
     // Convert settings.prompt_template to system_prompt, user_prompt, ai_prompt
     if (wrapper.model.settings.prompt_template) {
       const promptTemplate = wrapper.model.settings.prompt_template;
@@ -191,10 +189,10 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
     const system_prompt = promptTemplate.substring(0, systemIndex);
     const user_prompt = promptTemplate.substring(
       systemIndex + systemMarker.length,
-      promptIndex,
+      promptIndex
     );
     const ai_prompt = promptTemplate.substring(
-      promptIndex + promptMarker.length,
+      promptIndex + promptMarker.length
     );
 
     // Return the split parts
@@ -204,7 +202,7 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
     const promptIndex = promptTemplate.indexOf(promptMarker);
     const user_prompt = promptTemplate.substring(0, promptIndex);
     const ai_prompt = promptTemplate.substring(
-      promptIndex + promptMarker.length,
+      promptIndex + promptMarker.length
     );
 
     // Return the split parts
@@ -233,8 +231,8 @@ function loadLLMModel(settings: any): Promise<Response> {
     .then((res) => {
       log(
         `[NITRO]::Debug: Load model success with response ${JSON.stringify(
-          res,
-        )}`,
+          res
+        )}`
       );
       return Promise.resolve(res);
     })
@@ -263,8 +261,8 @@ async function validateModelStatus(): Promise<void> {
   }).then(async (res: Response) => {
     log(
       `[NITRO]::Debug: Validate model state success with response ${JSON.stringify(
-        res,
-      )}`,
+        res
+      )}`
     );
     // If the response is OK, check model_loaded status.
     if (res.ok) {
@@ -315,7 +313,7 @@ function spawnNitroProcess(): Promise<any> {
     const args: string[] = ["1", LOCAL_HOST, PORT.toString()];
     // Execute the binary
     log(
-      `[NITRO]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`,
+      `[NITRO]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`
     );
     subprocess = spawn(
       executableOptions.executablePath,
@@ -326,7 +324,7 @@ function spawnNitroProcess(): Promise<any> {
           ...process.env,
           CUDA_VISIBLE_DEVICES: executableOptions.cudaVisibleDevices,
         },
-      },
+      }
     );
 
     // Handle subprocess output
@@ -348,22 +346,6 @@ function spawnNitroProcess(): Promise<any> {
       log(`[NITRO]::Debug: Nitro is ready`);
       resolve();
     });
-  });
-}
-
-/**
- * Get the system resources information
- * TODO: Move to Core so that it can be reused
- */
-function getResourcesInfo(): Promise<ResourcesInfo> {
-  return new Promise(async (resolve) => {
-    const cpu = await physicalCpuCount();
-    log(`[NITRO]::CPU informations - ${cpu}`);
-    const response: ResourcesInfo = {
-      numCpuPhysicalCore: cpu,
-      memAvailable: 0,
-    };
-    resolve(response);
   });
 }
 
