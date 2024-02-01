@@ -61,9 +61,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const onNewMessageResponse = useCallback(
     (message: ThreadMessage) => {
       addNewMessage(message)
-      setIsGeneratingResponse(false)
     },
-    [addNewMessage, setIsGeneratingResponse]
+    [addNewMessage]
   )
 
   const onModelReady = useCallback(
@@ -114,8 +113,10 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         message.status
       )
       if (message.status === MessageStatus.Pending) {
-        if (message.content.length)
+        if (message.content.length) {
           updateThreadWaiting(message.thread_id, false)
+          setIsGeneratingResponse(false)
+        }
         return
       }
       // Mark the thread as not waiting for response
