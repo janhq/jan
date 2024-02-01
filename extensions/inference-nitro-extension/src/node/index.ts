@@ -27,15 +27,6 @@ interface ModelInitOptions {
   modelFullPath: string;
   model: Model;
 }
-
-/**
- * Model setting args for Nitro model load.
- */
-interface ModelSettingArgs extends ModelSettingParams {
-  llama_model_path: string;
-  cpu_threads: number;
-}
-
 // The PORT to use for the Nitro subprocess
 const PORT = 3928;
 // The HOST address to use for the Nitro subprocess
@@ -58,7 +49,7 @@ let subprocess: ChildProcessWithoutNullStreams | undefined = undefined;
 // The current model file url
 let currentModelFile: string = "";
 // The current model settings
-let currentSettings: ModelSettingArgs | undefined = undefined;
+let currentSettings: ModelSettingParams | undefined = undefined;
 
 /**
  * Stops a Nitro subprocess.
@@ -76,7 +67,7 @@ function stopModel(): Promise<void> {
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  */
 async function runModel(
-  wrapper: ModelInitOptions,
+  wrapper: ModelInitOptions
 ): Promise<ModelOperationResponse | void> {
   if (wrapper.model.engine !== InferenceEngine.nitro) {
     // Not a nitro model
@@ -94,7 +85,7 @@ async function runModel(
   const ggufBinFile = files.find(
     (file) =>
       file === path.basename(currentModelFile) ||
-      file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT),
+      file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT)
   );
 
   if (!ggufBinFile) return Promise.reject("No GGUF model file found");
@@ -189,10 +180,10 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
     const system_prompt = promptTemplate.substring(0, systemIndex);
     const user_prompt = promptTemplate.substring(
       systemIndex + systemMarker.length,
-      promptIndex,
+      promptIndex
     );
     const ai_prompt = promptTemplate.substring(
-      promptIndex + promptMarker.length,
+      promptIndex + promptMarker.length
     );
 
     // Return the split parts
@@ -202,7 +193,7 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
     const promptIndex = promptTemplate.indexOf(promptMarker);
     const user_prompt = promptTemplate.substring(0, promptIndex);
     const ai_prompt = promptTemplate.substring(
-      promptIndex + promptMarker.length,
+      promptIndex + promptMarker.length
     );
 
     // Return the split parts
@@ -218,6 +209,9 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
 function loadLLMModel(settings: any): Promise<Response> {
+  if (!settings?.ngl) {
+    settings.ngl = 100;
+  }
   log(`[NITRO]::Debug: Loading model with params ${JSON.stringify(settings)}`);
   return fetchRetry(NITRO_HTTP_LOAD_MODEL_URL, {
     method: "POST",
@@ -231,8 +225,8 @@ function loadLLMModel(settings: any): Promise<Response> {
     .then((res) => {
       log(
         `[NITRO]::Debug: Load model success with response ${JSON.stringify(
-          res,
-        )}`,
+          res
+        )}`
       );
       return Promise.resolve(res);
     })
@@ -261,8 +255,8 @@ async function validateModelStatus(): Promise<void> {
   }).then(async (res: Response) => {
     log(
       `[NITRO]::Debug: Validate model state success with response ${JSON.stringify(
-        res,
-      )}`,
+        res
+      )}`
     );
     // If the response is OK, check model_loaded status.
     if (res.ok) {
@@ -313,7 +307,7 @@ function spawnNitroProcess(): Promise<any> {
     const args: string[] = ["1", LOCAL_HOST, PORT.toString()];
     // Execute the binary
     log(
-      `[NITRO]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`,
+      `[NITRO]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`
     );
     subprocess = spawn(
       executableOptions.executablePath,
@@ -324,7 +318,7 @@ function spawnNitroProcess(): Promise<any> {
           ...process.env,
           CUDA_VISIBLE_DEVICES: executableOptions.cudaVisibleDevices,
         },
-      },
+      }
     );
 
     // Handle subprocess output
