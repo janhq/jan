@@ -103,7 +103,7 @@ const LocalServerScreen = () => {
   }, [handleChangePort, port])
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full" data-testid="local-server-testid">
       {/* Left SideBar */}
       <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <div className="p-4">

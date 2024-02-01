@@ -38,7 +38,6 @@ test.afterAll(async () => {
 })
 
 test('explores hub', async () => {
-  // Set the timeout for this test to 60 seconds
   test.setTimeout(TIMEOUT)
   await page.getByTestId('Hub').first().click({
     timeout: TIMEOUT,
