@@ -23,6 +23,7 @@ export const setActiveThreadIdAtom = atom(
 
 export const waitingToSendMessage = atom<boolean | undefined>(undefined)
 
+export const isGeneratingResponseAtom = atom<boolean | undefined>(undefined)
 /**
  * Stores all thread states for the current user
  */

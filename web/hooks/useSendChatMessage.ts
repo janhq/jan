@@ -25,12 +25,10 @@ import { ulid } from 'ulid'
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
-import { toaster } from '@/containers/Toast'
-
 import { getBase64 } from '@/utils/base64'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
-import { useActiveModel } from './useActiveModel'
+import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
@@ -59,9 +57,11 @@ export default function useSendChatMessage() {
   const { activeModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
   const { startModel } = useActiveModel()
-  const setQueuedMessage = useSetAtom(queuedMessageAtom)
+  const [queuedMessage, setQueuedMessage] = useAtom(queuedMessageAtom)
+  const loadModelFailed = useAtomValue(loadModelErrorAtom)
 
   const modelRef = useRef<Model | undefined>()
+  const loadModelFailedRef = useRef<string | undefined>()
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
 
@@ -72,6 +72,10 @@ export default function useSendChatMessage() {
   useEffect(() => {
     modelRef.current = activeModel
   }, [activeModel])
+
+  useEffect(() => {
+    loadModelFailedRef.current = loadModelFailed
+  }, [loadModelFailed])
 
   const resendChatMessage = async (currentMessage: ThreadMessage) => {
     if (!activeThread) {
@@ -119,21 +123,6 @@ export default function useSendChatMessage() {
       setQueuedMessage(false)
     }
     events.emit(MessageEvent.OnMessageSent, messageRequest)
-  }
-
-  // TODO: Refactor @louis
-  const waitForModelStarting = async (modelId: string) => {
-    return new Promise<void>((resolve) => {
-      setTimeout(async () => {
-        if (modelRef.current?.id !== modelId) {
-          console.debug('waiting for model to start')
-          await waitForModelStarting(modelId)
-          resolve()
-        } else {
-          resolve()
-        }
-      }, 200)
-    })
   }
 
   const sendChatMessage = async (message: string) => {
@@ -302,6 +291,19 @@ export default function useSendChatMessage() {
 
     setReloadModel(false)
     setEngineParamsUpdate(false)
+  }
+
+  const waitForModelStarting = async (modelId: string) => {
+    return new Promise<void>((resolve) => {
+      setTimeout(async () => {
+        if (modelRef.current?.id !== modelId && !loadModelFailedRef.current) {
+          await waitForModelStarting(modelId)
+          resolve()
+        } else {
+          resolve()
+        }
+      }, 200)
+    })
   }
 
   return {

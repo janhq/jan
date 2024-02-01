@@ -305,7 +305,7 @@ const loadLLMModel = async (settings: NitroModelSettings): Promise<Response> => 
     })
     .catch((err: any) => {
       logServer(`[NITRO]::Error: Load model failed with error ${err}`)
-      return Promise.reject()
+      return Promise.reject(err)
     })
 }
 

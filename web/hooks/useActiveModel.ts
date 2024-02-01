@@ -1,5 +1,5 @@
 import { events, Model, ModelEvent } from '@janhq/core'
-import { atom, useAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
@@ -9,6 +9,7 @@ import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
+export const loadModelErrorAtom = atom<string | undefined>(undefined)
 
 export const stateModelAtom = atom({
   state: 'start',
@@ -21,6 +22,7 @@ export function useActiveModel() {
   const activeThread = useAtomValue(activeThreadAtom)
   const [stateModel, setStateModel] = useAtom(stateModelAtom)
   const { downloadedModels } = useGetDownloadedModels()
+  const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
   const startModel = async (modelId: string) => {
     if (
@@ -31,6 +33,7 @@ export function useActiveModel() {
       return
     }
     // TODO: incase we have multiple assistants, the configuration will be from assistant
+    setLoadModelError(undefined)
 
     setActiveModel(undefined)
 
