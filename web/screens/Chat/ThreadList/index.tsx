@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
   Modal,
@@ -49,17 +49,19 @@ export default function ThreadList() {
   const activeThread = useAtomValue(activeThreadAtom)
   const { deleteThread, cleanThread } = useDeleteThread()
   const { downloadedModels } = useGetDownloadedModels()
+  const [isThreadsReady, setIsThreadsReady] = useState(false)
 
   const { activeThreadId, setActiveThread: onThreadClick } =
     useSetActiveThread()
 
   useEffect(() => {
-    getThreads()
+    getThreads().then(() => setIsThreadsReady(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     if (
+      isThreadsReady &&
       downloadedModels.length !== 0 &&
       threads.length === 0 &&
       assistants.length !== 0 &&
@@ -68,7 +70,7 @@ export default function ThreadList() {
       requestCreateNewThread(assistants[0])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assistants, threads, downloadedModels, activeThread])
+  }, [assistants, threads, downloadedModels, activeThread, isThreadsReady])
 
   return (
     <div className="px-3 py-4">

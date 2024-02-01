@@ -39,6 +39,7 @@ import {
   activeThreadAtom,
   engineParamsUpdateAtom,
   getActiveThreadModelParamsAtom,
+  isGeneratingResponseAtom,
   updateThreadAtom,
   updateThreadWaitingForResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -57,7 +58,7 @@ export default function useSendChatMessage() {
   const { activeModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
   const { startModel } = useActiveModel()
-  const [queuedMessage, setQueuedMessage] = useAtom(queuedMessageAtom)
+  const setQueuedMessage = useSetAtom(queuedMessageAtom)
   const loadModelFailed = useAtomValue(loadModelErrorAtom)
 
   const modelRef = useRef<Model | undefined>()
@@ -68,6 +69,7 @@ export default function useSendChatMessage() {
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const setReloadModel = useSetAtom(reloadModelAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
+  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -82,6 +84,7 @@ export default function useSendChatMessage() {
       console.error('No active thread')
       return
     }
+    setIsGeneratingResponse(true)
     updateThreadWaiting(activeThread.id, true)
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
@@ -132,6 +135,7 @@ export default function useSendChatMessage() {
       console.error('No active thread')
       return
     }
+    setIsGeneratingResponse(true)
 
     if (engineParamsUpdate) setReloadModel(true)
 

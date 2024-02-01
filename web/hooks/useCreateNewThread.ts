@@ -7,7 +7,7 @@ import {
   ThreadState,
   Model,
 } from '@janhq/core'
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useSetAtom } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
