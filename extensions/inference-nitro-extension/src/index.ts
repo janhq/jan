@@ -68,15 +68,28 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
    */
   private nitroProcessInfo: any = undefined;
 
+  private inferenceUrl = "";
+
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
     if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir))) {
-      await fs
-        .mkdirSync(JanInferenceNitroExtension._homeDir)
-        .catch((err: Error) => console.debug(err));
+      try {
+        await fs.mkdirSync(JanInferenceNitroExtension._homeDir);
+      } catch (e) {
+        console.debug(e);
+      }
     }
+
+    // init inference url
+    // @ts-ignore
+    const electronApi = window?.electronAPI;
+    this.inferenceUrl = INFERENCE_URL;
+    if (!electronApi) {
+      this.inferenceUrl = JAN_SERVER_INFERENCE_URL;
+    }
+    console.debug("Inference url: ", this.inferenceUrl);
 
     if (!(await fs.existsSync(JanInferenceNitroExtension._settingsDir)))
       await fs.mkdirSync(JanInferenceNitroExtension._settingsDir);
@@ -84,19 +97,19 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
     // Events subscription
     events.on(MessageEvent.OnMessageSent, (data: MessageRequest) =>
-      this.onMessageRequest(data),
+      this.onMessageRequest(data)
     );
 
     events.on(ModelEvent.OnModelInit, (model: Model) =>
-      this.onModelInit(model),
+      this.onModelInit(model)
     );
 
     events.on(ModelEvent.OnModelStop, (model: Model) =>
-      this.onModelStop(model),
+      this.onModelStop(model)
     );
 
     events.on(InferenceEvent.OnInferenceStopped, () =>
-      this.onInferenceStopped(),
+      this.onInferenceStopped()
     );
 
     // Attempt to fetch nvidia info
@@ -121,7 +134,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       } else {
         await fs.writeFileSync(
           engineFile,
-          JSON.stringify(this._engineSettings, null, 2),
+          JSON.stringify(this._engineSettings, null, 2)
         );
       }
     } catch (err) {
@@ -149,7 +162,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
     this.getNitroProcesHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
-      JanInferenceNitroExtension._intervalHealthCheck,
+      JanInferenceNitroExtension._intervalHealthCheck
     );
   }
 
@@ -206,7 +219,11 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     return new Promise(async (resolve, reject) => {
       if (!this._currentModel) return Promise.reject("No model loaded");
 
-      requestInference(data.messages ?? [], this._currentModel).subscribe({
+      requestInference(
+        this.inferenceUrl,
+        data.messages ?? [],
+        this._currentModel
+      ).subscribe({
         next: (_content: any) => {},
         complete: async () => {
           resolve(message);
@@ -251,7 +268,12 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       ...(this._currentModel || {}),
       ...(data.model || {}),
     };
-    requestInference(data.messages ?? [], model, this.controller).subscribe({
+    requestInference(
+      this.inferenceUrl,
+      data.messages ?? [],
+      model,
+      this.controller
+    ).subscribe({
       next: (content: any) => {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
