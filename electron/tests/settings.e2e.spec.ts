@@ -38,7 +38,8 @@ test.afterAll(async () => {
 })
 
 test('shows settings', async () => {
+  test.setTimeout(TIMEOUT)
   await page.getByTestId('Settings').first().click({ timeout: TIMEOUT })
   const settingDescription = page.getByTestId('testid-setting-description')
-  expect(settingDescription).toBeVisible({ timeout: TIMEOUT })
+  await expect(settingDescription).toBeVisible({ timeout: TIMEOUT })
 })

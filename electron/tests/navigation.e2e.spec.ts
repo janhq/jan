@@ -38,6 +38,7 @@ test.afterAll(async () => {
 })
 
 test('renders left navigation panel', async () => {
+  test.setTimeout(TIMEOUT)
   const systemMonitorBtn = await page
     .getByTestId('System Monitor')
     .first()
@@ -50,8 +51,11 @@ test('renders left navigation panel', async () => {
     .isEnabled({ timeout: TIMEOUT })
   expect([systemMonitorBtn, settingsBtn].filter((e) => !e).length).toBe(0)
   // Chat section should be there
-  const apiServer = await page.getByTestId('Local API Server').first()
-  expect(apiServer).toBeVisible({
+  await page.getByTestId('Local API Server').first().click({
+    timeout: TIMEOUT,
+  })
+  const localServer = await page.getByTestId('local-server-testid').first()
+  await expect(localServer).toBeVisible({
     timeout: TIMEOUT,
   })
 })
