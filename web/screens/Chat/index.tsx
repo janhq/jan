@@ -9,6 +9,7 @@ import { UploadCloudIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import GenerateResponse from '@/containers/Loader/GenerateResponse'
 import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
 
@@ -19,6 +20,7 @@ import { snackbar } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
+import { activeModelAtom, loadModelErrorAtom } from '@/hooks/useActiveModel'
 import { queuedMessageAtom, reloadModelAtom } from '@/hooks/useSendChatMessage'
 
 import ChatBody from '@/screens/Chat/ChatBody'
@@ -26,12 +28,14 @@ import ChatBody from '@/screens/Chat/ChatBody'
 import ThreadList from '@/screens/Chat/ThreadList'
 
 import ChatInput from './ChatInput'
+import LoadModelErrorMessage from './LoadModelErrorMessage'
 import RequestDownloadModel from './RequestDownloadModel'
 import Sidebar from './Sidebar'
 
 import {
   activeThreadAtom,
   engineParamsUpdateAtom,
+  isGeneratingResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const renderError = (code: string) => {
@@ -62,6 +66,11 @@ const ChatScreen: React.FC = () => {
   const [dragRejected, setDragRejected] = useState({ code: '' })
   const setFileUpload = useSetAtom(fileUploadAtom)
   const { experimentalFeature } = useContext(FeatureToggleContext)
+
+  const activeModel = useAtomValue(activeModelAtom)
+
+  const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
+  const loadModelError = useAtomValue(loadModelErrorAtom)
 
   const { getRootProps, isDragReject } = useDropzone({
     noClick: true,
@@ -202,6 +211,9 @@ const ChatScreen: React.FC = () => {
               </span>
             </div>
           )}
+
+          {activeModel && isGeneratingResponse && <GenerateResponse />}
+          {loadModelError && <LoadModelErrorMessage />}
           <ChatInput />
         </div>
       </div>

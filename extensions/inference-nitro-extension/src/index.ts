@@ -134,6 +134,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
     const modelFullPath = await joinPath(["models", model.id]);
 
+    this._currentModel = model;
     const nitroInitResult = await executeOnMain(NODE, "runModel", {
       modelFullPath,
       model,
@@ -144,7 +145,6 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       return;
     }
 
-    this._currentModel = model;
     events.emit(ModelEvent.OnModelReady, model);
 
     this.getNitroProcesHealthIntervalId = setInterval(
@@ -226,6 +226,9 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
    */
   private async onMessageRequest(data: MessageRequest) {
     if (data.model?.engine !== InferenceEngine.nitro || !this._currentModel) {
+      console.log(
+        `Model is not nitro or no model loaded ${data.model?.engine} ${this._currentModel}`
+      );
       return;
     }
 

@@ -67,7 +67,7 @@ function stopModel(): Promise<void> {
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  */
 async function runModel(
-  wrapper: ModelInitOptions
+  wrapper: ModelInitOptions,
 ): Promise<ModelOperationResponse | void> {
   if (wrapper.model.engine !== InferenceEngine.nitro) {
     // Not a nitro model
@@ -85,7 +85,7 @@ async function runModel(
   const ggufBinFile = files.find(
     (file) =>
       file === path.basename(currentModelFile) ||
-      file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT)
+      file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT),
   );
 
   if (!ggufBinFile) return Promise.reject("No GGUF model file found");
@@ -180,10 +180,10 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
     const system_prompt = promptTemplate.substring(0, systemIndex);
     const user_prompt = promptTemplate.substring(
       systemIndex + systemMarker.length,
-      promptIndex
+      promptIndex,
     );
     const ai_prompt = promptTemplate.substring(
-      promptIndex + promptMarker.length
+      promptIndex + promptMarker.length,
     );
 
     // Return the split parts
@@ -193,7 +193,7 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
     const promptIndex = promptTemplate.indexOf(promptMarker);
     const user_prompt = promptTemplate.substring(0, promptIndex);
     const ai_prompt = promptTemplate.substring(
-      promptIndex + promptMarker.length
+      promptIndex + promptMarker.length,
     );
 
     // Return the split parts
@@ -225,14 +225,14 @@ function loadLLMModel(settings: any): Promise<Response> {
     .then((res) => {
       log(
         `[NITRO]::Debug: Load model success with response ${JSON.stringify(
-          res
-        )}`
+          res,
+        )}`,
       );
       return Promise.resolve(res);
     })
     .catch((err) => {
       log(`[NITRO]::Error: Load model failed with error ${err}`);
-      return Promise.reject();
+      return Promise.reject(err);
     });
 }
 
@@ -254,8 +254,8 @@ async function validateModelStatus(): Promise<void> {
     retryDelay: 500,
   }).then(async (res: Response) => {
     log(
-      `[NITRO]::Debug: Validate model state success with response ${JSON.stringify(
-        res
+      `[NITRO]::Debug: Validate model state with response ${JSON.stringify(
+        res.status
       )}`
     );
     // If the response is OK, check model_loaded status.
@@ -264,9 +264,19 @@ async function validateModelStatus(): Promise<void> {
       // If the model is loaded, return an empty object.
       // Otherwise, return an object with an error message.
       if (body.model_loaded) {
+        log(
+          `[NITRO]::Debug: Validate model state success with response ${JSON.stringify(
+            body
+          )}`
+        );
         return Promise.resolve();
       }
     }
+    log(
+      `[NITRO]::Debug: Validate model state failed with response ${JSON.stringify(
+        res.statusText
+      )}`
+    );
     return Promise.reject("Validate model status failed");
   });
 }
@@ -307,7 +317,7 @@ function spawnNitroProcess(): Promise<any> {
     const args: string[] = ["1", LOCAL_HOST, PORT.toString()];
     // Execute the binary
     log(
-      `[NITRO]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`
+      `[NITRO]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`,
     );
     subprocess = spawn(
       executableOptions.executablePath,
@@ -318,7 +328,7 @@ function spawnNitroProcess(): Promise<any> {
           ...process.env,
           CUDA_VISIBLE_DEVICES: executableOptions.cudaVisibleDevices,
         },
-      }
+      },
     );
 
     // Handle subprocess output
