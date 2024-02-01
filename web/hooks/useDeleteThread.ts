@@ -21,7 +21,6 @@ import {
   threadsAtom,
   setActiveThreadIdAtom,
   deleteThreadStateAtom,
-  threadStatesAtom,
   updateThreadStateLastMessageAtom,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -34,7 +33,6 @@ export default function useDeleteThread() {
   const deleteMessages = useSetAtom(deleteChatMessagesAtom)
   const cleanMessages = useSetAtom(cleanChatMessagesAtom)
   const deleteThreadState = useSetAtom(deleteThreadStateAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
   const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
 
   const cleanThread = async (threadId: string) => {
@@ -74,22 +72,16 @@ export default function useDeleteThread() {
       const availableThreads = threads.filter((c) => c.id !== threadId)
       setThreads(availableThreads)
 
-      const deletingThreadState = threadStates[threadId]
-      const isFinishInit = deletingThreadState?.isFinishInit ?? true
-
       // delete the thread state
       deleteThreadState(threadId)
 
-      if (isFinishInit) {
-        deleteMessages(threadId)
-        setCurrentPrompt('')
-        toaster({
-          title: 'Thread successfully deleted.',
-          description: `Thread ${threadId} has been successfully deleted.`,
-          type: 'success',
-        })
-      }
-
+      deleteMessages(threadId)
+      setCurrentPrompt('')
+      toaster({
+        title: 'Thread successfully deleted.',
+        description: `Thread ${threadId} has been successfully deleted.`,
+        type: 'success',
+      })
       if (availableThreads.length > 0) {
         setActiveThreadId(availableThreads[0].id)
       } else {

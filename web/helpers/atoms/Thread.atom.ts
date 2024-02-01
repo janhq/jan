@@ -46,18 +46,6 @@ export const deleteThreadStateAtom = atom(
   }
 )
 
-export const updateThreadInitSuccessAtom = atom(
-  null,
-  (get, set, threadId: string) => {
-    const currentState = { ...get(threadStatesAtom) }
-    currentState[threadId] = {
-      ...currentState[threadId],
-      isFinishInit: true,
-    }
-    set(threadStatesAtom, currentState)
-  }
-)
-
 export const updateThreadWaitingForResponseAtom = atom(
   null,
   (get, set, threadId: string, waitingForResponse: boolean) => {

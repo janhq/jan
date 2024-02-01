@@ -5,7 +5,7 @@ import {
   ConversationalExtension,
 } from '@janhq/core'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import useSetActiveThread from './useSetActiveThread'
 
@@ -19,11 +19,9 @@ import {
 } from '@/helpers/atoms/Thread.atom'
 
 const useThreads = () => {
-  const [threadStates, setThreadStates] = useAtom(threadStatesAtom)
-  const [threads, setThreads] = useAtom(threadsAtom)
-  const [threadModelRuntimeParams, setThreadModelRuntimeParams] = useAtom(
-    threadModelParamsAtom
-  )
+  const setThreadStates = useSetAtom(threadStatesAtom)
+  const setThreads = useSetAtom(threadsAtom)
+  const setThreadModelRuntimeParams = useSetAtom(threadModelParamsAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const { setActiveThread } = useSetActiveThread()
 
@@ -41,7 +39,6 @@ const useThreads = () => {
             hasMore: false,
             waitingForResponse: false,
             lastMessage,
-            isFinishInit: true,
           }
 
           const modelParams = thread.assistants?.[0]?.model?.parameters
@@ -53,41 +50,12 @@ const useThreads = () => {
         }
       })
 
-      // allow at max 1 unfinished init thread and it should be at the top of the list
-      let unfinishedThreadId: string | undefined = undefined
-      const unfinishedThreadState: Record<string, ThreadState> = {}
-
-      for (const key of Object.keys(threadStates)) {
-        const threadState = threadStates[key]
-        if (threadState.isFinishInit === false) {
-          unfinishedThreadState[key] = threadState
-          unfinishedThreadId = key
-          break
-        }
-      }
-      const unfinishedThread: Thread | undefined = threads.find(
-        (thread) => thread.id === unfinishedThreadId
-      )
-
-      let allThreads: Thread[] = [...localThreads]
-      if (unfinishedThread) {
-        allThreads = [unfinishedThread, ...localThreads]
-      }
-
-      if (unfinishedThreadId) {
-        localThreadStates[unfinishedThreadId] =
-          unfinishedThreadState[unfinishedThreadId]
-
-        threadModelParams[unfinishedThreadId] =
-          threadModelRuntimeParams[unfinishedThreadId]
-      }
-
       // updating app states
       setThreadStates(localThreadStates)
-      setThreads(allThreads)
+      setThreads(localThreads)
       setThreadModelRuntimeParams(threadModelParams)
-      if (allThreads.length && !activeThread) {
-        setActiveThread(allThreads[0])
+      if (localThreads.length && !activeThread) {
+        setActiveThread(localThreads[0])
       }
     } catch (error) {
       console.error(error)
