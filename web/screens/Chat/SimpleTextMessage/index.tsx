@@ -1,10 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react'
 
-import { ChatCompletionRole, MessageStatus, ThreadMessage } from '@janhq/core'
+import {
+  ChatCompletionRole,
+  ContentType,
+  MessageStatus,
+  ThreadMessage,
+} from '@janhq/core'
 
+import {
+  Tooltip,
+  TooltipArrow,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+} from '@janhq/uikit'
 import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
+import { FolderOpenIcon } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
 
 import { markedHighlight } from 'marked-highlight'
@@ -13,12 +26,13 @@ import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import BubbleLoader from '@/containers/Loader/Bubble'
-
 import { useClipboard } from '@/hooks/useClipboard'
+import { usePath } from '@/hooks/usePath'
 
+import { toGibibytes } from '@/utils/converter'
 import { displayDate } from '@/utils/datetime'
 
+import Icon from '../FileUploadPreview/Icon'
 import MessageToolbar from '../MessageToolbar'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
@@ -29,6 +43,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     text = props.content[0]?.text?.value ?? ''
   }
   const clipboard = useClipboard({ timeout: 1000 })
+  const { onViewFile, onViewFileContainer } = usePath()
 
   const marked: Marked = new Marked(
     markedHighlight({
@@ -77,7 +92,6 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
   const [tokenCount, setTokenCount] = useState(0)
-
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
   const [tokenSpeed, setTokenSpeed] = useState(0)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
@@ -148,6 +162,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             </svg>
           </div>
         )}
+
         <div
           className={twMerge(
             'text-sm font-extrabold capitalize',
@@ -178,23 +193,84 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       </div>
 
       <div className={twMerge('w-full')}>
-        {props.status === MessageStatus.Pending &&
-        (!props.content[0] || props.content[0].text.value === '') ? (
-          <BubbleLoader />
-        ) : (
-          <>
-            <div
-              className={twMerge(
-                'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
-                isUser
-                  ? 'whitespace-pre-wrap break-words'
-                  : 'rounded-xl bg-secondary p-4'
-              )}
-              // eslint-disable-next-line @typescript-eslint/naming-convention
-              dangerouslySetInnerHTML={{ __html: parsedText }}
-            />
-          </>
-        )}
+        <>
+          {props.content[0]?.type === ContentType.Image && (
+            <div className="group/image relative mb-2 inline-flex overflow-hidden rounded-xl">
+              <img
+                className="aspect-auto h-[300px]"
+                alt={props.content[0]?.text.name}
+                src={props.content[0]?.text.annotations[0]}
+                onClick={() => onViewFile(`${props.id}.png`)}
+              />
+              <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 group-hover/image:inline-block" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover/image:flex"
+                    onClick={onViewFileContainer}
+                  >
+                    <FolderOpenIcon size={20} />
+                  </div>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent side="top" className="max-w-[154px] px-3">
+                    <span>Show in finder</span>
+                    <TooltipArrow />
+                  </TooltipContent>
+                </TooltipPortal>
+              </Tooltip>
+            </div>
+          )}
+
+          {props.content[0]?.type === ContentType.Pdf && (
+            <div className="group/file relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg bg-secondary p-4">
+              <div
+                className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 backdrop-blur-sm group-hover/file:inline-block"
+                onClick={() =>
+                  onViewFile(`${props.id}.${props.content[0]?.type}`)
+                }
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover/file:flex"
+                    onClick={onViewFileContainer}
+                  >
+                    <FolderOpenIcon size={20} />
+                  </div>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent side="top" className="max-w-[154px] px-3">
+                    <span>Show in finder</span>
+                    <TooltipArrow />
+                  </TooltipContent>
+                </TooltipPortal>
+              </Tooltip>
+
+              <Icon type={props.content[0].type} />
+
+              <div>
+                <h6 className="line-clamp-1 font-medium">
+                  {props.content[0].text.name?.replaceAll(/[-._]/g, ' ')}
+                </h6>
+                <p className="text-muted-foreground">
+                  {toGibibytes(Number(props.content[0].text.size))}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div
+            className={twMerge(
+              'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
+              isUser
+                ? 'whitespace-pre-wrap break-words'
+                : 'rounded-xl bg-secondary p-4'
+            )}
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            dangerouslySetInnerHTML={{ __html: parsedText }}
+          />
+        </>
       </div>
     </div>
   )

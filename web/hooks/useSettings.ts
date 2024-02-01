@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { fs, joinPath } from '@janhq/core'
 import { atom, useAtom } from 'jotai'
@@ -13,6 +13,7 @@ export const useSettings = () => {
 
   useEffect(() => {
     setTimeout(() => validateSettings, 3000)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const validateSettings = async () => {
@@ -31,7 +32,7 @@ export const useSettings = () => {
     })
   }
 
-  const readSettings = async () => {
+  const readSettings = useCallback(async () => {
     if (!window?.core?.api) {
       return
     }
@@ -41,7 +42,8 @@ export const useSettings = () => {
       return typeof settings === 'object' ? settings : JSON.parse(settings)
     }
     return {}
-  }
+  }, [])
+
   const saveSettings = async ({
     runMode,
     notify,

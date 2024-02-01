@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
 import ScrollToBottom from 'react-scroll-to-bottom'
 
@@ -42,7 +41,7 @@ import { toSettingParams } from '@/utils/modelParam'
 
 import EngineSetting from '../Chat/EngineSetting'
 
-import settingComponentBuilder from '../Chat/ModelSetting/settingComponentBuilder'
+import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
 
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
@@ -74,36 +73,37 @@ const LocalServerScreen = () => {
   const [host, setHost] = useAtom(hostAtom)
   const [port, setPort] = useAtom(portAtom)
 
+  const hostOptions = ['127.0.0.1', '0.0.0.0']
+
   const FIRST_TIME_VISIT_API_SERVER = 'firstTimeVisitAPIServer'
 
   const [firstTimeVisitAPIServer, setFirstTimeVisitAPIServer] =
     useState<boolean>(false)
 
-  const handleChangePort = (value: any) => {
-    if (Number(value) <= 0 || Number(value) >= 65536) {
-      setErrorRangePort(true)
-    } else {
-      setErrorRangePort(false)
-    }
-    setPort(value)
-  }
+  const handleChangePort = useCallback(
+    (value: string) => {
+      if (Number(value) <= 0 || Number(value) >= 65536) {
+        setErrorRangePort(true)
+      } else {
+        setErrorRangePort(false)
+      }
+      setPort(value)
+    },
+    [setPort]
+  )
 
   useEffect(() => {
-    if (
-      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === null ||
-      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === 'true'
-    ) {
-      localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'true')
+    if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) == null) {
       setFirstTimeVisitAPIServer(true)
     }
   }, [firstTimeVisitAPIServer])
 
   useEffect(() => {
     handleChangePort(port)
-  }, [])
+  }, [handleChangePort, port])
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full" data-testid="local-server-testid">
       {/* Left SideBar */}
       <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <div className="p-4">
@@ -167,8 +167,19 @@ const LocalServerScreen = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="127.0.0.1">127.0.0.1</SelectItem>
-                      <SelectItem value="0.0.0.0">0.0.0.0</SelectItem>
+                      {hostOptions.map((option, i) => {
+                        return (
+                          <SelectItem
+                            key={i}
+                            value={option}
+                            className={twMerge(
+                              host === option && 'bg-secondary'
+                            )}
+                          >
+                            {option}
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
 
@@ -361,7 +372,11 @@ const LocalServerScreen = () => {
             <div className="mt-4">
               <CardSidebar title="Model Parameters" asChild>
                 <div className="px-2 py-4">
-                  {settingComponentBuilder(componentDataEngineSetting, true)}
+                  <SettingComponentBuilder
+                    enabled={!serverEnabled}
+                    componentData={componentDataEngineSetting}
+                    selector={(x) => x.name === 'prompt_template'}
+                  />
                 </div>
               </CardSidebar>
             </div>
@@ -371,7 +386,7 @@ const LocalServerScreen = () => {
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting />
+                  <EngineSetting enabled={!serverEnabled} />
                 </div>
               </CardSidebar>
             </div>

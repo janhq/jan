@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ReactNode, useEffect, useRef } from 'react'
+import { ReactNode, useCallback, useEffect, useRef } from 'react'
 
 import {
   events,
@@ -13,8 +13,14 @@ import {
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
+import {
+  activeModelAtom,
+  loadModelErrorAtom,
+  stateModelAtom,
+} from '@/hooks/useActiveModel'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
+import { queuedMessageAtom } from '@/hooks/useSendChatMessage'
 
 import { toaster } from '../Toast'
 
@@ -26,6 +32,7 @@ import {
 import {
   updateThreadWaitingForResponseAtom,
   threadsAtom,
+  isGeneratingResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function EventHandler({ children }: { children: ReactNode }) {
@@ -34,11 +41,14 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const { downloadedModels } = useGetDownloadedModels()
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
+  const setQueuedMessage = useSetAtom(queuedMessageAtom)
+  const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const threads = useAtomValue(threadsAtom)
   const modelsRef = useRef(downloadedModels)
   const threadsRef = useRef(threads)
+  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   useEffect(() => {
     threadsRef.current = threads
@@ -48,50 +58,71 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     modelsRef.current = downloadedModels
   }, [downloadedModels])
 
-  async function handleNewMessageResponse(message: ThreadMessage) {
-    addNewMessage(message)
-  }
+  const onNewMessageResponse = useCallback(
+    (message: ThreadMessage) => {
+      addNewMessage(message)
+    },
+    [addNewMessage]
+  )
 
-  async function handleModelReady(model: Model) {
-    setActiveModel(model)
-    toaster({
-      title: 'Success!',
-      description: `Model ${model.id} has been started.`,
-    })
-    setStateModel(() => ({
-      state: 'stop',
-      loading: false,
-      model: model.id,
-    }))
-  }
+  const onModelReady = useCallback(
+    (model: Model) => {
+      setActiveModel(model)
+      toaster({
+        title: 'Success!',
+        description: `Model ${model.id} has been started.`,
+        type: 'success',
+      })
+      setStateModel(() => ({
+        state: 'stop',
+        loading: false,
+        model: model.id,
+      }))
+    },
+    [setActiveModel, setStateModel]
+  )
 
-  async function handleModelStopped() {
-    setTimeout(async () => {
+  const onModelStopped = useCallback(() => {
+    setTimeout(() => {
       setActiveModel(undefined)
       setStateModel({ state: 'start', loading: false, model: '' })
     }, 500)
-  }
+  }, [setActiveModel, setStateModel])
 
-  async function handleModelFail(res: any) {
-    const errorMessage = `${res.error}`
-    alert(errorMessage)
-    setStateModel(() => ({
-      state: 'start',
-      loading: false,
-      model: res.modelId,
-    }))
-  }
+  const onModelInitFailed = useCallback(
+    (res: any) => {
+      const errorMessage = `${res.error}`
+      console.error('Failed to load model: ' + errorMessage)
+      setLoadModelError(errorMessage)
+      setStateModel(() => ({
+        state: 'start',
+        loading: false,
+        model: res.modelId,
+      }))
+      setQueuedMessage(false)
+    },
+    [setStateModel, setQueuedMessage, setLoadModelError]
+  )
 
-  async function handleMessageResponseUpdate(message: ThreadMessage) {
-    updateMessage(
-      message.id,
-      message.thread_id,
-      message.content,
-      message.status
-    )
-    if (message.status !== MessageStatus.Pending) {
+  const onMessageResponseUpdate = useCallback(
+    (message: ThreadMessage) => {
+      updateMessage(
+        message.id,
+        message.thread_id,
+        message.content,
+        message.status
+      )
+      if (message.status === MessageStatus.Pending) {
+        if (message.content.length) {
+          updateThreadWaiting(message.thread_id, false)
+          setIsGeneratingResponse(false)
+        }
+        return
+      }
       // Mark the thread as not waiting for response
       updateThreadWaiting(message.thread_id, false)
+
+      setIsGeneratingResponse(false)
 
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
       if (thread) {
@@ -111,26 +142,33 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.addNewMessage(message)
       }
-    }
-  }
+    },
+    [updateMessage, updateThreadWaiting]
+  )
 
   useEffect(() => {
+    console.log('Registering events')
     if (window.core?.events) {
-      events.on(MessageEvent.OnMessageResponse, handleNewMessageResponse)
-      events.on(MessageEvent.OnMessageUpdate, handleMessageResponseUpdate)
-      events.on(ModelEvent.OnModelReady, handleModelReady)
-      events.on(ModelEvent.OnModelFail, handleModelFail)
-      events.on(ModelEvent.OnModelStopped, handleModelStopped)
+      events.on(MessageEvent.OnMessageResponse, onNewMessageResponse)
+      events.on(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
+
+      events.on(ModelEvent.OnModelReady, onModelReady)
+      events.on(ModelEvent.OnModelFail, onModelInitFailed)
+      events.on(ModelEvent.OnModelStopped, onModelStopped)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [
+    onNewMessageResponse,
+    onMessageResponseUpdate,
+    onModelReady,
+    onModelInitFailed,
+    onModelStopped,
+  ])
 
   useEffect(() => {
     return () => {
-      events.off(MessageEvent.OnMessageResponse, handleNewMessageResponse)
-      events.off(MessageEvent.OnMessageUpdate, handleMessageResponseUpdate)
+      events.off(MessageEvent.OnMessageResponse, onNewMessageResponse)
+      events.off(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [onNewMessageResponse, onMessageResponseUpdate])
   return <>{children}</>
 }

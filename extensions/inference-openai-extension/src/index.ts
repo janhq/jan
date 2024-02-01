@@ -15,6 +15,7 @@ import {
   ThreadMessage,
   events,
   fs,
+  InferenceEngine,
   BaseExtension,
   MessageEvent,
   ModelEvent,
@@ -114,7 +115,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
     }
   }
   private static async handleModelInit(model: OpenAIModel) {
-    if (model.engine !== "openai") {
+    if (model.engine !== InferenceEngine.openai) {
       return;
     } else {
       JanInferenceOpenAIExtension._currentModel = model;

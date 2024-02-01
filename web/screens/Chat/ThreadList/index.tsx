@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
   Modal,
@@ -49,17 +49,19 @@ export default function ThreadList() {
   const activeThread = useAtomValue(activeThreadAtom)
   const { deleteThread, cleanThread } = useDeleteThread()
   const { downloadedModels } = useGetDownloadedModels()
+  const [isThreadsReady, setIsThreadsReady] = useState(false)
 
   const { activeThreadId, setActiveThread: onThreadClick } =
     useSetActiveThread()
 
   useEffect(() => {
-    getThreads()
+    getThreads().then(() => setIsThreadsReady(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     if (
+      isThreadsReady &&
       downloadedModels.length !== 0 &&
       threads.length === 0 &&
       assistants.length !== 0 &&
@@ -68,7 +70,7 @@ export default function ThreadList() {
       requestCreateNewThread(assistants[0])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assistants, threads, downloadedModels, activeThread])
+  }, [assistants, threads, downloadedModels, activeThread, isThreadsReady])
 
   return (
     <div className="px-3 py-4">
@@ -95,13 +97,10 @@ export default function ThreadList() {
               }}
             >
               <div className="relative z-10 p-4 py-4">
-                <div className="flex justify-between">
-                  <h2 className="line-clamp-1 font-bold">{thread.title}</h2>
-                  <p className="mb-1 line-clamp-1 text-xs leading-5 text-muted-foreground">
-                    {thread.updated &&
-                      displayDate(new Date(thread.updated).getTime())}
-                  </p>
-                </div>
+                <p className="line-clamp-1 text-xs leading-5 text-muted-foreground">
+                  {thread.updated && displayDate(thread.updated)}
+                </p>
+                <h2 className="line-clamp-1 font-bold">{thread.title}</h2>
                 <p className="mt-1 line-clamp-1 text-xs text-gray-700 group-hover/message:max-w-[160px] dark:text-gray-300">
                   {lastMessage || 'No new message'}
                 </p>
@@ -160,9 +159,9 @@ export default function ThreadList() {
                       <div className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary">
                         <Trash2Icon
                           size={16}
-                          className="text-muted-foreground"
+                          className="text-red-600 dark:text-red-300"
                         />
-                        <span className="text-bold text-black dark:text-muted-foreground">
+                        <span className="text-bold text-red-600 dark:text-red-300">
                           Delete thread
                         </span>
                       </div>

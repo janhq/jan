@@ -9,74 +9,36 @@ import {
   TooltipPortal,
   TooltipTrigger,
 } from '@janhq/uikit'
-import { useAtomValue, useSetAtom } from 'jotai'
 
 import { InfoIcon } from 'lucide-react'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
 import { useClickOutside } from '@/hooks/useClickOutside'
-
-import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
-
-import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/modelParam'
-
-import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
-import {
-  engineParamsUpdateAtom,
-  getActiveThreadIdAtom,
-  getActiveThreadModelParamsAtom,
-} from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   name: string
   title: string
+  enabled: boolean
   description: string
   min: number
   max: number
   step: number
   value: number
+  onValueChanged: (e: string | number | boolean) => void
 }
 
 const SliderRightPanel: React.FC<Props> = ({
-  name,
   title,
+  enabled,
   min,
   max,
   step,
   description,
   value,
+  onValueChanged,
 }) => {
-  const { updateModelParameter } = useUpdateModelParameters()
-  const threadId = useAtomValue(getActiveThreadIdAtom)
-
-  const serverEnabled = useAtomValue(serverEnabledAtom)
-
-  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-
-  const modelSettingParams = toSettingParams(activeModelParams)
-
-  const engineParams = getConfigurationsData(modelSettingParams)
-
-  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
-
-  const { stopModel } = useActiveModel()
-
   const [showTooltip, setShowTooltip] = useState({ max: false, min: false })
 
   useClickOutside(() => setShowTooltip({ max: false, min: false }), null, [])
-
-  const onValueChanged = (e: number[]) => {
-    if (!threadId) return
-    if (engineParams.some((x) => x.name.includes(name))) {
-      setEngineParamsUpdate(true)
-      stopModel()
-    } else {
-      setEngineParamsUpdate(false)
-    }
-    updateModelParameter(threadId, name, e[0])
-  }
-
   return (
     <div className="flex flex-col">
       <div className="mb-3 flex items-center gap-x-2">
@@ -99,11 +61,11 @@ const SliderRightPanel: React.FC<Props> = ({
         <div className="relative w-full">
           <Slider
             value={[value]}
-            onValueChange={onValueChanged}
+            onValueChange={(e) => onValueChanged?.(e[0])}
             min={min}
             max={max}
             step={step}
-            disabled={serverEnabled}
+            disabled={!enabled}
           />
           <div className="relative mt-2 flex items-center justify-between text-gray-400">
             <p className="text-sm">{min}</p>
@@ -118,18 +80,18 @@ const SliderRightPanel: React.FC<Props> = ({
               min={min}
               max={max}
               value={String(value)}
-              disabled={serverEnabled}
+              disabled={!enabled}
               onBlur={(e) => {
                 if (Number(e.target.value) > Number(max)) {
-                  onValueChanged([Number(max)])
+                  onValueChanged?.(Number(max))
                   setShowTooltip({ max: true, min: false })
                 } else if (Number(e.target.value) < Number(min)) {
-                  onValueChanged([Number(min)])
+                  onValueChanged?.(Number(min))
                   setShowTooltip({ max: false, min: true })
                 }
               }}
               onChange={(e) => {
-                onValueChanged([Number(e.target.value)])
+                onValueChanged?.(Number(e.target.value))
               }}
             />
           </TooltipTrigger>

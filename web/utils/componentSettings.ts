@@ -1,13 +1,10 @@
-import { Model, ModelRuntimeParams, ModelSettingParams } from '@janhq/core'
+import { Model } from '@janhq/core'
 
+import { SettingComponentData } from '@/screens/Chat/ModelSetting/SettingComponent'
 import { presetConfiguration } from '@/screens/Chat/ModelSetting/predefinedComponent'
 
-import { SettingComponentData } from '@/screens/Chat/ModelSetting/settingComponentBuilder'
-
-import { ModelParams } from '@/helpers/atoms/Thread.atom'
-
 export const getConfigurationsData = (
-  settings: ModelSettingParams | ModelRuntimeParams,
+  settings: object,
   selectedModel?: Model
 ) => {
   const componentData: SettingComponentData[] = []
@@ -19,31 +16,35 @@ export const getConfigurationsData = (
       return
     }
     if ('slider' === componentSetting.controllerType) {
-      const value = Number(settings[key as keyof ModelParams])
+      const value = Number(settings[key as keyof typeof settings])
       if ('value' in componentSetting.controllerData) {
         componentSetting.controllerData.value = value
         if ('max' in componentSetting.controllerData) {
           switch (key) {
             case 'max_tokens':
               componentSetting.controllerData.max =
-                selectedModel?.parameters.max_tokens || 4096
+                selectedModel?.parameters.max_tokens ||
+                componentSetting.controllerData.max ||
+                4096
               break
             case 'ctx_len':
               componentSetting.controllerData.max =
-                selectedModel?.settings.ctx_len || 4096
+                selectedModel?.settings.ctx_len ||
+                componentSetting.controllerData.max ||
+                4096
               break
           }
         }
       }
     } else if ('input' === componentSetting.controllerType) {
-      const value = settings[key as keyof ModelParams] as string
-      const placeholder = settings[key as keyof ModelParams] as string
+      const value = settings[key as keyof typeof settings] as string
+      const placeholder = settings[key as keyof typeof settings] as string
       if ('value' in componentSetting.controllerData)
         componentSetting.controllerData.value = value
       if ('placeholder' in componentSetting.controllerData)
         componentSetting.controllerData.placeholder = placeholder
     } else if ('checkbox' === componentSetting.controllerType) {
-      const checked = settings[key as keyof ModelParams] as boolean
+      const checked = settings[key as keyof typeof settings] as boolean
 
       if ('checked' in componentSetting.controllerData)
         componentSetting.controllerData.checked = checked

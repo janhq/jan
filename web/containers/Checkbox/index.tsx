@@ -9,54 +9,26 @@ import {
   TooltipTrigger,
 } from '@janhq/uikit'
 
-import { useAtomValue, useSetAtom } from 'jotai'
 import { InfoIcon } from 'lucide-react'
-
-import { useActiveModel } from '@/hooks/useActiveModel'
-import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
-
-import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/modelParam'
-
-import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
-import {
-  engineParamsUpdateAtom,
-  getActiveThreadIdAtom,
-  getActiveThreadModelParamsAtom,
-} from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   name: string
   title: string
+  enabled?: boolean
   description: string
   checked: boolean
+  onValueChanged?: (e: string | number | boolean) => void
 }
 
-const Checkbox: React.FC<Props> = ({ name, title, checked, description }) => {
-  const { updateModelParameter } = useUpdateModelParameters()
-  const threadId = useAtomValue(getActiveThreadIdAtom)
-
-  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-
-  const modelSettingParams = toSettingParams(activeModelParams)
-
-  const engineParams = getConfigurationsData(modelSettingParams)
-
-  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
-
-  const serverEnabled = useAtomValue(serverEnabledAtom)
-
-  const { stopModel } = useActiveModel()
-
+const Checkbox: React.FC<Props> = ({
+  title,
+  checked,
+  enabled = true,
+  description,
+  onValueChanged,
+}) => {
   const onCheckedChange = (checked: boolean) => {
-    if (!threadId) return
-    if (engineParams.some((x) => x.name.includes(name))) {
-      setEngineParamsUpdate(true)
-      stopModel()
-    } else {
-      setEngineParamsUpdate(false)
-    }
-    updateModelParameter(threadId, name, checked)
+    onValueChanged?.(checked)
   }
 
   return (
@@ -80,7 +52,7 @@ const Checkbox: React.FC<Props> = ({ name, title, checked, description }) => {
       <Switch
         checked={checked}
         onCheckedChange={onCheckedChange}
-        disabled={serverEnabled}
+        disabled={!enabled}
       />
     </div>
   )

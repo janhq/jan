@@ -4,15 +4,14 @@ import {
   ConversationalExtension,
   Thread,
   ThreadMessage,
+  events,
 } from '@janhq/core'
 
 /**
  * JSONConversationalExtension is a ConversationalExtension implementation that provides
  * functionality for managing threads.
  */
-export default class JSONConversationalExtension
-  extends ConversationalExtension
-{
+export default class JSONConversationalExtension extends ConversationalExtension {
   private static readonly _homeDir = 'file://threads'
   private static readonly _threadInfoFileName = 'thread.json'
   private static readonly _threadMessagesFileName = 'messages.jsonl'
@@ -119,10 +118,56 @@ export default class JSONConversationalExtension
       ])
       if (!(await fs.existsSync(threadDirPath)))
         await fs.mkdirSync(threadDirPath)
+
+      if (message.content[0]?.type === 'image') {
+        const filesPath = await joinPath([threadDirPath, 'files'])
+        if (!(await fs.existsSync(filesPath))) await fs.mkdirSync(filesPath)
+
+        const imagePath = await joinPath([filesPath, `${message.id}.png`])
+        const base64 = message.content[0].text.annotations[0]
+        await this.storeImage(base64, imagePath)
+        if ((await fs.existsSync(imagePath)) && message.content?.length) {
+          // Use file path instead of blob
+          message.content[0].text.annotations[0] = `threads/${message.thread_id}/files/${message.id}.png`
+        }
+      }
+
+      if (message.content[0]?.type === 'pdf') {
+        const filesPath = await joinPath([threadDirPath, 'files'])
+        if (!(await fs.existsSync(filesPath))) await fs.mkdirSync(filesPath)
+
+        const filePath = await joinPath([filesPath, `${message.id}.pdf`])
+        const blob = message.content[0].text.annotations[0]
+        await this.storeFile(blob, filePath)
+
+        if ((await fs.existsSync(filePath)) && message.content?.length) {
+          // Use file path instead of blob
+          message.content[0].text.annotations[0] = `threads/${message.thread_id}/files/${message.id}.pdf`
+        }
+      }
       await fs.appendFileSync(threadMessagePath, JSON.stringify(message) + '\n')
       Promise.resolve()
     } catch (err) {
       Promise.reject(err)
+    }
+  }
+
+  async storeImage(base64: string, filePath: string): Promise<void> {
+    const base64Data = base64.replace(/^data:image\/\w+;base64,/, '')
+
+    try {
+      await fs.writeBlob(filePath, base64Data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async storeFile(base64: string, filePath: string): Promise<void> {
+    const base64Data = base64.replace(/^data:application\/pdf;base64,/, '')
+    try {
+      await fs.writeBlob(filePath, base64Data)
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -229,7 +274,11 @@ export default class JSONConversationalExtension
 
       const messages: ThreadMessage[] = []
       result.forEach((line: string) => {
-        messages.push(JSON.parse(line) as ThreadMessage)
+        try {
+          messages.push(JSON.parse(line) as ThreadMessage)
+        } catch (err) {
+          console.error(err)
+        }
       })
       return messages
     } catch (err) {

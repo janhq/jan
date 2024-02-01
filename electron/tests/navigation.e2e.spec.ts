@@ -9,6 +9,7 @@ import {
 
 let electronApp: ElectronApplication
 let page: Page
+const TIMEOUT: number = parseInt(process.env.TEST_TIMEOUT || '300000')
 
 test.beforeAll(async () => {
   process.env.CI = 'e2e'
@@ -26,7 +27,9 @@ test.beforeAll(async () => {
   })
   await stubDialog(electronApp, 'showMessageBox', { response: 1 })
 
-  page = await electronApp.firstWindow()
+  page = await electronApp.firstWindow({
+    timeout: TIMEOUT,
+  })
 })
 
 test.afterAll(async () => {
@@ -35,20 +38,24 @@ test.afterAll(async () => {
 })
 
 test('renders left navigation panel', async () => {
-  // Chat section should be there
-  const chatSection = await page.getByTestId('Chat').first().isVisible()
-  expect(chatSection).toBe(false)
-
-  // Home actions
-  /* Disable unstable feature tests
-   ** const botBtn = await page.getByTestId("Bot").first().isEnabled();
-   ** Enable back when it is whitelisted
-   */
-
+  test.setTimeout(TIMEOUT)
   const systemMonitorBtn = await page
     .getByTestId('System Monitor')
     .first()
-    .isEnabled()
-  const settingsBtn = await page.getByTestId('Settings').first().isEnabled()
+    .isEnabled({
+      timeout: TIMEOUT,
+    })
+  const settingsBtn = await page
+    .getByTestId('Thread')
+    .first()
+    .isEnabled({ timeout: TIMEOUT })
   expect([systemMonitorBtn, settingsBtn].filter((e) => !e).length).toBe(0)
+  // Chat section should be there
+  await page.getByTestId('Local API Server').first().click({
+    timeout: TIMEOUT,
+  })
+  const localServer = await page.getByTestId('local-server-testid').first()
+  await expect(localServer).toBeVisible({
+    timeout: TIMEOUT,
+  })
 })

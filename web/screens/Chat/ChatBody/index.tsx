@@ -10,6 +10,7 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
+import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
@@ -24,6 +25,7 @@ const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
+  const loadModelError = useAtomValue(loadModelErrorAtom)
 
   if (downloadedModels.length === 0)
     return (
@@ -80,9 +82,13 @@ const ChatBody: React.FC = () => {
         <ScrollToBottom className="flex h-full w-full flex-col">
           {messages.map((message, index) => (
             <div key={message.id}>
-              <ChatItem {...message} key={message.id} />
-              {(message.status === MessageStatus.Error ||
-                message.status === MessageStatus.Stopped) &&
+              {(message.status !== MessageStatus.Pending ||
+                message.content.length > 0) && (
+                <ChatItem {...message} key={message.id} />
+              )}
+              {!loadModelError &&
+                (message.status === MessageStatus.Error ||
+                  message.status === MessageStatus.Stopped) &&
                 index === messages.length - 1 && (
                   <ErrorMessage message={message} />
                 )}

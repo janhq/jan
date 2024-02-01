@@ -23,6 +23,7 @@ export const setActiveThreadIdAtom = atom(
 
 export const waitingToSendMessage = atom<boolean | undefined>(undefined)
 
+export const isGeneratingResponseAtom = atom<boolean | undefined>(undefined)
 /**
  * Stores all thread states for the current user
  */
@@ -42,18 +43,6 @@ export const deleteThreadStateAtom = atom(
   (get, set, threadId: string) => {
     const currentState = { ...get(threadStatesAtom) }
     delete currentState[threadId]
-    set(threadStatesAtom, currentState)
-  }
-)
-
-export const updateThreadInitSuccessAtom = atom(
-  null,
-  (get, set, threadId: string) => {
-    const currentState = { ...get(threadStatesAtom) }
-    currentState[threadId] = {
-      ...currentState[threadId],
-      isFinishInit: true,
-    }
     set(threadStatesAtom, currentState)
   }
 )

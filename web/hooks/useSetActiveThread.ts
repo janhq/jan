@@ -13,6 +13,7 @@ import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   ModelParams,
   getActiveThreadIdAtom,
+  isGeneratingResponseAtom,
   setActiveThreadIdAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -22,6 +23,7 @@ export default function useSetActiveThread() {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const setThreadMessage = useSetAtom(setConvoMessagesAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   const setActiveThread = async (thread: Thread) => {
     if (activeThreadId === thread.id) {
@@ -29,6 +31,7 @@ export default function useSetActiveThread() {
       return
     }
 
+    setIsGeneratingResponse(false)
     events.emit(InferenceEvent.OnInferenceStopped, thread.id)
 
     // load the corresponding messages
