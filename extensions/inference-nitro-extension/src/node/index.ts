@@ -27,15 +27,6 @@ interface ModelInitOptions {
   modelFullPath: string;
   model: Model;
 }
-
-/**
- * Model setting args for Nitro model load.
- */
-interface ModelSettingArgs extends ModelSettingParams {
-  llama_model_path: string;
-  cpu_threads: number;
-}
-
 // The PORT to use for the Nitro subprocess
 const PORT = 3928;
 // The HOST address to use for the Nitro subprocess
@@ -58,7 +49,7 @@ let subprocess: ChildProcessWithoutNullStreams | undefined = undefined;
 // The current model file url
 let currentModelFile: string = "";
 // The current model settings
-let currentSettings: ModelSettingArgs | undefined = undefined;
+let currentSettings: ModelSettingParams | undefined = undefined;
 
 /**
  * Stops a Nitro subprocess.
@@ -217,8 +208,8 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
  * Loads a LLM model into the Nitro subprocess by sending a HTTP POST request.
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
-function loadLLMModel(settings: ModelSettingParams): Promise<Response> {
-  if (!settings.ngl) {
+function loadLLMModel(settings: any): Promise<Response> {
+  if (!settings?.ngl) {
     settings.ngl = 100;
   }
   log(`[NITRO]::Debug: Loading model with params ${JSON.stringify(settings)}`);
