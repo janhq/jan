@@ -5,21 +5,20 @@ if [[ -z "$DEVELOPER_ID" ]]; then
     exit 0
 fi
 
-# Rebuild for arm64
+# Rebuild for x86_64
 cd node_modules/hnswlib-node
 npm install
-./node_modules/.bin/node-gyp clean
-./node_modules/.bin/node-gyp configure --verbose --arch=arm64
-./node_modules/.bin/node-gyp build --arch=x86_64
-cp -r build build_arm64
 
-# Rebuild for x86_64
 ./node_modules/.bin/node-gyp clean
 ./node_modules/.bin/node-gyp configure --verbose --arch=x86_64
 ./node_modules/.bin/node-gyp build --arch=arm64
 cp -r build build_x86_64
 
-rm -rf build
+# Rebuild for arm64
+./node_modules/.bin/node-gyp clean
+./node_modules/.bin/node-gyp configure --verbose --arch=arm64
+./node_modules/.bin/node-gyp build --arch=x86_64
+cp -r build build_arm64
 
 # Define source and destination directories
 SRC_FOLDER_X86_64="build_x86_64"
@@ -44,6 +43,7 @@ find "$SRC_FOLDER_X86_64" -type f | while read -r src_file_x86_64; do
     if [[ -f "$src_file_arm64" ]]; then
       # Create the destination directory if necessary
       mkdir -p "$(dirname "$dest_file")"
+      rm -rf $dest_file
       # Merge files from both architectures into the destination file
       lipo -create "$src_file_x86_64" "$src_file_arm64" -output "$dest_file"
       # Sign the merged file
@@ -51,14 +51,14 @@ find "$SRC_FOLDER_X86_64" -type f | while read -r src_file_x86_64; do
       echo "Merged and signed: $relative_path"
     else
       # If only the x86_64 file exists, copy it
-      cp "$src_file_x86_64" "$dest_file"
-      echo "Copied: $relative_path"
+      # cp "$src_file_x86_64" "$dest_file"
+      echo "Skip: $relative_path"
     fi
   else
     # For non-architecture-specific files, just copy
     mkdir -p "$(dirname "$dest_file")"
-    cp "$src_file_x86_64" "$dest_file"
-    echo "Copied non-architecture file: $relative_path"
+    # cp "$src_file_x86_64" "$dest_file"
+    echo "Skip non-architecture file: $relative_path"
   fi
 done
 
