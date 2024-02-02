@@ -8,8 +8,9 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
+    "build-hnswlib-node": "chmod +x ./sign.sh && ./sign.sh",
     "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../electron/pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && npm run build-hnswlib-node && npm run build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../electron/pre-install",
     "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install",
     "build:publish": "run-script-os"
   },
