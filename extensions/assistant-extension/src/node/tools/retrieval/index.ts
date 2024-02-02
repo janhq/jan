@@ -35,21 +35,19 @@ export class Retrieval {
     if (engine === "nitro") {
       this.embeddingModel = new OpenAIEmbeddings(
         { openAIApiKey: "nitro-embedding" },
-        { basePath: "http://127.0.0.1:3928/v1" }
+        { basePath: "http://127.0.0.1:3928/v1" },
       );
     } else {
       // Fallback to OpenAI Settings
       this.embeddingModel = new OpenAIEmbeddings({
-        configuration: {
-          apiKey: settings.api_key,
-        },
+        openAIApiKey: settings.api_key,
       });
     }
   }
 
   public ingestAgentKnowledge = async (
     filePath: string,
-    memoryPath: string
+    memoryPath: string,
   ): Promise<any> => {
     const loader = new PDFLoader(filePath, {
       splitPages: true,
