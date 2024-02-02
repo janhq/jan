@@ -61,3 +61,6 @@ find "$SRC_FOLDER_X86_64" "$SRC_FOLDER_ARM64" -type f | while read -r src_file; 
     echo "Copied non-architecture file: $relative_path"
   fi
 done
+
+rm -rf build_x86_64
+rm -rf build_arm64
