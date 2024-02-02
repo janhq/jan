@@ -20,7 +20,7 @@ import { snackbar } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
-import { activeModelAtom, loadModelErrorAtom } from '@/hooks/useActiveModel'
+import { activeModelAtom } from '@/hooks/useActiveModel'
 import { queuedMessageAtom, reloadModelAtom } from '@/hooks/useSendChatMessage'
 
 import ChatBody from '@/screens/Chat/ChatBody'
@@ -28,7 +28,6 @@ import ChatBody from '@/screens/Chat/ChatBody'
 import ThreadList from '@/screens/Chat/ThreadList'
 
 import ChatInput from './ChatInput'
-import LoadModelErrorMessage from './LoadModelErrorMessage'
 import RequestDownloadModel from './RequestDownloadModel'
 import Sidebar from './Sidebar'
 
@@ -70,7 +69,6 @@ const ChatScreen: React.FC = () => {
   const activeModel = useAtomValue(activeModelAtom)
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  const loadModelError = useAtomValue(loadModelErrorAtom)
 
   const { getRootProps, isDragReject } = useDropzone({
     noClick: true,
@@ -213,7 +211,6 @@ const ChatScreen: React.FC = () => {
           )}
 
           {activeModel && isGeneratingResponse && <GenerateResponse />}
-          {loadModelError && <LoadModelErrorMessage />}
           <ChatInput />
         </div>
       </div>
