@@ -8,6 +8,9 @@ import {
   ModelExtension,
   Model,
   getJanDataFolderPath,
+  events,
+  DownloadEvent,
+  DownloadRoute,
 } from '@janhq/core'
 
 /**
@@ -90,11 +93,57 @@ export default class JanModelExtension extends ModelExtension {
 
         downloadFile(source.url, path, network)
       }
+      // TODO: handle multiple binaries for web later
     } else {
       const fileName = this.extractFileName(model.sources[0]?.url)
       const path = await joinPath([modelDirPath, fileName])
       downloadFile(model.sources[0]?.url, path, network)
+      this.startPollingDownloadProgress(model.id)
     }
+  }
+
+  /**
+   * Specifically for Jan server.
+   */
+  private API_BASE_URL = 'http://localhost:1337'
+  // download/getDownloadProgress/openchat-3.5-7b
+  private async startPollingDownloadProgress(modelId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      //   {
+      //     "time": {
+      //         "elapsed": 3.006,
+      //         "remaining": 214.113
+      //     },
+      //     "speed": 20120064.537591483,
+      //     "percent": 0.013844934683405521,
+      //     "size": {
+      //         "total": 4368450656,
+      //         "transferred": 75914642
+      //     },
+      //     "modelId": "openchat-3.5-7b",
+      //     "filename": "openchat-3.5-1210.Q4_K_M.gguf"
+      // }
+      const interval = setInterval(async () => {
+        fetch(
+          `${this.API_BASE_URL}/v1/download/${DownloadRoute.getDownloadProgress}/${modelId}`,
+          {
+            method: 'GET',
+            headers: { contentType: 'application/json' },
+          }
+        ).then(async (res) => {
+          const state = await res.json()
+          if (state['modelId'] == null) {
+            // events.emit(DownloadEvent.onFileDownloadSuccess, {
+            //   ...state
+            // })
+            clearInterval(interval)
+          }
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
+            ...state,
+          })
+        })
+      }, 1000)
+    })
   }
 
   /**

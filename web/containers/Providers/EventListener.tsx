@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { PropsWithChildren, useEffect, useRef } from 'react'
+import { PropsWithChildren, useCallback, useEffect, useRef } from 'react'
 
-import { baseName } from '@janhq/core'
+import { baseName, DownloadEvent, events } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
@@ -18,6 +18,7 @@ import {
   downloadingModelsAtom,
 } from '@/helpers/atoms/Model.atom'
 
+// TODO refactor
 export default function EventListenerWrapper({ children }: PropsWithChildren) {
   const setProgress = useSetAtom(appDownloadProgress)
   const models = useAtomValue(downloadingModelsAtom)
@@ -39,82 +40,105 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
     downloadedModelRef.current = downloadedModels
   }, [downloadedModels])
 
+  const onFileDownloadUpdate = useCallback(
+    async (state: any) => {
+      console.log('onFileDownloadUpdate', state)
+      if (!state) return
+      // const modelName = await baseName(state.fileName)
+      const model = modelsRef.current.find(
+        (model) => modelBinFileName(model) === state.filename
+      )
+      if (model) {
+        setDownloadState({
+          ...state,
+          modelId: model.id,
+        })
+      }
+    },
+    [setDownloadState]
+  )
+
   useEffect(() => {
-    if (window && window.electronAPI) {
-      window.electronAPI.onFileDownloadUpdate(
-        async (_event: string, state: any | undefined) => {
-          if (!state) return
-          const modelName = await baseName(state.fileName)
-          const model = modelsRef.current.find(
-            (model) => modelBinFileName(model) === modelName
-          )
-          if (model)
-            setDownloadState({
-              ...state,
-              modelId: model.id,
-            })
-        }
-      )
+    console.log('Registering events')
+    events.on(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
+  }, [onFileDownloadUpdate])
 
-      window.electronAPI.onFileDownloadError(
-        async (_event: string, state: any) => {
-          const modelName = await baseName(state.fileName)
-          const model = modelsRef.current.find(
-            (model) => modelBinFileName(model) === modelName
-          )
-          if (model) {
-            if (state.err?.message !== 'aborted') {
-              console.error('Download error', state)
-              setDownloadStateFailed(model.id, state.err.message)
-            } else {
-              setDownloadStateCancelled(model.id)
-            }
-          }
-        }
-      )
+  // useEffect(() => {
+  //   if (window && window.electronAPI) {
+  //     window.electronAPI.onFileDownloadUpdate(
+  //       async (_event: string, state: any | undefined) => {
+  //         if (!state) return
+  //         const modelName = await baseName(state.fileName)
+  //         const model = modelsRef.current.find(
+  //           (model) => modelBinFileName(model) === modelName
+  //         )
+  //         if (model)
+  //           setDownloadState({
+  //             ...state,
+  //             modelId: model.id,
+  //           })
+  //       }
+  //     )
 
-      window.electronAPI.onFileDownloadSuccess(
-        async (_event: string, state: any) => {
-          if (state && state.fileName) {
-            const modelName = await baseName(state.fileName)
-            const model = modelsRef.current.find(
-              (model) => modelBinFileName(model) === modelName
-            )
-            if (model) {
-              setDownloadStateSuccess(model.id)
-              setDownloadedModels([...downloadedModelRef.current, model])
-            }
-          }
-        }
-      )
+  //     window.electronAPI.onFileDownloadError(
+  //       async (_event: string, state: any) => {
+  //         const modelName = await baseName(state.fileName)
+  //         const model = modelsRef.current.find(
+  //           (model) => modelBinFileName(model) === modelName
+  //         )
+  //         if (model) {
+  //           if (state.err?.message !== 'aborted') {
+  //             console.error('Download error', state)
+  //             setDownloadStateFailed(model.id, state.err.message)
+  //           } else {
+  //             setDownloadStateCancelled(model.id)
+  //           }
+  //         }
+  //       }
+  //     )
 
-      window.electronAPI.onAppUpdateDownloadUpdate(
-        (_event: string, progress: any) => {
-          setProgress(progress.percent)
-          console.debug('app update progress:', progress.percent)
-        }
-      )
+  //     window.electronAPI.onFileDownloadSuccess(
+  //       async (_event: string, state: any) => {
+  //         if (state && state.fileName) {
+  //           const modelName = await baseName(state.fileName)
+  //           const model = modelsRef.current.find(
+  //             (model) => modelBinFileName(model) === modelName
+  //           )
+  //           if (model) {
+  //             setDownloadStateSuccess(model.id)
+  //             setDownloadedModels([...downloadedModelRef.current, model])
+  //           }
+  //         }
+  //       }
+  //     )
 
-      window.electronAPI.onAppUpdateDownloadError(
-        (_event: string, callback: any) => {
-          console.error('Download error', callback)
-          setProgress(-1)
-        }
-      )
+  //     window.electronAPI.onAppUpdateDownloadUpdate(
+  //       (_event: string, progress: any) => {
+  //         setProgress(progress.percent)
+  //         console.debug('app update progress:', progress.percent)
+  //       }
+  //     )
 
-      window.electronAPI.onAppUpdateDownloadSuccess(() => {
-        setProgress(-1)
-      })
-    }
-    return () => {}
-  }, [
-    setDownloadState,
-    setDownloadStateCancelled,
-    setDownloadStateFailed,
-    setDownloadStateSuccess,
-    setDownloadedModels,
-    setProgress,
-  ])
+  //     window.electronAPI.onAppUpdateDownloadError(
+  //       (_event: string, callback: any) => {
+  //         console.error('Download error', callback)
+  //         setProgress(-1)
+  //       }
+  //     )
+
+  //     window.electronAPI.onAppUpdateDownloadSuccess(() => {
+  //       setProgress(-1)
+  //     })
+  //   }
+  //   return () => {}
+  // }, [
+  //   setDownloadState,
+  //   setDownloadStateCancelled,
+  //   setDownloadStateFailed,
+  //   setDownloadStateSuccess,
+  //   setDownloadedModels,
+  //   setProgress,
+  // ])
 
   return <EventHandler>{children}</EventHandler>
 }
