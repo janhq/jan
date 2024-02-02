@@ -70,7 +70,6 @@ const ChatScreen: React.FC = () => {
   const activeModel = useAtomValue(activeModelAtom)
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  const loadModelError = useAtomValue(loadModelErrorAtom)
 
   const { getRootProps, isDragReject } = useDropzone({
     noClick: true,
@@ -213,7 +212,6 @@ const ChatScreen: React.FC = () => {
           )}
 
           {activeModel && isGeneratingResponse && <GenerateResponse />}
-          {loadModelError && <LoadModelErrorMessage />}
           <ChatInput />
         </div>
       </div>

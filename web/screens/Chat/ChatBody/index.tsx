@@ -25,7 +25,6 @@ const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
-  const loadModelError = useAtomValue(loadModelErrorAtom)
 
   if (downloadedModels.length === 0)
     return (
@@ -86,9 +85,8 @@ const ChatBody: React.FC = () => {
                 message.content.length > 0) && (
                 <ChatItem {...message} key={message.id} />
               )}
-              {!loadModelError &&
-                (message.status === MessageStatus.Error ||
-                  message.status === MessageStatus.Stopped) &&
+              {(message.status === MessageStatus.Error ||
+                message.status === MessageStatus.Stopped) &&
                 index === messages.length - 1 && (
                   <ErrorMessage message={message} />
                 )}
