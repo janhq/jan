@@ -11,14 +11,16 @@ npm install
 
 ./node_modules/.bin/node-gyp clean
 ./node_modules/.bin/node-gyp configure --verbose --arch=x86_64
-./node_modules/.bin/node-gyp build --arch=arm64
+./node_modules/.bin/node-gyp build --arch=x86_64
 cp -r build build_x86_64
 
 # Rebuild for arm64
 ./node_modules/.bin/node-gyp clean
 ./node_modules/.bin/node-gyp configure --verbose --arch=arm64
-./node_modules/.bin/node-gyp build --arch=x86_64
+./node_modules/.bin/node-gyp build --arch=arm64
 cp -r build build_arm64
+
+rm -rf build
 
 # Define source and destination directories
 SRC_FOLDER_X86_64="build_x86_64"
@@ -51,14 +53,14 @@ find "$SRC_FOLDER_X86_64" -type f | while read -r src_file_x86_64; do
       echo "Merged and signed: $relative_path"
     else
       # If only the x86_64 file exists, copy it
-      # cp "$src_file_x86_64" "$dest_file"
-      echo "Skip: $relative_path"
+      cp "$src_file_x86_64" "$dest_file"
+      echo "Copied: $relative_path"
     fi
   else
     # For non-architecture-specific files, just copy
     mkdir -p "$(dirname "$dest_file")"
-    # cp "$src_file_x86_64" "$dest_file"
-    echo "Skip non-architecture file: $relative_path"
+    cp "$src_file_x86_64" "$dest_file"
+    echo "Copied non-architecture file: $relative_path"
   fi
 done
 
