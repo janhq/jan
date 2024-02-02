@@ -27,6 +27,9 @@ export default [
         TROUBLESHOOTING_URL: JSON.stringify(
           "https://jan.ai/guides/troubleshooting"
         ),
+        JAN_SERVER_INFERENCE_URL: JSON.stringify(
+          "http://localhost:1337/v1/chat/completions"
+        ),
       }),
       // Allow json resolution
       json(),
