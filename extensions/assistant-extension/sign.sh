@@ -7,15 +7,16 @@ fi
 
 # Rebuild for arm64
 cd node_modules/hnswlib-node
-node-gyp clean
-node-gyp configure --verbose --arch=arm64
-node-gyp build --arch=x86_64
+npm install
+./node_modules/.bin/node-gyp clean
+./node_modules/.bin/node-gyp configure --verbose --arch=arm64
+./node_modules/.bin/node-gyp build --arch=x86_64
 cp -r build build_arm64
 
 # Rebuild for x86_64
-node-gyp clean
-node-gyp configure --verbose --arch=x86_64
-node-gyp build --arch=arm64
+./node_modules/.bin/node-gyp clean
+./node_modules/.bin/node-gyp configure --verbose --arch=x86_64
+./node_modules/.bin/node-gyp build --arch=arm64
 cp -r build build_x86_64
 
 rm -rf build
@@ -25,42 +26,41 @@ SRC_FOLDER_X86_64="build_x86_64"
 SRC_FOLDER_ARM64="build_arm64"
 DEST_FOLDER="build"
 
-# Create the destination directory if it doesn't exist
+# Create the destination directory if it does not exist
 mkdir -p "$DEST_FOLDER"
 
-# Iterate over all files in both x86_64 and arm64 directories
-find "$SRC_FOLDER_X86_64" "$SRC_FOLDER_ARM64" -type f | while read -r src_file; do
-  # Obtain the relative path by removing the source directory path
-  relative_path="${src_file#./$SRC_FOLDER_X86_64/}"
-  relative_path="${relative_path#./$SRC_FOLDER_ARM64/}"
+# Iterate over all files in the x86_64 source folder
+find "$SRC_FOLDER_X86_64" -type f | while read -r src_file_x86_64; do
+  # Calculate the relative path correctly by removing the source folder prefix
+  relative_path="${src_file_x86_64#$SRC_FOLDER_X86_64/}"
 
-  # Determine the destination path based on the relative path
+  # Determine the corresponding file in the ARM64 folder and the destination file
+  src_file_arm64="$SRC_FOLDER_ARM64/$relative_path"
   dest_file="$DEST_FOLDER/$relative_path"
 
-  # Check the file's architecture with lipo
-  if lipo -info "$src_file" 2>&1 | grep -q "architecture"; then
-    # This is a file with a specific architecture
-    src_file_x86_64="${SRC_FOLDER_X86_64}/${relative_path}"
-    src_file_arm64="${SRC_FOLDER_ARM64}/${relative_path}"
-
-    # Merge if both file versions exist
-    if [[ -f "$src_file_x86_64" && -f "$src_file_arm64" ]]; then
+  # Check if the file is an architecture-specific file
+  if lipo -info "$src_file_x86_64" &>/dev/null; then
+    # If the file has a specific architecture and exists in both source folders
+    if [[ -f "$src_file_arm64" ]]; then
+      # Create the destination directory if necessary
       mkdir -p "$(dirname "$dest_file")"
+      # Merge files from both architectures into the destination file
       lipo -create "$src_file_x86_64" "$src_file_arm64" -output "$dest_file"
+      # Sign the merged file
       codesign -s "$DEVELOPER_ID" --options=runtime --timestamp --force "$dest_file"
-      echo "Merged file: $relative_path"
+      echo "Merged and signed: $relative_path"
     else
-      # If only one exists, copy that file
-      cp "$src_file" "$dest_file"
-      echo "Copied file: $relative_path"
+      # If only the x86_64 file exists, copy it
+      cp "$src_file_x86_64" "$dest_file"
+      echo "Copied: $relative_path"
     fi
   else
-    # This is a file without architecture, just copy
+    # For non-architecture-specific files, just copy
     mkdir -p "$(dirname "$dest_file")"
-    cp "$src_file" "$dest_file"
+    cp "$src_file_x86_64" "$dest_file"
     echo "Copied non-architecture file: $relative_path"
   fi
 done
 
-rm -rf build_x86_64
-rm -rf build_arm64
+# Remove the source folders after processing
+rm -rf "$SRC_FOLDER_X86_64" "$SRC_FOLDER_ARM64"
