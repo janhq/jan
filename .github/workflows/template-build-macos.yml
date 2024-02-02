@@ -56,6 +56,10 @@ jobs:
         with:
           node-version: 20
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 

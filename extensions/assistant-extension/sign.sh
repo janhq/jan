@@ -7,7 +7,6 @@ fi
 
 # Rebuild for x86_64
 cd node_modules/hnswlib-node
-python3 -m pip install distutils
 npm install
 
 ./node_modules/.bin/node-gyp clean
