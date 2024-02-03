@@ -10,8 +10,6 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
-import { loadModelErrorAtom } from '@/hooks/useActiveModel'
-
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import ChatItem from '../ChatItem'

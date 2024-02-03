@@ -3,6 +3,7 @@ import {
   AppRoute,
   DownloadRoute,
   ExtensionRoute,
+  FileManagerRoute,
   FileSystemRoute,
 } from '@janhq/core'
 
@@ -22,6 +23,7 @@ export const APIRoutes = [
     route: r,
   })),
   ...Object.values(FileSystemRoute).map((r) => ({ path: `fs`, route: r })),
+  ...Object.values(FileManagerRoute).map((r) => ({ path: `fs`, route: r })),
 ]
 
 // Define the restAPI object with methods for each API route

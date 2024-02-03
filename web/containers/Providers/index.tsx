@@ -21,7 +21,6 @@ import {
 
 import Umami from '@/utils/umami'
 
-import DataLoader from './DataLoader'
 import Loader from '../Loader'
 
 import DataLoader from './DataLoader'
