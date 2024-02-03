@@ -56,12 +56,12 @@ jobs:
         with:
           node-version: 20
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      # - uses: actions/setup-python@v5
+      #   with:
+      #     python-version: '3.11'
 
-      - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
+      # - name: Install jq
+      #   uses: dcarbone/install-jq-action@v2.0.1
 
       - name: Update app version based on latest release tag with build number
         if: inputs.public_provider != 'github'
