@@ -120,9 +120,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # CSC_LINK: "/tmp/codesign.p12"
           # CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_PATH: "."
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
@@ -138,9 +138,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # CSC_LINK: "/tmp/codesign.p12"
           # CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_PATH: "."
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
           ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
