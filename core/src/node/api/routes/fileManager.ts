@@ -1,5 +1,5 @@
 import { FileManagerRoute } from '../../../api'
-import { HttpServer } from '../../index'
+import { HttpServer, normalizeFilePath } from '../../index'
 
 export const fsRouter = async (app: HttpServer) => {
   app.post(`/app/${FileManagerRoute.syncFile}`, async (request: any, reply: any) => {})
