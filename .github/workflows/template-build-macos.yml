@@ -55,7 +55,9 @@ jobs:
         uses: actions/setup-node@v1
         with:
           node-version: 20
-
+      - name: Unblock keychain
+        run: |
+          security unlock-keychain -p ${{ secrets.KEYCHAIN_PASSWORD }} ~/Library/Keychains/login.keychain-db
       # - uses: actions/setup-python@v5
       #   with:
       #     python-version: '3.11'
