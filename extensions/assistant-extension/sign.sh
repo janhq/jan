@@ -46,8 +46,8 @@ find "$SRC_FOLDER_X86_64" -type f | while read -r src_file_x86_64; do
       # Create the destination directory if necessary
       mkdir -p "$(dirname "$dest_file")"
       rm -rf $dest_file
-      codesign -s "$DEVELOPER_ID" --options=runtime --timestamp --force "$src_file_x86_64"
-      codesign -s "$DEVELOPER_ID" --options=runtime --timestamp --force "$src_file_arm64"
+      codesign -s "$DEVELOPER_ID" --options=runtime "$src_file_x86_64"
+      codesign -s "$DEVELOPER_ID" --options=runtime "$src_file_arm64"
       # Merge files from both architectures into the destination file
       lipo -create "$src_file_x86_64" "$src_file_arm64" -output "$dest_file"
       # Sign the merged file
