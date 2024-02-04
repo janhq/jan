@@ -55,10 +55,10 @@ jobs:
     steps:
       - name: install-aws-cli-action
         uses: unfor19/install-aws-cli-action@v1
-      - name: Delete object older than 7 days
+      - name: Delete object older than 10 days
         run: |
           # Get the list of objects in the 'latest' folder
-          OBJECTS=$(aws s3api list-objects --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --query 'Contents[?LastModified<`'$(date -d "$current_date -30 days" -u +"%Y-%m-%dT%H:%M:%SZ")'`].{Key: Key}' --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com | jq -c .)
+          OBJECTS=$(aws s3api list-objects --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --query 'Contents[?LastModified<`'$(date -d "$current_date -10 days" -u +"%Y-%m-%dT%H:%M:%SZ")'`].{Key: Key}' --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com | jq -c .)
           
           # Create a JSON file for the delete operation
           echo "{\"Objects\": $OBJECTS, \"Quiet\": false}" > delete.json
