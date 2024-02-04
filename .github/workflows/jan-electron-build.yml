@@ -112,7 +112,7 @@ jobs:
           asset_content_type: text/yaml
 
   update_release_draft:
-    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64]
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, combine-latest-mac-yml]
     permissions:
       # write permission is required to create a github release
       contents: write
