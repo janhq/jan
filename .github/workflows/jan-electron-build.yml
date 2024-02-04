@@ -73,6 +73,8 @@ jobs:
   combine-latest-mac-yml:
     needs: [build-macos-x64, build-macos-arm64, create-draft-release]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -111,7 +113,6 @@ jobs:
           asset_name: latest-mac.yml
           asset_content_type: text/yaml
           overwrite: true
-
 
   update_release_draft:
     needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, combine-latest-mac-yml]
