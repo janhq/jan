@@ -101,7 +101,8 @@ jobs:
           node /tmp/merge-latest-ymls.js ./latest-mac-x64/latest-mac.yml ./latest-mac-arm64/latest-mac.yml ./latest-mac.yml
           cat ./latest-mac.yml
       
-      - uses: shogo82148/actions-upload-release-asset@v1.7.2@v1.7.2
+      - name: Yet Another Upload Release Asset Action  
+        uses: shogo82148/actions-upload-release-asset@v1.7.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
