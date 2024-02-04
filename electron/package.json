@@ -63,11 +63,11 @@
     "build:test:darwin": "tsc -p . && electron-builder -p never -m --dir",
     "build:test:win32": "tsc -p . && electron-builder -p never -w --dir",
     "build:test:linux": "tsc -p . && electron-builder -p never -l --dir",
-    "build:darwin": "tsc -p . && electron-builder -p never -m --x64 --arm64",
+    "build:darwin": "tsc -p . && electron-builder -p never -m",
     "build:win32": "tsc -p . && electron-builder -p never -w",
     "build:linux": "tsc -p . && electron-builder -p never -l deb -l AppImage",
     "build:publish": "run-script-os",
-    "build:publish:darwin": "tsc -p . && electron-builder -p always -m --x64 --arm64",
+    "build:publish:darwin": "tsc -p . && electron-builder -p always -m",
     "build:publish:win32": "tsc -p . && electron-builder -p always -w",
     "build:publish:linux": "tsc -p . && electron-builder -p always -l deb -l AppImage"
   },
