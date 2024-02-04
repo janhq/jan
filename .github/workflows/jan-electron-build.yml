@@ -44,7 +44,7 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-macos-arm64:
-    uses: ./.github/workflows/template-build-macos-x64.yml
+    uses: ./.github/workflows/template-build-macos-arm64.yml
     secrets: inherit
     needs: [get-update-version]
     with:
@@ -76,8 +76,7 @@ jobs:
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
-        with:
-          ref: ${{ needs.set-public-provider.outputs.ref }}
+
       - name: Download mac-x64 artifacts
         uses: actions/download-artifact@v3
         with:
