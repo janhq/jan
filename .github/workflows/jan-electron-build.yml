@@ -46,7 +46,7 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   update_release_draft:
-    needs: [build-macos, build-windows-x64, build-linux-x64]
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64]
     permissions:
       # write permission is required to create a github release
       contents: write
