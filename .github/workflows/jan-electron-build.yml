@@ -97,8 +97,9 @@ jobs:
           ls -la ./latest-mac-x64
           ls -la ./latest-mac-arm64
           ls -la ./electron
-          npm install js-yaml --prefix ./electron
-          node ./electron/merge-latest-ymls.js ./latest-mac-x64/latest-mac.yml ./latest-mac-arm64/latest-mac.yml ./latest-mac.yml
+          cp ./electron/merge-latest-ymls.js /tmp/merge-latest-ymls.js
+          npm install js-yaml --prefix /tmp
+          node /tmp/merge-latest-ymls.js ./latest-mac-x64/latest-mac.yml ./latest-mac-arm64/latest-mac.yml ./latest-mac.yml
           cat ./latest-mac.yml
       
       - uses: actions/upload-release-asset@v1.0.1
