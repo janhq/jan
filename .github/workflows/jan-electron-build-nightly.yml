@@ -85,8 +85,50 @@ jobs:
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
+  combine-latest-mac-yml:
+    needs: [set-public-provider, build-macos-x64, build-macos-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ needs.set-public-provider.outputs.ref }}
+      - name: Download mac-x64 artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: latest-mac-x64
+          path: ./latest-mac-x64
+      - name: Download mac-arm artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: latest-mac-arm64
+          path: ./latest-mac-arm64
+
+      - name: 'Merge latest-mac.yml'
+        # unfortunately electron-builder doesn't understand that we have two different releases for mac-x64 and mac-arm, so we need to manually merge the latest files
+        # see https://github.com/electron-userland/electron-builder/issues/5592
+        run: |
+          ls -la .
+          ls -la ./latest-mac-x64
+          ls -la ./latest-mac-arm64
+          ls -la ./electron
+          npm install -g js-yaml
+          node ./electron/merge-latest-ymls.js ./latest-mac-x64/latest-mac.yml ./latest-mac-arm64/latest-mac.yml ./latest-mac.yml
+          cat ./latest-mac.yml
+      
+      - name: Upload latest-mac.yml
+        if: ${{ needs.set-public-provider.outputs.public_provider == 'cloudflare-r2' }}
+        run: |
+          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/latest-mac.yml" --body "./latest-mac.yml"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+
+    
   noti-discord-nightly-and-update-url-readme:
-    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider]
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
     secrets: inherit
     if: github.event_name == 'schedule'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -97,7 +139,7 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-pre-release-and-update-url-readme:
-    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider]
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
     secrets: inherit
     if: github.event_name == 'push'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -108,7 +150,7 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-manual-and-update-url-readme:
-    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider]
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
     secrets: inherit
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'cloudflare-r2'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml

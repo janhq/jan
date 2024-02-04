@@ -114,3 +114,9 @@ jobs:
         with:
           name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
           path: ./electron/dist/*.AppImage
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: latest-mac-x64
+          path: ./electron/dist/latest-mac.yml

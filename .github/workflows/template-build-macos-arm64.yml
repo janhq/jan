@@ -159,3 +159,9 @@ jobs:
         with:
           name: jan-mac-arm64-${{ inputs.new_version }}
           path: ./electron/dist/jan-mac-arm64-${{ inputs.new_version }}.dmg
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: latest-mac-arm64
+          path: ./electron/dist/latest-mac.yml

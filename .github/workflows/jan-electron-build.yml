@@ -9,6 +9,31 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
+  create-draft-release:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    permissions:
+      contents: write
+    steps:
+      - name: Extract tag name without v prefix
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV && echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
+        env:
+          GITHUB_REF: ${{ github.ref }}
+      - name: Create Draft Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: "${{ env.VERSION }}"
+          draft: true
+          prerelease: false
+
   build-macos-x64:
     uses: ./.github/workflows/template-build-macos-x64.yml
     secrets: inherit
@@ -44,6 +69,46 @@ jobs:
       ref: ${{ github.ref }}
       public_provider: github
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  combine-latest-mac-yml:
+    needs: [build-macos-x64, build-macos-arm64, create-draft-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ needs.set-public-provider.outputs.ref }}
+      - name: Download mac-x64 artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: latest-mac-x64
+          path: ./latest-mac-x64
+      - name: Download mac-arm artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: latest-mac-arm64
+          path: ./latest-mac-arm64
+
+      - name: 'Merge latest-mac.yml'
+        # unfortunately electron-builder doesn't understand that we have two different releases for mac-x64 and mac-arm, so we need to manually merge the latest files
+        # see https://github.com/electron-userland/electron-builder/issues/5592
+        run: |
+          ls -la .
+          ls -la ./latest-mac-x64
+          ls -la ./latest-mac-arm64
+          ls -la ./electron
+          npm install -g js-yaml
+          node ./electron/merge-latest-ymls.js ./latest-mac-x64/latest-mac.yml ./latest-mac-arm64/latest-mac.yml ./latest-mac.yml
+          cat ./latest-mac.yml
+      
+      - uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./latest-mac.yml
+          asset_name: latest-mac.yml
+          asset_content_type: text/yaml
 
   update_release_draft:
     needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64]
