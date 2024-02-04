@@ -9,8 +9,17 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  build-macos:
-    uses: ./.github/workflows/template-build-macos.yml
+  build-macos-x64:
+    uses: ./.github/workflows/template-build-macos-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  build-macos-arm64:
+    uses: ./.github/workflows/template-build-macos-x64.yml
     secrets: inherit
     needs: [get-update-version]
     with:
