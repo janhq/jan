@@ -49,7 +49,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
   private _engineSettings: EngineSettings = {
     ctx_len: 2048,
     ngl: 100,
-    cpu_threads: 1,
+    cpu_threads: -1, // Default to auto (any value less then 1)
     cont_batching: false,
     embedding: true,
   };
@@ -144,6 +144,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     const nitroInitResult = await executeOnMain(NODE, "runModel", {
       modelPath,
       promptTemplate: model.settings.prompt_template,
+      ...this._engineSettings,
     });
 
     if (nitroInitResult?.error) {

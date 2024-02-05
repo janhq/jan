@@ -97,6 +97,11 @@ const runModel = async (
     nitroRunModel({
       modelPath: resolvePath(modelInitOptions.modelPath),
       promptTemplate: modelInitOptions.promptTemplate,
+      ctx_len: modelInitOptions.ctx_len,
+      ngl: modelInitOptions.ngl,
+      cpu_threads: modelInitOptions.cpu_threads,
+      cont_batching: modelInitOptions.cont_batching,
+      embedding: modelInitOptions.embedding,
     }),
   );
 
