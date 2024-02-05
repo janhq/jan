@@ -6,9 +6,9 @@ import {
   setBinPath as nitroSetBinPath,
   runModel as nitroRunModel,
   NitroModelInitOptions,
+  getCurrentNitroProcessInfo,
 } from "@janhq/nitro-node";
 
-import { getCurrentNitroProcessInfo } from "@janhq/nitro-node";
 
 /**
  * Initialize nitro

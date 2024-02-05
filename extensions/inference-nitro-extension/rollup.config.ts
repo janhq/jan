@@ -56,7 +56,7 @@ export default [
       },
     ],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-    external: ["@janhq/nitro-node", "@npmcli/installed-package-contents"],
+    external: ["@janhq/core/node", "@janhq/nitro-node"],
     watch: {
       include: "src/node/**",
     },
