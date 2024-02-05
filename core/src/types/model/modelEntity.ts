@@ -123,6 +123,7 @@ export type ModelSettingParams = {
   user_prompt?: string
   llama_model_path?: string
   mmproj?: string
+  cont_batching?: boolean
 }
 
 /**

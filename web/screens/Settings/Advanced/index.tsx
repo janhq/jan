@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 
 import {
@@ -21,6 +20,7 @@ import { FeatureToggleContext } from '@/context/FeatureToggle'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
+import FactoryReset from './FactoryReset'
 
 const Advanced = () => {
   const {
@@ -36,6 +36,7 @@ const Advanced = () => {
 
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
+
   const onProxyChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const value = event.target.value || ''
@@ -50,10 +51,12 @@ const Advanced = () => {
   )
 
   useEffect(() => {
-    readSettings().then((settings) => {
+    const setUseGpuIfPossible = async () => {
+      const settings = await readSettings()
       setGpuEnabled(settings.run_mode === 'gpu')
-    })
-  }, [])
+    }
+    setUseGpuIfPossible()
+  }, [readSettings])
 
   const clearLogs = async () => {
     if (await fs.existsSync(`file://logs`)) {
@@ -62,6 +65,7 @@ const Advanced = () => {
     toaster({
       title: 'Logs cleared',
       description: 'All logs have been cleared.',
+      type: 'success',
     })
   }
 
@@ -96,13 +100,7 @@ const Advanced = () => {
         </div>
         <Switch
           checked={experimentalFeature}
-          onCheckedChange={(e) => {
-            if (e === true) {
-              setExperimentalFeature(true)
-            } else {
-              setExperimentalFeature(false)
-            }
-          }}
+          onCheckedChange={setExperimentalFeature}
         />
       </div>
 
@@ -111,15 +109,15 @@ const Advanced = () => {
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
           <div className="flex-shrink-0 space-y-1.5">
             <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">NVidia GPU</h6>
+              <h6 className="text-sm font-semibold capitalize">Nvidia GPU</h6>
             </div>
             <p className="leading-relaxed">
-              Enable GPU acceleration for NVidia GPUs.
+              Enable GPU acceleration for Nvidia GPUs.
             </p>
           </div>
           <Switch
             checked={gpuEnabled}
-            onCheckedChange={(e: boolean) => {
+            onCheckedChange={(e) => {
               if (e === true) {
                 saveSettings({ runMode: 'gpu' })
                 setGpuEnabled(true)
@@ -137,7 +135,7 @@ const Advanced = () => {
       )}
 
       {/* Directory */}
-      {experimentalFeature && <DataFolder />}
+      <DataFolder />
 
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
@@ -170,19 +168,10 @@ const Advanced = () => {
             certain proxies.
           </p>
         </div>
-        <Switch
-          checked={ignoreSSL}
-          onCheckedChange={(e) => {
-            if (e === true) {
-              setIgnoreSSL(true)
-            } else {
-              setIgnoreSSL(false)
-            }
-          }}
-        />
+        <Switch checked={ignoreSSL} onCheckedChange={(e) => setIgnoreSSL(e)} />
       </div>
 
-      {/* Claer log */}
+      {/* Clear log */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
@@ -194,6 +183,9 @@ const Advanced = () => {
           Clear
         </Button>
       </div>
+
+      {/* Factory Reset */}
+      <FactoryReset />
     </div>
   )
 }

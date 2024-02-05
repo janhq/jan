@@ -1,7 +1,9 @@
-import useSendChatMessage from '@/hooks/useSendChatMessage'
+import { useAtomValue } from 'jotai'
+
+import { queuedMessageAtom } from '@/hooks/useSendChatMessage'
 
 const MessageQueuedBanner: React.FC = () => {
-  const { queuedMessage } = useSendChatMessage()
+  const queuedMessage = useAtomValue(queuedMessageAtom)
 
   return (
     <div>

@@ -1,19 +1,13 @@
 declare const NODE: string;
 declare const INFERENCE_URL: string;
 declare const TROUBLESHOOTING_URL: string;
+declare const JAN_SERVER_INFERENCE_URL: string;
 
 /**
- * The parameters for the initModel function.
- * @property settings - The settings for the machine learning model.
- * @property settings.ctx_len - The context length.
- * @property settings.ngl - The number of generated tokens.
- * @property settings.cont_batching - Whether to use continuous batching.
- * @property settings.embedding - Whether to use embedding.
+ * The response from the initModel function.
+ * @property error - An error message if the model fails to load.
  */
-interface EngineSettings {
-  ctx_len: number;
-  ngl: number;
-  cpu_threads: number;
-  cont_batching: boolean;
-  embedding: boolean;
+interface ModelOperationResponse {
+  error?: any;
+  modelFile?: string;
 }

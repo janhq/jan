@@ -1,14 +1,15 @@
 import { events, Model, ModelEvent } from '@janhq/core'
-import { atom, useAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { useGetDownloadedModels } from './useGetDownloadedModels'
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
+export const loadModelErrorAtom = atom<string | undefined>(undefined)
 
 export const stateModelAtom = atom({
   state: 'start',
@@ -20,7 +21,8 @@ export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const [stateModel, setStateModel] = useAtom(stateModelAtom)
-  const { downloadedModels } = useGetDownloadedModels()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
   const startModel = async (modelId: string) => {
     if (
@@ -31,6 +33,7 @@ export function useActiveModel() {
       return
     }
     // TODO: incase we have multiple assistants, the configuration will be from assistant
+    setLoadModelError(undefined)
 
     setActiveModel(undefined)
 
@@ -42,6 +45,7 @@ export function useActiveModel() {
       toaster({
         title: `Model ${modelId} not found!`,
         description: `Please download the model first.`,
+        type: 'warning',
       })
       setStateModel(() => ({
         state: 'start',

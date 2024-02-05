@@ -6,6 +6,7 @@ import { useSetAtom } from 'jotai'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
+  availableRamAtom,
   cpuUsageAtom,
   totalRamAtom,
   usedRamAtom,
@@ -16,6 +17,7 @@ export default function useGetSystemResources() {
   const [cpu, setCPU] = useState<number>(0)
   const setTotalRam = useSetAtom(totalRamAtom)
   const setUsedRam = useSetAtom(usedRamAtom)
+  const setAvailableRam = useSetAtom(availableRamAtom)
   const setCpuUsage = useSetAtom(cpuUsageAtom)
 
   const getSystemResources = async () => {
@@ -40,6 +42,10 @@ export default function useGetSystemResources() {
       setTotalRam(resourceInfor.mem.totalMemory)
 
     setRam(Math.round(ram * 100))
+    if (resourceInfor.mem.totalMemory && resourceInfor.mem.usedMemory)
+      setAvailableRam(
+        resourceInfor.mem.totalMemory - resourceInfor.mem.usedMemory
+      )
     setCPU(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
     setCpuUsage(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
   }
@@ -52,7 +58,7 @@ export default function useGetSystemResources() {
     // There is a possibility that this will be removed and replaced by the process event hook?
     const intervalId = setInterval(() => {
       getSystemResources()
-    }, 500)
+    }, 5000)
 
     // clean up interval
     return () => clearInterval(intervalId)

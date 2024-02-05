@@ -10,8 +10,8 @@ import {
   getCurrentNitroProcessInfo,
   getNvidiaConfig as nitroGetNvidiaConfig,
   setNvidiaConfig as nitroSetNvidiaConfig,
-  NitroNvidiaConfig,
 } from "@janhq/nitro-node";
+import { Model } from "@janhq/core";
 
 /**
  * Strip any non-serializable properties from an object or array
@@ -91,6 +91,8 @@ const setBinPath = async (urlBinPath: string): Promise<void> =>
  * Start nitro and run the model
  */
 const runModel = async (
+  // TODO: Actually support input type `Model`
+  _model: Model,
   modelInitOptions: NitroModelInitOptions,
   runMode?: "cpu" | "gpu",
 ): Promise<any> =>

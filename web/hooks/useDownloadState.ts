@@ -26,6 +26,7 @@ const setDownloadStateSuccessAtom = atom(null, (get, set, modelId: string) => {
   toaster({
     title: 'Download Completed',
     description: `Download ${modelId} completed`,
+    type: 'success',
   })
 })
 
@@ -61,6 +62,7 @@ const setDownloadStateCancelledAtom = atom(
       toaster({
         title: 'Cancel Download',
         description: `Model ${modelId} cancel download`,
+        type: 'warning',
       })
 
       return

@@ -24,6 +24,7 @@ import {
   ModelEvent,
   InferenceEvent,
   joinPath,
+  ModelSettingParams,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
@@ -46,7 +47,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
   private _currentModel: Model | undefined;
 
-  private _engineSettings: EngineSettings = {
+  private _engineSettings: ModelSettingParams = {
     ctx_len: 2048,
     ngl: 100,
     cpu_threads: -1, // Default to auto (any value less then 1)
@@ -68,6 +69,8 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
    */
   private nitroProcessInfo: any = undefined;
 
+  private inferenceUrl = "";
+
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
@@ -78,10 +81,23 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
         JanInferenceNitroExtension._settingsDir,
       ].map(async (dir: string): Promise<void> => {
         if (!(await fs.existsSync(dir))) {
-          await fs.mkdirSync(dir).catch((err: Error) => console.debug(err));
+          try {
+            await fs.mkdirSync(dir);
+          } catch (e) {
+            console.debug(e);
+          }
         }
       }),
     );
+
+    // init inference url
+    // @ts-ignore
+    const electronApi = window?.electronAPI;
+    this.inferenceUrl = INFERENCE_URL;
+    if (!electronApi) {
+      this.inferenceUrl = JAN_SERVER_INFERENCE_URL;
+    }
+    console.debug("Inference url: ", this.inferenceUrl);
 
     this.writeDefaultEngineSettings();
 
@@ -141,9 +157,12 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     ]);
     log(`[APP]::Debug: Initializing Nitro model: ${modelPath}`);
 
+    this._currentModel = model;
     const nitroInitResult = await executeOnMain(
       NODE,
       "runModel",
+      // TODO: Actually support input type `Model`
+      model,
       {
         modelPath,
         promptTemplate: model.settings.prompt_template,
@@ -158,7 +177,6 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       return;
     }
 
-    this._currentModel = model;
     events.emit(ModelEvent.OnModelReady, model);
 
     // Make sure to clear the health check interval if it's already running
@@ -225,7 +243,11 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     return new Promise(async (resolve, reject) => {
       if (!this._currentModel) return Promise.reject("No model loaded");
 
-      requestInference(data.messages ?? [], this._currentModel).subscribe({
+      requestInference(
+        this.inferenceUrl,
+        data.messages ?? [],
+        this._currentModel,
+      ).subscribe({
         next: (_content: any) => {},
         complete: async () => {
           resolve(message);
@@ -270,7 +292,12 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       ...(this._currentModel || {}),
       ...(data.model || {}),
     };
-    requestInference(data.messages ?? [], model, this.controller).subscribe({
+    requestInference(
+      this.inferenceUrl,
+      data.messages ?? [],
+      model,
+      this.controller,
+    ).subscribe({
       next: (content: any) => {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
