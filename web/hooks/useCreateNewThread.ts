@@ -7,7 +7,7 @@ import {
   ThreadState,
   Model,
 } from '@janhq/core'
-import { atom, useSetAtom } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
@@ -19,6 +19,7 @@ import useRecommendedModel from './useRecommendedModel'
 import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
+
 import {
   threadsAtom,
   threadStatesAtom,
@@ -53,11 +54,21 @@ export const useCreateNewThread = () => {
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
+  const threadStates = useAtomValue(threadStatesAtom)
+
   const requestCreateNewThread = async (
     assistant: Assistant,
     model?: Model | undefined
   ) => {
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
+
+    // check threads last message, if there empty last message use can not create thread
+    for (const key in threadStates) {
+      const lastMessage = threadStates[key].lastMessage
+      if (!lastMessage) {
+        return
+      }
+    }
 
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
