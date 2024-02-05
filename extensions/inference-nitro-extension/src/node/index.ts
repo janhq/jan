@@ -92,17 +92,21 @@ const setBinPath = async (urlBinPath: string): Promise<void> =>
  */
 const runModel = async (
   modelInitOptions: NitroModelInitOptions,
+  runMode?: "cpu" | "gpu",
 ): Promise<any> =>
   await sanitizePromise(
-    nitroRunModel({
-      modelPath: resolvePath(modelInitOptions.modelPath),
-      promptTemplate: modelInitOptions.promptTemplate,
-      ctx_len: modelInitOptions.ctx_len,
-      ngl: modelInitOptions.ngl,
-      cpu_threads: modelInitOptions.cpu_threads,
-      cont_batching: modelInitOptions.cont_batching,
-      embedding: modelInitOptions.embedding,
-    }),
+    nitroRunModel(
+      {
+        modelPath: resolvePath(modelInitOptions.modelPath),
+        promptTemplate: modelInitOptions.promptTemplate,
+        ctx_len: modelInitOptions.ctx_len,
+        ngl: modelInitOptions.ngl,
+        cpu_threads: modelInitOptions.cpu_threads,
+        cont_batching: modelInitOptions.cont_batching,
+        embedding: modelInitOptions.embedding,
+      },
+      runMode,
+    ),
   );
 
 // Set nitro logger upon module loaded

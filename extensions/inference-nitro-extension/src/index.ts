@@ -141,11 +141,17 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     ]);
     log(`[APP]::Debug: Initializing Nitro model: ${modelPath}`);
 
-    const nitroInitResult = await executeOnMain(NODE, "runModel", {
-      modelPath,
-      promptTemplate: model.settings.prompt_template,
-      ...this._engineSettings,
-    });
+    const nitroInitResult = await executeOnMain(
+      NODE,
+      "runModel",
+      {
+        modelPath,
+        promptTemplate: model.settings.prompt_template,
+        ...this._engineSettings,
+      },
+      // TODO: Support choosing run mode from chat interface
+      //"cpu",
+    );
 
     if (nitroInitResult?.error) {
       events.emit(ModelEvent.OnModelFail, model);
