@@ -8,3 +8,5 @@ fi
 
 # If both variables are set, execute the following commands
 find "$APP_PATH" \( -type f -perm +111 -o -name "*.node" \) -exec codesign -s "$DEVELOPER_ID" --options=runtime {} \;
+
+find "$APP_PATH" -type f -name "*.o" -exec codesign -s "$DEVELOPER_ID" --options=runtime {} \;

@@ -286,6 +286,7 @@ export default class JanModelExtension extends ModelExtension {
    * model.json file associated with it.
    *
    * This function will create a model.json file for the model.
+   * It works only with single binary file model.
    *
    * @param dirName the director which reside in ~/jan/models but does not have model.json file.
    */
@@ -302,15 +303,14 @@ export default class JanModelExtension extends ModelExtension {
     let binaryFileSize: number | undefined = undefined
 
     for (const file of files) {
-      if (file.endsWith(JanModelExtension._incompletedModelFileName)) continue
-      if (file.endsWith('.json')) continue
-
-      const path = await joinPath([JanModelExtension._homeDir, dirName, file])
-      const fileStats = await fs.fileStat(path)
-      if (fileStats.isDirectory) continue
-      binaryFileSize = fileStats.size
-      binaryFileName = file
-      break
+      if (file.endsWith(JanModelExtension._supportedModelFormat)) {
+        const path = await joinPath([JanModelExtension._homeDir, dirName, file])
+        const fileStats = await fs.fileStat(path)
+        if (fileStats.isDirectory) continue
+        binaryFileSize = fileStats.size
+        binaryFileName = file
+        break
+      }
     }
 
     if (!binaryFileName) {
@@ -318,7 +318,7 @@ export default class JanModelExtension extends ModelExtension {
       return
     }
 
-    const defaultModel = await this.getDefaultModel()
+    const defaultModel = await this.getDefaultModel() as Model
     if (!defaultModel) {
       console.error('Unable to find default model')
       return
@@ -326,8 +326,19 @@ export default class JanModelExtension extends ModelExtension {
 
     const model: Model = {
       ...defaultModel,
+      // Overwrite default N/A fields
       id: dirName,
       name: dirName,
+      sources: [
+        {
+          url: binaryFileName,
+          filename: binaryFileName,
+        },
+      ],
+      settings: {
+        ...defaultModel.settings,
+        llama_model_path: binaryFileName,
+      },
       created: Date.now(),
       description: `${dirName} - user self import model`,
       metadata: {

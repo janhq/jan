@@ -109,10 +109,10 @@ const Advanced = () => {
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
           <div className="flex-shrink-0 space-y-1.5">
             <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">NVidia GPU</h6>
+              <h6 className="text-sm font-semibold capitalize">Nvidia GPU</h6>
             </div>
             <p className="leading-relaxed">
-              Enable GPU acceleration for NVidia GPUs.
+              Enable GPU acceleration for Nvidia GPUs.
             </p>
           </div>
           <Switch

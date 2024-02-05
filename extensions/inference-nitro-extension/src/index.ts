@@ -243,9 +243,6 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
    */
   private async onMessageRequest(data: MessageRequest) {
     if (data.model?.engine !== InferenceEngine.nitro || !this._currentModel) {
-      console.log(
-        `Model is not nitro or no model loaded ${data.model?.engine} ${this._currentModel}`
-      );
       return;
     }
 
