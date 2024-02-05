@@ -35,11 +35,15 @@ After you've cloned the repository to your local machine or codespace, you'll ne
    npm install
    ```
 
-2. :hammer_and_wrench: Copy `.env.example` to `.env` and edit the `NITRO_VERSION` to your preference
+2. :hammer_and_wrench: Copy `.env.example` to `.env` and edit the `NITRO_VERSION` to your preference. Or edit `.env.production` if you are using a production environment.
 
    ```bash
    cp .env.example .env
    sed -i 's/NITRO_VERSION=.*/NITRO_VERSION=v2.34.56/' .env
+   ```
+
+   ```bash
+   sed -i 's/NITRO_VERSION=.*/NITRO_VERSION=v2.34.56/' .env.production
    ```
 
 3. :building_construction: Package the TypeScript for distribution

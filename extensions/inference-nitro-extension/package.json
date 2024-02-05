@@ -7,11 +7,13 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
-    "prebuild": "tsx -r dotenv/config scripts/prebuild.ts",
+    "prebuild": "tsx -r dotenv/config scripts/prebuild.ts dotenv_config_path=.env",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
-    "build:publish:darwin": "npm run build && ../../.github/scripts/auto-sign.sh && npm pack --pack-destination \"../../electron/pre-install\"",
-    "build:publish:win32": "npm run build && npm pack --pack-destination \"../../electron/pre-install\"",
-    "build:publish:linux": "npm run build && npm pack --pack-destination \"../../electron/pre-install\"",
+    "prebuild:prod": "tsx -r dotenv/config scripts/prebuild.ts dotenv_config_path=.env.production",
+    "build:prod": "tsc --module commonjs && rollup -c rollup.config.ts",
+    "build:publish:darwin": "npm run build:prod && ../../.github/scripts/auto-sign.sh && npm pack --pack-destination \"../../electron/pre-install\"",
+    "build:publish:win32": "npm run build:prod && npm pack --pack-destination \"../../electron/pre-install\"",
+    "build:publish:linux": "npm run build:prod && npm pack --pack-destination \"../../electron/pre-install\"",
     "build:publish": "run-script-os"
   },
   "exports": {
