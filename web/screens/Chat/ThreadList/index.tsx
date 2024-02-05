@@ -35,8 +35,6 @@ export default function ThreadList() {
     [setActiveThread]
   )
 
-  console.log(threadStates)
-
   return (
     <div className="px-3 py-4">
       {threads.length === 0 ? (
