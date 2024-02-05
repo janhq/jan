@@ -38,10 +38,6 @@ export function handleFileMangerIPCs() {
     getResourcePath()
   )
 
-  ipcMain.handle(FileManagerRoute.getUserHomePath, async (_event) =>
-    app.getPath('home')
-  )
-
   // handle fs is directory here
   ipcMain.handle(
     FileManagerRoute.fileStat,
