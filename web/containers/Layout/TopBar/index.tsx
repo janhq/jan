@@ -20,7 +20,6 @@ import { MainViewState } from '@/constants/screens'
 
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
-import useGetAssistants, { getAssistants } from '@/hooks/useGetAssistants'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { usePath } from '@/hooks/usePath'
@@ -29,13 +28,14 @@ import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 
 import { openFileTitle } from '@/utils/titleUtils'
 
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const TopBar = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const { mainViewState } = useMainViewState()
   const { requestCreateNewThread } = useCreateNewThread()
-  const { assistants } = useGetAssistants()
+  const assistants = useAtomValue(assistantsAtom)
   const [showRightSideBar, setShowRightSideBar] = useAtom(showRightSideBarAtom)
   const [showLeftSideBar, setShowLeftSideBar] = useAtom(showLeftSideBarAtom)
   const showing = useAtomValue(showRightSideBarAtom)
@@ -61,12 +61,7 @@ const TopBar = () => {
 
   const onCreateConversationClick = async () => {
     if (assistants.length === 0) {
-      const res = await getAssistants()
-      if (res.length === 0) {
-        alert('No assistant available')
-        return
-      }
-      requestCreateNewThread(res[0])
+      alert('No assistant available')
     } else {
       requestCreateNewThread(assistants[0])
     }

@@ -26,11 +26,12 @@ import { MainViewState } from '@/constants/screens'
 import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const menuLinks = [
   {
@@ -49,7 +50,8 @@ const BottomBar = () => {
   const { activeModel, stateModel } = useActiveModel()
   const { ram, cpu } = useGetSystemResources()
   const progress = useAtomValue(appDownloadProgress)
-  const { downloadedModels } = useGetDownloadedModels()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+
   const { setMainViewState } = useMainViewState()
   const { downloadStates } = useDownloadState()
   const setShowSelectModelModal = useSetAtom(showSelectModelModalAtom)
