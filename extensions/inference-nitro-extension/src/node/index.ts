@@ -1,43 +1,90 @@
 import path from "node:path";
+import fs from "node:fs";
 import { getJanDataFolderPath, log, normalizeFilePath } from "@janhq/core/node";
 import {
   initialize as nitroInitialize,
-  setLogger,
+  setLogger as nitroSetLogger,
   setBinPath as nitroSetBinPath,
   runModel as nitroRunModel,
   NitroModelInitOptions,
   getCurrentNitroProcessInfo,
+  getNvidiaConfig as nitroGetNvidiaConfig,
+  setNvidiaConfig as nitroSetNvidiaConfig,
+  NitroNvidiaConfig,
 } from "@janhq/nitro-node";
 
-
 /**
- * Initialize nitro
+ * Strip any non-serializable properties from an object or array
  */
-const initialize = async (): Promise<any> =>
-  await sanitizePromise(nitroInitialize());
+const safeSerialization = <T>(obj: T): Partial<T> =>
+  JSON.parse(JSON.stringify(obj));
+/**
+ * Sanitize any Promise to a serializable version
+ */
+const sanitizePromise = <T>(p: Promise<T>): Promise<Partial<T>> =>
+  p.then(safeSerialization).catch(safeSerialization);
 
 /**
  * Resolve file url path from string
  */
-const resolvePath = (fileURL: string) => {
+const resolvePath = (fileURL: string): string => {
   const absPath = path.join(getJanDataFolderPath(), normalizeFilePath(fileURL));
   return absPath;
 };
 
 /**
- * Strip any non-serializable properties from an object or array
- */
-const safeSerialization = (obj: any): any => JSON.parse(JSON.stringify(obj));
+ * Path to the settings file
+ **/
+export const NVIDIA_INFO_FILE = path.join(
+  getJanDataFolderPath(),
+  "settings",
+  "settings.json",
+);
+
 /**
- * Sanitize any Promise to a serializable version
+ * Read settings.json and call setNvidiaConfig
  */
-const sanitizePromise = <T>(p: Promise<T>): Promise<any> =>
-  p.then(safeSerialization).catch(safeSerialization);
+const setNvidiaConfigFromFile = async (): Promise<void> => {
+  try {
+    const data = JSON.parse(fs.readFileSync(NVIDIA_INFO_FILE, "utf-8"));
+    return await nitroSetNvidiaConfig(data);
+  } catch (error) {
+    return;
+  }
+};
+/**
+ * Save updated Nvidia config into file
+ */
+const saveNvidiaConfigToFile = async (): Promise<void> => {
+  const nvidiaConfig = nitroGetNvidiaConfig();
+  fs.writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(nvidiaConfig, null, 2));
+};
+
+/**
+ * Initialize nitro
+ */
+const _initialize = async (): Promise<void> => {
+  await setNvidiaConfigFromFile();
+  await sanitizePromise(nitroInitialize());
+  await saveNvidiaConfigToFile();
+};
+
+/**
+ * Wrapper to allow safe call from IPC
+ */
+const initialize = async (): Promise<void> =>
+  await sanitizePromise(_initialize());
+
+/**
+ * Set logger for nitro
+ */
+const setLogger = async (log: any): Promise<void> =>
+  await sanitizePromise(nitroSetLogger(log));
 
 /**
  * Set binary path for nitro binaries
  */
-const setBinPath = async (urlBinPath: string): Promise<any> =>
+const setBinPath = async (urlBinPath: string): Promise<void> =>
   await sanitizePromise(nitroSetBinPath(resolvePath(urlBinPath)));
 
 /**
