@@ -29,7 +29,7 @@ declare global {
 export default class JanHuggingFaceExtension extends HuggingFaceExtension {
   private static readonly _safetensorsRegexs = [
     /model\.safetensors$/,
-    /model-[0-9]+-of[0-9]+\.safetensors$/,
+    /model-[0-9]+-of-[0-9]+\.safetensors$/,
   ]
   private static readonly _pytorchRegexs = [
     /pytorch_model\.bin$/,
@@ -269,11 +269,13 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       max_sequence_length?: number
       max_position_embeddings?: number
     } = {}
+    let configExists = false
     try {
       const config = await fs.readFileSync(
         await joinPath([modelDirPath, 'config.json'])
       )
       configData = JSON.parse(config.toString())
+      configExists = true
     } catch (err) {
       // ignore missing config.json
     }
@@ -324,6 +326,10 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       engine: InferenceEngine.nitro,
     }
 
+    if (configExists) {
+      fs.unlinkSync(await joinPath([modelDirPath, 'config.json']))
+    }
+
     await fs.writeFileSync(modelConfigPath, JSON.stringify(metadata, null, 2))
   }
 
@@ -345,7 +351,7 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       const localPath = await joinPath([modelDirPath, filePath])
       await abortDownload(localPath)
     }
-    // ;(await fs.existsSync(modelDirPath)) && (await fs.rmdirSync(modelDirPath))
+    ;(await fs.existsSync(modelDirPath)) && (await fs.rmdirSync(modelDirPath))
 
     executeOnMain(NODE_MODULE_PATH, 'killProcesses')
   }
