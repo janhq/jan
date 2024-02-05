@@ -35,6 +35,8 @@ export default function ThreadList() {
     [setActiveThread]
   )
 
+  console.log(threadStates)
+
   return (
     <div className="px-3 py-4">
       {threads.length === 0 ? (
@@ -62,7 +64,9 @@ export default function ThreadList() {
               </p>
               <h2 className="line-clamp-1 font-bold">{thread.title}</h2>
               <p className="mt-1 line-clamp-1 text-xs text-gray-700 group-hover/message:max-w-[160px] dark:text-gray-300">
-                {threadStates[thread.id]?.lastMessage ?? 'No new message'}
+                {threadStates[thread.id]?.lastMessage
+                  ? threadStates[thread.id]?.lastMessage
+                  : 'No new message'}
               </p>
             </div>
             <div
