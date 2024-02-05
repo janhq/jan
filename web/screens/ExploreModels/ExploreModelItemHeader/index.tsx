@@ -66,7 +66,15 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
 
   let downloadButton = (
-    <Button onClick={() => onDownloadClick()}>Download</Button>
+    <Button
+      className="z-50"
+      onClick={(e) => {
+        e.stopPropagation()
+        onDownloadClick()
+      }}
+    >
+      Download
+    </Button>
   )
 
   const onUseModelClick = useCallback(async () => {
