@@ -34,18 +34,18 @@ export const useConvertHuggingFaceModel = () => {
       if (extension) {
         extension.interrupted = false
       }
-      // setConversionStatus('downloading')
-      // await extension?.downloadModelFiles(repoID, repoData, {
-      //   ignoreSSL,
-      //   proxy,
-      // })
-      // if (extension?.interrupted) return
-      // setConversionStatus('converting')
-      // await extension?.convert(repoID)
-      // if (extension?.interrupted) return
-      // setConversionStatus('quantizing')
-      // await extension?.quantize(repoID, quantization)
-      // if (extension?.interrupted) return
+      setConversionStatus('downloading')
+      await extension?.downloadModelFiles(repoID, repoData, {
+        ignoreSSL,
+        proxy,
+      })
+      if (extension?.interrupted) return
+      setConversionStatus('converting')
+      await extension?.convert(repoID)
+      if (extension?.interrupted) return
+      setConversionStatus('quantizing')
+      await extension?.quantize(repoID, quantization)
+      if (extension?.interrupted) return
       setConversionStatus('generating')
       await extension?.generateMetadata(repoID, repoData, quantization)
       setConversionStatus('done')
