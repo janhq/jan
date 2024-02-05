@@ -35,13 +35,20 @@ After you've cloned the repository to your local machine or codespace, you'll ne
    npm install
    ```
 
-1. :building_construction: Package the TypeScript for distribution
+2. :hammer_and_wrench: Copy `.env.example` to `.env` and edit the `NITRO_VERSION` to your preference
 
    ```bash
-   npm run bundle
+   cp .env.example .env
+   sed -i 's/NITRO_VERSION=.*/NITRO_VERSION=v2.34.56/' .env
    ```
 
-1. :white_check_mark: Check your artifact
+3. :building_construction: Package the TypeScript for distribution
+
+   ```bash
+   npm run build:publish
+   ```
+
+4. :white_check_mark: Check your artifact
 
    There will be a tgz file in your plugin directory now
 
@@ -75,4 +82,3 @@ There are a few things to keep in mind when writing your plugin code:
   [documentation](https://github.com/janhq/jan/blob/main/core/README.md).
 
 So, what are you waiting for? Go ahead and start customizing your plugin!
-

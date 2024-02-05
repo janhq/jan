@@ -1,37 +1,28 @@
 import path from "node:path";
 import { getJanDataFolderPath, log, normalizeFilePath } from "@janhq/core/node";
 import {
+  initialize as nitroInitialize,
   setLogger,
   setBinPath as nitroSetBinPath,
   runModel as nitroRunModel,
-  updateNvidiaInfo as nitroUpdateNvidiaInfo,
   NitroModelInitOptions,
 } from "@janhq/nitro-node";
 
 import { getCurrentNitroProcessInfo } from "@janhq/nitro-node";
-import { debugInspector, debugInspectorSync } from "./debugInspector";
 
 /**
- * Update nvidia driver info
+ * Initialize nitro
  */
-const updateNvidiaInfo = async (): Promise<any> =>
-  await sanitizePromise(nitroUpdateNvidiaInfo());
+const initialize = async (): Promise<any> =>
+  await sanitizePromise(nitroInitialize());
 
 /**
  * Resolve file url path from string
  */
-const _resolvePath = (fileURL: string) => {
+const resolvePath = (fileURL: string) => {
   const absPath = path.join(getJanDataFolderPath(), normalizeFilePath(fileURL));
   return absPath;
 };
-/**
- * Resolve file url path from string
- * Also with possibility to show debug information
- */
-const resolvePath = (fileURL: string) =>
-  process.env.DEBUG
-    ? debugInspectorSync(_resolvePath)(fileURL)
-    : _resolvePath(fileURL);
 
 /**
  * Strip any non-serializable properties from an object or array
@@ -57,18 +48,19 @@ const runModel = async (
 ): Promise<any> =>
   await sanitizePromise(
     nitroRunModel({
-      modelFullPath: resolvePath(modelInitOptions.modelFullPath),
+      modelPath: resolvePath(modelInitOptions.modelPath),
       promptTemplate: modelInitOptions.promptTemplate,
     }),
   );
 
 // Set nitro logger upon module loaded
 setLogger(log);
+// Set default bin path to within the extension's root
+// In build phase, the binaries will be downloaded and packed in advance
+setBinPath(path.join(__dirname, "..", "..", "bin"));
 
-// Conditional export with param logging if running in debug mode
 export default {
+  initialize,
   getCurrentNitroProcessInfo,
-  updateNvidiaInfo,
-  setBinPath: process.env.DEBUG ? debugInspector(setBinPath) : setBinPath,
-  runModel: process.env.DEBUG ? debugInspector(runModel) : runModel,
+  runModel,
 };

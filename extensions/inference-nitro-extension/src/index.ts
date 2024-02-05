@@ -35,7 +35,6 @@ import { ulid } from "ulid";
  */
 export default class JanInferenceNitroExtension extends InferenceExtension {
   private static readonly _homeDir = "file://engines";
-  private static readonly _binDir = "file://bin";
   private static readonly _settingsDir = "file://settings";
   private static readonly _modelsDir = "file://models";
   private static readonly _engineMetadataFileName = "nitro.json";
@@ -77,7 +76,6 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       [
         JanInferenceNitroExtension._homeDir,
         JanInferenceNitroExtension._settingsDir,
-        JanInferenceNitroExtension._binDir,
       ].map(async (dir: string): Promise<void> => {
         if (!(await fs.existsSync(dir))) {
           await fs.mkdirSync(dir).catch((err: Error) => console.debug(err));
@@ -104,8 +102,8 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       this.onInferenceStopped(),
     );
 
-    // Attempt to fetch nvidia info
-    await executeOnMain(NODE, "updateNvidiaInfo", {});
+    // Initialize nitro
+    await executeOnMain(NODE, "initialize");
   }
 
   /**
@@ -137,25 +135,14 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
   private async onModelInit(model: Model) {
     if (model.engine !== InferenceEngine.nitro) return;
 
-    const modelFullPath = await joinPath([
+    const modelPath = await joinPath([
       JanInferenceNitroExtension._modelsDir,
       model.id,
     ]);
-    log(`[APP]::Debug: Initializing Nitro model: ${modelFullPath}`);
-
-    // Set bin path for nitro binaries download during runtime
-    const nitroSetBinPathResult = await executeOnMain(
-      NODE,
-      "setBinPath",
-      JanInferenceNitroExtension._binDir,
-    );
-    if (nitroSetBinPathResult?.error) {
-      events.emit(ModelEvent.OnModelFail, model);
-      return;
-    }
+    log(`[APP]::Debug: Initializing Nitro model: ${modelPath}`);
 
     const nitroInitResult = await executeOnMain(NODE, "runModel", {
-      modelFullPath,
+      modelPath,
       promptTemplate: model.settings.prompt_template,
     });
 
@@ -194,7 +181,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
    * Periodically check for nitro process's health.
    */
   private async periodicallyGetNitroHealth(): Promise<void> {
-    const health = await executeOnMain(NODE, "getCurrentNitroProcessInfo", {});
+    const health = await executeOnMain(NODE, "getCurrentNitroProcessInfo");
 
     const isRunning = this.nitroProcessInfo?.isRunning ?? false;
     if (isRunning && health.isRunning === false) {

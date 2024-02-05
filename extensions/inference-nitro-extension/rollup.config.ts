@@ -56,7 +56,7 @@ export default [
       },
     ],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-    external: ["@janhq/nitro-node"],
+    external: ["@janhq/nitro-node", "@npmcli/installed-package-contents"],
     watch: {
       include: "src/node/**",
     },
@@ -66,10 +66,9 @@ export default [
       // Allow node_modules resolution, so you can use 'external' to control
       // which external modules to include in the bundle
       // https://github.com/rollup/rollup-plugin-node-resolve#usage
-      //resolve({
-      //  extensions: [".ts", ".js", ".json"],
-      //  preferBuiltins: false,
-      //}),
+      resolve({
+        extensions: [".ts", ".js", ".json"],
+      }),
 
       // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
       // This should be after resolve() plugin

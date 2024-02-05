@@ -7,6 +7,7 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
+    "prebuild": "tsx -r dotenv/config scripts/prebuild.ts",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
     "build:publish:darwin": "npm run build && ../../.github/scripts/auto-sign.sh && npm pack --pack-destination \"../../electron/pre-install\"",
     "build:publish:win32": "npm run build && npm pack --pack-destination \"../../electron/pre-install\"",
@@ -21,7 +22,9 @@
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-replace": "^5.0.5",
     "@types/node": "^20.11.4",
+    "dotenv": "^16.4.1",
     "rollup": "^2.38.5",
     "rollup-plugin-define": "^1.0.1",
     "rollup-plugin-sourcemaps": "^0.6.3",
@@ -33,7 +36,6 @@
   "dependencies": {
     "@janhq/core": "file:../../core",
     "@janhq/nitro-node": "../../../nitro/nitro-node/janhq-nitro-node-1.0.0.tgz",
-    "@rollup/plugin-replace": "^5.0.5",
     "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",
     "ulid": "^2.3.0"
@@ -42,6 +44,7 @@
     "node": ">=18.0.0"
   },
   "files": [
+    "bin/*",
     "dist/*",
     "package.json",
     "README.md"
