@@ -1,30 +1,32 @@
-import type { PythonShell } from 'python-shell'
 import {
   fs,
   downloadFile,
   abortDownload,
-  getResourcePath,
-  InferenceEngine,
   joinPath,
-  ModelExtension,
-  Model,
-  getJanDataFolderPath,
   HuggingFaceExtension,
   HuggingFaceRepoData,
   executeOnMain,
+  Quantization,
+  Model,
+  InferenceEngine,
+  getJanDataFolderPath,
+  events,
+  DownloadEvent,
+  log,
+  baseName,
 } from '@janhq/core'
+import { ggufMetadata } from 'hyllama'
+
+declare global {
+  interface Window {
+    electronAPI?: any
+  }
+}
 
 /**
  * A extension for models
  */
 export default class JanHuggingFaceExtension extends HuggingFaceExtension {
-  private static readonly _homeDir = 'file://models'
-  private static readonly _modelMetadataFileName = 'model.json'
-  private static readonly _incompletedModelFileName = '.download'
-  private static readonly _offlineInferenceEngine = InferenceEngine.nitro
-
-  private static readonly _configDirName = 'config'
-  private static readonly _defaultModelFileName = 'default-model.json'
   private static readonly _safetensorsRegexs = [
     /model\.safetensors$/,
     /model-[0-9]+-of[0-9]+\.safetensors$/,
@@ -35,7 +37,7 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
     /pytorch_model-[0-9]+-of-[0-9]+\.bin$/,
     /.*\.pt$/,
   ]
-  private interupted = false
+  interrupted = false
 
   /**
    * Called when the extension is loaded.
@@ -78,40 +80,251 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       repoData.siblings.some((sibling) => sibling.rfilename === file)
     )
 
-    return [...modelFiles, ...vocabFiles]
+    return [...modelFiles, ...vocabFiles, 'config.json']
+  }
+
+  private async getModelDirPath(repoID: string): Promise<string> {
+    const modelName = repoID.split('/').slice(1).join('/')
+    return joinPath([await getJanDataFolderPath(), 'models', modelName])
+  }
+  private async getConvertedModelPath(repoID: string): Promise<string> {
+    const modelName = repoID.split('/').slice(1).join('/')
+    const modelDirPath = await this.getModelDirPath(repoID)
+    return joinPath([modelDirPath, modelName + '.gguf'])
+  }
+  private async getQuantizedModelPath(
+    repoID: string,
+    quantization: Quantization
+  ): Promise<string> {
+    const modelName = repoID.split('/').slice(1).join('/')
+    const modelDirPath = await this.getModelDirPath(repoID)
+    return joinPath([
+      modelDirPath,
+      modelName + `-${quantization.toLowerCase()}.gguf`,
+    ])
   }
 
   /**
-   * Downloads and converts a Hugging Face model to GGUF.
+   * Downloads a Hugging Face model.
    * @param repoID - The repo ID of the model to convert.
    * @param repoData - The repo data of the model to convert.
    * @param network - Optional object to specify proxy/whether to ignore SSL certificates.
-   * @returns A promise that resolves when the conversion is complete.
+   * @returns A promise that resolves when the download is complete.
    */
-  async convert(
+  async downloadModelFiles(
     repoID: string,
     repoData: HuggingFaceRepoData,
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void> {
-    this.interupted = false
-    const modelName = repoID.split('/').slice(1).join('/')
-    const modelDirPath = await joinPath([
-      JanHuggingFaceExtension._homeDir,
-      modelName,
-    ])
+    if (this.interrupted) return
+    const modelDirPath = await this.getModelDirPath(repoID)
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
     const files = this.getFileList(repoData)
+    const filePaths: string[] = []
 
     for (const file of files) {
       const filePath = file
       const localPath = await joinPath([modelDirPath, filePath])
       const url = `https://huggingface.co/${repoID}/resolve/main/${filePath}`
 
-      if (this.interupted) return
-      await downloadFile(url, localPath, network)
+      if (this.interrupted) return
+      if (!(await fs.existsSync(localPath))) {
+        downloadFile(url, localPath, network)
+        filePaths.push(localPath)
+      }
     }
 
-    if (this.interupted) return
+    await new Promise<void>((resolve, reject) => {
+      if (filePaths.length === 0) resolve()
+      const onDownloadSuccess = async (
+        _event: string,
+        {
+          fileName: filePath,
+        }: {
+          fileName: string
+        }
+      ) => {
+        if (filePaths.includes(filePath)) {
+          filePaths.splice(filePaths.indexOf(filePath), 1)
+          if (filePaths.length === 0) {
+            resolve()
+          }
+        }
+      }
+
+      const onDownloadError = async (
+        _event: string,
+        {
+          fileName: filePath,
+          err,
+        }: {
+          fileName: string
+          err: Error
+        }
+      ) => {
+        if (filePaths.includes(filePath)) {
+          this.cancelConvert(repoID, repoData)
+          reject(err)
+        }
+      }
+
+      if (window?.electronAPI) {
+        window.electronAPI.onFileDownloadSuccess(onDownloadSuccess)
+        window.electronAPI.onFileDownloadError(onDownloadError)
+      }
+    })
+  }
+
+  /**
+   * Converts a Hugging Face model to GGUF.
+   * @param repoID - The repo ID of the model to convert.
+   * @returns A promise that resolves when the conversion is complete.
+   */
+  async convert(repoID: string): Promise<void> {
+    if (this.interrupted) return
+    const modelDirPath = await this.getModelDirPath(repoID)
+    const modelOutPath = await this.getConvertedModelPath(repoID)
+    if (!(await fs.existsSync(modelDirPath))) {
+      throw new Error('Model dir not found')
+    }
+    if (await fs.existsSync(modelOutPath)) return
+
+    await executeOnMain(NODE_MODULE_PATH, 'installDeps')
+    if (this.interrupted) return
+
+    await executeOnMain(
+      NODE_MODULE_PATH,
+      'convert',
+      modelDirPath,
+      modelOutPath + '.temp'
+    )
+    await executeOnMain(
+      NODE_MODULE_PATH,
+      'renameSync',
+      modelOutPath + '.temp',
+      modelOutPath
+    )
+
+    for (const file of await fs.readdirSync(modelDirPath)) {
+      if (modelOutPath.endsWith(file) || file.endsWith('config.json')) continue
+      await fs.unlinkSync(await joinPath([modelDirPath, file]))
+    }
+  }
+
+  /**
+   * Quantizes a GGUF model.
+   * @param repoID - The repo ID of the model to quantize.
+   * @param quantization - The quantization to use.
+   * @returns A promise that resolves when the quantization is complete.
+   */
+  async quantize(repoID: string, quantization: Quantization): Promise<void> {
+    if (this.interrupted) return
+    const modelDirPath = await this.getModelDirPath(repoID)
+    const modelOutPath = await this.getQuantizedModelPath(repoID, quantization)
+    if (!(await fs.existsSync(modelDirPath))) {
+      throw new Error('Model dir not found')
+    }
+    if (await fs.existsSync(modelOutPath)) return
+
+    await executeOnMain(
+      NODE_MODULE_PATH,
+      'quantize',
+      await this.getConvertedModelPath(repoID),
+      modelOutPath + '.temp',
+      quantization
+    )
+    await executeOnMain(
+      NODE_MODULE_PATH,
+      'renameSync',
+      modelOutPath + '.temp',
+      modelOutPath
+    )
+
+    await fs.unlinkSync(await this.getConvertedModelPath(repoID))
+  }
+
+  /**
+   * Generates Jan model metadata from a Hugging Face model.
+   * @param repoID - The repo ID of the model to generate metadata for.
+   * @param repoData - The repo data of the model to generate metadata for.
+   * @param quantization - The quantization of the model.
+   * @returns A promise that resolves when the model metadata generation is complete.
+   */
+  async generateMetadata(
+    repoID: string,
+    repoData: HuggingFaceRepoData,
+    quantization: Quantization
+  ): Promise<void> {
+    const modelName = repoID.split('/').slice(1).join('/')
+    const filename = `${modelName}-${quantization.toLowerCase()}.gguf`
+    const modelDirPath = await this.getModelDirPath(repoID)
+    const modelPath = await this.getQuantizedModelPath(repoID, quantization)
+    const modelConfigPath = await joinPath([modelDirPath, 'model.json'])
+    if (!(await fs.existsSync(modelPath))) {
+      throw new Error('Model not found')
+    }
+
+    const size = await executeOnMain(NODE_MODULE_PATH, 'getSize', modelPath)
+    let configData: {
+      max_sequence_length?: number
+      max_position_embeddings?: number
+    } = {}
+    try {
+      const config = await fs.readFileSync(
+        await joinPath([modelDirPath, 'config.json'])
+      )
+      configData = JSON.parse(config.toString())
+    } catch (err) {
+      // ignore missing config.json
+    }
+    // maybe later, currently it's gonna use too much memory
+    // const buffer = await fs.readFileSync(quantizedModelPath)
+    // const ggufData = ggufMetadata(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength))
+
+    let ctx = 4096
+    if (configData.max_sequence_length) {
+      ctx = configData.max_sequence_length
+    } else if (configData.max_position_embeddings) {
+      ctx = configData.max_position_embeddings
+    }
+
+    const metadata: Model = {
+      object: 'model',
+      version: 1,
+      format: 'gguf',
+      sources: [
+        {
+          url: `https://huggingface.co/${repoID}`, // i think this is just for download but not sure,
+          filename,
+        },
+      ],
+      id: modelName,
+      name: modelName,
+      created: Date.now(),
+      description: `Auto converted from Hugging Face model: ${repoID}`,
+      settings: {
+        ctx_len: ctx,
+        prompt_template: '',
+        llama_model_path: modelName,
+      },
+      parameters: {
+        temperature: 0.7,
+        top_p: 0.95,
+        stream: true,
+        max_tokens: 4096,
+        // stop: [''], seems like we dont really need this..?
+        frequency_penalty: 0,
+        presence_penalty: 0,
+      },
+      metadata: {
+        author: repoData.author,
+        tags: repoData.tags,
+        size,
+      },
+      engine: InferenceEngine.nitro,
+    }
+
+    await fs.writeFileSync(modelConfigPath, JSON.stringify(metadata, null, 2))
   }
 
   /**
@@ -124,38 +337,16 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
     repoID: string,
     repoData: HuggingFaceRepoData
   ): Promise<void> {
-    this.interupted = true
-    const modelName = repoID.split('/').slice(1).join('/')
-    const modelDirPath = await joinPath([
-      JanHuggingFaceExtension._homeDir,
-      modelName,
-    ])
+    this.interrupted = true
+    const modelDirPath = await this.getModelDirPath(repoID)
     const files = this.getFileList(repoData)
     for (const file of files) {
       const filePath = file
       const localPath = await joinPath([modelDirPath, filePath])
       await abortDownload(localPath)
-      fs.existsSync(localPath) && fs.unlinkSync(localPath)
     }
+    // ;(await fs.existsSync(modelDirPath)) && (await fs.rmdirSync(modelDirPath))
 
-    executeOnMain(NODE_MODULE_PATH, 'killPythonShell')
-  }
-
-  private installDeps(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.pythonShell = new PythonShell(await getResourcePath(), {
-        pythonPath: 'python3',
-        scriptPath: getResourcePath('python', 'huggingface'),
-        mode: 'text',
-      })
-      this.pythonShell.on('message', (message) => {
-        if (message === 'done') {
-          resolve()
-        }
-      })
-      this.pythonShell.on('error', (err) => {
-        reject(err)
-      })
-    })
+    executeOnMain(NODE_MODULE_PATH, 'killProcesses')
   }
 }

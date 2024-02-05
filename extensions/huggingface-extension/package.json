@@ -3,20 +3,34 @@
   "version": "1.0.0",
   "description": "Hugging Face extension for converting HF models to GGUF",
   "main": "dist/index.js",
-  "node": "dist/node/index.js",
+  "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
-    "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install"
+    "build": "tsc --module commonjs && rollup -c rollup.config.ts --configPlugin @rollup/plugin-typescript --bundleConfigAsCjs",
+    "build:publish": "rimraf *.tgz --glob && npm run build && cpx \"scripts/**\" \"dist/scripts\" && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../electron/pre-install"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/node/index.cjs.js"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-replace": "^5.0.5",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@types/node": "^20.11.16",
+    "cpx": "^1.5.0",
     "rimraf": "^5.0.5",
-    "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4"
+    "rollup": "^4.9.6",
+    "rollup-plugin-sourcemaps": "^0.6.3",
+    "rollup-plugin-typescript2": "^0.36.0",
+    "typescript": "^5.3.3"
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
+    "hyllama": "^0.1.2",
     "python-shell": "^5.0.0",
     "ts-loader": "^9.5.0"
   },

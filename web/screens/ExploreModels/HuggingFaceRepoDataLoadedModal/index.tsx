@@ -1,5 +1,21 @@
-import { Button } from '@janhq/uikit'
+import { useState } from 'react'
+
+import { Quantization } from '@janhq/core'
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectPortal,
+  SelectTrigger,
+  SelectValue,
+} from '@janhq/uikit'
 import { useAtomValue } from 'jotai'
+
+import { twMerge } from 'tailwind-merge'
+
+import { useConvertHuggingFaceModel } from '@/hooks/useConvertHuggingFaceModel'
 
 import {
   loadingAtom,
@@ -12,6 +28,17 @@ export const HuggingFaceRepoDataLoadedModal = () => {
   // This component only loads when repoData is not null
   const repoData = useAtomValue(repoDataAtom)!
   const unsupported = useAtomValue(unsupportedAtom)
+  const [quantization, setQuantization] = useState<Quantization>(
+    Quantization.Q4_K_M
+  )
+  const { convertHuggingFaceModel } = useConvertHuggingFaceModel()
+
+  const onValueSelected = (value: Quantization) => {
+    setQuantization(value)
+  }
+  const onConvertClick = () => {
+    convertHuggingFaceModel(repoData.id, repoData, quantization)
+  }
 
   return (
     <>
@@ -30,8 +57,37 @@ export const HuggingFaceRepoDataLoadedModal = () => {
           <p>...But you can import it manually!</p>
         ) : null}
       </div>
+      <Select
+        value={quantization}
+        onValueChange={onValueSelected}
+        disabled={unsupported}
+      >
+        <SelectTrigger className="relative w-full">
+          <SelectValue placeholder="Quantization">
+            <span className={twMerge('relative z-20')}>{quantization}</span>
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPortal>
+          <SelectContent className="right-2 block w-full min-w-[450px] pr-0">
+            <div className="border-b border-border" />
+            <SelectGroup>
+              {Object.values(Quantization).map((x, i) => (
+                <SelectItem
+                  key={i}
+                  value={x}
+                  className={twMerge(x === quantization && 'bg-secondary')}
+                >
+                  <div className="flex w-full justify-between">
+                    <span className="line-clamp-1 block">{x}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </SelectPortal>
+      </Select>
       <Button
-        // onClick={}
+        onClick={onConvertClick}
         className="w-full"
         loading={loading}
         disabled={unsupported}
