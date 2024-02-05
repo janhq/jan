@@ -198,6 +198,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
   /**
    * Makes a single response inference request.
+   * @deprecated This method is no longer used and will be removed in the future.
    * @param {MessageRequest} data - The data for the inference request.
    * @returns {Promise<any>} A promise that resolves with the inference response.
    */
@@ -207,35 +208,19 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       thread_id: data.threadId,
       created: timestamp,
       updated: timestamp,
-      status: MessageStatus.Pending,
+      status: MessageStatus.Ready,
       id: "",
       role: ChatCompletionRole.Assistant,
       object: "thread.message",
       content: [],
     };
-    events.emit(MessageEvent.OnMessageResponse, message);
 
     return new Promise(async (resolve, reject) => {
       if (!this._currentModel) return Promise.reject("No model loaded");
 
-      let lastMessage = "";
       requestInference(data.messages ?? [], this._currentModel).subscribe({
-        next: (content: any) => {
-          lastMessage = content;
-        },
+        next: (_content: any) => {},
         complete: async () => {
-          const messageContent: ThreadContent = {
-            type: ContentType.Text,
-            text: {
-              value: lastMessage.trim(),
-              annotations: [],
-            },
-          };
-          message.content = [messageContent];
-          message.status = message.content.length
-            ? MessageStatus.Ready
-            : MessageStatus.Error;
-          events.emit(MessageEvent.OnMessageUpdate, message);
           resolve(message);
         },
         error: async (err: any) => {
