@@ -1,7 +1,7 @@
 ---
-title: Engineering
+title: DevRel
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
-slug: /engineering
+slug: /engineering/devrel
 keywords:
   [
     Jan AI,
@@ -12,10 +12,6 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
+    developer relations,
   ]
 ---
-
-## Installation and Prerequisites
-
-- [Requirements](https://jan.ai/developer/prereq/#requirements)
-- [Setting up local env](https://jan.ai/developer/prereq/#prerequisites)
