@@ -1,22 +1,14 @@
+import { DownloadState } from '../types'
+
 /**
  * Manages file downloads and network requests.
  */
-
-export type DownloadProperties = {
-  modelId: string
-  filename: string
-  time: { elapsed: number; remaining: number }
-  speed: number
-  percent: number
-  size: { total: number; transferred: number }
-  downloadState: 'downloading' | 'error' | 'end'
-}
 export class DownloadManager {
   public networkRequests: Record<string, any> = {}
 
   public static instance: DownloadManager = new DownloadManager()
 
-  public downloadProgressMap: Record<string, DownloadProperties> = {}
+  public downloadProgressMap: Record<string, DownloadState> = {}
 
   constructor() {
     if (DownloadManager.instance) {

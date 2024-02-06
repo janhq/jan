@@ -25,7 +25,7 @@ import { MainViewState } from '@/constants/screens'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 
-import { useDownloadState } from '@/hooks/useDownloadState'
+import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
@@ -46,7 +46,6 @@ type Props = {
 const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const { downloadModel } = useDownloadModel()
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const { modelDownloadStateAtom } = useDownloadState()
   const { requestCreateNewThread } = useCreateNewThread()
   const totalRam = useAtomValue(totalRamAtom)
 

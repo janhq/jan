@@ -1,10 +1,11 @@
 import { DownloadRoute } from '../../../api'
 import { join } from 'path'
-import { DownloadManager, DownloadProperties } from '../../download'
+import { DownloadManager } from '../../download'
 import { HttpServer } from '../HttpServer'
 import { createWriteStream } from 'fs'
 import { getJanDataFolderPath } from '../../utils'
 import { normalizeFilePath } from '../../path'
+import { DownloadState } from '../../../types'
 
 export const downloadRouter = async (app: HttpServer) => {
   app.get(`/${DownloadRoute.getDownloadProgress}/:modelId`, async (req, res) => {
@@ -17,7 +18,9 @@ export const downloadRouter = async (app: HttpServer) => {
 
     // check if null DownloadManager.instance.downloadProgressMap
     if (!DownloadManager.instance.downloadProgressMap[modelId]) {
-      return res.status(200).send({ message: 'Download progress not found' })
+      return res.status(404).send({
+        message: 'Download progress not found',
+      })
     } else {
       return res.status(200).send(DownloadManager.instance.downloadProgressMap[modelId])
     }
@@ -46,17 +49,17 @@ export const downloadRouter = async (app: HttpServer) => {
     const rq = request({ url: normalizedArgs[0], strictSSL, proxy })
     progress(rq, {})
       .on('progress', function (state: any) {
-        const downloadState: DownloadProperties = {
+        const downloadProps: DownloadState = {
           ...state,
           modelId,
           filename,
           downloadState: 'downloading',
         }
-        console.debug('download onProgress', downloadState)
-        DownloadManager.instance.downloadProgressMap[modelId] = downloadState
+        console.debug(`Download ${modelId} onProgress`, downloadProps)
+        DownloadManager.instance.downloadProgressMap[modelId] = downloadProps
       })
       .on('error', function (err: Error) {
-        console.debug(`download onError ${modelId}`, err)
+        console.debug(`Download ${modelId} onError`, err.message)
 
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
         if (currentDownloadState) {
@@ -67,19 +70,23 @@ export const downloadRouter = async (app: HttpServer) => {
         }
       })
       .on('end', function () {
-        console.debug(`download onEnd ${modelId}`)
+        console.debug(`Download ${modelId} onEnd`)
 
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
         if (currentDownloadState) {
-          DownloadManager.instance.downloadProgressMap[modelId] = {
-            ...currentDownloadState,
-            downloadState: 'end',
+          if (currentDownloadState.downloadState === 'downloading') {
+            // if the previous state is downloading, then set the state to end (success)
+            DownloadManager.instance.downloadProgressMap[modelId] = {
+              ...currentDownloadState,
+              downloadState: 'end',
+            }
           }
         }
       })
       .pipe(createWriteStream(normalizedArgs[1]))
 
     DownloadManager.instance.setRequest(filename, rq)
+    res.status(200).send({ message: 'Download started' })
   })
 
   app.post(`/${DownloadRoute.abortDownload}`, async (req, res) => {
@@ -96,5 +103,10 @@ export const downloadRouter = async (app: HttpServer) => {
     const rq = DownloadManager.instance.networkRequests[fileName]
     DownloadManager.instance.networkRequests[fileName] = undefined
     rq?.abort()
+    if (rq) {
+      res.status(200).send({ message: 'Download aborted' })
+    } else {
+      res.status(404).send({ message: 'Download not found' })
+    }
   })
 }

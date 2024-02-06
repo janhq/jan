@@ -12,6 +12,7 @@ import {
   DownloadEvent,
   DownloadRoute,
 } from '@janhq/core'
+import { DownloadState } from '@janhq/core/.'
 
 /**
  * A extension for models
@@ -98,7 +99,11 @@ export default class JanModelExtension extends ModelExtension {
       const fileName = this.extractFileName(model.sources[0]?.url)
       const path = await joinPath([modelDirPath, fileName])
       downloadFile(model.sources[0]?.url, path, network)
-      this.startPollingDownloadProgress(model.id)
+
+      // @ts-ignore
+      if (window && !window.electronAPI) {
+        this.startPollingDownloadProgress(model.id)
+      }
     }
   }
 
@@ -111,7 +116,7 @@ export default class JanModelExtension extends ModelExtension {
     // wait for some seconds before polling
     await new Promise((resolve) => setTimeout(resolve, 3000))
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const interval = setInterval(async () => {
         fetch(
           `${this.API_BASE_URL}/v1/download/${DownloadRoute.getDownloadProgress}/${modelId}`,
@@ -120,16 +125,20 @@ export default class JanModelExtension extends ModelExtension {
             headers: { contentType: 'application/json' },
           }
         ).then(async (res) => {
-          const state = await res.json()
-          if (state['modelId'] == null) {
-            events.emit(DownloadEvent.onFileDownloadSuccess, {
-              ...state,
-            })
+          const state: DownloadState = await res.json()
+          if (state.downloadState === 'end') {
+            events.emit(DownloadEvent.onFileDownloadSuccess, state)
             clearInterval(interval)
+            return
           }
-          events.emit(DownloadEvent.onFileDownloadUpdate, {
-            ...state,
-          })
+
+          if (state.downloadState === 'error') {
+            events.emit(DownloadEvent.onFileDownloadError, state)
+            clearInterval(interval)
+            return
+          }
+
+          events.emit(DownloadEvent.onFileDownloadUpdate, state)
         })
       }, 1000)
     })
