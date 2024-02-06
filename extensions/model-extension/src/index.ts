@@ -106,23 +106,12 @@ export default class JanModelExtension extends ModelExtension {
    * Specifically for Jan server.
    */
   private API_BASE_URL = 'http://localhost:1337'
-  // download/getDownloadProgress/openchat-3.5-7b
+
   private async startPollingDownloadProgress(modelId: string): Promise<void> {
+    // wait for some seconds before polling
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+
     return new Promise((resolve, reject) => {
-      //   {
-      //     "time": {
-      //         "elapsed": 3.006,
-      //         "remaining": 214.113
-      //     },
-      //     "speed": 20120064.537591483,
-      //     "percent": 0.013844934683405521,
-      //     "size": {
-      //         "total": 4368450656,
-      //         "transferred": 75914642
-      //     },
-      //     "modelId": "openchat-3.5-7b",
-      //     "filename": "openchat-3.5-1210.Q4_K_M.gguf"
-      // }
       const interval = setInterval(async () => {
         fetch(
           `${this.API_BASE_URL}/v1/download/${DownloadRoute.getDownloadProgress}/${modelId}`,
@@ -133,9 +122,9 @@ export default class JanModelExtension extends ModelExtension {
         ).then(async (res) => {
           const state = await res.json()
           if (state['modelId'] == null) {
-            // events.emit(DownloadEvent.onFileDownloadSuccess, {
-            //   ...state
-            // })
+            events.emit(DownloadEvent.onFileDownloadSuccess, {
+              ...state,
+            })
             clearInterval(interval)
           }
           events.emit(DownloadEvent.onFileDownloadUpdate, {
@@ -367,7 +356,7 @@ export default class JanModelExtension extends ModelExtension {
       return
     }
 
-    const defaultModel = await this.getDefaultModel() as Model
+    const defaultModel = (await this.getDefaultModel()) as Model
     if (!defaultModel) {
       console.error('Unable to find default model')
       return

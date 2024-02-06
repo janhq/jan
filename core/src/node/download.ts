@@ -9,6 +9,7 @@ export type DownloadProperties = {
   speed: number
   percent: number
   size: { total: number; transferred: number }
+  downloadState: 'downloading' | 'error' | 'end'
 }
 export class DownloadManager {
   public networkRequests: Record<string, any> = {}
