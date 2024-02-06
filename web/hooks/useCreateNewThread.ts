@@ -65,7 +65,7 @@ export const useCreateNewThread = () => {
     // check last thread message, if there empty last message use can not create thread
     const lastMessage = threads[0]?.metadata?.lastMessage
 
-    if (!lastMessage && threads.length !== 0) {
+    if (!lastMessage && threads.length) {
       return null
     }
 
