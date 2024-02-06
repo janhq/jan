@@ -1,6 +1,6 @@
 import { DownloadRoute } from '../../../api'
 import { join } from 'path'
-import { DownloadManager } from '../../download'
+import { DownloadManager, DownloadProperties } from '../../download'
 import { HttpServer } from '../HttpServer'
 import { createWriteStream } from 'fs'
 import { getJanDataFolderPath } from '../../utils'
@@ -10,7 +10,10 @@ export const downloadRouter = async (app: HttpServer) => {
   app.get(`/${DownloadRoute.getDownloadProgress}/:modelId`, async (req, res) => {
     const modelId = req.params.modelId
 
-    console.log(`Getting download progress for model ${modelId}`)
+    console.debug(`Getting download progress for model ${modelId}`)
+    console.debug(
+      `All Download progress: ${JSON.stringify(DownloadManager.instance.downloadProgressMap)}`
+    )
 
     // check if null DownloadManager.instance.downloadProgressMap
     if (!DownloadManager.instance.downloadProgressMap[modelId]) {
@@ -43,16 +46,36 @@ export const downloadRouter = async (app: HttpServer) => {
     const rq = request({ url: normalizedArgs[0], strictSSL, proxy })
     progress(rq, {})
       .on('progress', function (state: any) {
-        console.debug('download onProgress', state)
-        DownloadManager.instance.downloadProgressMap[modelId] = { ...state, modelId, filename }
+        const downloadState: DownloadProperties = {
+          ...state,
+          modelId,
+          filename,
+          downloadState: 'downloading',
+        }
+        console.debug('download onProgress', downloadState)
+        DownloadManager.instance.downloadProgressMap[modelId] = downloadState
       })
       .on('error', function (err: Error) {
-        console.debug('download onError', err)
-        delete DownloadManager.instance.downloadProgressMap[modelId]
+        console.debug(`download onError ${modelId}`, err)
+
+        const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
+        if (currentDownloadState) {
+          DownloadManager.instance.downloadProgressMap[modelId] = {
+            ...currentDownloadState,
+            downloadState: 'error',
+          }
+        }
       })
       .on('end', function () {
-        console.debug('download onEnd')
-        delete DownloadManager.instance.downloadProgressMap[modelId]
+        console.debug(`download onEnd ${modelId}`)
+
+        const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
+        if (currentDownloadState) {
+          DownloadManager.instance.downloadProgressMap[modelId] = {
+            ...currentDownloadState,
+            downloadState: 'end',
+          }
+        }
       })
       .pipe(createWriteStream(normalizedArgs[1]))
 
