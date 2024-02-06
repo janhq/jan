@@ -33,6 +33,7 @@ import {
   updateThreadWaitingForResponseAtom,
   threadsAtom,
   isGeneratingResponseAtom,
+  updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function EventHandler({ children }: { children: ReactNode }) {
@@ -49,6 +50,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const modelsRef = useRef(downloadedModels)
   const threadsRef = useRef(threads)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
+  const updateThread = useSetAtom(updateThreadAtom)
 
   useEffect(() => {
     threadsRef.current = threads
@@ -131,6 +133,12 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           ...thread.metadata,
           lastMessage: messageContent,
         }
+
+        updateThread({
+          ...thread,
+          metadata,
+        })
+
         extensionManager
           .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.saveThread({
