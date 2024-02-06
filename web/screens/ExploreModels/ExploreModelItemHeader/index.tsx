@@ -35,7 +35,10 @@ import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
-import { nvidiaTotalVramAtom, totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
+import {
+  nvidiaTotalVramAtom,
+  totalRamAtom,
+} from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
   model: Model

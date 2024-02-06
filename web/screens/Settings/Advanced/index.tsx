@@ -61,8 +61,8 @@ const Advanced = () => {
       if (settings.gpus) {
         setGpuList(settings.gpus)
       }
-      setUseGpuIfPossible()
     }
+    setUseGpuIfPossible()
   }, [readSettings])
 
   const clearLogs = async () => {
@@ -155,7 +155,6 @@ const Advanced = () => {
         </div>
       )}
       {/* Directory */}
-      <DataFolder />
       {gpuEnabled && (
         <div className="mt-4">
           <label className="block text-sm font-medium text-gray-700">
@@ -188,6 +187,7 @@ const Advanced = () => {
           may affect token speed.
         </p>
       )}
+      <DataFolder />
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1.5">
