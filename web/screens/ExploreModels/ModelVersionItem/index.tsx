@@ -10,8 +10,10 @@ import { MainViewState } from '@/constants/screens'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { useDownloadState } from '@/hooks/useDownloadState'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
 import { useMainViewState } from '@/hooks/useMainViewState'
+
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   model: Model
@@ -20,7 +22,7 @@ type Props = {
 
 const ModelVersionItem: React.FC<Props> = ({ model }) => {
   const { downloadModel } = useDownloadModel()
-  const { downloadedModels } = useGetDownloadedModels()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { setMainViewState } = useMainViewState()
   const isDownloaded =
     downloadedModels.find(

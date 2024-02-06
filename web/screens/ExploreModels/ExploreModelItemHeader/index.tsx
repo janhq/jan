@@ -27,18 +27,15 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
 
-import { getAssistants } from '@/hooks/useGetAssistants'
-import { downloadedModelsAtom } from '@/hooks/useGetDownloadedModels'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { toGibibytes } from '@/utils/converter'
 
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
-import {
-  totalRamAtom,
-  nvidiaTotalVramAtom,
-} from '@/helpers/atoms/SystemBar.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import { nvidiaTotalVramAtom, totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
   model: Model
@@ -59,6 +56,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
     ram = totalRam
   }
   const serverEnabled = useAtomValue(serverEnabledAtom)
+  const assistants = useAtomValue(assistantsAtom)
 
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[model.id]),
@@ -69,17 +67,23 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 
   const onDownloadClick = useCallback(() => {
     downloadModel(model)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model])
 
   const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
 
   let downloadButton = (
-    <Button onClick={() => onDownloadClick()}>Download</Button>
+    <Button
+      className="z-50"
+      onClick={(e) => {
+        e.stopPropagation()
+        onDownloadClick()
+      }}
+    >
+      Download
+    </Button>
   )
 
   const onUseModelClick = useCallback(async () => {
-    const assistants = await getAssistants()
     if (assistants.length === 0) {
       alert('No assistant available')
       return
