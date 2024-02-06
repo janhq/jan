@@ -1,6 +1,10 @@
-import { expect, test as base } from '@playwright/test'
-import { _electron as electron } from '@playwright/test'
-import { ElectronApplication, Page } from '@playwright/test'
+import {
+  expect,
+  test as base,
+  _electron as electron,
+  ElectronApplication,
+  Page,
+} from '@playwright/test'
 import {
   findLatestBuild,
   parseElectronApp,
@@ -59,6 +63,5 @@ export const test = base.extend<{
     { auto: true },
   ],
 })
-
 
 test.setTimeout(TIMEOUT)
