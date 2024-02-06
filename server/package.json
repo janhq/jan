@@ -13,8 +13,9 @@
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "test:e2e": "playwright test --workers=1",
-    "dev": "tsc --watch & node --watch build/main.js",
-    "build": "tsc"
+    "build:core": "cd node_modules/@janhq/core && yarn install && yarn build",
+    "dev": "yarn build:core && tsc --watch & node --watch build/main.js",
+    "build": "yarn build:core && tsc"
   },
   "dependencies": {
     "@alumna/reflect": "^1.1.3",
@@ -40,5 +41,8 @@
     "run-script-os": "^1.1.6",
     "@types/tcp-port-used": "^1.0.4",
     "typescript": "^5.2.2"
-  }
+  },
+  "bundleDependencies": [
+    "@janhq/core"
+  ]
 }

@@ -45,8 +45,6 @@ COPY --from=builder /app/web/package.json ./web/package.json
 COPY --from=builder /app/web/yarn.lock ./web/yarn.lock
 COPY --from=builder /app/models ./models/
 
-RUN cd ./server/node_modules/@janhq/core && yarn install && yarn build
-
 RUN npm install -g serve@latest
 
 EXPOSE 1337 3000 3928
