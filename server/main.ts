@@ -1,6 +1,7 @@
+import { s3 } from "./middleware/s3";
 import { setup } from "./helpers/extension";
 import { startServer as start } from "./index";
 /**
- * Setup the extension and start the server
+ * Setup extensions and start the server
  */
-setup().then(() => start());
+setup().then(() => start({ storageAdataper: s3 }));
