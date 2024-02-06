@@ -1,40 +1,4 @@
-// For format details, see https://aka.ms/devcontainer.json. For config options, see the
-// README at: https://github.com/devcontainers/templates/tree/main/src/typescript-node
 {
-    "name": "Jan",
-    // Use the official image. More info: https://aka.ms/devcontainers/base
-    "image": "mcr.microsoft.com/devcontainers/typescript-node",
-    // Add the 'devcontainer' feature. More info: https://aka.ms/devcontainers/feature
-    "features": {
-        // Add make
-        "ghcr.io/jungaretti/features/make:1": {}
-    },
-    // Use 'updateContentCommand' to run commands before the container is created.
-    "updateContentCommand": "bash .devcontainer/install-dev-tools.sh",
-    // Use 'postCreateCommand' to run commands after the container is created.
-    "postCreateCommand": "corepack install -g yarn@1",
-    // Configure tool-specific properties.
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-vscode.makefile-tools",
-                "ms-python.python",
-                "ms-toolsai.jupyter",
-                "ms-toolsai.vscode-jupyter-cell-tags",
-                "ms-toolsai.jupyter-keymap",
-                "ms-toolsai.jupyter-renderers",
-                "ms-toolsai.vscode-jupyter-slideshow",
-                "ms-python.vscode-pylance",
-                "zhang-renyang.vscode-react",
-                "github.vscode-github-actions"
-            ],
-            "settings": {
-                // Output from make build can be very long
-                "terminal.integrated.scrollback": 10000,
-                "terminal.integrated.persistentSessionScrollback": 10000
-            }
-        }
-    },
-    // Use 'remoteUser' to run commands as a specific user.
-    "remoteUser": "root"
+    "name": "jan",
+    "image": "node:20"
 }
