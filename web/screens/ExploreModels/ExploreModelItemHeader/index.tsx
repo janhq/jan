@@ -35,7 +35,10 @@ import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
-import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
+import {
+  nvidiaTotalVramAtom,
+  totalRamAtom,
+} from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
   model: Model
@@ -49,7 +52,12 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const { modelDownloadStateAtom } = useDownloadState()
   const { requestCreateNewThread } = useCreateNewThread()
   const totalRam = useAtomValue(totalRamAtom)
-
+  const nvidiaTotalVram = useAtomValue(nvidiaTotalVramAtom)
+  // Default nvidia returns vram in MB, need to convert to bytes to match the unit of totalRamW
+  let ram = nvidiaTotalVram * 1024 * 1024
+  if (ram === 0) {
+    ram = totalRam
+  }
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const assistants = useAtomValue(assistantsAtom)
 
@@ -115,7 +123,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   }
 
   const getLabel = (size: number) => {
-    if (size * 1.25 >= totalRam) {
+    if (size * 1.25 >= ram) {
       return (
         <Badge className="rounded-md" themes="danger">
           Not enough RAM

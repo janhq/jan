@@ -10,15 +10,19 @@ import {
   cpuUsageAtom,
   totalRamAtom,
   usedRamAtom,
+  nvidiaTotalVramAtom,
 } from '@/helpers/atoms/SystemBar.atom'
 
 export default function useGetSystemResources() {
   const [ram, setRam] = useState<number>(0)
   const [cpu, setCPU] = useState<number>(0)
+
+  const [gpus, setGPUs] = useState<Record<string, never>[]>([])
   const setTotalRam = useSetAtom(totalRamAtom)
   const setUsedRam = useSetAtom(usedRamAtom)
   const setAvailableRam = useSetAtom(availableRamAtom)
   const setCpuUsage = useSetAtom(cpuUsageAtom)
+  const setTotalNvidiaVram = useSetAtom(nvidiaTotalVramAtom)
 
   const getSystemResources = async () => {
     if (
@@ -48,12 +52,25 @@ export default function useGetSystemResources() {
       )
     setCPU(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
     setCpuUsage(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
+
+    const gpus = currentLoadInfor?.gpu ?? []
+    setGPUs(gpus)
+
+    let totalNvidiaVram = 0
+    if (gpus.length > 0) {
+      totalNvidiaVram = gpus.reduce(
+        (total: number, gpu: { memoryTotal: string }) =>
+          total + Number(gpu.memoryTotal),
+        0
+      )
+    }
+    setTotalNvidiaVram(totalNvidiaVram)
   }
 
   useEffect(() => {
     getSystemResources()
 
-    // Fetch interval - every 0.5s
+    // Fetch interval - every 2s
     // TODO: Will we really need this?
     // There is a possibility that this will be removed and replaced by the process event hook?
     const intervalId = setInterval(() => {
@@ -69,5 +86,6 @@ export default function useGetSystemResources() {
     totalRamAtom,
     ram,
     cpu,
+    gpus,
   }
 }
