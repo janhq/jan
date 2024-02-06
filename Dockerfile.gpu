@@ -61,5 +61,5 @@ ENV JAN_API_PORT 1337
 CMD ["sh", "-c", "cd server && node build/main.js & cd web && npx serve out"]
 
 # pre-requisites: nvidia-docker
-# docker build -t jan-gpu .
+# docker build -t jan-gpu . -f Dockerfile.gpu
 # docker run -p 1337:1337 -p 3000:3000 -p 3928:3928 --gpus all jan-gpu
