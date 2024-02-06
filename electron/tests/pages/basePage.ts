@@ -61,4 +61,4 @@ export const test = base.extend<{
 })
 
 
-// test.setTimeout(TIMEOUT)
+test.setTimeout(TIMEOUT)
