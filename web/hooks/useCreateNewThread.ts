@@ -54,7 +54,7 @@ export const useCreateNewThread = () => {
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
-  const threadStates = useAtomValue(threadStatesAtom)
+  const threads = useAtomValue(threadsAtom)
 
   const requestCreateNewThread = async (
     assistant: Assistant,
@@ -62,12 +62,11 @@ export const useCreateNewThread = () => {
   ) => {
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
 
-    // check threads last message, if there empty last message use can not create thread
-    for (const key in threadStates) {
-      const lastMessage = threadStates[key].lastMessage
-      if (!lastMessage) {
-        return
-      }
+    // check last thread message, if there empty last message use can not create thread
+    const lastMessage = threads[0]?.metadata?.lastMessage
+
+    if (!lastMessage && threads.length !== 0) {
+      return null
     }
 
     const createdAt = Date.now()
