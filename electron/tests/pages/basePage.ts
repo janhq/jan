@@ -1,34 +1,64 @@
-import { Page, expect } from '@playwright/test'
-import { CommonActions } from './commonActions'
+import { expect, test as base } from '@playwright/test'
+import { _electron as electron } from '@playwright/test'
+import { ElectronApplication, Page } from '@playwright/test'
+import {
+  findLatestBuild,
+  parseElectronApp,
+  stubDialog,
+} from 'electron-playwright-helpers'
 
-export class BasePage {
-  private dataMap = new Map()
+export const TIMEOUT: number = parseInt(process.env.TEST_TIMEOUT || '300000')
 
-  constructor(
-    protected readonly page: Page,
-    readonly action: CommonActions,
-    protected readonly menuId: string,
-    protected readonly containerId: string
-  ) {}
+export let electronApp: ElectronApplication
+export let page: Page
 
-  public getValue(key: string) {
-    return this.action.getValue(key)
-  }
+export async function setupElectron() {
+  process.env.CI = 'e2e'
 
-  public setValue(key: string, value: string) {
-    this.action.setValue(key, value)
-  }
+  const latestBuild = findLatestBuild('dist')
+  expect(latestBuild).toBeTruthy()
 
-  async takeScreenshot(name: string='') {
-    await this.action.takeScreenshot(name)
-  }
+  // parse the packaged Electron app and find paths and other info
+  const appInfo = parseElectronApp(latestBuild)
+  expect(appInfo).toBeTruthy()
 
-  async navigateByMenu() {
-    await this.page.getByTestId(this.menuId).first().click()
-  }
+  electronApp = await electron.launch({
+    args: [appInfo.main], // main file from package.json
+    executablePath: appInfo.executable, // path to the Electron executable
+  })
+  await stubDialog(electronApp, 'showMessageBox', { response: 1 })
 
-  async verifyContainerVisible() {
-    const container = this.page.getByTestId(this.containerId)
-    expect(container.isVisible()).toBeTruthy()
-  }
+  page = await electronApp.firstWindow({
+    timeout: TIMEOUT,
+  })
+  // Return appInfo for future use
+  return appInfo
 }
+
+export async function teardownElectron() {
+  await page.close()
+  await electronApp.close()
+}
+
+export const test = base.extend<{
+  attachScreenshotsToReport: void
+}>({
+  attachScreenshotsToReport: [
+    async ({ request }, use, testInfo) => {
+      await use()
+
+      // After the test, we can check whether the test passed or failed.
+      if (testInfo.status !== testInfo.expectedStatus) {
+        const screenshot = await page.screenshot()
+        await testInfo.attach('screenshot', {
+          body: screenshot,
+          contentType: 'image/png',
+        })
+      }
+    },
+    { auto: true },
+  ],
+})
+
+
+// test.setTimeout(TIMEOUT)
