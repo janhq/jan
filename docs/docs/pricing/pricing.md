@@ -1,0 +1,4 @@
+---
+title: Pricing
+slug: /pricing
+---

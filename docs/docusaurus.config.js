@@ -241,32 +241,62 @@ const config = {
         // Navbar Left
         {
           type: "docSidebar",
-          sidebarId: "guidesSidebar",
-          position: "left",
-          label: "Guides",
+          sidebarId: "productSidebar",
+          positionL: "left",
+          label: "Products",
         },
         {
           type: "docSidebar",
-          sidebarId: "developerSidebar",
-          position: "left",
-          label: "Developer",
-        },
-        {
-          position: "left",
-          to: "/api-reference",
-          label: "API Reference",
+          sidebarId: "solutionSidebar",
+          positionL: "left",
+          label: "Solutions",
         },
         {
           type: "docSidebar",
-          position: "left",
-          sidebarId: "docsSidebar",
-          label: "Framework",
+          sidebarId: "ecosystemSidebar",
+          positionL: "left",
+          label: "Ecosystem",
         },
+        {
+          type: "docSidebar",
+          sidebarId: "pricingSidebar",
+          positionL: "left",
+          label: "Pricing",
+        },
+        // {
+        //   type: "docSidebar",
+        //   sidebarId: "guidesSidebar",
+        //   position: "left",
+        //   label: "Guides",
+        // },
+        // {
+        //   type: "docSidebar",
+        //   sidebarId: "developerSidebar",
+        //   position: "left",
+        //   label: "Developer",
+        // },
+        // {
+        //   position: "left",
+        //   to: "/api-reference",
+        //   label: "API Reference",
+        // },
+        // {
+        //   type: "docSidebar",
+        //   position: "left",
+        //   sidebarId: "docsSidebar",
+        //   label: "Framework",
+        // },
         // Navbar right
         {
           to: "blog",
           label: "Blog",
           position: "right",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "partnerSidebar",
+          position: "right",
+          label: "Partners",
         },
         {
           type: "docSidebar",
