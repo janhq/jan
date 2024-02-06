@@ -259,44 +259,47 @@ const config = {
         },
         {
           type: "docSidebar",
+          sidebarId: "partnerSidebar",
+          position: "left",
+          label: "Partners",
+        },
+        {
+          type: "docSidebar",
           sidebarId: "pricingSidebar",
           positionL: "left",
           label: "Pricing",
         },
-        // {
-        //   type: "docSidebar",
-        //   sidebarId: "guidesSidebar",
-        //   position: "left",
-        //   label: "Guides",
-        // },
-        // {
-        //   type: "docSidebar",
-        //   sidebarId: "developerSidebar",
-        //   position: "left",
-        //   label: "Developer",
-        // },
-        // {
-        //   position: "left",
-        //   to: "/api-reference",
-        //   label: "API Reference",
-        // },
-        // {
-        //   type: "docSidebar",
-        //   position: "left",
-        //   sidebarId: "docsSidebar",
-        //   label: "Framework",
-        // },
         // Navbar right
+        {
+          type: "dropdown",
+          label: "Docs",
+          position: "right",
+          items: [
+            {
+              type: "docSidebar",
+              sidebarId: "guidesSidebar",
+              label: "User Guide",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "developerSidebar",
+              label: "Developer",
+            },
+            {
+              to: "/api-reference",
+              label: "API Reference",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "docsSidebar",
+              label: "Framework",
+            },
+          ],
+        },
         {
           to: "blog",
           label: "Blog",
           position: "right",
-        },
-        {
-          type: "docSidebar",
-          sidebarId: "partnerSidebar",
-          position: "right",
-          label: "Partners",
         },
         {
           type: "docSidebar",
