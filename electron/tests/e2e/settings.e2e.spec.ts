@@ -1,23 +1,18 @@
 import { expect } from '@playwright/test'
 
-import {
-  setupElectron,
-  teardownElectron,
-  test,
-  page,
-  TIMEOUT,
-} from '../pages/basePage'
+import { test, page, TIMEOUT } from '../pages/basePage'
 
 test.beforeAll(async () => {
-  await setupElectron()
+  console.log('before settings')
 })
 
 test.afterAll(async () => {
-  await teardownElectron()
+  console.log('after settings')
 })
 
 test('shows settings', async () => {
-  await page.getByTestId('Settings').first().click({ timeout: TIMEOUT })
+  await page.getByTestId('Settings123').first().click()
+  expect(true).toEqual(false)
   const settingDescription = page.getByTestId('testid-setting-description')
   await expect(settingDescription).toBeVisible({ timeout: TIMEOUT })
 })
