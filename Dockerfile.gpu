@@ -1,10 +1,22 @@
-FROM nvidia/cuda:12.0.0-devel-ubuntu22.04 AS base
+# Please change the base image to the appropriate CUDA version base on NVIDIA Driver Compatibility
+# Run nvidia-smi to check the CUDA version and the corresponding driver version
+# Then update the base image to the appropriate CUDA version refer https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags
+
+FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04 AS base 
 
 # 1. Install dependencies only when needed
 FROM base AS builder
 
 # Install g++ 11
-RUN apt update && apt install -y gcc-11 g++-11 cpp-11 jq xsel curl gnupg && curl -sL https://deb.nodesource.com/setup_20.x | bash - && apt install nodejs -y && rm -rf /var/lib/apt/lists/*
+RUN apt update && apt install -y gcc-11 g++-11 cpp-11 jq xsel curl gnupg make python3-dev && curl -sL https://deb.nodesource.com/setup_20.x | bash - && apt install nodejs -y && rm -rf /var/lib/apt/lists/*
+
+# Update alternatives for GCC and related tools
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 \
+                         --slave /usr/bin/g++ g++ /usr/bin/g++-11 \
+                         --slave /usr/bin/gcov gcov /usr/bin/gcov-11 \
+                         --slave /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-11 \
+                         --slave /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-11 && \
+    update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-11 110
 
 RUN npm install -g yarn
 
@@ -24,7 +36,15 @@ RUN export NODE_ENV=production && yarn workspace jan-web build
 FROM base AS runner
 
 # Install g++ 11
-RUN apt update && apt install -y gcc-11 g++-11 cpp-11 jq xsel curl gnupg && curl -sL https://deb.nodesource.com/setup_20.x | bash - && apt-get install nodejs -y && rm -rf /var/lib/apt/lists/*
+RUN apt update && apt install -y gcc-11 g++-11 cpp-11 jq xsel curl gnupg make python3-dev && curl -sL https://deb.nodesource.com/setup_20.x | bash - && apt-get install nodejs -y && rm -rf /var/lib/apt/lists/*
+
+# Update alternatives for GCC and related tools
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 \
+                         --slave /usr/bin/g++ g++ /usr/bin/g++-11 \
+                         --slave /usr/bin/gcov gcov /usr/bin/gcov-11 \
+                         --slave /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-11 \
+                         --slave /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-11 && \
+    update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-11 110
 
 RUN npm install -g yarn
 
