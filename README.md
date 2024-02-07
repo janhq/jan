@@ -236,7 +236,7 @@ This will build the app MacOS m1/m2 for production (with code signing already do
   - **Option 1**: Run Jan in CPU mode
 
     ```bash
-    docker compose --profile cpu up
+    docker compose --profile cpu up -d
     ```
 
   - **Option 2**: Run Jan in GPU mode
@@ -274,18 +274,19 @@ This will build the app MacOS m1/m2 for production (with code signing already do
       |=======================================================================================|
       ```
 
-    - **Step 2**: Go to https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags and find the lates minor version of image tag that matches the cuda version from the output of `nvidia-smi` (e.g. 12.1 -> 12.1.0)
+    - **Step 2**: Go to https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags and find the smallest minor version of image tag that matches the cuda version from the output of `nvidia-smi` (e.g. 12.1 -> 12.1.0)
 
-    - **Step 3**: Update the `Dockerfile.gpu` line number 5 with the latest minor version of the image tag from step 2 (e.g. change `FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04 AS base` to `FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS base`)
+    - **Step 3**: Update the `Dockerfile.gpu` line number 5 with the latest minor version of the image tag from step 2 (e.g. change `FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS base` to `FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS base`)
 
     - **Step 4**: Run command to start Jan in GPU mode
 
       ```bash
       # GPU mode
-      docker compose --profile gpu up
+      docker compose --profile gpu up -d
       ```
 
   This will start the web server and you can access Jan at `http://localhost:3000`.
+  > Note: Currently, Docker mode is only work for development and localhost, production is not supported yet. RAG feature is not supported in Docker mode yet.
 
 ## Acknowledgements
 

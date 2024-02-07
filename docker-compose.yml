@@ -1,6 +1,9 @@
+# Docker Compose file for setting up Minio, createbuckets, app_cpu, and app_gpu services
+
 version: '3.7'
 
 services:
+  # Minio service for object storage
   minio:
     image: minio/minio
     volumes:
@@ -9,6 +12,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
+      # Set the root user and password for Minio
       MINIO_ROOT_USER: minioadmin # This acts as AWS_ACCESS_KEY
       MINIO_ROOT_PASSWORD: minioadmin # This acts as AWS_SECRET_ACCESS_KEY
     command: server --console-address ":9001" /data
@@ -22,6 +26,7 @@ services:
       vpcbr:
         ipv4_address: 10.5.0.2
 
+  # createbuckets service to create a bucket and set its policy
   createbuckets:
     image: minio/mc
     depends_on:
@@ -36,7 +41,7 @@ services:
     networks:
       vpcbr:
 
-
+  # app_cpu service for running the CPU version of the application
   app_cpu:
     image: jan:latest
     volumes:
@@ -45,6 +50,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
+      # Set the AWS access key, secret access key, bucket name, endpoint, and region for app_cpu
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
       S3_BUCKET_NAME: mybucket
@@ -60,8 +66,8 @@ services:
     networks:
       vpcbr:
         ipv4_address: 10.5.0.3
-       
 
+  # app_gpu service for running the GPU version of the application
   app_gpu:
     deploy:
       resources:
@@ -78,12 +84,12 @@ services:
       dockerfile: Dockerfile.gpu
     restart: always
     environment:
+      # Set the AWS access key, secret access key, bucket name, endpoint, and region for app_gpu
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
       S3_BUCKET_NAME: mybucket
       AWS_ENDPOINT: http://10.5.0.2:9000
       AWS_REGION: us-east-1
-    
     profiles:
       - gpu
     ports:
@@ -106,5 +112,6 @@ networks:
        - subnet: 10.5.0.0/16
          gateway: 10.5.0.1
 
-# docker compose --profile cpu up
-# docker compose --profile gpu up
+# Usage:
+# - Run 'docker-compose --profile cpu up -d' to start the app_cpu service
+# - Run 'docker-compose --profile gpu up -d' to start the app_gpu service
