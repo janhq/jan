@@ -26,11 +26,12 @@ import { MainViewState } from '@/constants/screens'
 import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const menuLinks = [
   {
@@ -47,13 +48,21 @@ const menuLinks = [
 
 const BottomBar = () => {
   const { activeModel, stateModel } = useActiveModel()
-  const { ram, cpu } = useGetSystemResources()
+  const { ram, cpu, gpus } = useGetSystemResources()
   const progress = useAtomValue(appDownloadProgress)
-  const { downloadedModels } = useGetDownloadedModels()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+
   const { setMainViewState } = useMainViewState()
   const { downloadStates } = useDownloadState()
   const setShowSelectModelModal = useSetAtom(showSelectModelModalAtom)
   const [serverEnabled] = useAtom(serverEnabledAtom)
+
+  const calculateGpuMemoryUsage = (gpu: Record<string, never>) => {
+    const total = parseInt(gpu.memoryTotal)
+    const free = parseInt(gpu.memoryFree)
+    if (!total || !free) return 0
+    return Math.round(((total - free) / total) * 100)
+  }
 
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/80 px-3">
@@ -117,6 +126,17 @@ const BottomBar = () => {
           <SystemItem name="CPU:" value={`${cpu}%`} />
           <SystemItem name="Mem:" value={`${ram}%`} />
         </div>
+        {gpus.length > 0 && (
+          <div className="flex items-center gap-x-2">
+            {gpus.map((gpu, index) => (
+              <SystemItem
+                key={index}
+                name={`GPU ${gpu.id}:`}
+                value={`${gpu.utilization}% Util, ${calculateGpuMemoryUsage(gpu)}% Mem`}
+              />
+            ))}
+          </div>
+        )}
         {/* VERSION is defined by webpack, please see next.config.js */}
         <span className="text-xs text-muted-foreground">
           Jan v{VERSION ?? ''}

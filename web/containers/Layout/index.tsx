@@ -12,7 +12,8 @@ import TopBar from '@/containers/Layout/TopBar'
 import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
-import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
+
+import { SUCCESS_SET_NEW_DESTINATION } from '@/screens/Settings/Advanced/DataFolder'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
@@ -28,7 +29,7 @@ const BaseLayout = (props: PropsWithChildren) => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
       setMainViewState(MainViewState.Settings)
     }
-  }, [])
+  }, [setMainViewState])
 
   return (
     <div className="flex h-screen w-screen flex-1 overflow-hidden">

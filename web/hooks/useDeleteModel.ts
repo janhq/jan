@@ -1,13 +1,14 @@
 import { ExtensionTypeEnum, ModelExtension, Model } from '@janhq/core'
 
+import { useAtom } from 'jotai'
+
 import { toaster } from '@/containers/Toast'
 
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-
 import { extensionManager } from '@/extension/ExtensionManager'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useDeleteModel() {
-  const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
+  const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelsAtom)
 
   const deleteModel = async (model: Model) => {
     await extensionManager
@@ -19,6 +20,7 @@ export default function useDeleteModel() {
     toaster({
       title: 'Model Deletion Successful',
       description: `The model ${model.id} has been successfully deleted.`,
+      type: 'success',
     })
   }
 

@@ -24,3 +24,7 @@ export const removeDownloadingModelAtom = atom(
     )
   }
 )
+
+export const downloadedModelsAtom = atom<Model[]>([])
+
+export const configuredModelsAtom = atom<Model[]>([])

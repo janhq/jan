@@ -26,6 +26,8 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
+import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
+
 import { toGibibytes } from '@/utils/converter'
 
 import ModelLabel from '../ModelLabel'
@@ -34,68 +36,40 @@ import OpenAiKeyInput from '../OpenAiKeyInput'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 import {
-  ModelParams,
   activeThreadAtom,
-  getActiveThreadIdAtom,
   setThreadModelParamsAtom,
-  threadStatesAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
 
-export default function DropdownListSidebar() {
-  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
+// TODO: Move all of the unscoped logics outside of the component
+const DropdownListSidebar = ({
+  strictedThread = true,
+}: {
+  strictedThread?: boolean
+}) => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const { activeModel, stateModel } = useActiveModel()
+
+  const { stateModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const { setMainViewState } = useMainViewState()
-
+  const [loader, setLoader] = useState(0)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
-
-  /**
-   * Default value for max_tokens and ctx_len
-   * Its to avoid OOM issue since a model can set a big number for these settings
-   */
-  const defaultValue = (value?: number) => {
-    if (value && value < 4096) return value
-    return 4096
-  }
+  const { updateModelParameter } = useUpdateModelParameters()
 
   useEffect(() => {
-    setSelectedModel(selectedModel || activeModel || recommendedModel)
+    if (!activeThread) return
 
-    if (activeThread) {
-      const finishInit = threadStates[activeThread.id].isFinishInit ?? true
-      if (finishInit) return
-      const modelParams: ModelParams = {
-        ...recommendedModel?.parameters,
-        ...recommendedModel?.settings,
-        /**
-         * This is to set default value for these settings instead of maximum value
-         * Should only apply when model.json has these settings
-         */
-        ...(recommendedModel?.parameters.max_tokens && {
-          max_tokens: defaultValue(recommendedModel?.parameters.max_tokens),
-        }),
-        ...(recommendedModel?.settings.ctx_len && {
-          ctx_len: defaultValue(recommendedModel?.settings.ctx_len),
-        }),
-      }
-      setThreadModelParams(activeThread.id, modelParams)
+    let model = downloadedModels.find(
+      (model) => model.id === activeThread.assistants[0].model.id
+    )
+    if (!model) {
+      model = recommendedModel
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    recommendedModel,
-    activeThread,
-    setSelectedModel,
-    setThreadModelParams,
-    threadStates,
-  ])
-
-  const [loader, setLoader] = useState(0)
+    setSelectedModel(model)
+  }, [recommendedModel, activeThread, downloadedModels, setSelectedModel])
 
   // This is fake loader please fix this when we have realtime percentage when load model
   useEffect(() => {
@@ -132,25 +106,35 @@ export default function DropdownListSidebar() {
         setServerEnabled(false)
       }
 
-      if (activeThreadId) {
+      if (activeThread) {
         const modelParams = {
           ...model?.parameters,
           ...model?.settings,
         }
-        setThreadModelParams(activeThreadId, modelParams)
+        // Update model paramter to the thread state
+        setThreadModelParams(activeThread.id, modelParams)
+
+        // Update model parameter to the thread file
+        if (model)
+          updateModelParameter(activeThread.id, {
+            params: modelParams,
+            modelId: model.id,
+            engine: model.engine,
+          })
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       downloadedModels,
       serverEnabled,
-      activeThreadId,
-      activeModel,
+      activeThread,
+      setSelectedModel,
+      setServerEnabled,
       setThreadModelParams,
+      updateModelParameter,
     ]
   )
 
-  if (!activeThread) {
+  if (strictedThread && !activeThread) {
     return null
   }
 
@@ -236,10 +220,9 @@ export default function DropdownListSidebar() {
         </Select>
       </div>
 
-      <OpenAiKeyInput
-        selectedModel={selectedModel}
-        serverEnabled={serverEnabled}
-      />
+      <OpenAiKeyInput />
     </>
   )
 }
+
+export default DropdownListSidebar

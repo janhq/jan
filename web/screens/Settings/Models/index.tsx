@@ -2,16 +2,17 @@ import { useState } from 'react'
 
 import { Input } from '@janhq/uikit'
 
+import { useAtomValue } from 'jotai'
 import { SearchIcon } from 'lucide-react'
 
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-
 import RowModel from './Row'
+
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const Column = ['Name', 'Model ID', 'Size', 'Version', 'Status', '']
 
 export default function Models() {
-  const { downloadedModels } = useGetDownloadedModels()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [searchValue, setsearchValue] = useState('')
 
   const filteredDownloadedModels = downloadedModels.filter((x) => {

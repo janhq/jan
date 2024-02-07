@@ -24,6 +24,7 @@ import {
   MessageEvent,
   ModelEvent,
   InferenceEvent,
+  ModelSettingParams,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
@@ -45,12 +46,12 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
   private _currentModel: Model | undefined;
 
-  private _engineSettings: EngineSettings = {
+  private _engineSettings: ModelSettingParams = {
     ctx_len: 2048,
     ngl: 100,
     cpu_threads: 1,
     cont_batching: false,
-    embedding: false,
+    embedding: true,
   };
 
   controller = new AbortController();
@@ -67,15 +68,28 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
    */
   private nitroProcessInfo: any = undefined;
 
+  private inferenceUrl = "";
+
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
     if (!(await fs.existsSync(JanInferenceNitroExtension._homeDir))) {
-      await fs
-        .mkdirSync(JanInferenceNitroExtension._homeDir)
-        .catch((err: Error) => console.debug(err));
+      try {
+        await fs.mkdirSync(JanInferenceNitroExtension._homeDir);
+      } catch (e) {
+        console.debug(e);
+      }
     }
+
+    // init inference url
+    // @ts-ignore
+    const electronApi = window?.electronAPI;
+    this.inferenceUrl = INFERENCE_URL;
+    if (!electronApi) {
+      this.inferenceUrl = JAN_SERVER_INFERENCE_URL;
+    }
+    console.debug("Inference url: ", this.inferenceUrl);
 
     if (!(await fs.existsSync(JanInferenceNitroExtension._settingsDir)))
       await fs.mkdirSync(JanInferenceNitroExtension._settingsDir);
@@ -133,6 +147,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
 
     const modelFullPath = await joinPath(["models", model.id]);
 
+    this._currentModel = model;
     const nitroInitResult = await executeOnMain(NODE, "runModel", {
       modelFullPath,
       model,
@@ -143,7 +158,6 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       return;
     }
 
-    this._currentModel = model;
     events.emit(ModelEvent.OnModelReady, model);
 
     this.getNitroProcesHealthIntervalId = setInterval(
@@ -205,7 +219,11 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     return new Promise(async (resolve, reject) => {
       if (!this._currentModel) return Promise.reject("No model loaded");
 
-      requestInference(data.messages ?? [], this._currentModel).subscribe({
+      requestInference(
+        this.inferenceUrl,
+        data.messages ?? [],
+        this._currentModel
+      ).subscribe({
         next: (_content: any) => {},
         complete: async () => {
           resolve(message);
@@ -250,7 +268,12 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       ...(this._currentModel || {}),
       ...(data.model || {}),
     };
-    requestInference(data.messages ?? [], model, this.controller).subscribe({
+    requestInference(
+      this.inferenceUrl,
+      data.messages ?? [],
+      model,
+      this.controller
+    ).subscribe({
       next: (content: any) => {
         const messageContent: ThreadContent = {
           type: ContentType.Text,

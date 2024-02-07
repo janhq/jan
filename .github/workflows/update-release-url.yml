@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: "0"
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
-          ref: main
+          ref: dev
 
       - name: Get Latest Release
         uses: pozetroninc/github-action-get-latest-release@v0.7.0
@@ -46,4 +46,4 @@ jobs:
           git config --global user.name "Service Account"
           git add README.md
           git commit -m "Update README.md with Stable Download URLs"
-          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:main
+          git -c http.extraheader="AUTHORIZATION: bearer ${{ secrets.PAT_SERVICE_ACCOUNT }}" push origin HEAD:dev

@@ -2,7 +2,8 @@ import fs from 'fs'
 import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
 import { ContentType, MessageStatus, Model, ThreadMessage } from './../../../index'
-import { getJanDataFolderPath } from '../../utils'
+import { getEngineConfiguration, getJanDataFolderPath } from '../../utils'
+import { DEFAULT_CHAT_COMPLETION_URL } from './consts'
 
 export const getBuilder = async (configuration: RouteConfiguration) => {
   const directoryPath = join(getJanDataFolderPath(), configuration.dirName)
@@ -309,7 +310,7 @@ export const chatCompletions = async (request: any, reply: any) => {
   const engineConfiguration = await getEngineConfiguration(requestedModel.engine)
 
   let apiKey: string | undefined = undefined
-  let apiUrl: string = 'http://127.0.0.1:3928/inferences/llamacpp/chat_completion' // default nitro url
+  let apiUrl: string = DEFAULT_CHAT_COMPLETION_URL
 
   if (engineConfiguration) {
     apiKey = engineConfiguration.api_key
@@ -320,7 +321,7 @@ export const chatCompletions = async (request: any, reply: any) => {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
-    "Access-Control-Allow-Origin": "*"
+    'Access-Control-Allow-Origin': '*',
   })
 
   const headers: Record<string, any> = {
@@ -345,14 +346,4 @@ export const chatCompletions = async (request: any, reply: any) => {
   } else {
     response.body.pipe(reply.raw)
   }
-}
-
-const getEngineConfiguration = async (engineId: string) => {
-  if (engineId !== 'openai') {
-    return undefined
-  }
-  const directoryPath = join(getJanDataFolderPath(), 'engines')
-  const filePath = join(directoryPath, `${engineId}.json`)
-  const data = await fs.readFileSync(filePath, 'utf-8')
-  return JSON.parse(data)
 }

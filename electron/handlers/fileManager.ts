@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, app } from 'electron'
 // @ts-ignore
 import reflect from '@alumna/reflect'
 
@@ -38,6 +38,10 @@ export function handleFileMangerIPCs() {
     getResourcePath()
   )
 
+  ipcMain.handle(FileManagerRoute.getUserHomePath, async (_event) =>
+    app.getPath('home')
+  )
+
   // handle fs is directory here
   ipcMain.handle(
     FileManagerRoute.fileStat,
@@ -57,6 +61,22 @@ export function handleFileMangerIPCs() {
       }
 
       return fileStat
+    }
+  )
+
+  ipcMain.handle(
+    FileManagerRoute.writeBlob,
+    async (_event, path: string, data: string): Promise<void> => {
+      try {
+        const normalizedPath = normalizeFilePath(path)
+        const dataBuffer = Buffer.from(data, 'base64')
+        fs.writeFileSync(
+          join(getJanDataFolderPath(), normalizedPath),
+          dataBuffer
+        )
+      } catch (err) {
+        console.error(`writeFile ${path} result: ${err}`)
+      }
     }
   )
 }

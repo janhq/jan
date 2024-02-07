@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { fs, joinPath } from '@janhq/core'
 import { atom, useAtom } from 'jotai'
@@ -32,7 +32,7 @@ export const useSettings = () => {
     })
   }
 
-  const readSettings = async () => {
+  const readSettings = useCallback(async () => {
     if (!window?.core?.api) {
       return
     }
@@ -42,18 +42,22 @@ export const useSettings = () => {
       return typeof settings === 'object' ? settings : JSON.parse(settings)
     }
     return {}
-  }
+  }, [])
+
   const saveSettings = async ({
     runMode,
     notify,
+    gpusInUse,
   }: {
     runMode?: string | undefined
     notify?: boolean | undefined
+    gpusInUse?: string[] | undefined
   }) => {
     const settingsFile = await joinPath(['file://settings', 'settings.json'])
     const settings = await readSettings()
     if (runMode != null) settings.run_mode = runMode
     if (notify != null) settings.notify = notify
+    if (gpusInUse != null) settings.gpus_in_use = gpusInUse
     await fs.writeFileSync(settingsFile, JSON.stringify(settings))
   }
 

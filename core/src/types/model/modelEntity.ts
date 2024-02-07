@@ -7,6 +7,7 @@ export type ModelInfo = {
   settings: ModelSettingParams
   parameters: ModelRuntimeParams
   engine?: InferenceEngine
+  proxyEngine?: InferenceEngine
 }
 
 /**
@@ -18,7 +19,8 @@ export enum InferenceEngine {
   nitro = 'nitro',
   openai = 'openai',
   triton_trtllm = 'triton_trtllm',
-  hf_endpoint = 'hf_endpoint',
+
+  tool_retrieval_enabled = 'tool_retrieval_enabled',
 }
 
 export type ModelArtifact = {
@@ -90,6 +92,13 @@ export type Model = {
    * The model engine.
    */
   engine: InferenceEngine
+
+  proxyEngine?: InferenceEngine
+
+  /**
+   * Is multimodal or not.
+   */
+  visionModel?: boolean
 }
 
 export type ModelMetadata = {
@@ -114,6 +123,7 @@ export type ModelSettingParams = {
   user_prompt?: string
   llama_model_path?: string
   mmproj?: string
+  cont_batching?: boolean
 }
 
 /**
@@ -129,4 +139,5 @@ export type ModelRuntimeParams = {
   stop?: string[]
   frequency_penalty?: number
   presence_penalty?: number
+  engine?: string
 }
