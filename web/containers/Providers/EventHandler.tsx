@@ -128,10 +128,10 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
       if (thread) {
-        const messageContent = message.content[0]?.text.value ?? ''
+        const messageContent = message.content[0]?.text?.value
         const metadata = {
           ...thread.metadata,
-          lastMessage: messageContent,
+          ...(messageContent && { lastMessage: messageContent }),
         }
 
         updateThread({
@@ -151,7 +151,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           ?.addNewMessage(message)
       }
     },
-    [updateMessage, updateThreadWaiting, setIsGeneratingResponse]
+    [updateMessage, updateThreadWaiting, setIsGeneratingResponse, updateThread]
   )
 
   useEffect(() => {
