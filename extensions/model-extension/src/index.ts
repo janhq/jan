@@ -11,6 +11,7 @@ import {
   events,
   DownloadEvent,
   DownloadRoute,
+  ModelEvent,
 } from '@janhq/core'
 import { DownloadState } from '@janhq/core/.'
 import { extractFileName } from './helpers/path'
@@ -68,6 +69,8 @@ export default class JanModelExtension extends ModelExtension {
 
       // Finished migration
       localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION)
+
+      events.emit(ModelEvent.OnModelsUpdate, {})
     } catch (err) {
       console.error(err)
     }
