@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test'
-import { page, test, TIMEOUT } from '../config/fixtures'
+import { page, test, TIMEOUT } from '../pages/basePage'
 
 test('renders left navigation panel', async () => {
   const systemMonitorBtn = await page
