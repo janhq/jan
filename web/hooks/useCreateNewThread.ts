@@ -66,13 +66,9 @@ export const useCreateNewThread = () => {
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
 
     // check last thread message, if there empty last message use can not create thread
-    const lastMessage = threads[0]?.metadata?.lastMessage
+    const lastMessage = threads[threads.length - 1]?.metadata?.lastMessage
 
-    if (
-      !lastMessage &&
-      threads.length &&
-      messages[messages.length - 1]?.status !== MessageStatus.Error
-    ) {
+    if (!lastMessage && threads.length && !messages.length) {
       return null
     }
 
