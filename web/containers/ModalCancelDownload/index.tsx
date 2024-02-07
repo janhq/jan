@@ -17,23 +17,22 @@ import {
 import { atom, useAtomValue } from 'jotai'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
-import { useDownloadState } from '@/hooks/useDownloadState'
+
+import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
-import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { getDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   model: Model
   isFromList?: boolean
 }
 
-export default function ModalCancelDownload({ model, isFromList }: Props) {
-  const { modelDownloadStateAtom } = useDownloadState()
-  const downloadingModels = useAtomValue(downloadingModelsAtom)
+const ModalCancelDownload: React.FC<Props> = ({ model, isFromList }) => {
+  const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const downloadAtom = useMemo(
     () => atom((get) => get(modelDownloadStateAtom)[model.id]),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [model.id]
   )
   const downloadState = useAtomValue(downloadAtom)
@@ -98,3 +97,5 @@ export default function ModalCancelDownload({ model, isFromList }: Props) {
     </Modal>
   )
 }
+
+export default ModalCancelDownload
