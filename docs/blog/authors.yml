@@ -1,9 +1,16 @@
 dan-jan:
   name: Daniel Onggunhao
   title: Co-Founder
-  url: https://github.com/dan-jan 
+  url: https://github.com/dan-jan
   image_url: https://avatars.githubusercontent.com/u/101145494?v=4
   email: daniel@jan.ai
+
+namchuai:
+  name: Nam Nguyen
+  title: Developer
+  url: https://github.com/namchuai
+  image_url: https://avatars.githubusercontent.com/u/10397206?v=4
+  email: james@jan.ai
   
 hiro-v:
   name: Hiro Vuong
