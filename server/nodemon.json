@@ -1,5 +1,0 @@
-{
-    "watch": ["main.ts", "v1"],
-    "ext": "ts, json",
-    "exec": "tsc && node ./build/main.js"
-}

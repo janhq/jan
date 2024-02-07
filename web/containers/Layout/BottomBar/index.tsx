@@ -25,8 +25,7 @@ import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
-import { useDownloadState } from '@/hooks/useDownloadState'
-
+import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
@@ -53,7 +52,7 @@ const BottomBar = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
 
   const { setMainViewState } = useMainViewState()
-  const { downloadStates } = useDownloadState()
+  const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setShowSelectModelModal = useSetAtom(showSelectModelModalAtom)
   const [serverEnabled] = useAtom(serverEnabledAtom)
 
@@ -109,7 +108,7 @@ const BottomBar = () => {
           )}
         {downloadedModels.length === 0 &&
           !stateModel.loading &&
-          downloadStates.length === 0 && (
+          Object.values(downloadStates).length === 0 && (
             <Button
               size="sm"
               themes="outline"

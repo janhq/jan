@@ -4,6 +4,7 @@ import { threadRouter } from './thread'
 import { fsRouter } from './fs'
 import { extensionRouter } from './extension'
 import { downloadRouter } from './download'
+import { fileManagerRouter } from './fileManager'
 
 export const v1Router = async (app: HttpServer) => {
   // MARK: External Routes
@@ -16,6 +17,8 @@ export const v1Router = async (app: HttpServer) => {
   app.register(fsRouter, {
     prefix: '/fs',
   })
+  app.register(fileManagerRouter)
+
   app.register(extensionRouter, {
     prefix: '/extension',
   })

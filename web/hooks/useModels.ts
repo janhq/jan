@@ -1,6 +1,12 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
-import { ExtensionTypeEnum, Model, ModelExtension } from '@janhq/core'
+import {
+  ExtensionTypeEnum,
+  Model,
+  ModelEvent,
+  ModelExtension,
+  events,
+} from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
@@ -14,23 +20,30 @@ const useModels = () => {
   const setDownloadedModels = useSetAtom(downloadedModelsAtom)
   const setConfiguredModels = useSetAtom(configuredModelsAtom)
 
-  useEffect(() => {
+  const getData = useCallback(() => {
     const getDownloadedModels = async () => {
       const models = await getLocalDownloadedModels()
       setDownloadedModels(models)
     }
-
-    getDownloadedModels()
-  }, [setDownloadedModels])
-
-  useEffect(() => {
     const getConfiguredModels = async () => {
       const models = await getLocalConfiguredModels()
       setConfiguredModels(models)
     }
-
+    getDownloadedModels()
     getConfiguredModels()
-  }, [setConfiguredModels])
+  }, [setDownloadedModels, setConfiguredModels])
+
+  useEffect(() => {
+    // Try get data on mount
+    getData()
+
+    // Listen for model updates
+    events.on(ModelEvent.OnModelsUpdate, async () => getData())
+    return () => {
+      // Remove listener on unmount
+      events.off(ModelEvent.OnModelsUpdate, async () => {})
+    }
+  }, [getData])
 }
 
 const getLocalConfiguredModels = async (): Promise<Model[]> =>
