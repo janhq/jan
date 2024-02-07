@@ -1,6 +1,6 @@
 # [Release Version] QA Script 
 
-**Release Version:**
+**Release Version:** v0.4.6
 
 **Operating System:**
 
@@ -25,10 +25,10 @@
 
 ### 3. Users uninstall app
 
-- [ ] :key: Check that the uninstallation process removes all components of the app from the system.
+- [ ] :key::warning: Check that the uninstallation process removes the app successfully from the system.
 - [ ] Clean the Jan root directory and open the app to check if it creates all the necessary folders, especially models and extensions.
 - [ ] When updating the app, check if the `/models` directory has any JSON files that change according to the update.
-- [ ] Verify if updating the app also updates extensions correctly (test functionality changes; support notifications for necessary tests with each version related to extensions update).
+- [ ] Verify if updating the app also updates extensions correctly (test functionality changes, support notifications for necessary tests with each version related to extensions update).
 
 ### 4. Users close app
 
@@ -60,49 +60,45 @@
 - [ ] :key: Ensure that the conversation thread is maintained without any loss of data upon sending multiple messages.
 - [ ] Test for the ability to send different types of messages (e.g., text, emojis, code blocks).
 - [ ] :key: Validate the scroll functionality in the chat window for lengthy conversations.
-- [ ] Check if the user can renew responses multiple times.
 - [ ] Check if the user can copy the response.
 - [ ] Check if the user can delete responses.
-- [ ] :warning: Test if the user deletes the message midway, then the assistant stops that response.
 - [ ] :key: Check the `clear message` button works.
 - [ ] :key: Check the `delete entire chat` works.
-- [ ] :warning: Check if deleting all the chat retains the system prompt.
+- [ ] Check if deleting all the chat retains the system prompt.
 - [ ] Check the output format of the AI (code blocks, JSON, markdown, ...).
 - [ ] :key: Validate that there is appropriate error handling and messaging if the assistant fails to respond.
 - [ ] Test assistant's ability to maintain context over multiple exchanges.
 - [ ] :key: Check the `create new chat` button works correctly
 - [ ] Confirm that by changing `models` mid-thread the app can still handle it.
-- [ ] Check that by changing `instructions` mid-thread the app can still handle it.
-- [ ] Check the `regenerate` button renews the response.
-- [ ] Check the `Instructions` update correctly after the user updates it midway.
+- [ ] Check the `regenerate` button renews the response (single / multiple times).
+- [ ] Check the `Instructions` update correctly after the user updates it midway (mid-thread).
 
 ### 2. Users can customize chat settings like model parameters via both the GUI & thread.json
 
-- [ ] :key: Confirm that the chat settings options are accessible via the GUI.
+- [ ] :key: Confirm that the Threads settings options are accessible.
 - [ ] Test the functionality to adjust model parameters (e.g., Temperature, Top K, Top P) from the GUI and verify they are reflected in the chat behavior.
 - [ ] :key: Ensure that changes can be saved and persisted between sessions.
 - [ ] Validate that users can access and modify the thread.json file.
 - [ ] :key: Check that changes made in thread.json are correctly applied to the chat session upon reload or restart.
-- [ ] Verify if there is a revert option to go back to previous settings after changes are made.
-- [ ] Test for user feedback or confirmation after saving changes to settings.
 - [ ] Check the maximum and minimum limits of the adjustable parameters and how they affect the assistant's responses.
 - [ ] :key: Validate user permissions for those who can change settings and persist them.
 - [ ] :key: Ensure that users switch between threads with different models, the app can handle it.
 
-### 3. Users can click on a history thread
+### 3. Model dropdown
+- [ ] :key: Model list should highlight recommended based on user RAM
+- [ ] Model size should display (for both installed and imported models)
 
+### 4. Users can click on a history thread
 - [ ] Test the ability to click on any thread in the history panel.
 - [ ] :key: Verify that clicking a thread brings up the past conversation in the main chat window.
 - [ ] :key: Ensure that the selected thread is highlighted or otherwise indicated in the history panel.
 - [ ] Confirm that the chat window displays the entire conversation from the selected history thread without any missing messages.
 - [ ] :key: Check the performance and accuracy of the history feature when dealing with a large number of threads.
 - [ ] Validate that historical threads reflect the exact state of the chat at that time, including settings.
-- [ ] :key: :warning: Test the search functionality within the history panel for quick navigation.
 - [ ] :key: Verify the ability to delete or clean old threads.
 - [ ] :key: Confirm that changing the title of the thread updates correctly.
 
-### 4. Users can config instructions for the assistant.
-
+### 5. Users can config instructions for the assistant.
 - [ ] Ensure there is a clear interface to input or change instructions for the assistant.
 - [ ] Test if the instructions set by the user are being followed by the assistant in subsequent conversations.
 - [ ] :key: Validate that changes to instructions are updated in real time and do not require a restart of the application or session.
@@ -112,6 +108,8 @@
 - [ ] Validate that instructions can be saved with descriptive names for easy retrieval.
 - [ ] :key: Check if the assistant can handle conflicting instructions and how it resolves them.
 - [ ] Ensure that instruction configurations are documented for user reference.
+- [ ] :key: RAG - Users can import documents and the system should process queries about the uploaded file, providing accurate and appropriate responses in the conversation thread.
+
 
 ## D. Hub
 
@@ -125,8 +123,7 @@
 
 - [ ] Display the best model for their RAM at the top.
 - [ ] :key: Ensure that models are labeled with RAM requirements and compatibility.
-- [ ] :key: Validate that the download function is disabled for models that exceed the user's system capabilities.
-- [ ] Test that the platform provides alternative recommendations for models not suitable due to RAM limitations.
+- [ ] :warning: Test that the platform provides alternative recommendations for models not suitable due to RAM limitations.
 - [ ] :key: Check the download model functionality and validate if the cancel download feature works correctly.
 
 ### 3. Users can download models via a HuggingFace URL (coming soon)
@@ -139,7 +136,7 @@
 
 - [ ] :key: Have clear instructions so users can do their own.
 - [ ] :key: Ensure the new model updates after restarting the app.
-- [ ] Ensure it raises clear errors for users to fix the problem while adding a new model.
+- [ ] :warning:Ensure it raises clear errors for users to fix the problem while adding a new model.
 
 ### 5. Users can use the model as they want
 
@@ -149,8 +146,12 @@
 - [ ] Check if starting another model stops the other model entirely.
 - [ ] Check the `Explore models` navigate correctly to the model panel.
 - [ ] :key: Check when deleting a model it will delete all the files on the user's computer.
-- [ ] The recommended tags should present right for the user's hardware.
+- [ ] :warning:The recommended tags should present right for the user's hardware.
 - [ ] Assess that the descriptions of models are accurate and informative.
+
+### 6. Users can Integrate With a Remote Server
+- [ ] :key: Import openAI GPT model https://jan.ai/guides/using-models/integrate-with-remote-server/ and the model displayed in Hub / Thread dropdown
+- [ ] Users can use the remote model properly
 
 ## E. System Monitor
 
@@ -181,7 +182,7 @@
 - [ ] Confirm that the application saves the theme preference and persists it across sessions.
 - [ ] Validate that all elements of the UI are compatible with the theme changes and maintain legibility and contrast.
 
-### 2. Users change the extensions
+### 2. Users change the extensions [TBU]
 
 - [ ] Confirm that the `Extensions` tab lists all available plugins.
 - [ ] :key: Test the toggle switch for each plugin to ensure it enables or disables the plugin correctly.
@@ -208,3 +209,19 @@
 - [ ] :key: Test that the application prevents the installation of incompatible or corrupt plugin files.
 - [ ] :key: Check that the user can uninstall or disable custom plugins as easily as pre-installed ones.
 - [ ] Verify that the application's performance remains stable after the installation of custom plugins.
+
+### 5. Advanced Settings
+- [ ] Attemp to test downloading model from hub using **HTTP Proxy** [guideline](https://github.com/janhq/jan/pull/1562)
+- [ ] Users can move **Jan data folder**
+- [ ] Users can click on Reset button to **factory reset** app settings to its original state & delete all usage data.
+
+## G. Local API server
+
+### 1. Local Server Usage with Server Options
+- [ ] :key: Explore API Reference: Swagger API for sending/receiving requests
+    - [ ] Use default server option
+    - [ ] Configure and use custom server options
+- [ ] Test starting/stopping the local API server with different Model/Model settings
+- [ ] Server logs captured with correct Server Options provided
+- [ ] Verify functionality of Open logs/Clear feature
+- [ ] Ensure that threads and other functions impacting the model are disabled while the local server is running

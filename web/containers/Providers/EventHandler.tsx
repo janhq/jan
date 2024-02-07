@@ -18,7 +18,6 @@ import {
   loadModelErrorAtom,
   stateModelAtom,
 } from '@/hooks/useActiveModel'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { queuedMessageAtom } from '@/hooks/useSendChatMessage'
 
@@ -29,16 +28,18 @@ import {
   addNewMessageAtom,
   updateMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
   updateThreadWaitingForResponseAtom,
   threadsAtom,
   isGeneratingResponseAtom,
+  updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function EventHandler({ children }: { children: ReactNode }) {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
-  const { downloadedModels } = useGetDownloadedModels()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
   const setQueuedMessage = useSetAtom(queuedMessageAtom)
@@ -49,6 +50,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const modelsRef = useRef(downloadedModels)
   const threadsRef = useRef(threads)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
+  const updateThread = useSetAtom(updateThreadAtom)
 
   useEffect(() => {
     threadsRef.current = threads
@@ -131,6 +133,12 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           ...thread.metadata,
           lastMessage: messageContent,
         }
+
+        updateThread({
+          ...thread,
+          metadata,
+        })
+
         extensionManager
           .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.saveThread({
@@ -143,7 +151,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           ?.addNewMessage(message)
       }
     },
-    [updateMessage, updateThreadWaiting]
+    [updateMessage, updateThreadWaiting, setIsGeneratingResponse]
   )
 
   useEffect(() => {

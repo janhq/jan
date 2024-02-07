@@ -6,6 +6,7 @@ import { Observable } from "rxjs";
  * @returns An Observable that emits the generated response as a string.
  */
 export function requestInference(
+  inferenceUrl: string,
   recentMessages: any[],
   model: Model,
   controller?: AbortController
@@ -17,7 +18,7 @@ export function requestInference(
       stream: true,
       ...model.parameters,
     });
-    fetch(INFERENCE_URL, {
+    fetch(inferenceUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

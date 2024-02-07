@@ -1,3 +1,4 @@
+---
 components:
   schemas:
     MessageObject:
@@ -75,7 +76,7 @@ components:
           example: msg_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's a thread message."
+          description: Type of the object, indicating it's a thread message.
           default: thread.message
         created_at:
           type: integer
@@ -88,7 +89,7 @@ components:
           example: thread_abc123
         role:
           type: string
-          description: "Role of the sender, either 'user' or 'assistant'."
+          description: Role of the sender, either 'user' or 'assistant'.
           example: user
         content:
           type: array
@@ -97,7 +98,7 @@ components:
             properties:
               type:
                 type: string
-                description: "Type of content, e.g., 'text'."
+                description: Type of content, e.g., 'text'.
                 example: text
               text:
                 type: object
@@ -110,21 +111,21 @@ components:
                     type: array
                     items:
                       type: string
-                    description: "Annotations for the text content, if any."
+                    description: Annotations for the text content, if any.
                     example: []
         file_ids:
           type: array
           items:
             type: string
-          description: "Array of file IDs associated with the message, if any."
+          description: Array of file IDs associated with the message, if any.
           example: []
         assistant_id:
           type: string
-          description: "Identifier of the assistant involved in the message, if applicable."
+          description: Identifier of the assistant involved in the message, if applicable.
           example: null
         run_id:
           type: string
-          description: "Run ID associated with the message, if applicable."
+          description: Run ID associated with the message, if applicable.
           example: null
         metadata:
           type: object
@@ -139,7 +140,7 @@ components:
           example: msg_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's a thread message."
+          description: Type of the object, indicating it's a thread message.
           example: thread.message
         created_at:
           type: integer
@@ -152,7 +153,7 @@ components:
           example: thread_abc123
         role:
           type: string
-          description: "Role of the sender, either 'user' or 'assistant'."
+          description: Role of the sender, either 'user' or 'assistant'.
           example: user
         content:
           type: array
@@ -161,7 +162,7 @@ components:
             properties:
               type:
                 type: string
-                description: "Type of content, e.g., 'text'."
+                description: Type of content, e.g., 'text'.
                 example: text
               text:
                 type: object
@@ -174,21 +175,21 @@ components:
                     type: array
                     items:
                       type: string
-                    description: "Annotations for the text content, if any."
+                    description: Annotations for the text content, if any.
                     example: []
         file_ids:
           type: array
           items:
             type: string
-          description: "Array of file IDs associated with the message, if any."
+          description: Array of file IDs associated with the message, if any.
           example: []
         assistant_id:
           type: string
-          description: "Identifier of the assistant involved in the message, if applicable."
+          description: Identifier of the assistant involved in the message, if applicable.
           example: null
         run_id:
           type: string
-          description: "Run ID associated with the message, if applicable."
+          description: Run ID associated with the message, if applicable.
           example: null
         metadata:
           type: object
@@ -199,7 +200,7 @@ components:
       properties:
         object:
           type: string
-          description: "Type of the object, indicating it's a list."
+          description: Type of the object, indicating it's a list.
           default: list
         data:
           type: array
@@ -226,7 +227,7 @@ components:
           example: msg_abc123
         object:
           type: string
-          description: "Type of the object, indicating it's a thread message."
+          description: Type of the object, indicating it's a thread message.
           example: thread.message
         created_at:
           type: integer
@@ -239,7 +240,7 @@ components:
           example: thread_abc123
         role:
           type: string
-          description: "Role of the sender, either 'user' or 'assistant'."
+          description: Role of the sender, either 'user' or 'assistant'.
           example: user
         content:
           type: array
@@ -248,7 +249,7 @@ components:
             properties:
               type:
                 type: string
-                description: "Type of content, e.g., 'text'."
+                description: Type of content, e.g., 'text'.
               text:
                 type: object
                 properties:
@@ -260,20 +261,20 @@ components:
                     type: array
                     items:
                       type: string
-                    description: "Annotations for the text content, if any."
+                    description: Annotations for the text content, if any.
         file_ids:
           type: array
           items:
             type: string
-          description: "Array of file IDs associated with the message, if any."
+          description: Array of file IDs associated with the message, if any.
           example: []
         assistant_id:
           type: string
-          description: "Identifier of the assistant involved in the message, if applicable."
+          description: Identifier of the assistant involved in the message, if applicable.
           example: null
         run_id:
           type: string
-          description: "Run ID associated with the message, if applicable."
+          description: Run ID associated with the message, if applicable.
           example: null
         metadata:
           type: object

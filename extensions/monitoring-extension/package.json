@@ -1,6 +1,6 @@
 {
   "name": "@janhq/monitoring-extension",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "This extension provides system health and OS level data",
   "main": "dist/index.js",
   "module": "dist/module.js",
@@ -26,6 +26,7 @@
     "README.md"
   ],
   "bundleDependencies": [
-    "node-os-utils"
+    "node-os-utils",
+    "@janhq/core"
   ]
 }

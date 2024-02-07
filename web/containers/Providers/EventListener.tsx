@@ -3,10 +3,9 @@
 import { PropsWithChildren, useEffect, useRef } from 'react'
 
 import { baseName } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { useDownloadState } from '@/hooks/useDownloadState'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { modelBinFileName } from '@/utils/model'
 
@@ -14,14 +13,17 @@ import EventHandler from './EventHandler'
 
 import { appDownloadProgress } from './Jotai'
 
-import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  downloadedModelsAtom,
+  downloadingModelsAtom,
+} from '@/helpers/atoms/Model.atom'
 
 export default function EventListenerWrapper({ children }: PropsWithChildren) {
   const setProgress = useSetAtom(appDownloadProgress)
   const models = useAtomValue(downloadingModelsAtom)
   const modelsRef = useRef(models)
 
-  const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
+  const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelsAtom)
   const {
     setDownloadState,
     setDownloadStateSuccess,
