@@ -9,6 +9,7 @@ import {
   joinPath,
   executeOnMain,
   AssistantExtension,
+  AssistantEvent,
 } from "@janhq/core";
 
 export default class JanAssistantExtension extends AssistantExtension {
@@ -21,7 +22,7 @@ export default class JanAssistantExtension extends AssistantExtension {
   async onLoad() {
     // making the assistant directory
     const assistantDirExist = await fs.existsSync(
-      JanAssistantExtension._homeDir,
+      JanAssistantExtension._homeDir
     );
     if (
       localStorage.getItem(`${EXTENSION_NAME}-version`) !== VERSION ||
@@ -31,14 +32,16 @@ export default class JanAssistantExtension extends AssistantExtension {
         await fs.mkdirSync(JanAssistantExtension._homeDir);
 
       // Write assistant metadata
-      this.createJanAssistant();
+      await this.createJanAssistant();
       // Finished migration
       localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION);
+      // Update the assistant list
+      events.emit(AssistantEvent.OnAssistantsUpdate, {});
     }
 
     // Events subscription
     events.on(MessageEvent.OnMessageSent, (data: MessageRequest) =>
-      JanAssistantExtension.handleMessageRequest(data, this),
+      JanAssistantExtension.handleMessageRequest(data, this)
     );
 
     events.on(InferenceEvent.OnInferenceStopped, () => {
@@ -53,7 +56,7 @@ export default class JanAssistantExtension extends AssistantExtension {
 
   private static async handleMessageRequest(
     data: MessageRequest,
-    instance: JanAssistantExtension,
+    instance: JanAssistantExtension
   ) {
     instance.isCancelled = false;
     instance.controller = new AbortController();
@@ -80,7 +83,7 @@ export default class JanAssistantExtension extends AssistantExtension {
           NODE,
           "toolRetrievalIngestNewDocument",
           docFile,
-          data.model?.proxyEngine,
+          data.model?.proxyEngine
         );
       }
     }
@@ -96,7 +99,7 @@ export default class JanAssistantExtension extends AssistantExtension {
         NODE,
         "toolRetrievalUpdateTextSplitter",
         data.thread.assistants[0].tools[0]?.settings?.chunk_size ?? 4000,
-        data.thread.assistants[0].tools[0]?.settings?.chunk_overlap ?? 200,
+        data.thread.assistants[0].tools[0]?.settings?.chunk_overlap ?? 200
       );
     }
 
@@ -110,7 +113,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       const retrievalResult = await executeOnMain(
         NODE,
         "toolRetrievalQueryResult",
-        prompt,
+        prompt
       );
 
       // Update the message content
@@ -168,7 +171,7 @@ export default class JanAssistantExtension extends AssistantExtension {
     try {
       await fs.writeFileSync(
         assistantMetadataPath,
-        JSON.stringify(assistant, null, 2),
+        JSON.stringify(assistant, null, 2)
       );
     } catch (err) {
       console.error(err);
@@ -180,7 +183,7 @@ export default class JanAssistantExtension extends AssistantExtension {
     // get all the assistant metadata json
     const results: Assistant[] = [];
     const allFileName: string[] = await fs.readdirSync(
-      JanAssistantExtension._homeDir,
+      JanAssistantExtension._homeDir
     );
     for (const fileName of allFileName) {
       const filePath = await joinPath([
@@ -190,7 +193,7 @@ export default class JanAssistantExtension extends AssistantExtension {
 
       if (filePath.includes(".DS_Store")) continue;
       const jsonFiles: string[] = (await fs.readdirSync(filePath)).filter(
-        (file: string) => file === "assistant.json",
+        (file: string) => file === "assistant.json"
       );
 
       if (jsonFiles.length !== 1) {
@@ -200,7 +203,7 @@ export default class JanAssistantExtension extends AssistantExtension {
 
       const content = await fs.readFileSync(
         await joinPath([filePath, jsonFiles[0]]),
-        "utf-8",
+        "utf-8"
       );
       const assistant: Assistant =
         typeof content === "object" ? content : JSON.parse(content);
