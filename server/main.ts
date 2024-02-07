@@ -1,5 +1,5 @@
 import { s3 } from "./middleware/s3";
-import { setup } from "./helpers/extension";
+import { setup } from "./helpers/setup";
 import { startServer as start } from "./index";
 /**
  * Setup extensions and start the server

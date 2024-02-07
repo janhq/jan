@@ -38,6 +38,11 @@ export function handleFileMangerIPCs() {
     getResourcePath()
   )
 
+  // Handles the 'getUserHomePath' IPC event. This event is triggered to get the user home path.
+  ipcMain.handle(FileManagerRoute.getUserHomePath, async (_event) =>
+    app.getPath('home')
+  )
+
   // handle fs is directory here
   ipcMain.handle(
     FileManagerRoute.fileStat,
