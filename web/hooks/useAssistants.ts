@@ -1,6 +1,12 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
-import { Assistant, AssistantExtension, ExtensionTypeEnum } from '@janhq/core'
+import {
+  Assistant,
+  AssistantEvent,
+  AssistantExtension,
+  ExtensionTypeEnum,
+  events,
+} from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
@@ -10,14 +16,19 @@ import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 const useAssistants = () => {
   const setAssistants = useSetAtom(assistantsAtom)
 
-  useEffect(() => {
-    const getAssistants = async () => {
-      const assistants = await getLocalAssistants()
-      setAssistants(assistants)
-    }
-
-    getAssistants()
+  const getData = useCallback(async () => {
+    const assistants = await getLocalAssistants()
+    setAssistants(assistants)
   }, [setAssistants])
+
+  useEffect(() => {
+    getData()
+
+    events.on(AssistantEvent.OnAssistantsUpdate, () => getData())
+    return () => {
+      events.off(AssistantEvent.OnAssistantsUpdate, () => getData())
+    }
+  }, [getData])
 }
 
 const getLocalAssistants = async (): Promise<Assistant[]> =>

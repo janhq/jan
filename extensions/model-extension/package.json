@@ -8,7 +8,7 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install"
+    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "cpx": "^1.5.0",

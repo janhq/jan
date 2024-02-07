@@ -10,8 +10,6 @@ import {
 
 import { useSetAtom } from 'jotai'
 
-import { loadModelErrorAtom } from './useActiveModel'
-
 import { extensionManager } from '@/extension'
 import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
@@ -26,7 +24,6 @@ export default function useSetActiveThread() {
   const setThreadMessage = useSetAtom(setConvoMessagesAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
-  const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
   const setActiveThread = useCallback(
     async (thread: Thread) => {
