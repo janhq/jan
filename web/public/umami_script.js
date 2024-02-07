@@ -10,7 +10,7 @@
       u = t.document,
       c = t.history,
       f = 'jan.ai',
-      s = 'main page',
+      s = 'mainpage',
       l = i.search,
       d = u.currentScript
     if (d) {
