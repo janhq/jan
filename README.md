@@ -43,31 +43,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Stable (Recommended)</b></td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-win-x64-0.4.5.exe'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.6/jan-win-x64-0.4.6.exe'>
         <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-mac-x64-0.4.5.dmg'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.6/jan-mac-x64-0.4.6.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-mac-arm64-0.4.5.dmg'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.6/jan-mac-arm64-0.4.6.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-linux-amd64-0.4.5.deb'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.6/jan-linux-amd64-0.4.6.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.5/jan-linux-x86_64-0.4.5.AppImage'>
+      <a href='https://github.com/janhq/jan/releases/download/v0.4.6/jan-linux-x86_64-0.4.6.AppImage'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
@@ -76,31 +76,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-win-x64-0.4.5-260.exe'>
+      <a href='https://delta.jan.ai/latest/jan-win-x64-0.4.6-264.exe'>
         <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-mac-x64-0.4.5-260.dmg'>
+      <a href='https://delta.jan.ai/latest/jan-mac-x64-0.4.6-264.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-mac-arm64-0.4.5-260.dmg'>
+      <a href='https://delta.jan.ai/latest/jan-mac-arm64-0.4.6-264.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-linux-amd64-0.4.5-260.deb'>
+      <a href='https://delta.jan.ai/latest/jan-linux-amd64-0.4.6-264.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-linux-x86_64-0.4.5-260.AppImage'>
+      <a href='https://delta.jan.ai/latest/jan-linux-x86_64-0.4.6-264.AppImage'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
@@ -217,6 +217,76 @@ make build
 ```
 
 This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
+
+### Docker mode
+
+- Supported OS: Linux, WSL2 Docker
+- Pre-requisites:
+  - `docker` and `docker compose`, follow instruction [here](https://docs.docker.com/engine/install/ubuntu/)
+
+    ```bash
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh ./get-docker.sh --dry-run
+    ```
+
+  - `nvidia-driver` and `nvidia-docker2`, follow instruction [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (If you want to run with GPU mode)
+
+- Run Jan in Docker mode
+
+  - **Option 1**: Run Jan in CPU mode
+
+    ```bash
+    docker compose --profile cpu up -d
+    ```
+
+  - **Option 2**: Run Jan in GPU mode
+
+    - **Step 1**: Check cuda compatibility with your nvidia driver by running `nvidia-smi` and check the cuda version in the output
+
+      ```bash
+      nvidia-smi
+
+      # Output
+      +---------------------------------------------------------------------------------------+
+      | NVIDIA-SMI 531.18                 Driver Version: 531.18       CUDA Version: 12.1     |
+      |-----------------------------------------+----------------------+----------------------+
+      | GPU  Name                      TCC/WDDM | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+      | Fan  Temp  Perf            Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+      |                                         |                      |               MIG M. |
+      |=========================================+======================+======================|
+      |   0  NVIDIA GeForce RTX 4070 Ti    WDDM | 00000000:01:00.0  On |                  N/A |
+      |  0%   44C    P8               16W / 285W|   1481MiB / 12282MiB |      2%      Default |
+      |                                         |                      |                  N/A |
+      +-----------------------------------------+----------------------+----------------------+
+      |   1  NVIDIA GeForce GTX 1660 Ti    WDDM | 00000000:02:00.0 Off |                  N/A |
+      |  0%   49C    P8               14W / 120W|      0MiB /  6144MiB |      0%      Default |
+      |                                         |                      |                  N/A |
+      +-----------------------------------------+----------------------+----------------------+
+      |   2  NVIDIA GeForce GTX 1660 Ti    WDDM | 00000000:05:00.0 Off |                  N/A |
+      | 29%   38C    P8               11W / 120W|      0MiB /  6144MiB |      0%      Default |
+      |                                         |                      |                  N/A |
+      +-----------------------------------------+----------------------+----------------------+
+
+      +---------------------------------------------------------------------------------------+
+      | Processes:                                                                            |
+      |  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+      |        ID   ID                                                             Usage      |
+      |=======================================================================================|
+      ```
+
+    - **Step 2**: Go to https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags and find the smallest minor version of image tag that matches the cuda version from the output of `nvidia-smi` (e.g. 12.1 -> 12.1.0)
+
+    - **Step 3**: Update the `Dockerfile.gpu` line number 5 with the latest minor version of the image tag from step 2 (e.g. change `FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS base` to `FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS base`)
+
+    - **Step 4**: Run command to start Jan in GPU mode
+
+      ```bash
+      # GPU mode
+      docker compose --profile gpu up -d
+      ```
+
+  This will start the web server and you can access Jan at `http://localhost:3000`.
+  > Note: Currently, Docker mode is only work for development and localhost, production is not supported yet. RAG feature is not supported in Docker mode yet.
 
 ## Acknowledgements
 

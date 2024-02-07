@@ -6,8 +6,9 @@ import {
   ThreadAssistantInfo,
   ThreadState,
   Model,
+  MessageStatus,
 } from '@janhq/core'
-import { atom, useSetAtom } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
@@ -19,6 +20,8 @@ import useRecommendedModel from './useRecommendedModel'
 import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
+
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   threadsAtom,
   threadStatesAtom,
@@ -50,14 +53,24 @@ export const useCreateNewThread = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
+
+  const threads = useAtomValue(threadsAtom)
 
   const requestCreateNewThread = async (
     assistant: Assistant,
     model?: Model | undefined
   ) => {
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
+
+    // check last thread message, if there empty last message use can not create thread
+    const lastMessage = threads[threads.length - 1]?.metadata?.lastMessage
+
+    if (!lastMessage && threads.length && !messages.length) {
+      return null
+    }
 
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {

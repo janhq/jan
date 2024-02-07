@@ -21,6 +21,10 @@ import {
 
 import Umami from '@/utils/umami'
 
+import Loader from '../Loader'
+
+import DataLoader from './DataLoader'
+
 import KeyListener from './KeyListener'
 
 import { extensionManager } from '@/extension'
@@ -30,6 +34,7 @@ const Providers = (props: PropsWithChildren) => {
 
   const [setupCore, setSetupCore] = useState(false)
   const [activated, setActivated] = useState(false)
+  const [settingUp, setSettingUp] = useState(false)
 
   async function setupExtensions() {
     // Register all active extensions
@@ -37,11 +42,13 @@ const Providers = (props: PropsWithChildren) => {
 
     setTimeout(async () => {
       if (!isCoreExtensionInstalled()) {
-        setupBaseExtensions()
+        setSettingUp(true)
+        await setupBaseExtensions()
         return
       }
 
       extensionManager.load()
+      setSettingUp(false)
       setActivated(true)
     }, 500)
   }
@@ -71,11 +78,14 @@ const Providers = (props: PropsWithChildren) => {
     <JotaiWrapper>
       <ThemeWrapper>
         <Umami />
+        {settingUp && <Loader description="Preparing Update..." />}
         {setupCore && activated && (
           <KeyListener>
             <FeatureToggleWrapper>
               <EventListenerWrapper>
-                <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+                <TooltipProvider delayDuration={0}>
+                  <DataLoader>{children}</DataLoader>
+                </TooltipProvider>
                 {!isMac && <GPUDriverPrompt />}
               </EventListenerWrapper>
               <Toaster />

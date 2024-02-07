@@ -41,7 +41,7 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-silicon
     environment: production
     permissions:
       contents: write
@@ -55,9 +55,15 @@ jobs:
         uses: actions/setup-node@v1
         with:
           node-version: 20
+      - name: Unblock keychain
+        run: |
+          security unlock-keychain -p ${{ secrets.KEYCHAIN_PASSWORD }} ~/Library/Keychains/login.keychain-db
+      # - uses: actions/setup-python@v5
+      #   with:
+      #     python-version: '3.11'
 
-      - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
+      # - name: Install jq
+      #   uses: dcarbone/install-jq-action@v2.0.1
 
       - name: Update app version based on latest release tag with build number
         if: inputs.public_provider != 'github'
@@ -88,17 +94,17 @@ jobs:
         env:
           VERSION_TAG: ${{ inputs.new_version }}
 
-      - name: Get Cer for code signing
-        run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
-        shell: bash
-        env:
-          CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+      # - name: Get Cer for code signing
+      #   run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
+      #   shell: bash
+      #   env:
+      #     CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
 
-      - uses: apple-actions/import-codesign-certs@v2
-        continue-on-error: true
-        with:
-          p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-          p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+      # - uses: apple-actions/import-codesign-certs@v2
+      #   continue-on-error: true
+      #   with:
+      #     p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+      #     p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
       - name: Build and publish app to cloudflare r2 or github artifactory
         if: inputs.public_provider != 'github'
@@ -112,9 +118,9 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: "/tmp/codesign.p12"
-          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          # CSC_LINK: "/tmp/codesign.p12"
+          # CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          # CSC_IDENTITY_AUTO_DISCOVERY: "true"
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_PATH: "."
@@ -130,9 +136,9 @@ jobs:
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: "/tmp/codesign.p12"
-          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          # CSC_LINK: "/tmp/codesign.p12"
+          # CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          # CSC_IDENTITY_AUTO_DISCOVERY: "true"
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_PATH: "."
@@ -144,13 +150,11 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v2
         with:
-          name: jan-mac-x64-${{ inputs.new_version }}
-          path: ./electron/dist/jan-mac-x64-${{ inputs.new_version }}.dmg
-
-      - name: Upload Artifact
-        if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@v2
-        with:
           name: jan-mac-arm64-${{ inputs.new_version }}
           path: ./electron/dist/jan-mac-arm64-${{ inputs.new_version }}.dmg
 
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: latest-mac-arm64
+          path: ./electron/dist/latest-mac.yml
