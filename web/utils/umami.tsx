@@ -10,10 +10,10 @@ interface UmamiData {
 declare global {
   interface Window {
     umami:
-    | {
-      track: (event: string, data?: UmamiData) => void
-    }
-    | undefined
+      | {
+          track: (event: string, data?: UmamiData) => void
+        }
+      | undefined
   }
 }
 
