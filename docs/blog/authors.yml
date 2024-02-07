@@ -4,10 +4,18 @@ dan-jan:
   url: https://github.com/dan-jan 
   image_url: https://avatars.githubusercontent.com/u/101145494?v=4
   email: daniel@jan.ai
-
+  
 hiro-v:
   name: Hiro Vuong
   title: MLE
   url: https://github.com/hiro-v
   image_url: https://avatars.githubusercontent.com/u/22463238?v=4
   email: hiro@jan.ai
+
+ashley-jan:
+  name: Ashley Tran
+  title: Product Designer
+  url: https://github.com/imtuyethan
+  image_url: https://avatars.githubusercontent.com/u/89722390?v=4
+  email: ashley@jan.ai
+  
