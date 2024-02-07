@@ -242,7 +242,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       tools: [
         {
           type: "retrieval",
-          enabled: false,
+          enabled: true,
           settings: {
             top_k: 2,
             chunk_size: 1024,
