@@ -1,19 +1,5 @@
 import { expect } from '@playwright/test'
-import {
-  page,
-  setupElectron,
-  TIMEOUT,
-  test,
-  teardownElectron,
-} from '../pages/basePage'
-
-test.beforeAll(async () => {
-  await setupElectron()
-})
-
-test.afterAll(async () => {
-  await teardownElectron()
-})
+import { page, test, TIMEOUT } from '../pages/basePage'
 
 test('renders left navigation panel', async () => {
   const systemMonitorBtn = await page
