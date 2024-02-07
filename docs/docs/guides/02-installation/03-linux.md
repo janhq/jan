@@ -12,10 +12,23 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
+    installation guide,
   ]
 ---
 
 # Installing Jan on Linux
+
+## System Requirements
+
+Ensure that your system meets the following requirements:
+
+- glibc 2.27 or higher (check with `ldd --version`)
+- gcc 11, g++ 11, cpp 11, or higher, refer to this [link](https://jan.ai/guides/troubleshooting/gpu-not-used/#specific-requirements-for-linux) for more information.
+
+To enable GPU support, you will need:
+
+- NVIDIA GPU with CUDA Toolkit 11.7 or higher
+- NVIDIA driver 470.63.01 or higher
 
 ## Installation
 
@@ -65,7 +78,6 @@ jan-linux-amd64-{version}.deb
 
 # AppImage
 jan-linux-x86_64-{version}.AppImage
-```
 ```
 
 ## Uninstall Jan
