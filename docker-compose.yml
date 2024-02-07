@@ -1,0 +1,110 @@
+version: '3.7'
+
+services:
+  minio:
+    image: minio/minio
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin # This acts as AWS_ACCESS_KEY
+      MINIO_ROOT_PASSWORD: minioadmin # This acts as AWS_SECRET_ACCESS_KEY
+    command: server --console-address ":9001" /data
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.2
+
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/mybucket;
+      /usr/bin/mc policy set public myminio/mybucket;
+      exit 0;
+      "
+    networks:
+      vpcbr:
+
+
+  app_cpu:
+    image: jan:latest
+    volumes:
+      - app_data:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET_NAME: mybucket
+      AWS_ENDPOINT: http://10.5.0.2:9000
+      AWS_REGION: us-east-1
+    restart: always
+    profiles:
+      - cpu
+    ports:
+      - "3000:3000"
+      - "1337:1337"
+      - "3928:3928"
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.3
+       
+
+  app_gpu:
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+    image: jan-gpu:latest
+    volumes:
+      - app_data:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    restart: always
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET_NAME: mybucket
+      AWS_ENDPOINT: http://10.5.0.2:9000
+      AWS_REGION: us-east-1
+    
+    profiles:
+      - gpu
+    ports:
+      - "3000:3000"
+      - "1337:1337"
+      - "3928:3928"
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.4
+
+volumes:
+  minio_data:
+  app_data:
+
+networks:
+  vpcbr:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.5.0.0/16
+         gateway: 10.5.0.1
+
+# docker compose --profile cpu up
+# docker compose --profile gpu up

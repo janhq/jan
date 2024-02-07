@@ -218,6 +218,31 @@ make build
 
 This will build the app MacOS m1/m2 for production (with code signing already done) and put the result in `dist` folder.
 
+### Docker mode
+
+- Supported OS: Linux, WSL2 Docker
+- Pre-requisites:
+  - `docker` and `docker compose`, follow instruction [here](https://docs.docker.com/engine/install/ubuntu/)
+
+    ```bash
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh ./get-docker.sh --dry-run
+    ```
+
+  - `nvidia docker`, follow instruction [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (If you want to run with GPU mode)
+
+- Run Jan in Docker mode
+
+    ```bash
+    # CPU mode
+    docker compose --profile cpu up
+
+    # GPU mode
+    docker compose --profile gpu up
+    ```
+
+  This will start the web server and you can access Jan at `http://localhost:3000`.
+
 ## Acknowledgements
 
 Jan builds on top of other open-source projects:
