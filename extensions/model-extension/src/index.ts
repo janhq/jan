@@ -13,6 +13,7 @@ import {
   DownloadRoute,
 } from '@janhq/core'
 import { DownloadState } from '@janhq/core/.'
+import { extractFileName } from './helpers/path'
 
 /**
  * A extension for models
@@ -33,6 +34,8 @@ export default class JanModelExtension extends ModelExtension {
    */
   async onLoad() {
     this.copyModelsToHomeDir()
+    // Handle Desktop Events
+    this.handleDesktopEvents()
   }
 
   /**
@@ -87,7 +90,10 @@ export default class JanModelExtension extends ModelExtension {
     if (model.sources.length > 1) {
       // path to model binaries
       for (const source of model.sources) {
-        let path = this.extractFileName(source.url)
+        let path = extractFileName(
+          source.url,
+          JanModelExtension._supportedModelFormat
+        )
         if (source.filename) {
           path = await joinPath([modelDirPath, source.filename])
         }
@@ -96,12 +102,14 @@ export default class JanModelExtension extends ModelExtension {
       }
       // TODO: handle multiple binaries for web later
     } else {
-      const fileName = this.extractFileName(model.sources[0]?.url)
+      const fileName = extractFileName(
+        model.sources[0]?.url,
+        JanModelExtension._supportedModelFormat
+      )
       const path = await joinPath([modelDirPath, fileName])
       downloadFile(model.sources[0]?.url, path, network)
 
-      // @ts-ignore
-      if (window && !window.electronAPI) {
+      if (window && window.core?.api && window.core.api.baseApiUrl) {
         this.startPollingDownloadProgress(model.id)
       }
     }
@@ -110,8 +118,6 @@ export default class JanModelExtension extends ModelExtension {
   /**
    * Specifically for Jan server.
    */
-  private API_BASE_URL = 'http://localhost:1337'
-
   private async startPollingDownloadProgress(modelId: string): Promise<void> {
     // wait for some seconds before polling
     await new Promise((resolve) => setTimeout(resolve, 3000))
@@ -119,7 +125,7 @@ export default class JanModelExtension extends ModelExtension {
     return new Promise((resolve) => {
       const interval = setInterval(async () => {
         fetch(
-          `${this.API_BASE_URL}/v1/download/${DownloadRoute.getDownloadProgress}/${modelId}`,
+          `${window.core.api.baseApiUrl}/v1/download/${DownloadRoute.getDownloadProgress}/${modelId}`,
           {
             method: 'GET',
             headers: { contentType: 'application/json' },
@@ -129,12 +135,14 @@ export default class JanModelExtension extends ModelExtension {
           if (state.downloadState === 'end') {
             events.emit(DownloadEvent.onFileDownloadSuccess, state)
             clearInterval(interval)
+            resolve()
             return
           }
 
           if (state.downloadState === 'error') {
             events.emit(DownloadEvent.onFileDownloadError, state)
             clearInterval(interval)
+            resolve()
             return
           }
 
@@ -142,19 +150,6 @@ export default class JanModelExtension extends ModelExtension {
         })
       }, 1000)
     })
-  }
-
-  /**
-   *  try to retrieve the download file name from the source url
-   */
-  private extractFileName(url: string): string {
-    const extractedFileName = url.split('/').pop()
-    const fileName = extractedFileName
-      .toLowerCase()
-      .endsWith(JanModelExtension._supportedModelFormat)
-      ? extractedFileName
-      : extractedFileName + JanModelExtension._supportedModelFormat
-    return fileName
   }
 
   /**
@@ -428,5 +423,29 @@ export default class JanModelExtension extends ModelExtension {
    */
   async getConfiguredModels(): Promise<Model[]> {
     return this.getModelsMetadata()
+  }
+
+  handleDesktopEvents() {
+    if (window && window.electronAPI) {
+      window.electronAPI.onFileDownloadUpdate(
+        async (_event: string, state: any | undefined) => {
+          if (!state) return
+          ;(state.downloadState = 'update'),
+            events.emit(DownloadEvent.onFileDownloadUpdate, state)
+        }
+      )
+      window.electronAPI.onFileDownloadError(
+        async (_event: string, state: any) => {
+          ;(state.downloadState = 'error'),
+            events.emit(DownloadEvent.onFileDownloadError, state)
+        }
+      )
+      window.electronAPI.onFileDownloadSuccess(
+        async (_event: string, state: any) => {
+          ;(state.downloadState = 'end'),
+            events.emit(DownloadEvent.onFileDownloadSuccess, state)
+        }
+      )
+    }
   }
 }

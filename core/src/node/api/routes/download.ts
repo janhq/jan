@@ -39,9 +39,9 @@ export const downloadRouter = async (app: HttpServer) => {
 
     const localPath = normalizedArgs[1]
     const array = localPath.split('/')
-    const filename = array.pop() ?? ''
+    const fileName = array.pop() ?? ''
     const modelId = array.pop() ?? ''
-    console.debug('downloadFile', normalizedArgs, filename, modelId)
+    console.debug('downloadFile', normalizedArgs, fileName, modelId)
 
     const request = require('request')
     const progress = require('request-progress')
@@ -52,7 +52,7 @@ export const downloadRouter = async (app: HttpServer) => {
         const downloadProps: DownloadState = {
           ...state,
           modelId,
-          filename,
+          fileName,
           downloadState: 'downloading',
         }
         console.debug(`Download ${modelId} onProgress`, downloadProps)
@@ -85,7 +85,7 @@ export const downloadRouter = async (app: HttpServer) => {
       })
       .pipe(createWriteStream(normalizedArgs[1]))
 
-    DownloadManager.instance.setRequest(filename, rq)
+    DownloadManager.instance.setRequest(localPath, rq)
     res.status(200).send({ message: 'Download started' })
   })
 

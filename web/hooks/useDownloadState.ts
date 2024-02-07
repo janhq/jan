@@ -2,7 +2,11 @@ import { atom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { removeDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
+import {
+  configuredModelsAtom,
+  downloadedModelsAtom,
+  removeDownloadingModelAtom,
+} from '@/helpers/atoms/Model.atom'
 
 // download states
 export const modelDownloadStateAtom = atom<Record<string, DownloadState>>({})
@@ -19,6 +23,10 @@ export const setDownloadStateAtom = atom(
       // download successfully
       delete currentState[state.modelId]
       set(removeDownloadingModelAtom, state.modelId)
+      const model = get(configuredModelsAtom).find(
+        (e) => e.id === state.modelId
+      )
+      if (model) set(downloadedModelsAtom, (prev) => [...prev, model])
       toaster({
         title: 'Download Completed',
         description: `Download ${state.modelId} completed`,

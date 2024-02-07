@@ -52,4 +52,6 @@ export const restAPI = {
     }
   }, {}),
   openExternalUrl,
+  // Jan Server URL
+  baseApiUrl: API_BASE_URL,
 }
