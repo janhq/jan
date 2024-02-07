@@ -35,8 +35,14 @@ Van-QA:
 
 hahuyhoang411:
   name: Rex Ha
-  title: LLM Researcher & Content writer
+  title: LLM Researcher & Content Writer
   url: https://github.com/hahuyhoang411
   image_url: https://avatars.githubusercontent.com/u/64120343?v=4
   email: rex@jan.ai
-  
+
+automaticcat:
+  name: Alan Dao
+  title: AI Engineer
+  url: https://github.com/tikikun
+  image_url: https://avatars.githubusercontent.com/u/22268502?v=4
+  email: alan@jan.ai
