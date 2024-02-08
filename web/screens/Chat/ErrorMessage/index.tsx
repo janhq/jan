@@ -64,29 +64,18 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         </div>
       )}
       {message.status === MessageStatus.Error && (
-        <div key={message.id} className="mt-10 flex flex-col items-center">
-          <span className="mb-3 text-center text-sm font-medium text-gray-500">
-            <>
-              <p>Apologies, something&apos;s amiss!</p>
-              Jan&apos;s in beta. Find troubleshooting guides{' '}
-              <a
-                href="https://jan.ai/guides/troubleshooting"
-                target="_blank"
-                className="text-blue-600 hover:underline dark:text-blue-300"
-              >
-                here
-              </a>{' '}
-              or reach out to us on{' '}
-              <a
-                href="https://discord.gg/AsJ8krTT3N"
-                target="_blank"
-                className="text-blue-600 hover:underline dark:text-blue-300"
-              >
-                Discord
-              </a>{' '}
-              for assistance.
-            </>
-          </span>
+        <div
+          key={message.id}
+          className="flex flex-col items-center text-center text-sm font-medium text-gray-500"
+        >
+          <p>{`Apologies, something’s amiss!`}</p>
+          <p>
+            Jan’s in beta. Access&nbsp;
+            <span className="cursor-pointer text-primary">
+              troubleshooting assistance
+            </span>
+            &nbsp; now.
+          </p>
         </div>
       )}
     </>
