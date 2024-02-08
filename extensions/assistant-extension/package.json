@@ -45,7 +45,6 @@
   ],
   "bundleDependencies": [
     "@janhq/core",
-    "hnswlib-node",
-    "pdf-parse"
+    "hnswlib-node"
   ]
 }
