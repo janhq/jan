@@ -1,3 +1,5 @@
+import { useContext } from 'react'
+
 import {
   Assistant,
   ConversationalExtension,
@@ -6,12 +8,14 @@ import {
   ThreadAssistantInfo,
   ThreadState,
   Model,
-  MessageStatus,
+  AssistantTool,
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { generateThreadId } from '@/utils/thread'
 
@@ -54,6 +58,7 @@ export const useCreateNewThread = () => {
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
+  const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
@@ -72,11 +77,18 @@ export const useCreateNewThread = () => {
       return null
     }
 
+    // modify assistant tools when experimental on, retieval toggle enabled in default
+    const assistantTools: AssistantTool = {
+      type: 'retrieval',
+      enabled: true,
+      settings: assistant.tools && assistant.tools[0].settings,
+    }
+
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
       assistant_name: assistant.name,
-      tools: assistant.tools,
+      tools: experimentalFeature ? [assistantTools] : assistant.tools,
       model: {
         id: defaultModel?.id ?? '*',
         settings: defaultModel?.settings ?? {},
