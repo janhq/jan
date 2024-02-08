@@ -77,7 +77,7 @@ const LocalServerScreen = () => {
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
   const [host, setHost] = useAtom(hostAtom)
   const [port, setPort] = useAtom(portAtom)
-  const loadModelError = useAtomValue(loadModelErrorAtom)
+  const [loadModelError, setLoadModelError] = useAtom(loadModelErrorAtom)
 
   const hostOptions = ['127.0.0.1', '0.0.0.0']
 
@@ -128,6 +128,7 @@ const LocalServerScreen = () => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
                   setServerEnabled(false)
+                  setLoadModelError(undefined)
                 } else {
                   startModel(String(selectedModel?.id))
                   window.core?.api?.startServer({
@@ -379,7 +380,7 @@ const LocalServerScreen = () => {
               <span>
                 Model failed to start. Access{' '}
                 <span
-                  className="cursor-pointer text-primary"
+                  className="cursor-pointer text-primary dark:text-blue-400"
                   onClick={() => setModalTroubleShooting(true)}
                 >
                   troubleshooting assistance
