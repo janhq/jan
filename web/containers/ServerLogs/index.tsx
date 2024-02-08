@@ -5,17 +5,20 @@ import React from 'react'
 
 import { useAtomValue } from 'jotai'
 
-import { useServerLog } from '@/hooks/useServerLog'
+import { useLogs } from '@/hooks/useLogs'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
-const Logs = () => {
-  const { getServerLog } = useServerLog()
+type ServerLogsProps = { limit: number }
+
+const ServerLogs = (props: ServerLogsProps) => {
+  const { limit = 0 } = props
+  const { getLogs } = useLogs()
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const [logs, setLogs] = useState([])
 
   useEffect(() => {
-    getServerLog().then((log) => {
+    getLogs('server').then((log) => {
       if (typeof log?.split === 'function') {
         setLogs(log.split(/\r?\n|\r|\n/g))
       }
@@ -27,9 +30,9 @@ const Logs = () => {
   return (
     <div className="overflow-hidden">
       {logs.length > 1 ? (
-        <div className="h-full overflow-auto p-4">
+        <div className="h-full overflow-auto">
           <code className="text-xs">
-            {logs.map((log, i) => {
+            {logs.slice(-limit).map((log, i) => {
               return (
                 <p key={i} className="my-2 leading-relaxed">
                   {log}
@@ -176,4 +179,4 @@ const Logs = () => {
   )
 }
 
-export default Logs
+export default ServerLogs

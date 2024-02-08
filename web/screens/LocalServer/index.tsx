@@ -33,8 +33,10 @@ import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
 
+import ServerLogs from '@/containers/ServerLogs'
+
 import { useActiveModel } from '@/hooks/useActiveModel'
-import { useServerLog } from '@/hooks/useServerLog'
+import { useLogs } from '@/hooks/useLogs'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toSettingParams } from '@/utils/modelParam'
@@ -44,8 +46,6 @@ import EngineSetting from '../Chat/EngineSetting'
 import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
 
 import { showRightSideBarAtom } from '../Chat/Sidebar'
-
-import Logs from './Logs'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
@@ -64,7 +64,7 @@ const LocalServerScreen = () => {
   const modelEngineParams = toSettingParams(activeModelParams)
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
-  const { openServerLog, clearServerLog } = useServerLog()
+  const { openServerLog, clearServerLog } = useLogs()
   const { startModel, stateModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
 
@@ -350,7 +350,7 @@ const LocalServerScreen = () => {
             </div>
           </div>
         ) : (
-          <Logs />
+          <ServerLogs />
         )}
       </ScrollToBottom>
 

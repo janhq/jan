@@ -9,6 +9,10 @@ import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
 
+import ModalTroubleShooting, {
+  modalTroubleShootingAtom,
+} from '@/containers/ModalTroubleShoot'
+
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { extensionManager } from '@/extension'
@@ -23,6 +27,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const thread = useAtomValue(activeThreadAtom)
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const { resendChatMessage } = useSendChatMessage()
+  const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
   const regenerateMessage = async () => {
     const lastMessageIndex = messages.length - 1
@@ -71,11 +76,15 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           <p>{`Apologies, something’s amiss!`}</p>
           <p>
             Jan’s in beta. Access&nbsp;
-            <span className="cursor-pointer text-primary">
+            <span
+              className="cursor-pointer text-primary"
+              onClick={() => setModalTroubleShooting(true)}
+            >
               troubleshooting assistance
             </span>
-            &nbsp; now.
+            &nbsp;now.
           </p>
+          <ModalTroubleShooting />
         </div>
       )}
     </>
