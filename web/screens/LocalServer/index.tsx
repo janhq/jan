@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
 import ScrollToBottom from 'react-scroll-to-bottom'
 
@@ -81,31 +80,30 @@ const LocalServerScreen = () => {
   const [firstTimeVisitAPIServer, setFirstTimeVisitAPIServer] =
     useState<boolean>(false)
 
-  const handleChangePort = (value: any) => {
-    if (Number(value) <= 0 || Number(value) >= 65536) {
-      setErrorRangePort(true)
-    } else {
-      setErrorRangePort(false)
-    }
-    setPort(value)
-  }
+  const handleChangePort = useCallback(
+    (value: string) => {
+      if (Number(value) <= 0 || Number(value) >= 65536) {
+        setErrorRangePort(true)
+      } else {
+        setErrorRangePort(false)
+      }
+      setPort(value)
+    },
+    [setPort]
+  )
 
   useEffect(() => {
-    if (
-      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === null ||
-      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === 'true'
-    ) {
-      localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'true')
+    if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) == null) {
       setFirstTimeVisitAPIServer(true)
     }
   }, [firstTimeVisitAPIServer])
 
   useEffect(() => {
     handleChangePort(port)
-  }, [])
+  }, [handleChangePort, port])
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full" data-testid="local-server-testid">
       {/* Left SideBar */}
       <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <div className="p-4">

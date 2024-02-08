@@ -3,23 +3,15 @@ import { useAtomValue } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 
-import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const usePath = () => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const onReviewInFinder = async (type: string) => {
     // TODO: this logic should be refactored.
-    if (type !== 'Model') {
-      if (!activeThread) return
-      const activeThreadState = threadStates[activeThread.id]
-      if (!activeThreadState.isFinishInit) {
-        alert('Thread is not started yet')
-        return
-      }
-    }
+    if (type !== 'Model' && !activeThread) return
 
     const userSpace = await getJanDataFolderPath()
     let filePath = undefined
@@ -33,6 +25,7 @@ export const usePath = () => {
         if (!selectedModel) return
         filePath = await joinPath(['models', selectedModel.id])
         break
+      case 'Tools':
       case 'Assistant':
         if (!assistantId) return
         filePath = await joinPath(['assistants', assistantId])
@@ -48,14 +41,7 @@ export const usePath = () => {
 
   const onViewJson = async (type: string) => {
     // TODO: this logic should be refactored.
-    if (type !== 'Model') {
-      if (!activeThread) return
-      const activeThreadState = threadStates[activeThread.id]
-      if (!activeThreadState.isFinishInit) {
-        alert('Thread is not started yet')
-        return
-      }
-    }
+    if (type !== 'Model' && !activeThread) return
 
     const userSpace = await getJanDataFolderPath()
     let filePath = undefined
@@ -74,6 +60,7 @@ export const usePath = () => {
         filePath = await joinPath(['models', selectedModel.id, 'model.json'])
         break
       case 'Assistant':
+      case 'Tools':
         if (!assistantId) return
         filePath = await joinPath(['assistants', assistantId, 'assistant.json'])
         break
@@ -88,11 +75,6 @@ export const usePath = () => {
 
   const onViewFile = async (id: string) => {
     if (!activeThread) return
-    const activeThreadState = threadStates[activeThread.id]
-    if (!activeThreadState.isFinishInit) {
-      alert('Thread is not started yet')
-      return
-    }
 
     const userSpace = await getJanDataFolderPath()
     let filePath = undefined
@@ -102,9 +84,21 @@ export const usePath = () => {
     openFileExplorer(fullPath)
   }
 
+  const onViewFileContainer = async () => {
+    if (!activeThread) return
+
+    const userSpace = await getJanDataFolderPath()
+    let filePath = undefined
+    filePath = await joinPath(['threads', `${activeThread.id}/files`])
+    if (!filePath) return
+    const fullPath = await joinPath([userSpace, filePath])
+    openFileExplorer(fullPath)
+  }
+
   return {
     onReviewInFinder,
     onViewJson,
     onViewFile,
+    onViewFileContainer,
   }
 }

@@ -25,12 +25,10 @@ import { ulid } from 'ulid'
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
-import { toaster } from '@/containers/Toast'
-
 import { getBase64 } from '@/utils/base64'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
-import { useActiveModel } from './useActiveModel'
+import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
@@ -41,9 +39,8 @@ import {
   activeThreadAtom,
   engineParamsUpdateAtom,
   getActiveThreadModelParamsAtom,
-  threadStatesAtom,
+  isGeneratingResponseAtom,
   updateThreadAtom,
-  updateThreadInitSuccessAtom,
   updateThreadWaitingForResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -62,26 +59,32 @@ export default function useSendChatMessage() {
   const selectedModel = useAtomValue(selectedModelAtom)
   const { startModel } = useActiveModel()
   const setQueuedMessage = useSetAtom(queuedMessageAtom)
+  const loadModelFailed = useAtomValue(loadModelErrorAtom)
 
   const modelRef = useRef<Model | undefined>()
-  const threadStates = useAtomValue(threadStatesAtom)
-  const updateThreadInitSuccess = useSetAtom(updateThreadInitSuccessAtom)
+  const loadModelFailedRef = useRef<string | undefined>()
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const setReloadModel = useSetAtom(reloadModelAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
+  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   useEffect(() => {
     modelRef.current = activeModel
   }, [activeModel])
+
+  useEffect(() => {
+    loadModelFailedRef.current = loadModelFailed
+  }, [loadModelFailed])
 
   const resendChatMessage = async (currentMessage: ThreadMessage) => {
     if (!activeThread) {
       console.error('No active thread')
       return
     }
+    setIsGeneratingResponse(true)
     updateThreadWaiting(activeThread.id, true)
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
@@ -125,21 +128,6 @@ export default function useSendChatMessage() {
     events.emit(MessageEvent.OnMessageSent, messageRequest)
   }
 
-  // TODO: Refactor @louis
-  const waitForModelStarting = async (modelId: string) => {
-    return new Promise<void>((resolve) => {
-      setTimeout(async () => {
-        if (modelRef.current?.id !== modelId) {
-          console.debug('waiting for model to start')
-          await waitForModelStarting(modelId)
-          resolve()
-        } else {
-          resolve()
-        }
-      }, 200)
-    })
-  }
-
   const sendChatMessage = async (message: string) => {
     if (!message || message.trim().length === 0) return
 
@@ -147,55 +135,14 @@ export default function useSendChatMessage() {
       console.error('No active thread')
       return
     }
+    setIsGeneratingResponse(true)
 
     if (engineParamsUpdate) setReloadModel(true)
 
-    const activeThreadState = threadStates[activeThread.id]
     const runtimeParams = toRuntimeParams(activeModelParams)
     const settingParams = toSettingParams(activeModelParams)
 
-    // if the thread is not initialized, we need to initialize it first
-    if (
-      !activeThreadState.isFinishInit ||
-      activeThread.assistants[0].model.id !== selectedModel?.id
-    ) {
-      if (!selectedModel) {
-        toaster({ title: 'Please select a model' })
-        return
-      }
-      const assistantId = activeThread.assistants[0].assistant_id ?? ''
-      const assistantName = activeThread.assistants[0].assistant_name ?? ''
-      const instructions = activeThread.assistants[0].instructions ?? ''
-      const tools = activeThread.assistants[0].tools ?? []
-
-      const initThread: Thread = {
-        ...activeThread,
-        assistants: [
-          {
-            assistant_id: assistantId,
-            assistant_name: assistantName,
-            instructions: instructions,
-            tools: tools,
-            model: {
-              id: selectedModel.id,
-              settings: settingParams,
-              parameters: runtimeParams,
-              engine: selectedModel.engine,
-            },
-          },
-        ],
-      }
-
-      updateThreadInitSuccess(activeThread.id)
-      updateThread(initThread)
-
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread(initThread)
-    }
-
     updateThreadWaiting(activeThread.id, true)
-
     const prompt = message.trim()
     setCurrentPrompt('')
 
@@ -348,6 +295,19 @@ export default function useSendChatMessage() {
 
     setReloadModel(false)
     setEngineParamsUpdate(false)
+  }
+
+  const waitForModelStarting = async (modelId: string) => {
+    return new Promise<void>((resolve) => {
+      setTimeout(async () => {
+        if (modelRef.current?.id !== modelId && !loadModelFailedRef.current) {
+          await waitForModelStarting(modelId)
+          resolve()
+        } else {
+          resolve()
+        }
+      }, 200)
+    })
   }
 
   return {

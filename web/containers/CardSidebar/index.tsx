@@ -156,7 +156,10 @@ export default function CardSidebar({
                       </>
                     ) : (
                       <>
-                        Opens <span className="lowercase">{title}.json.</span>
+                        Opens{' '}
+                        <span className="lowercase">
+                          {title === 'Tools' ? 'assistant' : title}.json.
+                        </span>
                         &nbsp;Changes affect all new threads.
                       </>
                     )}

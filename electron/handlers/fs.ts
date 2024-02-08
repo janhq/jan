@@ -1,8 +1,7 @@
 import { ipcMain } from 'electron'
 
 import { getJanDataFolderPath, normalizeFilePath } from '@janhq/core/node'
-import fs from 'fs'
-import { FileManagerRoute, FileSystemRoute } from '@janhq/core'
+import { FileSystemRoute } from '@janhq/core'
 import { join } from 'path'
 /**
  * Handles file system operations.

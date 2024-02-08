@@ -3,11 +3,19 @@ import path from "path";
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import tcpPortUsed from "tcp-port-used";
 import fetchRT from "fetch-retry";
-import { log, getJanDataFolderPath } from "@janhq/core/node";
+import {
+  log,
+  getJanDataFolderPath,
+  getSystemResourceInfo,
+} from "@janhq/core/node";
 import { getNitroProcessInfo, updateNvidiaInfo } from "./nvidia";
-import { Model, InferenceEngine, ModelSettingParams } from "@janhq/core";
+import {
+  Model,
+  InferenceEngine,
+  ModelSettingParams,
+  PromptTemplate,
+} from "@janhq/core";
 import { executableNitroFile } from "./execute";
-import { physicalCpuCount } from "./utils";
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch);
@@ -19,25 +27,6 @@ interface ModelInitOptions {
   modelFullPath: string;
   model: Model;
 }
-
-/**
- * The response object of Prompt Template parsing.
- */
-interface PromptTemplate {
-  system_prompt?: string;
-  ai_prompt?: string;
-  user_prompt?: string;
-  error?: string;
-}
-
-/**
- * Model setting args for Nitro model load.
- */
-interface ModelSettingArgs extends ModelSettingParams {
-  llama_model_path: string;
-  cpu_threads: number;
-}
-
 // The PORT to use for the Nitro subprocess
 const PORT = 3928;
 // The HOST address to use for the Nitro subprocess
@@ -60,7 +49,7 @@ let subprocess: ChildProcessWithoutNullStreams | undefined = undefined;
 // The current model file url
 let currentModelFile: string = "";
 // The current model settings
-let currentSettings: ModelSettingArgs | undefined = undefined;
+let currentSettings: ModelSettingParams | undefined = undefined;
 
 /**
  * Stops a Nitro subprocess.
@@ -106,7 +95,7 @@ async function runModel(
   if (wrapper.model.engine !== InferenceEngine.nitro) {
     return Promise.reject("Not a nitro model");
   } else {
-    const nitroResourceProbe = await getResourcesInfo();
+    const nitroResourceProbe = await getSystemResourceInfo();
     // Convert settings.prompt_template to system_prompt, user_prompt, ai_prompt
     if (wrapper.model.settings.prompt_template) {
       const promptTemplate = wrapper.model.settings.prompt_template;
@@ -220,6 +209,9 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
 function loadLLMModel(settings: any): Promise<Response> {
+  if (!settings?.ngl) {
+    settings.ngl = 100;
+  }
   log(`[NITRO]::Debug: Loading model with params ${JSON.stringify(settings)}`);
   return fetchRetry(NITRO_HTTP_LOAD_MODEL_URL, {
     method: "POST",
@@ -240,7 +232,7 @@ function loadLLMModel(settings: any): Promise<Response> {
     })
     .catch((err) => {
       log(`[NITRO]::Error: Load model failed with error ${err}`);
-      return Promise.reject();
+      return Promise.reject(err);
     });
 }
 
@@ -262,9 +254,9 @@ async function validateModelStatus(): Promise<void> {
     retryDelay: 500,
   }).then(async (res: Response) => {
     log(
-      `[NITRO]::Debug: Validate model state success with response ${JSON.stringify(
-        res,
-      )}`,
+      `[NITRO]::Debug: Validate model state with response ${JSON.stringify(
+        res.status
+      )}`
     );
     // If the response is OK, check model_loaded status.
     if (res.ok) {
@@ -272,9 +264,19 @@ async function validateModelStatus(): Promise<void> {
       // If the model is loaded, return an empty object.
       // Otherwise, return an object with an error message.
       if (body.model_loaded) {
+        log(
+          `[NITRO]::Debug: Validate model state success with response ${JSON.stringify(
+            body
+          )}`
+        );
         return Promise.resolve();
       }
     }
+    log(
+      `[NITRO]::Debug: Validate model state failed with response ${JSON.stringify(
+        res.statusText
+      )}`
+    );
     return Promise.reject("Validate model status failed");
   });
 }
@@ -348,22 +350,6 @@ function spawnNitroProcess(): Promise<any> {
       log(`[NITRO]::Debug: Nitro is ready`);
       resolve();
     });
-  });
-}
-
-/**
- * Get the system resources information
- * TODO: Move to Core so that it can be reused
- */
-function getResourcesInfo(): Promise<ResourcesInfo> {
-  return new Promise(async (resolve) => {
-    const cpu = await physicalCpuCount();
-    log(`[NITRO]::CPU informations - ${cpu}`);
-    const response: ResourcesInfo = {
-      numCpuPhysicalCore: cpu,
-      memAvailable: 0,
-    };
-    resolve(response);
   });
 }
 

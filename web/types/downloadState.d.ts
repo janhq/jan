@@ -1,12 +1,13 @@
 type DownloadState = {
   modelId: string
+  filename: string
   time: DownloadTime
   speed: number
   percent: number
   size: DownloadSize
-  isFinished?: boolean
   children?: DownloadState[]
   error?: string
+  downloadState: 'downloading' | 'error' | 'end'
 }
 
 type DownloadTime = {

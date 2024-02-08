@@ -127,8 +127,8 @@ jobs:
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANALYTICS_ID: ${{ secrets.JAN_APP_POSTHOG_PROJECT_API_KEY }}
-          ANALYTICS_HOST: ${{ secrets.JAN_APP_POSTHOG_URL }}
+          ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
+          ANALYTICS_HOST: ${{ secrets.JAN_APP_UMAMI_URL }}
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}

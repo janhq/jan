@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 
 import { openExternalUrl } from '@janhq/core'
 import {
@@ -10,29 +10,28 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  Modal,
 } from '@janhq/uikit'
 
+import { useAtomValue } from 'jotai'
 import { SearchIcon } from 'lucide-react'
-
-import Loader from '@/containers/Loader'
-
-import { useGetConfiguredModels } from '@/hooks/useGetConfiguredModels'
-
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import ExploreModelList from './ExploreModelList'
 import { HuggingFaceModal } from './HuggingFaceModal'
 
+import {
+  configuredModelsAtom,
+  downloadedModelsAtom,
+} from '@/helpers/atoms/Model.atom'
+
 const ExploreModelsScreen = () => {
-  const { loading, models } = useGetConfiguredModels()
+  const configuredModels = useAtomValue(configuredModelsAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [searchValue, setsearchValue] = useState('')
-  const { downloadedModels } = useGetDownloadedModels()
   const [sortSelected, setSortSelected] = useState('All Models')
   const sortMenu = ['All Models', 'Recommended', 'Downloaded']
   const [showHuggingFaceModal, setShowHuggingFaceModal] = useState(false)
 
-  const filteredModels = models.filter((x) => {
+  const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'Downloaded') {
       return (
         x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
@@ -48,20 +47,21 @@ const ExploreModelsScreen = () => {
     }
   })
 
-  const onHowToImportModelClick = () => {
+  const onHowToImportModelClick = useCallback(() => {
     openExternalUrl('https://jan.ai/guides/using-models/import-manually/')
-  }
+  }, [])
 
   const onHuggingFaceConverterClick = () => {
     setShowHuggingFaceModal(true)
   }
 
-  if (loading) return <Loader description="loading ..." />
-
   return (
-    <div className="flex h-full w-full overflow-y-auto bg-background">
+    <div
+      className="flex h-full w-full overflow-y-auto bg-background"
+      data-testid="hub-container-test-id"
+    >
       <div className="h-full w-full p-4">
-        <div className="h-full" data-test-id="testid-explore-models">
+        <div className="h-full">
           <HuggingFaceModal
             open={showHuggingFaceModal}
             onOpenChange={setShowHuggingFaceModal}

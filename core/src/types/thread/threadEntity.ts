@@ -43,5 +43,4 @@ export type ThreadState = {
   waitingForResponse: boolean
   error?: Error
   lastMessage?: string
-  isFinishInit?: boolean
 }

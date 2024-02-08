@@ -1,11 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React from 'react'
+import React, { useContext } from 'react'
 
-import { InferenceEngine } from '@janhq/core'
-import { Input, Textarea, Switch } from '@janhq/uikit'
+import {
+  Input,
+  Textarea,
+  Switch,
+  Tooltip,
+  TooltipArrow,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+} from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
 
+import { InfoIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
@@ -14,6 +23,8 @@ import CardSidebar from '@/containers/CardSidebar'
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
@@ -39,6 +50,7 @@ const Sidebar: React.FC = () => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
+  const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const modelEngineParams = toSettingParams(activeModelParams)
   const modelRuntimeParams = toRuntimeParams(activeModelParams)
@@ -131,60 +143,160 @@ const Sidebar: React.FC = () => {
                 }}
               />
             </div>
+          </div>
+        </CardSidebar>
 
-            <div>
-              {activeThread?.assistants[0]?.tools &&
-                componentDataAssistantSetting.length > 0 && (
-                  <div className="mt-2">
-                    <CardSidebar
-                      title="Retrieval"
-                      asChild
-                      rightAction={
-                        <Switch
-                          name="retrieval"
-                          className="mr-2"
-                          checked={activeThread?.assistants[0].tools[0].enabled}
-                          onCheckedChange={(e) => {
-                            if (activeThread)
-                              updateThreadMetadata({
-                                ...activeThread,
-                                assistants: [
-                                  {
-                                    ...activeThread.assistants[0],
-                                    tools: [
+        {experimentalFeature && (
+          <div>
+            {activeThread?.assistants[0]?.tools &&
+              componentDataAssistantSetting.length > 0 && (
+                <div className="mt-2">
+                  <CardSidebar title="Tools">
+                    <div className="px-2 pt-4">
+                      <div className="mb-2">
+                        <div className="flex items-center justify-between">
+                          <label
+                            id="retrieval"
+                            className="inline-flex items-center font-bold text-zinc-500 dark:text-gray-300"
+                          >
+                            Retrieval
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <InfoIcon
+                                  size={16}
+                                  className="ml-2 flex-shrink-0 text-black dark:text-gray-500"
+                                />
+                              </TooltipTrigger>
+                              <TooltipPortal>
+                                <TooltipContent
+                                  side="top"
+                                  className="max-w-[240px]"
+                                >
+                                  <span>
+                                    Retrieval helps the assistant use
+                                    information from files you send to it. Once
+                                    you share a file, the assistant
+                                    automatically fetches the relevant content
+                                    based on your request.
+                                  </span>
+                                  <TooltipArrow />
+                                </TooltipContent>
+                              </TooltipPortal>
+                            </Tooltip>
+                          </label>
+
+                          <div className="flex items-center justify-between">
+                            <Switch
+                              name="retrieval"
+                              className="mr-2"
+                              checked={
+                                activeThread?.assistants[0].tools[0].enabled
+                              }
+                              onCheckedChange={(e) => {
+                                if (activeThread)
+                                  updateThreadMetadata({
+                                    ...activeThread,
+                                    assistants: [
                                       {
-                                        type: 'retrieval',
-                                        enabled: e,
-                                        settings:
-                                          (activeThread.assistants[0].tools &&
-                                            activeThread.assistants[0].tools[0]
-                                              ?.settings) ??
-                                          {},
+                                        ...activeThread.assistants[0],
+                                        tools: [
+                                          {
+                                            type: 'retrieval',
+                                            enabled: e,
+                                            settings:
+                                              (activeThread.assistants[0]
+                                                .tools &&
+                                                activeThread.assistants[0]
+                                                  .tools[0]?.settings) ??
+                                              {},
+                                          },
+                                        ],
                                       },
                                     ],
-                                  },
-                                ],
-                              })
-                          }}
-                        />
-                      }
-                    >
+                                  })
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
                       {activeThread?.assistants[0]?.tools[0].enabled && (
-                        <div className="px-2 py-4">
+                        <div className="pb-4 pt-2">
                           <div className="mb-4">
-                            <label
-                              id="tool-title"
-                              className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
-                            >
-                              Embedding Engine
-                            </label>
-                            <div className="flex items-center justify-between">
-                              <label className="font-medium text-zinc-500 dark:text-gray-300">
-                                {selectedModel?.engine ===
-                                InferenceEngine.openai
-                                  ? 'OpenAI'
-                                  : 'Nitro'}
+                            <div className="item-center mb-2 flex">
+                              <label
+                                id="embedding-model"
+                                className="inline-flex font-bold text-zinc-500 dark:text-gray-300"
+                              >
+                                Embedding Model
                               </label>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <InfoIcon
+                                    size={16}
+                                    className="ml-2 flex-shrink-0 dark:text-gray-500"
+                                  />
+                                </TooltipTrigger>
+                                <TooltipPortal>
+                                  <TooltipContent
+                                    side="top"
+                                    className="max-w-[240px]"
+                                  >
+                                    <span>
+                                      Embedding model is crucial for
+                                      understanding and processing the input
+                                      text effectively by converting text to
+                                      numerical representations. Align the model
+                                      choice with your task, evaluate its
+                                      performance, and consider factors like
+                                      resource availability. Experiment to find
+                                      the best fit for your specific use case.
+                                    </span>
+                                    <TooltipArrow />
+                                  </TooltipContent>
+                                </TooltipPortal>
+                              </Tooltip>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <Input value={selectedModel?.name} disabled />
+                            </div>
+                          </div>
+                          <div className="mb-4">
+                            <div className="mb-2 flex items-center">
+                              <label
+                                id="vector-database"
+                                className="inline-block font-bold text-zinc-500 dark:text-gray-300"
+                              >
+                                Vector Database
+                              </label>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <InfoIcon
+                                    size={16}
+                                    className="ml-2 flex-shrink-0 dark:text-gray-500"
+                                  />
+                                </TooltipTrigger>
+                                <TooltipPortal>
+                                  <TooltipContent
+                                    side="top"
+                                    className="max-w-[240px]"
+                                  >
+                                    <span>
+                                      Vector Database is crucial for efficient
+                                      storage and retrieval of embeddings.
+                                      Consider your specific task, available
+                                      resources, and language requirements.
+                                      Experiment to find the best fit for your
+                                      specific use case.
+                                    </span>
+                                    <TooltipArrow />
+                                  </TooltipContent>
+                                </TooltipPortal>
+                              </Tooltip>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <Input value="HNSWLib" disabled />
                             </div>
                           </div>
                           <AssistantSetting
@@ -192,12 +304,13 @@ const Sidebar: React.FC = () => {
                           />
                         </div>
                       )}
-                    </CardSidebar>
-                  </div>
-                )}
-            </div>
+                    </div>
+                  </CardSidebar>
+                </div>
+              )}
           </div>
-        </CardSidebar>
+        )}
+
         <CardSidebar title="Model">
           <div className="px-2 pt-4">
             <DropdownListSidebar />

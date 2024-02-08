@@ -13,8 +13,13 @@ import {
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+import {
+  activeModelAtom,
+  loadModelErrorAtom,
+  stateModelAtom,
+} from '@/hooks/useActiveModel'
+
+import { queuedMessageAtom } from '@/hooks/useSendChatMessage'
 
 import { toaster } from '../Toast'
 
@@ -23,22 +28,29 @@ import {
   addNewMessageAtom,
   updateMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
   updateThreadWaitingForResponseAtom,
   threadsAtom,
+  isGeneratingResponseAtom,
+  updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function EventHandler({ children }: { children: ReactNode }) {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
-  const { downloadedModels } = useGetDownloadedModels()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
+  const setQueuedMessage = useSetAtom(queuedMessageAtom)
+  const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const threads = useAtomValue(threadsAtom)
   const modelsRef = useRef(downloadedModels)
   const threadsRef = useRef(threads)
+  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
+  const updateThread = useSetAtom(updateThreadAtom)
 
   useEffect(() => {
     threadsRef.current = threads
@@ -61,6 +73,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       toaster({
         title: 'Success!',
         description: `Model ${model.id} has been started.`,
+        type: 'success',
       })
       setStateModel(() => ({
         state: 'stop',
@@ -82,13 +95,15 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     (res: any) => {
       const errorMessage = `${res.error}`
       console.error('Failed to load model: ' + errorMessage)
+      setLoadModelError(errorMessage)
       setStateModel(() => ({
         state: 'start',
         loading: false,
         model: res.modelId,
       }))
+      setQueuedMessage(false)
     },
-    [setStateModel]
+    [setStateModel, setQueuedMessage, setLoadModelError]
   )
 
   const onMessageResponseUpdate = useCallback(
@@ -100,18 +115,30 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         message.status
       )
       if (message.status === MessageStatus.Pending) {
+        if (message.content.length) {
+          updateThreadWaiting(message.thread_id, false)
+          setIsGeneratingResponse(false)
+        }
         return
       }
       // Mark the thread as not waiting for response
       updateThreadWaiting(message.thread_id, false)
 
+      setIsGeneratingResponse(false)
+
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
       if (thread) {
-        const messageContent = message.content[0]?.text.value ?? ''
+        const messageContent = message.content[0]?.text?.value
         const metadata = {
           ...thread.metadata,
-          lastMessage: messageContent,
+          ...(messageContent && { lastMessage: messageContent }),
         }
+
+        updateThread({
+          ...thread,
+          metadata,
+        })
+
         extensionManager
           .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.saveThread({
@@ -124,7 +151,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           ?.addNewMessage(message)
       }
     },
-    [updateMessage, updateThreadWaiting]
+    [updateMessage, updateThreadWaiting, setIsGeneratingResponse, updateThread]
   )
 
   useEffect(() => {

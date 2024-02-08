@@ -12,12 +12,11 @@ export class Retrieval {
   public chunkOverlap?: number = 0;
   private retriever: any;
 
-  private embeddingModel: any = undefined;
+  private embeddingModel?: OpenAIEmbeddings = undefined;
   private textSplitter?: RecursiveCharacterTextSplitter;
 
   constructor(chunkSize: number = 4000, chunkOverlap: number = 200) {
     this.updateTextSplitter(chunkSize, chunkOverlap);
-    this.embeddingModel = new OpenAIEmbeddings({});
   }
 
   public updateTextSplitter(chunkSize: number, chunkOverlap: number): void {
@@ -41,9 +40,7 @@ export class Retrieval {
     } else {
       // Fallback to OpenAI Settings
       this.embeddingModel = new OpenAIEmbeddings({
-        configuration: {
-          apiKey: settings.api_key,
-        },
+        openAIApiKey: settings.api_key,
       });
     }
   }
@@ -55,6 +52,7 @@ export class Retrieval {
     const loader = new PDFLoader(filePath, {
       splitPages: true,
     });
+    if (!this.embeddingModel) return Promise.reject();
     const doc = await loader.load();
     const docs = await this.textSplitter!.splitDocuments(doc);
     const vectorStore = await HNSWLib.fromDocuments(docs, this.embeddingModel);
@@ -62,6 +60,7 @@ export class Retrieval {
   };
 
   public loadRetrievalAgent = async (memoryPath: string): Promise<void> => {
+    if (!this.embeddingModel) return Promise.reject();
     const vectorStore = await HNSWLib.load(memoryPath, this.embeddingModel);
     this.retriever = vectorStore.asRetriever(2);
     return Promise.resolve();

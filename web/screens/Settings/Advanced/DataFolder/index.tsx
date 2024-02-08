@@ -1,17 +1,20 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 
-import { fs, AppConfiguration } from '@janhq/core'
+import { fs, AppConfiguration, isSubdirectory } from '@janhq/core'
 import { Button, Input } from '@janhq/uikit'
 import { useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
 import Loader from '@/containers/Loader'
 
-import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
+export const SUCCESS_SET_NEW_DESTINATION = 'successSetNewDestination'
 
 import ModalChangeDirectory, {
   showDirectoryConfirmModalAtom,
 } from './ModalChangeDirectory'
+import ModalChangeDestNotEmpty, {
+  showDestNotEmptyConfirmAtom,
+} from './ModalConfirmDestNotEmpty'
 import ModalErrorSetDestGlobal, {
   showChangeFolderErrorAtom,
 } from './ModalErrorSetDestGlobal'
@@ -24,6 +27,7 @@ const DataFolder = () => {
   const setShowDirectoryConfirm = useSetAtom(showDirectoryConfirmModalAtom)
   const setShowSameDirectory = useSetAtom(showSamePathModalAtom)
   const setShowChangeFolderError = useSetAtom(showChangeFolderErrorAtom)
+  const showDestNotEmptyConfirm = useSetAtom(showDestNotEmptyConfirmAtom)
   const [destinationPath, setDestinationPath] = useState(undefined)
 
   useEffect(() => {
@@ -43,9 +47,33 @@ const DataFolder = () => {
       return
     }
 
+    const appConfiguration: AppConfiguration =
+      await window.core?.api?.getAppConfigurations()
+    const currentJanDataFolder = appConfiguration.data_folder
+
+    if (await isSubdirectory(currentJanDataFolder, destFolder)) {
+      setShowSameDirectory(true)
+      return
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const newDestChildren: any[] = await fs.readdirSync(destFolder)
+    const isNotEmpty =
+      newDestChildren.filter((x) => x !== '.DS_Store').length > 0
+
+    if (isNotEmpty) {
+      showDestNotEmptyConfirm(true)
+      return
+    }
+
     setDestinationPath(destFolder)
     setShowDirectoryConfirm(true)
-  }, [janDataFolderPath, setShowSameDirectory, setShowDirectoryConfirm])
+  }, [
+    janDataFolderPath,
+    setShowDirectoryConfirm,
+    setShowSameDirectory,
+    showDestNotEmptyConfirm,
+  ])
 
   const onUserConfirmed = useCallback(async () => {
     if (!destinationPath) return
@@ -67,6 +95,7 @@ const DataFolder = () => {
       await window.core?.api?.relaunch()
     } catch (e) {
       console.error(`Error: ${e}`)
+      setShowLoader(false)
       setShowChangeFolderError(true)
     }
   }, [destinationPath, setShowChangeFolderError])
@@ -94,7 +123,8 @@ const DataFolder = () => {
             />
             <FolderOpenIcon
               size={16}
-              className="absolute right-2 top-1/2 -translate-y-1/2"
+              className="absolute right-2 top-1/2 z-10 -translate-y-1/2 cursor-pointer"
+              onClick={() => window.core?.api?.openAppDirectory()}
             />
           </div>
           <Button
@@ -107,12 +137,13 @@ const DataFolder = () => {
           </Button>
         </div>
       </div>
-      <ModalSameDirectory />
+      <ModalSameDirectory onChangeFolderClick={onChangeFolderClick} />
       <ModalChangeDirectory
         destinationPath={destinationPath ?? ''}
         onUserConfirmed={onUserConfirmed}
       />
       <ModalErrorSetDestGlobal />
+      <ModalChangeDestNotEmpty onUserConfirmed={onUserConfirmed} />
       {showLoader && <Loader description="Relocating Jan Data Folder..." />}
     </Fragment>
   )

@@ -2,11 +2,14 @@
 import {
   ConversationalExtension,
   ExtensionTypeEnum,
+  InferenceEngine,
   Thread,
   ThreadAssistantInfo,
 } from '@janhq/core'
 
 import { useAtomValue, useSetAtom } from 'jotai'
+
+import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
@@ -19,16 +22,22 @@ import {
   threadsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
+export type UpdateModelParameter = {
+  params?: ModelParams
+  modelId?: string
+  engine?: InferenceEngine
+}
+
 export default function useUpdateModelParameters() {
   const threads = useAtomValue(threadsAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const activeThreadState = useAtomValue(activeThreadStateAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const selectedModel = useAtomValue(selectedModelAtom)
 
   const updateModelParameter = async (
     threadId: string,
-    name: string,
-    value: number | boolean | string
+    settings: UpdateModelParameter
   ) => {
     const thread = threads.find((thread) => thread.id === threadId)
     if (!thread) {
@@ -40,20 +49,17 @@ export default function useUpdateModelParameters() {
       console.error('No active thread')
       return
     }
+
+    const params = settings.modelId
+      ? settings.params
+      : { ...activeModelParams, ...settings.params }
+
     const updatedModelParams: ModelParams = {
-      ...activeModelParams,
-      // Explicitly set the value to an array if the name is 'stop'
-      // This is because the inference engine would only accept an array for the 'stop' parameter
-      [name]: name === 'stop' ? (value === '' ? [] : [value]) : value,
+      ...params,
     }
 
     // update the state
     setThreadModelParams(thread.id, updatedModelParams)
-
-    if (!activeThreadState.isFinishInit) {
-      // if thread is not initialized, we don't need to update thread.json
-      return
-    }
 
     const assistants = thread.assistants.map(
       (assistant: ThreadAssistantInfo) => {
@@ -62,6 +68,10 @@ export default function useUpdateModelParameters() {
 
         assistant.model.parameters = runtimeParams
         assistant.model.settings = settingParams
+        if (selectedModel) {
+          assistant.model.id = settings.modelId ?? selectedModel?.id
+          assistant.model.engine = settings.engine ?? selectedModel?.engine
+        }
         return assistant
       }
     )

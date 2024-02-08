@@ -18,7 +18,7 @@ import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
-import { Marked, Renderer } from 'marked'
+import { Marked, Renderer, marked as markedDefault } from 'marked'
 
 import { markedHighlight } from 'marked-highlight'
 
@@ -37,13 +37,29 @@ import MessageToolbar from '../MessageToolbar'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
+function isMarkdownValue(value: string): boolean {
+  const tokenTypes: string[] = []
+  markedDefault(value, {
+    walkTokens: (token) => {
+      tokenTypes.push(token.type)
+    },
+  })
+  const isMarkdown = ['code', 'codespan'].some((tokenType) => {
+    return tokenTypes.includes(tokenType)
+  })
+  return isMarkdown
+}
+
 const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   let text = ''
+  const isUser = props.role === ChatCompletionRole.User
+  const isSystem = props.role === ChatCompletionRole.System
+
   if (props.content && props.content.length > 0) {
     text = props.content[0]?.text?.value ?? ''
   }
+
   const clipboard = useClipboard({ timeout: 1000 })
-  const { onViewFile } = usePath()
 
   const marked: Marked = new Marked(
     markedHighlight({
@@ -88,9 +104,8 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     }
   )
 
+  const { onViewFile, onViewFileContainer } = usePath()
   const parsedText = marked.parse(text)
-  const isUser = props.role === ChatCompletionRole.User
-  const isSystem = props.role === ChatCompletionRole.System
   const [tokenCount, setTokenCount] = useState(0)
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
   const [tokenSpeed, setTokenSpeed] = useState(0)
@@ -200,13 +215,14 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 className="aspect-auto h-[300px]"
                 alt={props.content[0]?.text.name}
                 src={props.content[0]?.text.annotations[0]}
+                onClick={() => onViewFile(`${props.id}.png`)}
               />
               <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 group-hover/image:inline-block" />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
                     className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover/image:flex"
-                    onClick={() => onViewFile(`${props.id}.png`)}
+                    onClick={onViewFileContainer}
                   >
                     <FolderOpenIcon size={20} />
                   </div>
@@ -223,14 +239,17 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
           {props.content[0]?.type === ContentType.Pdf && (
             <div className="group/file relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg bg-secondary p-4">
-              <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 backdrop-blur-sm group-hover/file:inline-block" />
+              <div
+                className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 backdrop-blur-sm group-hover/file:inline-block"
+                onClick={() =>
+                  onViewFile(`${props.id}.${props.content[0]?.type}`)
+                }
+              />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
                     className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover/file:flex"
-                    onClick={() =>
-                      onViewFile(`${props.id}.${props.content[0]?.type}`)
-                    }
+                    onClick={onViewFileContainer}
                   >
                     <FolderOpenIcon size={20} />
                   </div>
@@ -256,16 +275,29 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             </div>
           )}
 
-          <div
-            className={twMerge(
-              'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
-              isUser
-                ? 'whitespace-pre-wrap break-words'
-                : 'rounded-xl bg-secondary p-4'
-            )}
-            // eslint-disable-next-line @typescript-eslint/naming-convention
-            dangerouslySetInnerHTML={{ __html: parsedText }}
-          />
+          {isUser && !isMarkdownValue(text) ? (
+            <div
+              className={twMerge(
+                'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
+                isUser
+                  ? 'whitespace-pre-wrap break-words'
+                  : 'rounded-xl bg-secondary p-4'
+              )}
+            >
+              {text}
+            </div>
+          ) : (
+            <div
+              className={twMerge(
+                'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
+                isUser
+                  ? 'whitespace-pre-wrap break-words'
+                  : 'rounded-xl bg-secondary p-4'
+              )}
+              // eslint-disable-next-line @typescript-eslint/naming-convention
+              dangerouslySetInnerHTML={{ __html: parsedText }}
+            />
+          )}
         </>
       </div>
     </div>

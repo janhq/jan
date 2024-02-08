@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, app } from 'electron'
 // @ts-ignore
 import reflect from '@alumna/reflect'
 
@@ -36,6 +36,11 @@ export function handleFileMangerIPCs() {
   // Handles the 'getResourcePath' IPC event. This event is triggered to get the resource path.
   ipcMain.handle(FileManagerRoute.getResourcePath, async (_event) =>
     getResourcePath()
+  )
+
+  // Handles the 'getUserHomePath' IPC event. This event is triggered to get the user home path.
+  ipcMain.handle(FileManagerRoute.getUserHomePath, async (_event) =>
+    app.getPath('home')
   )
 
   // handle fs is directory here

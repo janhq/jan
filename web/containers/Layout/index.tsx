@@ -12,7 +12,8 @@ import TopBar from '@/containers/Layout/TopBar'
 import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
-import { SUCCESS_SET_NEW_DESTINATION } from '@/hooks/useVaultDirectory'
+
+import { SUCCESS_SET_NEW_DESTINATION } from '@/screens/Settings/Advanced/DataFolder'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props

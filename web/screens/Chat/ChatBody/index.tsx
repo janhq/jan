@@ -8,14 +8,8 @@ import { useAtomValue } from 'jotai'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import GenerateResponse from '@/containers/Loader/GenerateResponse'
-
 import { MainViewState } from '@/constants/screens'
 
-import { activeModelAtom } from '@/hooks/useActiveModel'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-
-import useInference from '@/hooks/useInference'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import ChatItem from '../ChatItem'
@@ -23,13 +17,14 @@ import ChatItem from '../ChatItem'
 import ErrorMessage from '../ErrorMessage'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const activeModel = useAtomValue(activeModelAtom)
-  const { downloadedModels } = useGetDownloadedModels()
+
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+
   const { setMainViewState } = useMainViewState()
-  const { isGeneratingResponse } = useInference()
 
   if (downloadedModels.length === 0)
     return (
@@ -97,15 +92,6 @@ const ChatBody: React.FC = () => {
                 )}
             </div>
           ))}
-
-          {activeModel &&
-            (isGeneratingResponse ||
-              (messages.length &&
-                messages[messages.length - 1].status ===
-                  MessageStatus.Pending &&
-                !messages[messages.length - 1].content.length)) && (
-              <GenerateResponse />
-            )}
         </ScrollToBottom>
       )}
     </Fragment>
