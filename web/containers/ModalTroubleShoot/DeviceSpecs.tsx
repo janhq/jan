@@ -6,6 +6,7 @@ import { CopyIcon, CheckIcon } from 'lucide-react'
 
 import { useClipboard } from '@/hooks/useClipboard'
 
+// TODO @Louis help add missing information device specs
 const DeviceSpecs = () => {
   const userAgent = window.navigator.userAgent
   const clipboard = useClipboard({ timeout: 1000 })
