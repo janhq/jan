@@ -45,9 +45,7 @@
   ],
   "bundleDependencies": [
     "@janhq/core",
-    "@langchain/community",
     "hnswlib-node",
-    "langchain",
     "pdf-parse"
   ]
 }
