@@ -77,7 +77,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           <p>
             Jan’s in beta. Access&nbsp;
             <span
-              className="cursor-pointer text-primary"
+              className="cursor-pointer text-primary dark:text-blue-400"
               onClick={() => setModalTroubleShooting(true)}
             >
               troubleshooting assistance

@@ -13,7 +13,7 @@ import { useLogs } from '@/hooks/useLogs'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
-type ServerLogsProps = { limit: number; withCopy?: boolean }
+type ServerLogsProps = { limit?: number; withCopy?: boolean }
 
 const ServerLogs = (props: ServerLogsProps) => {
   const { limit = 0 } = props
@@ -38,7 +38,7 @@ const ServerLogs = (props: ServerLogsProps) => {
       <div className="absolute -top-11 right-2">
         <Button
           themes="outline"
-          className="bg-white"
+          className="bg-white dark:bg-secondary/50"
           onClick={() => {
             clipboard.copy(logs.slice(-100) ?? '')
           }}

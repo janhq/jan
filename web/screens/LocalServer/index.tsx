@@ -350,7 +350,9 @@ const LocalServerScreen = () => {
             </div>
           </div>
         ) : (
-          <ServerLogs />
+          <div className="p-4">
+            <ServerLogs />
+          </div>
         )}
       </ScrollToBottom>
 
