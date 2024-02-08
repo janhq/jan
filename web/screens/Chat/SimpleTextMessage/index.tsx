@@ -152,6 +152,13 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.content])
 
+  if (
+    messages[messages.length - 1]?.status === MessageStatus.Error &&
+    !isUser
+  ) {
+    return null
+  }
+
   return (
     <div className="group relative mx-auto rounded-xl px-8">
       <div
