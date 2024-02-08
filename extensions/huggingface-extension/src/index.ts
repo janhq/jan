@@ -80,7 +80,15 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       repoData.siblings.some((sibling) => sibling.rfilename === file)
     )
 
-    return [...modelFiles, ...vocabFiles, 'config.json']
+    const jsonAndTxtFiles = repoData.siblings
+      .map((file) => file.rfilename)
+      .filter(
+        (file) =>
+          (file.endsWith('.json') && !vocabFiles.includes(file)) ||
+          file.endsWith('.txt')
+      )
+
+    return [...modelFiles, ...vocabFiles, ...jsonAndTxtFiles]
   }
 
   private async getModelDirPath(repoID: string): Promise<string> {
@@ -102,6 +110,16 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       modelDirPath,
       modelName + `-${quantization.toLowerCase()}.gguf`,
     ])
+  }
+  private getCtxLength(config: {
+    max_sequence_length?: number
+    max_position_embeddings?: number
+    n_ctx?: number
+  }): number {
+    if (config.max_sequence_length) return config.max_sequence_length
+    if (config.max_position_embeddings) return config.max_position_embeddings
+    if (config.n_ctx) return config.n_ctx
+    return 4096
   }
 
   /**
@@ -192,12 +210,49 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
     await executeOnMain(NODE_MODULE_PATH, 'installDeps')
     if (this.interrupted) return
 
-    await executeOnMain(
-      NODE_MODULE_PATH,
-      'convert',
-      modelDirPath,
-      modelOutPath + '.temp'
-    )
+    try {
+      await executeOnMain(
+        NODE_MODULE_PATH,
+        'convertHf',
+        modelDirPath,
+        modelOutPath + '.temp'
+      )
+    } catch (err) {
+      log(`[Conversion]::Debug: Error using hf-to-gguf.py, trying convert.py`)
+
+      let ctx = 4096
+      try {
+        const config = await fs.readFileSync(
+          await joinPath([modelDirPath, 'config.json']),
+          'utf8'
+        )
+        const configParsed = JSON.parse(config)
+        ctx = this.getCtxLength(configParsed)
+        configParsed.max_sequence_length = ctx
+        await fs.writeFileSync(
+          await joinPath([modelDirPath, 'config.json']),
+          JSON.stringify(configParsed, null, 2)
+        )
+      } catch (err) {
+        log(`${err}`)
+        // ignore missing config.json
+      }
+
+      const bpe = await fs.existsSync(
+        await joinPath([modelDirPath, 'vocab.json'])
+      )
+
+      await executeOnMain(
+        NODE_MODULE_PATH,
+        'convert',
+        modelDirPath,
+        modelOutPath + '.temp',
+        {
+          ctx,
+          bpe,
+        }
+      )
+    }
     await executeOnMain(
       NODE_MODULE_PATH,
       'renameSync',
@@ -206,7 +261,11 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
     )
 
     for (const file of await fs.readdirSync(modelDirPath)) {
-      if (modelOutPath.endsWith(file) || file.endsWith('config.json')) continue
+      if (
+        modelOutPath.endsWith(file) ||
+        (file.endsWith('config.json') && !file.endsWith('_config.json'))
+      )
+        continue
       await fs.unlinkSync(await joinPath([modelDirPath, file]))
     }
   }
@@ -265,30 +324,20 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
     }
 
     const size = await executeOnMain(NODE_MODULE_PATH, 'getSize', modelPath)
-    let configData: {
-      max_sequence_length?: number
-      max_position_embeddings?: number
-    } = {}
-    let configExists = false
+    let ctx = 4096
     try {
       const config = await fs.readFileSync(
-        await joinPath([modelDirPath, 'config.json'])
+        await joinPath([modelDirPath, 'config.json']),
+        'utf8'
       )
-      configData = JSON.parse(config.toString())
-      configExists = true
+      ctx = this.getCtxLength(JSON.parse(config))
+      fs.unlinkSync(await joinPath([modelDirPath, 'config.json']))
     } catch (err) {
       // ignore missing config.json
     }
     // maybe later, currently it's gonna use too much memory
     // const buffer = await fs.readFileSync(quantizedModelPath)
     // const ggufData = ggufMetadata(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength))
-
-    let ctx = 4096
-    if (configData.max_sequence_length) {
-      ctx = configData.max_sequence_length
-    } else if (configData.max_position_embeddings) {
-      ctx = configData.max_position_embeddings
-    }
 
     const metadata: Model = {
       object: 'model',
@@ -326,10 +375,6 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       engine: InferenceEngine.nitro,
     }
 
-    if (configExists) {
-      fs.unlinkSync(await joinPath([modelDirPath, 'config.json']))
-    }
-
     await fs.writeFileSync(modelConfigPath, JSON.stringify(metadata, null, 2))
   }
 
@@ -351,7 +396,7 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       const localPath = await joinPath([modelDirPath, filePath])
       await abortDownload(localPath)
     }
-    ;(await fs.existsSync(modelDirPath)) && (await fs.rmdirSync(modelDirPath))
+    // ;(await fs.existsSync(modelDirPath)) && (await fs.rmdirSync(modelDirPath))
 
     executeOnMain(NODE_MODULE_PATH, 'killProcesses')
   }

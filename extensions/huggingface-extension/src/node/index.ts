@@ -73,15 +73,64 @@ export const installDeps = (): Promise<void> => {
   })
 }
 
-export const convert = async (
+export const convertHf = async (
   modelDirPath: string,
   outPath: string
 ): Promise<void> => {
   return await new Promise<void>((resolve, reject) => {
     pythonShell = new PythonShell(
-      presolve(__dirname, '..', 'scripts', 'convert.py'),
+      presolve(__dirname, '..', 'scripts', 'convert-hf-to-gguf.py'),
       {
         args: [modelDirPath, '--outfile', outPath],
+        env: {
+          ...process.env,
+          NO_LOCAL_GGUF: '1',
+        },
+      }
+    )
+    pythonShell.on('message', (message) => {
+      log(`[Conversion]::Debug: ${message}`)
+    })
+    pythonShell.on('stderr', (stderr) => {
+      log(`[Conversion]::Error: ${stderr}`)
+    })
+    pythonShell.on('error', (err) => {
+      pythonShell = undefined
+      log(`[Conversion]::Error: ${err}`)
+      reject(err)
+    })
+    pythonShell.on('close', () => {
+      const exitCode = pythonShell?.exitCode
+      pythonShell = undefined
+      if (exitCode !== 0) {
+        log(`[Conversion]::Debug: Conversion exited with code: ${exitCode}`)
+        reject(exitCode)
+      } else {
+        resolve()
+      }
+    })
+  })
+}
+
+export const convert = async (
+  modelDirPath: string,
+  outPath: string,
+  { ctx, bpe }: { ctx?: number; bpe?: boolean }
+): Promise<void> => {
+  const args = [modelDirPath, '--outfile', outPath]
+  if (ctx) {
+    args.push('--ctx')
+    args.push(ctx.toString())
+  }
+  if (bpe) {
+    args.push('--vocab-type')
+    args.push('bpe')
+  }
+  return await new Promise<void>((resolve, reject) => {
+    pythonShell = new PythonShell(
+      presolve(__dirname, '..', 'scripts', 'convert.py'),
+      {
+        args,
         env: {
           ...process.env,
           NO_LOCAL_GGUF: '1',

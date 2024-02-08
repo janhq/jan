@@ -1,8 +1,6 @@
 import { CommandModal, Modal, ModalContent } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { useConvertHuggingFaceModel } from '@/hooks/useConvertHuggingFaceModel'
-
 import { HuggingFaceConvertingErrorModal } from '../HuggingFaceConvertingErrorModal'
 import { HuggingFaceConvertingModal } from '../HuggingFaceConvertingModal'
 import { HuggingFaceRepoDataLoadedModal } from '../HuggingFaceRepoDataLoadedModal'
@@ -25,19 +23,18 @@ const HuggingFaceModal = ({
   const conversionStatus = useAtomValue(conversionStatusAtom)
   const conversionError = useAtomValue(conversionErrorAtom)
   const setReset = useSetAtom(resetAtom)
-  const { cancelConvertHuggingFaceModel } = useConvertHuggingFaceModel()
 
   return (
     <Modal
       {...props}
       onOpenChange={(open) => {
         if (open === false) {
-          setReset()
           if (
-            repoData &&
-            !['done', 'stopping'].includes(conversionStatus ?? '')
+            !repoData ||
+            ['done', 'stopping'].includes(conversionStatus ?? '') ||
+            conversionError
           ) {
-            cancelConvertHuggingFaceModel(repoData.id, repoData)
+            setReset()
           }
         }
         if (props.onOpenChange) {
