@@ -107,7 +107,7 @@ const ModalTroubleShooting: React.FC = () => {
             </div>
             <ScrollToBottom className={twMerge('relative h-[140px] px-4 py-2')}>
               {isTabActive === 0 && <AppLogs />}
-              {isTabActive === 1 && <ServerLogs limit={100} />}
+              {isTabActive === 1 && <ServerLogs limit={50} withCopy />}
               {isTabActive === 2 && <DeviceSpecs />}
             </ScrollToBottom>
           </div>
