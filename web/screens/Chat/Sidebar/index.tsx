@@ -153,66 +153,70 @@ const Sidebar: React.FC = () => {
                 <div className="mt-2">
                   <CardSidebar title="Tools">
                     <div className="px-2 pt-4">
-                      <div className=" flex items-center justify-between">
-                        <label
-                          id="retrieval"
-                          className="mb-2 inline-flex items-center font-bold text-zinc-500 dark:text-gray-300"
-                        >
-                          Retrieval
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <InfoIcon
-                                size={16}
-                                className="ml-2 flex-shrink-0 text-black dark:text-gray-500"
-                              />
-                            </TooltipTrigger>
-                            <TooltipPortal>
-                              <TooltipContent
-                                side="top"
-                                className="max-w-[240px]"
-                              >
-                                <span>
-                                  Retrieval helps the assistant use information
-                                  from files you send to it. Once you share a
-                                  file, the assistant automatically fetches the
-                                  relevant content based on your request.
-                                </span>
-                                <TooltipArrow />
-                              </TooltipContent>
-                            </TooltipPortal>
-                          </Tooltip>
-                        </label>
-
+                      <div className="mb-2">
                         <div className="flex items-center justify-between">
-                          <Switch
-                            name="retrieval"
-                            className="mr-2"
-                            checked={
-                              activeThread?.assistants[0].tools[0].enabled
-                            }
-                            onCheckedChange={(e) => {
-                              if (activeThread)
-                                updateThreadMetadata({
-                                  ...activeThread,
-                                  assistants: [
-                                    {
-                                      ...activeThread.assistants[0],
-                                      tools: [
-                                        {
-                                          type: 'retrieval',
-                                          enabled: e,
-                                          settings:
-                                            (activeThread.assistants[0].tools &&
-                                              activeThread.assistants[0]
-                                                .tools[0]?.settings) ??
-                                            {},
-                                        },
-                                      ],
-                                    },
-                                  ],
-                                })
-                            }}
-                          />
+                          <label
+                            id="retrieval"
+                            className="inline-flex items-center font-bold text-zinc-500 dark:text-gray-300"
+                          >
+                            Retrieval
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <InfoIcon
+                                  size={16}
+                                  className="ml-2 flex-shrink-0 text-black dark:text-gray-500"
+                                />
+                              </TooltipTrigger>
+                              <TooltipPortal>
+                                <TooltipContent
+                                  side="top"
+                                  className="max-w-[240px]"
+                                >
+                                  <span>
+                                    Retrieval helps the assistant use
+                                    information from files you send to it. Once
+                                    you share a file, the assistant
+                                    automatically fetches the relevant content
+                                    based on your request.
+                                  </span>
+                                  <TooltipArrow />
+                                </TooltipContent>
+                              </TooltipPortal>
+                            </Tooltip>
+                          </label>
+
+                          <div className="flex items-center justify-between">
+                            <Switch
+                              name="retrieval"
+                              className="mr-2"
+                              checked={
+                                activeThread?.assistants[0].tools[0].enabled
+                              }
+                              onCheckedChange={(e) => {
+                                if (activeThread)
+                                  updateThreadMetadata({
+                                    ...activeThread,
+                                    assistants: [
+                                      {
+                                        ...activeThread.assistants[0],
+                                        tools: [
+                                          {
+                                            type: 'retrieval',
+                                            enabled: e,
+                                            settings:
+                                              (activeThread.assistants[0]
+                                                .tools &&
+                                                activeThread.assistants[0]
+                                                  .tools[0]?.settings) ??
+                                              {},
+                                          },
+                                        ],
+                                      },
+                                    ],
+                                  })
+                              }}
+                            />
+                          </div>
                         </div>
                       </div>
                       {activeThread?.assistants[0]?.tools[0].enabled && (
