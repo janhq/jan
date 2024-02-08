@@ -11,7 +11,7 @@ namchuai:
   url: https://github.com/namchuai
   image_url: https://avatars.githubusercontent.com/u/10397206?v=4
   email: james@jan.ai
-  
+
 hiro-v:
   name: Hiro Vuong
   title: MLE
@@ -60,4 +60,10 @@ automaticcat:
   url: https://github.com/tikikun
   image_url: https://avatars.githubusercontent.com/u/22268502?v=4
   email: alan@jan.ai
-  
+
+hieu-jan:
+  name: Henry Ho
+  title: Software Engineer
+  url: https://github.com/hieu-jan
+  image_url: https://avatars.githubusercontent.com/u/150573299?v=4
+  email: hieu@jan.ai
