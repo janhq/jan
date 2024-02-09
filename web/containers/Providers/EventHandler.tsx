@@ -95,12 +95,12 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     (res: any) => {
       const errorMessage = `${res.error}`
       console.error('Failed to load model: ' + errorMessage)
-      setLoadModelError(errorMessage)
       setStateModel(() => ({
         state: 'start',
         loading: false,
         model: res.modelId,
       }))
+      setLoadModelError(errorMessage)
       setQueuedMessage(false)
     },
     [setStateModel, setQueuedMessage, setLoadModelError]
