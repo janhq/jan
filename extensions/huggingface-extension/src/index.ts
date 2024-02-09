@@ -13,7 +13,6 @@ import {
   events,
   DownloadEvent,
   log,
-  baseName,
 } from '@janhq/core'
 import { ggufMetadata } from 'hyllama'
 
@@ -80,15 +79,17 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       repoData.siblings.some((sibling) => sibling.rfilename === file)
     )
 
-    const jsonAndTxtFiles = repoData.siblings
+    const etcFiles = repoData.siblings
       .map((file) => file.rfilename)
       .filter(
         (file) =>
           (file.endsWith('.json') && !vocabFiles.includes(file)) ||
-          file.endsWith('.txt')
+          file.endsWith('.txt') ||
+          file.endsWith('.py') ||
+          file.endsWith('.tiktoken')
       )
 
-    return [...modelFiles, ...vocabFiles, ...jsonAndTxtFiles]
+    return [...modelFiles, ...vocabFiles, ...etcFiles]
   }
 
   private async getModelDirPath(repoID: string): Promise<string> {
