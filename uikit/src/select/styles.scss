@@ -21,6 +21,7 @@
 
   &-item {
     @apply hover:bg-secondary relative my-1 block w-full cursor-pointer select-none items-center rounded-sm px-4 py-2 text-sm data-[disabled]:pointer-events-none data-[disabled]:opacity-50;
+    @apply focus:outline-none focus-visible:outline-0;
   }
 
   &-trigger-viewport {
