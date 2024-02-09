@@ -1,3 +1,5 @@
+import { useContext } from 'react'
+
 import {
   Assistant,
   ConversationalExtension,
@@ -6,11 +8,14 @@ import {
   ThreadAssistantInfo,
   ThreadState,
   Model,
+  AssistantTool,
 } from '@janhq/core'
-import { atom, useSetAtom } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { generateThreadId } from '@/utils/thread'
 
@@ -19,6 +24,8 @@ import useRecommendedModel from './useRecommendedModel'
 import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
+
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   threadsAtom,
   threadStatesAtom,
@@ -50,8 +57,12 @@ export const useCreateNewThread = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
+  const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
+
+  const threads = useAtomValue(threadsAtom)
 
   const requestCreateNewThread = async (
     assistant: Assistant,
@@ -59,11 +70,25 @@ export const useCreateNewThread = () => {
   ) => {
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
 
+    // check last thread message, if there empty last message use can not create thread
+    const lastMessage = threads[threads.length - 1]?.metadata?.lastMessage
+
+    if (!lastMessage && threads.length && !messages.length) {
+      return null
+    }
+
+    // modify assistant tools when experimental on, retieval toggle enabled in default
+    const assistantTools: AssistantTool = {
+      type: 'retrieval',
+      enabled: true,
+      settings: assistant.tools && assistant.tools[0].settings,
+    }
+
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
       assistant_name: assistant.name,
-      tools: assistant.tools,
+      tools: experimentalFeature ? [assistantTools] : assistant.tools,
       model: {
         id: defaultModel?.id ?? '*',
         settings: defaultModel?.settings ?? {},

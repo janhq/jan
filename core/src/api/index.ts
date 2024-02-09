@@ -30,6 +30,7 @@ export enum DownloadRoute {
   downloadFile = 'downloadFile',
   pauseDownload = 'pauseDownload',
   resumeDownload = 'resumeDownload',
+  getDownloadProgress = 'getDownloadProgress',
 }
 
 export enum DownloadEvent {

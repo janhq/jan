@@ -19,11 +19,12 @@ declare global {
 
 const Umami = () => {
   const appVersion = VERSION
-  const analyticsHost = ANALYTICS_HOST
+  const analyticsScriptPath = './umami_script.js'
   const analyticsId = ANALYTICS_ID
 
   useEffect(() => {
-    if (!appVersion || !analyticsHost || !analyticsId) return
+    if (!appVersion || !analyticsScriptPath || !analyticsId) return
+
     const ping = () => {
       // Check if umami is defined before ping
       if (window.umami !== null && typeof window.umami !== 'undefined') {
@@ -45,15 +46,16 @@ const Umami = () => {
     return () => {
       document.removeEventListener('umami:loaded', ping)
     }
-  }, [appVersion, analyticsHost, analyticsId])
+  }, [appVersion, analyticsScriptPath, analyticsId])
 
   return (
     <>
-      {appVersion && analyticsHost && analyticsId && (
+      {appVersion && analyticsScriptPath && analyticsId && (
         <Script
-          src={analyticsHost}
+          src={analyticsScriptPath}
           data-website-id={analyticsId}
           data-cache="true"
+          data-host-url="https://eu.umami.is"
           defer
           onLoad={() => document.dispatchEvent(new Event('umami:loaded'))}
         />

@@ -110,11 +110,6 @@ const ChatScreen: React.FC = () => {
       const imageType = files[0]?.type.includes('image')
       setFileUpload([{ file: files[0], type: imageType ? 'image' : 'pdf' }])
       setDragOver(false)
-      if (imageType) {
-        setCurrentPrompt('What do you see in this image?')
-      } else {
-        setCurrentPrompt('Summarize this for me')
-      }
     },
     onDropRejected: (e) => {
       if (

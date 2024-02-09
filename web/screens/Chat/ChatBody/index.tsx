@@ -10,9 +10,6 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
-import { loadModelErrorAtom } from '@/hooks/useActiveModel'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import ChatItem from '../ChatItem'
@@ -20,10 +17,13 @@ import ChatItem from '../ChatItem'
 import ErrorMessage from '../ErrorMessage'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const { downloadedModels } = useGetDownloadedModels()
+
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+
   const { setMainViewState } = useMainViewState()
 
   if (downloadedModels.length === 0)

@@ -12,6 +12,8 @@ import {
 import { JanApiRouteConfiguration } from '../common/configuration'
 import { startModel, stopModel } from '../common/startStopModel'
 import { ModelSettingParams } from '../../../types'
+import { getJanDataFolderPath } from '../../utils'
+import { normalizeFilePath } from '../../path'
 
 export const commonRouter = async (app: HttpServer) => {
   // Common Routes
@@ -52,7 +54,14 @@ export const commonRouter = async (app: HttpServer) => {
   // App Routes
   app.post(`/app/${AppRoute.joinPath}`, async (request: any, reply: any) => {
     const args = JSON.parse(request.body) as any[]
-    reply.send(JSON.stringify(join(...args[0])))
+
+    const paths = args[0].map((arg: string) =>
+      typeof arg === 'string' && (arg.startsWith(`file:/`) || arg.startsWith(`file:\\`))
+        ? join(getJanDataFolderPath(), normalizeFilePath(arg))
+        : arg
+    )
+
+    reply.send(JSON.stringify(join(...paths)))
   })
 
   app.post(`/app/${AppRoute.baseName}`, async (request: any, reply: any) => {
