@@ -20,11 +20,12 @@ import {
   SelectValue,
 } from '@janhq/uikit'
 
-import { atom, useAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { Paintbrush, CodeIcon } from 'lucide-react'
 import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 
+import { AlertTriangleIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import CardSidebar from '@/containers/CardSidebar'
@@ -33,9 +34,12 @@ import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
 
+import ModalTroubleShooting, {
+  modalTroubleShootingAtom,
+} from '@/containers/ModalTroubleShoot'
 import ServerLogs from '@/containers/ServerLogs'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
+import { loadModelErrorAtom, useActiveModel } from '@/hooks/useActiveModel'
 import { useLogs } from '@/hooks/useLogs'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
@@ -60,6 +64,7 @@ const LocalServerScreen = () => {
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const showRightSideBar = useAtomValue(showRightSideBarAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
   const modelEngineParams = toSettingParams(activeModelParams)
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
@@ -72,6 +77,7 @@ const LocalServerScreen = () => {
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
   const [host, setHost] = useAtom(hostAtom)
   const [port, setPort] = useAtom(portAtom)
+  const [loadModelError, setLoadModelError] = useAtom(loadModelErrorAtom)
 
   const hostOptions = ['127.0.0.1', '0.0.0.0']
 
@@ -122,6 +128,7 @@ const LocalServerScreen = () => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
                   setServerEnabled(false)
+                  setLoadModelError(undefined)
                 } else {
                   startModel(String(selectedModel?.id))
                   window.core?.api?.startServer({
@@ -367,6 +374,20 @@ const LocalServerScreen = () => {
       >
         <div className="px-4 pt-4">
           <DropdownListSidebar strictedThread={false} />
+          {loadModelError && (
+            <div className="mt-3 flex space-x-2 text-xs">
+              <AlertTriangleIcon size={16} className="text-danger" />
+              <span>
+                Model failed to start. Access{' '}
+                <span
+                  className="cursor-pointer text-primary dark:text-blue-400"
+                  onClick={() => setModalTroubleShooting(true)}
+                >
+                  troubleshooting assistance
+                </span>
+              </span>
+            </div>
+          )}
 
           {componentDataEngineSetting.filter(
             (x) => x.name === 'prompt_template'
@@ -395,6 +416,7 @@ const LocalServerScreen = () => {
           )}
         </div>
       </div>
+      <ModalTroubleShooting />
     </div>
   )
 }
