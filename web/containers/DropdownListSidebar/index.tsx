@@ -12,9 +12,16 @@ import {
   SelectValue,
 } from '@janhq/uikit'
 
+import { motion as m } from 'framer-motion'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
-import { MonitorIcon, LayoutGridIcon, FoldersIcon } from 'lucide-react'
+import {
+  MonitorIcon,
+  LayoutGridIcon,
+  FoldersIcon,
+  GlobeIcon,
+  CopyIcon,
+} from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -42,6 +49,8 @@ import {
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
 
+const engineOptions = ['Local', 'Remote']
+
 // TODO: Move all of the unscoped logics outside of the component
 const DropdownListSidebar = ({
   strictedThread = true,
@@ -51,13 +60,22 @@ const DropdownListSidebar = ({
   const activeThread = useAtomValue(activeThreadAtom)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-
+  const [isTabActive, setIsTabActive] = useState(0)
   const { stateModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const { setMainViewState } = useMainViewState()
   const [loader, setLoader] = useState(0)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
   const { updateModelParameter } = useUpdateModelParameters()
+
+  const localModel = downloadedModels.filter(
+    (model) => model.engine === InferenceEngine.nitro
+  )
+  const remoteModel = downloadedModels.filter(
+    (model) => model.engine === InferenceEngine.openai
+  )
+
+  const modelOptions = isTabActive === 0 ? localModel : remoteModel
 
   useEffect(() => {
     if (!activeThread) return
@@ -171,10 +189,47 @@ const DropdownListSidebar = ({
           </SelectTrigger>
           <SelectPortal>
             <SelectContent className="right-2  block w-full min-w-[450px] pr-0">
-              <div className="flex w-full items-center space-x-2 px-4 py-2">
-                <MonitorIcon size={20} className="text-muted-foreground" />
-                <span>Local</span>
+              <div className="relative px-2 py-2 dark:bg-secondary/50">
+                <ul className="inline-flex w-full space-x-2 rounded-lg bg-zinc-100 px-1 dark:bg-secondary">
+                  {engineOptions.map((name, i) => {
+                    return (
+                      <li
+                        className="relative flex w-full cursor-pointer items-center justify-center space-x-2 px-2 py-2"
+                        key={i}
+                        onClick={() => setIsTabActive(i)}
+                      >
+                        {i === 0 ? (
+                          <MonitorIcon
+                            size={20}
+                            className="z-50 text-muted-foreground"
+                          />
+                        ) : (
+                          <GlobeIcon
+                            size={20}
+                            className="z-50 text-muted-foreground"
+                          />
+                        )}
+                        <span
+                          className={twMerge(
+                            'relative z-50 font-medium text-muted-foreground',
+                            isTabActive === i &&
+                              'font-bold text-foreground dark:text-black'
+                          )}
+                        >
+                          {name}
+                        </span>
+                        {isTabActive === i && (
+                          <m.div
+                            className="absolute -left-2 top-1 h-[calc(100%-8px)] w-full rounded-md bg-background dark:bg-white"
+                            layoutId="dropdown-state-active"
+                          />
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
               </div>
+
               <div className="border-b border-border" />
               {downloadedModels.length === 0 ? (
                 <div className="px-4 py-2">
@@ -182,7 +237,7 @@ const DropdownListSidebar = ({
                 </div>
               ) : (
                 <SelectGroup>
-                  {downloadedModels.map((x, i) => (
+                  {modelOptions.map((x, i) => (
                     <SelectItem
                       key={i}
                       value={x.id}
@@ -191,7 +246,21 @@ const DropdownListSidebar = ({
                       )}
                     >
                       <div className="flex w-full justify-between">
-                        <span className="line-clamp-1 block">{x.name}</span>
+                        <div className="flex flex-col">
+                          <span className="line-clamp-1 block">{x.name}</span>
+                          <div className="relative mt-1 flex items-center space-x-2 text-muted-foreground">
+                            <span>{x.id}</span>
+                            <CopyIcon
+                              size={16}
+                              className="absolute right-0 z-20"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                e.preventDefault()
+                                console.log('hh')
+                              }}
+                            />
+                          </div>
+                        </div>
                         <div className="space-x-2">
                           <span className="font-bold text-muted-foreground">
                             {toGibibytes(x.metadata.size)}
