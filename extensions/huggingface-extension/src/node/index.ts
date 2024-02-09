@@ -82,10 +82,6 @@ export const convertHf = async (
       presolve(__dirname, '..', 'scripts', 'convert-hf-to-gguf.py'),
       {
         args: [modelDirPath, '--outfile', outPath],
-        env: {
-          ...process.env,
-          NO_LOCAL_GGUF: '1',
-        },
       }
     )
     pythonShell = _pythonShell
@@ -132,10 +128,6 @@ export const convert = async (
       presolve(__dirname, '..', 'scripts', 'convert.py'),
       {
         args,
-        env: {
-          ...process.env,
-          NO_LOCAL_GGUF: '1',
-        },
       }
     )
     _pythonShell.on('message', (message) => {
