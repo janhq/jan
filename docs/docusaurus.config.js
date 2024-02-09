@@ -239,23 +239,39 @@ const config = {
       },
       items: [
         // Navbar Left
+        // {
+        //   type: "docSidebar",
+        //   sidebarId: "aboutSidebar",
+        //   position: "left",
+        //   label: "About",
+        // },
         {
-          type: "docSidebar",
-          sidebarId: "productSidebar",
-          positionL: "left",
-          label: "Products",
+          type: "dropdown",
+          label: "About",
+          position: "left",
+          items: [
+            {
+              type: "doc",
+              label: "What is Jan?",
+              docId: "about/about",
+            },
+            {
+              type: "doc",
+              label: "Who we are",
+              docId: "team/team",
+            },
+            {
+              type: "doc",
+              label: "Wall of love",
+              docId: "wall-of-love",
+            },
+          ],
         },
         {
           type: "docSidebar",
-          sidebarId: "solutionSidebar",
+          sidebarId: "featuresSidebar",
           positionL: "left",
-          label: "Solutions",
-        },
-        {
-          type: "docSidebar",
-          sidebarId: "ecosystemSidebar",
-          positionL: "left",
-          label: "Ecosystem",
+          label: "Features",
         },
         {
           type: "docSidebar",
@@ -300,12 +316,6 @@ const config = {
           to: "blog",
           label: "Blog",
           position: "right",
-        },
-        {
-          type: "docSidebar",
-          sidebarId: "aboutSidebar",
-          position: "right",
-          label: "About",
         },
       ],
     },

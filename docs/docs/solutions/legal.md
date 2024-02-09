@@ -1,0 +1,4 @@
+---
+title: Legal
+tags: [industries]
+---

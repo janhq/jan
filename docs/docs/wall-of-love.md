@@ -1,0 +1,3 @@
+---
+title: Wall of love
+---

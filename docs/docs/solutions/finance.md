@@ -1,3 +1,4 @@
 ---
 title: Finance
+tags: [industries]
 ---

@@ -1,3 +1,4 @@
 ---
 title: Healthcare
+tags: [industries]
 ---

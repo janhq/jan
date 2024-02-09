@@ -1,3 +1,3 @@
 ---
-title: Cloud-based AI 
+title: OpenAI API Support (and others)
 ---
