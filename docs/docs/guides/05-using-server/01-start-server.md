@@ -1,6 +1,6 @@
 ---
 title: Start Local Server
-slug: /guides/server
+slug: /guides/using-server/server
 description: How to run Jan's built-in API server.
 keywords:
   [
