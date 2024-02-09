@@ -48,22 +48,22 @@ export const getQuantizeExecutable = (): string => {
 
 export const installDeps = (): Promise<void> => {
   return new Promise((resolve, reject) => {
-    pythonShell = new PythonShell(
+    const _pythonShell = new PythonShell(
       presolve(__dirname, '..', 'scripts', 'install_deps.py')
     )
-    pythonShell.on('message', (message) => {
+    _pythonShell.on('message', (message) => {
       log(`[Install Deps]::Debug: ${message}`)
     })
-    pythonShell.on('stderr', (stderr) => {
+    _pythonShell.on('stderr', (stderr) => {
       log(`[Install Deps]::Error: ${stderr}`)
     })
-    pythonShell.on('error', (err) => {
+    _pythonShell.on('error', (err) => {
       pythonShell = undefined
       log(`[Install Deps]::Error: ${err}`)
       reject(err)
     })
-    pythonShell.on('close', () => {
-      const exitCode = pythonShell?.exitCode
+    _pythonShell.on('close', () => {
+      const exitCode = _pythonShell.exitCode
       pythonShell = undefined
       log(
         `[Install Deps]::Debug: Deps installation exited with code: ${exitCode}`
@@ -78,7 +78,7 @@ export const convertHf = async (
   outPath: string
 ): Promise<void> => {
   return await new Promise<void>((resolve, reject) => {
-    pythonShell = new PythonShell(
+    const _pythonShell = new PythonShell(
       presolve(__dirname, '..', 'scripts', 'convert-hf-to-gguf.py'),
       {
         args: [modelDirPath, '--outfile', outPath],
@@ -88,19 +88,20 @@ export const convertHf = async (
         },
       }
     )
-    pythonShell.on('message', (message) => {
+    pythonShell = _pythonShell
+    _pythonShell.on('message', (message) => {
       log(`[Conversion]::Debug: ${message}`)
     })
-    pythonShell.on('stderr', (stderr) => {
+    _pythonShell.on('stderr', (stderr) => {
       log(`[Conversion]::Error: ${stderr}`)
     })
-    pythonShell.on('error', (err) => {
+    _pythonShell.on('error', (err) => {
       pythonShell = undefined
       log(`[Conversion]::Error: ${err}`)
       reject(err)
     })
-    pythonShell.on('close', () => {
-      const exitCode = pythonShell?.exitCode
+    _pythonShell.on('close', () => {
+      const exitCode = _pythonShell.exitCode
       pythonShell = undefined
       if (exitCode !== 0) {
         log(`[Conversion]::Debug: Conversion exited with code: ${exitCode}`)
@@ -127,7 +128,7 @@ export const convert = async (
     args.push('bpe')
   }
   return await new Promise<void>((resolve, reject) => {
-    pythonShell = new PythonShell(
+    const _pythonShell = new PythonShell(
       presolve(__dirname, '..', 'scripts', 'convert.py'),
       {
         args,
@@ -137,19 +138,19 @@ export const convert = async (
         },
       }
     )
-    pythonShell.on('message', (message) => {
+    _pythonShell.on('message', (message) => {
       log(`[Conversion]::Debug: ${message}`)
     })
-    pythonShell.on('stderr', (stderr) => {
+    _pythonShell.on('stderr', (stderr) => {
       log(`[Conversion]::Error: ${stderr}`)
     })
-    pythonShell.on('error', (err) => {
+    _pythonShell.on('error', (err) => {
       pythonShell = undefined
       log(`[Conversion]::Error: ${err}`)
       reject(err)
     })
-    pythonShell.on('close', () => {
-      const exitCode = pythonShell?.exitCode
+    _pythonShell.on('close', () => {
+      const exitCode = _pythonShell.exitCode
       pythonShell = undefined
       if (exitCode !== 0) {
         log(`[Conversion]::Debug: Conversion exited with code: ${exitCode}`)
@@ -168,20 +169,21 @@ export const quantize = async (
 ): Promise<void> => {
   return await new Promise<void>((resolve, reject) => {
     const quantizeExecutable = getQuantizeExecutable()
-    quantizeProcess = spawn(quantizeExecutable, [
+    const _quantizeProcess = spawn(quantizeExecutable, [
       modelPath,
       outPath,
       quantization,
     ])
+    quantizeProcess = _quantizeProcess
 
-    quantizeProcess?.stdout?.on('data', (data) => {
+    _quantizeProcess.stdout?.on('data', (data) => {
       log(`[Quantization]::Debug: ${data}`)
     })
-    quantizeProcess?.stderr?.on('data', (data) => {
+    _quantizeProcess.stderr?.on('data', (data) => {
       log(`[Quantization]::Error: ${data}`)
     })
 
-    quantizeProcess.on('close', (code) => {
+    _quantizeProcess.on('close', (code) => {
       if (code !== 0) {
         log(`[Quantization]::Debug: Quantization exited with code: ${code}`)
         reject(code)
