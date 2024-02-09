@@ -8,6 +8,7 @@ deps = [
     'gguf>=0.1.0',
     'protobuf>=4.21.0,<5.0.0',
     'torch~=2.1.1',
-    'packaging>=20.0'
+    'packaging>=20.0',
+    'tiktoken~=0.5.0'
 ]
 subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--upgrade', '--force-reinstall', *deps])
