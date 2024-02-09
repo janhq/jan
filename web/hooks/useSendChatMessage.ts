@@ -6,6 +6,7 @@ import {
   ChatCompletionRole,
   ContentType,
   MessageRequest,
+  MessageRequestType,
   MessageStatus,
   ExtensionTypeEnum,
   Thread,
@@ -112,6 +113,7 @@ export default function useSendChatMessage() {
 
     const messageRequest: MessageRequest = {
       id: ulid(),
+      type: MessageRequestType.Thread,
       messages: messages,
       threadId: activeThread.id,
       model: activeThread.assistants[0].model ?? selectedModel,
@@ -209,6 +211,7 @@ export default function useSendChatMessage() {
     }
     const messageRequest: MessageRequest = {
       id: msgId,
+      type: MessageRequestType.Thread,
       threadId: activeThread.id,
       messages,
       model: {
@@ -218,8 +221,8 @@ export default function useSendChatMessage() {
       },
       thread: activeThread,
     }
-    const timestamp = Date.now()
 
+    const timestamp = Date.now()
     const content: any = []
 
     if (base64Blob && fileUpload[0]?.type === 'image') {
