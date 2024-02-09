@@ -14,7 +14,7 @@ import {
 
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
-import { MonitorIcon } from 'lucide-react'
+import { MonitorIcon, LayoutGridIcon, FoldersIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -206,13 +206,22 @@ const DropdownListSidebar = ({
                 </SelectGroup>
               )}
               <div className="border-b border-border" />
-              <div className="w-full px-4 py-2">
+              <div className="flex w-full space-x-2 px-4 py-2">
+                <Button
+                  block
+                  themes="secondary"
+                  onClick={() => setMainViewState(MainViewState.Settings)}
+                >
+                  <FoldersIcon size={20} className="mr-2" />
+                  <span>My Models</span>
+                </Button>
                 <Button
                   block
                   className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
                   onClick={() => setMainViewState(MainViewState.Hub)}
                 >
-                  Explore The Hub
+                  <LayoutGridIcon size={20} className="mr-2" />
+                  <span>Explore The Hub</span>
                 </Button>
               </div>
             </SelectContent>
