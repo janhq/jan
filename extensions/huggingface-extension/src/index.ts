@@ -149,48 +149,40 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       if (this.interrupted) return
       if (!(await fs.existsSync(localPath))) {
         downloadFile(url, localPath, network)
-        filePaths.push(localPath)
+        filePaths.push(filePath)
       }
     }
 
     await new Promise<void>((resolve, reject) => {
       if (filePaths.length === 0) resolve()
-      const onDownloadSuccess = async (
-        _event: string,
-        {
-          fileName: filePath,
-        }: {
-          fileName: string
-        }
-      ) => {
-        if (filePaths.includes(filePath)) {
-          filePaths.splice(filePaths.indexOf(filePath), 1)
+      const onDownloadSuccess = async ({ fileName }: { fileName: string }) => {
+        if (filePaths.includes(fileName)) {
+          filePaths.splice(filePaths.indexOf(fileName), 1)
           if (filePaths.length === 0) {
+            events.off(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
+            events.off(DownloadEvent.onFileDownloadError, onDownloadError)
             resolve()
           }
         }
       }
 
-      const onDownloadError = async (
-        _event: string,
-        {
-          fileName: filePath,
-          err,
-        }: {
-          fileName: string
-          err: Error
-        }
-      ) => {
-        if (filePaths.includes(filePath)) {
+      const onDownloadError = async ({
+        fileName,
+        error,
+      }: {
+        fileName: string
+        error: Error
+      }) => {
+        if (filePaths.includes(fileName)) {
           this.cancelConvert(repoID, repoData)
-          reject(err)
+          events.off(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
+          events.off(DownloadEvent.onFileDownloadError, onDownloadError)
+          reject(error)
         }
       }
 
-      if (window?.electronAPI) {
-        window.electronAPI.onFileDownloadSuccess(onDownloadSuccess)
-        window.electronAPI.onFileDownloadError(onDownloadError)
-      }
+      events.on(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
+      events.on(DownloadEvent.onFileDownloadError, onDownloadError)
     })
   }
 
