@@ -81,7 +81,8 @@ const ChatBody: React.FC = () => {
         <ScrollToBottom className="flex h-full w-full flex-col">
           {messages.map((message, index) => (
             <div key={message.id}>
-              {(message.status !== MessageStatus.Pending ||
+              {((message.status !== MessageStatus.Error &&
+                message.status !== MessageStatus.Pending) ||
                 message.content.length > 0) && (
                 <ChatItem {...message} key={message.id} />
               )}
