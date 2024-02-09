@@ -12,7 +12,6 @@ import {
   SelectValue,
 } from '@janhq/uikit'
 
-import { motion as m } from 'framer-motion'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import {

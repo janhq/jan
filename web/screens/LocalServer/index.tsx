@@ -373,6 +373,28 @@ const LocalServerScreen = () => {
         )}
       >
         <div className="px-4 pt-4">
+          <div className="mb-4 flex items-start space-x-2">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              className="mt-1 flex-shrink-0"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                fill-rule="evenodd"
+                clip-rule="evenodd"
+                d="M9.00033 17.3337C13.6027 17.3337 17.3337 13.6027 17.3337 9.00033C17.3337 4.39795 13.6027 0.666992 9.00033 0.666992C4.39795 0.666992 0.666992 4.39795 0.666992 9.00033C0.666992 10.9978 1.36978 12.8311 2.54157 14.2666L0.910703 15.9111C0.390085 16.436 0.758808 17.3337 1.49507 17.3337H9.00033ZM5.25033 7.33366C5.25033 6.87342 5.62342 6.50033 6.08366 6.50033H11.917C12.3772 6.50033 12.7503 6.87342 12.7503 7.33366C12.7503 7.7939 12.3772 8.16699 11.917 8.16699H6.08366C5.62342 8.16699 5.25033 7.7939 5.25033 7.33366ZM6.08366 9.83366C5.62342 9.83366 5.25033 10.2068 5.25033 10.667C5.25033 11.1272 5.62342 11.5003 6.08366 11.5003H8.58366C9.0439 11.5003 9.41699 11.1272 9.41699 10.667C9.41699 10.2068 9.0439 9.83366 8.58366 9.83366H6.08366Z"
+                fill="#2563EB"
+              />
+            </svg>
+
+            <p>
+              You can concurrently send requests to one active local model and
+              multiple remote models.
+            </p>
+          </div>
           <DropdownListSidebar strictedThread={false} />
           {loadModelError && (
             <div className="mt-3 flex space-x-2 text-xs">
