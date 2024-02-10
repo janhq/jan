@@ -63,6 +63,17 @@ const BottomBar = () => {
     return Math.round(((total - free) / total) * 100)
   }
 
+  const calculateUtilization = () => {
+    let sum = 0
+    const util = gpus.map((x) => {
+      return Number(x['utilization'])
+    })
+    util.forEach((num) => {
+      sum += num
+    })
+    return sum
+  }
+
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/80 px-3">
       <div className="flex flex-shrink-0 items-center gap-x-2">
@@ -126,15 +137,39 @@ const BottomBar = () => {
           <SystemItem name="Mem:" value={`${ram}%`} />
         </div>
         {gpus.length > 0 && (
-          <div className="flex items-center gap-x-2">
-            {gpus.map((gpu, index) => (
-              <SystemItem
-                key={index}
-                name={`GPU ${gpu.id}:`}
-                value={`${gpu.utilization}% Util, ${calculateGpuMemoryUsage(gpu)}% Mem`}
-              />
-            ))}
-          </div>
+          <Tooltip>
+            <TooltipTrigger>
+              <div className="flex cursor-pointer items-center">
+                <SystemItem
+                  name={`${gpus.length} GPU `}
+                  value={`${calculateUtilization()}% `}
+                />
+              </div>
+            </TooltipTrigger>
+            {gpus.length > 1 && (
+              <TooltipContent
+                side="top"
+                sideOffset={10}
+                className="min-w-[240px]"
+              >
+                <span>
+                  {gpus.map((gpu, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between"
+                    >
+                      <div>
+                        <span>{gpu.name}</span>
+                        <span>{gpu.vram}MB VRAM</span>
+                      </div>
+                      <span>{gpu.utilization}%</span>
+                    </div>
+                  ))}
+                </span>
+                <TooltipArrow />
+              </TooltipContent>
+            )}
+          </Tooltip>
         )}
         {/* VERSION is defined by webpack, please see next.config.js */}
         <span className="text-xs text-muted-foreground">

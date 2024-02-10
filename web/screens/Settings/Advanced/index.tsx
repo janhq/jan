@@ -8,12 +8,32 @@ import {
   ChangeEvent,
 } from 'react'
 
+import { openExternalUrl } from '@janhq/core'
+
 import { fs } from '@janhq/core'
-import { Switch, Button, Input } from '@janhq/uikit'
+import {
+  Switch,
+  Button,
+  Input,
+  Select,
+  Checkbox,
+  SelectContent,
+  SelectGroup,
+  SelectPortal,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+  Tooltip,
+  TooltipArrow,
+  TooltipContent,
+  TooltipTrigger,
+} from '@janhq/uikit'
+
+import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
 import ShortcutModal from '@/containers/ShortcutModal'
 
-import { toaster } from '@/containers/Toast'
+import { snackbar, toaster } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
@@ -39,6 +59,12 @@ const Advanced = () => {
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
+
+  const selectedGpu = gpuList
+    .filter((x) => gpusInUse.includes(x.id))
+    .map((y) => {
+      return y['name']
+    })
 
   const onProxyChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -77,6 +103,7 @@ const Advanced = () => {
   }
 
   const handleGPUChange = (gpuId: string) => {
+    // TODO detect current use GPU nvidia or AMD
     let updatedGpusInUse = [...gpusInUse]
     if (updatedGpusInUse.includes(gpuId)) {
       updatedGpusInUse = updatedGpusInUse.filter((id) => id !== gpuId)
@@ -127,66 +154,171 @@ const Advanced = () => {
 
       {/* CPU / GPU switching */}
       {!isMac && (
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="flex-shrink-0 space-y-1.5">
-            <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">Nvidia GPU</h6>
-            </div>
-            <p className="leading-relaxed">
-              Enable GPU acceleration for Nvidia GPUs.
-            </p>
-          </div>
-          <Switch
-            checked={gpuEnabled}
-            onCheckedChange={(e) => {
-              if (e === true) {
-                saveSettings({ runMode: 'gpu' })
-                setGpuEnabled(true)
-                setShowNotification(false)
-                setTimeout(() => {
-                  validateSettings()
-                }, 300)
-              } else {
-                saveSettings({ runMode: 'cpu' })
-                setGpuEnabled(false)
-              }
-            }}
-          />
-        </div>
-      )}
-      {/* Directory */}
-      {gpuEnabled && (
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-gray-700">
-            Select GPU(s)
-          </label>
-          <div className="mt-2 space-y-2">
-            {gpuList.map((gpu) => (
-              <div key={gpu.id}>
-                <input
-                  type="checkbox"
-                  id={`gpu-${gpu.id}`}
-                  name="gpu"
-                  value={gpu.id}
-                  checked={gpusInUse.includes(gpu.id)}
-                  onChange={() => handleGPUChange(gpu.id)}
-                />
-                <label htmlFor={`gpu-${gpu.id}`}>
-                  {' '}
-                  {gpu.name} (VRAM: {gpu.vram} MB)
-                </label>
+        <div className="flex w-full flex-col items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+          <div className="flex items-start justify-between">
+            <div className="space-y-1.5">
+              <div className="flex gap-x-2">
+                <h6 className="text-sm font-semibold capitalize">
+                  GPU Acceleration
+                </h6>
               </div>
-            ))}
+              <p className="pr-8 leading-relaxed">
+                Enable to enhance model performance by utilizing your devices
+                GPU for acceleration. Read{' '}
+                <span>
+                  {' '}
+                  <span
+                    className="cursor-pointer text-blue-600"
+                    onClick={() =>
+                      openExternalUrl(
+                        'https://jan.ai/guides/troubleshooting/gpu-not-used/'
+                      )
+                    }
+                  >
+                    troubleshooting guide
+                  </span>{' '}
+                </span>{' '}
+                for further assistance.
+              </p>
+            </div>
+            {gpuList.length > 0 && !gpuEnabled && (
+              <Tooltip>
+                <TooltipTrigger>
+                  <AlertCircleIcon size={20} className="mr-2 text-yellow-600" />
+                </TooltipTrigger>
+                <TooltipContent
+                  side="right"
+                  sideOffset={10}
+                  className="max-w-[240px]"
+                >
+                  <span>
+                    Disabling GPU Acceleration may result in reduced
+                    performance. It is recommended to keep this enabled for
+                    optimal user experience.
+                  </span>
+                  <TooltipArrow />
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            <Tooltip>
+              <TooltipTrigger>
+                <Switch
+                  checked={gpuEnabled}
+                  onCheckedChange={(e) => {
+                    if (e === true) {
+                      saveSettings({ runMode: 'gpu' })
+                      setGpuEnabled(true)
+                      setShowNotification(false)
+                      snackbar({
+                        description: 'Successfully turned on GPU Accelertion',
+                        type: 'success',
+                      })
+                      setTimeout(() => {
+                        validateSettings()
+                      }, 300)
+                    } else {
+                      saveSettings({ runMode: 'cpu' })
+                      setGpuEnabled(false)
+                      snackbar({
+                        description: 'Successfully turned off GPU Accelertion',
+                        type: 'success',
+                      })
+                    }
+                  }}
+                />
+              </TooltipTrigger>
+              {gpuList.length === 0 && (
+                <TooltipContent
+                  side="right"
+                  sideOffset={10}
+                  className="max-w-[240px]"
+                >
+                  <span>
+                    Your current device does not have a compatible GPU for
+                    monitoring. To enable GPU monitoring, please ensure your
+                    device has a supported Nvidia or AMD GPU with updated
+                    drivers.
+                  </span>
+                  <TooltipArrow />
+                </TooltipContent>
+              )}
+            </Tooltip>
           </div>
+
+          {gpuEnabled && (
+            <div className="mt-2 w-full rounded-lg bg-secondary p-4">
+              <label className="mb-1 inline-block font-medium">
+                Choose GPU
+              </label>
+              <Select value={selectedGpu.join()}>
+                <SelectTrigger className="w-[340px] bg-white">
+                  <SelectValue placeholder="Select GPU">
+                    <span className="line-clamp-1 w-full pr-8">
+                      {selectedGpu.join()}
+                    </span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPortal>
+                  <SelectContent className="w-[400px] px-1 pb-2">
+                    <SelectGroup>
+                      <SelectLabel>Nvidia</SelectLabel>
+                      <div className="px-4 pb-2">
+                        <div className="rounded-lg bg-secondary p-3">
+                          {gpuList
+                            .filter((gpu) =>
+                              gpu.name.toLowerCase().includes('nvidia')
+                            )
+                            .map((gpu) => (
+                              <div
+                                key={gpu.id}
+                                className="my-1 flex items-center space-x-2"
+                              >
+                                <Checkbox
+                                  id={`gpu-${gpu.id}`}
+                                  name="gpu-nvidia"
+                                  className="bg-white"
+                                  value={gpu.id}
+                                  checked={gpusInUse.includes(gpu.id)}
+                                  onCheckedChange={() =>
+                                    handleGPUChange(gpu.id)
+                                  }
+                                />
+                                <label
+                                  className="flex w-full items-center justify-between"
+                                  htmlFor={`gpu-${gpu.id}`}
+                                >
+                                  <span>{gpu.name}</span>
+                                  <span>{gpu.vram}MB VRAM</span>
+                                </label>
+                              </div>
+                            ))}
+                        </div>
+                        {/* Warning message */}
+                        {gpuEnabled && gpusInUse.length > 1 && (
+                          <div className="mt-2 flex items-start space-x-2 text-yellow-500">
+                            <AlertTriangleIcon
+                              size={16}
+                              className="flex-shrink-0"
+                            />
+                            <p className="text-xs leading-relaxed">
+                              If multi-GPU is enabled with different GPU models
+                              or without NVLink, it could impact token speed.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </SelectGroup>
+
+                    {/* TODO enable this when we support AMD */}
+                  </SelectContent>
+                </SelectPortal>
+              </Select>
+            </div>
+          )}
         </div>
       )}
-      {/* Warning message */}
-      {gpuEnabled && gpusInUse.length > 1 && (
-        <p className="mt-2 italic text-red-500">
-          If enabling multi-GPU without the same GPU model or without NVLink, it
-          may affect token speed.
-        </p>
-      )}
+
       <DataFolder />
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
