@@ -275,9 +275,9 @@ const config = {
         },
         {
           type: "docSidebar",
-          sidebarId: "partnerSidebar",
+          sidebarId: "ecosystemSidebar",
           position: "left",
-          label: "Partners",
+          label: "Ecosystem",
         },
         {
           type: "docSidebar",

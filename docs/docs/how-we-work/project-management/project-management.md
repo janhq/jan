@@ -1,6 +1,5 @@
 ---
 title: Project Management
-slug: /product/management
 ---
 
 We use the [Jan Monorepo Project](https://github.com/orgs/janhq/projects/5) in Github to manage our roadmap and sprint Kanbans.
@@ -58,3 +57,10 @@ We aim to always sprint on `tasks` that are a part of the [current roadmap](http
 
 - `Urgent bugs`: assign to an owner (or @engineers if you are not sure) && tag the current `sprint` & `milestone`
 - `All else`: assign the correct roadmap `label(s)` and owner (if any)
+
+
+#### Request for help
+
+As a result, our feature prioritization can feel a bit black box at times.
+
+We'd appreciate high quality insights and volunteers for user interviews through [Discord](https://discord.gg/af6SaTdzpx) and [Github](https://github.com/janhq).
