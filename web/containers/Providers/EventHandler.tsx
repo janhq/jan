@@ -2,16 +2,21 @@
 import { ReactNode, useCallback, useEffect, useRef } from 'react'
 
 import {
+  ChatCompletionMessage,
+  ChatCompletionRole,
   events,
   ThreadMessage,
   ExtensionTypeEnum,
   MessageStatus,
+  MessageRequest,
   Model,
   ConversationalExtension,
   MessageEvent,
+  MessageRequestType,
   ModelEvent,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
+import { ulid } from 'ulid'
 
 import {
   activeModelAtom,
@@ -25,6 +30,7 @@ import { toaster } from '../Toast'
 
 import { extensionManager } from '@/extension'
 import {
+  getCurrentChatMessagesAtom,
   addNewMessageAtom,
   updateMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
@@ -37,9 +43,11 @@ import {
 } from '@/helpers/atoms/Thread.atom'
 
 export default function EventHandler({ children }: { children: ReactNode }) {
+  const messages = useAtomValue(getCurrentChatMessagesAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const activeModel = useAtomValue(activeModelAtom)
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
   const setQueuedMessage = useSetAtom(queuedMessageAtom)
@@ -51,6 +59,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const threadsRef = useRef(threads)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
   const updateThread = useSetAtom(updateThreadAtom)
+  const messagesRef = useRef(messages)
+  const activeModelRef = useRef(activeModel)
 
   useEffect(() => {
     threadsRef.current = threads
@@ -60,9 +70,51 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     modelsRef.current = downloadedModels
   }, [downloadedModels])
 
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
+    activeModelRef.current = activeModel
+  }, [activeModel])
+
   const onNewMessageResponse = useCallback(
     (message: ThreadMessage) => {
-      addNewMessage(message)
+      const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
+      // If this is the first ever prompt in the thread
+      if (thread && thread.title.trim() == 'New Thread') {
+        // This is the first time message comes in on a new thread
+        //  Summarize the first message, and make that the title of the Thread
+        // 1. Get the summary of the first prompt using whatever engine user is currently using
+        const firstPrompt = messagesRef?.current[0].content[0].text.value.trim()
+        const summarizeFirstPrompt =
+          'Summarize "' + firstPrompt + '" in 5 words as a title'
+
+        // Prompt: Given this query from user {query}, return to me the summary in 5 words as the title
+        const msgId = ulid()
+        const messages: ChatCompletionMessage[] = [
+          {
+            role: ChatCompletionRole.User,
+            content: summarizeFirstPrompt,
+          } as ChatCompletionMessage,
+        ]
+
+        const firstPromptRequest: MessageRequest = {
+          id: msgId,
+          threadId: message.thread_id,
+          type: MessageRequestType.Summary,
+          messages,
+          model: activeModelRef?.current,
+        }
+
+        // 2. Update the title with the result of the inference
+        //      the title will be updated as part of the `EventName.OnFirstPromptUpdate`
+        events.emit(MessageEvent.OnMessageSent, firstPromptRequest)
+      }
+
+      if (message.type !== MessageRequestType.Summary) {
+        addNewMessage(message)
+      }
     },
     [addNewMessage]
   )
@@ -134,6 +186,11 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           ...(messageContent && { lastMessage: messageContent }),
         }
 
+        // Update the Thread title with the response of the inference on the 1st prompt
+        if (message.type === MessageRequestType.Summary) {
+          thread.title = messageContent
+        }
+
         updateThread({
           ...thread,
           metadata,
@@ -146,9 +203,12 @@ export default function EventHandler({ children }: { children: ReactNode }) {
             metadata,
           })
 
-        extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.addNewMessage(message)
+        // If this is not the summary of the Thread, don't need to add it to the Thread
+        if (message.type !== MessageRequestType.Summary) {
+          extensionManager
+            .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+            ?.addNewMessage(message)
+        }
       }
     },
     [updateMessage, updateThreadWaiting, setIsGeneratingResponse, updateThread]

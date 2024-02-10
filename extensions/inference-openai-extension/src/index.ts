@@ -18,6 +18,7 @@ import {
   InferenceEngine,
   BaseExtension,
   MessageEvent,
+  MessageRequestType,
   ModelEvent,
   InferenceEvent,
   AppConfigurationEventName,
@@ -157,6 +158,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
     const message: ThreadMessage = {
       id: ulid(),
       thread_id: data.threadId,
+      type: data.type,
       assistant_id: data.assistantId,
       role: ChatCompletionRole.Assistant,
       content: [],
@@ -165,7 +167,10 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
       updated: timestamp,
       object: "thread.message",
     };
-    events.emit(MessageEvent.OnMessageResponse, message);
+
+    if (data.type !== MessageRequestType.Summary) {
+      events.emit(MessageEvent.OnMessageResponse, message);
+    }
 
     instance.isCancelled = false;
     instance.controller = new AbortController();

@@ -10,6 +10,7 @@ import {
   ChatCompletionRole,
   ContentType,
   MessageRequest,
+  MessageRequestType,
   MessageStatus,
   ThreadContent,
   ThreadMessage,
@@ -250,6 +251,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     const message: ThreadMessage = {
       id: ulid(),
       thread_id: data.threadId,
+      type: data.type,
       assistant_id: data.assistantId,
       role: ChatCompletionRole.Assistant,
       content: [],
@@ -258,7 +260,10 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
       updated: timestamp,
       object: "thread.message",
     };
-    events.emit(MessageEvent.OnMessageResponse, message);
+
+    if (data.type !== MessageRequestType.Summary) {
+      events.emit(MessageEvent.OnMessageResponse, message);
+    }
 
     this.isCancelled = false;
     this.controller = new AbortController();
