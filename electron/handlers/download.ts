@@ -46,7 +46,7 @@ export function handleDownloaderIPCs() {
         DownloadEvent.onFileDownloadError,
         {
           fileName,
-          err: { message: 'aborted' },
+          error: 'aborted',
         }
       )
     }
@@ -92,13 +92,13 @@ export function handleDownloaderIPCs() {
             }
           )
         })
-        .on('error', function (err: Error) {
+        .on('error', function (error: Error) {
           WindowManager?.instance.currentWindow?.webContents.send(
             DownloadEvent.onFileDownloadError,
             {
               fileName,
-              err,
               modelId,
+              error,
             }
           )
         })
@@ -121,7 +121,7 @@ export function handleDownloaderIPCs() {
               {
                 fileName,
                 modelId,
-                err: { message: 'aborted' },
+                error: 'aborted',
               }
             )
           }
