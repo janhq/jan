@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { resolve } from 'path'
+import { resolve, sep } from 'path'
 import { WindowManager } from './../managers/window'
 import request from 'request'
 import { createWriteStream, renameSync } from 'fs'
@@ -68,7 +68,7 @@ export function handleDownloaderIPCs() {
       if (typeof localPath === 'string') {
         localPath = normalizeFilePath(localPath)
       }
-      const array = localPath.split('/')
+      const array = localPath.split(sep)
       const fileName = array.pop() ?? ''
       const modelId = array.pop() ?? ''
 
