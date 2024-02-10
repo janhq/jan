@@ -33,41 +33,47 @@ At Jan, our mission is to advance human-machine collaboration. We achieve this t
 
 ## What's different about it?
 
-Jan is 
-
-| Mainstream                      | Jan                          |
-| ------------------------------- | ---------------------------- |
-| Closed-source                   | Open-source                  |
-| Cloud-first                     | Local-first                  |
-| AI Monopolies owned by Big Tech | Personal AI that you control |
-| Monetize your users             | Privacy as a human right     |
-| Consume                         | Create                       |
+|                                                            | Status Quo                                                             | Jan                                                                                     |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Ownership                                                  | AI Monopolies owned by Big Tech                                        | AI that you own and control                                                             |
+| Openness?                                                  | Closed-source                                                          | [Open-source (AGPLv3)](https://github.com/janhq/jan/blob/main/LICENSE)                  |
+| Your role                                                  | Consume                                                                | Create, Tinker and Customize                                                            |
+| Approach                                                   | Cloud                                                                  | [Local-first](https://www.inkandswitch.com/local-first/), running 100% on your computer |
+| Data                                                       | Data stored on their servers                                           | Data stored in your local filesystem in open, non-proprietary file formats              |
+| Privacy                                                    | Privacy?                                                               | Runs 100% on your own machine, predictably, privately and offline                       |
+| Transparency                                               | "Black Box"                                                            | Runs predictability with code available to tinker and customize                         |
+| What happens if there's an outage or goes out of business? | Your life's work held hostage in the cloud in proprietary data formats[^1] | Continues to run 100% on your computer, your data is safe in your local folder          |
+| Driving Philosophy                                         | Monetize your users                                                    | Privacy as a human right and the [Right to Repair](https://www.repair.org/)             |
 
 ## How do I get it?
 
+You can install and start using Jan in less than 5 minutes, from [jan.ai](https://jan.ai) or our [Github repo](https://github.com/janhq/jan). 
+
+You can read the [User Guide](/docs/user-guide) if you need some help to get started. 
+
 ## What license is the code under?
+
+Jan is licensed under the [AGPLv3 License](https://github.com/janhq/jan/blob/main/LICENSE). 
+
+We happily accept pull requests, however we do ask that you sign a [Contributor License Agreement](https://en.wikipedia.org/wiki/Contributor_License_Agreement) so that we have the right to relicense your contributions[^2]. 
+
+We also have a [Contributor Program](/docs/team/contributor-program) to provide ownership and upside to contributors who have made significant contributions to the project.
 
 ## What was it built with?
 
+Jan is pragmatically built using Javascript at the application level, and C++ at the Inference level (which we have refactored into [Nitro](https://nitro.jan.ai)). We use [Electron](https://www.electronjs.org/) to build the desktop client. 
 
-
-
-
-Jan is built on an open-source, modular framework 
-
- that runs on your own computer, with a local API server. It is a ChatGPT-alternative that is designed to be private, local, and free from subscription fees.
-
-
-
-Jan believes in the need for an **open source AI ecosystem**. We are focused on building the infra and tooling to allow open source AIs to compete on a level playing field with proprietary ones.
-
-Jan's long-term technical endeavor is to build a cognitive framework for future robots, who are practical, useful assistants for humans and businesses in everyday life.
+We have made similar choices to the [Next.js Enterprise Javascript Stack](https://vercel.com/templates/next.js/nextjs-enterprise-boilerplate), which is a [battle-tested](https://nextjs.org/showcase/enterprise) framework for building enterprise-grade applications.
 
 ## Contact
 
 Drop us a message in our [Discord](https://discord.gg/af6SaTdzpx) and we'll get back to you.
 
 - `#general`: for general discussion
-- `#jan-dev`: for Jan-related questions
-- `#nitro-dev`: for Nitro-related questions
-- '#bd-inquiries': for enterprise license queries
+- `#get-help`: for bug reports and troubleshooting
+- `#roadmap`: for feature requests and ideas
+
+## Footnotes
+
+[^1]: Credit to Obsidian's original website
+[^2]: Credit to [Discourse's About Page](https://www.discourse.org/about)
