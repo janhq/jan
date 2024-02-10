@@ -15,7 +15,7 @@ keywords:
   ]
 ---
 
-Jan is a [local-first](https://www.inkandswitch.com/local-first/) productivity tool to [create, customize and use AI](https://www.gatesnotes.com/AI-agents) for everyday tasks. 
+Jan is a [open-source](https://en.wikipedia.org/wiki/Open_source), [local-first](https://www.inkandswitch.com/local-first/) productivity tool to [create, customize and use AI](https://www.gatesnotes.com/AI-agents). 
 
 You can: 
 - Run locally using [open-source LLMs](https://huggingface.co/models?pipeline_tag=text-generation) or connect to cloud AIs like [ChatGPT](https://openai.com/blog/openai-api) or [Google](https://ai.google.dev/)
@@ -29,11 +29,19 @@ Longer-term, Jan is building a cognitive framework for future robots. We envisio
 
 ## Why do we exist
 
-At Jan, our mission is to advance human-machine collaboration. We achieve this through delivering the best AI tools on desktop to allow users to run, customize and tinker with AI.        
+At Jan, our mission is to advance human-machine collaboration. We achieve this through delivering the best open-source, local-first tools to allow users to run, customize and tinker with AI. 
 
 ## What's different about it?
 
 Jan is 
+
+| Mainstream                      | Jan                          |
+| ------------------------------- | ---------------------------- |
+| Closed-source                   | Open-source                  |
+| Cloud-first                     | Local-first                  |
+| AI Monopolies owned by Big Tech | Personal AI that you control |
+| Monetize your users             | Privacy as a human right     |
+| Consume                         | Create                       |
 
 ## How do I get it?
 
@@ -57,17 +65,9 @@ Jan's long-term technical endeavor is to build a cognitive framework for future 
 
 ## Contact
 
-### General Enquiries
-
 Drop us a message in our [Discord](https://discord.gg/af6SaTdzpx) and we'll get back to you.
 
 - `#general`: for general discussion
 - `#jan-dev`: for Jan-related questions
 - `#nitro-dev`: for Nitro-related questions
 - '#bd-inquiries': for enterprise license queries
-
-### Careers
-
-Jan has a culture of ownership, independent thought, and lightning fast execution. If you'd like to join us, we have open positions on our [careers page](https://janai.bamboohr.com/careers).
-
-## Footnotes

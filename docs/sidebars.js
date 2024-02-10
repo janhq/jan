@@ -47,7 +47,7 @@ const sidebars = {
             "how-we-work/engineering/qa",
           ],
         },
-        "how-we-work/design/design",
+        "how-we-work/product-design/product-design",
         {
           type: "category",
           label: "Engineering",
