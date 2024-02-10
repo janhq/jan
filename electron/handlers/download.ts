@@ -1,11 +1,15 @@
 import { ipcMain } from 'electron'
-import { resolve } from 'path'
+import { resolve, sep } from 'path'
 import { WindowManager } from './../managers/window'
 import request from 'request'
 import { createWriteStream, renameSync } from 'fs'
 import { DownloadEvent, DownloadRoute } from '@janhq/core'
 const progress = require('request-progress')
-import { DownloadManager, getJanDataFolderPath, normalizeFilePath } from '@janhq/core/node'
+import {
+  DownloadManager,
+  getJanDataFolderPath,
+  normalizeFilePath,
+} from '@janhq/core/node'
 
 export function handleDownloaderIPCs() {
   /**
@@ -42,7 +46,7 @@ export function handleDownloaderIPCs() {
         DownloadEvent.onFileDownloadError,
         {
           fileName,
-          err: { message: 'aborted' },
+          error: 'aborted',
         }
       )
     }
@@ -56,20 +60,23 @@ export function handleDownloaderIPCs() {
    */
   ipcMain.handle(
     DownloadRoute.downloadFile,
-    async (_event, url, fileName, network) => {
+    async (_event, url, localPath, network) => {
       const strictSSL = !network?.ignoreSSL
       const proxy = network?.proxy?.startsWith('http')
         ? network.proxy
         : undefined
-
-      if (typeof fileName === 'string') {
-        fileName = normalizeFilePath(fileName)
+      if (typeof localPath === 'string') {
+        localPath = normalizeFilePath(localPath)
       }
-      const destination = resolve(getJanDataFolderPath(), fileName)
+      const array = localPath.split(sep)
+      const fileName = array.pop() ?? ''
+      const modelId = array.pop() ?? ''
+
+      const destination = resolve(getJanDataFolderPath(), localPath)
       const rq = request({ url, strictSSL, proxy })
 
       // Put request to download manager instance
-      DownloadManager.instance.setRequest(fileName, rq)
+      DownloadManager.instance.setRequest(localPath, rq)
 
       // Downloading file to a temp file first
       const downloadingTempFile = `${destination}.download`
@@ -81,20 +88,22 @@ export function handleDownloaderIPCs() {
             {
               ...state,
               fileName,
+              modelId,
             }
           )
         })
-        .on('error', function (err: Error) {
+        .on('error', function (error: Error) {
           WindowManager?.instance.currentWindow?.webContents.send(
             DownloadEvent.onFileDownloadError,
             {
               fileName,
-              err,
+              modelId,
+              error,
             }
           )
         })
         .on('end', function () {
-          if (DownloadManager.instance.networkRequests[fileName]) {
+          if (DownloadManager.instance.networkRequests[localPath]) {
             // Finished downloading, rename temp file to actual file
             renameSync(downloadingTempFile, destination)
 
@@ -102,15 +111,17 @@ export function handleDownloaderIPCs() {
               DownloadEvent.onFileDownloadSuccess,
               {
                 fileName,
+                modelId,
               }
             )
-            DownloadManager.instance.setRequest(fileName, undefined)
+            DownloadManager.instance.setRequest(localPath, undefined)
           } else {
             WindowManager?.instance.currentWindow?.webContents.send(
               DownloadEvent.onFileDownloadError,
               {
                 fileName,
-                err: { message: 'aborted' },
+                modelId,
+                error: 'aborted',
               }
             )
           }

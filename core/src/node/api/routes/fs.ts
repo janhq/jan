@@ -1,8 +1,9 @@
-import { FileSystemRoute } from '../../../api'
+import { FileManagerRoute, FileSystemRoute } from '../../../api'
 import { join } from 'path'
 import { HttpServer } from '../HttpServer'
 import { getJanDataFolderPath } from '../../utils'
 import { normalizeFilePath } from '../../path'
+import { writeFileSync } from 'fs'
 
 export const fsRouter = async (app: HttpServer) => {
   const moduleName = 'fs'
@@ -25,5 +26,15 @@ export const fsRouter = async (app: HttpServer) => {
         console.log(ex)
       }
     })
+  })
+  app.post(`/${FileManagerRoute.writeBlob}`, async (request: any, reply: any) => {
+    try {
+      const args = JSON.parse(request.body) as any[]
+      console.log('writeBlob:', args[0])
+      const dataBuffer = Buffer.from(args[1], 'base64')
+      writeFileSync(args[0], dataBuffer)
+    } catch (err) {
+      console.error(`writeFile ${request.body} result: ${err}`)
+    }
   })
 }

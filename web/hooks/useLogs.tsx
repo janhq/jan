@@ -5,12 +5,12 @@ import {
   getJanDataFolderPath,
 } from '@janhq/core'
 
-export const useServerLog = () => {
-  const getServerLog = async () => {
-    if (!(await fs.existsSync(await joinPath(['file://logs', 'server.log']))))
+export const useLogs = () => {
+  const getLogs = async (file: string) => {
+    if (!(await fs.existsSync(await joinPath(['file://logs', `${file}.log`]))))
       return {}
     const logs = await fs.readFileSync(
-      await joinPath(['file://logs', 'server.log']),
+      await joinPath(['file://logs', `${file}.log`]),
       'utf-8'
     )
 
@@ -25,5 +25,5 @@ export const useServerLog = () => {
   const clearServerLog = async () => {
     await fs.writeFileSync(await joinPath(['file://logs', 'server.log']), '')
   }
-  return { getServerLog, openServerLog, clearServerLog }
+  return { getLogs, openServerLog, clearServerLog }
 }

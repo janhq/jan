@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+
 import {
   ExtensionTypeEnum,
   Thread,
@@ -5,14 +7,13 @@ import {
   ConversationalExtension,
 } from '@janhq/core'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 
 import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
   ModelParams,
-  activeThreadAtom,
   threadModelParamsAtom,
   threadStatesAtom,
   threadsAtom,
@@ -22,11 +23,10 @@ const useThreads = () => {
   const setThreadStates = useSetAtom(threadStatesAtom)
   const setThreads = useSetAtom(threadsAtom)
   const setThreadModelRuntimeParams = useSetAtom(threadModelParamsAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
   const { setActiveThread } = useSetActiveThread()
 
-  const getThreads = async () => {
-    try {
+  useEffect(() => {
+    const getThreads = async () => {
       const localThreads = await getLocalThreads()
       const localThreadStates: Record<string, ThreadState> = {}
       const threadModelParams: Record<string, ModelParams> = {}
@@ -54,17 +54,19 @@ const useThreads = () => {
       setThreadStates(localThreadStates)
       setThreads(localThreads)
       setThreadModelRuntimeParams(threadModelParams)
-      if (localThreads.length && !activeThread) {
+
+      if (localThreads.length > 0) {
         setActiveThread(localThreads[0])
       }
-    } catch (error) {
-      console.error(error)
     }
-  }
 
-  return {
-    getThreads,
-  }
+    getThreads()
+  }, [
+    setActiveThread,
+    setThreadModelRuntimeParams,
+    setThreadStates,
+    setThreads,
+  ])
 }
 
 const getLocalThreads = async (): Promise<Thread[]> =>
