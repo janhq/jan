@@ -1,6 +1,6 @@
 {
   "name": "@janhq/monitoring-extension",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "This extension provides system health and OS level data",
   "main": "dist/index.js",
   "module": "dist/module.js",
@@ -8,17 +8,17 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install"
+    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "rimraf": "^3.0.2",
     "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4"
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.0"
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
-    "node-os-utils": "^1.3.7",
-    "ts-loader": "^9.5.0"
+    "node-os-utils": "^1.3.7"
   },
   "files": [
     "dist/*",
@@ -26,6 +26,7 @@
     "README.md"
   ],
   "bundleDependencies": [
-    "node-os-utils"
+    "node-os-utils",
+    "@janhq/core"
   ]
 }

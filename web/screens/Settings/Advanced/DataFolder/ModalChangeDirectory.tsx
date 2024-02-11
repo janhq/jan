@@ -11,20 +11,23 @@ import {
   Button,
 } from '@janhq/uikit'
 
-import { useVaultDirectory } from '@/hooks/useVaultDirectory'
+import { atom, useAtom } from 'jotai'
 
-const ModalChangeDirectory = () => {
-  const {
-    isDirectoryConfirm,
-    setIsDirectoryConfirm,
-    applyNewDestination,
-    newDestinationPath,
-  } = useVaultDirectory()
+export const showDirectoryConfirmModalAtom = atom(false)
+
+type Props = {
+  destinationPath: string
+  onUserConfirmed: () => void
+}
+
+const ModalChangeDirectory: React.FC<Props> = ({
+  destinationPath,
+  onUserConfirmed,
+}) => {
+  const [show, setShow] = useAtom(showDirectoryConfirmModalAtom)
+
   return (
-    <Modal
-      open={isDirectoryConfirm}
-      onOpenChange={() => setIsDirectoryConfirm(false)}
-    >
+    <Modal open={show} onOpenChange={setShow}>
       <ModalPortal />
       <ModalContent>
         <ModalHeader>
@@ -32,18 +35,16 @@ const ModalChangeDirectory = () => {
         </ModalHeader>
         <p className="text-muted-foreground">
           Are you sure you want to relocate Jan data folder to{' '}
-          <span className="font-medium text-foreground">
-            {newDestinationPath}
-          </span>
+          <span className="font-medium text-foreground">{destinationPath}</span>
           ? A restart will be required afterward.
         </p>
         <ModalFooter>
           <div className="flex gap-x-2">
-            <ModalClose asChild onClick={() => setIsDirectoryConfirm(false)}>
+            <ModalClose asChild onClick={() => setShow(false)}>
               <Button themes="ghost">Cancel</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button onClick={applyNewDestination} autoFocus>
+              <Button onClick={onUserConfirmed} autoFocus>
                 Yes, Proceed
               </Button>
             </ModalClose>

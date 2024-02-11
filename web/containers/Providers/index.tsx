@@ -6,8 +6,6 @@ import { Toaster } from 'react-hot-toast'
 
 import { TooltipProvider } from '@janhq/uikit'
 
-import { PostHogProvider } from 'posthog-js/react'
-
 import GPUDriverPrompt from '@/containers/GPUDriverPromptModal'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
@@ -21,7 +19,11 @@ import {
   setupBaseExtensions,
 } from '@/services/extensionService'
 
-import { instance } from '@/utils/posthog'
+import Umami from '@/utils/umami'
+
+import Loader from '../Loader'
+
+import DataLoader from './DataLoader'
 
 import KeyListener from './KeyListener'
 
@@ -32,6 +34,7 @@ const Providers = (props: PropsWithChildren) => {
 
   const [setupCore, setSetupCore] = useState(false)
   const [activated, setActivated] = useState(false)
+  const [settingUp, setSettingUp] = useState(false)
 
   async function setupExtensions() {
     // Register all active extensions
@@ -39,11 +42,13 @@ const Providers = (props: PropsWithChildren) => {
 
     setTimeout(async () => {
       if (!isCoreExtensionInstalled()) {
-        setupBaseExtensions()
+        setSettingUp(true)
+        await setupBaseExtensions()
         return
       }
 
       extensionManager.load()
+      setSettingUp(false)
       setActivated(true)
     }, 500)
   }
@@ -70,25 +75,25 @@ const Providers = (props: PropsWithChildren) => {
   }, [setupCore])
 
   return (
-    <PostHogProvider client={instance}>
-      <JotaiWrapper>
-        <ThemeWrapper>
-          {setupCore && activated && (
-            <KeyListener>
-              <FeatureToggleWrapper>
-                <EventListenerWrapper>
-                  <TooltipProvider delayDuration={0}>
-                    {children}
-                  </TooltipProvider>
-                  {!isMac && <GPUDriverPrompt />}
-                </EventListenerWrapper>
-                <Toaster position="top-right" />
-              </FeatureToggleWrapper>
-            </KeyListener>
-          )}
-        </ThemeWrapper>
-      </JotaiWrapper>
-    </PostHogProvider>
+    <JotaiWrapper>
+      <ThemeWrapper>
+        <Umami />
+        {settingUp && <Loader description="Preparing Update..." />}
+        {setupCore && activated && (
+          <KeyListener>
+            <FeatureToggleWrapper>
+              <EventListenerWrapper>
+                <TooltipProvider delayDuration={0}>
+                  <DataLoader>{children}</DataLoader>
+                </TooltipProvider>
+                {!isMac && <GPUDriverPrompt />}
+              </EventListenerWrapper>
+              <Toaster />
+            </FeatureToggleWrapper>
+          </KeyListener>
+        )}
+      </ThemeWrapper>
+    </JotaiWrapper>
   )
 }
 

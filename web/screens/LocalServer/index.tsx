@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
 import ScrollToBottom from 'react-scroll-to-bottom'
 
@@ -21,31 +20,36 @@ import {
   SelectValue,
 } from '@janhq/uikit'
 
-import { atom, useAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { Paintbrush, CodeIcon } from 'lucide-react'
 import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 
+import { AlertTriangleIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import CardSidebar from '@/containers/CardSidebar'
+
 import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
-import { useServerLog } from '@/hooks/useServerLog'
+import ModalTroubleShooting, {
+  modalTroubleShootingAtom,
+} from '@/containers/ModalTroubleShoot'
+import ServerLogs from '@/containers/ServerLogs'
+
+import { loadModelErrorAtom, useActiveModel } from '@/hooks/useActiveModel'
+import { useLogs } from '@/hooks/useLogs'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toSettingParams } from '@/utils/modelParam'
 
 import EngineSetting from '../Chat/EngineSetting'
 
-import settingComponentBuilder from '../Chat/ModelSetting/settingComponentBuilder'
+import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
 
 import { showRightSideBarAtom } from '../Chat/Sidebar'
-
-import Logs from './Logs'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
@@ -58,51 +62,54 @@ const portAtom = atom('1337')
 const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
-  const showing = useAtomValue(showRightSideBarAtom)
+  const showRightSideBar = useAtomValue(showRightSideBarAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
   const modelEngineParams = toSettingParams(activeModelParams)
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
-  const { openServerLog, clearServerLog } = useServerLog()
+  const { openServerLog, clearServerLog } = useLogs()
   const { startModel, stateModel } = useActiveModel()
-  const [selectedModel] = useAtom(selectedModelAtom)
+  const selectedModel = useAtomValue(selectedModelAtom)
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
   const [host, setHost] = useAtom(hostAtom)
   const [port, setPort] = useAtom(portAtom)
+  const [loadModelError, setLoadModelError] = useAtom(loadModelErrorAtom)
+
+  const hostOptions = ['127.0.0.1', '0.0.0.0']
 
   const FIRST_TIME_VISIT_API_SERVER = 'firstTimeVisitAPIServer'
 
   const [firstTimeVisitAPIServer, setFirstTimeVisitAPIServer] =
     useState<boolean>(false)
 
-  const handleChangePort = (value: any) => {
-    if (Number(value) <= 0 || Number(value) >= 65536) {
-      setErrorRangePort(true)
-    } else {
-      setErrorRangePort(false)
-    }
-    setPort(value)
-  }
+  const handleChangePort = useCallback(
+    (value: string) => {
+      if (Number(value) <= 0 || Number(value) >= 65536) {
+        setErrorRangePort(true)
+      } else {
+        setErrorRangePort(false)
+      }
+      setPort(value)
+    },
+    [setPort]
+  )
 
   useEffect(() => {
-    if (
-      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === null ||
-      localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === 'true'
-    ) {
-      localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'true')
+    if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) == null) {
       setFirstTimeVisitAPIServer(true)
     }
   }, [firstTimeVisitAPIServer])
 
   useEffect(() => {
     handleChangePort(port)
-  }, [])
+  }, [handleChangePort, port])
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full" data-testid="local-server-testid">
       {/* Left SideBar */}
       <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
         <div className="p-4">
@@ -116,11 +123,12 @@ const LocalServerScreen = () => {
             <Button
               block
               themes={serverEnabled ? 'danger' : 'primary'}
-              disabled={stateModel.loading || errorRangePort}
+              disabled={stateModel.loading || errorRangePort || !selectedModel}
               onClick={() => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
                   setServerEnabled(false)
+                  setLoadModelError(undefined)
                 } else {
                   startModel(String(selectedModel?.id))
                   window.core?.api?.startServer({
@@ -166,8 +174,19 @@ const LocalServerScreen = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="127.0.0.1">127.0.0.1</SelectItem>
-                      <SelectItem value="0.0.0.0">0.0.0.0</SelectItem>
+                      {hostOptions.map((option, i) => {
+                        return (
+                          <SelectItem
+                            key={i}
+                            value={option}
+                            className={twMerge(
+                              host === option && 'bg-secondary'
+                            )}
+                          >
+                            {option}
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
 
@@ -176,6 +195,7 @@ const LocalServerScreen = () => {
                       'w-[70px] flex-shrink-0',
                       errorRangePort && 'border-danger'
                     )}
+                    type="number"
                     value={port}
                     onChange={(e) => {
                       handleChangePort(e.target.value)
@@ -275,7 +295,7 @@ const LocalServerScreen = () => {
 
       {/* Middle Bar */}
       <ScrollToBottom className="relative flex h-full w-full flex-col overflow-auto bg-background">
-        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-secondary/30">
+        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-zinc-600">
           <h2 className="font-bold">Server Logs</h2>
           <div className="space-x-2">
             <Button
@@ -337,7 +357,9 @@ const LocalServerScreen = () => {
             </div>
           </div>
         ) : (
-          <Logs />
+          <div className="p-4">
+            <ServerLogs />
+          </div>
         )}
       </ScrollToBottom>
 
@@ -345,15 +367,49 @@ const LocalServerScreen = () => {
       <div
         className={twMerge(
           'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background transition-all duration-100 dark:bg-background/20',
-          showing
+          showRightSideBar
             ? 'w-80 translate-x-0 opacity-100'
             : 'w-0 translate-x-full opacity-0'
         )}
       >
-        <div className="px-4">
-          <div className="mt-4">
-            <DropdownListSidebar />
+        <div className="px-4 pt-4">
+          <div className="mb-4 flex items-start space-x-2">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              className="mt-1 flex-shrink-0"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                fill-rule="evenodd"
+                clip-rule="evenodd"
+                d="M9.00033 17.3337C13.6027 17.3337 17.3337 13.6027 17.3337 9.00033C17.3337 4.39795 13.6027 0.666992 9.00033 0.666992C4.39795 0.666992 0.666992 4.39795 0.666992 9.00033C0.666992 10.9978 1.36978 12.8311 2.54157 14.2666L0.910703 15.9111C0.390085 16.436 0.758808 17.3337 1.49507 17.3337H9.00033ZM5.25033 7.33366C5.25033 6.87342 5.62342 6.50033 6.08366 6.50033H11.917C12.3772 6.50033 12.7503 6.87342 12.7503 7.33366C12.7503 7.7939 12.3772 8.16699 11.917 8.16699H6.08366C5.62342 8.16699 5.25033 7.7939 5.25033 7.33366ZM6.08366 9.83366C5.62342 9.83366 5.25033 10.2068 5.25033 10.667C5.25033 11.1272 5.62342 11.5003 6.08366 11.5003H8.58366C9.0439 11.5003 9.41699 11.1272 9.41699 10.667C9.41699 10.2068 9.0439 9.83366 8.58366 9.83366H6.08366Z"
+                fill="#2563EB"
+              />
+            </svg>
+
+            <p>
+              You can concurrently send requests to one active local model and
+              multiple remote models.
+            </p>
           </div>
+          <DropdownListSidebar strictedThread={false} />
+          {loadModelError && (
+            <div className="mt-3 flex space-x-2 text-xs">
+              <AlertTriangleIcon size={16} className="text-danger" />
+              <span>
+                Model failed to start. Access{' '}
+                <span
+                  className="cursor-pointer text-primary dark:text-blue-400"
+                  onClick={() => setModalTroubleShooting(true)}
+                >
+                  troubleshooting assistance
+                </span>
+              </span>
+            </div>
+          )}
 
           {componentDataEngineSetting.filter(
             (x) => x.name === 'prompt_template'
@@ -361,7 +417,11 @@ const LocalServerScreen = () => {
             <div className="mt-4">
               <CardSidebar title="Model Parameters" asChild>
                 <div className="px-2 py-4">
-                  {settingComponentBuilder(componentDataEngineSetting, true)}
+                  <SettingComponentBuilder
+                    enabled={!serverEnabled}
+                    componentData={componentDataEngineSetting}
+                    selector={(x) => x.name === 'prompt_template'}
+                  />
                 </div>
               </CardSidebar>
             </div>
@@ -371,13 +431,14 @@ const LocalServerScreen = () => {
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting />
+                  <EngineSetting enabled={!serverEnabled} />
                 </div>
               </CardSidebar>
             </div>
           )}
         </div>
       </div>
+      <ModalTroubleShooting />
     </div>
   )
 }

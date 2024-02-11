@@ -9,7 +9,10 @@ import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
+import ModalTroubleShooting, {
+  modalTroubleShootingAtom,
+} from '@/containers/ModalTroubleShoot'
+
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { extensionManager } from '@/extension'
@@ -17,7 +20,6 @@ import {
   deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
@@ -25,8 +27,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const thread = useAtomValue(activeThreadAtom)
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const { resendChatMessage } = useSendChatMessage()
-  const { activeModel } = useActiveModel()
-  const totalRam = useAtomValue(totalRamAtom)
+  const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
   const regenerateMessage = async () => {
     const lastMessageIndex = messages.length - 1
@@ -68,36 +69,22 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         </div>
       )}
       {message.status === MessageStatus.Error && (
-        <div key={message.id} className="mt-10 flex flex-col items-center">
-          <span className="mb-3 text-center text-sm font-medium text-gray-500">
-            {Number(activeModel?.metadata.size) > totalRam ? (
-              <>
-                Oops! Model size exceeds available RAM. Consider selecting a
-                smaller model or upgrading your RAM for smoother performance.
-              </>
-            ) : (
-              <>
-                <p>Apologies, something&apos;s amiss!</p>
-                Jan&apos;s in beta. Find troubleshooting guides{' '}
-                <a
-                  href="https://jan.ai/guides/troubleshooting"
-                  target="_blank"
-                  className="text-blue-600 hover:underline dark:text-blue-300"
-                >
-                  here
-                </a>{' '}
-                or reach out to us on{' '}
-                <a
-                  href="https://discord.gg/AsJ8krTT3N"
-                  target="_blank"
-                  className="text-blue-600 hover:underline dark:text-blue-300"
-                >
-                  Discord
-                </a>{' '}
-                for assistance.
-              </>
-            )}
-          </span>
+        <div
+          key={message.id}
+          className="flex flex-col items-center text-center text-sm font-medium text-gray-500"
+        >
+          <p>{`Apologies, something’s amiss!`}</p>
+          <p>
+            Jan’s in beta. Access&nbsp;
+            <span
+              className="cursor-pointer text-primary dark:text-blue-400"
+              onClick={() => setModalTroubleShooting(true)}
+            >
+              troubleshooting assistance
+            </span>
+            &nbsp;now.
+          </p>
+          <ModalTroubleShooting />
         </div>
       )}
     </>

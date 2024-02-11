@@ -6,11 +6,11 @@ import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toSettingParams } from '@/utils/modelParam'
 
-import settingComponentBuilder from '../ModelSetting/settingComponentBuilder'
+import SettingComponentBuilder from '../ModelSetting/SettingComponent'
 
 import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
-const EngineSetting = () => {
+const EngineSetting = ({ enabled = true }: { enabled?: boolean }) => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
 
@@ -18,13 +18,18 @@ const EngineSetting = () => {
 
   const modelSettingParams = toSettingParams(activeModelParams)
 
-  const componentData = getConfigurationsData(modelSettingParams, selectedModel)
-
-  componentData.sort((a, b) => a.title.localeCompare(b.title))
+  const componentData = getConfigurationsData(
+    modelSettingParams,
+    selectedModel
+  ).toSorted((a, b) => a.title.localeCompare(b.title))
 
   return (
     <div className="flex flex-col">
-      {settingComponentBuilder(componentData)}
+      <SettingComponentBuilder
+        componentData={componentData}
+        enabled={enabled}
+        selector={(e) => e.name !== 'prompt_template'}
+      />
     </div>
   )
 }

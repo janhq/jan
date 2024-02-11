@@ -10,7 +10,7 @@ const ExploreModelList: React.FC<Props> = ({ models }) => {
   const takenModelIds: string[] = []
   const featuredModels = models
     .filter((m) => {
-      if (m.metadata.tags.includes('Featured')) {
+      if (m.metadata?.tags?.includes('Featured')) {
         takenModelIds.push(m.id)
         return m
       }
@@ -19,7 +19,7 @@ const ExploreModelList: React.FC<Props> = ({ models }) => {
 
   const recommendedModels = models
     .filter((m) => {
-      if (m.metadata.tags.includes('Recommended')) {
+      if (m.metadata?.tags?.includes('Recommended')) {
         takenModelIds.push(m.id)
         return m
       }

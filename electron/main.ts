@@ -25,9 +25,11 @@ import { migrateExtensions } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
 import { setupExtensions } from './utils/extension'
 import { setupCore } from './utils/setup'
+import { setupReactDevTool } from './utils/dev'
 
 app
   .whenReady()
+  .then(setupReactDevTool)
   .then(setupCore)
   .then(createUserSpace)
   .then(migrateExtensions)

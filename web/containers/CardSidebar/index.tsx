@@ -13,10 +13,13 @@ import { useClickOutside } from '@/hooks/useClickOutside'
 
 import { usePath } from '@/hooks/usePath'
 
+import { openFileTitle } from '@/utils/titleUtils'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 interface Props {
   children: ReactNode
+  rightAction?: ReactNode
   title: string
   asChild?: boolean
   hideMoreVerticalAction?: boolean
@@ -25,6 +28,7 @@ export default function CardSidebar({
   children,
   title,
   asChild,
+  rightAction,
   hideMoreVerticalAction,
 }: Props) {
   const [show, setShow] = useState(true)
@@ -36,13 +40,6 @@ export default function CardSidebar({
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
-  let openFolderTitle: string = 'Open Containing Folder'
-  if (isMac) {
-    openFolderTitle = 'Show in Finder'
-  } else if (isWindows) {
-    openFolderTitle = 'Show in File Explorer'
-  }
-
   return (
     <div
       className={twMerge(
@@ -53,27 +50,16 @@ export default function CardSidebar({
       <div
         className={twMerge(
           'relative flex items-center justify-between pl-4',
-          show && 'border-b border-border'
+          show && children && 'border-b border-border'
         )}
       >
-        <span className="font-bold">{title}</span>
-        <div className="flex">
-          {!asChild && (
-            <>
-              {!hideMoreVerticalAction && (
-                <div
-                  ref={setToggle}
-                  className="cursor-pointer rounded-lg bg-zinc-100 p-2 pr-0 dark:bg-zinc-900"
-                  onClick={() => setMore(!more)}
-                >
-                  <MoreVerticalIcon className="h-5 w-5" />
-                </div>
-              )}
-            </>
-          )}
+        <div className="flex items-center ">
           <button
-            onClick={() => setShow(!show)}
-            className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-900"
+            onClick={() => {
+              if (!children) return
+              setShow(!show)
+            }}
+            className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 py-2 pr-2 dark:bg-zinc-900"
           >
             <ChevronDownIcon
               className={twMerge(
@@ -82,6 +68,23 @@ export default function CardSidebar({
               )}
             />
           </button>
+          <span className="font-bold">{title}</span>
+        </div>
+        <div className="flex">
+          {rightAction && rightAction}
+          {!asChild && (
+            <>
+              {!hideMoreVerticalAction && (
+                <div
+                  ref={setToggle}
+                  className="cursor-pointer rounded-lg bg-zinc-100 p-2 px-3 dark:bg-zinc-900"
+                  onClick={() => setMore(!more)}
+                >
+                  <MoreVerticalIcon className="h-5 w-5" />
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {more && (
@@ -110,7 +113,7 @@ export default function CardSidebar({
                 {title === 'Model' ? (
                   <div className="flex flex-col">
                     <span className="font-medium text-black dark:text-muted-foreground">
-                      {openFolderTitle}
+                      {openFileTitle()}
                     </span>
                     <span className="mt-1 text-muted-foreground">
                       Opens thread.json. Changes affect this thread only.
@@ -118,7 +121,7 @@ export default function CardSidebar({
                   </div>
                 ) : (
                   <span className="text-bold text-black dark:text-muted-foreground">
-                    Show in Finder
+                    {openFileTitle()}
                   </span>
                 )}
               </>
@@ -153,7 +156,10 @@ export default function CardSidebar({
                       </>
                     ) : (
                       <>
-                        Opens <span className="lowercase">{title}.json.</span>
+                        Opens{' '}
+                        <span className="lowercase">
+                          {title === 'Tools' ? 'assistant' : title}.json.
+                        </span>
                         &nbsp;Changes affect all new threads.
                       </>
                     )}

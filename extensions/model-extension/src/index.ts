@@ -8,7 +8,13 @@ import {
   ModelExtension,
   Model,
   getJanDataFolderPath,
+  events,
+  DownloadEvent,
+  DownloadRoute,
+  ModelEvent,
 } from '@janhq/core'
+import { DownloadState } from '@janhq/core/.'
+import { extractFileName } from './helpers/path'
 
 /**
  * A extension for models
@@ -29,6 +35,8 @@ export default class JanModelExtension extends ModelExtension {
    */
   async onLoad() {
     this.copyModelsToHomeDir()
+    // Handle Desktop Events
+    this.handleDesktopEvents()
   }
 
   /**
@@ -61,6 +69,8 @@ export default class JanModelExtension extends ModelExtension {
 
       // Finished migration
       localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION)
+
+      events.emit(ModelEvent.OnModelsUpdate, {})
     } catch (err) {
       console.error(err)
     }
@@ -83,31 +93,66 @@ export default class JanModelExtension extends ModelExtension {
     if (model.sources.length > 1) {
       // path to model binaries
       for (const source of model.sources) {
-        let path = this.extractFileName(source.url)
+        let path = extractFileName(
+          source.url,
+          JanModelExtension._supportedModelFormat
+        )
         if (source.filename) {
           path = await joinPath([modelDirPath, source.filename])
         }
 
         downloadFile(source.url, path, network)
       }
+      // TODO: handle multiple binaries for web later
     } else {
-      const fileName = this.extractFileName(model.sources[0]?.url)
+      const fileName = extractFileName(
+        model.sources[0]?.url,
+        JanModelExtension._supportedModelFormat
+      )
       const path = await joinPath([modelDirPath, fileName])
       downloadFile(model.sources[0]?.url, path, network)
+
+      if (window && window.core?.api && window.core.api.baseApiUrl) {
+        this.startPollingDownloadProgress(model.id)
+      }
     }
   }
 
   /**
-   *  try to retrieve the download file name from the source url
+   * Specifically for Jan server.
    */
-  private extractFileName(url: string): string {
-    const extractedFileName = url.split('/').pop()
-    const fileName = extractedFileName
-      .toLowerCase()
-      .endsWith(JanModelExtension._supportedModelFormat)
-      ? extractedFileName
-      : extractedFileName + JanModelExtension._supportedModelFormat
-    return fileName
+  private async startPollingDownloadProgress(modelId: string): Promise<void> {
+    // wait for some seconds before polling
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+
+    return new Promise((resolve) => {
+      const interval = setInterval(async () => {
+        fetch(
+          `${window.core.api.baseApiUrl}/v1/download/${DownloadRoute.getDownloadProgress}/${modelId}`,
+          {
+            method: 'GET',
+            headers: { contentType: 'application/json' },
+          }
+        ).then(async (res) => {
+          const state: DownloadState = await res.json()
+          if (state.downloadState === 'end') {
+            events.emit(DownloadEvent.onFileDownloadSuccess, state)
+            clearInterval(interval)
+            resolve()
+            return
+          }
+
+          if (state.downloadState === 'error') {
+            events.emit(DownloadEvent.onFileDownloadError, state)
+            clearInterval(interval)
+            resolve()
+            return
+          }
+
+          events.emit(DownloadEvent.onFileDownloadUpdate, state)
+        })
+      }, 1000)
+    })
   }
 
   /**
@@ -286,6 +331,7 @@ export default class JanModelExtension extends ModelExtension {
    * model.json file associated with it.
    *
    * This function will create a model.json file for the model.
+   * It works only with single binary file model.
    *
    * @param dirName the director which reside in ~/jan/models but does not have model.json file.
    */
@@ -302,15 +348,14 @@ export default class JanModelExtension extends ModelExtension {
     let binaryFileSize: number | undefined = undefined
 
     for (const file of files) {
-      if (file.endsWith(JanModelExtension._incompletedModelFileName)) continue
-      if (file.endsWith('.json')) continue
-
-      const path = await joinPath([JanModelExtension._homeDir, dirName, file])
-      const fileStats = await fs.fileStat(path)
-      if (fileStats.isDirectory) continue
-      binaryFileSize = fileStats.size
-      binaryFileName = file
-      break
+      if (file.endsWith(JanModelExtension._supportedModelFormat)) {
+        const path = await joinPath([JanModelExtension._homeDir, dirName, file])
+        const fileStats = await fs.fileStat(path)
+        if (fileStats.isDirectory) continue
+        binaryFileSize = fileStats.size
+        binaryFileName = file
+        break
+      }
     }
 
     if (!binaryFileName) {
@@ -318,7 +363,7 @@ export default class JanModelExtension extends ModelExtension {
       return
     }
 
-    const defaultModel = await this.getDefaultModel()
+    const defaultModel = (await this.getDefaultModel()) as Model
     if (!defaultModel) {
       console.error('Unable to find default model')
       return
@@ -326,8 +371,19 @@ export default class JanModelExtension extends ModelExtension {
 
     const model: Model = {
       ...defaultModel,
+      // Overwrite default N/A fields
       id: dirName,
       name: dirName,
+      sources: [
+        {
+          url: binaryFileName,
+          filename: binaryFileName,
+        },
+      ],
+      settings: {
+        ...defaultModel.settings,
+        llama_model_path: binaryFileName,
+      },
       created: Date.now(),
       description: `${dirName} - user self import model`,
       metadata: {
@@ -370,5 +426,29 @@ export default class JanModelExtension extends ModelExtension {
    */
   async getConfiguredModels(): Promise<Model[]> {
     return this.getModelsMetadata()
+  }
+
+  handleDesktopEvents() {
+    if (window && window.electronAPI) {
+      window.electronAPI.onFileDownloadUpdate(
+        async (_event: string, state: any | undefined) => {
+          if (!state) return
+          state.downloadState = 'update'
+          events.emit(DownloadEvent.onFileDownloadUpdate, state)
+        }
+      )
+      window.electronAPI.onFileDownloadError(
+        async (_event: string, state: any) => {
+          state.downloadState = 'error'
+          events.emit(DownloadEvent.onFileDownloadError, state)
+        }
+      )
+      window.electronAPI.onFileDownloadSuccess(
+        async (_event: string, state: any) => {
+          state.downloadState = 'end'
+          events.emit(DownloadEvent.onFileDownloadSuccess, state)
+        }
+      )
+    }
   }
 }

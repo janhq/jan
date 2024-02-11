@@ -24,15 +24,12 @@ const nextConfig = {
     config.plugins = [
       ...config.plugins,
       new webpack.DefinePlugin({
-        PLUGIN_CATALOG: JSON.stringify(
-          'https://cdn.jsdelivr.net/npm/@janhq/plugin-catalog@latest/dist/index.js'
-        ),
         VERSION: JSON.stringify(packageJson.version),
-        ANALYTICS_ID:
-          JSON.stringify(process.env.ANALYTICS_ID) ?? JSON.stringify('xxx'),
-        ANALYTICS_HOST:
-          JSON.stringify(process.env.ANALYTICS_HOST) ?? JSON.stringify('xxx'),
-        API_BASE_URL: JSON.stringify('http://localhost:1337'),
+        ANALYTICS_ID: JSON.stringify(process.env.ANALYTICS_ID),
+        ANALYTICS_HOST: JSON.stringify(process.env.ANALYTICS_HOST),
+        API_BASE_URL: JSON.stringify(
+          process.env.API_BASE_URL ?? 'http://localhost:1337'
+        ),
         isMac: process.platform === 'darwin',
         isWindows: process.platform === 'win32',
         isLinux: process.platform === 'linux',

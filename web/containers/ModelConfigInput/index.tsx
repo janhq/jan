@@ -7,65 +7,26 @@ import {
   TooltipTrigger,
 } from '@janhq/uikit'
 
-import { useAtomValue, useSetAtom } from 'jotai'
-
 import { InfoIcon } from 'lucide-react'
-
-import { useActiveModel } from '@/hooks/useActiveModel'
-import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
-
-import { getConfigurationsData } from '@/utils/componentSettings'
-
-import { toSettingParams } from '@/utils/modelParam'
-
-import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
-import {
-  engineParamsUpdateAtom,
-  getActiveThreadIdAtom,
-  getActiveThreadModelParamsAtom,
-} from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   title: string
+  enabled?: boolean
   name: string
   description: string
   placeholder: string
   value: string
+  onValueChanged?: (e: string | number | boolean) => void
 }
 
 const ModelConfigInput: React.FC<Props> = ({
   title,
-  name,
+  enabled = true,
   value,
   description,
   placeholder,
+  onValueChanged,
 }) => {
-  const { updateModelParameter } = useUpdateModelParameters()
-  const threadId = useAtomValue(getActiveThreadIdAtom)
-
-  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-
-  const modelSettingParams = toSettingParams(activeModelParams)
-
-  const engineParams = getConfigurationsData(modelSettingParams)
-
-  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
-
-  const { stopModel } = useActiveModel()
-
-  const serverEnabled = useAtomValue(serverEnabledAtom)
-
-  const onValueChanged = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    if (!threadId) return
-    if (engineParams.some((x) => x.name.includes(name))) {
-      setEngineParamsUpdate(true)
-      stopModel()
-    } else {
-      setEngineParamsUpdate(false)
-    }
-    updateModelParameter(threadId, name, e.target.value)
-  }
-
   return (
     <div className="flex flex-col">
       <div className="mb-2 flex items-center gap-x-2">
@@ -86,9 +47,9 @@ const ModelConfigInput: React.FC<Props> = ({
       </div>
       <Textarea
         placeholder={placeholder}
-        onChange={onValueChanged}
+        onChange={(e) => onValueChanged?.(e.target.value)}
         value={value}
-        disabled={serverEnabled}
+        disabled={!enabled}
       />
     </div>
   )

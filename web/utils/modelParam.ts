@@ -22,7 +22,7 @@ export const toRuntimeParams = (
 
   for (const [key, value] of Object.entries(modelParams)) {
     if (key in defaultModelParams) {
-      runtimeParams[key as keyof ModelRuntimeParams] = value
+      Object.assign(runtimeParams, { ...runtimeParams, [key]: value })
     }
   }
 
@@ -47,7 +47,7 @@ export const toSettingParams = (
 
   for (const [key, value] of Object.entries(modelParams)) {
     if (key in defaultSettingParams) {
-      settingParams[key as keyof ModelSettingParams] = value
+      Object.assign(settingParams, { ...settingParams, [key]: value })
     }
   }
 

@@ -41,7 +41,7 @@ export function requestInference(
       .then(async (response) => {
         if (!response.ok) {
           subscriber.next(
-            (await response.json()).error?.message ?? "Error occured"
+            (await response.json()).error?.message ?? "Error occurred."
           );
           subscriber.complete();
           return;

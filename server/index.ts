@@ -38,6 +38,7 @@ export interface ServerConfig {
   isVerboseEnabled?: boolean;
   schemaPath?: string;
   baseDir?: string;
+  storageAdataper?: any;
 }
 
 /**
@@ -103,9 +104,12 @@ export const startServer = async (configs?: ServerConfig) => {
       { prefix: "extensions" }
     );
 
+    // Register proxy middleware
+    if (configs?.storageAdataper)
+      server.addHook("preHandler", configs.storageAdataper);
+
     // Register API routes
     await server.register(v1Router, { prefix: "/v1" });
-
     // Start listening for requests
     await server
       .listen({

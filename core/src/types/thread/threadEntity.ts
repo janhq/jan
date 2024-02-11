@@ -1,3 +1,4 @@
+import { AssistantTool } from '../assistant'
 import { ModelInfo } from '../model'
 
 /**
@@ -30,6 +31,7 @@ export type ThreadAssistantInfo = {
   assistant_name: string
   model: ModelInfo
   instructions?: string
+  tools?: AssistantTool[]
 }
 
 /**
@@ -41,5 +43,4 @@ export type ThreadState = {
   waitingForResponse: boolean
   error?: Error
   lastMessage?: string
-  isFinishInit?: boolean
 }

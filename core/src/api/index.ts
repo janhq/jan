@@ -3,7 +3,6 @@
  * @description Enum of all the routes exposed by the app
  */
 export enum AppRoute {
-  appDataPath = 'appDataPath',
   openExternalUrl = 'openExternalUrl',
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
@@ -12,6 +11,7 @@ export enum AppRoute {
   updateAppConfiguration = 'updateAppConfiguration',
   relaunch = 'relaunch',
   joinPath = 'joinPath',
+  isSubdirectory = 'isSubdirectory',
   baseName = 'baseName',
   startServer = 'startServer',
   stopServer = 'stopServer',
@@ -30,6 +30,7 @@ export enum DownloadRoute {
   downloadFile = 'downloadFile',
   pauseDownload = 'pauseDownload',
   resumeDownload = 'resumeDownload',
+  getDownloadProgress = 'getDownloadProgress',
 }
 
 export enum DownloadEvent {
@@ -61,7 +62,9 @@ export enum FileManagerRoute {
   syncFile = 'syncFile',
   getJanDataFolderPath = 'getJanDataFolderPath',
   getResourcePath = 'getResourcePath',
+  getUserHomePath = 'getUserHomePath',
   fileStat = 'fileStat',
+  writeBlob = 'writeBlob',
 }
 
 export type ApiFunction = (...args: any[]) => any
