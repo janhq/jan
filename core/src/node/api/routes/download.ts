@@ -1,5 +1,5 @@
 import { DownloadRoute } from '../../../api'
-import { join } from 'path'
+import { join, sep } from 'path'
 import { DownloadManager } from '../../download'
 import { HttpServer } from '../HttpServer'
 import { createWriteStream } from 'fs'
@@ -38,7 +38,7 @@ export const downloadRouter = async (app: HttpServer) => {
     })
 
     const localPath = normalizedArgs[1]
-    const array = localPath.split('/')
+    const array = localPath.split(sep)
     const fileName = array.pop() ?? ''
     const modelId = array.pop() ?? ''
     console.debug('downloadFile', normalizedArgs, fileName, modelId)
@@ -99,7 +99,7 @@ export const downloadRouter = async (app: HttpServer) => {
     })
 
     const localPath = normalizedArgs[0]
-    const fileName = localPath.split('/').pop() ?? ''
+    const fileName = localPath.split(sep).pop() ?? ''
     const rq = DownloadManager.instance.networkRequests[fileName]
     DownloadManager.instance.networkRequests[fileName] = undefined
     rq?.abort()

@@ -14,6 +14,7 @@ import {
 
 export default class JanAssistantExtension extends AssistantExtension {
   private static readonly _homeDir = "file://assistants";
+  private static readonly _threadDir = "file://threads";
 
   controller = new AbortController();
   isCancelled = false;
@@ -64,6 +65,8 @@ export default class JanAssistantExtension extends AssistantExtension {
     if (
       data.model?.engine !== InferenceEngine.tool_retrieval_enabled ||
       !data.messages ||
+      // TODO: Since the engine is defined, its unsafe to assume that assistant tools are defined
+      // That could lead to an issue where thread stuck at generating response
       !data.thread?.assistants[0]?.tools
     ) {
       return;
@@ -71,11 +74,12 @@ export default class JanAssistantExtension extends AssistantExtension {
 
     const latestMessage = data.messages[data.messages.length - 1];
 
-    // Ingest the document if needed
+    // 1. Ingest the document if needed
     if (
       latestMessage &&
       latestMessage.content &&
-      typeof latestMessage.content !== "string"
+      typeof latestMessage.content !== "string" &&
+      latestMessage.content.length > 1
     ) {
       const docFile = latestMessage.content[1]?.doc_url?.url;
       if (docFile) {
@@ -86,9 +90,29 @@ export default class JanAssistantExtension extends AssistantExtension {
           data.model?.proxyEngine
         );
       }
+    } else if (
+      // Check whether we need to ingest document or not
+      // Otherwise wrong context will be sent
+      !(await fs.existsSync(
+        await joinPath([
+          JanAssistantExtension._threadDir,
+          data.threadId,
+          "memory",
+        ])
+      ))
+    ) {
+      // No document ingested, reroute the result to inference engine
+      const output = {
+        ...data,
+        model: {
+          ...data.model,
+          engine: data.model.proxyEngine,
+        },
+      };
+      events.emit(MessageEvent.OnMessageSent, output);
+      return;
     }
-
-    // Load agent on thread changed
+    // 2. Load agent on thread changed
     if (instance.retrievalThreadId !== data.threadId) {
       await executeOnMain(NODE, "toolRetrievalLoadThreadMemory", data.threadId);
 
@@ -103,22 +127,22 @@ export default class JanAssistantExtension extends AssistantExtension {
       );
     }
 
+    // 3. Using the retrieval template with the result and query
     if (latestMessage.content) {
       const prompt =
         typeof latestMessage.content === "string"
           ? latestMessage.content
           : latestMessage.content[0].text;
       // Retrieve the result
-      console.debug("toolRetrievalQuery", latestMessage.content);
       const retrievalResult = await executeOnMain(
         NODE,
         "toolRetrievalQueryResult",
         prompt
       );
+      console.debug("toolRetrievalQueryResult", retrievalResult);
 
-      // Update the message content
-      // Using the retrieval template with the result and query
-      if (data.thread?.assistants[0].tools)
+      // Update message content
+      if (data.thread?.assistants[0]?.tools && retrievalResult)
         data.messages[data.messages.length - 1].content =
           data.thread.assistants[0].tools[0].settings?.retrieval_template
             ?.replace("{CONTEXT}", retrievalResult)
@@ -140,7 +164,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       return message;
     });
 
-    // Reroute the result to inference engine
+    // 4. Reroute the result to inference engine
     const output = {
       ...data,
       model: {
@@ -248,12 +272,12 @@ export default class JanAssistantExtension extends AssistantExtension {
             chunk_size: 1024,
             chunk_overlap: 64,
             retrieval_template: `Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
-            ----------------
-            CONTEXT: {CONTEXT}
-            ----------------
-            QUESTION: {QUESTION}
-            ----------------
-            Helpful Answer:`,
+----------------
+CONTEXT: {CONTEXT}
+----------------
+QUESTION: {QUESTION}
+----------------
+Helpful Answer:`,
           },
         },
       ],
