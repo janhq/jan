@@ -35,6 +35,7 @@ export class Retrieval {
     if (engine === "nitro") {
       this.embeddingModel = new OpenAIEmbeddings(
         { openAIApiKey: "nitro-embedding" },
+        // TODO: Raw settings
         { basePath: "http://127.0.0.1:3928/v1" },
       );
     } else {
@@ -75,3 +76,5 @@ export class Retrieval {
     return Promise.resolve(serializedDoc);
   };
 }
+
+export const retrieval = new Retrieval();
