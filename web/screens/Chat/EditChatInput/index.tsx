@@ -15,7 +15,7 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
-import { editPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
+import { editPromptAtom } from '@/containers/Providers/Jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
@@ -24,9 +24,9 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 import { extensionManager } from '@/extension'
 
 import {
-  deleteMessageAtom,
   editMessageAtom,
   getCurrentChatMessagesAtom,
+  setConvoMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
@@ -45,11 +45,10 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
 
   const [editPrompt, setEditPrompt] = useAtom(editPromptAtom)
   const { sendChatMessage } = useSendChatMessage()
-  const deleteMessage = useSetAtom(deleteMessageAtom)
+  const setMessages = useSetAtom(setConvoMessagesAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
 
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
-  const [fileUpload] = useAtom(fileUploadAtom)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const setEditMessage = useSetAtom(editMessageAtom)
 
@@ -90,13 +89,16 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
 
   const sendEditMessage = async () => {
     setEditMessage('')
-    deleteMessage(message.id ?? '')
+    const messageIdx = messages.findIndex((msg) => msg.id === message.id)
+    const newMessages = messages.slice(0, messageIdx)
     if (activeThread) {
+      setMessages(activeThread.id, newMessages)
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.writeMessages(
           activeThread.id,
-          messages.filter((msg) => msg.id !== message.id)
+          // Remove all of the messages below this
+          newMessages
         )
         .then(() => {
           sendChatMessage(editPrompt)
