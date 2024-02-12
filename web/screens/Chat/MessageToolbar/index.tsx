@@ -57,10 +57,6 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   }
 
   const onRegenerateClick = async () => {
-    if (message.role !== ChatCompletionRole.User) {
-      // Delete last response before regenerating
-      await onDeleteClick()
-    }
     resendChatMessage(message)
   }
 

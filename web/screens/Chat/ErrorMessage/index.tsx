@@ -1,10 +1,4 @@
-import {
-  ChatCompletionRole,
-  ConversationalExtension,
-  ExtensionTypeEnum,
-  MessageStatus,
-  ThreadMessage,
-} from '@janhq/core'
+import { MessageStatus, ThreadMessage } from '@janhq/core'
 import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
@@ -15,39 +9,17 @@ import ModalTroubleShooting, {
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
-import { extensionManager } from '@/extension'
-import {
-  deleteMessageAtom,
-  getCurrentChatMessagesAtom,
-} from '@/helpers/atoms/ChatMessage.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const thread = useAtomValue(activeThreadAtom)
-  const deleteMessage = useSetAtom(deleteMessageAtom)
   const { resendChatMessage } = useSendChatMessage()
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
   const regenerateMessage = async () => {
     const lastMessageIndex = messages.length - 1
     const message = messages[lastMessageIndex]
-    if (message.role !== ChatCompletionRole.User) {
-      // Delete last response before regenerating
-      deleteMessage(message.id ?? '')
-      if (thread) {
-        await extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.writeMessages(
-            thread.id,
-            messages.filter((msg) => msg.id !== message.id)
-          )
-      }
-      const targetMessage = messages[lastMessageIndex - 1]
-      if (targetMessage) resendChatMessage(targetMessage)
-    } else {
-      resendChatMessage(message)
-    }
+    resendChatMessage(message)
   }
 
   return (
