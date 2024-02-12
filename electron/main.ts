@@ -26,6 +26,7 @@ import { cleanUpAndQuit } from './utils/clean'
 import { setupExtensions } from './utils/extension'
 import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
+import { cleanLogs } from './utils/log'
 
 app
   .whenReady()
@@ -45,6 +46,7 @@ app
       }
     })
   })
+  .then(() => cleanLogs())
 
 app.once('window-all-closed', () => {
   cleanUpAndQuit()
