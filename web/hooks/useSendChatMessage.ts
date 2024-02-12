@@ -38,6 +38,7 @@ import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
   addNewMessageAtom,
+  deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
@@ -58,6 +59,7 @@ export default function useSendChatMessage() {
   const updateThread = useSetAtom(updateThreadAtom)
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
+  const deleteMessage = useSetAtom(deleteMessageAtom)
   const setEditPrompt = useSetAtom(editPromptAtom)
 
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
@@ -131,6 +133,19 @@ export default function useSendChatMessage() {
       startModel(modelId)
       await waitForModelStarting(modelId)
       setQueuedMessage(false)
+    }
+
+    if (currentMessage.role !== ChatCompletionRole.User) {
+      // Delete last response before regenerating
+      deleteMessage(currentMessage.id ?? '')
+      if (activeThread) {
+        await extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.writeMessages(
+            activeThread.id,
+            currentMessages.filter((msg) => msg.id !== currentMessage.id)
+          )
+      }
     }
     events.emit(MessageEvent.OnMessageSent, messageRequest)
   }
