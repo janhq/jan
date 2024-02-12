@@ -24,7 +24,11 @@ import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulid'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
-import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
+import {
+  currentPromptAtom,
+  editPromptAtom,
+  fileUploadAtom,
+} from '@/containers/Providers/Jotai'
 
 import { getBase64 } from '@/utils/base64'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
@@ -54,6 +58,7 @@ export default function useSendChatMessage() {
   const updateThread = useSetAtom(updateThreadAtom)
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
+  const setEditPrompt = useSetAtom(editPromptAtom)
 
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const { activeModel } = useActiveModel()
@@ -147,6 +152,7 @@ export default function useSendChatMessage() {
     updateThreadWaiting(activeThread.id, true)
     const prompt = message.trim()
     setCurrentPrompt('')
+    setEditPrompt('')
 
     const base64Blob = fileUpload[0]
       ? await getBase64(fileUpload[0].file).then()
