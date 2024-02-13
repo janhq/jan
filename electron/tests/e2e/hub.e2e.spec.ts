@@ -1,4 +1,4 @@
-import { page, test, TIMEOUT, appInfo } from '../pages/basePage'
+import { test, appInfo } from '../config/fixtures'
 import { expect } from '@playwright/test'
 
 test.beforeAll(async () => {
@@ -13,11 +13,8 @@ test.beforeAll(async () => {
   })
 })
 
-test('explores hub', async () => {
-  await page.getByTestId('Hub').first().click({
-    timeout: TIMEOUT,
-  })
-  await page.getByTestId('hub-container-test-id').isVisible({
-    timeout: TIMEOUT,
-  })
+test('explores hub', async ({ hubPage }) => {
+  await hubPage.navigateByMenu()
+  await hubPage.verifyContainerVisible()
+  await hubPage.takeScreenshot()
 })
