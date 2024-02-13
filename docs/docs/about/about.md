@@ -64,12 +64,19 @@ We also have a [Contributor Program](/docs/team/contributor-program) to provide 
 
 [Jan](https://github.com/janhq/jan) is pragmatically built using `Typescript` at the application level and `C++` at the Inference level (which we have refactored into [Nitro](https://nitro.jan.ai)[^3]).
 
-We use [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) and currently support a desktop client with [Electron](https://www.electronjs.org/), a headless server-mode with native [Nodejs](https://nodejs.org/en), and more.
+We follow [clean architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) and currently support multiple frameworks and runtimes:
 
-From an architectural perspective, we have made similar choices to the [Next.js Enterprise Javascript Stack](https://vercel.com/templates/next.js/nextjs-enterprise-boilerplate), which is a [battle-tested](https://nextjs.org/showcase/enterprise) framework for building enterprise-grade applications that scale.
+- A desktop client with [Electron](https://www.electronjs.org/)
+- A headless server-mode with [Nodejs](https://nodejs.org/en)
+- Planned support for mobile with [Capacitor](https://capacitorjs.com/)
+- Planned support for python runtime
+
+Architecturally, we have made similar choices to the [Next.js Enterprise Javascript Stack](https://vercel.com/templates/next.js/nextjs-enterprise-boilerplate), which is a [battle-tested](https://nextjs.org/showcase/enterprise) framework for building enterprise-grade applications that scale.
 
 :::tip
-At its core, Jan is a software development kit to build and run copilots, agents and assistants on personal devices. The desktop client that many folks use is just a small set of extensions we/the community have built on top.
+
+**At its core, Jan is a software development kit to build and run copilots on personal devices**. The Desktop Client many folks use is, rather, a specific set of extensions packaged by default. We're excited to see what developers do with the SDK (once its in better shape).
+
 :::
 
 ## Contact
@@ -84,4 +91,4 @@ Drop us a message in our [Discord](https://discord.gg/af6SaTdzpx) and we'll get 
 
 [^1]: Credit to Obsidian's original website
 [^2]: Credit to [Discourse's About Page](https://www.discourse.org/about)
-[^3]: Credit to [Llama.cpp](https://github.com/ggerganov/llama.cpp), [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM), [vLLM](https://github.com/vllm-project/vllm) and more.
+[^3]: Credit to [Llama.cpp](https://github.com/ggerganov/llama.cpp), [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM), [vLLM](https://github.com/vllm-project/vllm), [LMDeploy](https://github.com/InternLM/lmdeploy) and more.

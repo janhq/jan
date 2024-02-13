@@ -53,22 +53,7 @@ const sidebars = {
       ],
     },
   ],
-  featuresSidebar: [
-    {
-      type: "category",
-      collapsible: true,
-      collapsed: true,
-      label: "Features",
-      link: { type: "doc", id: "features/features" },
-      items: [
-        "features/local",
-        "features/remote",
-        "features/api-server",
-        "features/extensions-framework",
-        "features/agents-framework",
-        "features/data-security",
-      ],
-    },
+  productSidebar: [
     {
       type: "category",
       label: "Platforms",
@@ -78,6 +63,21 @@ const sidebars = {
         "server-suite/server-suite",
         // "platforms/mobile",
         // "platforms/hub",
+      ],
+    },
+    {
+      type: "category",
+      collapsible: true,
+      collapsed: false,
+      label: "Features",
+      link: { type: "doc", id: "features/features" },
+      items: [
+        "features/local",
+        "features/remote",
+        "features/api-server",
+        "features/extensions-framework",
+        "features/agents-framework",
+        "features/data-security",
       ],
     },
     // NOTE: Jan Server Suite will be torn out into it's own section in the future

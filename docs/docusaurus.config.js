@@ -269,9 +269,9 @@ const config = {
         },
         {
           type: "docSidebar",
-          sidebarId: "featuresSidebar",
+          sidebarId: "productSidebar",
           positionL: "left",
-          label: "Features",
+          label: "Product",
         },
         {
           type: "docSidebar",
@@ -279,12 +279,12 @@ const config = {
           position: "left",
           label: "Ecosystem",
         },
-        {
-          type: "docSidebar",
-          sidebarId: "pricingSidebar",
-          positionL: "left",
-          label: "Pricing",
-        },
+        // {
+        //   type: "docSidebar",
+        //   sidebarId: "pricingSidebar",
+        //   positionL: "left",
+        //   label: "Pricing",
+        // },
         // Navbar right
         {
           type: "dropdown",
