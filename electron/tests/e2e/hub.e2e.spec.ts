@@ -16,5 +16,4 @@ test.beforeAll(async () => {
 test('explores hub', async ({ hubPage }) => {
   await hubPage.navigateByMenu()
   await hubPage.verifyContainerVisible()
-  await hubPage.takeScreenshot()
 })

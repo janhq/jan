@@ -1,14 +1,14 @@
 import { Page, expect } from '@playwright/test'
 import { CommonActions } from './commonActions'
+import { TIMEOUT } from '../config/fixtures'
 
 export class BasePage {
-  private dataMap = new Map()
+  menuId: string
 
   constructor(
     protected readonly page: Page,
     readonly action: CommonActions,
-    protected readonly menuId: string,
-    protected readonly containerId: string
+    protected containerId: string
   ) {}
 
   public getValue(key: string) {
@@ -19,7 +19,7 @@ export class BasePage {
     this.action.setValue(key, value)
   }
 
-  async takeScreenshot(name: string='') {
+  async takeScreenshot(name: string = '') {
     await this.action.takeScreenshot(name)
   }
 
@@ -30,5 +30,20 @@ export class BasePage {
   async verifyContainerVisible() {
     const container = this.page.getByTestId(this.containerId)
     expect(container.isVisible()).toBeTruthy()
+  }
+
+  async waitUpdateLoader() {
+    await this.isElementVisible('img[alt="Jan - Logo"]')
+  }
+
+  //wait and find a specific element with it's selector and return Visible
+  async isElementVisible(selector: any) {
+    let isVisible = true
+    await this.page
+      .waitForSelector(selector, { state: 'visible', timeout: TIMEOUT })
+      .catch(() => {
+        isVisible = false
+      })
+    return isVisible
   }
 }
