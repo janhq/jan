@@ -70,7 +70,7 @@ Download Jan Desktop Client [here](https://github.com/janhq/jan?tab=readme-ov-fi
 
 - Use Jan as a UI only, pointing to a different backend. [See Docs](/guides/using-models/integrate-with-remote-server)
 - Use Jan as a backend only, pointing to a different frontend. [See Docs](/guides/using-models/integrate-with-remote-server)
-- Run Jan in team-mode on production-grade GPUs. [Pending Docs]
+- Run Jan in team-mode on production-grade GPUs. [See Server Suite](/server-suite)
 
 <!-- CTA ⇒ Server Docs -->
 
@@ -78,8 +78,7 @@ Download Jan Desktop Client [here](https://github.com/janhq/jan?tab=readme-ov-fi
 
 - Customize the app’s look and feel though Themes.
 - Customize assistants, models and other features with **no code**.
-- Customize the entire Application through Extensions. Inspired by VSCode extensions, the desktop app can be entirely customized. [docs] See the default extensions here.
+- Customize the entire Application through Extensions. Inspired by VSCode extensions, the desktop app can be entirely customized.
 
-![Alt text](image-2.png)
-![Alt text](image-3.png)
+[See the default extensions](https://github.com/janhq/jan/tree/main/extensions) bundled with every Desktop install.
 ![Alt text](image-4.png)

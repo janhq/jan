@@ -224,7 +224,7 @@ const config = {
           description:
             "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
           keywords:
-            "Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
+            "Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
           applicationCategory: "BusinessApplication",
           operatingSystem: "Multiple",
           url: "https://jan.ai/",
