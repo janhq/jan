@@ -1,3 +1,3 @@
 ---
-title: Wall of love
+title: Wall of Love ❤️
 ---

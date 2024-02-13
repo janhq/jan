@@ -15,7 +15,7 @@ keywords:
   ]
 ---
 
-Jan is a [open-source](https://en.wikipedia.org/wiki/Open_source), [local-first](https://www.inkandswitch.com/local-first/) productivity tool to [create, customize and use AI](https://www.gatesnotes.com/AI-agents). 
+Jan is a [open-source](https://en.wikipedia.org/wiki/Open_source), [local-first](https://www.inkandswitch.com/local-first/) tool to [create, customize and use AI](https://www.gatesnotes.com/AI-agents) for everyday tasks. 
 
 You can: 
 - Run locally using [open-source LLMs](https://huggingface.co/models?pipeline_tag=text-generation) or connect to cloud AIs like [ChatGPT](https://openai.com/blog/openai-api) or [Google](https://ai.google.dev/)
@@ -33,17 +33,17 @@ At Jan, our mission is to advance human-machine collaboration. We achieve this t
 
 ## What's different about it?
 
-|                                                            | Status Quo                                                             | Jan                                                                                     |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Ownership                                                  | AI Monopolies owned by Big Tech                                        | AI that you own and control                                                             |
-| Openness?                                                  | Closed-source                                                          | [Open-source (AGPLv3)](https://github.com/janhq/jan/blob/main/LICENSE)                  |
-| Your role                                                  | Consume                                                                | Create, Tinker and Customize                                                            |
-| Approach                                                   | Cloud                                                                  | [Local-first](https://www.inkandswitch.com/local-first/), running 100% on your computer |
-| Data                                                       | Data stored on their servers                                           | Data stored in your local filesystem in open, non-proprietary file formats              |
-| Privacy                                                    | Privacy?                                                               | Runs 100% on your own machine, predictably, privately and offline                       |
-| Transparency                                               | "Black Box"                                                            | Runs predictability with code available to tinker and customize                         |
-| What happens if there's an outage or goes out of business? | Your life's work held hostage in the cloud in proprietary data formats[^1] | Continues to run 100% on your computer, your data is safe in your local folder          |
-| Driving Philosophy                                         | Monetize your users                                                    | Privacy as a human right and the [Right to Repair](https://www.repair.org/)             |
+|                                                            | Status Quo                                                                 | Jan                                                                                                                           |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Ownership                                                  | AI Monopolies owned by Big Tech                                            | AI that you own and control                                                                                                   |
+| Openness?                                                  | Closed-source                                                              | [Open-source (AGPLv3)](https://github.com/janhq/jan/blob/main/LICENSE)                                                        |
+| Your role                                                  | Consume                                                                    | Create, Tinker and Customize                                                                                                  |
+| Approach                                                   | Cloud                                                                      | [Local-first](https://www.inkandswitch.com/local-first/), running 100% on your computer                                       |
+| Data                                                       | Data stored on their servers                                               | Data stored in your local filesystem in open, non-proprietary file formats                                                    |
+| Privacy                                                    | Privacy?                                                                   | Runs 100% on your own machine, predictably, privately and offline                                                             |
+| Transparency                                               | "Black Box"                                                                | Runs predictability with code available to tinker and customize                                                               |
+| What happens if there's an outage or goes out of business? | Your life's work held hostage in the cloud in proprietary data formats[^1] | Continues to run 100% on your computer, your data is safe in your local folder                                                |
+| Driving Philosophy                                         | Monetize your users                                                        | [Privacy as a human right](https://en.wikipedia.org/wiki/Right_to_privacy) and the [Right to Repair](https://www.repair.org/) |
 
 ## How do I get it?
 
