@@ -48,15 +48,6 @@ const sidebars = {
           ],
         },
         "how-we-work/product-design/product-design",
-        {
-          type: "category",
-          label: "Engineering",
-          link: { type: "doc", id: "how-we-work/engineering/engineering" },
-          items: [
-            "how-we-work/engineering/ci-cd",
-            "how-we-work/engineering/qa",
-          ],
-        },
         "how-we-work/analytics/analytics",
         "how-we-work/website-docs/website-docs",
       ],

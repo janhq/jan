@@ -1,5 +1,5 @@
 ---
-title: How We Work 
+title: How We Work
 ---
 
 ### Open Source
@@ -16,9 +16,8 @@ We use GitHub to build in public and welcome anyone to join in.
 
 - [Jan's Kanban](https://github.com/orgs/janhq/projects/5)
 - [Jan's Roadmap](https://github.com/orgs/janhq/projects/5/views/29)
-- [Jan's Newsletter](https://newsletter.jan.ai)
+- `coming soon` [Jan's Newsletter](https://newsletter.jan.ai)
 
 ### Remote Team
 
 Jan has a fully-remote team. We are mainly based in the APAC timezone. We use [Discord](https://discord.gg/af6SaTdzpx) and [Github](https://github.com/janhq) to work.
-
