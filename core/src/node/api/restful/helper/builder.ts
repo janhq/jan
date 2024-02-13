@@ -1,10 +1,11 @@
 import fs from 'fs'
 import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
-import { ContentType, MessageStatus, Model, ThreadMessage } from './../../../index'
-import { getEngineConfiguration, getJanDataFolderPath } from '../../utils'
+import { ContentType, MessageStatus, Model, ThreadMessage } from '../../../../index'
+import { getEngineConfiguration, getJanDataFolderPath } from '../../../helper'
 import { DEFAULT_CHAT_COMPLETION_URL } from './consts'
 
+// TODO: Refactor these
 export const getBuilder = async (configuration: RouteConfiguration) => {
   const directoryPath = join(getJanDataFolderPath(), configuration.dirName)
   try {

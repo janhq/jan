@@ -1,6 +1,6 @@
 import fs from 'fs'
 import util from 'util'
-import { getAppLogPath, getServerLogPath } from './utils'
+import { getAppLogPath, getServerLogPath } from './config'
 
 export const log = (message: string) => {
   const path = getAppLogPath()
