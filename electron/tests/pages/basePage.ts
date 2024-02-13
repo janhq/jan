@@ -1,114 +1,34 @@
-import {
-  _electron as electron,
-  BrowserContext,
-  ElectronApplication,
-  expect,
-  Page,
-  test as base,
-} from '@playwright/test'
-import {
-  ElectronAppInfo,
-  findLatestBuild,
-  parseElectronApp,
-  stubDialog,
-} from 'electron-playwright-helpers'
-import * as fs from 'fs'
-import { Constants } from '../config/constants'
+import { Page, expect } from '@playwright/test'
+import { CommonActions } from './commonActions'
 
-export let electronApp: ElectronApplication
-export let page: Page
-export let appInfo: ElectronAppInfo
-export const TIMEOUT = parseInt(process.env.TEST_TIMEOUT || Constants.TIMEOUT)
+export class BasePage {
+  private dataMap = new Map()
 
-export async function setupElectron() {
-  process.env.CI = 'e2e'
+  constructor(
+    protected readonly page: Page,
+    readonly action: CommonActions,
+    protected readonly menuId: string,
+    protected readonly containerId: string
+  ) {}
 
-  const latestBuild = findLatestBuild('dist')
-  expect(latestBuild).toBeTruthy()
+  public getValue(key: string) {
+    return this.action.getValue(key)
+  }
 
-  // parse the packaged Electron app and find paths and other info
-  appInfo = parseElectronApp(latestBuild)
-  expect(appInfo).toBeTruthy()
+  public setValue(key: string, value: string) {
+    this.action.setValue(key, value)
+  }
 
-  electronApp = await electron.launch({
-    args: [appInfo.main], // main file from package.json
-    executablePath: appInfo.executable, // path to the Electron executable
-    recordVideo: { dir: Constants.VIDEO_DIR }, // Specify the directory for video recordings
-  })
-  await stubDialog(electronApp, 'showMessageBox', { response: 1 })
+  async takeScreenshot(name: string='') {
+    await this.action.takeScreenshot(name)
+  }
 
-  page = await electronApp.firstWindow({
-    timeout: TIMEOUT,
-  })
+  async navigateByMenu() {
+    await this.page.getByTestId(this.menuId).first().click()
+  }
+
+  async verifyContainerVisible() {
+    const container = this.page.getByTestId(this.containerId)
+    expect(container.isVisible()).toBeTruthy()
+  }
 }
-
-export async function teardownElectron() {
-  await page.close()
-  await electronApp.close()
-}
-
-/**
- * this fixture is needed to record and attach videos / screenshot on failed tests when
- * tests are run in serial mode (i.e. browser is not closed between tests)
- */
-export const test = base.extend<
-  {
-    attachVideoPage: Page
-    attachScreenshotsToReport: void
-  },
-  { createVideoContext: BrowserContext }
->({
-  createVideoContext: [
-    async ({ browser }, use) => {
-      // const context = browser.newContext()
-      const context = electronApp.context()
-      await use(context)
-
-      fs.rmSync(Constants.VIDEO_DIR, { recursive: true })
-    },
-    { scope: 'worker' },
-  ],
-
-  attachVideoPage: [
-    async ({ createVideoContext }, use, testInfo) => {
-      await use(page)
-
-      if (testInfo.status !== testInfo.expectedStatus) {
-        const path = await createVideoContext.pages()[0].video()?.path()
-        await createVideoContext.close()
-        await testInfo.attach('video', {
-          path: path,
-        })
-      }
-    },
-    { scope: 'test', auto: true },
-  ],
-
-  attachScreenshotsToReport: [
-    async ({ request }, use, testInfo) => {
-      await use()
-
-      // After the test, we can check whether the test passed or failed.
-      if (testInfo.status !== testInfo.expectedStatus) {
-        const screenshot = await page.screenshot()
-        await testInfo.attach('screenshot', {
-          body: screenshot,
-          contentType: 'image/png',
-        })
-      }
-    },
-    { auto: true },
-  ],
-})
-
-test.setTimeout(TIMEOUT)
-
-test.beforeAll(async () => {
-  console.log('before tests')
-  await setupElectron()
-})
-
-test.afterAll(async () => {
-  console.log('after tests')
-  await teardownElectron()
-})
