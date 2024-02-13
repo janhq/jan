@@ -1,0 +1,225 @@
+---
+sidebar_position: 2
+hide_table_of_contents: true
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import installImageURL from '../../static/img/homepage-new/jan-ai-download.png';
+
+# Installation
+
+<Tabs>
+    <TabItem value="mac" label="Mac" default>
+
+:::warning
+
+Ensure that your MacOS version is 13 or higher to run Jan.
+
+:::
+
+        ### Stable Releases
+
+        To download stable releases, go to [Jan.ai](https://jan.ai/) > select **Download for Mac**.
+
+        The download should be available as a `.dmg`.
+
+        ### Nightly Releases
+
+        Jan is also available as a nightly release for an experimental version.
+
+        You can download it from [Jan's Discord](https://discord.gg/FTk2MvZwJH) in the [`#nightly-builds`](https://discord.gg/q8szebnxZ7) channel.
+
+        ### Uninstall for Troubleshooting
+
+:::note
+
+If you are stuck in a broken build, try to uninstall Jan by following the steps below.
+
+:::
+
+        To uninstall:
+
+        1. Delete Jan from your `/Applications` folder.
+        2. Delete Application data.
+
+        ```sh
+        # Newer versions
+        rm -rf ~/Library/Application\ Support/jan
+        
+        # Versions 0.2.0 and older
+        rm -rf ~/Library/Application\ Support/jan-electron
+        ```
+
+        3. Clear Application cache.
+
+        ```sh
+        rm -rf ~/Library/Caches/jan*
+        ```
+        4. Use the following commands to remove any dangling backend processes:
+
+        ```sh
+        ps aux | grep nitro
+        ```
+
+        Look for processes like "nitro" and "nitro_arm_64", and kill them one by one with:
+
+        ```sh
+        kill -9 <PID>
+        ```
+
+    </TabItem>
+    <TabItem value="windows" label="Windows">
+
+:::warning
+
+Ensure that your system meets the following requirements:
+ - Windows 10 or higher is required to run Jan.
+
+To enable GPU support, you will need:
+ - NVIDIA GPU with CUDA Toolkit 11.7 or higher
+ - NVIDIA driver 470.63.01 or higher
+
+:::
+
+        ### Stable Releases
+
+        To download stable releases, go to [Jan.ai](https://jan.ai/) > select **Download for Windows**.
+        
+        The download should be available as a `.exe` file.
+
+        ### Nightly Releases
+
+        Jan is also available as a nightly release for an experimental version.
+
+        You can download it from [Jan's Discord](https://discord.gg/FTk2MvZwJH) in the [`#nightly-builds`](https://discord.gg/q8szebnxZ7) channel.
+
+        ### Default Installation Directory
+
+        By default, Jan is installed in the following directory:
+
+        ```sh
+        # Default installation directory
+        C:\Users\{username}\AppData\Local\Programs\Jan
+        ```
+
+        ### Uninstall​ for Troubleshooting
+
+:::note
+
+If you are stuck in a broken build, try to uninstall Jan by following the steps below.
+
+:::
+
+        To uninstall Jan on Windows, uninstall it via [Windows Control Panel](https://support.microsoft.com/en-us/windows/uninstall-or-remove-apps-and-programs-in-windows-4b55f974-2cc6-2d2b-d092-5905080eaf98).
+
+        To remove all user data associated with Jan, you can delete the `/jan` directory in Windows' [AppData directory](https://superuser.com/questions/632891/what-is-appdata).
+
+        ```sh
+        cd C:\Users\%USERNAME%\AppData\Roaming
+        rmdir /S jan
+        ```
+
+    </TabItem>
+    <TabItem value="linux" label="Linux">
+
+:::warning
+Ensure that your system meets the following requirements:
+ - glibc 2.27 or higher (check with `ldd --version`)
+ - gcc 11, g++ 11, cpp 11, or higher, refer to this link for more information.
+
+To enable GPU support, you will need:
+ - NVIDIA GPU with CUDA Toolkit 11.7 or higher
+ - NVIDIA driver 470.63.01 or higher
+:::
+
+        ### Stable Releases
+
+        To download stable releases, go to [Jan.ai](https://jan.ai/) > select **Download for Linux**.
+        
+        The download should be available as a `.AppImage` file or a `.deb` file.
+
+        ### Nightly Releases
+
+        Jan is also available as a nightly release for an experimental version.
+        
+        You can download it from [Jan's Discord](https://discord.gg/FTk2MvZwJH) in the [`#nightly-builds`](https://discord.gg/q8szebnxZ7) channel.
+
+        <Tabs groupId="linux_type">
+            <TabItem value="linux_main" label="Linux">
+            
+                To install Jan, you should use your package manager's install or `dpkg`.
+        
+            </TabItem>
+            <TabItem value="deb_ub" label="Debian / Ubuntu">
+            
+                To install Jan, run the following command:
+
+                ```sh
+                # Install Jan using dpkg
+                sudo dpkg -i jan-linux-amd64-{version}.deb
+
+                # Install Jan using apt-get
+                sudo apt-get install ./jan-linux-amd64-{version}.deb
+                # where jan-linux-amd64-{version}.deb is path to the Jan package
+                ```
+
+            </TabItem>
+            <TabItem value="other" label="Others">
+
+                To install Jan, run the following commands:
+
+                ```sh
+                # Install Jan using AppImage
+                chmod +x jan-linux-x86_64-{version}.AppImage
+                ./jan-linux-x86_64-{version}.AppImage
+                # where jan-linux-x86_64-{version}.AppImage is path to the Jan package
+                ```
+
+            </TabItem>
+        </Tabs>
+
+        ### Uninstall​ for Troubleshooting
+
+:::note
+
+If you are stuck in a broken build, try to uninstall Jan by following the steps below.
+
+:::
+
+        <Tabs groupId="linux_type">
+            <TabItem value="linux_main" label="Linux">
+
+                To uninstall Jan, you should use your package manager's uninstall or remove option. 
+
+                This will return your system to its state before the installation of Jan.
+
+                This method can also reset all settings if you are experiencing any issues with Jan.
+        
+            </TabItem>
+            <TabItem value="deb_ub" label="Debian / Ubuntu">
+            
+                To uninstall Jan, run the following command.MDXContent
+
+                ```sh
+                sudo apt-get remove jan
+                # where jan is the name of Jan package
+                ```
+
+                This will return your system to its state before the installation of Jan.
+
+                This method can also be used to reset all settings if you are experiencing any issues with Jan.
+
+            </TabItem>
+            <TabItem value="other" label="Others">
+            
+                To uninstall Jan, you can uninstall Jan by deleting the `.AppImage` file.
+
+                If you wish to completely remove all user data associated with Jan after uninstallation, you can delete the user data at `~/jan`.
+
+                This method can also reset all settings if you are experiencing any issues with Jan.
+                
+            </TabItem>
+        </Tabs>
+    </TabItem>
+</Tabs>

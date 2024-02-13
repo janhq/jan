@@ -1,0 +1,62 @@
+---
+sidebar_position: 4
+---
+
+# 0.4.3
+
+For more details, [Click here](https://github.com/janhq/jan/releases/tag/v0.4.3)
+
+## Changes
+
+ - Hotfix Prompt template for models on the Hub
+ - Update model list for new release
+ - fix (Thread): #1119 focus on the first thread to prevent blank chat screen
+ - fix (Thread): #1064 message being added to wrong thread if switching thread
+ - fix (Thread): #1042 allow create new thread by clicking Use in Jan Hub
+ - feat (ModelSetting): #1065 update state of model setting between threads
+ - Update model version
+ - fix: cache hallucinations and failed to load model due to race condition
+ - fix (thread): #1043 default model to prefer active model
+ - Update issue templates
+ - Update ctx_len and max_tokens
+
+## 🚀 Features
+
+ - feat: Add codeQL analysis for push main and pr main
+ - Feature autoupdater for nightly build
+ - feat: copy button for code block
+ - Enhancements to Dependency Installation and App Testing
+
+## 🐛 Fixes
+
+ - fix: error road map url
+ - Fix token speed slow in machine has multi gpus
+ - fix: added dialog confirmation clean thread
+ - fix: remove remote model from shortcut models dialog
+ - fix: ui issue - all models are activated
+ - fix: should not hide empty message away
+ - fix: added tooltip for user cannot change model after starting thread
+ - fix: remote model always active badges
+ - fix: handle chat completion state with enter button
+ - fix: model active indicator only show when model activated
+ - fix: #1096 yield error message upon thread switching
+ - fix: toaster success deleted thread showing id instead of active model
+ - fix: update copy setting page
+ - fix: search recommended model
+ - fix: #1097 streaming response is replaced by error message
+ - Fix auto update windows Bug
+ - fix: added dialog confirmation when delete thread
+ - fix: system monitor broken layout when responsive
+ - bug: chatbox doesn't resize back down
+ - fix: thread is broken after deleted first generated message
+
+## 🧰 Maintenance
+
+ - feat: Add codeQL analysis for push main and pr main
+ - docs: refactor dev docs, guides and specs
+ - Correct jq command cause ci nightly build run failed
+ - Fix nightly build autoupdater
+ - Feature autoupdater for nightly build
+ - docs: Update product.md
+ - Posthog disable click event and increase timeout for nitro load model…
+ - docs: improve quickstart docs
