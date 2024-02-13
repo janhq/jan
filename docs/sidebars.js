@@ -60,7 +60,8 @@ const sidebars = {
       collapsible: false,
       items: [
         "platforms/desktop",
-        "server-suite/server-suite",
+        "server-suite/home-server",
+        "server-suite/enterprise",
         // "platforms/mobile",
         // "platforms/hub",
       ],

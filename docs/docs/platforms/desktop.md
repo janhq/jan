@@ -15,7 +15,7 @@ keywords:
   ]
 ---
 
-# Turn Any Computer into an AI Computer
+# Turn any computer into an AI computer
 
 ![Alt text](image.png)
 

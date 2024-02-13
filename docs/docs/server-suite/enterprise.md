@@ -1,6 +1,6 @@
 ---
-title: Jan Server Suite
-slug: /server-suite
+title: Jan Enterprise
+slug: /enterprise
 description: Built for Enterprise Deployments
 keywords:
   [
@@ -15,11 +15,9 @@ keywords:
   ]
 ---
 
-# Jan Server Suite is for Teams
+# Customize and run AI across your organization
 
-Jan Server Suite can be used as a professional backend to create, customize and run AIs at scale.
-
-Self-host Jan anymore, from your homeservers to production-grade data centers.
+Jan can professional backend to create, customize and run AIs at scale, for production-grade data centers.
 
 :::warning
 
@@ -43,13 +41,7 @@ Over time, we expect more teams and organizations to turn to running their own A
 - Eliminate monthly API bills - use your existing hardware
 - Full control over your AI - you can open it up and see what's going on
 
-## Why Jan Server Suite
-
-We built [Jan Desktop](/desktop) for our personal use. We're now building Server Suite, for our team & community, as a part of our [build in public](/how-we-work) ethos.
-
-Our goal is to help teams, like ours, move past cobbling together demo apps to use AI at work. We should be able to customize and collaborate with AIs that are usable on a daily basis.
-
-Check out [Server Suite](https://github.com/janhq/jan/tree/dev/server) if you need:
+## Why Jan Enterprise
 
 ### Fast deployment
 
@@ -69,7 +61,7 @@ Not a Jan fan but convinced about local AI? No worries, here's a list of [awesom
 
 :::
 
-## Features
+## Supported Extensions
 
 The SDK and current implemention accomodate the following potential extensions.
 
