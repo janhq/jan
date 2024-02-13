@@ -241,6 +241,12 @@ const config = {
         // Navbar Left
         {
           type: "docSidebar",
+          sidebarId: "quickStartSidebar",
+          position: "left",
+          label: "Quickstart",
+        },
+        {
+          type: "docSidebar",
           sidebarId: "guidesSidebar",
           position: "left",
           label: "Guides",
