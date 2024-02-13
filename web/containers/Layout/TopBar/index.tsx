@@ -95,6 +95,7 @@ const TopBar = () => {
                 </div>
                 <div
                   className="unset-drag cursor-pointer pr-4"
+                  data-testid="btn-create-thread"
                   onClick={onCreateConversationClick}
                 >
                   <PenSquareIcon size={20} className="text-muted-foreground" />
