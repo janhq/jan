@@ -3,13 +3,13 @@ import { BasePage } from './basePage'
 import { CommonActions } from './commonActions'
 
 export class HubPage extends BasePage {
-  static readonly menuId: string = 'Hub'
+  readonly menuId: string = 'Hub'
   static readonly containerId: string = 'hub-container-test-id'
 
   constructor(
     public page: Page,
     readonly action: CommonActions
   ) {
-    super(page, action, HubPage.menuId, HubPage.containerId)
+    super(page, action, HubPage.containerId)
   }
 }

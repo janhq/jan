@@ -2,7 +2,7 @@ import { Page, TestInfo } from '@playwright/test'
 import { page } from '../config/fixtures'
 
 export class CommonActions {
-  private myMap = new Map<string, string>()
+  private testData = new Map<string, string>()
 
   constructor(
     public page: Page,
@@ -25,10 +25,10 @@ export class CommonActions {
   }
 
   setValue(key: string, value: string) {
-    this.myMap.set(key, value)
+    this.testData.set(key, value)
   }
 
   getValue(key: string) {
-    return this.myMap.get(key)
+    return this.testData.get(key)
   }
 }
