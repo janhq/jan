@@ -26,6 +26,7 @@ import {
   ModelEvent,
   InferenceEvent,
   ModelSettingParams,
+  getJanDataFolderPath,
 } from "@janhq/core";
 import { requestInference } from "./helpers/sse";
 import { ulid } from "ulid";
@@ -146,11 +147,14 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
   private async onModelInit(model: Model) {
     if (model.engine !== InferenceEngine.nitro) return;
 
-    const modelFullPath = await joinPath(["models", model.id]);
-
+    const modelFolder = await joinPath([
+      await getJanDataFolderPath(),
+      "models",
+      model.id,
+    ]);
     this._currentModel = model;
     const nitroInitResult = await executeOnMain(NODE, "runModel", {
-      modelFullPath,
+      modelFolder,
       model,
     });
 

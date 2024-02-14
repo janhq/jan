@@ -1,12 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  AppRoute,
-  CoreRoutes,
-  DownloadRoute,
-  ExtensionRoute,
-  FileManagerRoute,
-  FileSystemRoute,
-} from '@janhq/core'
+import { CoreRoutes } from '@janhq/core'
 
 import { safeJsonParse } from '@/utils/json'
 
