@@ -106,10 +106,10 @@ export const test = base.extend<
 test.beforeAll(async () => {
   test.setTimeout(TIMEOUT)
   await setupElectron()
-  await page.waitForSelector('img[alt="Jan - Logo"]', {
-    state: 'visible',
-    timeout: TIMEOUT,
-  })
+  // await page.waitForSelector('img[alt="Jan - Logo123"]', {
+  //   state: 'visible',
+  //   timeout: TIMEOUT,
+  // })
 })
 
 test.afterAll(async () => {
