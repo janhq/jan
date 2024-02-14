@@ -1,6 +1,6 @@
-import { SystemResourceInfo } from "../../types"
-import { physicalCpuCount } from "./config"
-import { log, logServer } from "./log"
+import { SystemResourceInfo } from '../../types'
+import { physicalCpuCount } from './config'
+import { log, logServer } from './log'
 
 export const getSystemResourceInfo = async (): Promise<SystemResourceInfo> => {
   const cpu = await physicalCpuCount()

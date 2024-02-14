@@ -13,7 +13,7 @@ import GenerateResponse from '@/containers/Loader/GenerateResponse'
 import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
 
-import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
+import { fileUploadAtom } from '@/containers/Providers/Jotai'
 import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
 import { snackbar } from '@/containers/Toast'
@@ -54,7 +54,6 @@ const renderError = (code: string) => {
 }
 
 const ChatScreen: React.FC = () => {
-  const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const showLeftSideBar = useAtomValue(showLeftSideBarAtom)
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)

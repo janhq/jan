@@ -125,8 +125,5 @@ export const CoreRoutes = [
   ...Object.values(FileManagerRoute),
 ]
 
-export const APIRoutes = [
-  ...CoreRoutes,
-  ...Object.values(NativeRoute),
-]
+export const APIRoutes = [...CoreRoutes, ...Object.values(NativeRoute)]
 export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]

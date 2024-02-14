@@ -1,13 +1,13 @@
 export enum ExtensionTypeEnum {
-  Assistant = "assistant",
-  Conversational = "conversational",
-  Inference = "inference",
-  Model = "model",
-  SystemMonitoring = "systemMonitoring",
+  Assistant = 'assistant',
+  Conversational = 'conversational',
+  Inference = 'inference',
+  Model = 'model',
+  SystemMonitoring = 'systemMonitoring',
 }
 
 export interface ExtensionType {
-  type(): ExtensionTypeEnum | undefined;
+  type(): ExtensionTypeEnum | undefined
 }
 /**
  * Represents a base extension.
@@ -20,16 +20,16 @@ export abstract class BaseExtension implements ExtensionType {
    * Undefined means its not extending any known extension by the application.
    */
   type(): ExtensionTypeEnum | undefined {
-    return undefined;
+    return undefined
   }
   /**
    * Called when the extension is loaded.
    * Any initialization logic for the extension should be put here.
    */
-  abstract onLoad(): void;
+  abstract onLoad(): void
   /**
    * Called when the extension is unloaded.
    * Any cleanup logic for the extension should be put here.
    */
-  abstract onUnload(): void;
+  abstract onUnload(): void
 }

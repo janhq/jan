@@ -1,4 +1,10 @@
-import { AppRoute, DownloadRoute, ExtensionRoute, FileManagerRoute, FileSystemRoute } from '../../../api'
+import {
+  AppRoute,
+  DownloadRoute,
+  ExtensionRoute,
+  FileManagerRoute,
+  FileSystemRoute,
+} from '../../../api'
 import { Downloader } from '../processors/download'
 import { FileSystem } from '../processors/fs'
 import { Extension } from '../processors/extension'
