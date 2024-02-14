@@ -103,9 +103,8 @@ export const test = base.extend<
   ],
 })
 
-test.setTimeout(TIMEOUT)
-
 test.beforeAll(async () => {
+  test.setTimeout(TIMEOUT)
   await setupElectron()
   await page.waitForSelector('img[alt="Jan - Logo"]', {
     state: 'visible',
