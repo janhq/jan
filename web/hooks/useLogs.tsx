@@ -7,12 +7,9 @@ import {
 
 export const useLogs = () => {
   const getLogs = async (file: string) => {
-    if (!(await fs.existsSync(await joinPath(['file://logs', `${file}.log`]))))
-      return {}
-    const logs = await fs.readFileSync(
-      await joinPath(['file://logs', `${file}.log`]),
-      'utf-8'
-    )
+    const path = await joinPath(['file://logs', `${file}.log`])
+    if (!(await fs.existsSync(path))) return {}
+    const logs = await fs.readFileSync(path, 'utf-8')
 
     return logs
   }
