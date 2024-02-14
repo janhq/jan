@@ -3,7 +3,7 @@ import { PlaywrightTestConfig } from '@playwright/test'
 const config: PlaywrightTestConfig = {
   testDir: './tests/e2e',
   retries: 0,
-  globalTimeout: 300000,
+  globalTimeout: 60000,
   use: {
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
