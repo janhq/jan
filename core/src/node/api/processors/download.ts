@@ -58,6 +58,7 @@ export class Downloader implements Processor {
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
         const downloadState: DownloadState = {
           ...currentDownloadState,
+          error: error.message,
           downloadState: 'error',
         }
         if (currentDownloadState) {

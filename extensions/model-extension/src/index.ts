@@ -219,15 +219,20 @@ export default class JanModelExtension extends ModelExtension {
   async getDownloadedModels(): Promise<Model[]> {
     return await this.getModelsMetadata(
       async (modelDir: string, model: Model) => {
-        if (model.engine !== JanModelExtension._offlineInferenceEngine) {
+        if (model.engine !== JanModelExtension._offlineInferenceEngine)
           return true
-        }
+
+        // model binaries (sources) are absolute path & exist
+        const existFiles = await Promise.all(
+          model.sources.map((source) => fs.existsSync(source.url))
+        )
+        if (existFiles.every((exist) => exist)) return true
+
         return await fs
           .readdirSync(await joinPath([JanModelExtension._homeDir, modelDir]))
           .then((files: string[]) => {
-            // or model binary exists in the directory
-            // model binary name can match model ID or be a .gguf file and not be an incompleted model file
-            // TODO: Check diff between urls, filenames
+            // Model binary exists in the directory
+            // Model binary name can match model ID or be a .gguf file and not be an incompleted model file
             return (
               files.includes(modelDir) ||
               files.filter(
@@ -273,7 +278,18 @@ export default class JanModelExtension extends ModelExtension {
         if (await fs.existsSync(jsonPath)) {
           // if we have the model.json file, read it
           let model = await this.readModelMetadata(jsonPath)
+
           model = typeof model === 'object' ? model : JSON.parse(model)
+
+          // This to ensure backward compatibility with `model.json` with `source_url`
+          if (model['source_url'] != null) {
+            model['sources'] = [
+              {
+                filename: model.id,
+                url: model['source_url'],
+              },
+            ]
+          }
 
           if (selector && !(await selector?.(dirName, model))) {
             return
@@ -288,31 +304,18 @@ export default class JanModelExtension extends ModelExtension {
       })
       const results = await Promise.allSettled(readJsonPromises)
       const modelData = results.map((result) => {
-        if (result.status === 'fulfilled') {
+        if (result.status === 'fulfilled' && result.value) {
           try {
-            // This to ensure backward compatibility with `model.json` with `source_url`
-            const tmpModel =
+            const model =
               typeof result.value === 'object'
                 ? result.value
                 : JSON.parse(result.value)
-            if (tmpModel['source_url'] != null) {
-              tmpModel['source'] = [
-                {
-                  filename: tmpModel.id,
-                  url: tmpModel['source_url'],
-                },
-              ]
-            }
-
-            return tmpModel as Model
+            return model as Model
           } catch {
             console.debug(`Unable to parse model metadata: ${result.value}`)
-            return undefined
           }
-        } else {
-          console.error(result.reason)
-          return undefined
         }
+        return undefined
       })
 
       return modelData.filter((e) => !!e)
