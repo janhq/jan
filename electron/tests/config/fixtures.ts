@@ -68,7 +68,7 @@ export const test = base.extend<
     await use(new HubPage(page, commonActions))
   },
   createVideoContext: [
-    async ({ browser }, use) => {
+    async ({ playwright }, use) => {
       const context = electronApp.context()
       await use(context)
     },
@@ -103,15 +103,17 @@ export const test = base.extend<
   ],
 })
 
+test.setTimeout(TIMEOUT)
+
 test.beforeAll(async () => {
-  test.setTimeout(TIMEOUT)
   await setupElectron()
-  // await page.waitForSelector('img[alt="Jan - Logo123"]', {
-  //   state: 'visible',
-  //   timeout: TIMEOUT,
-  // })
+  await page.waitForSelector('img[alt="Jan - Logo"]', {
+    state: 'visible',
+    timeout: TIMEOUT,
+  })
 })
 
 test.afterAll(async () => {
-  await teardownElectron()
+  // temporally disabling this due to the config for parallel testing WIP
+  // teardownElectron()
 })
