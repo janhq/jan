@@ -1,4 +1,4 @@
-import { DownloadState } from '../types'
+import { DownloadState } from '../../types'
 
 /**
  * Manages file downloads and network requests.

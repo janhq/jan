@@ -9,12 +9,9 @@ import { log } from '@janhq/core/node'
 /**
  * IPC Handlers
  **/
-import { handleDownloaderIPCs } from './handlers/download'
-import { handleExtensionIPCs } from './handlers/extension'
-import { handleFileMangerIPCs } from './handlers/fileManager'
-import { handleAppIPCs } from './handlers/app'
+import { injectHandler } from './handlers/common'
 import { handleAppUpdates } from './handlers/update'
-import { handleFsIPCs } from './handlers/fs'
+import { handleAppIPCs } from './handlers/native'
 
 /**
  * Utils
@@ -92,11 +89,11 @@ function createMainWindow() {
  * Handles various IPC messages from the renderer process.
  */
 function handleIPCs() {
-  handleFsIPCs()
-  handleDownloaderIPCs()
-  handleExtensionIPCs()
+  // Inject core handlers for IPCs
+  injectHandler()
+
+  // Handle native IPCs
   handleAppIPCs()
-  handleFileMangerIPCs()
 }
 
 /*

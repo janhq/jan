@@ -2,7 +2,7 @@ import { AppConfiguration, SystemResourceInfo } from '../../types'
 import { join } from 'path'
 import fs from 'fs'
 import os from 'os'
-import { log, logServer } from '../log'
+import { log, logServer } from './log'
 import childProcess from 'child_process'
 
 // TODO: move this to core
@@ -54,34 +54,6 @@ export const updateAppConfiguration = (configuration: AppConfiguration): Promise
 
   fs.writeFileSync(configurationFile, JSON.stringify(configuration))
   return Promise.resolve()
-}
-
-/**
- * Utility function to get server log path
- *
- * @returns {string} The log path.
- */
-export const getServerLogPath = (): string => {
-  const appConfigurations = getAppConfigurations()
-  const logFolderPath = join(appConfigurations.data_folder, 'logs')
-  if (!fs.existsSync(logFolderPath)) {
-    fs.mkdirSync(logFolderPath, { recursive: true })
-  }
-  return join(logFolderPath, 'server.log')
-}
-
-/**
- * Utility function to get app log path
- *
- * @returns {string} The log path.
- */
-export const getAppLogPath = (): string => {
-  const appConfigurations = getAppConfigurations()
-  const logFolderPath = join(appConfigurations.data_folder, 'logs')
-  if (!fs.existsSync(logFolderPath)) {
-    fs.mkdirSync(logFolderPath, { recursive: true })
-  }
-  return join(logFolderPath, 'app.log')
 }
 
 /**
@@ -146,18 +118,6 @@ const exec = async (command: string): Promise<string> => {
   })
 }
 
-export const getSystemResourceInfo = async (): Promise<SystemResourceInfo> => {
-  const cpu = await physicalCpuCount()
-  const message = `[NITRO]::CPU informations - ${cpu}`
-  log(message)
-  logServer(message)
-
-  return {
-    numCpuPhysicalCore: cpu,
-    memAvailable: 0, // TODO: this should not be 0
-  }
-}
-
 export const getEngineConfiguration = async (engineId: string) => {
   if (engineId !== 'openai') {
     return undefined
@@ -166,4 +126,32 @@ export const getEngineConfiguration = async (engineId: string) => {
   const filePath = join(directoryPath, `${engineId}.json`)
   const data = fs.readFileSync(filePath, 'utf-8')
   return JSON.parse(data)
+}
+
+/**
+ * Utility function to get server log path
+ *
+ * @returns {string} The log path.
+ */
+export const getServerLogPath = (): string => {
+  const appConfigurations = getAppConfigurations()
+  const logFolderPath = join(appConfigurations.data_folder, 'logs')
+  if (!fs.existsSync(logFolderPath)) {
+    fs.mkdirSync(logFolderPath, { recursive: true })
+  }
+  return join(logFolderPath, 'server.log')
+}
+
+/**
+ * Utility function to get app log path
+ *
+ * @returns {string} The log path.
+ */
+export const getAppLogPath = (): string => {
+  const appConfigurations = getAppConfigurations()
+  const logFolderPath = join(appConfigurations.data_folder, 'logs')
+  if (!fs.existsSync(logFolderPath)) {
+    fs.mkdirSync(logFolderPath, { recursive: true })
+  }
+  return join(logFolderPath, 'app.log')
 }

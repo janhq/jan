@@ -94,7 +94,7 @@ export function persistExtensions() {
  * @returns {Promise.<Array.<Extension>>} New extension
  * @alias extensionManager.installExtensions
  */
-export async function installExtensions(extensions: any, store = true) {
+export async function installExtensions(extensions: any) {
   const installed: Extension[] = [];
   for (const ext of extensions) {
     // Set install options and activation based on input type
@@ -104,11 +104,12 @@ export async function installExtensions(extensions: any, store = true) {
 
     // Install and possibly activate extension
     const extension = new Extension(...spec);
+    if(!extension.origin) { continue }
     await extension._install();
     if (activate) extension.setActive(true);
 
     // Add extension to store if needed
-    if (store) addExtension(extension);
+    addExtension(extension);
     installed.push(extension);
   }
 

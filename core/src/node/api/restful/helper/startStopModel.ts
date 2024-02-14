@@ -1,9 +1,9 @@
 import fs from 'fs'
 import { join } from 'path'
-import { getJanDataFolderPath, getJanExtensionsPath, getSystemResourceInfo } from '../../utils'
-import { logServer } from '../../log'
+import { getJanDataFolderPath, getJanExtensionsPath, getSystemResourceInfo } from '../../../helper'
+import { logServer } from '../../../helper/log'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
-import { Model, ModelSettingParams, PromptTemplate } from '../../../types'
+import { Model, ModelSettingParams, PromptTemplate } from '../../../../types'
 import {
   LOCAL_HOST,
   NITRO_DEFAULT_PORT,
