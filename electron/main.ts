@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 /**
  * Managers
@@ -77,7 +77,7 @@ function createMainWindow() {
 
   /* Open external links in the default browser */
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    require('electron').shell.openExternal(url)
+    shell.openExternal(url)
     return { action: 'deny' }
   })
 

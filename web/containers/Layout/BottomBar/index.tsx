@@ -56,13 +56,6 @@ const BottomBar = () => {
   const setShowSelectModelModal = useSetAtom(showSelectModelModalAtom)
   const [serverEnabled] = useAtom(serverEnabledAtom)
 
-  const calculateGpuMemoryUsage = (gpu: Record<string, never>) => {
-    const total = parseInt(gpu.memoryTotal)
-    const free = parseInt(gpu.memoryFree)
-    if (!total || !free) return 0
-    return Math.round(((total - free) / total) * 100)
-  }
-
   const calculateUtilization = () => {
     let sum = 0
     const util = gpus.map((x) => {

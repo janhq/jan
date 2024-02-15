@@ -6,7 +6,7 @@ import { handleRequests } from './app/handlers'
 export const v1Router = async (app: HttpServer) => {
   // MARK: Public API Routes
   app.register(commonRouter)
-  
+
   // MARK: Internal Application Routes
   handleRequests(app)
 
