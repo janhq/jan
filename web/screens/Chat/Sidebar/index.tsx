@@ -59,8 +59,14 @@ const Sidebar: React.FC = () => {
       activeThread?.assistants[0]?.tools[0]?.settings) ??
       {}
   )
-  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
-  const componentDataRuntimeSetting = getConfigurationsData(modelRuntimeParams)
+  const componentDataEngineSetting = getConfigurationsData(
+    modelEngineParams,
+    selectedModel
+  )
+  const componentDataRuntimeSetting = getConfigurationsData(
+    modelRuntimeParams,
+    selectedModel
+  )
 
   return (
     <div
@@ -319,7 +325,7 @@ const Sidebar: React.FC = () => {
               <div className="mt-6">
                 <CardSidebar title="Inference Parameters" asChild>
                   <div className="px-2 py-4">
-                    <ModelSetting />
+                    <ModelSetting componentData={componentDataRuntimeSetting} />
                   </div>
                 </CardSidebar>
               </div>
@@ -344,7 +350,7 @@ const Sidebar: React.FC = () => {
               <div className="my-4">
                 <CardSidebar title="Engine Parameters" asChild>
                   <div className="px-2 py-4">
-                    <EngineSetting />
+                    <EngineSetting componentData={componentDataEngineSetting} />
                   </div>
                 </CardSidebar>
               </div>
