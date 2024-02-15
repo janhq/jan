@@ -14,6 +14,7 @@ import useSetActiveThread from './useSetActiveThread'
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
   ModelParams,
+  threadDataReadyAtom,
   threadModelParamsAtom,
   threadStatesAtom,
   threadsAtom,
@@ -24,6 +25,7 @@ const useThreads = () => {
   const setThreads = useSetAtom(threadsAtom)
   const setThreadModelRuntimeParams = useSetAtom(threadModelParamsAtom)
   const { setActiveThread } = useSetActiveThread()
+  const setThreadDataReady = useSetAtom(threadDataReadyAtom)
 
   useEffect(() => {
     const getThreads = async () => {
@@ -58,6 +60,7 @@ const useThreads = () => {
       if (localThreads.length > 0) {
         setActiveThread(localThreads[0])
       }
+      setThreadDataReady(true)
     }
 
     getThreads()
@@ -66,6 +69,7 @@ const useThreads = () => {
     setThreadModelRuntimeParams,
     setThreadStates,
     setThreads,
+    setThreadDataReady,
   ])
 }
 
