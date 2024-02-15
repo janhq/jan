@@ -1,6 +1,4 @@
-/* eslint-disable react/display-name */
-
-import { forwardRef, useState } from 'react'
+import { useState } from 'react'
 
 import { Model } from '@janhq/core'
 import { Badge } from '@janhq/uikit'
@@ -11,7 +9,7 @@ type Props = {
   model: Model
 }
 
-const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
+const ExploreModelItem: React.FC<Props> = ({ model }) => {
   const [open, setOpen] = useState('')
 
   const handleToggle = () => {
@@ -23,10 +21,7 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
   }
 
   return (
-    <div
-      ref={ref}
-      className="mb-6 flex flex-col overflow-hidden rounded-xl border border-border bg-background/60"
-    >
+    <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-border bg-background/60">
       <ExploreModelItemHeader
         model={model}
         onClick={handleToggle}
@@ -82,17 +77,11 @@ const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
               </span>
               <p className="mt-2 font-medium uppercase">{model.format}</p>
             </div>
-            {/* <div className="mt-4">
-              <span className="font-semibold text-muted-foreground">
-                Compatibility
-              </span>
-              <p className="mt-2 font-medium">-</p>
-            </div> */}
           </div>
         </div>
       )}
     </div>
   )
-})
+}
 
 export default ExploreModelItem

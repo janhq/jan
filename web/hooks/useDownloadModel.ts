@@ -7,13 +7,12 @@ import {
   abortDownload,
   joinPath,
   ModelArtifact,
+  DownloadState,
 } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
-
-import { modelBinFileName } from '@/utils/model'
 
 import { setDownloadStateAtom } from './useDownloadState'
 
@@ -29,7 +28,7 @@ export default function useDownloadModel() {
     async (model: Model) => {
       const childProgresses: DownloadState[] = model.sources.map(
         (source: ModelArtifact) => ({
-          filename: source.filename,
+          fileName: source.filename,
           modelId: model.id,
           time: {
             elapsed: 0,
@@ -47,7 +46,7 @@ export default function useDownloadModel() {
 
       // set an initial download state
       setDownloadState({
-        filename: '',
+        fileName: '',
         modelId: model.id,
         time: {
           elapsed: 0,
@@ -70,11 +69,12 @@ export default function useDownloadModel() {
     [ignoreSSL, proxy, addDownloadingModel, setDownloadState]
   )
 
-  const abortModelDownload = async (model: Model) => {
-    await abortDownload(
-      await joinPath(['models', model.id, modelBinFileName(model)])
-    )
-  }
+  const abortModelDownload = useCallback(async (model: Model) => {
+    for (const source of model.sources) {
+      const path = await joinPath(['models', model.id, source.filename])
+      await abortDownload(path)
+    }
+  }, [])
 
   return {
     downloadModel,

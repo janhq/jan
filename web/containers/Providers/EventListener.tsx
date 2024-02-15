@@ -3,7 +3,7 @@ import { PropsWithChildren, useCallback, useEffect } from 'react'
 
 import React from 'react'
 
-import { DownloadEvent, events } from '@janhq/core'
+import { DownloadEvent, events, DownloadState } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from '@/hooks/useDownloadState'
