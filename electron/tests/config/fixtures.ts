@@ -34,7 +34,7 @@ export async function setupElectron() {
   electronApp = await electron.launch({
     args: [appInfo.main], // main file from package.json
     executablePath: appInfo.executable, // path to the Electron executable
-    recordVideo: { dir: Constants.VIDEO_DIR }, // Specify the directory for video recordings
+    // recordVideo: { dir: Constants.VIDEO_DIR }, // Specify the directory for video recordings
   })
   await stubDialog(electronApp, 'showMessageBox', { response: 1 })
 
