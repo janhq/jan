@@ -52,7 +52,6 @@ import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
-import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
 const corsEnabledAtom = atom(true)
 const verboseEnabledAtom = atom(true)
@@ -63,15 +62,14 @@ const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const showRightSideBar = useAtomValue(showRightSideBarAtom)
-  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
-
-  const modelEngineParams = toSettingParams(activeModelParams)
-  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
   const { openServerLog, clearServerLog } = useLogs()
   const { startModel, stateModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
+
+  const modelEngineParams = toSettingParams(selectedModel?.settings)
+  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
@@ -396,7 +394,7 @@ const LocalServerScreen = () => {
             </p>
           </div>
           <DropdownListSidebar strictedThread={false} />
-          {loadModelError && (
+          {loadModelError && serverEnabled && (
             <div className="mt-3 flex space-x-2 text-xs">
               <AlertTriangleIcon size={16} className="text-danger" />
               <span>
@@ -431,7 +429,10 @@ const LocalServerScreen = () => {
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting enabled={!serverEnabled} />
+                  <EngineSetting
+                    enabled={!serverEnabled}
+                    componentData={componentDataEngineSetting}
+                  />
                 </div>
               </CardSidebar>
             </div>
