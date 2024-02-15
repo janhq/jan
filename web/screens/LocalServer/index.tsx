@@ -394,7 +394,7 @@ const LocalServerScreen = () => {
             </p>
           </div>
           <DropdownListSidebar strictedThread={false} />
-          {loadModelError && (
+          {loadModelError && serverEnabled && (
             <div className="mt-3 flex space-x-2 text-xs">
               <AlertTriangleIcon size={16} className="text-danger" />
               <span>
