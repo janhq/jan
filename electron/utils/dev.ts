@@ -7,7 +7,7 @@ export const setupReactDevTool = async () => {
       'electron-devtools-installer'
     ) // Don't use import on top level, since the installer package is dev-only
     try {
-      const name = installExtension(REACT_DEVELOPER_TOOLS)
+      const name = await installExtension(REACT_DEVELOPER_TOOLS)
       console.log(`Added Extension: ${name}`)
     } catch (err) {
       console.log('An error occurred while installing devtools:')
