@@ -44,12 +44,9 @@ const ServerLogs = (props: ServerLogsProps) => {
     updateLogs()
 
     // Log polling interval
-    const intervalId = setInterval(
-      () => {
-        updateLogs()
-      },
-      window.core?.api?.pollingInterval ?? 1000
-    )
+    const intervalId = setInterval(() => {
+      updateLogs()
+    }, window.core?.api?.pollingInterval ?? 1000)
 
     // clean up interval
     return () => clearInterval(intervalId)
