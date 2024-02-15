@@ -8,9 +8,8 @@ import {
   ChangeEvent,
 } from 'react'
 
-import { openExternalUrl } from '@janhq/core'
+import { openExternalUrl, fs } from '@janhq/core'
 
-import { fs } from '@janhq/core'
 import {
   Switch,
   Button,
@@ -42,6 +41,12 @@ import { useSettings } from '@/hooks/useSettings'
 import DataFolder from './DataFolder'
 import FactoryReset from './FactoryReset'
 
+type GPU = {
+  id: string
+  vram: number | null
+  name: string
+}
+
 const Advanced = () => {
   const {
     experimentalFeature,
@@ -53,9 +58,7 @@ const Advanced = () => {
   } = useContext(FeatureToggleContext)
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
-  const [gpuList, setGpuList] = useState([
-    { id: 'none', vram: null, name: 'none' },
-  ])
+  const [gpuList, setGpuList] = useState<GPU[]>([])
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
@@ -117,6 +120,9 @@ const Advanced = () => {
     saveSettings({ gpusInUse: updatedGpusInUse })
   }
 
+  const gpuSelectionPlaceHolder =
+    gpuList.length > 0 ? 'Select GPU' : "You don't have any compatible GPU"
+
   return (
     <div className="block w-full">
       {/* Keyboard shortcut  */}
@@ -155,7 +161,7 @@ const Advanced = () => {
       {/* CPU / GPU switching */}
       {!isMac && (
         <div className="flex w-full flex-col items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between w-full">
             <div className="space-y-1.5">
               <div className="flex gap-x-2">
                 <h6 className="text-sm font-semibold capitalize">
@@ -204,6 +210,7 @@ const Advanced = () => {
             <Tooltip>
               <TooltipTrigger>
                 <Switch
+                  disabled={gpuList.length === 0}
                   checked={gpuEnabled}
                   onCheckedChange={(e) => {
                     if (e === true) {
@@ -245,77 +252,70 @@ const Advanced = () => {
               )}
             </Tooltip>
           </div>
-
-          {gpuEnabled && (
-            <div className="mt-2 w-full rounded-lg bg-secondary p-4">
-              <label className="mb-1 inline-block font-medium">
-                Choose GPU
-              </label>
-              <Select value={selectedGpu.join()}>
-                <SelectTrigger className="w-[340px] bg-white">
-                  <SelectValue placeholder="Select GPU">
-                    <span className="line-clamp-1 w-full pr-8">
-                      {selectedGpu.join()}
-                    </span>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPortal>
-                  <SelectContent className="w-[400px] px-1 pb-2">
-                    <SelectGroup>
-                      <SelectLabel>Nvidia</SelectLabel>
-                      <div className="px-4 pb-2">
-                        <div className="rounded-lg bg-secondary p-3">
-                          {gpuList
-                            .filter((gpu) =>
-                              gpu.name.toLowerCase().includes('nvidia')
-                            )
-                            .map((gpu) => (
-                              <div
-                                key={gpu.id}
-                                className="my-1 flex items-center space-x-2"
+          <div className="mt-2 w-full rounded-lg bg-secondary p-4">
+            <label className="mb-1 inline-block font-medium">Choose GPU</label>
+            <Select disabled={!gpuEnabled} value={selectedGpu.join()}>
+              <SelectTrigger className="w-[340px] bg-white">
+                <SelectValue placeholder={gpuSelectionPlaceHolder}>
+                  <span className="line-clamp-1 w-full pr-8">
+                    {selectedGpu.join()}
+                  </span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPortal>
+                <SelectContent className="w-[400px] px-1 pb-2">
+                  <SelectGroup>
+                    <SelectLabel>Nvidia</SelectLabel>
+                    <div className="px-4 pb-2">
+                      <div className="rounded-lg bg-secondary p-3">
+                        {gpuList
+                          .filter((gpu) =>
+                            gpu.name.toLowerCase().includes('nvidia')
+                          )
+                          .map((gpu) => (
+                            <div
+                              key={gpu.id}
+                              className="my-1 flex items-center space-x-2"
+                            >
+                              <Checkbox
+                                id={`gpu-${gpu.id}`}
+                                name="gpu-nvidia"
+                                className="bg-white"
+                                value={gpu.id}
+                                checked={gpusInUse.includes(gpu.id)}
+                                onCheckedChange={() => handleGPUChange(gpu.id)}
+                              />
+                              <label
+                                className="flex w-full items-center justify-between"
+                                htmlFor={`gpu-${gpu.id}`}
                               >
-                                <Checkbox
-                                  id={`gpu-${gpu.id}`}
-                                  name="gpu-nvidia"
-                                  className="bg-white"
-                                  value={gpu.id}
-                                  checked={gpusInUse.includes(gpu.id)}
-                                  onCheckedChange={() =>
-                                    handleGPUChange(gpu.id)
-                                  }
-                                />
-                                <label
-                                  className="flex w-full items-center justify-between"
-                                  htmlFor={`gpu-${gpu.id}`}
-                                >
-                                  <span>{gpu.name}</span>
-                                  <span>{gpu.vram}MB VRAM</span>
-                                </label>
-                              </div>
-                            ))}
-                        </div>
-                        {/* Warning message */}
-                        {gpuEnabled && gpusInUse.length > 1 && (
-                          <div className="mt-2 flex items-start space-x-2 text-yellow-500">
-                            <AlertTriangleIcon
-                              size={16}
-                              className="flex-shrink-0"
-                            />
-                            <p className="text-xs leading-relaxed">
-                              If multi-GPU is enabled with different GPU models
-                              or without NVLink, it could impact token speed.
-                            </p>
-                          </div>
-                        )}
+                                <span>{gpu.name}</span>
+                                <span>{gpu.vram}MB VRAM</span>
+                              </label>
+                            </div>
+                          ))}
                       </div>
-                    </SelectGroup>
+                      {/* Warning message */}
+                      {gpuEnabled && gpusInUse.length > 1 && (
+                        <div className="mt-2 flex items-start space-x-2 text-yellow-500">
+                          <AlertTriangleIcon
+                            size={16}
+                            className="flex-shrink-0"
+                          />
+                          <p className="text-xs leading-relaxed">
+                            If multi-GPU is enabled with different GPU models or
+                            without NVLink, it could impact token speed.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </SelectGroup>
 
-                    {/* TODO enable this when we support AMD */}
-                  </SelectContent>
-                </SelectPortal>
-              </Select>
-            </div>
-          )}
+                  {/* TODO enable this when we support AMD */}
+                </SelectContent>
+              </SelectPortal>
+            </Select>
+          </div>
         </div>
       )}
 
