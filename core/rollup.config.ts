@@ -54,7 +54,8 @@ export default [
       'url',
       'http',
       'os',
-      'util'
+      'util',
+      'child_process',
     ],
     watch: {
       include: 'src/node/**',

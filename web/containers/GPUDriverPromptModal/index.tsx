@@ -36,7 +36,7 @@ const GPUDriverPrompt: React.FC = () => {
       <Modal open={showNotification} onOpenChange={openChanged}>
         <ModalContent>
           <ModalHeader>
-            <ModalTitle>
+            <ModalTitle className="pr-4 leading-relaxed">
               Checking for machine that does not meet the requirements.
             </ModalTitle>
           </ModalHeader>

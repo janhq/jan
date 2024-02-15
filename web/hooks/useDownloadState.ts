@@ -44,7 +44,10 @@ export const setDownloadStateAtom = atom(
         })
       } else {
         let error = state.error
-        if (state.error?.includes('certificate')) {
+        if (
+          typeof error?.includes === 'function' &&
+          state.error?.includes('certificate')
+        ) {
           error +=
             '. To fix enable "Ignore SSL Certificates" in Advanced settings.'
         }

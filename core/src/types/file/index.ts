@@ -5,7 +5,7 @@ export type FileStat = {
 
 export type DownloadState = {
   modelId: string
-  filename: string
+  fileName: string
   time: DownloadTime
   speed: number
   percent: number

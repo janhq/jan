@@ -14,7 +14,7 @@ export abstract class ConversationalExtension
    * Conversation extension type.
    */
   type(): ExtensionTypeEnum | undefined {
-    return ExtensionTypeEnum.Conversational;
+    return ExtensionTypeEnum.Conversational
   }
 
   abstract getThreads(): Promise<Thread[]>

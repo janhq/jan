@@ -109,6 +109,8 @@ export const deleteMessageAtom = atom(null, (get, set, id: string) => {
   }
 })
 
+export const editMessageAtom = atom('')
+
 export const updateMessageAtom = atom(
   null,
   (

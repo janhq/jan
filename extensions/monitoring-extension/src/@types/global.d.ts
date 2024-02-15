@@ -1,1 +1,1 @@
-declare const MODULE: string;
+declare const MODULE: string

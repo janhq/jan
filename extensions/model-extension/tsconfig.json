@@ -8,7 +8,7 @@
     "forceConsistentCasingInFileNames": true,
     "strict": false,
     "skipLibCheck": true,
-    "rootDir": "./src",
+    "rootDir": "./src"
   },
-  "include": ["./src"],
+  "include": ["./src"]
 }
