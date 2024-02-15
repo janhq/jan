@@ -31,7 +31,7 @@ export default function CardSidebar({
   rightAction,
   hideMoreVerticalAction,
 }: Props) {
-  const [show, setShow] = useState(true)
+  const [show, setShow] = useState(false)
   const [more, setMore] = useState(false)
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
