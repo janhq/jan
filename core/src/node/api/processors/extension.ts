@@ -1,7 +1,6 @@
 import { readdirSync } from 'fs'
 import { join, extname } from 'path'
 
-import { ExtensionRoute } from '../../../api'
 import { Processor } from './Processor'
 import { ModuleManager } from '../../helper/module'
 import { getJanExtensionsPath as getPath } from '../../helper'
