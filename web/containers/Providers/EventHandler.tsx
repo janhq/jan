@@ -130,25 +130,38 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const updateThreadTitle = useCallback(
     (message: ThreadMessage) => {
       // Update only when it's finished
-      if (message.status === MessageStatus.Pending) {
+      if (message.status !== MessageStatus.Ready) {
         return
       }
 
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
       const messageContent = message.content[0]?.text?.value
-      if (thread && messageContent) {
-        // Update the Thread title with the response of the inference on the 1st prompt
-        updateThread({
-          ...thread,
-          title: messageContent,
-          metadata: thread.metadata,
-        })
 
-        extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.saveThread({
+      // The thread title should not be updated if the message is less than 10 words
+      // And no new line character is present
+      // And non-alphanumeric characters should be removed
+      if (thread && messageContent && !messageContent.includes('\n')) {
+        // Remove non-alphanumeric characters
+        const cleanedMessageContent = messageContent
+          .replace(/[^a-z0-9\s]/gi, '')
+          .trim()
+        // Split the message into words
+        const words = cleanedMessageContent.split(' ')
+        // Check if the message is less than 10 words
+        if (words.length < 10) {
+          // Update the Thread title with the response of the inference on the 1st prompt
+          updateThread({
             ...thread,
+            title: cleanedMessageContent,
+            metadata: thread.metadata,
           })
+
+          extensionManager
+            .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+            ?.saveThread({
+              ...thread,
+            })
+        }
       }
     },
     [updateThread]
@@ -230,25 +243,25 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       //  Summarize the first message, and make that the title of the Thread
       // 1. Get the summary of the first prompt using whatever engine user is currently using
       const threadMessages = messagesRef?.current
-      const summarizeFirstPrompt =
-        'Summarize the conversation above in 5 words as a title'
 
+      if (!threadMessages || threadMessages.length === 0) return
+
+      const summarizeFirstPrompt = `Summarize this text "${threadMessages[0].content[0].text.value}" for a conversation title in less than 10 words`
       // Prompt: Given this query from user {query}, return to me the summary in 5 words as the title
       const msgId = ulid()
       const messages: ChatCompletionMessage[] = [
-        ...threadMessages.map((msg) => {
-          return {
-            role: msg.role,
-            content: msg.content[0]?.text.value,
-          }
-        }),
+        {
+          role: ChatCompletionRole.System,
+          content:
+            'The conversation below is for a text summarization, user asks assistant to summarize a text and assistant should response in just less than 10 words',
+        },
         {
           role: ChatCompletionRole.User,
           content: summarizeFirstPrompt,
-        } as ChatCompletionMessage,
+        },
       ]
 
-      const firstPromptRequest: MessageRequest = {
+      const messageRequest: MessageRequest = {
         id: msgId,
         threadId: message.thread_id,
         type: MessageRequestType.Summary,
@@ -263,7 +276,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
       // 2. Update the title with the result of the inference
       setTimeout(() => {
-        events.emit(MessageEvent.OnMessageSent, firstPromptRequest)
+        events.emit(MessageEvent.OnMessageSent, messageRequest)
       }, 1000)
     }
   }
