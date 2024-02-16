@@ -199,7 +199,7 @@ const ChatScreen: React.FC = () => {
           {queuedMessage && !reloadModel && (
             <div className="mb-2 text-center">
               <span className="text-muted-foreground">
-                Message queued. It can be sent once the model has started
+                Message will be sent once the model has started
               </span>
             </div>
           )}
