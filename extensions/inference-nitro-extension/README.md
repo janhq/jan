@@ -64,10 +64,10 @@ There are a few things to keep in mind when writing your plugin code:
   In `index.ts`, you will see that the extension function will return a `Promise<any>`.
 
   ```typescript
-  import { core } from "@janhq/core";
+  import { core } from '@janhq/core'
 
   function onStart(): Promise<any> {
-    return core.invokePluginFunc(MODULE_PATH, "run", 0);
+    return core.invokePluginFunc(MODULE_PATH, 'run', 0)
   }
   ```
 
@@ -75,4 +75,3 @@ There are a few things to keep in mind when writing your plugin code:
   [documentation](https://github.com/janhq/jan/blob/main/core/README.md).
 
 So, what are you waiting for? Go ahead and start customizing your plugin!
-

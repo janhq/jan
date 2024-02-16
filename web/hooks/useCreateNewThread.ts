@@ -25,7 +25,6 @@ import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
 
-import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   threadsAtom,
   threadStatesAtom,
@@ -57,7 +56,6 @@ export const useCreateNewThread = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
@@ -71,9 +69,9 @@ export const useCreateNewThread = () => {
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
 
     // check last thread message, if there empty last message use can not create thread
-    const lastMessage = threads[threads.length - 1]?.metadata?.lastMessage
+    const lastMessage = threads[0]?.metadata?.lastMessage
 
-    if (!lastMessage && threads.length && !messages.length) {
+    if (!lastMessage && threads.length) {
       return null
     }
 

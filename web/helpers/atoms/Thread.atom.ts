@@ -28,6 +28,10 @@ export const isGeneratingResponseAtom = atom<boolean | undefined>(undefined)
  * Stores all thread states for the current user
  */
 export const threadStatesAtom = atom<Record<string, ThreadState>>({})
+
+// Whether thread data is ready or not
+export const threadDataReadyAtom = atom<boolean>(false)
+
 export const activeThreadStateAtom = atom<ThreadState | undefined>((get) => {
   const threadId = get(activeThreadIdAtom)
   if (!threadId) {

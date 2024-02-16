@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import React from 'react'
 
@@ -23,15 +23,34 @@ const ServerLogs = (props: ServerLogsProps) => {
 
   const clipboard = useClipboard({ timeout: 1000 })
 
-  useEffect(() => {
-    getLogs('server').then((log) => {
-      if (typeof log?.split === 'function') {
-        setLogs(log.split(/\r?\n|\r|\n/g))
-      }
-    })
-
+  const updateLogs = useCallback(
+    () =>
+      getLogs('server').then((log) => {
+        if (typeof log?.split === 'function') {
+          setLogs(log.split(/\r?\n|\r|\n/g))
+        }
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logs, serverEnabled])
+    []
+  )
+
+  useEffect(() => {
+    if (serverEnabled) {
+      updateLogs()
+    }
+  }, [serverEnabled, updateLogs])
+
+  useEffect(() => {
+    updateLogs()
+
+    // Log polling interval
+    const intervalId = setInterval(() => {
+      updateLogs()
+    }, window.core?.api?.pollingInterval ?? 1000)
+
+    // clean up interval
+    return () => clearInterval(intervalId)
+  }, [updateLogs])
 
   return (
     <>

@@ -9,7 +9,9 @@ const file3 = args[2]
 
 // check that all arguments are present and throw error instead
 if (!file1 || !file2 || !file3) {
-  throw new Error('Please provide 3 file paths as arguments: path to file1, to file2 and destination path')
+  throw new Error(
+    'Please provide 3 file paths as arguments: path to file1, to file2 and destination path'
+  )
 }
 
 const doc1 = yaml.load(fs.readFileSync(file1, 'utf8'))

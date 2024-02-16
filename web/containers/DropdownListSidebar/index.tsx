@@ -94,7 +94,7 @@ const DropdownListSidebar = ({
 
   // This is fake loader please fix this when we have realtime percentage when load model
   useEffect(() => {
-    if (stateModel.loading) {
+    if (stateModel.model === selectedModel?.id && stateModel.loading) {
       if (loader === 24) {
         setTimeout(() => {
           setLoader(loader + 1)
@@ -115,7 +115,7 @@ const DropdownListSidebar = ({
     } else {
       setLoader(0)
     }
-  }, [stateModel.loading, loader])
+  }, [stateModel.loading, loader, selectedModel, stateModel.model])
 
   const onValueSelected = useCallback(
     async (modelId: string) => {
@@ -159,12 +159,16 @@ const DropdownListSidebar = ({
     return null
   }
 
+  const selectedModelLoading =
+    stateModel.model === selectedModel?.id && stateModel.loading
+
   return (
     <>
       <div
         className={twMerge(
           'relative w-full overflow-hidden rounded-md',
-          stateModel.loading && 'pointer-events-none bg-blue-200 text-blue-600'
+          stateModel.loading && 'pointer-events-none',
+          selectedModelLoading && 'bg-blue-200 text-blue-600'
         )}
       >
         <Select
@@ -174,7 +178,7 @@ const DropdownListSidebar = ({
         >
           <SelectTrigger className="relative w-full">
             <SelectValue placeholder="Choose model to start">
-              {stateModel.loading && (
+              {selectedModelLoading && (
                 <div
                   className="z-5 absolute left-0 top-0 h-full w-full rounded-md bg-blue-100/80"
                   style={{ width: `${loader}%` }}
@@ -183,7 +187,7 @@ const DropdownListSidebar = ({
               <span
                 className={twMerge(
                   'relative z-20',
-                  stateModel.loading && 'font-medium'
+                  selectedModelLoading && 'font-medium'
                 )}
               >
                 {selectedModel?.name}

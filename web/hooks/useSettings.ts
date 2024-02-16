@@ -24,7 +24,7 @@ export const useSettings = () => {
         ((settings.nvidia_driver?.exist && !settings.cuda?.exist) ||
           !settings.nvidia_driver?.exist)
       ) {
-        setShowNotification(true)
+        setShowNotification(false)
       }
 
       // Check if run_mode is 'gpu' or 'cpu' and update state accordingly

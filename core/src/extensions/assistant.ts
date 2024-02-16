@@ -1,5 +1,5 @@
-import { Assistant, AssistantInterface } from "../index";
-import { BaseExtension, ExtensionTypeEnum } from "../extension";
+import { Assistant, AssistantInterface } from '../index'
+import { BaseExtension, ExtensionTypeEnum } from '../extension'
 
 /**
  * Assistant extension for managing assistants.
@@ -10,10 +10,10 @@ export abstract class AssistantExtension extends BaseExtension implements Assist
    * Assistant extension type.
    */
   type(): ExtensionTypeEnum | undefined {
-    return ExtensionTypeEnum.Assistant;
+    return ExtensionTypeEnum.Assistant
   }
 
-  abstract createAssistant(assistant: Assistant): Promise<void>;
-  abstract deleteAssistant(assistant: Assistant): Promise<void>;
-  abstract getAssistants(): Promise<Assistant[]>;
+  abstract createAssistant(assistant: Assistant): Promise<void>
+  abstract deleteAssistant(assistant: Assistant): Promise<void>
+  abstract getAssistants(): Promise<Assistant[]>
 }
