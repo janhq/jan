@@ -11,6 +11,8 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
+    local server,
+    api server,
   ]
 ---
 
@@ -40,7 +42,7 @@ With your local server running, you can click the `Try it out` button on the top
 
 Use the API endpoints, request and response body examples as models for your own application.
 
-### Curl request example
+### cURL Request Example
 
 Here's an example curl request with a local server running `tinyllama-1.1b`:
 

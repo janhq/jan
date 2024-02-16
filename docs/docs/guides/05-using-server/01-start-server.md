@@ -12,6 +12,8 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
+    local server,
+    api server,
   ]
 ---
 
@@ -23,9 +25,9 @@ Navigate by clicking the `Local API Server` icon on the left side of your screen
 
 <br></br>
 
-![01-local-api-view](./assets/01-local-api-view.png)
+![01-local-api-view](./assets/01-local-api-view.gif)
 
-## Choose your model
+## Choosing a Model
 
 On the top right of your screen under `Model Settings`, set the LLM that your local server will be running. You can choose from any of the models already installed, or pick a new model by clicking `Explore the Hub`.
 
@@ -33,9 +35,9 @@ On the top right of your screen under `Model Settings`, set the LLM that your lo
 
 ![01-choose-model](./assets/01-choose-model.png)
 
-## Set your Server Options
+## Server Options
 
-On the left side of your screen you can set custom server options.
+On the left side of your screen, you can set custom server options.
 
 <br></br>
 
@@ -49,9 +51,9 @@ You can make the local server more accessible by clicking on the address and cho
 
 ### Port
 
-Jan runs on port `1337` by default, but this can be changed.
+Jan runs on port `1337` by default. You can change the port to any other port number if needed.
 
-### CORS
+### Cross-Origin Resource Sharing (CORS)
 
 Cross-Origin Resource Sharing (CORS) manages resource access on the local server from external domains. Enabled for security by default, it can be disabled if needed.
 
