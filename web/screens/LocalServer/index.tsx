@@ -122,20 +122,20 @@ const LocalServerScreen = () => {
               block
               themes={serverEnabled ? 'danger' : 'primary'}
               disabled={stateModel.loading || errorRangePort || !selectedModel}
-              onClick={() => {
+              onClick={async () => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
                   setServerEnabled(false)
                   setLoadModelError(undefined)
                 } else {
                   startModel(String(selectedModel?.id))
-                  window.core?.api?.startServer({
+                  const isStarted = await window.core?.api?.startServer({
                     host,
                     port,
                     isCorsEnabled,
                     isVerboseEnabled,
                   })
-                  setServerEnabled(true)
+                  if (isStarted) setServerEnabled(true)
                   if (firstTimeVisitAPIServer) {
                     localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
                     setFirstTimeVisitAPIServer(false)

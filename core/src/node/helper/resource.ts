@@ -6,7 +6,6 @@ export const getSystemResourceInfo = async (): Promise<SystemResourceInfo> => {
   const cpu = await physicalCpuCount()
   const message = `[NITRO]::CPU informations - ${cpu}`
   log(message)
-  logServer(message)
 
   return {
     numCpuPhysicalCore: cpu,

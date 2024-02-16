@@ -45,7 +45,7 @@ export interface ServerConfig {
  * Function to start the server
  * @param configs - Server configurations
  */
-export const startServer = async (configs?: ServerConfig) => {
+export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
   // Update server settings
   isVerbose = configs?.isVerboseEnabled ?? true
   hostSetting = configs?.host ?? JAN_API_HOST
@@ -123,10 +123,12 @@ export const startServer = async (configs?: ServerConfig) => {
             `Debug: JAN API listening at: http://${hostSetting}:${portSetting}`
           )
       })
+    return true
   } catch (e) {
     // Log any errors
     if (isVerbose) logServer(`Error: ${e}`)
   }
+  return false
 }
 
 /**
