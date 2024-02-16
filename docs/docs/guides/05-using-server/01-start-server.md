@@ -21,7 +21,7 @@ Jan ships with a built-in API server that can be used as a drop-in, local replac
 
 ## Open Local API Server View
 
-Navigate by clicking the `Local API Server` icon on the left side of your screen, as shown in the image below.
+Navigate to the Local API Server view by clicking the corresponding icon on the left side of the screen.
 
 <br></br>
 
@@ -41,7 +41,7 @@ On the left side of your screen, you can set custom server options.
 
 <br></br>
 
-![01-server-settings](./assets/01-server-settings.png)
+![01-server-settings](./assets/01-server-options.png)
 
 ### Local Server Address
 
@@ -67,6 +67,6 @@ Click the `Start Server` button on the top left of your screen. You will see the
 
 <br></br>
 
-![01-running-server](./assets/01-running-server.png)
+![01-running-server](./assets/01-running-server.gif)
 
-Your server is now running. Next, learn how to use your local API server.
+You server is now running and you can use the server address and port to make requests to the local server.

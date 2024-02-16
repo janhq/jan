@@ -1,5 +1,5 @@
 ---
-title: Using Local Server
+title: Using Jan's Built-in API Server
 description: How to use Jan's built-in API server.
 keywords:
   [
@@ -22,13 +22,13 @@ Jan's built-in API server is compatible with [OpenAI's API](https://platform.ope
 
 Jan contains a comprehensive API reference. This reference displays all the API endpoints available, gives you examples requests and responses, and allows you to execute them in browser.
 
-On the top left of your screen below the red `Stop Server` button is the blue `API Reference`. Clicking this will open the reference in browser.
+On the top left of your screen below the red `Stop Server` button is the blue `API Reference`. Clicking this will open the reference in your browser.
 
 <br></br>
 
 ![02-api-reference](./assets/02-api-reference.png)
 
-Scroll through the various available endpoints to learn what options are available.
+Scroll through the various available endpoints to learn what options are available and try them out by executing the example requests. In addition, you can also use the [Jan API Reference](https://jan.ai/api-reference/) on the Jan website.
 
 ### Chat
 
@@ -44,16 +44,12 @@ Use the API endpoints, request and response body examples as models for your own
 
 ### cURL Request Example
 
-Here's an example curl request with a local server running `tinyllama-1.1b`:
+Here is an example curl request with a local server running `tinyllama-1.1b`:
 
 <br></br>
 
 ```json
-curl -X 'POST' \
-  'http://localhost:1337/v1/chat/completions' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
+{
   "messages": [
     {
       "content": "You are a helpful assistant.",
@@ -74,10 +70,11 @@ curl -X 'POST' \
   "presence_penalty": 0,
   "temperature": 0.7,
   "top_p": 0.95
-}'
+}
+'
 ```
 
-### Response body example
+### Response Body Example
 
 ```json
 {
