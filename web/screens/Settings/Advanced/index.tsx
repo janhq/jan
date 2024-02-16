@@ -85,14 +85,14 @@ const Advanced = () => {
   useEffect(() => {
     const setUseGpuIfPossible = async () => {
       const settings = await readSettings()
-      setGpuEnabled(settings.run_mode === 'gpu')
+      setGpuEnabled(settings.run_mode === 'gpu' && gpuList.length > 0)
       setGpusInUse(settings.gpus_in_use || [])
       if (settings.gpus) {
         setGpuList(settings.gpus)
       }
     }
     setUseGpuIfPossible()
-  }, [readSettings])
+  }, [readSettings, gpuList])
 
   const clearLogs = async () => {
     if (await fs.existsSync(`file://logs`)) {
@@ -254,7 +254,10 @@ const Advanced = () => {
           </div>
           <div className="mt-2 w-full rounded-lg bg-secondary p-4">
             <label className="mb-1 inline-block font-medium">Choose GPU</label>
-            <Select disabled={!gpuEnabled} value={selectedGpu.join()}>
+            <Select
+              disabled={gpuList.length === 0 || !gpuEnabled}
+              value={selectedGpu.join()}
+            >
               <SelectTrigger className="w-[340px] bg-white">
                 <SelectValue placeholder={gpuSelectionPlaceHolder}>
                   <span className="line-clamp-1 w-full pr-8">
