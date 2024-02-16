@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+
 import {
   Badge,
   Button,
@@ -31,6 +33,11 @@ import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  cpuUsageAtom,
+  gpusAtom,
+  ramUtilitizedAtom,
+} from '@/helpers/atoms/SystemBar.atom'
 
 const menuLinks = [
   {
@@ -47,9 +54,12 @@ const menuLinks = [
 
 const BottomBar = () => {
   const { activeModel, stateModel } = useActiveModel()
-  const { ram, cpu, gpus } = useGetSystemResources()
+  const { watch, stopWatching } = useGetSystemResources()
   const progress = useAtomValue(appDownloadProgress)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const gpus = useAtomValue(gpusAtom)
+  const cpu = useAtomValue(cpuUsageAtom)
+  const ramUtilitized = useAtomValue(ramUtilitizedAtom)
 
   const { setMainViewState } = useMainViewState()
   const downloadStates = useAtomValue(modelDownloadStateAtom)
@@ -66,6 +76,16 @@ const BottomBar = () => {
     })
     return sum
   }
+
+  useEffect(() => {
+    // Watch for resource update
+    watch()
+
+    return () => {
+      stopWatching()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/80 px-3">
@@ -127,7 +147,7 @@ const BottomBar = () => {
       <div className="flex items-center gap-x-3">
         <div className="flex items-center gap-x-2">
           <SystemItem name="CPU:" value={`${cpu}%`} />
-          <SystemItem name="Mem:" value={`${ram}%`} />
+          <SystemItem name="Mem:" value={`${ramUtilitized}%`} />
         </div>
         {gpus.length > 0 && (
           <Tooltip>
