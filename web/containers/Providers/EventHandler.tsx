@@ -282,11 +282,9 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    console.log('Registering events')
     if (window.core?.events) {
       events.on(MessageEvent.OnMessageResponse, onNewMessageResponse)
       events.on(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
-
       events.on(ModelEvent.OnModelReady, onModelReady)
       events.on(ModelEvent.OnModelFail, onModelInitFailed)
       events.on(ModelEvent.OnModelStopped, onModelStopped)
