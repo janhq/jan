@@ -31,6 +31,32 @@ export async function setup() {
     'utf-8'
   )
 
+  if (!existsSync(join(appDir, 'settings'))) {
+    console.debug('Writing nvidia config file...')
+    mkdirSync(join(appDir, 'settings'))
+    writeFileSync(
+      join(appDir, 'settings', 'settings.json'),
+      JSON.stringify(
+        {
+          notify: true,
+          run_mode: 'cpu',
+          nvidia_driver: {
+            exist: false,
+            version: '',
+          },
+          cuda: {
+            exist: false,
+            version: '',
+          },
+          gpus: [],
+          gpu_highest_vram: '',
+          gpus_in_use: [],
+          is_initial: true,
+        }),
+      'utf-8'
+    )
+  }
+
   /**
    * Install extensions
    */
