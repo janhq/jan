@@ -1,17 +1,14 @@
 import { useCallback } from 'react'
 
-import {
-  InferenceEvent,
-  ExtensionTypeEnum,
-  Thread,
-  events,
-  ConversationalExtension,
-} from '@janhq/core'
+import { ExtensionTypeEnum, Thread, ConversationalExtension } from '@janhq/core'
 
-import { useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { extensionManager } from '@/extension'
-import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import {
+  readyThreadsMessagesAtom,
+  setConvoMessagesAtom,
+} from '@/helpers/atoms/ChatMessage.atom'
 import {
   ModelParams,
   setActiveThreadIdAtom,
@@ -22,12 +19,15 @@ export default function useSetActiveThread() {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const setThreadMessage = useSetAtom(setConvoMessagesAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+  const readyMessageThreads = useAtomValue(readyThreadsMessagesAtom)
 
   const setActiveThread = useCallback(
     async (thread: Thread) => {
-      // load the corresponding messages
-      const messages = await getLocalThreadMessage(thread.id)
-      setThreadMessage(thread.id, messages)
+      // Load local messages only if there are no messages in the state
+      if (!readyMessageThreads[thread.id]) {
+        const messages = await getLocalThreadMessage(thread.id)
+        setThreadMessage(thread.id, messages)
+      }
 
       setActiveThreadId(thread.id)
       const modelParams: ModelParams = {
@@ -36,7 +36,12 @@ export default function useSetActiveThread() {
       }
       setThreadModelParams(thread.id, modelParams)
     },
-    [setActiveThreadId, setThreadMessage, setThreadModelParams]
+    [
+      setActiveThreadId,
+      setThreadMessage,
+      setThreadModelParams,
+      readyMessageThreads,
+    ]
   )
 
   return { setActiveThread }
