@@ -9,6 +9,8 @@ import {
   ThreadState,
   Model,
   AssistantTool,
+  events,
+  InferenceEvent,
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -30,6 +32,7 @@ import {
   threadStatesAtom,
   updateThreadAtom,
   setThreadModelParamsAtom,
+  isGeneratingResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -57,6 +60,7 @@ export const useCreateNewThread = () => {
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const { experimentalFeature } = useContext(FeatureToggleContext)
+  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
@@ -66,6 +70,10 @@ export const useCreateNewThread = () => {
     assistant: Assistant,
     model?: Model | undefined
   ) => {
+    // Stop generating if any
+    setIsGeneratingResponse(false)
+    events.emit(InferenceEvent.OnInferenceStopped, {})
+
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
 
     // check last thread message, if there empty last message use can not create thread

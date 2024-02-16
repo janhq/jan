@@ -177,7 +177,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       )
       if (message.status === MessageStatus.Pending) {
         if (message.content.length) {
-          updateThreadWaiting(message.thread_id, false)
           setIsGeneratingResponse(false)
         }
         return

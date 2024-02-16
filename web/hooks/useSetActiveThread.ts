@@ -14,7 +14,6 @@ import { extensionManager } from '@/extension'
 import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   ModelParams,
-  isGeneratingResponseAtom,
   setActiveThreadIdAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -23,13 +22,9 @@ export default function useSetActiveThread() {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const setThreadMessage = useSetAtom(setConvoMessagesAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   const setActiveThread = useCallback(
     async (thread: Thread) => {
-      setIsGeneratingResponse(false)
-      events.emit(InferenceEvent.OnInferenceStopped, thread.id)
-
       // load the corresponding messages
       const messages = await getLocalThreadMessage(thread.id)
       setThreadMessage(thread.id, messages)
@@ -41,12 +36,7 @@ export default function useSetActiveThread() {
       }
       setThreadModelParams(thread.id, modelParams)
     },
-    [
-      setActiveThreadId,
-      setThreadMessage,
-      setThreadModelParams,
-      setIsGeneratingResponse,
-    ]
+    [setActiveThreadId, setThreadMessage, setThreadModelParams]
   )
 
   return { setActiveThread }
