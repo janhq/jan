@@ -24,7 +24,7 @@ On the top left of your screen below the red `Stop Server` button is the blue `A
 
 <br></br>
 
-![api-reference](./assets/api-reference.png)
+![02-api-reference](./assets/02-api-reference.png)
 
 Scroll through the various available endpoints to learn what options are available.
 
@@ -34,7 +34,7 @@ In the Chat section of the API reference, you will see an example JSON request b
 
 <br></br>
 
-![chat-example](./assets/chat-example.png)
+![02-chat-example](./assets/02-chat-example.png)
 
 With your local server running, you can click the `Try it out` button on the top left, then the blue `Execute` button below the JSON. The browser will send the example request to your server, and display the response body below.
 

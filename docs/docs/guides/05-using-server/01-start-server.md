@@ -23,15 +23,15 @@ Navigate by clicking the `Local API Server` icon on the left side of your screen
 
 <br></br>
 
-![local-api-view](./assets/local-api-view.png)
+![01-local-api-view](./assets/01-local-api-view.png)
 
 ## Choose your model
 
-On the top right of your screen under `Model Settings`, set the LLM that your local server will be running. You can choose from any of the models already installed, or pick a new model by clicking `Explore the Hub`. 
+On the top right of your screen under `Model Settings`, set the LLM that your local server will be running. You can choose from any of the models already installed, or pick a new model by clicking `Explore the Hub`.
 
 <br></br>
 
-![choose-model](./assets/choose-model.png)
+![01-choose-model](./assets/01-choose-model.png)
 
 ## Set your Server Options
 
@@ -39,7 +39,7 @@ On the left side of your screen you can set custom server options.
 
 <br></br>
 
-![server-settings](./assets/server-settings.png)
+![01-server-settings](./assets/01-server-settings.png)
 
 ### Local Server Address
 
@@ -65,7 +65,6 @@ Click the `Start Server` button on the top left of your screen. You will see the
 
 <br></br>
 
-![running-server](./assets/running-server.png)
+![01-running-server](./assets/01-running-server.png)
 
 Your server is now running. Next, learn how to use your local API server.
-
