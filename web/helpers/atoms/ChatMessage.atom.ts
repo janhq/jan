@@ -16,6 +16,8 @@ import {
  */
 export const chatMessages = atom<Record<string, ThreadMessage[]>>({})
 
+export const readyThreadsMessagesAtom = atom<Record<string, boolean>>({})
+
 /**
  * Return the chat messages for the current active conversation
  */
@@ -34,6 +36,10 @@ export const setConvoMessagesAtom = atom(
     }
     newData[threadId] = messages
     set(chatMessages, newData)
+    set(readyThreadsMessagesAtom, {
+      ...get(readyThreadsMessagesAtom),
+      [threadId]: true,
+    })
   }
 )
 
