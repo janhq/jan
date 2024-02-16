@@ -9,8 +9,6 @@ import {
 
 import { useSetAtom } from 'jotai'
 
-import useSetActiveThread from './useSetActiveThread'
-
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
   ModelParams,
@@ -24,7 +22,6 @@ const useThreads = () => {
   const setThreadStates = useSetAtom(threadStatesAtom)
   const setThreads = useSetAtom(threadsAtom)
   const setThreadModelRuntimeParams = useSetAtom(threadModelParamsAtom)
-  const { setActiveThread } = useSetActiveThread()
   const setThreadDataReady = useSetAtom(threadDataReadyAtom)
 
   useEffect(() => {
@@ -56,16 +53,11 @@ const useThreads = () => {
       setThreadStates(localThreadStates)
       setThreads(localThreads)
       setThreadModelRuntimeParams(threadModelParams)
-
-      if (localThreads.length > 0) {
-        setActiveThread(localThreads[0])
-      }
       setThreadDataReady(true)
     }
 
     getThreads()
   }, [
-    setActiveThread,
     setThreadModelRuntimeParams,
     setThreadStates,
     setThreads,

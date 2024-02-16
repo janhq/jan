@@ -49,8 +49,17 @@ export default function ThreadList() {
   useEffect(() => {
     if (threadDataReady && assistants.length > 0 && threads.length === 0) {
       requestCreateNewThread(assistants[0])
+    } else if (threadDataReady && !activeThreadId) {
+      setActiveThread(threads[0])
     }
-  }, [assistants, threads, threadDataReady, requestCreateNewThread])
+  }, [
+    assistants,
+    threads,
+    threadDataReady,
+    requestCreateNewThread,
+    activeThreadId,
+    setActiveThread,
+  ])
 
   return (
     <div className="px-3 py-4">
