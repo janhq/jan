@@ -5,6 +5,7 @@ import { getJanDataFolderPath } from '@janhq/core/node'
 
 /**
  * Default GPU settings
+ * TODO: This needs to be refactored to support multiple accelerators
  **/
 const DEFALT_SETTINGS = {
   notify: true,
@@ -21,12 +22,17 @@ const DEFALT_SETTINGS = {
   gpu_highest_vram: '',
   gpus_in_use: [],
   is_initial: true,
+  // TODO: This needs to be set based on user toggle in settings
+  vulkan: {
+    enabled: true,
+    gpu_in_use: '1',
+  },
 }
 
 /**
  * Path to the settings file
  **/
-export const NVIDIA_INFO_FILE = path.join(
+export const GPU_INFO_FILE = path.join(
   getJanDataFolderPath(),
   'settings',
   'settings.json'
@@ -52,10 +58,10 @@ export async function updateNvidiaInfo() {
   if (process.platform !== 'darwin') {
     let data
     try {
-      data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf-8'))
+      data = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
     } catch (error) {
       data = DEFALT_SETTINGS
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2))
+      writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
     }
     updateNvidiaDriverInfo()
     updateGpuInfo()
@@ -79,7 +85,7 @@ export async function updateNvidiaDriverInfo(): Promise<void> {
   exec(
     'nvidia-smi --query-gpu=driver_version --format=csv,noheader',
     (error, stdout) => {
-      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf-8'))
+      let data = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
 
       if (!error) {
         const firstLine = stdout.split('\n')[0].trim()
@@ -89,7 +95,7 @@ export async function updateNvidiaDriverInfo(): Promise<void> {
         data['nvidia_driver'].exist = false
       }
 
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2))
+      writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
       Promise.resolve()
     }
   )
@@ -161,7 +167,7 @@ export async function updateGpuInfo(): Promise<void> {
   exec(
     'nvidia-smi --query-gpu=index,memory.total,name --format=csv,noheader,nounits',
     (error, stdout) => {
-      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf-8'))
+      let data = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
 
       if (!error) {
         // Get GPU info and gpu has higher memory first
@@ -192,7 +198,7 @@ export async function updateGpuInfo(): Promise<void> {
       }
 
       data = updateCudaExistence(data)
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2))
+      writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
       Promise.resolve()
     }
   )

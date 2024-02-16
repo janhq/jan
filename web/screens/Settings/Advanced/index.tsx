@@ -58,6 +58,8 @@ const Advanced = () => {
     setProxy,
     proxyEnabled,
     setProxyEnabled,
+    vulkanEnabled,
+    setVulkanEnabled,
   } = useContext(FeatureToggleContext)
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
@@ -169,12 +171,12 @@ const Advanced = () => {
             <div className="space-y-1.5">
               <div className="flex gap-x-2">
                 <h6 className="text-sm font-semibold capitalize">
-                  GPU Acceleration
+                  NVIDIA GPU Acceleration
                 </h6>
               </div>
               <p className="pr-8 leading-relaxed">
-                Enable to enhance model performance by utilizing your devices
-                GPU for acceleration. Read{' '}
+                Enable to enhance model performance by utilizing your NVIDIA GPU
+                devices for acceleration. Read{' '}
                 <span>
                   {' '}
                   <span
@@ -202,7 +204,7 @@ const Advanced = () => {
                   className="max-w-[240px]"
                 >
                   <span>
-                    Disabling GPU Acceleration may result in reduced
+                    Disabling NVIDIA GPU Acceleration may result in reduced
                     performance. It is recommended to keep this enabled for
                     optimal user experience.
                   </span>
@@ -259,7 +261,9 @@ const Advanced = () => {
             </Tooltip>
           </div>
           <div className="mt-2 w-full rounded-lg bg-secondary p-4">
-            <label className="mb-1 inline-block font-medium">Choose GPU</label>
+            <label className="mb-1 inline-block font-medium">
+              Choose device(s)
+            </label>
             <Select
               disabled={gpuList.length === 0 || !gpuEnabled}
               value={selectedGpu.join()}
@@ -325,6 +329,26 @@ const Advanced = () => {
               </SelectPortal>
             </Select>
           </div>
+        </div>
+      )}
+
+      {/* Vulkan for AMD GPU/ APU and Intel Arc GPU */}
+      {/* TODO: This needs to be set based on user toggle in settings for enabled BOOLEAN and index as INT */}
+      {!isMac && (
+        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+          <div className="flex-shrink-0 space-y-1.5">
+            <div className="flex gap-x-2">
+              <h6 className="text-sm font-semibold capitalize">Vulkan GPU</h6>
+            </div>
+            <p className="text-xs leading-relaxed">
+              Enable Vulkan with AMD GPU/APU and Intel Arc GPU for better model
+              performance. 0 - iGPU, n positive - eGPU
+            </p>
+          </div>
+          {vulkanEnabled && (
+            <Input value={vulkanEnabled ? 1 : 0} className="w-[60px] pr-8" />
+          )}
+          <Switch checked={vulkanEnabled} onCheckedChange={setVulkanEnabled} />
         </div>
       )}
 
