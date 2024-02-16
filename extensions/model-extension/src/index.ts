@@ -12,8 +12,9 @@ import {
   DownloadEvent,
   DownloadRoute,
   ModelEvent,
+  DownloadState,
 } from '@janhq/core'
-import { DownloadState } from '@janhq/core/.'
+
 import { extractFileName } from './helpers/path'
 
 /**
