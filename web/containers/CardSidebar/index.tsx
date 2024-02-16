@@ -31,7 +31,7 @@ export default function CardSidebar({
   rightAction,
   hideMoreVerticalAction,
 }: Props) {
-  const [show, setShow] = useState(true)
+  const [show, setShow] = useState(false)
   const [more, setMore] = useState(false)
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
@@ -156,7 +156,10 @@ export default function CardSidebar({
                       </>
                     ) : (
                       <>
-                        Opens <span className="lowercase">{title}.json.</span>
+                        Opens{' '}
+                        <span className="lowercase">
+                          {title === 'Tools' ? 'assistant' : title}.json.
+                        </span>
                         &nbsp;Changes affect all new threads.
                       </>
                     )}

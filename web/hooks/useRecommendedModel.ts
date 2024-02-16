@@ -5,9 +5,9 @@ import { Model, InferenceEngine } from '@janhq/core'
 import { atom, useAtomValue } from 'jotai'
 
 import { activeModelAtom } from './useActiveModel'
-import { getDownloadedModels } from './useGetDownloadedModels'
 
-import { activeThreadAtom, threadStatesAtom } from '@/helpers/atoms/Thread.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const lastUsedModel = atom<Model | undefined>(undefined)
 
@@ -24,19 +24,20 @@ export const LAST_USED_MODEL_ID = 'last-used-model-id'
  */
 export default function useRecommendedModel() {
   const activeModel = useAtomValue(activeModelAtom)
-  const [downloadedModels, setDownloadedModels] = useState<Model[]>([])
+  const [sortedModels, setSortedModels] = useState<Model[]>([])
   const [recommendedModel, setRecommendedModel] = useState<Model | undefined>()
   const activeThread = useAtomValue(activeThreadAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
 
   const getAndSortDownloadedModels = useCallback(async (): Promise<Model[]> => {
-    const models = (await getDownloadedModels()).sort((a, b) =>
+    const models = downloadedModels.sort((a, b) =>
       a.engine !== InferenceEngine.nitro && b.engine === InferenceEngine.nitro
         ? 1
         : -1
     )
-    setDownloadedModels(models)
+    setSortedModels(models)
     return models
-  }, [])
+  }, [downloadedModels])
 
   const getRecommendedModel = useCallback(async (): Promise<
     Model | undefined
@@ -98,5 +99,5 @@ export default function useRecommendedModel() {
     getRecommendedModel()
   }, [getRecommendedModel])
 
-  return { recommendedModel, downloadedModels }
+  return { recommendedModel, downloadedModels: sortedModels }
 }

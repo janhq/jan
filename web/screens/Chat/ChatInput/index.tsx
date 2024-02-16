@@ -112,14 +112,12 @@ const ChatInput: React.FC = () => {
     const file = event.target.files?.[0]
     if (!file) return
     setFileUpload([{ file: file, type: 'pdf' }])
-    setCurrentPrompt('Summarize this for me')
   }
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
     setFileUpload([{ file: file, type: 'image' }])
-    setCurrentPrompt('What do you see in this image?')
   }
 
   const renderPreview = (fileUpload: any) => {

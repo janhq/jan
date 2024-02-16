@@ -1,45 +1,47 @@
-import { writeFileSync, existsSync, readFileSync } from "fs";
-import { exec } from "child_process";
-import path from "path";
-import { getJanDataFolderPath } from "@janhq/core/node";
+import { writeFileSync, existsSync, readFileSync } from 'fs'
+import { exec } from 'child_process'
+import path from 'path'
+import { getJanDataFolderPath } from '@janhq/core/node'
 
 /**
  * Default GPU settings
  **/
 const DEFALT_SETTINGS = {
   notify: true,
-  run_mode: "cpu",
+  run_mode: 'cpu',
   nvidia_driver: {
     exist: false,
-    version: "",
+    version: '',
   },
   cuda: {
     exist: false,
-    version: "",
+    version: '',
   },
   gpus: [],
-  gpu_highest_vram: "",
-};
+  gpu_highest_vram: '',
+  gpus_in_use: [],
+  is_initial: true,
+}
 
 /**
  * Path to the settings file
  **/
 export const NVIDIA_INFO_FILE = path.join(
   getJanDataFolderPath(),
-  "settings",
-  "settings.json"
-);
+  'settings',
+  'settings.json'
+)
 
 /**
  * Current nitro process
  */
-let nitroProcessInfo: NitroProcessInfo | undefined = undefined;
+let nitroProcessInfo: NitroProcessInfo | undefined = undefined
 
 /**
  * Nitro process info
  */
 export interface NitroProcessInfo {
-  isRunning: boolean;
+  isRunning: boolean
 }
 
 /**
@@ -47,12 +49,16 @@ export interface NitroProcessInfo {
  * Will be called when the extension is loaded to turn on GPU acceleration if supported
  */
 export async function updateNvidiaInfo() {
-  if (process.platform !== "darwin") {
-    await Promise.all([
-      updateNvidiaDriverInfo(),
-      updateCudaExistence(),
-      updateGpuInfo(),
-    ]);
+  if (process.platform !== 'darwin') {
+    let data
+    try {
+      data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf-8'))
+    } catch (error) {
+      data = DEFALT_SETTINGS
+      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2))
+    }
+    updateNvidiaDriverInfo()
+    updateGpuInfo()
   }
 }
 
@@ -62,36 +68,31 @@ export async function updateNvidiaInfo() {
 export const getNitroProcessInfo = (subprocess: any): NitroProcessInfo => {
   nitroProcessInfo = {
     isRunning: subprocess != null,
-  };
-  return nitroProcessInfo;
-};
+  }
+  return nitroProcessInfo
+}
 
 /**
  * Validate nvidia and cuda for linux and windows
  */
 export async function updateNvidiaDriverInfo(): Promise<void> {
   exec(
-    "nvidia-smi --query-gpu=driver_version --format=csv,noheader",
+    'nvidia-smi --query-gpu=driver_version --format=csv,noheader',
     (error, stdout) => {
-      let data;
-      try {
-        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-      } catch (error) {
-        data = DEFALT_SETTINGS;
-      }
+      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf-8'))
 
       if (!error) {
-        const firstLine = stdout.split("\n")[0].trim();
-        data["nvidia_driver"].exist = true;
-        data["nvidia_driver"].version = firstLine;
+        const firstLine = stdout.split('\n')[0].trim()
+        data['nvidia_driver'].exist = true
+        data['nvidia_driver'].version = firstLine
       } else {
-        data["nvidia_driver"].exist = false;
+        data['nvidia_driver'].exist = false
       }
 
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
-      Promise.resolve();
+      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2))
+      Promise.resolve()
     }
-  );
+  )
 }
 
 /**
@@ -101,59 +102,56 @@ export function checkFileExistenceInPaths(
   file: string,
   paths: string[]
 ): boolean {
-  return paths.some((p) => existsSync(path.join(p, file)));
+  return paths.some((p) => existsSync(path.join(p, file)))
 }
 
 /**
  * Validate cuda for linux and windows
  */
-export function updateCudaExistence() {
-  let filesCuda12: string[];
-  let filesCuda11: string[];
-  let paths: string[];
-  let cudaVersion: string = "";
+export function updateCudaExistence(
+  data: Record<string, any> = DEFALT_SETTINGS
+): Record<string, any> {
+  let filesCuda12: string[]
+  let filesCuda11: string[]
+  let paths: string[]
+  let cudaVersion: string = ''
 
-  if (process.platform === "win32") {
-    filesCuda12 = ["cublas64_12.dll", "cudart64_12.dll", "cublasLt64_12.dll"];
-    filesCuda11 = ["cublas64_11.dll", "cudart64_11.dll", "cublasLt64_11.dll"];
-    paths = process.env.PATH ? process.env.PATH.split(path.delimiter) : [];
+  if (process.platform === 'win32') {
+    filesCuda12 = ['cublas64_12.dll', 'cudart64_12.dll', 'cublasLt64_12.dll']
+    filesCuda11 = ['cublas64_11.dll', 'cudart64_11.dll', 'cublasLt64_11.dll']
+    paths = process.env.PATH ? process.env.PATH.split(path.delimiter) : []
   } else {
-    filesCuda12 = ["libcudart.so.12", "libcublas.so.12", "libcublasLt.so.12"];
-    filesCuda11 = ["libcudart.so.11.0", "libcublas.so.11", "libcublasLt.so.11"];
+    filesCuda12 = ['libcudart.so.12', 'libcublas.so.12', 'libcublasLt.so.12']
+    filesCuda11 = ['libcudart.so.11.0', 'libcublas.so.11', 'libcublasLt.so.11']
     paths = process.env.LD_LIBRARY_PATH
       ? process.env.LD_LIBRARY_PATH.split(path.delimiter)
-      : [];
-    paths.push("/usr/lib/x86_64-linux-gnu/");
+      : []
+    paths.push('/usr/lib/x86_64-linux-gnu/')
   }
 
   let cudaExists = filesCuda12.every(
     (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
-  );
+  )
 
   if (!cudaExists) {
     cudaExists = filesCuda11.every(
       (file) => existsSync(file) || checkFileExistenceInPaths(file, paths)
-    );
+    )
     if (cudaExists) {
-      cudaVersion = "11";
+      cudaVersion = '11'
     }
   } else {
-    cudaVersion = "12";
+    cudaVersion = '12'
   }
 
-  let data;
-  try {
-    data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-  } catch (error) {
-    data = DEFALT_SETTINGS;
+  data['cuda'].exist = cudaExists
+  data['cuda'].version = cudaVersion
+  console.log(data['is_initial'], data['gpus_in_use'])
+  if (cudaExists && data['is_initial'] && data['gpus_in_use'].length > 0) {
+    data.run_mode = 'gpu'
   }
-
-  data["cuda"].exist = cudaExists;
-  data["cuda"].version = cudaVersion;
-  if (cudaExists) {
-    data.run_mode = "gpu";
-  }
-  writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
+  data.is_initial = false
+  return data
 }
 
 /**
@@ -161,40 +159,41 @@ export function updateCudaExistence() {
  */
 export async function updateGpuInfo(): Promise<void> {
   exec(
-    "nvidia-smi --query-gpu=index,memory.total --format=csv,noheader,nounits",
+    'nvidia-smi --query-gpu=index,memory.total,name --format=csv,noheader,nounits',
     (error, stdout) => {
-      let data;
-      try {
-        data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
-      } catch (error) {
-        data = DEFALT_SETTINGS;
-      }
+      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf-8'))
 
       if (!error) {
         // Get GPU info and gpu has higher memory first
-        let highestVram = 0;
-        let highestVramId = "0";
+        let highestVram = 0
+        let highestVramId = '0'
         let gpus = stdout
           .trim()
-          .split("\n")
+          .split('\n')
           .map((line) => {
-            let [id, vram] = line.split(", ");
-            vram = vram.replace(/\r/g, "");
+            let [id, vram, name] = line.split(', ')
+            vram = vram.replace(/\r/g, '')
             if (parseFloat(vram) > highestVram) {
-              highestVram = parseFloat(vram);
-              highestVramId = id;
+              highestVram = parseFloat(vram)
+              highestVramId = id
             }
-            return { id, vram };
-          });
+            return { id, vram, name }
+          })
 
-        data["gpus"] = gpus;
-        data["gpu_highest_vram"] = highestVramId;
+        data.gpus = gpus
+        data.gpu_highest_vram = highestVramId
       } else {
-        data["gpus"] = [];
+        data.gpus = []
+        data.gpu_highest_vram = ''
       }
 
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2));
-      Promise.resolve();
+      if (!data['gpus_in_use'] || data['gpus_in_use'].length === 0) {
+        data.gpus_in_use = [data['gpu_highest_vram']]
+      }
+
+      data = updateCudaExistence(data)
+      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2))
+      Promise.resolve()
     }
-  );
+  )
 }

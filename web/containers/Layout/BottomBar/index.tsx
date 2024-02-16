@@ -25,12 +25,12 @@ import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
-import { useDownloadState } from '@/hooks/useDownloadState'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const menuLinks = [
   {
@@ -47,13 +47,25 @@ const menuLinks = [
 
 const BottomBar = () => {
   const { activeModel, stateModel } = useActiveModel()
-  const { ram, cpu } = useGetSystemResources()
+  const { ram, cpu, gpus } = useGetSystemResources()
   const progress = useAtomValue(appDownloadProgress)
-  const { downloadedModels } = useGetDownloadedModels()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+
   const { setMainViewState } = useMainViewState()
-  const { downloadStates } = useDownloadState()
+  const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setShowSelectModelModal = useSetAtom(showSelectModelModalAtom)
   const [serverEnabled] = useAtom(serverEnabledAtom)
+
+  const calculateUtilization = () => {
+    let sum = 0
+    const util = gpus.map((x) => {
+      return Number(x['utilization'])
+    })
+    util.forEach((num) => {
+      sum += num
+    })
+    return sum
+  }
 
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/80 px-3">
@@ -100,7 +112,7 @@ const BottomBar = () => {
           )}
         {downloadedModels.length === 0 &&
           !stateModel.loading &&
-          downloadStates.length === 0 && (
+          Object.values(downloadStates).length === 0 && (
             <Button
               size="sm"
               themes="outline"
@@ -117,6 +129,41 @@ const BottomBar = () => {
           <SystemItem name="CPU:" value={`${cpu}%`} />
           <SystemItem name="Mem:" value={`${ram}%`} />
         </div>
+        {gpus.length > 0 && (
+          <Tooltip>
+            <TooltipTrigger>
+              <div className="flex cursor-pointer items-center">
+                <SystemItem
+                  name={`${gpus.length} GPU `}
+                  value={`${calculateUtilization()}% `}
+                />
+              </div>
+            </TooltipTrigger>
+            {gpus.length > 1 && (
+              <TooltipContent
+                side="top"
+                sideOffset={10}
+                className="min-w-[240px]"
+              >
+                <span>
+                  {gpus.map((gpu, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between"
+                    >
+                      <div>
+                        <span>{gpu.name}</span>
+                        <span>{gpu.vram}MB VRAM</span>
+                      </div>
+                      <span>{gpu.utilization}%</span>
+                    </div>
+                  ))}
+                </span>
+                <TooltipArrow />
+              </TooltipContent>
+            )}
+          </Tooltip>
+        )}
         {/* VERSION is defined by webpack, please see next.config.js */}
         <span className="text-xs text-muted-foreground">
           Jan v{VERSION ?? ''}

@@ -1,16 +1,17 @@
 {
   "name": "@janhq/assistant-extension",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "This extension enables assistants, including Jan, a default assistant that can call all downloaded models",
   "main": "dist/index.js",
   "node": "dist/node/index.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
-    "build": "tsc --module commonjs && rollup -c rollup.config.ts",
-    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../electron/pre-install",
-    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install",
+    "clean:modules": "rimraf node_modules/pdf-parse/test && cd node_modules/pdf-parse/lib/pdf.js && rimraf v1.9.426 v1.10.88 v2.0.550",
+    "build": "yarn clean:modules && tsc --module commonjs && rollup -c rollup.config.ts",
+    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install",
     "build:publish": "run-script-os"
   },
   "devDependencies": {
@@ -25,7 +26,7 @@
     "rollup-plugin-define": "^1.0.1",
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.36.0",
-    "typescript": "^5.3.3",
+    "typescript": "^5.2.2",
     "run-script-os": "^1.1.6"
   },
   "dependencies": {
@@ -44,9 +45,6 @@
   ],
   "bundleDependencies": [
     "@janhq/core",
-    "@langchain/community",
-    "hnswlib-node",
-    "langchain",
-    "pdf-parse"
+    "hnswlib-node"
   ]
 }

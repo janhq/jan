@@ -104,7 +104,7 @@ export default class Extension {
       await pacote.extract(
         this.specifier,
         join(ExtensionManager.instance.getExtensionsPath() ?? '', this.name ?? ''),
-        this.installOptions,
+        this.installOptions
       )
 
       // Set the url using the custom extensions protocol

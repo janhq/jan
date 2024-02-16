@@ -1,8 +1,7 @@
 // @ts-nocheck
-import { app, Menu, dialog, shell } from 'electron'
+import { app, Menu, shell } from 'electron'
 const isMac = process.platform === 'darwin'
 import { autoUpdater } from 'electron-updater'
-import { compareSemanticVersions } from './versionDiff'
 
 const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   {
