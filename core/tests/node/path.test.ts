@@ -1,4 +1,4 @@
-import { normalizeFilePath } from "../../src/node/path";
+import { normalizeFilePath } from "../../src/node/helper/path";
 
 describe("Test file normalize", () => {
   test("returns no file protocol prefix on Unix", async () => {

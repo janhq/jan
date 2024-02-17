@@ -52,7 +52,6 @@ import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
-import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
 const corsEnabledAtom = atom(true)
 const verboseEnabledAtom = atom(true)
@@ -63,15 +62,14 @@ const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const showRightSideBar = useAtomValue(showRightSideBarAtom)
-  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
-
-  const modelEngineParams = toSettingParams(activeModelParams)
-  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
   const { openServerLog, clearServerLog } = useLogs()
   const { startModel, stateModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
+
+  const modelEngineParams = toSettingParams(selectedModel?.settings)
+  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
@@ -124,20 +122,20 @@ const LocalServerScreen = () => {
               block
               themes={serverEnabled ? 'danger' : 'primary'}
               disabled={stateModel.loading || errorRangePort || !selectedModel}
-              onClick={() => {
+              onClick={async () => {
                 if (serverEnabled) {
                   window.core?.api?.stopServer()
                   setServerEnabled(false)
                   setLoadModelError(undefined)
                 } else {
                   startModel(String(selectedModel?.id))
-                  window.core?.api?.startServer({
+                  const isStarted = await window.core?.api?.startServer({
                     host,
                     port,
                     isCorsEnabled,
                     isVerboseEnabled,
                   })
-                  setServerEnabled(true)
+                  if (isStarted) setServerEnabled(true)
                   if (firstTimeVisitAPIServer) {
                     localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
                     setFirstTimeVisitAPIServer(false)
@@ -383,8 +381,8 @@ const LocalServerScreen = () => {
               xmlns="http://www.w3.org/2000/svg"
             >
               <path
-                fill-rule="evenodd"
-                clip-rule="evenodd"
+                fillRule="evenodd"
+                clipRule="evenodd"
                 d="M9.00033 17.3337C13.6027 17.3337 17.3337 13.6027 17.3337 9.00033C17.3337 4.39795 13.6027 0.666992 9.00033 0.666992C4.39795 0.666992 0.666992 4.39795 0.666992 9.00033C0.666992 10.9978 1.36978 12.8311 2.54157 14.2666L0.910703 15.9111C0.390085 16.436 0.758808 17.3337 1.49507 17.3337H9.00033ZM5.25033 7.33366C5.25033 6.87342 5.62342 6.50033 6.08366 6.50033H11.917C12.3772 6.50033 12.7503 6.87342 12.7503 7.33366C12.7503 7.7939 12.3772 8.16699 11.917 8.16699H6.08366C5.62342 8.16699 5.25033 7.7939 5.25033 7.33366ZM6.08366 9.83366C5.62342 9.83366 5.25033 10.2068 5.25033 10.667C5.25033 11.1272 5.62342 11.5003 6.08366 11.5003H8.58366C9.0439 11.5003 9.41699 11.1272 9.41699 10.667C9.41699 10.2068 9.0439 9.83366 8.58366 9.83366H6.08366Z"
                 fill="#2563EB"
               />
@@ -396,7 +394,7 @@ const LocalServerScreen = () => {
             </p>
           </div>
           <DropdownListSidebar strictedThread={false} />
-          {loadModelError && (
+          {loadModelError && serverEnabled && (
             <div className="mt-3 flex space-x-2 text-xs">
               <AlertTriangleIcon size={16} className="text-danger" />
               <span>
@@ -431,7 +429,10 @@ const LocalServerScreen = () => {
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting enabled={!serverEnabled} />
+                  <EngineSetting
+                    enabled={!serverEnabled}
+                    componentData={componentDataEngineSetting}
+                  />
                 </div>
               </CardSidebar>
             </div>

@@ -1,4 +1,4 @@
-import { MonitoringExtension, executeOnMain } from "@janhq/core";
+import { MonitoringExtension, executeOnMain } from '@janhq/core'
 
 /**
  * JanMonitoringExtension is a extension that provides system monitoring functionality.
@@ -20,7 +20,7 @@ export default class JanMonitoringExtension extends MonitoringExtension {
    * @returns A Promise that resolves to an object containing information about the system resources.
    */
   getResourcesInfo(): Promise<any> {
-    return executeOnMain(MODULE, "getResourcesInfo");
+    return executeOnMain(MODULE, 'getResourcesInfo')
   }
 
   /**
@@ -28,6 +28,6 @@ export default class JanMonitoringExtension extends MonitoringExtension {
    * @returns A Promise that resolves to an object containing information about the current system load.
    */
   getCurrentLoad(): Promise<any> {
-    return executeOnMain(MODULE, "getCurrentLoad");
+    return executeOnMain(MODULE, 'getCurrentLoad')
   }
 }

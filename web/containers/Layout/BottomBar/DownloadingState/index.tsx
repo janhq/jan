@@ -32,7 +32,8 @@ export default function DownloadingState() {
     .map((a) => a.size.total + a.size.total)
     .reduce((partialSum, a) => partialSum + a, 0)
 
-  const totalPercentage = ((totalCurrentProgress / totalSize) * 100).toFixed(2)
+  const totalPercentage =
+    totalSize !== 0 ? ((totalCurrentProgress / totalSize) * 100).toFixed(2) : 0
 
   return (
     <Fragment>

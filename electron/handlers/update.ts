@@ -36,7 +36,7 @@ export function handleAppUpdates() {
   autoUpdater.on('error', (info: any) => {
     WindowManager.instance.currentWindow?.webContents.send(
       AppEvent.onAppUpdateDownloadError,
-      {}
+      info
     )
   })
 

@@ -27,6 +27,8 @@ export type ThreadMessage = {
   updated: number
   /** The additional metadata of this message. **/
   metadata?: Record<string, unknown>
+
+  type?: string
 }
 
 /**
@@ -56,6 +58,8 @@ export type MessageRequest = {
   /** The thread of this message is belong to. **/
   // TODO: deprecate threadId field
   thread?: Thread
+
+  type?: string
 }
 
 /**

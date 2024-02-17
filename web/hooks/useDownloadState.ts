@@ -1,3 +1,4 @@
+import { DownloadState } from '@janhq/core'
 import { atom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -20,18 +21,35 @@ export const setDownloadStateAtom = atom(
     const currentState = { ...get(modelDownloadStateAtom) }
 
     if (state.downloadState === 'end') {
-      // download successfully
-      delete currentState[state.modelId]
-      set(removeDownloadingModelAtom, state.modelId)
-      const model = get(configuredModelsAtom).find(
-        (e) => e.id === state.modelId
+      const modelDownloadState = currentState[state.modelId]
+
+      const updatedChildren: DownloadState[] =
+        modelDownloadState.children!.filter(
+          (m) => m.fileName !== state.fileName
+        )
+      updatedChildren.push(state)
+      modelDownloadState.children = updatedChildren
+      currentState[state.modelId] = modelDownloadState
+
+      const isAllChildrenDownloadEnd = modelDownloadState.children?.every(
+        (m) => m.downloadState === 'end'
       )
-      if (model) set(downloadedModelsAtom, (prev) => [...prev, model])
-      toaster({
-        title: 'Download Completed',
-        description: `Download ${state.modelId} completed`,
-        type: 'success',
-      })
+
+      if (isAllChildrenDownloadEnd) {
+        // download successfully
+        delete currentState[state.modelId]
+        set(removeDownloadingModelAtom, state.modelId)
+
+        const model = get(configuredModelsAtom).find(
+          (e) => e.id === state.modelId
+        )
+        if (model) set(downloadedModelsAtom, (prev) => [...prev, model])
+        toaster({
+          title: 'Download Completed',
+          description: `Download ${state.modelId} completed`,
+          type: 'success',
+        })
+      }
     } else if (state.downloadState === 'error') {
       // download error
       delete currentState[state.modelId]
@@ -59,7 +77,62 @@ export const setDownloadStateAtom = atom(
       }
     } else {
       // download in progress
-      currentState[state.modelId] = state
+      if (state.size.total === 0) {
+        // this is initial state, just set the state
+        currentState[state.modelId] = state
+        set(modelDownloadStateAtom, currentState)
+        return
+      }
+
+      const modelDownloadState = currentState[state.modelId]
+      if (!modelDownloadState) {
+        console.debug('setDownloadStateAtom: modelDownloadState not found')
+        return
+      }
+
+      // delete the children if the filename is matched and replace the new state
+      const updatedChildren: DownloadState[] =
+        modelDownloadState.children!.filter(
+          (m) => m.fileName !== state.fileName
+        )
+
+      updatedChildren.push(state)
+
+      // re-calculate the overall progress if we have all the children download data
+      const isAnyChildDownloadNotReady = updatedChildren.some(
+        (m) => m.size.total === 0
+      )
+
+      modelDownloadState.children = updatedChildren
+
+      if (isAnyChildDownloadNotReady) {
+        // just update the children
+        currentState[state.modelId] = modelDownloadState
+        set(modelDownloadStateAtom, currentState)
+
+        return
+      }
+
+      const parentTotalSize = modelDownloadState.size.total
+      if (parentTotalSize === 0) {
+        // calculate the total size of the parent by sum all children total size
+        const totalSize = updatedChildren.reduce(
+          (acc, m) => acc + m.size.total,
+          0
+        )
+
+        modelDownloadState.size.total = totalSize
+      }
+
+      // calculate the total transferred size by sum all children transferred size
+      const transferredSize = updatedChildren.reduce(
+        (acc, m) => acc + m.size.transferred,
+        0
+      )
+      modelDownloadState.size.transferred = transferredSize
+      modelDownloadState.percent = transferredSize / parentTotalSize
+
+      currentState[state.modelId] = modelDownloadState
     }
 
     set(modelDownloadStateAtom, currentState)

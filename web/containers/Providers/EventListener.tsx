@@ -3,7 +3,7 @@ import { PropsWithChildren, useCallback, useEffect } from 'react'
 
 import React from 'react'
 
-import { DownloadEvent, events } from '@janhq/core'
+import { DownloadEvent, events, DownloadState } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from '@/hooks/useDownloadState'
@@ -41,14 +41,14 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   )
 
   useEffect(() => {
-    console.log('EventListenerWrapper: registering event listeners...')
+    console.debug('EventListenerWrapper: registering event listeners...')
 
     events.on(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
     events.on(DownloadEvent.onFileDownloadError, onFileDownloadError)
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
 
     return () => {
-      console.log('EventListenerWrapper: unregistering event listeners...')
+      console.debug('EventListenerWrapper: unregistering event listeners...')
       events.off(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
       events.off(DownloadEvent.onFileDownloadError, onFileDownloadError)
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
