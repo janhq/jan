@@ -1,0 +1,91 @@
+---
+title: Integrate LM Studio with Jan
+slug: /guides/integrations/lmstudio
+description: Guide to integrate LM Studio with Jan
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    LM Studio integration,
+  ]
+---
+
+## Quick Introduction
+
+With [LM Studio](https://lmstudio.ai/), you can discover, download, and run local Large Language Models (LLMs). In this guide, we will show you how to integrate and use your current models on LM Studio with Jan. We will use the model [Phi 2 - GGUF](https://huggingface.co/TheBloke/phi-2-GGUF) on Hugging Face as an example.
+
+## Steps to Integrate LM Studio with Jan
+
+### 1. Start the LM Studio server
+
+Navigate to the `Local Inference Server` on the LM Studio application, and select the model you want to use. Then, start the server after configuring the server port and options.
+
+![LM Studio Server](assets/05-setting-lmstudio-server.gif)
+
+<br></br>
+
+Modify the `openai.json` file in the `~/jan/engines` folder to include the full URL of the LM Studio server.
+
+```json title="~/jan/engines/openai.json"
+{
+  "full_url": "http://localhost:<port>/v1/chat/completions"
+}
+```
+
+:::tip
+
+- Replace `<port>` with the port number you set in the LM Studio server. The default port is `1234`.
+
+:::
+
+### 2. Modify a Model JSON
+
+Navigate to the `~/jan/models` folder. Create a folder named `<lmstudio-modelname>`, for example, `lmstudio-phi-2` and create a `model.json` file inside the folder including the following configurations:
+
+- Ensure the filename must be `model.json`.
+- Ensure the `format` property is set to `api`.
+- Ensure the `engine` property is set to `openai`.
+- Ensure the `state` property is set to `ready`.
+
+```json title="~/jan/models/lmstudio-phi-2/model.json"
+{
+  "sources": [
+    {
+      "filename": "phi-2-GGUF",
+      "url": "https://huggingface.co/TheBloke/phi-2-GGUF"
+    }
+  ],
+  "id": "lmstudio-phi-2",
+  "object": "model",
+  "name": "LM Studio - Phi 2 - GGUF",
+  "version": "1.0",
+  "description": "TheBloke/phi-2-GGUF",
+  // highlight-next-line
+  "format": "api",
+  "settings": {},
+  "parameters": {},
+  "metadata": {
+    "author": "Microsoft",
+    "tags": ["General", "Big Context Length"]
+  },
+  // highlight-start
+  "engine": "openai"
+  // highlight-end
+}
+```
+
+### 3. Start the Model
+
+Restart Jan and navigate to the Hub. Locate your model and click the Use button.
+
+![LM Studio Model](assets/05-lmstudio-run.png)
+
+### 4. Try Out the Integration of Jan and LM Studio
+
+![LM Studio Integration Demo](assets/05-lmstudio-integration-demo.gif)
