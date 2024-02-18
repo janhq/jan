@@ -206,7 +206,13 @@ const ChatInput: React.FC = () => {
             className="absolute bottom-10 right-0 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
           >
             <ul>
-              <li className="flex w-full cursor-not-allowed  items-center space-x-2 px-4 py-2 text-muted-foreground opacity-50 hover:bg-secondary">
+              <li
+                className="flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary"
+                onClick={() => {
+                  imageInputRef.current?.click()
+                  setShowAttacmentMenus(false)
+                }}
+              >
                 <ImageIcon size={16} />
                 <span className="font-medium">Image</span>
               </li>

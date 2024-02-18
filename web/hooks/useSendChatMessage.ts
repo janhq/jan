@@ -173,6 +173,8 @@ export default function useSendChatMessage() {
       ? await getBase64(fileUpload[0].file).then()
       : undefined
 
+    const fileContentType = fileUpload[0]?.type
+
     const msgId = ulid()
 
     const messages: ChatCompletionMessage[] = [
@@ -195,21 +197,30 @@ export default function useSendChatMessage() {
           .concat([
             {
               role: ChatCompletionRole.User,
-              content:
-                selectedModel && base64Blob
-                  ? [
-                      {
-                        type: ChatCompletionMessageContentType.Text,
-                        text: prompt,
-                      },
-                      {
-                        type: ChatCompletionMessageContentType.Doc,
-                        doc_url: {
-                          url: `threads/${activeThread.id}/files/${msgId}.pdf`,
-                        },
-                      },
-                    ]
-                  : prompt,
+              content: selectedModel
+                ? [
+                    {
+                      type: ChatCompletionMessageContentType.Text,
+                      text: prompt,
+                    },
+                    base64Blob && fileContentType === 'pdf'
+                      ? {
+                          type: ChatCompletionMessageContentType.Doc,
+                          doc_url: {
+                            url: `threads/${activeThread.id}/files/${msgId}.pdf`,
+                          },
+                        }
+                      : null,
+                    base64Blob && fileContentType === 'image'
+                      ? {
+                          type: ChatCompletionMessageContentType.Image,
+                          image_url: {
+                            url: base64Blob,
+                          },
+                        }
+                      : null,
+                  ].filter((e) => e !== null)
+                : prompt,
             } as ChatCompletionMessage,
           ])
       )
@@ -227,7 +238,15 @@ export default function useSendChatMessage() {
       modelRequest = {
         ...modelRequest,
         engine: InferenceEngine.tool_retrieval_enabled,
-        proxyEngine: modelRequest.engine,
+        proxy_model: modelRequest.engine,
+      }
+
+      // Add support for vision model with tool retrieval enabled
+      if (
+        modelRequest.settings.visionModel &&
+        !modelRequest.settings.textModel
+      ) {
+        modelRequest.engine = modelRequest.proxy_model
       }
     }
     const messageRequest: MessageRequest = {

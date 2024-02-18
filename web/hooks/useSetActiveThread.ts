@@ -21,17 +21,17 @@ export default function useSetActiveThread() {
 
   const setActiveThread = async (thread: Thread) => {
     // Load local messages only if there are no messages in the state
-    if (!readyMessageThreads[thread.id]) {
-      const messages = await getLocalThreadMessage(thread.id)
-      setThreadMessage(thread.id, messages)
+    if (!readyMessageThreads[thread?.id]) {
+      const messages = await getLocalThreadMessage(thread?.id)
+      setThreadMessage(thread?.id, messages)
     }
 
-    setActiveThreadId(thread.id)
+    setActiveThreadId(thread?.id)
     const modelParams: ModelParams = {
-      ...thread.assistants[0]?.model?.parameters,
-      ...thread.assistants[0]?.model?.settings,
+      ...thread?.assistants[0]?.model?.parameters,
+      ...thread?.assistants[0]?.model?.settings,
     }
-    setThreadModelParams(thread.id, modelParams)
+    setThreadModelParams(thread?.id, modelParams)
   }
 
   return { setActiveThread }
