@@ -28,7 +28,7 @@
     "author": "Jan",
     "tags": ["7B", "Merged", "Featured"],
     "size": 4370000000,
-    "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/trinity-v1.2-7b/cover.png"
+    "cover": "https://raw.githubusercontent.com/janhq/jan/dev/models/trinity-v1.2-7b/cover.png"
   },
   "engine": "nitro"
 }
