@@ -1,67 +1,49 @@
-import {
-  expect,
-  test as base,
-  _electron as electron,
-  ElectronApplication,
-  Page,
-} from '@playwright/test'
-import {
-  findLatestBuild,
-  parseElectronApp,
-  stubDialog,
-} from 'electron-playwright-helpers'
+import { Page, expect } from '@playwright/test'
+import { CommonActions } from './commonActions'
+import { TIMEOUT } from '../config/fixtures'
 
-export const TIMEOUT: number = parseInt(process.env.TEST_TIMEOUT || '300000')
+export class BasePage {
+  menuId: string
 
-export let electronApp: ElectronApplication
-export let page: Page
+  constructor(
+    protected readonly page: Page,
+    readonly action: CommonActions,
+    protected containerId: string
+  ) {}
 
-export async function setupElectron() {
-  process.env.CI = 'e2e'
+  public getValue(key: string) {
+    return this.action.getValue(key)
+  }
 
-  const latestBuild = findLatestBuild('dist')
-  expect(latestBuild).toBeTruthy()
+  public setValue(key: string, value: string) {
+    this.action.setValue(key, value)
+  }
 
-  // parse the packaged Electron app and find paths and other info
-  const appInfo = parseElectronApp(latestBuild)
-  expect(appInfo).toBeTruthy()
+  async takeScreenshot(name: string = '') {
+    await this.action.takeScreenshot(name)
+  }
 
-  electronApp = await electron.launch({
-    args: [appInfo.main], // main file from package.json
-    executablePath: appInfo.executable, // path to the Electron executable
-  })
-  await stubDialog(electronApp, 'showMessageBox', { response: 1 })
+  async navigateByMenu() {
+    await this.page.getByTestId(this.menuId).first().click()
+  }
 
-  page = await electronApp.firstWindow({
-    timeout: TIMEOUT,
-  })
-  // Return appInfo for future use
-  return appInfo
+  async verifyContainerVisible() {
+    const container = this.page.getByTestId(this.containerId)
+    expect(container.isVisible()).toBeTruthy()
+  }
+
+  async waitUpdateLoader() {
+    await this.isElementVisible('img[alt="Jan - Logo"]')
+  }
+
+  //wait and find a specific element with it's selector and return Visible
+  async isElementVisible(selector: any) {
+    let isVisible = true
+    await this.page
+      .waitForSelector(selector, { state: 'visible', timeout: TIMEOUT })
+      .catch(() => {
+        isVisible = false
+      })
+    return isVisible
+  }
 }
-
-export async function teardownElectron() {
-  await page.close()
-  await electronApp.close()
-}
-
-export const test = base.extend<{
-  attachScreenshotsToReport: void
-}>({
-  attachScreenshotsToReport: [
-    async ({ request }, use, testInfo) => {
-      await use()
-
-      // After the test, we can check whether the test passed or failed.
-      if (testInfo.status !== testInfo.expectedStatus) {
-        const screenshot = await page.screenshot()
-        await testInfo.attach('screenshot', {
-          body: screenshot,
-          contentType: 'image/png',
-        })
-      }
-    },
-    { auto: true },
-  ],
-})
-
-test.setTimeout(TIMEOUT)

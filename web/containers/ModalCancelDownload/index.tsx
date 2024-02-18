@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback } from 'react'
 
 import { Model } from '@janhq/core'
 
@@ -14,7 +14,7 @@ import {
   Progress,
 } from '@janhq/uikit'
 
-import { atom, useAtomValue } from 'jotai'
+import { useAtomValue } from 'jotai'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
 
@@ -30,14 +30,21 @@ type Props = {
 }
 
 const ModalCancelDownload: React.FC<Props> = ({ model, isFromList }) => {
-  const downloadingModels = useAtomValue(getDownloadingModelAtom)
-  const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[model.id]),
-    [model.id]
-  )
-  const downloadState = useAtomValue(downloadAtom)
-  const cancelText = `Cancel ${formatDownloadPercentage(downloadState.percent)}`
   const { abortModelDownload } = useDownloadModel()
+  const downloadingModels = useAtomValue(getDownloadingModelAtom)
+  const allDownloadStates = useAtomValue(modelDownloadStateAtom)
+  const downloadState = allDownloadStates[model.id]
+
+  const cancelText = `Cancel ${formatDownloadPercentage(downloadState.percent)}`
+
+  const onAbortDownloadClick = useCallback(() => {
+    if (downloadState?.modelId) {
+      const model = downloadingModels.find(
+        (model) => model.id === downloadState.modelId
+      )
+      if (model) abortModelDownload(model)
+    }
+  }, [downloadState, downloadingModels, abortModelDownload])
 
   return (
     <Modal>
@@ -77,17 +84,7 @@ const ModalCancelDownload: React.FC<Props> = ({ model, isFromList }) => {
               <Button themes="ghost">No</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button
-                themes="danger"
-                onClick={() => {
-                  if (downloadState?.modelId) {
-                    const model = downloadingModels.find(
-                      (model) => model.id === downloadState.modelId
-                    )
-                    if (model) abortModelDownload(model)
-                  }
-                }}
-              >
+              <Button themes="danger" onClick={onAbortDownloadClick}>
                 Yes
               </Button>
             </ModalClose>

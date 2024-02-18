@@ -76,31 +76,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-win-x64-0.4.6-264.exe'>
+      <a href='https://delta.jan.ai/latest/jan-win-x64-0.4.6-274.exe'>
         <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-mac-x64-0.4.6-264.dmg'>
+      <a href='https://delta.jan.ai/latest/jan-mac-x64-0.4.6-274.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-mac-arm64-0.4.6-264.dmg'>
+      <a href='https://delta.jan.ai/latest/jan-mac-arm64-0.4.6-274.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-linux-amd64-0.4.6-264.deb'>
+      <a href='https://delta.jan.ai/latest/jan-linux-amd64-0.4.6-274.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-linux-x86_64-0.4.6-264.AppImage'>
+      <a href='https://delta.jan.ai/latest/jan-linux-x86_64-0.4.6-274.AppImage'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
@@ -167,6 +167,7 @@ To reset your installation:
    - Clear Application cache in `~/Library/Caches/jan`
 
 ## Requirements for running Jan
+
 - MacOS: 13 or higher
 - Windows:
   - Windows 10 or higher
@@ -194,17 +195,17 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 1. **Clone the repository and prepare:**
 
-    ```bash
-    git clone https://github.com/janhq/jan
-    cd jan
-    git checkout -b DESIRED_BRANCH
-    ```
+   ```bash
+   git clone https://github.com/janhq/jan
+   cd jan
+   git checkout -b DESIRED_BRANCH
+   ```
 
 2. **Run development and use Jan Desktop**
 
-    ```bash
-    make dev
-    ```
+   ```bash
+   make dev
+   ```
 
 This will start the development server and open the desktop app.
 
@@ -222,14 +223,15 @@ This will build the app MacOS m1/m2 for production (with code signing already do
 
 - Supported OS: Linux, WSL2 Docker
 - Pre-requisites:
-  - `docker` and `docker compose`, follow instruction [here](https://docs.docker.com/engine/install/ubuntu/)
+
+  - Docker Engine and Docker Compose are required to run Jan in Docker mode. Follow the [instructions](https://docs.docker.com/engine/install/ubuntu/) below to get started with Docker Engine on Ubuntu.
 
     ```bash
     curl -fsSL https://get.docker.com -o get-docker.sh
     sudo sh ./get-docker.sh --dry-run
     ```
 
-  - `nvidia-driver` and `nvidia-docker2`, follow instruction [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (If you want to run with GPU mode)
+  - If you intend to run Jan in GPU mode, you need to install `nvidia-driver` and `nvidia-docker2`. Follow the instruction [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for installation.
 
 - Run Jan in Docker mode
 
@@ -241,7 +243,7 @@ This will build the app MacOS m1/m2 for production (with code signing already do
 
   - **Option 2**: Run Jan in GPU mode
 
-    - **Step 1**: Check cuda compatibility with your nvidia driver by running `nvidia-smi` and check the cuda version in the output
+    - **Step 1**: Check CUDA compatibility with your NVIDIA driver by running `nvidia-smi` and check the CUDA version in the output
 
       ```bash
       nvidia-smi
@@ -274,7 +276,7 @@ This will build the app MacOS m1/m2 for production (with code signing already do
       |=======================================================================================|
       ```
 
-    - **Step 2**: Go to https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags and find the smallest minor version of image tag that matches the cuda version from the output of `nvidia-smi` (e.g. 12.1 -> 12.1.0)
+    - **Step 2**: Visit [NVIDIA NGC Catalog ](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags) and find the smallest minor version of image tag that matches your CUDA version (e.g., 12.1 -> 12.1.0)
 
     - **Step 3**: Update the `Dockerfile.gpu` line number 5 with the latest minor version of the image tag from step 2 (e.g. change `FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS base` to `FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS base`)
 
@@ -286,6 +288,7 @@ This will build the app MacOS m1/m2 for production (with code signing already do
       ```
 
   This will start the web server and you can access Jan at `http://localhost:3000`.
+
   > Note: Currently, Docker mode is only work for development and localhost, production is not supported yet. RAG feature is not supported in Docker mode yet.
 
 ## Acknowledgements

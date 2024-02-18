@@ -32,7 +32,10 @@ COPY --from=builder /app/node_modules ./node_modules/
 COPY --from=builder /app/yarn.lock ./yarn.lock
 
 # Copy the package.json, yarn.lock, and build output of server yarn space to leverage Docker cache
+COPY --from=builder /app/core ./core/
 COPY --from=builder /app/server ./server/
+RUN cd core && yarn install && yarn run build
+RUN yarn workspace @janhq/server install && yarn workspace @janhq/server build
 COPY --from=builder /app/docs/openapi ./docs/openapi/
 
 # Copy pre-install dependencies

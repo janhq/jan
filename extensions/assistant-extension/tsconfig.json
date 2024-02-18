@@ -14,7 +14,7 @@
     "outDir": "dist",
     "importHelpers": true,
     "typeRoots": ["node_modules/@types"],
-    "skipLibCheck": true,
+    "skipLibCheck": true
   },
-  "include": ["src"],
+  "include": ["src"]
 }

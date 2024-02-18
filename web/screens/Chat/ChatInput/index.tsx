@@ -38,6 +38,8 @@ import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
+  isGeneratingResponseAtom,
+  threadStatesAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -57,6 +59,12 @@ const ChatInput: React.FC = () => {
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
   const { experimentalFeature } = useContext(FeatureToggleContext)
+  const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
+  const threadStates = useAtomValue(threadStatesAtom)
+
+  const isStreamingResponse = Object.values(threadStates).some(
+    (threadState) => threadState.waitingForResponse
+  )
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)
@@ -235,7 +243,9 @@ const ChatInput: React.FC = () => {
         accept="application/pdf"
       />
 
-      {messages[messages.length - 1]?.status !== MessageStatus.Pending ? (
+      {messages[messages.length - 1]?.status !== MessageStatus.Pending &&
+      !isGeneratingResponse &&
+      !isStreamingResponse ? (
         <Button
           size="lg"
           disabled={
