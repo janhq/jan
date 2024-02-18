@@ -36,6 +36,7 @@ import { snackbar, toaster } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
@@ -62,6 +63,7 @@ const Advanced = () => {
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
+  const { stopModel } = useActiveModel()
 
   const selectedGpu = gpuList
     .filter((x) => gpusInUse.includes(x.id))
@@ -232,6 +234,8 @@ const Advanced = () => {
                         type: 'success',
                       })
                     }
+                    // Stop any running model to apply the changes
+                    if (e !== gpuEnabled) stopModel()
                   }}
                 />
               </TooltipTrigger>
