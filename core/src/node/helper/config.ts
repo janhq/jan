@@ -1,8 +1,7 @@
-import { AppConfiguration, SystemResourceInfo } from '../../types'
+import { AppConfiguration } from '../../types'
 import { join } from 'path'
 import fs from 'fs'
 import os from 'os'
-import { log, logServer } from './log'
 import childProcess from 'child_process'
 
 // TODO: move this to core
