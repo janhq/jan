@@ -36,6 +36,7 @@ import { snackbar, toaster } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
@@ -62,6 +63,7 @@ const Advanced = () => {
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
+  const { stopModel } = useActiveModel()
 
   const selectedGpu = gpuList
     .filter((x) => gpusInUse.includes(x.id))
@@ -85,14 +87,14 @@ const Advanced = () => {
   useEffect(() => {
     const setUseGpuIfPossible = async () => {
       const settings = await readSettings()
-      setGpuEnabled(settings.run_mode === 'gpu' && gpuList.length > 0)
+      setGpuEnabled(settings.run_mode === 'gpu' && settings.gpus?.length > 0)
       setGpusInUse(settings.gpus_in_use || [])
       if (settings.gpus) {
         setGpuList(settings.gpus)
       }
     }
     setUseGpuIfPossible()
-  }, [readSettings, gpuList])
+  }, [readSettings])
 
   const clearLogs = async () => {
     if (await fs.existsSync(`file://logs`)) {
@@ -232,6 +234,8 @@ const Advanced = () => {
                         type: 'success',
                       })
                     }
+                    // Stop any running model to apply the changes
+                    if (e !== gpuEnabled) stopModel()
                   }}
                 />
               </TooltipTrigger>
@@ -258,7 +262,7 @@ const Advanced = () => {
               disabled={gpuList.length === 0 || !gpuEnabled}
               value={selectedGpu.join()}
             >
-              <SelectTrigger className="w-[340px] bg-white">
+              <SelectTrigger className="w-[340px] dark:bg-gray-500 bg-white">
                 <SelectValue placeholder={gpuSelectionPlaceHolder}>
                   <span className="line-clamp-1 w-full pr-8">
                     {selectedGpu.join()}
@@ -273,7 +277,7 @@ const Advanced = () => {
                       <div className="rounded-lg bg-secondary p-3">
                         {gpuList
                           .filter((gpu) =>
-                            gpu.name.toLowerCase().includes('nvidia')
+                            gpu.name?.toLowerCase().includes('nvidia')
                           )
                           .map((gpu) => (
                             <div
