@@ -302,7 +302,14 @@ const Sidebar: React.FC = () => {
                           </div>
 
                           <div className="flex items-center justify-between">
-                            <Input value={selectedModel?.name} disabled />
+                            <Input
+                              value={
+                                selectedModel?.name.includes('OpenAI')
+                                  ? 'OpenAI ADA-002'
+                                  : selectedModel?.name
+                              }
+                              disabled
+                            />
                           </div>
                         </div>
                         <div className="mb-4">
