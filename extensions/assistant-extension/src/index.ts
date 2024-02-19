@@ -73,8 +73,26 @@ export default class JanAssistantExtension extends AssistantExtension {
 
     const latestMessage = data.messages[data.messages.length - 1]
 
-    // 1. Ingest the document if needed
+    let webRetrievalResult: string | undefined = undefined
+    // 1. Search web if retrieval web browsing is enabled
     if (
+      data.thread?.assistants[0]?.tools[0]?.settings?.web_browsing_enabled &&
+      latestMessage &&
+      latestMessage.content
+    ) {
+      const webRetrievalResult = await executeOnMain(
+        NODE,
+        'toolSearch',
+        latestMessage.content,
+        data.thread.assistants[0].tools[0]?.settings
+          ?.web_browsing_search_platform
+      )
+      console.debug('toolRetrievalWebSearchResult', webRetrievalResult)
+    }
+
+    // 2. Ingest the document if needed
+    if (
+      data.thread?.assistants[0]?.tools[0]?.settings?.local_file_enabled &&
       latestMessage &&
       latestMessage.content &&
       typeof latestMessage.content !== 'string' &&
@@ -111,8 +129,12 @@ export default class JanAssistantExtension extends AssistantExtension {
       events.emit(MessageEvent.OnMessageSent, output)
       return
     }
-    // 2. Load agent on thread changed
-    if (instance.retrievalThreadId !== data.threadId) {
+
+    // 3. Load agent on thread changed
+    if (
+      data.thread?.assistants[0]?.tools[0]?.settings?.local_file_enabled &&
+      instance.retrievalThreadId !== data.threadId
+    ) {
       await executeOnMain(NODE, 'toolRetrievalLoadThreadMemory', data.threadId)
 
       instance.retrievalThreadId = data.threadId
@@ -126,7 +148,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       )
     }
 
-    // 3. Using the retrieval template with the result and query
+    // 4. Using the retrieval template with the result and query
     if (latestMessage.content) {
       const prompt =
         typeof latestMessage.content === 'string'
@@ -141,11 +163,22 @@ export default class JanAssistantExtension extends AssistantExtension {
       console.debug('toolRetrievalQueryResult', retrievalResult)
 
       // Update message content
-      if (data.thread?.assistants[0]?.tools && retrievalResult)
+      if (
+        data.thread?.assistants[0]?.tools &&
+        (retrievalResult || webRetrievalResult)
+      ) {
+        let context = ''
+        if (retrievalResult) {
+          context += `Local files reference: ${retrievalResult} \n`
+        }
+        if (webRetrievalResult) {
+          context += `Web search reference: ${webRetrievalResult} \n`
+        }
         data.messages[data.messages.length - 1].content =
           data.thread.assistants[0].tools[0].settings?.retrieval_template
-            ?.replace('{CONTEXT}', retrievalResult)
+            ?.replace('{CONTEXT}', context)
             .replace('{QUESTION}', prompt)
+      }
     }
 
     // Filter out all the messages that are not text
@@ -163,7 +196,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       return message
     })
 
-    // 4. Reroute the result to inference engine
+    // 5. Reroute the result to inference engine
     const output = {
       ...data,
       model: {
@@ -259,14 +292,23 @@ export default class JanAssistantExtension extends AssistantExtension {
       object: 'assistant',
       created_at: Date.now(),
       name: 'Jan',
-      description: 'A default assistant that can use all downloaded models',
+      description:
+        'A default assistant that can use all downloaded models and tools',
       model: '*',
       instructions: '',
       tools: [
         {
           type: 'retrieval',
-          enabled: false,
+          enabled: true,
           settings: {
+            // [remote search - dynamic]  Web browsing retrieval settings
+            web_browsing_enabled: true,
+            web_browsing_search_platform: 'google',
+
+            // [remote - static] Local file retrieval settings
+
+            // [local - static] Local file retrieval settings
+            local_file_enabled: true,
             top_k: 2,
             chunk_size: 1024,
             chunk_overlap: 64,

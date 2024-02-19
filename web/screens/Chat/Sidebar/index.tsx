@@ -265,6 +265,166 @@ const Sidebar: React.FC = () => {
                     </div>
                     {activeThread?.assistants[0]?.tools[0].enabled && (
                       <div className="pb-4 pt-2">
+                        <div className="mb-2">
+                          <div className="flex items-center justify-between">
+                            <label
+                              id="retrieval"
+                              className="inline-flex items-center font-bold text-zinc-500 dark:text-gray-300"
+                            >
+                              Web browsing
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <InfoIcon
+                                    size={16}
+                                    className="ml-2 flex-shrink-0 text-black dark:text-gray-500"
+                                  />
+                                </TooltipTrigger>
+                                <TooltipPortal>
+                                  <TooltipContent
+                                    side="top"
+                                    className="max-w-[240px]"
+                                  >
+                                    <span>
+                                      Web browsing with search engine. Please
+                                      make sure you are able to use internet
+                                      (with proxy)
+                                    </span>
+                                    <TooltipArrow />
+                                  </TooltipContent>
+                                </TooltipPortal>
+                              </Tooltip>
+                            </label>
+
+                            <div className="flex items-center justify-between">
+                              <Switch
+                                name="retrieval"
+                                className="mr-2"
+                                checked={
+                                  activeThread?.assistants[0].tools[0].settings
+                                    .web_browsing_enabled
+                                }
+                                onCheckedChange={(e) => {
+                                  // if (activeThread)
+                                  //   updateThreadMetadata({
+                                  //     ...activeThread,
+                                  //     assistants: [
+                                  //       {
+                                  //         ...activeThread.assistants[0],
+                                  //         tools: [
+                                  //           {
+                                  //             ...activeThread?.assistants[0]
+                                  //               .tools[0],
+                                  //             settings: {
+                                  //               ...activeThread?.assistants[0]
+                                  //                 .tools[0].settings,
+                                  //               web_browsing_enabled: e,
+                                  //             },
+                                  //           },
+                                  //         ],
+                                  //       },
+                                  //     ],
+                                  //   })
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mb-4">
+                          <div className="mb-2 flex items-center">
+                            <label
+                              id="vector-database"
+                              className="inline-block font-bold text-zinc-500 dark:text-gray-300"
+                            >
+                              Search engine
+                            </label>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <InfoIcon
+                                  size={16}
+                                  className="ml-2 flex-shrink-0 dark:text-gray-500"
+                                />
+                              </TooltipTrigger>
+                              <TooltipPortal>
+                                <TooltipContent
+                                  side="top"
+                                  className="max-w-[240px]"
+                                >
+                                  <span>
+                                    Search engine for retrieval with web
+                                    browsing
+                                  </span>
+                                  <TooltipArrow />
+                                </TooltipContent>
+                              </TooltipPortal>
+                            </Tooltip>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Input value="Google" disabled />
+                          </div>
+                        </div>
+                        <div className="mb-2">
+                          <div className="flex items-center justify-between">
+                            <label
+                              id="retrieval"
+                              className="inline-flex items-center font-bold text-zinc-500 dark:text-gray-300"
+                            >
+                              Local files
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <InfoIcon
+                                    size={16}
+                                    className="ml-2 flex-shrink-0 text-black dark:text-gray-500"
+                                  />
+                                </TooltipTrigger>
+                                <TooltipPortal>
+                                  <TooltipContent
+                                    side="top"
+                                    className="max-w-[240px]"
+                                  >
+                                    <span>
+                                      RAG on local files. Please make sure you
+                                      upload files
+                                    </span>
+                                    <TooltipArrow />
+                                  </TooltipContent>
+                                </TooltipPortal>
+                              </Tooltip>
+                            </label>
+
+                            <div className="flex items-center justify-between">
+                              <Switch
+                                name="retrieval"
+                                className="mr-2"
+                                checked={
+                                  activeThread?.assistants[0].tools[0].settings
+                                    .local_file_enabled
+                                }
+                                onCheckedChange={(e) => {
+                                  // if (activeThread)
+                                  // updateThreadMetadata({
+                                  // ...activeThread,
+                                  // assistants: [
+                                  //   {
+                                  //     ...activeThread.assistants[0],
+                                  //     tools: [
+                                  //       {
+                                  //         ...activeThread?.assistants[0]
+                                  //           .tools[0],
+                                  //         settings: {
+                                  //           ...activeThread?.assistants[0]
+                                  //             .tools[0].settings,
+                                  //           local_file_enabled: e,
+                                  //         },
+                                  //       },
+                                  //     ],
+                                  //   },
+                                  // ],
+                                  // })
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
                         <div className="mb-4">
                           <div className="item-center mb-2 flex">
                             <label
@@ -304,7 +464,9 @@ const Sidebar: React.FC = () => {
                           <div className="flex items-center justify-between">
                             <Input
                               value={
-                                selectedModel?.name.includes('OpenAI')
+                                selectedModel?.name
+                                  .toLowerCase()
+                                  .includes('openai')
                                   ? 'OpenAI ADA-002'
                                   : selectedModel?.name
                               }
