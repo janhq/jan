@@ -56,6 +56,8 @@ const Advanced = () => {
     setIgnoreSSL,
     proxy,
     setProxy,
+    proxyEnabled,
+    setProxyEnabled,
   } = useContext(FeatureToggleContext)
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
@@ -329,9 +331,13 @@ const Advanced = () => {
       <DataFolder />
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="flex-shrink-0 space-y-1.5">
-          <div className="flex gap-x-2">
+        <div className="flex-shrink-0 space-y-1.5 w-full">
+          <div className="flex gap-x-2 justify-between w-full">
             <h6 className="text-sm font-semibold capitalize">HTTPS Proxy</h6>
+            <Switch
+              checked={proxyEnabled}
+              onCheckedChange={(_) => setProxyEnabled(!proxyEnabled)}
+            />
           </div>
           <p className="leading-relaxed">
             Specify the HTTPS proxy or leave blank (proxy auto-configuration and
@@ -341,6 +347,7 @@ const Advanced = () => {
             placeholder={'http://<user>:<password>@<domain or IP>:<port>'}
             value={partialProxy}
             onChange={onProxyChange}
+            className="w-2/3"
           />
         </div>
       </div>

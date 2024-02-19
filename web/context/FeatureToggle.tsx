@@ -4,18 +4,22 @@ interface FeatureToggleContextType {
   experimentalFeature: boolean
   ignoreSSL: boolean
   proxy: string
+  proxyEnabled: boolean
   setExperimentalFeature: (on: boolean) => void
   setIgnoreSSL: (on: boolean) => void
   setProxy: (value: string) => void
+  setProxyEnabled: (on: boolean) => void
 }
 
 const initialContext: FeatureToggleContextType = {
   experimentalFeature: false,
   ignoreSSL: false,
   proxy: '',
+  proxyEnabled: false,
   setExperimentalFeature: () => {},
   setIgnoreSSL: () => {},
   setProxy: () => {},
+  setProxyEnabled: () => {},
 }
 
 export const FeatureToggleContext =
@@ -29,8 +33,11 @@ export default function FeatureToggleWrapper({
   const EXPERIMENTAL_FEATURE = 'experimentalFeature'
   const IGNORE_SSL = 'ignoreSSLFeature'
   const HTTPS_PROXY_FEATURE = 'httpsProxyFeature'
+  const PROXY_FEATURE_ENABLED = 'proxyFeatureEnabled'
+
   const [experimentalFeature, directSetExperimentalFeature] =
     useState<boolean>(false)
+  const [proxyEnabled, directSetProxyEnabled] = useState<boolean>(false)
   const [ignoreSSL, directSetIgnoreSSL] = useState<boolean>(false)
   const [proxy, directSetProxy] = useState<string>('')
 
@@ -40,6 +47,9 @@ export default function FeatureToggleWrapper({
     )
     directSetIgnoreSSL(localStorage.getItem(IGNORE_SSL) === 'true')
     directSetProxy(localStorage.getItem(HTTPS_PROXY_FEATURE) ?? '')
+    directSetProxyEnabled(
+      localStorage.getItem(PROXY_FEATURE_ENABLED) === 'true'
+    )
   }, [])
 
   const setExperimentalFeature = (on: boolean) => {
@@ -57,15 +67,22 @@ export default function FeatureToggleWrapper({
     directSetProxy(proxy)
   }
 
+  const setProxyEnabled = (on: boolean) => {
+    localStorage.setItem(PROXY_FEATURE_ENABLED, on ? 'true' : 'false')
+    directSetProxyEnabled(on)
+  }
+
   return (
     <FeatureToggleContext.Provider
       value={{
         experimentalFeature,
         ignoreSSL,
         proxy,
+        proxyEnabled,
         setExperimentalFeature,
         setIgnoreSSL,
         setProxy,
+        setProxyEnabled,
       }}
     >
       {children}

@@ -20,7 +20,7 @@ import { extensionManager } from '@/extension/ExtensionManager'
 import { addDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useDownloadModel() {
-  const { ignoreSSL, proxy } = useContext(FeatureToggleContext)
+  const { ignoreSSL, proxy, proxyEnabled } = useContext(FeatureToggleContext)
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
 
@@ -64,9 +64,9 @@ export default function useDownloadModel() {
 
       addDownloadingModel(model)
 
-      await localDownloadModel(model, ignoreSSL, proxy)
+      await localDownloadModel(model, ignoreSSL, proxyEnabled ? proxy : '')
     },
-    [ignoreSSL, proxy, addDownloadingModel, setDownloadState]
+    [ignoreSSL, proxy, proxyEnabled, addDownloadingModel, setDownloadState]
   )
 
   const abortModelDownload = useCallback(async (model: Model) => {
