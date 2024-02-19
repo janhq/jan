@@ -18,9 +18,9 @@ keywords:
 
 ## Quick Introduction
 
-With [LM Studio](https://lmstudio.ai/), you can discover, download, and run local Large Language Models (LLMs). In this guide, we will show you how to integrate and use your current models on LM Studio with Jan. We will use the model [Phi 2 - GGUF](https://huggingface.co/TheBloke/phi-2-GGUF) on Hugging Face as an example.
+With [LM Studio](https://lmstudio.ai/), you can discover, download, and run local Large Language Models (LLMs). In this guide, we will show you how to integrate and use your current models on LM Studio with Jan using 2 methods.  The first method is integrating LM Studio server with Jan UI. The second method is migrating your downloaded model from LM Studio to Jan. We will use the model [Phi 2 - GGUF](https://huggingface.co/TheBloke/phi-2-GGUF) on Hugging Face as an example.
 
-## Steps to Integrate LM Studio with Jan
+## Steps to Integrate LM Studio server with Jan UI
 
 ### 1. Start the LM Studio server
 
@@ -89,3 +89,21 @@ Restart Jan and navigate to the Hub. Locate your model and click the Use button.
 ### 4. Try Out the Integration of Jan and LM Studio
 
 ![LM Studio Integration Demo](assets/05-lmstudio-integration-demo.gif)
+
+## Steps to Migrate Your Downloaded Model from LM Studio to Jan
+
+### 1. Migrate Your Downloaded Model
+
+Navigate to `My Models` in the LM Studio application and reveal the model folder.
+
+![Reveal-model-folder-lmstudio](assets/05-reveal-model-folder-lmstudio.gif)
+
+Copy the model folder that you want to migrate to `~/jan/models` folder.
+
+Ensure the folder name property is the same as the model name of `.gguf` filename by changing the folder name if necessary. For example, in this case, we changed foldername from `TheBloke` to `phi-2.Q4_K_S`.
+
+### 2. Start the Model
+
+Restart Jan and navigate to the Hub. Jan will automatically detect the model and display it in the Hub. Locate your model and click the Use button for trying out the migrating model.
+
+![Demo](assets/05-demo-migrating-model.gif)
