@@ -1,10 +1,12 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 
 import { Progress } from '@janhq/uikit'
 import { useAtom, useAtomValue } from 'jotai'
 import { MonitorIcon, XIcon, ChevronDown, ChevronUp } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
+
+import useGetSystemResources from '@/hooks/useGetSystemResources'
 
 import { toGibibytes } from '@/utils/converter'
 
@@ -29,6 +31,18 @@ const SystemMonitor = () => {
   const [systemMonitorCollapse, setSystemMonitorCollapse] = useAtom(
     systemMonitorCollapseAtom
   )
+
+  const { watch, stopWatching } = useGetSystemResources()
+
+  useEffect(() => {
+    // Watch for resource update
+    watch()
+
+    return () => {
+      stopWatching()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const calculateUtilization = () => {
     let sum = 0

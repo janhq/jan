@@ -1,5 +1,3 @@
-import { useEffect } from 'react'
-
 import {
   Tooltip,
   TooltipArrow,
@@ -17,8 +15,6 @@ import ProgressBar from '@/containers/ProgressBar'
 
 import { appDownloadProgress } from '@/containers/Providers/Jotai'
 
-import useGetSystemResources from '@/hooks/useGetSystemResources'
-
 import SystemMonitor from './SystemMonitor'
 
 const menuLinks = [
@@ -35,18 +31,7 @@ const menuLinks = [
 ]
 
 const BottomBar = () => {
-  const { watch, stopWatching } = useGetSystemResources()
   const progress = useAtomValue(appDownloadProgress)
-
-  useEffect(() => {
-    // Watch for resource update
-    watch()
-
-    return () => {
-      stopWatching()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   return (
     <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/80 px-3">
