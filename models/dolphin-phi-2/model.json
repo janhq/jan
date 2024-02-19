@@ -1,5 +1,5 @@
 {
-    "source": [
+    "sources": [
       {
         "url": "https://huggingface.co/TheBloke/dolphin-2_6-phi-2-GGUF/resolve/main/dolphin-2_6-phi-2.Q8_0.gguf",
         "filename": "dolphin-2_6-phi-2.Q8_0.gguf"

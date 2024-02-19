@@ -1,5 +1,5 @@
 {
-    "source": [
+    "sources": [
       {
         "url": "https://huggingface.co/TheBloke/stablelm-zephyr-3b-GGUF/resolve/main/stablelm-zephyr-3b.Q8_0.gguf",
         "filename": "stablelm-zephyr-3b.Q8_0.gguf"
