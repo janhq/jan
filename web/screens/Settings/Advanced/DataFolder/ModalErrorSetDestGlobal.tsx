@@ -10,16 +10,14 @@ import {
   ModalClose,
   Button,
 } from '@janhq/uikit'
+import { atom, useAtom } from 'jotai'
 
-import { useVaultDirectory } from '@/hooks/useVaultDirectory'
+export const showChangeFolderErrorAtom = atom(false)
 
 const ModalErrorSetDestGlobal = () => {
-  const { isErrorSetNewDest, setIsErrorSetNewDest } = useVaultDirectory()
+  const [show, setShow] = useAtom(showChangeFolderErrorAtom)
   return (
-    <Modal
-      open={isErrorSetNewDest}
-      onOpenChange={() => setIsErrorSetNewDest(false)}
-    >
+    <Modal open={show} onOpenChange={setShow}>
       <ModalPortal />
       <ModalContent>
         <ModalHeader>
@@ -31,7 +29,7 @@ const ModalErrorSetDestGlobal = () => {
         </p>
         <ModalFooter>
           <div className="flex gap-x-2">
-            <ModalClose asChild onClick={() => setIsErrorSetNewDest(false)}>
+            <ModalClose asChild onClick={() => setShow(false)}>
               <Button themes="danger">Got it</Button>
             </ModalClose>
           </div>

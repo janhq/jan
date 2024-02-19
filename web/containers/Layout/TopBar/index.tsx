@@ -27,6 +27,8 @@ import { usePath } from '@/hooks/usePath'
 
 import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 
+import { openFileTitle } from '@/utils/titleUtils'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const TopBar = () => {
@@ -120,13 +122,14 @@ const TopBar = () => {
               </span>
             </div>
           </div>
-          {activeThread && (
-            <div
-              className={twMerge(
-                'absolute right-0 h-full w-80',
-                showing && 'border-l border-border'
-              )}
-            >
+          <div
+            className={twMerge(
+              'absolute right-0 h-full w-80',
+              showing && 'border-l border-border'
+            )}
+          >
+            {((activeThread && mainViewState === MainViewState.Thread) ||
+              mainViewState === MainViewState.LocalServer) && (
               <div className="flex h-full w-52 items-center justify-between px-4">
                 {showing && (
                   <div className="relative flex h-full items-center">
@@ -161,7 +164,7 @@ const TopBar = () => {
                             className="text-muted-foreground"
                           />
                           <span className="font-medium text-black dark:text-muted-foreground">
-                            Show in Finder
+                            {openFileTitle()}
                           </span>
                         </div>
                         <div
@@ -206,7 +209,7 @@ const TopBar = () => {
                           />
                           <div className="flex flex-col">
                             <span className="font-medium text-black dark:text-muted-foreground">
-                              Show in Finder
+                              {openFileTitle()}
                             </span>
                           </div>
                         </div>
@@ -227,8 +230,8 @@ const TopBar = () => {
                   />
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
       <CommandSearch />

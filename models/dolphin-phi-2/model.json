@@ -13,7 +13,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n",
+      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
       "llama_model_path": "dolphin-2_6-phi-2.Q8_0.gguf"
     },
     "parameters": {

@@ -8,11 +8,9 @@ import { useAtomValue } from 'jotai'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import GenerateResponse from '@/containers/Loader/GenerateResponse'
-
 import { MainViewState } from '@/constants/screens'
 
-import { activeModelAtom } from '@/hooks/useActiveModel'
+import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
@@ -21,17 +19,13 @@ import ChatItem from '../ChatItem'
 
 import ErrorMessage from '../ErrorMessage'
 
-import {
-  generateResponseAtom,
-  getCurrentChatMessagesAtom,
-} from '@/helpers/atoms/ChatMessage.atom'
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const activeModel = useAtomValue(activeModelAtom)
   const { downloadedModels } = useGetDownloadedModels()
   const { setMainViewState } = useMainViewState()
-  const generateResponse = useAtomValue(generateResponseAtom)
+  const loadModelError = useAtomValue(loadModelErrorAtom)
 
   if (downloadedModels.length === 0)
     return (
@@ -92,22 +86,14 @@ const ChatBody: React.FC = () => {
                 message.content.length > 0) && (
                 <ChatItem {...message} key={message.id} />
               )}
-              {(message.status === MessageStatus.Error ||
-                message.status === MessageStatus.Stopped) &&
+              {!loadModelError &&
+                (message.status === MessageStatus.Error ||
+                  message.status === MessageStatus.Stopped) &&
                 index === messages.length - 1 && (
                   <ErrorMessage message={message} />
                 )}
             </div>
           ))}
-
-          {activeModel &&
-            (generateResponse ||
-              (messages.length &&
-                messages[messages.length - 1].status ===
-                  MessageStatus.Pending &&
-                !messages[messages.length - 1].content.length)) && (
-              <GenerateResponse />
-            )}
         </ScrollToBottom>
       )}
     </Fragment>

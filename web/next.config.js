@@ -25,10 +25,8 @@ const nextConfig = {
       ...config.plugins,
       new webpack.DefinePlugin({
         VERSION: JSON.stringify(packageJson.version),
-        ANALYTICS_ID:
-          JSON.stringify(process.env.ANALYTICS_ID) ?? JSON.stringify('xxx'),
-        ANALYTICS_HOST:
-          JSON.stringify(process.env.ANALYTICS_HOST) ?? JSON.stringify('xxx'),
+        ANALYTICS_ID: JSON.stringify(process.env.ANALYTICS_ID),
+        ANALYTICS_HOST: JSON.stringify(process.env.ANALYTICS_HOST),
         API_BASE_URL: JSON.stringify('http://localhost:1337'),
         isMac: process.platform === 'darwin',
         isWindows: process.platform === 'win32',

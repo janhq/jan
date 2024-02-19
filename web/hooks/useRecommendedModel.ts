@@ -26,7 +26,6 @@ export default function useRecommendedModel() {
   const activeModel = useAtomValue(activeModelAtom)
   const [downloadedModels, setDownloadedModels] = useState<Model[]>([])
   const [recommendedModel, setRecommendedModel] = useState<Model | undefined>()
-  const threadStates = useAtomValue(threadStatesAtom)
   const activeThread = useAtomValue(activeThreadAtom)
 
   const getAndSortDownloadedModels = useCallback(async (): Promise<Model[]> => {
@@ -43,30 +42,12 @@ export default function useRecommendedModel() {
     Model | undefined
   > => {
     const models = await getAndSortDownloadedModels()
-    if (!activeThread) {
-      return
-    }
+    if (!activeThread) return
+    const modelId = activeThread.assistants[0]?.model.id
+    const model = models.find((model) => model.id === modelId)
 
-    const finishInit = threadStates[activeThread.id].isFinishInit ?? true
-    if (finishInit) {
-      const modelId = activeThread.assistants[0]?.model.id
-      const model = models.find((model) => model.id === modelId)
-
-      if (model) {
-        setRecommendedModel(model)
-      }
-
-      return
-    } else {
-      const modelId = activeThread.assistants[0]?.model.id
-      if (modelId !== '*') {
-        const model = models.find((model) => model.id === modelId)
-
-        if (model) {
-          setRecommendedModel(model)
-        }
-        return
-      }
+    if (model) {
+      setRecommendedModel(model)
     }
 
     if (activeModel) {

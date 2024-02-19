@@ -3,19 +3,26 @@ import { useEffect, useState } from 'react'
 
 import React from 'react'
 
+import { useAtomValue } from 'jotai'
+
 import { useServerLog } from '@/hooks/useServerLog'
+
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 const Logs = () => {
   const { getServerLog } = useServerLog()
+  const serverEnabled = useAtomValue(serverEnabledAtom)
   const [logs, setLogs] = useState([])
 
   useEffect(() => {
     getServerLog().then((log) => {
-      if (typeof log?.split === 'function') setLogs(log.split(/\r?\n|\r|\n/g))
+      if (typeof log?.split === 'function') {
+        setLogs(log.split(/\r?\n|\r|\n/g))
+      }
     })
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logs])
+  }, [logs, serverEnabled])
 
   return (
     <div className="overflow-hidden">
