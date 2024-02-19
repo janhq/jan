@@ -116,7 +116,7 @@ const Sidebar: React.FC = () => {
           </div>
         </div>
 
-        <CardSidebar title="Assistant">
+        <CardSidebar title="Assistant" isShow={true}>
           <div className="flex flex-col space-y-4 p-2">
             <div className="flex items-center space-x-2">
               <LogoMark width={24} height={24} />
@@ -149,6 +149,47 @@ const Sidebar: React.FC = () => {
                 }}
               />
             </div>
+          </div>
+        </CardSidebar>
+
+        <CardSidebar title="Model" isShow={true}>
+          <div className="px-2 pt-4">
+            <DropdownListSidebar />
+
+            {componentDataRuntimeSetting.length > 0 && (
+              <div className="mt-6">
+                <CardSidebar title="Inference Parameters" asChild>
+                  <div className="px-2 py-4">
+                    <ModelSetting componentData={componentDataRuntimeSetting} />
+                  </div>
+                </CardSidebar>
+              </div>
+            )}
+
+            {componentDataEngineSetting.filter(
+              (x) => x.name === 'prompt_template'
+            ).length !== 0 && (
+              <div className="mt-4">
+                <CardSidebar title="Model Parameters" asChild>
+                  <div className="px-2 py-4">
+                    <SettingComponentBuilder
+                      componentData={componentDataEngineSetting}
+                      selector={(x: any) => x.name === 'prompt_template'}
+                    />
+                  </div>
+                </CardSidebar>
+              </div>
+            )}
+
+            {componentDataEngineSetting.length > 0 && (
+              <div className="my-4">
+                <CardSidebar title="Engine Parameters" asChild>
+                  <div className="px-2 py-4">
+                    <EngineSetting componentData={componentDataEngineSetting} />
+                  </div>
+                </CardSidebar>
+              </div>
+            )}
           </div>
         </CardSidebar>
 
@@ -312,47 +353,6 @@ const Sidebar: React.FC = () => {
               )}
           </div>
         )}
-
-        <CardSidebar title="Model">
-          <div className="px-2 pt-4">
-            <DropdownListSidebar />
-
-            {componentDataRuntimeSetting.length > 0 && (
-              <div className="mt-6">
-                <CardSidebar title="Inference Parameters" asChild>
-                  <div className="px-2 py-4">
-                    <ModelSetting componentData={componentDataRuntimeSetting} />
-                  </div>
-                </CardSidebar>
-              </div>
-            )}
-
-            {componentDataEngineSetting.filter(
-              (x) => x.name === 'prompt_template'
-            ).length !== 0 && (
-              <div className="mt-4">
-                <CardSidebar title="Model Parameters" asChild>
-                  <div className="px-2 py-4">
-                    <SettingComponentBuilder
-                      componentData={componentDataEngineSetting}
-                      selector={(x: any) => x.name === 'prompt_template'}
-                    />
-                  </div>
-                </CardSidebar>
-              </div>
-            )}
-
-            {componentDataEngineSetting.length > 0 && (
-              <div className="my-4">
-                <CardSidebar title="Engine Parameters" asChild>
-                  <div className="px-2 py-4">
-                    <EngineSetting componentData={componentDataEngineSetting} />
-                  </div>
-                </CardSidebar>
-              </div>
-            )}
-          </div>
-        </CardSidebar>
       </div>
     </div>
   )

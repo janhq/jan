@@ -30,7 +30,7 @@ const OpenAiKeyInput: React.FC = () => {
   }
 
   return (
-    <div className="mt-4">
+    <div className="my-4">
       <label
         id="thread-title"
         className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
