@@ -1,6 +1,5 @@
 import { basename, isAbsolute, join, relative } from 'path'
 
-import { AppRoute } from '../../../api'
 import { Processor } from './Processor'
 import { getAppConfigurations as appConfiguration, updateAppConfiguration } from '../../helper'
 import { log as writeLog, logServer as writeServerLog } from '../../helper/log'
