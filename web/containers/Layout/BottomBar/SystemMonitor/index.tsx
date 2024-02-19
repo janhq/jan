@@ -6,6 +6,7 @@ import { MonitorIcon, XIcon, ChevronDown, ChevronUp } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import { useClickOutside } from '@/hooks/useClickOutside'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 
 import { toGibibytes } from '@/utils/converter'
@@ -31,8 +32,20 @@ const SystemMonitor = () => {
   const [systemMonitorCollapse, setSystemMonitorCollapse] = useAtom(
     systemMonitorCollapseAtom
   )
+  const [control, setControl] = useState<HTMLDivElement | null>(null)
+  const [elementExpand, setElementExpand] = useState<HTMLDivElement | null>(
+    null
+  )
 
   const { watch, stopWatching } = useGetSystemResources()
+  useClickOutside(
+    () => {
+      setSystemMonitorCollapse(false)
+      setShowFullScreen(false)
+    },
+    null,
+    [control, elementExpand]
+  )
 
   useEffect(() => {
     // Watch for resource update
@@ -58,6 +71,7 @@ const SystemMonitor = () => {
   return (
     <Fragment>
       <div
+        ref={setControl}
         className={twMerge(
           'flex items-center gap-x-2 cursor-pointer p-2 rounded-md hover:bg-secondary',
           systemMonitorCollapse && 'bg-secondary'
@@ -72,6 +86,7 @@ const SystemMonitor = () => {
       </div>
       {systemMonitorCollapse && (
         <div
+          ref={setElementExpand}
           className={twMerge(
             'fixed left-16 bottom-12 bg-white w-[calc(100%-64px)] h-[400px] z-50 border-t border-border flex flex-col flex-shrink-0',
             showFullScreen && 'h-[calc(100%-48px)]'
