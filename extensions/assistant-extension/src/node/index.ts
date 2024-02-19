@@ -1,6 +1,9 @@
+import path from 'path'
+
 import { getJanDataFolderPath, normalizeFilePath } from '@janhq/core/node'
 import { retrieval } from './tools/retrieval'
-import path from 'path'
+
+import { googleSearch } from './tools/search'
 
 export function toolRetrievalUpdateTextSplitter(
   chunkSize: number,
@@ -36,4 +39,10 @@ export async function toolRetrievalQueryResult(query: string) {
   return retrieval.generateResult(query).catch((err) => {
     console.error(err)
   })
+}
+
+export async function toolSearch(query: string, platform: string) {
+  if (platform === 'google') {
+    return await googleSearch(query)
+  }
 }
