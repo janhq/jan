@@ -318,13 +318,6 @@ export const chatCompletions = async (request: any, reply: any) => {
     apiUrl = engineConfiguration.full_url
   }
 
-  reply.raw.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-  })
-
   const headers: Record<string, any> = {
     'Content-Type': 'application/json',
   }
@@ -343,8 +336,14 @@ export const chatCompletions = async (request: any, reply: any) => {
   })
   if (response.status !== 200) {
     console.error(response)
-    return
+    reply.code(400).send(response)
   } else {
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    })
     response.body.pipe(reply.raw)
   }
 }
