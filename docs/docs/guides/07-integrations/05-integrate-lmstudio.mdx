@@ -90,7 +90,7 @@ Restart Jan and navigate to the Hub. Locate your model and click the Use button.
 
 ![LM Studio Integration Demo](assets/05-lmstudio-integration-demo.gif)
 
-## Steps to Migrate Your Downloaded Model from LM Studio to Jan (Version 0.4.6 and older)
+## Steps to Migrate Your Downloaded Model from LM Studio to Jan (version 0.4.6 and older)
 
 ### 1. Migrate Your Downloaded Model
 
@@ -107,3 +107,67 @@ Ensure the folder name property is the same as the model name of `.gguf` filenam
 Restart Jan and navigate to the Hub. Jan will automatically detect the model and display it in the Hub. Locate your model and click the Use button for trying out the migrating model.
 
 ![Demo](assets/05-demo-migrating-model.gif)
+
+## Steps to Pointing the Downloaded Model of LM Studio from Jan (version 0.4.7+)
+
+Starting from version 0.4.7, Jan supports importing models using an absolute filepath, so you can directly use the model from the LM Studio folder.
+
+### 1. Revel the Model Absolute Path
+
+Navigate to `My Models` in the LM Studio application and reveal the model folder. Then, you can get the absolute path of your model.
+
+![Reveal-model-folder-lmstudio](assets/05-reveal-model-folder-lmstudio.gif)
+
+### 2. Modify a Model JSON
+
+Navigate to the `~/jan/models` folder. Create a folder named `<modelname>`, for example, `phi-2.Q4_K_S` and create a `model.json` file inside the folder including the following configurations:
+
+- Ensure the filename must be `model.json`.
+- Ensure the `id` property matches the folder name you created.
+- Ensure the `url` property is the direct binary download link ending in `.gguf`. Now, you can use the absolute filepath of the model file. In this example, the absolute filepath is `/Users/<username>/.cache/lm-studio/models/TheBloke/phi-2-GGUF/phi-2.Q4_K_S.gguf`.
+- Ensure the `engine` property is set to `nitro`.
+
+```json
+{
+  "object": "model",
+  "version": 1,
+  "format": "gguf",
+  "sources": [
+    {
+      "filename": "phi-2.Q4_K_S.gguf",
+      "url": "<absolute-path-of-model-file>"
+    }
+  ],
+  "id": "phi-2.Q4_K_S",
+  "name": "phi-2.Q4_K_S",
+  "created": 1708308111506,
+  "description": "phi-2.Q4_K_S - user self import model",
+  "settings": {
+    "ctx_len": 4096,
+    "embedding": false,
+    "prompt_template": "{system_message}\n### Instruction: {prompt}\n### Response:",
+    "llama_model_path": "phi-2.Q4_K_S.gguf"
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 2048,
+    "stop": ["<endofstring>"],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "size": 1615568736,
+    "author": "User",
+    "tags": []
+  },
+  "engine": "nitro"
+}
+```
+
+### 3. Start the Model
+
+Restart Jan and navigate to the Hub. Jan will automatically detect the model and display it in the Hub. Locate your model and click the Use button for trying out the migrating model.
+
+![Demo](assets/05-demo-pointing-model.gif)
