@@ -297,6 +297,10 @@ export default function useSendChatMessage() {
     const updatedThread: Thread = {
       ...activeThread,
       updated: timestamp,
+      metadata: {
+        ...(activeThread.metadata ?? {}),
+        lastMessage: prompt,
+      },
     }
 
     // change last update thread when send message
