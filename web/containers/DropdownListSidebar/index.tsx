@@ -162,6 +162,8 @@ const DropdownListSidebar = ({
   const selectedModelLoading =
     stateModel.model === selectedModel?.id && stateModel.loading
 
+  console.log(isTabActive)
+
   return (
     <>
       <div
@@ -195,7 +197,12 @@ const DropdownListSidebar = ({
             </SelectValue>
           </SelectTrigger>
           <SelectPortal>
-            <SelectContent className="right-2  block w-full min-w-[450px] pr-0">
+            <SelectContent
+              className={twMerge(
+                'right-2  block w-full min-w-[450px] pr-0',
+                isTabActive === 1 && '[&_.select-scroll-down-button]:hidden'
+              )}
+            >
               <div className="relative px-2 py-2 dark:bg-secondary/50">
                 <ul className="inline-flex w-full space-x-2 rounded-lg bg-zinc-100 px-1 dark:bg-secondary">
                   {engineOptions.map((name, i) => {
