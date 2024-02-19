@@ -10,7 +10,6 @@ import { useAtom, useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
-  MonitorIcon,
   LayoutGridIcon,
   SquareCodeIcon,
 } from 'lucide-react'
@@ -74,16 +73,6 @@ export default function RibbonNav() {
         />
       ),
       state: MainViewState.LocalServer,
-    },
-    {
-      name: 'System Monitor',
-      icon: (
-        <MonitorIcon
-          size={20}
-          className="flex-shrink-0 text-muted-foreground"
-        />
-      ),
-      state: MainViewState.SystemMonitor,
     },
     {
       name: 'Settings',
