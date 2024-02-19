@@ -154,7 +154,10 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     })
 
     if (nitroInitResult?.error) {
-      events.emit(ModelEvent.OnModelFail, model)
+      events.emit(ModelEvent.OnModelFail, {
+        ...model,
+        error: nitroInitResult.error,
+      })
       return
     }
 
