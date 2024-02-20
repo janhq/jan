@@ -310,9 +310,15 @@ async function killSubprocess(): Promise<void> {
       subprocess?.kill()
       subprocess = undefined
     })
-    .catch(() => {})
+    .catch(() => {}) // Do nothing with this attempt
     .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
     .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
+    .catch((err) => {
+      log(
+        `[NITRO]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
+      )
+      throw 'PORT_NOT_AVAILABLE'
+    })
 }
 
 /**
