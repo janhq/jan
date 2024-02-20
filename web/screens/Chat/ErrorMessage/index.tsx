@@ -51,9 +51,8 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               className="flex flex-col items-center text-center text-sm font-medium text-gray-500 w-full"
             >
               <p className="w-[90%]">
-                Failed to use a port, causing a fatal error. Check for
-                conflicting apps and ensure the port is available, or
-                access&nbsp;
+                Port 3928 is currently unavailable. Check for conflicting apps,
+                or access&nbsp;
                 <span
                   className="cursor-pointer text-primary dark:text-blue-400"
                   onClick={() => setModalTroubleShooting(true)}
