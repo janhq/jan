@@ -1,5 +1,5 @@
 {
-    "source": [
+    "sources": [
         {
             "url":"https://huggingface.co/janhq/llamacorn-1.1b-chat-GGUF/resolve/main/llamacorn-1.1b-chat.Q8_0.gguf",
             "filename": "llamacorn-1.1b-chat.Q8_0.gguf"

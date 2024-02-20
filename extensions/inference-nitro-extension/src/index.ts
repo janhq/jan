@@ -88,7 +88,7 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     const electronApi = window?.electronAPI
     this.inferenceUrl = INFERENCE_URL
     if (!electronApi) {
-      this.inferenceUrl = JAN_SERVER_INFERENCE_URL
+      this.inferenceUrl = `${window.core?.api?.baseApiUrl}/v1/chat/completions`
     }
     console.debug('Inference url: ', this.inferenceUrl)
 

@@ -125,7 +125,7 @@ export const getMessages = async (threadId: string): Promise<ThreadMessage[]> =>
   }
 }
 
-export const retrieveMesasge = async (threadId: string, messageId: string) => {
+export const retrieveMessage = async (threadId: string, messageId: string) => {
   const messages = await getMessages(threadId)
   const filteredMessages = messages.filter((m) => m.id === messageId)
   if (!filteredMessages || filteredMessages.length === 0) {
