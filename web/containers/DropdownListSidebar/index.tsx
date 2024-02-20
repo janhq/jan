@@ -162,8 +162,6 @@ const DropdownListSidebar = ({
   const selectedModelLoading =
     stateModel.model === selectedModel?.id && stateModel.loading
 
-  console.log(isTabActive)
-
   return (
     <>
       <div
