@@ -93,6 +93,7 @@ const Advanced = () => {
       const settings = await readSettings()
       setGpuEnabled(settings.run_mode === 'gpu' && settings.gpus?.length > 0)
       setGpusInUse(settings.gpus_in_use || [])
+      setVulkanEnabled(settings.vulkan || false)
       if (settings.gpus) {
         setGpuList(settings.gpus)
       }
@@ -342,13 +343,18 @@ const Advanced = () => {
             </div>
             <p className="text-xs leading-relaxed">
               Enable Vulkan with AMD GPU/APU and Intel Arc GPU for better model
-              performance. 0 - iGPU, n positive - eGPU
+              performance.
             </p>
           </div>
-          {vulkanEnabled && (
-            <Input value={vulkanEnabled ? 1 : 0} className="w-[60px] pr-8" />
-          )}
-          <Switch checked={vulkanEnabled} onCheckedChange={setVulkanEnabled} />
+
+          <Switch
+            checked={vulkanEnabled}
+            onCheckedChange={(e) => {
+              stopModel()
+              saveSettings({ vulkan: e, gpusInUse: [] })
+              setVulkanEnabled(e)
+            }}
+          />
         </div>
       )}
 

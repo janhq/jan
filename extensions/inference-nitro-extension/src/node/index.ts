@@ -345,6 +345,10 @@ function spawnNitroProcess(): Promise<any> {
         env: {
           ...process.env,
           CUDA_VISIBLE_DEVICES: executableOptions.cudaVisibleDevices,
+          // Vulkan - Support 1 device at a time for now
+          ...(executableOptions.vkVisibleDevices?.length > 0 && {
+            GGML_VULKAN_DEVICE: executableOptions.vkVisibleDevices[0],
+          }),
         },
       }
     )

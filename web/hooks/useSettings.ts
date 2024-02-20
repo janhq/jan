@@ -48,16 +48,19 @@ export const useSettings = () => {
     runMode,
     notify,
     gpusInUse,
+    vulkan,
   }: {
     runMode?: string | undefined
     notify?: boolean | undefined
     gpusInUse?: string[] | undefined
+    vulkan?: boolean | undefined
   }) => {
     const settingsFile = await joinPath(['file://settings', 'settings.json'])
     const settings = await readSettings()
     if (runMode != null) settings.run_mode = runMode
     if (notify != null) settings.notify = notify
     if (gpusInUse != null) settings.gpus_in_use = gpusInUse
+    if (vulkan != null) settings.vulkan = vulkan
     await fs.writeFileSync(settingsFile, JSON.stringify(settings))
   }
 
