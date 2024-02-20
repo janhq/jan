@@ -152,7 +152,7 @@ const BottomBar = () => {
         {gpus.length > 0 && (
           <Tooltip>
             <TooltipTrigger>
-              <div className="flex cursor-pointer items-center">
+              <div className="flex items-center">
                 <SystemItem
                   name={`${gpus.length} GPU `}
                   value={`${calculateUtilization()}% `}
