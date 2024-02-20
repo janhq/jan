@@ -5,6 +5,7 @@
 error.log
 node_modules
 *.tgz
+!charts/server/charts/*.tgz
 yarn.lock
 dist
 build
