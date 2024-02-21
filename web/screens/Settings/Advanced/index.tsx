@@ -99,7 +99,7 @@ const Advanced = () => {
       }
     }
     setUseGpuIfPossible()
-  }, [readSettings])
+  }, [readSettings, setGpuList, setGpuEnabled, setGpusInUse, setVulkanEnabled])
 
   const clearLogs = async () => {
     if (await fs.existsSync(`file://logs`)) {
@@ -172,11 +172,11 @@ const Advanced = () => {
             <div className="space-y-1.5">
               <div className="flex gap-x-2">
                 <h6 className="text-sm font-semibold capitalize">
-                  NVIDIA GPU Acceleration
+                  GPU Acceleration
                 </h6>
               </div>
               <p className="pr-8 leading-relaxed">
-                Enable to enhance model performance by utilizing your NVIDIA GPU
+                Enable to enhance model performance by utilizing your GPU
                 devices for acceleration. Read{' '}
                 <span>
                   {' '}
@@ -217,7 +217,7 @@ const Advanced = () => {
             <Tooltip>
               <TooltipTrigger>
                 <Switch
-                  disabled={gpuList.length === 0}
+                  disabled={gpuList.length === 0 || vulkanEnabled}
                   checked={gpuEnabled}
                   onCheckedChange={(e) => {
                     if (e === true) {
@@ -279,12 +279,16 @@ const Advanced = () => {
               <SelectPortal>
                 <SelectContent className="w-[400px] px-1 pb-2">
                   <SelectGroup>
-                    <SelectLabel>Nvidia</SelectLabel>
+                    <SelectLabel>
+                      {vulkanEnabled ? 'Vulkan Supported GPUs' : 'Nvidia'}
+                    </SelectLabel>
                     <div className="px-4 pb-2">
                       <div className="rounded-lg bg-secondary p-3">
                         {gpuList
                           .filter((gpu) =>
-                            gpu.name?.toLowerCase().includes('nvidia')
+                            vulkanEnabled
+                              ? gpu.name
+                              : gpu.name?.toLowerCase().includes('nvidia')
                           )
                           .map((gpu) => (
                             <div
@@ -304,7 +308,9 @@ const Advanced = () => {
                                 htmlFor={`gpu-${gpu.id}`}
                               >
                                 <span>{gpu.name}</span>
-                                <span>{gpu.vram}MB VRAM</span>
+                                {!vulkanEnabled && (
+                                  <span>{gpu.vram}MB VRAM</span>
+                                )}
                               </label>
                             </div>
                           ))}
@@ -334,22 +340,28 @@ const Advanced = () => {
       )}
 
       {/* Vulkan for AMD GPU/ APU and Intel Arc GPU */}
-      {/* TODO: This needs to be set based on user toggle in settings for enabled BOOLEAN and index as INT */}
-      {!isMac && (
+      {!isMac && experimentalFeature && (
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
           <div className="flex-shrink-0 space-y-1.5">
             <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">Vulkan GPU</h6>
+              <h6 className="text-sm font-semibold capitalize">
+                Vulkan Support
+              </h6>
             </div>
             <p className="text-xs leading-relaxed">
               Enable Vulkan with AMD GPU/APU and Intel Arc GPU for better model
-              performance.
+              performance (reload needed).
             </p>
           </div>
 
           <Switch
             checked={vulkanEnabled}
             onCheckedChange={(e) => {
+              toaster({
+                title: 'Reload',
+                description:
+                  'Vulkan settings updated. Reload now to apply the changes.',
+              })
               stopModel()
               saveSettings({ vulkan: e, gpusInUse: [] })
               setVulkanEnabled(e)

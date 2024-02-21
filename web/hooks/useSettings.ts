@@ -60,8 +60,21 @@ export const useSettings = () => {
     if (runMode != null) settings.run_mode = runMode
     if (notify != null) settings.notify = notify
     if (gpusInUse != null) settings.gpus_in_use = gpusInUse
-    if (vulkan != null) settings.vulkan = vulkan
+    if (vulkan != null) {
+      settings.vulkan = vulkan
+      // GPU enabled, set run_mode to 'gpu'
+      if (settings.vulkan) {
+        settings.run_mode = 'gpu'
+      } else {
+        settings.run_mode = settings.gpus?.length > 0 ? 'gpu' : 'cpu'
+      }
+    }
     await fs.writeFileSync(settingsFile, JSON.stringify(settings))
+
+    // Relaunch to apply settings
+    if (vulkan != null) {
+      window.location.reload()
+    }
   }
 
   return {
