@@ -49,11 +49,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   }
 
   const onEditClick = async () => {
-    if (!editMessage.length) {
-      setEditMessage(message.id ?? '')
-    } else {
-      setEditMessage('')
-    }
+    setEditMessage(message.id ?? '')
   }
 
   const onRegenerateClick = async () => {

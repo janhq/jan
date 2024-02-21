@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   ConversationalExtension,
@@ -10,7 +10,19 @@ import {
   events,
 } from '@janhq/core'
 
-import { Textarea, Button } from '@janhq/uikit'
+import {
+  Textarea,
+  Button,
+  Checkbox,
+  Input,
+  Modal,
+  ModalClose,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalPortal,
+  ModalTitle,
+} from '@janhq/uikit'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
@@ -19,6 +31,7 @@ import { editPromptAtom } from '@/containers/Providers/Jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
+import { useClickOutside } from '@/hooks/useClickOutside'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { extensionManager } from '@/extension'
@@ -51,6 +64,11 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const setEditMessage = useSetAtom(editMessageAtom)
+  const [showDialog, setshowDialog] = useState(false)
+
+  const ref = useClickOutside(() => {
+    setshowDialog(true)
+  })
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditPrompt(e.target.value)
@@ -120,7 +138,10 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   }
 
   return (
-    <div className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 pb-0 pt-1">
+    <div
+      className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 pb-0 pt-1"
+      ref={ref}
+    >
       <div className="relative flex w-full flex-col">
         <Textarea
           className={twMerge(
@@ -152,6 +173,28 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
           Cancel
         </Button>
       </div>
+
+      <Modal open={showDialog} onOpenChange={() => setshowDialog(false)}>
+        <ModalPortal />
+        <ModalContent>
+          <ModalHeader>
+            <ModalTitle>Edit Message</ModalTitle>
+          </ModalHeader>
+          <p className="text-muted-foreground">
+            Do you want to discard the change
+          </p>
+          <ModalFooter>
+            <div className="flex gap-x-2">
+              <ModalClose asChild onClick={() => setshowDialog(false)}>
+                <Button themes="outline">Cancel</Button>
+              </ModalClose>
+              <ModalClose asChild onClick={() => setEditMessage('')}>
+                <Button autoFocus>Yes</Button>
+              </ModalClose>
+            </div>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   )
 }
