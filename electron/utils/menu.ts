@@ -13,7 +13,7 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
         click: () =>
           dialog.showMessageBox({
             title: `Jan`,
-            message: `Jan Version v${app.getVersion()}${app.getVersion().includes('-') ? ' (Nightly)' : ''}\n\nCopyright © 2024 Jan`,
+            message: `Jan Version v${app.getVersion()}\n\nCopyright © 2024 Jan`,
           }),
       },
       {
