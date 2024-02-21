@@ -13,8 +13,6 @@ import {
 import {
   Textarea,
   Button,
-  Checkbox,
-  Input,
   Modal,
   ModalClose,
   ModalContent,
@@ -31,7 +29,6 @@ import { editPromptAtom } from '@/containers/Providers/Jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
-import { useClickOutside } from '@/hooks/useClickOutside'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { extensionManager } from '@/extension'
@@ -65,10 +62,6 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const setEditMessage = useSetAtom(editMessageAtom)
   const [showDialog, setshowDialog] = useState(false)
-
-  const ref = useClickOutside(() => {
-    setshowDialog(true)
-  })
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditPrompt(e.target.value)
@@ -138,10 +131,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   }
 
   return (
-    <div
-      className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 pb-0 pt-1"
-      ref={ref}
-    >
+    <div className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 pb-0 pt-1">
       <div className="relative flex w-full flex-col">
         <Textarea
           className={twMerge(
