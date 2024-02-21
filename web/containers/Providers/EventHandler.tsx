@@ -114,8 +114,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   const onModelInitFailed = useCallback(
     (res: any) => {
-      const errorMessage = `${res.error}`
-      console.error('Failed to load model: ' + errorMessage)
+      const errorMessage = res?.error ?? res
+      console.error('Failed to load model: ', errorMessage)
       setStateModel(() => ({
         state: 'start',
         loading: false,

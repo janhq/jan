@@ -197,7 +197,7 @@ const Sidebar: React.FC = () => {
           <div>
             {activeThread?.assistants[0]?.tools &&
               componentDataAssistantSetting.length > 0 && (
-                <CardSidebar title="Tools">
+                <CardSidebar title="Tools" isShow={true}>
                   <div className="px-2 pt-4">
                     <div className="mb-2">
                       <div className="flex items-center justify-between">
