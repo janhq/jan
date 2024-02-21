@@ -186,7 +186,7 @@ const BottomBar = () => {
         )}
         {/* VERSION is defined by webpack, please see next.config.js */}
         <span className="text-xs text-muted-foreground">
-          Jan v{VERSION ?? ''}
+          Jan v{VERSION ?? ''} {VERSION.includes('-') ? ' (Nightly)' : ''}
         </span>
         <div className="mt-1 flex items-center gap-x-2">
           {menuLinks

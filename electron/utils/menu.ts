@@ -8,7 +8,14 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   {
     label: app.name,
     submenu: [
-      { role: 'about' },
+      {
+        label: `About ${app.name}`,
+        click: () =>
+          dialog.showMessageBox({
+            title: `Jan`,
+            message: `Jan Version v${app.getVersion()}${app.getVersion().includes('-') ? ' (Nightly)' : ''}\n\nCopyright © 2024 Jan`,
+          }),
+      },
       {
         label: 'Check for Updates...',
         click: () =>
@@ -31,36 +38,7 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
             }),
       },
       { type: 'separator' },
-      { role: 'services' },
-      { type: 'separator' },
-      { role: 'hide' },
-      { role: 'hideOthers' },
-      { role: 'unhide' },
-      { type: 'separator' },
       { role: 'quit' },
-    ],
-  },
-  {
-    label: 'Edit',
-    submenu: [
-      { role: 'undo' },
-      { role: 'redo' },
-      { type: 'separator' },
-      { role: 'cut' },
-      { role: 'copy' },
-      { role: 'paste' },
-      ...(isMac
-        ? [
-            { role: 'pasteAndMatchStyle' },
-            { role: 'delete' },
-            { role: 'selectAll' },
-            { type: 'separator' },
-            {
-              label: 'Speech',
-              submenu: [{ role: 'startSpeaking' }, { role: 'stopSpeaking' }],
-            },
-          ]
-        : [{ role: 'delete' }, { type: 'separator' }, { role: 'selectAll' }]),
     ],
   },
   {
