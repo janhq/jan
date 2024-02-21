@@ -24,13 +24,14 @@ With [Ollama](https://ollama.com/), you can run large language models locally. I
 
 ### 1. Start the Ollama Server
 
-Firstly, you can select the model you want to use from the [Ollama library](https://ollama.com/library). Then, run your model by using the following command:
+1. Select the model you want to use from the [Ollama library](https://ollama.com/library). 
+2. Run your model by using the following command:
   
 ```bash
 ollama run <model-name>
 ```
 
-According to the [Ollama documentation on OpenAI compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md), you can use the `http://localhost:11434/v1/chat/completions` endpoint to interact with the Ollama server. Thus, modify the `openai.json` file in the `~/jan/engines` folder to include the full URL of the Ollama server.
+3. According to the [Ollama documentation on OpenAI compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md), you can use the `http://localhost:11434/v1/chat/completions` endpoint to interact with the Ollama server. Thus, modify the `openai.json` file in the `~/jan/engines` folder to include the full URL of the Ollama server.
 
 ```json title="~/jan/engines/openai.json"
 {
@@ -40,13 +41,14 @@ According to the [Ollama documentation on OpenAI compatibility](https://github.c
 
 ### 2. Modify a Model JSON
 
-Navigate to the `~/jan/models` folder. Create a folder named `<ollam-modelname>`, for example, `lmstudio-phi-2` and create a `model.json` file inside the folder including the following configurations:
+1. Navigate to the `~/jan/models` folder. 
+2. Create a folder named `<ollam-modelname>`, for example, `lmstudio-phi-2`.
+3. Create a `model.json` file inside the folder including the following configurations:
 
-- Ensure the filename must be `model.json`.
-- Ensure the `id` property is set to the model name as Ollama model name.
-- Ensure the `format` property is set to `api`.
-- Ensure the `engine` property is set to `openai`.
-- Ensure the `state` property is set to `ready`.
+- Set the `id` property to the model name as Ollama model name.
+- Set the `format` property to `api`.
+- Set the `engine` property to `openai`.
+- Set the `state` property to `ready`.
 
 ```json title="~/jan/models/llama2/model.json"
 {
@@ -77,7 +79,8 @@ Navigate to the `~/jan/models` folder. Create a folder named `<ollam-modelname>`
 
 ### 3. Start the Model
 
-Restart Jan and navigate to the Hub. Locate your model and click the Use button.
+1. Restart Jan and navigate to the **Hub**.
+2. Locate your model and click the **Use** button.
 
 ![Ollama Model](assets/06-ollama-run.png)
 
