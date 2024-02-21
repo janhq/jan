@@ -6,7 +6,7 @@ import {
   ConversationalExtension,
   ContentType,
 } from '@janhq/core'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import {
   RefreshCcw,
   CopyIcon,
@@ -30,7 +30,7 @@ import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
-  const [editMessage, setEditMessage] = useAtom(editMessageAtom)
+  const setEditMessage = useSetAtom(editMessageAtom)
   const thread = useAtomValue(activeThreadAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { resendChatMessage } = useSendChatMessage()
@@ -49,11 +49,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   }
 
   const onEditClick = async () => {
-    if (!editMessage.length) {
-      setEditMessage(message.id ?? '')
-    } else {
-      setEditMessage('')
-    }
+    setEditMessage(message.id ?? '')
   }
 
   const onRegenerateClick = async () => {
