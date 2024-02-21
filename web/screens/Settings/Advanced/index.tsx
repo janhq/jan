@@ -113,14 +113,21 @@ const Advanced = () => {
   }
 
   const handleGPUChange = (gpuId: string) => {
-    // TODO detect current use GPU nvidia or AMD
     let updatedGpusInUse = [...gpusInUse]
     if (updatedGpusInUse.includes(gpuId)) {
       updatedGpusInUse = updatedGpusInUse.filter((id) => id !== gpuId)
       if (gpuEnabled && updatedGpusInUse.length === 0) {
+        // Vulkan support only allow 1 active device at a time
+        if (vulkanEnabled) {
+          updatedGpusInUse = []
+        }
         updatedGpusInUse.push(gpuId)
       }
     } else {
+      // Vulkan support only allow 1 active device at a time
+      if (vulkanEnabled) {
+        updatedGpusInUse = []
+      }
       updatedGpusInUse.push(gpuId)
     }
     setGpusInUse(updatedGpusInUse)
