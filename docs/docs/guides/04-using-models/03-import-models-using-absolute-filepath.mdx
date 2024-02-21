@@ -25,9 +25,10 @@ After downloading .gguf model, you can get the absolute filepath of the model fi
 
 ### 2. Configure the Model JSON
 
-Navigate to the `~/jan/models` folder. Create a folder named `<modelname>`, for example, `tinyllama` and create a `model.json` file inside the folder including the following configurations:
+1. Navigate to the `~/jan/models` folder. 
+2. Create a folder named `<modelname>`, for example, `tinyllama`.
+3. Create a `model.json` file inside the folder, including the following configurations:
 
-- Ensure the filename must be `model.json`.
 - Ensure the `id` property matches the folder name you created.
 - Ensure the `url` property is the direct binary download link ending in `.gguf`. Now, you can use the absolute filepath of the model file.
 - Ensure the `engine` property is set to `nitro`.
@@ -72,7 +73,7 @@ Navigate to the `~/jan/models` folder. Create a folder named `<modelname>`, for 
 
 :::warning
 
-- Windows users may need to use double backslashes in the `url` property, for example: `C:\\Users\\username\\filename.gguf`.
+- If you are using Windows, you need to use double backslashes in the url property, for example: `C:\\Users\\username\\filename.gguf`.
 
 :::
 
