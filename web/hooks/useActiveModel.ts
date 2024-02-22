@@ -3,9 +3,9 @@ import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { useGetDownloadedModels } from './useGetDownloadedModels'
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
@@ -21,7 +21,7 @@ export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const [stateModel, setStateModel] = useAtom(stateModelAtom)
-  const { downloadedModels } = useGetDownloadedModels()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
   const startModel = async (modelId: string) => {

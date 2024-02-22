@@ -13,7 +13,7 @@ import GenerateResponse from '@/containers/Loader/GenerateResponse'
 import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
 
-import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
+import { fileUploadAtom } from '@/containers/Providers/Jotai'
 import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
 import { snackbar } from '@/containers/Toast'
@@ -54,7 +54,6 @@ const renderError = (code: string) => {
 }
 
 const ChatScreen: React.FC = () => {
-  const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const showLeftSideBar = useAtomValue(showLeftSideBarAtom)
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
@@ -110,11 +109,6 @@ const ChatScreen: React.FC = () => {
       const imageType = files[0]?.type.includes('image')
       setFileUpload([{ file: files[0], type: imageType ? 'image' : 'pdf' }])
       setDragOver(false)
-      if (imageType) {
-        setCurrentPrompt('What do you see in this image?')
-      } else {
-        setCurrentPrompt('Summarize this for me')
-      }
     },
     onDropRejected: (e) => {
       if (
@@ -205,7 +199,7 @@ const ChatScreen: React.FC = () => {
           {queuedMessage && !reloadModel && (
             <div className="mb-2 text-center">
               <span className="text-muted-foreground">
-                Message queued. It can be sent once the model has started
+                Message will be sent once the model has started
               </span>
             </div>
           )}

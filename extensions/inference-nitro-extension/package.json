@@ -8,13 +8,13 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
-    "downloadnitro:linux": "NITRO_VERSION=$(cat ./bin/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64.tar.gz -e --strip 1 -o ./bin/linux-cpu && chmod +x ./bin/linux-cpu/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda-12-0.tar.gz -e --strip 1 -o ./bin/linux-cuda-12-0 && chmod +x ./bin/linux-cuda-12-0/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda-11-7.tar.gz -e --strip 1 -o ./bin/linux-cuda-11-7 && chmod +x ./bin/linux-cuda-11-7/nitro",
+    "downloadnitro:linux": "NITRO_VERSION=$(cat ./bin/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64.tar.gz -e --strip 1 -o ./bin/linux-cpu && chmod +x ./bin/linux-cpu/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda-12-0.tar.gz -e --strip 1 -o ./bin/linux-cuda-12-0 && chmod +x ./bin/linux-cuda-12-0/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-cuda-11-7.tar.gz -e --strip 1 -o ./bin/linux-cuda-11-7 && chmod +x ./bin/linux-cuda-11-7/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-linux-amd64-vulkan.tar.gz -e --strip 1 -o ./bin/linux-vulkan && chmod +x ./bin/linux-vulkan/nitro && download https://delta.jan.ai/vulkaninfo -o ./bin && chmod +x ./bin/vulkaninfo",
     "downloadnitro:darwin": "NITRO_VERSION=$(cat ./bin/version.txt) && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-arm64.tar.gz -e --strip 1 -o ./bin/mac-arm64 && chmod +x ./bin/mac-arm64/nitro && download https://github.com/janhq/nitro/releases/download/v${NITRO_VERSION}/nitro-${NITRO_VERSION}-mac-amd64.tar.gz -e --strip 1 -o ./bin/mac-x64 && chmod +x ./bin/mac-x64/nitro",
     "downloadnitro:win32": "download.bat",
     "downloadnitro": "run-script-os",
-    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../electron/pre-install",
-    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../electron/pre-install",
-    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" &&  npm pack && cpx *.tgz ../../electron/pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" &&  npm pack && cpx *.tgz ../../pre-install",
     "build:publish": "run-script-os"
   },
   "exports": {
@@ -35,12 +35,12 @@
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.36.0",
     "run-script-os": "^1.1.6",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "@types/os-utils": "^0.0.4",
+    "@rollup/plugin-replace": "^5.0.5"
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
-    "@rollup/plugin-replace": "^5.0.5",
-    "@types/os-utils": "^0.0.4",
     "fetch-retry": "^5.0.6",
     "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",

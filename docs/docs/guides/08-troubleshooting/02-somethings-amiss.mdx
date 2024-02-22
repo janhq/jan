@@ -45,7 +45,9 @@ This may occur due to several reasons. Please follow these steps to resolve it:
 
 5. If you are on Nvidia GPUs, please download [Cuda](https://developer.nvidia.com/cuda-downloads).
 
-6. When [checking app logs](https://jan.ai/troubleshooting/how-to-get-error-logs/), if you encounter the error log `Bind address failed at 127.0.0.1:3928`, it indicates that the port used by Nitro might already be in use. Use the following commands to check the port status:
+6. If you're using Linux, please ensure that your system meets the following requirements gcc 11, g++ 11, cpp 11, or higher, refer to this [link](https://jan.ai/guides/troubleshooting/gpu-not-used/#specific-requirements-for-linux) for more information.
+
+7. When [checking app logs](https://jan.ai/troubleshooting/how-to-get-error-logs/), if you encounter the error log `Bind address failed at 127.0.0.1:3928`, it indicates that the port used by Nitro might already be in use. Use the following commands to check the port status:
 
 <Tabs groupId="operating-systems">
   <TabItem value="mac" label="macOS">

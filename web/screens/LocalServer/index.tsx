@@ -20,11 +20,12 @@ import {
   SelectValue,
 } from '@janhq/uikit'
 
-import { atom, useAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { Paintbrush, CodeIcon } from 'lucide-react'
 import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 
+import { AlertTriangleIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import CardSidebar from '@/containers/CardSidebar'
@@ -33,8 +34,15 @@ import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
-import { useServerLog } from '@/hooks/useServerLog'
+import ModalTroubleShooting, {
+  modalTroubleShootingAtom,
+} from '@/containers/ModalTroubleShoot'
+import ServerLogs from '@/containers/ServerLogs'
+
+import { toaster } from '@/containers/Toast'
+
+import { loadModelErrorAtom, useActiveModel } from '@/hooks/useActiveModel'
+import { useLogs } from '@/hooks/useLogs'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toSettingParams } from '@/utils/modelParam'
@@ -45,10 +53,7 @@ import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
 
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
-import Logs from './Logs'
-
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
-import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
 const corsEnabledAtom = atom(true)
 const verboseEnabledAtom = atom(true)
@@ -59,19 +64,20 @@ const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const showRightSideBar = useAtomValue(showRightSideBarAtom)
-  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
-  const modelEngineParams = toSettingParams(activeModelParams)
-  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
-
-  const { openServerLog, clearServerLog } = useServerLog()
+  const { openServerLog, clearServerLog } = useLogs()
   const { startModel, stateModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
+
+  const modelEngineParams = toSettingParams(selectedModel?.settings)
+  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
   const [host, setHost] = useAtom(hostAtom)
   const [port, setPort] = useAtom(portAtom)
+  const [loadModelError, setLoadModelError] = useAtom(loadModelErrorAtom)
 
   const hostOptions = ['127.0.0.1', '0.0.0.0']
 
@@ -102,6 +108,45 @@ const LocalServerScreen = () => {
     handleChangePort(port)
   }, [handleChangePort, port])
 
+  const onStartServerClick = async () => {
+    if (selectedModel == null) return
+    try {
+      const isStarted = await window.core?.api?.startServer({
+        host,
+        port,
+        isCorsEnabled,
+        isVerboseEnabled,
+      })
+      await startModel(selectedModel.id)
+      if (isStarted) setServerEnabled(true)
+      if (firstTimeVisitAPIServer) {
+        localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
+        setFirstTimeVisitAPIServer(false)
+      }
+    } catch (e) {
+      console.error(e)
+      toaster({
+        title: `Failed to start server!`,
+        description: 'Please check Server Logs for more details.',
+        type: 'error',
+      })
+    }
+  }
+
+  const onStopServerClick = async () => {
+    window.core?.api?.stopServer()
+    setServerEnabled(false)
+    setLoadModelError(undefined)
+  }
+
+  const onToggleServer = async () => {
+    if (serverEnabled) {
+      await onStopServerClick()
+    } else {
+      await onStartServerClick()
+    }
+  }
+
   return (
     <div className="flex h-full w-full" data-testid="local-server-testid">
       {/* Left SideBar */}
@@ -118,25 +163,7 @@ const LocalServerScreen = () => {
               block
               themes={serverEnabled ? 'danger' : 'primary'}
               disabled={stateModel.loading || errorRangePort || !selectedModel}
-              onClick={() => {
-                if (serverEnabled) {
-                  window.core?.api?.stopServer()
-                  setServerEnabled(false)
-                } else {
-                  startModel(String(selectedModel?.id))
-                  window.core?.api?.startServer({
-                    host,
-                    port,
-                    isCorsEnabled,
-                    isVerboseEnabled,
-                  })
-                  setServerEnabled(true)
-                  if (firstTimeVisitAPIServer) {
-                    localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
-                    setFirstTimeVisitAPIServer(false)
-                  }
-                }
-              }}
+              onClick={onToggleServer}
             >
               {serverEnabled ? 'Stop' : 'Start'} Server
             </Button>
@@ -350,7 +377,9 @@ const LocalServerScreen = () => {
             </div>
           </div>
         ) : (
-          <Logs />
+          <div className="p-4">
+            <ServerLogs />
+          </div>
         )}
       </ScrollToBottom>
 
@@ -364,7 +393,43 @@ const LocalServerScreen = () => {
         )}
       >
         <div className="px-4 pt-4">
+          <div className="mb-4 flex items-start space-x-2">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              className="mt-1 flex-shrink-0"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M9.00033 17.3337C13.6027 17.3337 17.3337 13.6027 17.3337 9.00033C17.3337 4.39795 13.6027 0.666992 9.00033 0.666992C4.39795 0.666992 0.666992 4.39795 0.666992 9.00033C0.666992 10.9978 1.36978 12.8311 2.54157 14.2666L0.910703 15.9111C0.390085 16.436 0.758808 17.3337 1.49507 17.3337H9.00033ZM5.25033 7.33366C5.25033 6.87342 5.62342 6.50033 6.08366 6.50033H11.917C12.3772 6.50033 12.7503 6.87342 12.7503 7.33366C12.7503 7.7939 12.3772 8.16699 11.917 8.16699H6.08366C5.62342 8.16699 5.25033 7.7939 5.25033 7.33366ZM6.08366 9.83366C5.62342 9.83366 5.25033 10.2068 5.25033 10.667C5.25033 11.1272 5.62342 11.5003 6.08366 11.5003H8.58366C9.0439 11.5003 9.41699 11.1272 9.41699 10.667C9.41699 10.2068 9.0439 9.83366 8.58366 9.83366H6.08366Z"
+                fill="#2563EB"
+              />
+            </svg>
+
+            <p>
+              You can concurrently send requests to one active local model and
+              multiple remote models.
+            </p>
+          </div>
           <DropdownListSidebar strictedThread={false} />
+          {loadModelError && serverEnabled && (
+            <div className="mt-3 flex space-x-2 text-xs">
+              <AlertTriangleIcon size={16} className="text-danger" />
+              <span>
+                Model failed to start. Access{' '}
+                <span
+                  className="cursor-pointer text-primary dark:text-blue-400"
+                  onClick={() => setModalTroubleShooting(true)}
+                >
+                  troubleshooting assistance
+                </span>
+              </span>
+            </div>
+          )}
 
           {componentDataEngineSetting.filter(
             (x) => x.name === 'prompt_template'
@@ -386,13 +451,17 @@ const LocalServerScreen = () => {
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting enabled={!serverEnabled} />
+                  <EngineSetting
+                    enabled={!serverEnabled}
+                    componentData={componentDataEngineSetting}
+                  />
                 </div>
               </CardSidebar>
             </div>
           )}
         </div>
       </div>
+      <ModalTroubleShooting />
     </div>
   )
 }

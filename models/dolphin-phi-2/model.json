@@ -1,0 +1,32 @@
+{
+    "sources": [
+      {
+        "url": "https://huggingface.co/TheBloke/dolphin-2_6-phi-2-GGUF/resolve/main/dolphin-2_6-phi-2.Q8_0.gguf",
+        "filename": "dolphin-2_6-phi-2.Q8_0.gguf"
+      }
+    ],
+    "id": "dolphin-phi-2",
+    "object": "model",
+    "name": "Dolphin Phi-2 2.7B Q8",
+    "version": "1.0",
+    "description": "Dolphin Phi-2 is a 2.7B model, fine-tuned for chat, excelling in common sense and logical reasoning benchmarks.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+      "llama_model_path": "dolphin-2_6-phi-2.Q8_0.gguf"
+    },
+    "parameters": {
+      "max_tokens": 4096,
+      "stop": ["<|im_end|>"]
+    },
+    "metadata": {
+      "author": "Cognitive Computations, Microsoft",
+      "tags": [
+        "3B",
+        "Finetuned"
+      ],
+      "size": 2960000000
+    },
+    "engine": "nitro"
+  }

@@ -1,91 +1,62 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { PropsWithChildren, useCallback, useEffect } from 'react'
 
-import { PropsWithChildren, useEffect, useRef } from 'react'
+import React from 'react'
 
-import { baseName } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { DownloadEvent, events, DownloadState } from '@janhq/core'
+import { useSetAtom } from 'jotai'
 
-import { useDownloadState } from '@/hooks/useDownloadState'
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
-
-import { modelBinFileName } from '@/utils/model'
+import { setDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import EventHandler from './EventHandler'
 
 import { appDownloadProgress } from './Jotai'
 
-import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
-
-export default function EventListenerWrapper({ children }: PropsWithChildren) {
+const EventListenerWrapper = ({ children }: PropsWithChildren) => {
+  const setDownloadState = useSetAtom(setDownloadStateAtom)
   const setProgress = useSetAtom(appDownloadProgress)
-  const models = useAtomValue(downloadingModelsAtom)
-  const modelsRef = useRef(models)
 
-  const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
-  const {
-    setDownloadState,
-    setDownloadStateSuccess,
-    setDownloadStateFailed,
-    setDownloadStateCancelled,
-  } = useDownloadState()
-  const downloadedModelRef = useRef(downloadedModels)
+  const onFileDownloadUpdate = useCallback(
+    async (state: DownloadState) => {
+      console.debug('onFileDownloadUpdate', state)
+      setDownloadState(state)
+    },
+    [setDownloadState]
+  )
+
+  const onFileDownloadError = useCallback(
+    (state: DownloadState) => {
+      console.debug('onFileDownloadError', state)
+      setDownloadState(state)
+    },
+    [setDownloadState]
+  )
+
+  const onFileDownloadSuccess = useCallback(
+    (state: DownloadState) => {
+      console.debug('onFileDownloadSuccess', state)
+      setDownloadState(state)
+    },
+    [setDownloadState]
+  )
 
   useEffect(() => {
-    modelsRef.current = models
-  }, [models])
-  useEffect(() => {
-    downloadedModelRef.current = downloadedModels
-  }, [downloadedModels])
+    console.debug('EventListenerWrapper: registering event listeners...')
+
+    events.on(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
+    events.on(DownloadEvent.onFileDownloadError, onFileDownloadError)
+    events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+
+    return () => {
+      console.debug('EventListenerWrapper: unregistering event listeners...')
+      events.off(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
+      events.off(DownloadEvent.onFileDownloadError, onFileDownloadError)
+      events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+    }
+  }, [onFileDownloadUpdate, onFileDownloadError, onFileDownloadSuccess])
 
   useEffect(() => {
     if (window && window.electronAPI) {
-      window.electronAPI.onFileDownloadUpdate(
-        async (_event: string, state: any | undefined) => {
-          if (!state) return
-          const modelName = await baseName(state.fileName)
-          const model = modelsRef.current.find(
-            (model) => modelBinFileName(model) === modelName
-          )
-          if (model)
-            setDownloadState({
-              ...state,
-              modelId: model.id,
-            })
-        }
-      )
-
-      window.electronAPI.onFileDownloadError(
-        async (_event: string, state: any) => {
-          const modelName = await baseName(state.fileName)
-          const model = modelsRef.current.find(
-            (model) => modelBinFileName(model) === modelName
-          )
-          if (model) {
-            if (state.err?.message !== 'aborted') {
-              console.error('Download error', state)
-              setDownloadStateFailed(model.id, state.err.message)
-            } else {
-              setDownloadStateCancelled(model.id)
-            }
-          }
-        }
-      )
-
-      window.electronAPI.onFileDownloadSuccess(
-        async (_event: string, state: any) => {
-          if (state && state.fileName) {
-            const modelName = await baseName(state.fileName)
-            const model = modelsRef.current.find(
-              (model) => modelBinFileName(model) === modelName
-            )
-            if (model) {
-              setDownloadStateSuccess(model.id)
-              setDownloadedModels([...downloadedModelRef.current, model])
-            }
-          }
-        }
-      )
-
       window.electronAPI.onAppUpdateDownloadUpdate(
         (_event: string, progress: any) => {
           setProgress(progress.percent)
@@ -105,14 +76,9 @@ export default function EventListenerWrapper({ children }: PropsWithChildren) {
       })
     }
     return () => {}
-  }, [
-    setDownloadState,
-    setDownloadStateCancelled,
-    setDownloadStateFailed,
-    setDownloadStateSuccess,
-    setDownloadedModels,
-    setProgress,
-  ])
+  }, [setDownloadState, setProgress])
 
   return <EventHandler>{children}</EventHandler>
 }
+
+export default EventListenerWrapper

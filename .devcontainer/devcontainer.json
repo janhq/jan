@@ -1,4 +1,4 @@
 {
-    "name": "jan",
-    "image": "node:20"
+  "name": "jan",
+  "image": "node:20"
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 
 import { openExternalUrl } from '@janhq/core'
 import {
@@ -12,24 +12,24 @@ import {
   SelectItem,
 } from '@janhq/uikit'
 
+import { useAtomValue } from 'jotai'
 import { SearchIcon } from 'lucide-react'
-
-import Loader from '@/containers/Loader'
-
-import { useGetConfiguredModels } from '@/hooks/useGetConfiguredModels'
-
-import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
 
 import ExploreModelList from './ExploreModelList'
 
+import {
+  configuredModelsAtom,
+  downloadedModelsAtom,
+} from '@/helpers/atoms/Model.atom'
+
 const ExploreModelsScreen = () => {
-  const { loading, models } = useGetConfiguredModels()
+  const configuredModels = useAtomValue(configuredModelsAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [searchValue, setsearchValue] = useState('')
-  const { downloadedModels } = useGetDownloadedModels()
   const [sortSelected, setSortSelected] = useState('All Models')
   const sortMenu = ['All Models', 'Recommended', 'Downloaded']
 
-  const filteredModels = models.filter((x) => {
+  const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'Downloaded') {
       return (
         x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
@@ -45,11 +45,9 @@ const ExploreModelsScreen = () => {
     }
   })
 
-  const onHowToImportModelClick = () => {
+  const onHowToImportModelClick = useCallback(() => {
     openExternalUrl('https://jan.ai/guides/using-models/import-manually/')
-  }
-
-  if (loading) return <Loader description="loading ..." />
+  }, [])
 
   return (
     <div

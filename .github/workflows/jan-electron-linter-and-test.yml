@@ -1,5 +1,6 @@
 name: Jan Electron Linter & Test
 on:
+  workflow_dispatch:
   push:
     branches:
       - main

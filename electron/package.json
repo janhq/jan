@@ -4,6 +4,7 @@
   "main": "./build/main.js",
   "author": "Jan <service@jan.ai>",
   "license": "MIT",
+  "productName": "Jan",
   "homepage": "https://github.com/janhq/jan/tree/main/electron",
   "description": "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers.",
   "build": {
@@ -11,7 +12,6 @@
     "productName": "Jan",
     "files": [
       "renderer/**/*",
-      "build/*.{js,map}",
       "build/**/*.{js,map}",
       "pre-install",
       "models/**/*",
@@ -57,16 +57,17 @@
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "test:e2e": "playwright test --workers=1",
-    "dev": "tsc -p . && electron .",
-    "build": "run-script-os",
-    "build:test": "run-script-os",
+    "copy:assets": "rimraf --glob \"./pre-install/*.tgz\" && cpx \"../pre-install/*.tgz\" \"./pre-install\"",
+    "dev": "yarn copy:assets && tsc -p . && electron .",
+    "build": "yarn copy:assets && run-script-os",
+    "build:test": "yarn copy:assets && run-script-os",
     "build:test:darwin": "tsc -p . && electron-builder -p never -m --dir",
     "build:test:win32": "tsc -p . && electron-builder -p never -w --dir",
     "build:test:linux": "tsc -p . && electron-builder -p never -l --dir",
     "build:darwin": "tsc -p . && electron-builder -p never -m",
     "build:win32": "tsc -p . && electron-builder -p never -w",
     "build:linux": "tsc -p . && electron-builder -p never -l deb -l AppImage",
-    "build:publish": "run-script-os",
+    "build:publish": "yarn copy:assets && run-script-os",
     "build:publish:darwin": "tsc -p . && electron-builder -p always -m",
     "build:publish:win32": "tsc -p . && electron-builder -p always -w",
     "build:publish:linux": "tsc -p . && electron-builder -p always -l deb -l AppImage"
@@ -76,7 +77,6 @@
     "@janhq/core": "link:./core",
     "@janhq/server": "link:./server",
     "@npmcli/arborist": "^7.1.0",
-    "@types/request": "^2.48.12",
     "@uiball/loaders": "^1.3.0",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7",
@@ -85,8 +85,6 @@
     "pacote": "^17.0.4",
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
-    "rimraf": "^5.0.5",
-    "typescript": "^5.2.2",
     "ulid": "^2.3.0",
     "use-debounce": "^9.0.4"
   },
@@ -95,6 +93,7 @@
     "@playwright/test": "^1.38.1",
     "@types/npmcli__arborist": "^5.6.4",
     "@types/pacote": "^11.1.7",
+    "@types/request": "^2.48.12",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
     "electron": "28.0.0",
@@ -102,7 +101,9 @@
     "electron-devtools-installer": "^3.2.0",
     "electron-playwright-helpers": "^1.6.0",
     "eslint-plugin-react": "^7.33.2",
-    "run-script-os": "^1.1.6"
+    "rimraf": "^5.0.5",
+    "run-script-os": "^1.1.6",
+    "typescript": "^5.2.2"
   },
   "installConfig": {
     "hoistingLimits": "workspaces"

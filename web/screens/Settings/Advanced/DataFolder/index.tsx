@@ -83,7 +83,8 @@ const DataFolder = () => {
         await window.core?.api?.getAppConfigurations()
       const currentJanDataFolder = appConfiguration.data_folder
       appConfiguration.data_folder = destinationPath
-      await fs.syncFile(currentJanDataFolder, destinationPath)
+      const { err } = await fs.syncFile(currentJanDataFolder, destinationPath)
+      if (err) throw err
       await window.core?.api?.updateAppConfiguration(appConfiguration)
       console.debug(
         `File sync finished from ${currentJanDataFolder} to ${destinationPath}`
@@ -94,7 +95,7 @@ const DataFolder = () => {
       }, 1200)
       await window.core?.api?.relaunch()
     } catch (e) {
-      console.error(`Error: ${e}`)
+      console.error(e)
       setShowLoader(false)
       setShowChangeFolderError(true)
     }

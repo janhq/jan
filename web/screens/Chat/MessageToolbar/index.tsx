@@ -7,7 +7,13 @@ import {
   ContentType,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { RefreshCcw, CopyIcon, Trash2Icon, CheckIcon } from 'lucide-react'
+import {
+  RefreshCcw,
+  CopyIcon,
+  Trash2Icon,
+  CheckIcon,
+  PencilIcon,
+} from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -17,12 +23,14 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 import { extensionManager } from '@/extension'
 import {
   deleteMessageAtom,
+  editMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
+  const setEditMessage = useSetAtom(editMessageAtom)
   const thread = useAtomValue(activeThreadAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { resendChatMessage } = useSendChatMessage()
@@ -40,11 +48,11 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
     }
   }
 
+  const onEditClick = async () => {
+    setEditMessage(message.id ?? '')
+  }
+
   const onRegenerateClick = async () => {
-    if (message.role !== ChatCompletionRole.User) {
-      // Delete last response before regenerating
-      await onDeleteClick()
-    }
     resendChatMessage(message)
   }
 
@@ -53,6 +61,16 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   return (
     <div className={twMerge('flex flex-row items-center')}>
       <div className="flex overflow-hidden rounded-md border border-border bg-background/20">
+        {message.role === ChatCompletionRole.User &&
+          message.content[0]?.type === ContentType.Text && (
+            <div
+              className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
+              onClick={onEditClick}
+            >
+              <PencilIcon size={14} />
+            </div>
+          )}
+
         {message.id === messages[messages.length - 1]?.id &&
           messages[messages.length - 1].status !== MessageStatus.Error &&
           messages[messages.length - 1].content[0]?.type !==

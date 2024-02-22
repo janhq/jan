@@ -35,7 +35,7 @@ To get started with Continue in VS Code, please follow this [guide to install Co
 
 ### 2. Enable Jan API Server
 
-To configure the Continue to use Jan's Local Server, you need to enable Jan API Server with your preferred model, please follow this [guide to enable Jan API Server](../05-using-server/01-server.md)
+To configure the Continue to use Jan's Local Server, you need to enable Jan API Server with your preferred model, please follow this [guide to enable Jan API Server](/guides/using-server/start-server).
 
 ### 3. Configure Continue to Use Jan's Local Server
 
@@ -77,7 +77,7 @@ Edit the `config.json` file and include the following configuration.
       // highlight-start
       "model": "mistral-ins-7b-q4",
       "apiKey": "EMPTY",
-      "apiBase": "http://localhost:1337"
+      "apiBase": "http://localhost:1337/v1"
       // highlight-end
     }
   ]
@@ -86,7 +86,7 @@ Edit the `config.json` file and include the following configuration.
 
 - Ensure that the `provider` is `openai`.
 - Ensure that the `model` is the same as the one you enabled in the Jan API Server.
-- Ensure that the `apiBase` is `http://localhost:1337`.
+- Ensure that the `apiBase` is `http://localhost:1337/v1`.
 - Ensure that the `apiKey` is `EMPTY`.
 
 ### 4. Ensure the Using Model Is Activated in Jan

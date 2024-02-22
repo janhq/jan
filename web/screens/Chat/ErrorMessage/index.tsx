@@ -1,55 +1,34 @@
-import {
-  ChatCompletionRole,
-  ConversationalExtension,
-  ExtensionTypeEnum,
-  MessageStatus,
-  ThreadMessage,
-} from '@janhq/core'
+import { MessageStatus, ThreadMessage } from '@janhq/core'
 import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
+import ModalTroubleShooting, {
+  modalTroubleShootingAtom,
+} from '@/containers/ModalTroubleShoot'
+
+import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
-import { extensionManager } from '@/extension'
-import {
-  deleteMessageAtom,
-  getCurrentChatMessagesAtom,
-} from '@/helpers/atoms/ChatMessage.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const thread = useAtomValue(activeThreadAtom)
-  const deleteMessage = useSetAtom(deleteMessageAtom)
   const { resendChatMessage } = useSendChatMessage()
+  const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
+  const loadModelError = useAtomValue(loadModelErrorAtom)
+  const PORT_NOT_AVAILABLE = 'PORT_NOT_AVAILABLE'
 
   const regenerateMessage = async () => {
     const lastMessageIndex = messages.length - 1
     const message = messages[lastMessageIndex]
-    if (message.role !== ChatCompletionRole.User) {
-      // Delete last response before regenerating
-      deleteMessage(message.id ?? '')
-      if (thread) {
-        await extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.writeMessages(
-            thread.id,
-            messages.filter((msg) => msg.id !== message.id)
-          )
-      }
-      const targetMessage = messages[lastMessageIndex - 1]
-      if (targetMessage) resendChatMessage(targetMessage)
-    } else {
-      resendChatMessage(message)
-    }
+    resendChatMessage(message)
   }
 
   return (
-    <>
+    <div className="mt-10">
       {message.status === MessageStatus.Stopped && (
-        <div key={message.id} className="mt-10 flex flex-col items-center">
+        <div key={message.id} className="flex flex-col items-center">
           <span className="mb-3 text-center text-sm font-medium text-gray-500">
             Oops! The generation was interrupted. Let&apos;s give it another go!
           </span>
@@ -65,32 +44,47 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         </div>
       )}
       {message.status === MessageStatus.Error && (
-        <div key={message.id} className="mt-10 flex flex-col items-center">
-          <span className="mb-3 text-center text-sm font-medium text-gray-500">
-            <>
-              <p>Apologies, something&apos;s amiss!</p>
-              Jan&apos;s in beta. Find troubleshooting guides{' '}
-              <a
-                href="https://jan.ai/guides/troubleshooting"
-                target="_blank"
-                className="text-blue-600 hover:underline dark:text-blue-300"
-              >
-                here
-              </a>{' '}
-              or reach out to us on{' '}
-              <a
-                href="https://discord.gg/AsJ8krTT3N"
-                target="_blank"
-                className="text-blue-600 hover:underline dark:text-blue-300"
-              >
-                Discord
-              </a>{' '}
-              for assistance.
-            </>
-          </span>
-        </div>
+        <>
+          {loadModelError === PORT_NOT_AVAILABLE ? (
+            <div
+              key={message.id}
+              className="flex flex-col items-center text-center text-sm font-medium text-gray-500 w-full"
+            >
+              <p className="w-[90%]">
+                Port 3928 is currently unavailable. Check for conflicting apps,
+                or access&nbsp;
+                <span
+                  className="cursor-pointer text-primary dark:text-blue-400"
+                  onClick={() => setModalTroubleShooting(true)}
+                >
+                  troubleshooting assistance
+                </span>
+                &nbsp;for further support.
+              </p>
+              <ModalTroubleShooting />
+            </div>
+          ) : (
+            <div
+              key={message.id}
+              className="flex flex-col items-center text-center text-sm font-medium text-gray-500"
+            >
+              <p>{`Apologies, something’s amiss!`}</p>
+              <p>
+                Jan’s in beta. Access&nbsp;
+                <span
+                  className="cursor-pointer text-primary dark:text-blue-400"
+                  onClick={() => setModalTroubleShooting(true)}
+                >
+                  troubleshooting assistance
+                </span>
+                &nbsp;now.
+              </p>
+              <ModalTroubleShooting />
+            </div>
+          )}
+        </>
       )}
-    </>
+    </div>
   )
 }
 export default ErrorMessage
