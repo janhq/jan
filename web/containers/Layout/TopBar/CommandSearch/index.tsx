@@ -38,11 +38,7 @@ const menus = [
     icon: <LayoutGridIcon size={16} className="mr-3 text-muted-foreground" />,
     state: MainViewState.Hub,
   },
-  {
-    name: 'System Monitor',
-    icon: <MonitorIcon size={16} className="mr-3 text-muted-foreground" />,
-    state: MainViewState.SystemMonitor,
-  },
+
   {
     name: 'Settings',
     icon: <SettingsIcon size={16} className="mr-3 text-muted-foreground" />,
