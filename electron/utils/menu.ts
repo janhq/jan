@@ -8,7 +8,14 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   {
     label: app.name,
     submenu: [
-      { role: 'about' },
+      {
+        label: `About ${app.name}`,
+        click: () =>
+          dialog.showMessageBox({
+            title: `Jan`,
+            message: `Jan Version v${app.getVersion()}\n\nCopyright © 2024 Jan`,
+          }),
+      },
       {
         label: 'Check for Updates...',
         click: () =>

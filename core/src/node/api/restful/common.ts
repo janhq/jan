@@ -8,7 +8,7 @@ import {
   createMessage,
   createThread,
   getMessages,
-  retrieveMesasge,
+  retrieveMessage,
   updateThread,
 } from './helper/builder'
 
@@ -17,10 +17,18 @@ import { startModel, stopModel } from './helper/startStopModel'
 import { ModelSettingParams } from '../../../types'
 
 export const commonRouter = async (app: HttpServer) => {
+  const normalizeData = (data: any) => {
+    return {
+      object: 'list',
+      data,
+    }
+  }
   // Common Routes
   // Read & Delete :: Threads | Models | Assistants
   Object.keys(JanApiRouteConfiguration).forEach((key) => {
-    app.get(`/${key}`, async (_request) => getBuilder(JanApiRouteConfiguration[key]))
+    app.get(`/${key}`, async (_request) =>
+      getBuilder(JanApiRouteConfiguration[key]).then(normalizeData)
+    )
 
     app.get(`/${key}/:id`, async (request: any) =>
       retrieveBuilder(JanApiRouteConfiguration[key], request.params.id)
@@ -34,10 +42,12 @@ export const commonRouter = async (app: HttpServer) => {
   // Threads
   app.post(`/threads/`, async (req, res) => createThread(req.body))
 
-  app.get(`/threads/:threadId/messages`, async (req, res) => getMessages(req.params.threadId))
+  app.get(`/threads/:threadId/messages`, async (req, res) =>
+    getMessages(req.params.threadId).then(normalizeData)
+  )
 
   app.get(`/threads/:threadId/messages/:messageId`, async (req, res) =>
-    retrieveMesasge(req.params.threadId, req.params.messageId)
+    retrieveMessage(req.params.threadId, req.params.messageId)
   )
 
   app.post(`/threads/:threadId/messages`, async (req, res) =>

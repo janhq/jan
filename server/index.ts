@@ -7,6 +7,7 @@ import {
   getJanExtensionsPath,
 } from '@janhq/core/node'
 import { join } from 'path'
+import tcpPortUsed from 'tcp-port-used'
 
 // Load environment variables
 dotenv.config()
@@ -46,6 +47,15 @@ export interface ServerConfig {
  * @param configs - Server configurations
  */
 export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
+  if (configs?.port && configs?.host) {
+    const inUse = await tcpPortUsed.check(Number(configs.port), configs.host)
+    if (inUse) {
+      const errorMessage = `Port ${configs.port} is already in use.`
+      logServer(errorMessage)
+      throw new Error(errorMessage)
+    }
+  }
+
   // Update server settings
   isVerbose = configs?.isVerboseEnabled ?? true
   hostSetting = configs?.host ?? JAN_API_HOST

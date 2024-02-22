@@ -39,6 +39,8 @@ import ModalTroubleShooting, {
 } from '@/containers/ModalTroubleShoot'
 import ServerLogs from '@/containers/ServerLogs'
 
+import { toaster } from '@/containers/Toast'
+
 import { loadModelErrorAtom, useActiveModel } from '@/hooks/useActiveModel'
 import { useLogs } from '@/hooks/useLogs'
 
@@ -106,6 +108,45 @@ const LocalServerScreen = () => {
     handleChangePort(port)
   }, [handleChangePort, port])
 
+  const onStartServerClick = async () => {
+    if (selectedModel == null) return
+    try {
+      const isStarted = await window.core?.api?.startServer({
+        host,
+        port,
+        isCorsEnabled,
+        isVerboseEnabled,
+      })
+      await startModel(selectedModel.id)
+      if (isStarted) setServerEnabled(true)
+      if (firstTimeVisitAPIServer) {
+        localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
+        setFirstTimeVisitAPIServer(false)
+      }
+    } catch (e) {
+      console.error(e)
+      toaster({
+        title: `Failed to start server!`,
+        description: 'Please check Server Logs for more details.',
+        type: 'error',
+      })
+    }
+  }
+
+  const onStopServerClick = async () => {
+    window.core?.api?.stopServer()
+    setServerEnabled(false)
+    setLoadModelError(undefined)
+  }
+
+  const onToggleServer = async () => {
+    if (serverEnabled) {
+      await onStopServerClick()
+    } else {
+      await onStartServerClick()
+    }
+  }
+
   return (
     <div className="flex h-full w-full" data-testid="local-server-testid">
       {/* Left SideBar */}
@@ -122,26 +163,7 @@ const LocalServerScreen = () => {
               block
               themes={serverEnabled ? 'danger' : 'primary'}
               disabled={stateModel.loading || errorRangePort || !selectedModel}
-              onClick={async () => {
-                if (serverEnabled) {
-                  window.core?.api?.stopServer()
-                  setServerEnabled(false)
-                  setLoadModelError(undefined)
-                } else {
-                  startModel(String(selectedModel?.id))
-                  const isStarted = await window.core?.api?.startServer({
-                    host,
-                    port,
-                    isCorsEnabled,
-                    isVerboseEnabled,
-                  })
-                  if (isStarted) setServerEnabled(true)
-                  if (firstTimeVisitAPIServer) {
-                    localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
-                    setFirstTimeVisitAPIServer(false)
-                  }
-                }
-              }}
+              onClick={onToggleServer}
             >
               {serverEnabled ? 'Stop' : 'Start'} Server
             </Button>

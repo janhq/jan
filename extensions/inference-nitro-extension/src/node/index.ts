@@ -4,7 +4,7 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
 import { log, getSystemResourceInfo } from '@janhq/core/node'
-import { getNitroProcessInfo, updateNvidiaInfo } from './nvidia'
+import { getNitroProcessInfo, updateNvidiaInfo } from './accelerator'
 import {
   Model,
   InferenceEngine,
@@ -310,9 +310,15 @@ async function killSubprocess(): Promise<void> {
       subprocess?.kill()
       subprocess = undefined
     })
-    .catch(() => {})
+    .catch(() => {}) // Do nothing with this attempt
     .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
     .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
+    .catch((err) => {
+      log(
+        `[NITRO]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
+      )
+      throw 'PORT_NOT_AVAILABLE'
+    })
 }
 
 /**
@@ -339,6 +345,10 @@ function spawnNitroProcess(): Promise<any> {
         env: {
           ...process.env,
           CUDA_VISIBLE_DEVICES: executableOptions.cudaVisibleDevices,
+          // Vulkan - Support 1 device at a time for now
+          ...(executableOptions.vkVisibleDevices?.length > 0 && {
+            GGML_VULKAN_DEVICE: executableOptions.vkVisibleDevices[0],
+          }),
         },
       }
     )

@@ -1,0 +1,256 @@
+common:
+  imageTag: v0.4.6-cpu
+  # DO NOT CHANGE THE LINE ABOVE. MAKE ALL CHANGES BELOW
+
+  # Global pvc for all workload
+  pvc:
+    enabled: false
+    name: 'janroot'
+    accessModes: 'ReadWriteOnce'
+    storageClassName: ''
+    capacity: '50Gi'
+
+  # Global image pull secret
+  imagePullSecrets: []
+
+  externalSecret:
+    create: false
+    name: ''
+    annotations: {}
+
+  nameOverride: 'jan-server'
+  fullnameOverride: 'jan-server'
+
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: 'jan-server-service-account'
+
+  podDisruptionBudget:
+    create: false
+    minAvailable: 1
+
+  workloads:
+    - name: server
+      image:
+        repository: ghcr.io/janhq/jan-server
+        pullPolicy: Always
+
+      command: ['/bin/sh', '-c']
+      args: ['cd server && node build/main.js']
+
+      replicaCount: 1
+      ports:
+        containerPort: 1337
+
+      strategy:
+        canary:
+          steps:
+            - setWeight: 50
+            - pause: { duration: 1m }
+
+      ingress:
+        enabled: true
+        className: 'nginx'
+        annotations:
+          nginx.ingress.kubernetes.io/proxy-body-size: '100m'
+          nginx.ingress.kubernetes.io/proxy-read-timeout: '1800'
+          nginx.ingress.kubernetes.io/proxy-send-timeout: '1800'
+          # cert-manager.io/cluster-issuer: 'jan-ai-dns01-cluster-issuer'
+          # nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+          nginx.ingress.kubernetes.io/backend-protocol: HTTP
+        hosts:
+          - host: server.local
+            paths:
+              - path: /
+                pathType: Prefix
+        tls:
+          []
+          # - hosts:
+          #     - server-dev.jan.ai
+          #   secretName: jan-server-prod-tls-v2
+
+      instrumentation:
+        enabled: false
+      podAnnotations: {}
+
+      podSecurityContext: {}
+
+      securityContext: {}
+
+      service:
+        extenalLabel: {}
+        type: ClusterIP
+        port: 1337
+        targetPort: 1337
+
+      # If you want to use GPU, please uncomment the following lines and change imageTag to the one with GPU support
+      resources:
+        # limits:
+        #   nvidia.com/gpu: 1
+        requests:
+          cpu: 2000m
+          memory: 8192M
+
+      # If you want to use pv, please uncomment the following lines and enable pvc.enabled
+      volumes:
+        []
+        # - name: janroot
+        #   persistentVolumeClaim:
+        #     claimName: janroot
+
+      volumeMounts:
+        []
+        # - name: janroot
+        #   mountPath: /app/server/build/jan
+
+      # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME, AWS_ENDPOINT, AWS_REGION should mount as a secret env instead of plain text here
+      # Change API_BASE_URL to your server's public domain
+      env:
+        - name: API_BASE_URL
+          value: 'http://server.local'
+
+      lifecycle: {}
+      autoscaling:
+        enabled: false
+        minReplicas: 2
+        maxReplicas: 3
+        targetCPUUtilizationPercentage: 95
+        targetMemoryUtilizationPercentage: 95
+
+      kedaScaling:
+        enabled: false # ignore if autoscaling.enable = true
+        cooldownPeriod: 30
+        pollingInterval: 2
+        minReplicas: 1
+        maxReplicas: 5
+        metricName: celery_queue_length
+        query: celery_queue_length{queue_name="myqueue"} # change queue_name here
+        serverAddress: http://prometheus-prod-kube-prome-prometheus.monitoring.svc:9090
+        threshold: '3'
+
+      nodeSelector: {}
+
+      tolerations: []
+
+      podSecurityGroup:
+        enabled: false
+        securitygroupid: []
+
+      # Reloader Option
+      reloader: 'false'
+      vpa:
+        enabled: false
+
+    - name: web
+      image:
+        repository: ghcr.io/janhq/jan-server
+        pullPolicy: Always
+
+      command: ['/bin/sh', '-c']
+      args:
+        [
+          'export NODE_ENV=production && yarn workspace jan-web build && cd web && npx serve out',
+        ]
+
+      replicaCount: 1
+      ports:
+        containerPort: 3000
+
+      strategy:
+        canary:
+          steps:
+            - setWeight: 50
+            - pause: { duration: 1m }
+
+      ingress:
+        enabled: true
+        className: 'nginx'
+        annotations:
+          nginx.ingress.kubernetes.io/proxy-body-size: '100m'
+          nginx.ingress.kubernetes.io/proxy-read-timeout: '1800'
+          nginx.ingress.kubernetes.io/proxy-send-timeout: '1800'
+          # cert-manager.io/cluster-issuer: 'jan-ai-dns01-cluster-issuer'
+          # nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+          nginx.ingress.kubernetes.io/backend-protocol: HTTP
+        hosts:
+          - host: web.local
+            paths:
+              - path: /
+                pathType: Prefix
+        tls:
+          []
+          # - hosts:
+          #     - server-dev.jan.ai
+          #   secretName: jan-server-prod-tls-v2
+
+      instrumentation:
+        enabled: false
+      podAnnotations: {}
+
+      podSecurityContext: {}
+
+      securityContext: {}
+
+      service:
+        extenalLabel: {}
+        type: ClusterIP
+        port: 3000
+        targetPort: 3000
+
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 2048M
+        requests:
+          cpu: 50m
+          memory: 500M
+
+      volumes:
+        []
+        # - name: janroot
+        #   persistentVolumeClaim:
+        #     claimName: janroot
+
+      volumeMounts:
+        []
+        # - name: janroot
+        #   mountPath: /app/server/build/jan
+
+      # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME, AWS_ENDPOINT, AWS_REGION should mount as a secret env instead of plain text here
+      # Change API_BASE_URL to your server's public domain
+      env:
+        - name: API_BASE_URL
+          value: 'http://server.local'
+
+      lifecycle: {}
+      autoscaling:
+        enabled: true
+        minReplicas: 1
+        maxReplicas: 3
+        targetCPUUtilizationPercentage: 95
+        targetMemoryUtilizationPercentage: 95
+
+      kedaScaling:
+        enabled: false # ignore if autoscaling.enable = true
+        cooldownPeriod: 30
+        pollingInterval: 2
+        minReplicas: 1
+        maxReplicas: 5
+        metricName: celery_queue_length
+        query: celery_queue_length{queue_name="myqueue"} # change queue_name here
+        serverAddress: http://prometheus-prod-kube-prome-prometheus.monitoring.svc:9090
+        threshold: '3'
+
+      nodeSelector: {}
+
+      tolerations: []
+
+      podSecurityGroup:
+        enabled: false
+        securitygroupid: []
+
+      # Reloader Option
+      reloader: 'false'
+      vpa:
+        enabled: false
