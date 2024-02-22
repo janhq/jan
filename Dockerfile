@@ -43,6 +43,8 @@ COPY --from=builder /app/uikit ./uikit/
 COPY --from=builder /app/web ./web/
 COPY --from=builder /app/models ./models/
 
+RUN cd /app/server/build/jan/ && ln -s ../../../models models
+
 RUN yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build
 RUN yarn workspace jan-web install
 
