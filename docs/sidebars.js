@@ -59,7 +59,7 @@ const sidebars = {
       items: [
         "platforms/desktop",
         "server-suite/home-server",
-        "server-suite/enterprise",
+        //"server-suite/enterprise",
         // "platforms/mobile",
         // "platforms/hub",
       ],

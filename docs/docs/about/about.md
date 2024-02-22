@@ -56,7 +56,7 @@ You can read the [User Guide](/docs/user-guide) if you need some help to get sta
 
 Jan is licensed under the [AGPLv3 License](https://github.com/janhq/jan/blob/main/LICENSE).
 
-We happily accept pull requests, however we do ask that you sign a [Contributor License Agreement](https://en.wikipedia.org/wiki/Contributor_License_Agreement) so that we have the right to relicense your contributions[^2].
+We happily accept pull requests, however, we do ask that you sign a [Contributor License Agreement](https://en.wikipedia.org/wiki/Contributor_License_Agreement) so that we have the right to relicense your contributions[^2].
 
 We also have a [Contributor Program](/docs/team/contributor-program) to provide ownership and upside to contributors who have made significant contributions to the project.
 
@@ -69,7 +69,7 @@ We follow [clean architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/
 - A desktop client with [Electron](https://www.electronjs.org/)
 - A headless server-mode with [Nodejs](https://nodejs.org/en)
 - Planned support for mobile with [Capacitor](https://capacitorjs.com/)
-- Planned support for python runtime
+- Planned support for Python runtime
 
 Architecturally, we have made similar choices to the [Next.js Enterprise Javascript Stack](https://vercel.com/templates/next.js/nextjs-enterprise-boilerplate), which is a [battle-tested](https://nextjs.org/showcase/enterprise) framework for building enterprise-grade applications that scale.
 
