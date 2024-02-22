@@ -18,11 +18,14 @@ export const restAPI = {
       ...acc,
       [proxy.route]: (...args: any) => {
         // For each route, define a function that sends a request to the API
-        return fetch(`${API_BASE_URL}/v1/${proxy.path}/${proxy.route}`, {
-          method: 'POST',
-          body: JSON.stringify(args),
-          headers: { contentType: 'application/json' },
-        }).then(async (res) => {
+        return fetch(
+          `${window.core?.api.baseApiUrl}/v1/${proxy.path}/${proxy.route}`,
+          {
+            method: 'POST',
+            body: JSON.stringify(args),
+            headers: { contentType: 'application/json' },
+          }
+        ).then(async (res) => {
           try {
             if (proxy.path === 'fs') {
               const text = await res.text()
@@ -38,6 +41,6 @@ export const restAPI = {
   }, {}),
   openExternalUrl,
   // Jan Server URL
-  baseApiUrl: API_BASE_URL,
+  baseApiUrl: process.env.API_BASE_URL ?? API_BASE_URL,
   pollingInterval: 5000,
 }

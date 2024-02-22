@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   ConversationalExtension,
@@ -10,7 +10,17 @@ import {
   events,
 } from '@janhq/core'
 
-import { Textarea, Button } from '@janhq/uikit'
+import {
+  Textarea,
+  Button,
+  Modal,
+  ModalClose,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalPortal,
+  ModalTitle,
+} from '@janhq/uikit'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
@@ -51,6 +61,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const setEditMessage = useSetAtom(editMessageAtom)
+  const [showDialog, setshowDialog] = useState(false)
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditPrompt(e.target.value)
@@ -152,6 +163,28 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
           Cancel
         </Button>
       </div>
+
+      <Modal open={showDialog} onOpenChange={() => setshowDialog(false)}>
+        <ModalPortal />
+        <ModalContent>
+          <ModalHeader>
+            <ModalTitle>Edit Message</ModalTitle>
+          </ModalHeader>
+          <p className="text-muted-foreground">
+            Do you want to discard the change
+          </p>
+          <ModalFooter>
+            <div className="flex gap-x-2">
+              <ModalClose asChild onClick={() => setshowDialog(false)}>
+                <Button themes="outline">Cancel</Button>
+              </ModalClose>
+              <ModalClose asChild onClick={() => setEditMessage('')}>
+                <Button autoFocus>Yes</Button>
+              </ModalClose>
+            </div>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   )
 }

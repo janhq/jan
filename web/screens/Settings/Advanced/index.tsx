@@ -36,6 +36,7 @@ import { snackbar, toaster } from '@/containers/Toast'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
@@ -55,6 +56,10 @@ const Advanced = () => {
     setIgnoreSSL,
     proxy,
     setProxy,
+    proxyEnabled,
+    setProxyEnabled,
+    vulkanEnabled,
+    setVulkanEnabled,
   } = useContext(FeatureToggleContext)
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
@@ -62,6 +67,7 @@ const Advanced = () => {
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
+  const { stopModel } = useActiveModel()
 
   const selectedGpu = gpuList
     .filter((x) => gpusInUse.includes(x.id))
@@ -85,14 +91,15 @@ const Advanced = () => {
   useEffect(() => {
     const setUseGpuIfPossible = async () => {
       const settings = await readSettings()
-      setGpuEnabled(settings.run_mode === 'gpu' && gpuList.length > 0)
+      setGpuEnabled(settings.run_mode === 'gpu' && settings.gpus?.length > 0)
       setGpusInUse(settings.gpus_in_use || [])
+      setVulkanEnabled(settings.vulkan || false)
       if (settings.gpus) {
         setGpuList(settings.gpus)
       }
     }
     setUseGpuIfPossible()
-  }, [readSettings, gpuList])
+  }, [readSettings, setGpuList, setGpuEnabled, setGpusInUse, setVulkanEnabled])
 
   const clearLogs = async () => {
     if (await fs.existsSync(`file://logs`)) {
@@ -106,14 +113,21 @@ const Advanced = () => {
   }
 
   const handleGPUChange = (gpuId: string) => {
-    // TODO detect current use GPU nvidia or AMD
     let updatedGpusInUse = [...gpusInUse]
     if (updatedGpusInUse.includes(gpuId)) {
       updatedGpusInUse = updatedGpusInUse.filter((id) => id !== gpuId)
       if (gpuEnabled && updatedGpusInUse.length === 0) {
+        // Vulkan support only allow 1 active device at a time
+        if (vulkanEnabled) {
+          updatedGpusInUse = []
+        }
         updatedGpusInUse.push(gpuId)
       }
     } else {
+      // Vulkan support only allow 1 active device at a time
+      if (vulkanEnabled) {
+        updatedGpusInUse = []
+      }
       updatedGpusInUse.push(gpuId)
     }
     setGpusInUse(updatedGpusInUse)
@@ -169,8 +183,8 @@ const Advanced = () => {
                 </h6>
               </div>
               <p className="pr-8 leading-relaxed">
-                Enable to enhance model performance by utilizing your devices
-                GPU for acceleration. Read{' '}
+                Enable to enhance model performance by utilizing your GPU
+                devices for acceleration. Read{' '}
                 <span>
                   {' '}
                   <span
@@ -198,7 +212,7 @@ const Advanced = () => {
                   className="max-w-[240px]"
                 >
                   <span>
-                    Disabling GPU Acceleration may result in reduced
+                    Disabling NVIDIA GPU Acceleration may result in reduced
                     performance. It is recommended to keep this enabled for
                     optimal user experience.
                   </span>
@@ -210,7 +224,7 @@ const Advanced = () => {
             <Tooltip>
               <TooltipTrigger>
                 <Switch
-                  disabled={gpuList.length === 0}
+                  disabled={gpuList.length === 0 || vulkanEnabled}
                   checked={gpuEnabled}
                   onCheckedChange={(e) => {
                     if (e === true) {
@@ -232,6 +246,8 @@ const Advanced = () => {
                         type: 'success',
                       })
                     }
+                    // Stop any running model to apply the changes
+                    if (e !== gpuEnabled) stopModel()
                   }}
                 />
               </TooltipTrigger>
@@ -253,12 +269,14 @@ const Advanced = () => {
             </Tooltip>
           </div>
           <div className="mt-2 w-full rounded-lg bg-secondary p-4">
-            <label className="mb-1 inline-block font-medium">Choose GPU</label>
+            <label className="mb-1 inline-block font-medium">
+              Choose device(s)
+            </label>
             <Select
               disabled={gpuList.length === 0 || !gpuEnabled}
               value={selectedGpu.join()}
             >
-              <SelectTrigger className="w-[340px] bg-white">
+              <SelectTrigger className="w-[340px] dark:bg-gray-500 bg-white">
                 <SelectValue placeholder={gpuSelectionPlaceHolder}>
                   <span className="line-clamp-1 w-full pr-8">
                     {selectedGpu.join()}
@@ -268,12 +286,16 @@ const Advanced = () => {
               <SelectPortal>
                 <SelectContent className="w-[400px] px-1 pb-2">
                   <SelectGroup>
-                    <SelectLabel>Nvidia</SelectLabel>
+                    <SelectLabel>
+                      {vulkanEnabled ? 'Vulkan Supported GPUs' : 'Nvidia'}
+                    </SelectLabel>
                     <div className="px-4 pb-2">
                       <div className="rounded-lg bg-secondary p-3">
                         {gpuList
                           .filter((gpu) =>
-                            gpu.name.toLowerCase().includes('nvidia')
+                            vulkanEnabled
+                              ? gpu.name
+                              : gpu.name?.toLowerCase().includes('nvidia')
                           )
                           .map((gpu) => (
                             <div
@@ -293,7 +315,9 @@ const Advanced = () => {
                                 htmlFor={`gpu-${gpu.id}`}
                               >
                                 <span>{gpu.name}</span>
-                                <span>{gpu.vram}MB VRAM</span>
+                                {!vulkanEnabled && (
+                                  <span>{gpu.vram}MB VRAM</span>
+                                )}
                               </label>
                             </div>
                           ))}
@@ -322,12 +346,47 @@ const Advanced = () => {
         </div>
       )}
 
+      {/* Vulkan for AMD GPU/ APU and Intel Arc GPU */}
+      {!isMac && experimentalFeature && (
+        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+          <div className="flex-shrink-0 space-y-1.5">
+            <div className="flex gap-x-2">
+              <h6 className="text-sm font-semibold capitalize">
+                Vulkan Support
+              </h6>
+            </div>
+            <p className="text-xs leading-relaxed">
+              Enable Vulkan with AMD GPU/APU and Intel Arc GPU for better model
+              performance (reload needed).
+            </p>
+          </div>
+
+          <Switch
+            checked={vulkanEnabled}
+            onCheckedChange={(e) => {
+              toaster({
+                title: 'Reload',
+                description:
+                  'Vulkan settings updated. Reload now to apply the changes.',
+              })
+              stopModel()
+              saveSettings({ vulkan: e, gpusInUse: [] })
+              setVulkanEnabled(e)
+            }}
+          />
+        </div>
+      )}
+
       <DataFolder />
       {/* Proxy */}
       <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="flex-shrink-0 space-y-1.5">
-          <div className="flex gap-x-2">
+        <div className="flex-shrink-0 space-y-1.5 w-full">
+          <div className="flex gap-x-2 justify-between w-full">
             <h6 className="text-sm font-semibold capitalize">HTTPS Proxy</h6>
+            <Switch
+              checked={proxyEnabled}
+              onCheckedChange={(_) => setProxyEnabled(!proxyEnabled)}
+            />
           </div>
           <p className="leading-relaxed">
             Specify the HTTPS proxy or leave blank (proxy auto-configuration and
@@ -337,6 +396,7 @@ const Advanced = () => {
             placeholder={'http://<user>:<password>@<domain or IP>:<port>'}
             value={partialProxy}
             onChange={onProxyChange}
+            className="w-2/3"
           />
         </div>
       </div>

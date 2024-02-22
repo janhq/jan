@@ -14,9 +14,6 @@ COPY . ./
 RUN export NITRO_VERSION=$(cat extensions/inference-nitro-extension/bin/version.txt) && \
     jq --arg nitroVersion $NITRO_VERSION '(.scripts."downloadnitro:linux" | gsub("\\${NITRO_VERSION}"; $nitroVersion)) | gsub("\r"; "")' extensions/inference-nitro-extension/package.json > /tmp/newcommand.txt && export NEW_COMMAND=$(sed 's/^"//;s/"$//' /tmp/newcommand.txt) && jq --arg newCommand "$NEW_COMMAND" '.scripts."downloadnitro:linux" = $newCommand' extensions/inference-nitro-extension/package.json > /tmp/package.json && mv /tmp/package.json extensions/inference-nitro-extension/package.json
 RUN make install-and-build
-RUN yarn workspace jan-web install
-
-RUN export NODE_ENV=production && yarn workspace jan-web build
 
 # # 2. Rebuild the source code only when needed
 FROM base AS runner
@@ -42,11 +39,12 @@ COPY --from=builder /app/docs/openapi ./docs/openapi/
 COPY --from=builder /app/pre-install ./pre-install/
 
 # Copy the package.json, yarn.lock, and output of web yarn space to leverage Docker cache
-COPY --from=builder /app/web/out ./web/out/
-COPY --from=builder /app/web/.next ./web/.next/
-COPY --from=builder /app/web/package.json ./web/package.json
-COPY --from=builder /app/web/yarn.lock ./web/yarn.lock
+COPY --from=builder /app/uikit ./uikit/
+COPY --from=builder /app/web ./web/
 COPY --from=builder /app/models ./models/
+
+RUN yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build
+RUN yarn workspace jan-web install
 
 RUN npm install -g serve@latest
 
@@ -55,7 +53,9 @@ EXPOSE 1337 3000 3928
 ENV JAN_API_HOST 0.0.0.0
 ENV JAN_API_PORT 1337
 
-CMD ["sh", "-c", "cd server && node build/main.js & cd web && npx serve out"]
+ENV API_BASE_URL http://localhost:1337
+
+CMD ["sh", "-c", "export NODE_ENV=production && yarn workspace jan-web build && cd web && npx serve out & cd server && node build/main.js"]
 
 # docker build -t jan .
 # docker run -p 1337:1337 -p 3000:3000 -p 3928:3928 jan

@@ -3,7 +3,7 @@ import { useCallback, useEffect } from 'react'
 import { Thread } from '@janhq/core/'
 
 import { motion as m } from 'framer-motion'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { GalleryHorizontalEndIcon, MoreVerticalIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -18,6 +18,7 @@ import CleanThreadModal from '../CleanThreadModal'
 import DeleteThreadModal from '../DeleteThreadModal'
 
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
+import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   getActiveThreadIdAtom,
   threadDataReadyAtom,
@@ -33,12 +34,14 @@ export default function ThreadList() {
   const assistants = useAtomValue(assistantsAtom)
   const threadDataReady = useAtomValue(threadDataReadyAtom)
   const { requestCreateNewThread } = useCreateNewThread()
+  const setEditMessage = useSetAtom(editMessageAtom)
 
   const onThreadClick = useCallback(
     (thread: Thread) => {
       setActiveThread(thread)
+      setEditMessage('')
     },
-    [setActiveThread]
+    [setActiveThread, setEditMessage]
   )
 
   /**

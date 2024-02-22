@@ -130,8 +130,8 @@ export const setDownloadStateAtom = atom(
         0
       )
       modelDownloadState.size.transferred = transferredSize
-      modelDownloadState.percent = transferredSize / parentTotalSize
-
+      modelDownloadState.percent =
+        parentTotalSize === 0 ? 0 : transferredSize / parentTotalSize
       currentState[state.modelId] = modelDownloadState
     }
 
