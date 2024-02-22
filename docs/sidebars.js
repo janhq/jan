@@ -19,7 +19,6 @@ const sidebars = {
       label: "What is Jan?",
       link: { type: "doc", id: "about/about" },
       items: [
-        "about/roadmap",
         "community/community",
       ],
     },
