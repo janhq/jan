@@ -83,7 +83,10 @@ export class ExtensionManager {
     // Import class
     const extensionUrl = window.electronAPI
       ? extension.url
-      : extension.url.replace('extension://', `${API_BASE_URL}/extensions/`)
+      : extension.url.replace(
+          'extension://',
+          `${window.core?.api?.baseApiUrl ?? ''}/extensions/`
+        )
     await import(/* webpackIgnore: true */ extensionUrl).then(
       (extensionClass) => {
         // Register class if it has a default export

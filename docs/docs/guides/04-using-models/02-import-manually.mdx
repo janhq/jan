@@ -29,6 +29,10 @@ In this section, we will show you how to import a GGUF model from [HuggingFace](
 
 > We are fast shipping a UI to make this easier, but it's a bit manual for now. Apologies.
 
+## Import Models Using Absolute Filepath (version 0.4.7)
+
+Starting from version 0.4.7, Jan has introduced the capability to import models using an absolute file path. It allows you to import models from any directory on your computer. Please check the [import models using absolute filepath](../import-models-using-absolute-filepath) guide for more information. 
+
 ## Manually Importing a Downloaded Model (nightly versions and v0.4.4+)
 
 ### 1. Create a Model Folder
@@ -186,7 +190,6 @@ This means that you can easily reconfigure your models, export them, and share y
 
 Edit `model.json` and include the following configurations:
 
-- Ensure the filename must be `model.json`.
 - Ensure the `id` property matches the folder name you created.
 - Ensure the GGUF filename should match the `id` property exactly.
 - Ensure the `source.url` property is the direct binary download link ending in `.gguf`. In HuggingFace, you can find the direct links in the `Files and versions` tab.

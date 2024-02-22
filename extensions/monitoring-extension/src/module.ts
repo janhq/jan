@@ -37,10 +37,10 @@ const getCurrentLoad = () =>
       }
       if (data.run_mode === 'gpu' && data.gpus_in_use.length > 0) {
         const gpuIds = data['gpus_in_use'].join(',')
-        if (gpuIds !== '') {
+        if (gpuIds !== '' && data['vulkan'] !== true) {
           exec(
             `nvidia-smi --query-gpu=index,name,temperature.gpu,utilization.gpu,memory.total,memory.free,utilization.memory --format=csv,noheader,nounits --id=${gpuIds}`,
-            (error, stdout, stderr) => {
+            (error, stdout, _) => {
               if (error) {
                 console.error(`exec error: ${error}`)
                 reject(error)

@@ -83,6 +83,7 @@ function createMainWindow() {
 
   /* Enable dev tools for development */
   if (!app.isPackaged) mainWindow.webContents.openDevTools()
+  log(`Version: ${app.getVersion()}`)
 }
 
 /**

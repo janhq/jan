@@ -28,7 +28,7 @@
     "author": "Intel, Jan",
     "tags": ["7B", "Merged", "Featured"],
     "size": 4370000000,
-    "cover": "https://raw.githubusercontent.com/janhq/jan/main/models/openhermes-neural-7b/cover.png"
+    "cover": "https://raw.githubusercontent.com/janhq/jan/dev/models/openhermes-neural-7b/cover.png"
   },
   "engine": "nitro"
 }
