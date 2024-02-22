@@ -5,7 +5,9 @@ interface FeatureToggleContextType {
   ignoreSSL: boolean
   proxy: string
   proxyEnabled: boolean
+  vulkanEnabled: boolean
   setExperimentalFeature: (on: boolean) => void
+  setVulkanEnabled: (on: boolean) => void
   setIgnoreSSL: (on: boolean) => void
   setProxy: (value: string) => void
   setProxyEnabled: (on: boolean) => void
@@ -16,7 +18,9 @@ const initialContext: FeatureToggleContextType = {
   ignoreSSL: false,
   proxy: '',
   proxyEnabled: false,
+  vulkanEnabled: false,
   setExperimentalFeature: () => {},
+  setVulkanEnabled: () => {},
   setIgnoreSSL: () => {},
   setProxy: () => {},
   setProxyEnabled: () => {},
@@ -31,6 +35,7 @@ export default function FeatureToggleWrapper({
   children: ReactNode
 }) {
   const EXPERIMENTAL_FEATURE = 'experimentalFeature'
+  const VULKAN_ENABLED = 'vulkanEnabled'
   const IGNORE_SSL = 'ignoreSSLFeature'
   const HTTPS_PROXY_FEATURE = 'httpsProxyFeature'
   const PROXY_FEATURE_ENABLED = 'proxyFeatureEnabled'
@@ -38,6 +43,7 @@ export default function FeatureToggleWrapper({
   const [experimentalFeature, directSetExperimentalFeature] =
     useState<boolean>(false)
   const [proxyEnabled, directSetProxyEnabled] = useState<boolean>(false)
+  const [vulkanEnabled, directEnableVulkan] = useState<boolean>(false)
   const [ignoreSSL, directSetIgnoreSSL] = useState<boolean>(false)
   const [proxy, directSetProxy] = useState<string>('')
 
@@ -55,6 +61,11 @@ export default function FeatureToggleWrapper({
   const setExperimentalFeature = (on: boolean) => {
     localStorage.setItem(EXPERIMENTAL_FEATURE, on ? 'true' : 'false')
     directSetExperimentalFeature(on)
+  }
+
+  const setVulkanEnabled = (on: boolean) => {
+    localStorage.setItem(VULKAN_ENABLED, on ? 'true' : 'false')
+    directEnableVulkan(on)
   }
 
   const setIgnoreSSL = (on: boolean) => {
@@ -79,7 +90,9 @@ export default function FeatureToggleWrapper({
         ignoreSSL,
         proxy,
         proxyEnabled,
+        vulkanEnabled,
         setExperimentalFeature,
+        setVulkanEnabled,
         setIgnoreSSL,
         setProxy,
         setProxyEnabled,

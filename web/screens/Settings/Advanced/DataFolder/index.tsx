@@ -83,10 +83,7 @@ const DataFolder = () => {
         await window.core?.api?.getAppConfigurations()
       const currentJanDataFolder = appConfiguration.data_folder
       appConfiguration.data_folder = destinationPath
-      const { _, err } = await fs.syncFile(
-        currentJanDataFolder,
-        destinationPath
-      )
+      const { err } = await fs.syncFile(currentJanDataFolder, destinationPath)
       if (err) throw err
       await window.core?.api?.updateAppConfiguration(appConfiguration)
       console.debug(

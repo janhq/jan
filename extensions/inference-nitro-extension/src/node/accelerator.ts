@@ -1,10 +1,11 @@
 import { writeFileSync, existsSync, readFileSync } from 'fs'
-import { exec } from 'child_process'
+import { exec, spawn } from 'child_process'
 import path from 'path'
-import { getJanDataFolderPath } from '@janhq/core/node'
+import { getJanDataFolderPath, log } from '@janhq/core/node'
 
 /**
  * Default GPU settings
+ * TODO: This needs to be refactored to support multiple accelerators
  **/
 const DEFALT_SETTINGS = {
   notify: true,
@@ -21,12 +22,17 @@ const DEFALT_SETTINGS = {
   gpu_highest_vram: '',
   gpus_in_use: [],
   is_initial: true,
+  // TODO: This needs to be set based on user toggle in settings
+  vulkan: {
+    enabled: true,
+    gpu_in_use: '1',
+  },
 }
 
 /**
  * Path to the settings file
  **/
-export const NVIDIA_INFO_FILE = path.join(
+export const GPU_INFO_FILE = path.join(
   getJanDataFolderPath(),
   'settings',
   'settings.json'
@@ -52,10 +58,10 @@ export async function updateNvidiaInfo() {
   if (process.platform !== 'darwin') {
     let data
     try {
-      data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf-8'))
+      data = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
     } catch (error) {
       data = DEFALT_SETTINGS
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2))
+      writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
     }
     updateNvidiaDriverInfo()
     updateGpuInfo()
@@ -79,7 +85,7 @@ export async function updateNvidiaDriverInfo(): Promise<void> {
   exec(
     'nvidia-smi --query-gpu=driver_version --format=csv,noheader',
     (error, stdout) => {
-      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf-8'))
+      let data = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
 
       if (!error) {
         const firstLine = stdout.split('\n')[0].trim()
@@ -89,7 +95,7 @@ export async function updateNvidiaDriverInfo(): Promise<void> {
         data['nvidia_driver'].exist = false
       }
 
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2))
+      writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
       Promise.resolve()
     }
   )
@@ -158,42 +164,77 @@ export function updateCudaExistence(
  * Get GPU information
  */
 export async function updateGpuInfo(): Promise<void> {
-  exec(
-    'nvidia-smi --query-gpu=index,memory.total,name --format=csv,noheader,nounits',
-    (error, stdout) => {
-      let data = JSON.parse(readFileSync(NVIDIA_INFO_FILE, 'utf-8'))
+  let data = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
 
-      if (!error) {
-        // Get GPU info and gpu has higher memory first
-        let highestVram = 0
-        let highestVramId = '0'
-        let gpus = stdout
-          .trim()
-          .split('\n')
-          .map((line) => {
-            let [id, vram, name] = line.split(', ')
-            vram = vram.replace(/\r/g, '')
-            if (parseFloat(vram) > highestVram) {
-              highestVram = parseFloat(vram)
-              highestVramId = id
-            }
-            return { id, vram, name }
-          })
+  // Cuda
+  if (data['vulkan'] === true) {
+    // Vulkan
+    exec(
+      process.platform === 'win32'
+        ? `${__dirname}\\..\\bin\\vulkaninfoSDK.exe --summary`
+        : `${__dirname}/../bin/vulkaninfo --summary`,
+      (error, stdout) => {
+        if (!error) {
+          const output = stdout.toString()
+          log(output)
+          const gpuRegex = /GPU(\d+):(?:[\s\S]*?)deviceName\s*=\s*(.*)/g
 
-        data.gpus = gpus
-        data.gpu_highest_vram = highestVramId
-      } else {
-        data.gpus = []
-        data.gpu_highest_vram = ''
+          let gpus = []
+          let match
+          while ((match = gpuRegex.exec(output)) !== null) {
+            const id = match[1]
+            const name = match[2]
+            gpus.push({ id, vram: 0, name })
+          }
+          data.gpus = gpus
+
+          if (!data['gpus_in_use'] || data['gpus_in_use'].length === 0) {
+            data.gpus_in_use = [data.gpus.length > 1 ? '1' : '0']
+          }
+
+          data = updateCudaExistence(data)
+          writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
+        }
+        Promise.resolve()
       }
+    )
+  } else {
+    exec(
+      'nvidia-smi --query-gpu=index,memory.total,name --format=csv,noheader,nounits',
+      (error, stdout) => {
+        if (!error) {
+          log(stdout)
+          // Get GPU info and gpu has higher memory first
+          let highestVram = 0
+          let highestVramId = '0'
+          let gpus = stdout
+            .trim()
+            .split('\n')
+            .map((line) => {
+              let [id, vram, name] = line.split(', ')
+              vram = vram.replace(/\r/g, '')
+              if (parseFloat(vram) > highestVram) {
+                highestVram = parseFloat(vram)
+                highestVramId = id
+              }
+              return { id, vram, name }
+            })
 
-      if (!data['gpus_in_use'] || data['gpus_in_use'].length === 0) {
-        data.gpus_in_use = [data['gpu_highest_vram']]
+          data.gpus = gpus
+          data.gpu_highest_vram = highestVramId
+        } else {
+          data.gpus = []
+          data.gpu_highest_vram = ''
+        }
+
+        if (!data['gpus_in_use'] || data['gpus_in_use'].length === 0) {
+          data.gpus_in_use = [data['gpu_highest_vram']]
+        }
+
+        data = updateCudaExistence(data)
+        writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
+        Promise.resolve()
       }
-
-      data = updateCudaExistence(data)
-      writeFileSync(NVIDIA_INFO_FILE, JSON.stringify(data, null, 2))
-      Promise.resolve()
-    }
-  )
+    )
+  }
 }
