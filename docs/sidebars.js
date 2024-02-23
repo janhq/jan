@@ -44,6 +44,7 @@ const sidebars = {
           items: [
             "how-we-work/engineering/ci-cd",
             "how-we-work/engineering/qa",
+            "how-we-work/engineering/acknowledgements",
           ],
         },
         "how-we-work/product-design/product-design",
