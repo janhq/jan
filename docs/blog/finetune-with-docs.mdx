@@ -217,15 +217,19 @@ split_dataset = hf_dataset.train_test_split(test_size=0.1)
 # Push to Hugging Face Hub
 split_dataset.push_to_hub(REPO_NAME)
 ```
+
+Please refer to **Table 1** for samples of the generated dataset.
+
 ## **3. Finetuning**
 
 We use the [alignment-handbook](https://github.com/huggingface/alignment-handbook) from Hugging Face for the training code. This is a well-written library that explains in detail everything about finetuning LLMs. It also provides cutting-edge technology implementation like [LORA/QLoRA](#what-is-lora) or [Flash Attention](#what-is-flash-attention) for efficient training on customer GPUs.
 
 For installing the alignment-handbook, please follow their [installation guide](https://github.com/huggingface/alignment-handbook?tab=readme-ov-file#installation-instructions).
 
-In our training setup, we selected the [Stealth v1.3](https://huggingface.co/jan-hq/stealth-v1.3) model as the foundation. We experimented with various LoRA/QLoRA configurations to optimize performance and came up with the settings of `r = 256` and `alpha = 512`. For a comprehensive view of our settings, please refer to our sample YAML configuration file.
+In our training setup, we selected the [Stealth v1.3](https://huggingface.co/jan-hq/stealth-v1.3) model as the foundation. We explored different configurations of LoRA/QLoRA, focusing on the parameters `r` and `alpha`. The `r` parameter, denoting the rank in low-rank adaptation, influences the model's learning capacity and complexity, with higher values offering more flexibility at the risk of overfitting. The `alpha` parameter scales the adaptation's effect, balancing new learning and existing knowledge retention. We found `r = 256` and `alpha = 512` to be effective settings. For more details, see our sample YAML configuration file.
 
 For training the model after installing the repository, you can run the following command:
+
 ```js title="Command to train LLM with alignment handbook"
 ACCELERATE_LOG_LEVEL=info \
 accelerate launch \
