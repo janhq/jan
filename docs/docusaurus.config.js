@@ -4,6 +4,7 @@
 require("dotenv").config();
 
 const darkCodeTheme = require("prism-react-renderer/themes/dracula");
+const path = require('path');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -76,6 +77,9 @@ const config = {
         ],
       },
     ],
+
+    //To input custom Plugin
+    path.resolve(__dirname, 'plugins', 'changelog-plugin'),
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
@@ -293,6 +297,11 @@ const config = {
           items: [
             {
               type: "docSidebar",
+              sidebarId: "quickstartSidebar",
+              label: "Quickstart",
+            },
+            {
+              type: "docSidebar",
               sidebarId: "guidesSidebar",
               label: "User Guide",
             },
@@ -337,6 +346,11 @@ const config = {
       respectPrefersColorScheme: false,
     },
   },
+
+  customFields: {
+    githubAccessToken: process.env.GITHUB_ACCESS_TOKEN || "XXXX",
+  },
+
   themes: ["@docusaurus/theme-live-codeblock", "@docusaurus/theme-mermaid"],
 };
 
