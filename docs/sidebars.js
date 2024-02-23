@@ -19,7 +19,7 @@ const sidebars = {
       label: "What is Jan?",
       link: { type: "doc", id: "about/about" },
       items: [
-        "about/roadmap",
+        //"about/roadmap",
         "community/community",
       ],
     },
@@ -60,7 +60,7 @@ const sidebars = {
       items: [
         "platforms/desktop",
         "server-suite/home-server",
-        "server-suite/enterprise",
+        // "server-suite/enterprise",
         // "platforms/mobile",
         // "platforms/hub",
       ],
