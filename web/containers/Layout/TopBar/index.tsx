@@ -68,7 +68,7 @@ const TopBar = () => {
   }
 
   return (
-    <div className="fixed left-0 top-0 z-50 flex h-12 w-full border-b border-border bg-background/80 backdrop-blur-md">
+    <div className="fixed left-0 top-0 z-20 flex h-12 w-full border-b border-border bg-background/80 backdrop-blur-md">
       {mainViewState !== MainViewState.Thread &&
       mainViewState !== MainViewState.LocalServer ? (
         <div className="relative left-16 flex w-[calc(100%-64px)] items-center justify-between space-x-4 pl-6 pr-2">
@@ -95,6 +95,7 @@ const TopBar = () => {
                 </div>
                 <div
                   className="unset-drag cursor-pointer pr-4"
+                  data-testid="btn-create-thread"
                   onClick={onCreateConversationClick}
                 >
                   <PenSquareIcon size={20} className="text-muted-foreground" />

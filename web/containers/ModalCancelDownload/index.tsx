@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback } from 'react'
 
 import { Model } from '@janhq/core'
 
@@ -14,31 +14,37 @@ import {
   Progress,
 } from '@janhq/uikit'
 
-import { atom, useAtomValue } from 'jotai'
+import { useAtomValue } from 'jotai'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
-import { useDownloadState } from '@/hooks/useDownloadState'
+
+import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
-import { downloadingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { getDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   model: Model
   isFromList?: boolean
 }
 
-export default function ModalCancelDownload({ model, isFromList }: Props) {
-  const { modelDownloadStateAtom } = useDownloadState()
-  const downloadingModels = useAtomValue(downloadingModelsAtom)
-  const downloadAtom = useMemo(
-    () => atom((get) => get(modelDownloadStateAtom)[model.id]),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [model.id]
-  )
-  const downloadState = useAtomValue(downloadAtom)
-  const cancelText = `Cancel ${formatDownloadPercentage(downloadState.percent)}`
+const ModalCancelDownload: React.FC<Props> = ({ model, isFromList }) => {
   const { abortModelDownload } = useDownloadModel()
+  const downloadingModels = useAtomValue(getDownloadingModelAtom)
+  const allDownloadStates = useAtomValue(modelDownloadStateAtom)
+  const downloadState = allDownloadStates[model.id]
+
+  const cancelText = `Cancel ${formatDownloadPercentage(downloadState.percent)}`
+
+  const onAbortDownloadClick = useCallback(() => {
+    if (downloadState?.modelId) {
+      const model = downloadingModels.find(
+        (model) => model.id === downloadState.modelId
+      )
+      if (model) abortModelDownload(model)
+    }
+  }, [downloadState, downloadingModels, abortModelDownload])
 
   return (
     <Modal>
@@ -78,17 +84,7 @@ export default function ModalCancelDownload({ model, isFromList }: Props) {
               <Button themes="ghost">No</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button
-                themes="danger"
-                onClick={() => {
-                  if (downloadState?.modelId) {
-                    const model = downloadingModels.find(
-                      (model) => model.id === downloadState.modelId
-                    )
-                    if (model) abortModelDownload(model)
-                  }
-                }}
-              >
+              <Button themes="danger" onClick={onAbortDownloadClick}>
                 Yes
               </Button>
             </ModalClose>
@@ -98,3 +94,5 @@ export default function ModalCancelDownload({ model, isFromList }: Props) {
     </Modal>
   )
 }
+
+export default ModalCancelDownload

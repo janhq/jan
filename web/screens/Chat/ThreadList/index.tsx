@@ -1,13 +1,14 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import { Thread } from '@janhq/core/'
 
 import { motion as m } from 'framer-motion'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { GalleryHorizontalEndIcon, MoreVerticalIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useSetActiveThread from '@/hooks/useSetActiveThread'
 
 import { displayDate } from '@/utils/datetime'
@@ -16,8 +17,11 @@ import CleanThreadModal from '../CleanThreadModal'
 
 import DeleteThreadModal from '../DeleteThreadModal'
 
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
+import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   getActiveThreadIdAtom,
+  threadDataReadyAtom,
   threadStatesAtom,
   threadsAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -27,13 +31,38 @@ export default function ThreadList() {
   const threads = useAtomValue(threadsAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const { setActiveThread } = useSetActiveThread()
+  const assistants = useAtomValue(assistantsAtom)
+  const threadDataReady = useAtomValue(threadDataReadyAtom)
+  const { requestCreateNewThread } = useCreateNewThread()
+  const setEditMessage = useSetAtom(editMessageAtom)
 
   const onThreadClick = useCallback(
     (thread: Thread) => {
       setActiveThread(thread)
+      setEditMessage('')
     },
-    [setActiveThread]
+    [setActiveThread, setEditMessage]
   )
+
+  /**
+   * Auto create thread
+   * This will create a new thread if there are assistants available
+   * and there are no threads available
+   */
+  useEffect(() => {
+    if (threadDataReady && assistants.length > 0 && threads.length === 0) {
+      requestCreateNewThread(assistants[0])
+    } else if (threadDataReady && !activeThreadId) {
+      setActiveThread(threads[0])
+    }
+  }, [
+    assistants,
+    threads,
+    threadDataReady,
+    requestCreateNewThread,
+    activeThreadId,
+    setActiveThread,
+  ])
 
   return (
     <div className="px-3 py-4">

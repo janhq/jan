@@ -1,0 +1,30 @@
+name: Jan Build Docker
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+jobs:
+  # Job create Update app version based on latest release tag with build number and save to output
+  get-update-version:
+    uses: ./.github/workflows/template-get-update-version.yml
+
+  build-cpu:
+    permissions:
+      packages: write
+    uses: ./.github/workflows/template-build-jan-server.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      dockerfile_path: ./Dockerfile
+      docker_image_tag: "ghcr.io/janhq/jan-server:cpu-latest,ghcr.io/janhq/jan-server:cpu-${{ needs.get-update-version.outputs.new_version }}"
+
+  build-gpu:
+    permissions:
+      packages: write
+    uses: ./.github/workflows/template-build-jan-server.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      dockerfile_path: ./Dockerfile.gpu
+      docker_image_tag: "ghcr.io/janhq/jan-server:cuda-12.2-latest,ghcr.io/janhq/jan-server:cuda-12.2-${{ needs.get-update-version.outputs.new_version }}"

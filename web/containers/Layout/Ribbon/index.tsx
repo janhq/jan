@@ -6,11 +6,10 @@ import {
 } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 
-import { useAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
-  MonitorIcon,
   LayoutGridIcon,
   SquareCodeIcon,
 } from 'lucide-react'
@@ -23,16 +22,19 @@ import { MainViewState } from '@/constants/screens'
 
 import { useMainViewState } from '@/hooks/useMainViewState'
 
+import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 export default function RibbonNav() {
   const { mainViewState, setMainViewState } = useMainViewState()
   const [serverEnabled] = useAtom(serverEnabledAtom)
+  const setEditMessage = useSetAtom(editMessageAtom)
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
     if (serverEnabled && state === MainViewState.Thread) return
     setMainViewState(state)
+    setEditMessage('')
   }
 
   const primaryMenus = [
@@ -71,16 +73,6 @@ export default function RibbonNav() {
         />
       ),
       state: MainViewState.LocalServer,
-    },
-    {
-      name: 'System Monitor',
-      icon: (
-        <MonitorIcon
-          size={20}
-          className="flex-shrink-0 text-muted-foreground"
-        />
-      ),
-      state: MainViewState.SystemMonitor,
     },
     {
       name: 'Settings',

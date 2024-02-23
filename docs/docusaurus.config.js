@@ -224,7 +224,7 @@ const config = {
           description:
             "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
           keywords:
-            "Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
+            "Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
           applicationCategory: "BusinessApplication",
           operatingSystem: "Multiple",
           url: "https://jan.ai/",
@@ -239,40 +239,83 @@ const config = {
       },
       items: [
         // Navbar Left
+        // {
+        //   type: "docSidebar",
+        //   sidebarId: "aboutSidebar",
+        //   position: "left",
+        //   label: "About",
+        // },
         {
-          type: "docSidebar",
-          sidebarId: "guidesSidebar",
+          type: "dropdown",
+          label: "About",
           position: "left",
-          label: "Guides",
+          items: [
+            {
+              type: "doc",
+              label: "What is Jan?",
+              docId: "about/about",
+            },
+            {
+              type: "doc",
+              label: "Who we are",
+              docId: "team/team",
+            },
+            {
+              type: "doc",
+              label: "Wall of love",
+              docId: "wall-of-love",
+            },
+          ],
         },
         {
           type: "docSidebar",
-          sidebarId: "developerSidebar",
-          position: "left",
-          label: "Developer",
-        },
-        {
-          position: "left",
-          to: "/api-reference",
-          label: "API Reference",
+          sidebarId: "productSidebar",
+          positionL: "left",
+          label: "Product",
         },
         {
           type: "docSidebar",
+          sidebarId: "ecosystemSidebar",
           position: "left",
-          sidebarId: "docsSidebar",
-          label: "Framework",
+          label: "Ecosystem",
         },
+        // {
+        //   type: "docSidebar",
+        //   sidebarId: "pricingSidebar",
+        //   positionL: "left",
+        //   label: "Pricing",
+        // },
         // Navbar right
+        {
+          type: "dropdown",
+          label: "Docs",
+          position: "right",
+          items: [
+            {
+              type: "docSidebar",
+              sidebarId: "guidesSidebar",
+              label: "User Guide",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "developerSidebar",
+              label: "Developer",
+            },
+            {
+              to: "/api-reference",
+              label: "API Reference",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "docsSidebar",
+              label: "Framework",
+            },
+          ],
+        },
         {
           to: "blog",
           label: "Blog",
           position: "right",
-        },
-        {
-          type: "docSidebar",
-          sidebarId: "aboutSidebar",
-          position: "right",
-          label: "About",
         },
       ],
     },

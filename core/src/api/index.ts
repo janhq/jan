@@ -1,15 +1,22 @@
 /**
- * App Route APIs
+ * Native Route APIs
  * @description Enum of all the routes exposed by the app
  */
-export enum AppRoute {
+export enum NativeRoute {
   openExternalUrl = 'openExternalUrl',
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
   selectDirectory = 'selectDirectory',
+  relaunch = 'relaunch',
+}
+
+/**
+ * App Route APIs
+ * @description Enum of all the routes exposed by the app
+ */
+export enum AppRoute {
   getAppConfigurations = 'getAppConfigurations',
   updateAppConfiguration = 'updateAppConfiguration',
-  relaunch = 'relaunch',
   joinPath = 'joinPath',
   isSubdirectory = 'isSubdirectory',
   baseName = 'baseName',
@@ -30,6 +37,7 @@ export enum DownloadRoute {
   downloadFile = 'downloadFile',
   pauseDownload = 'pauseDownload',
   resumeDownload = 'resumeDownload',
+  getDownloadProgress = 'getDownloadProgress',
 }
 
 export enum DownloadEvent {
@@ -68,6 +76,10 @@ export enum FileManagerRoute {
 
 export type ApiFunction = (...args: any[]) => any
 
+export type NativeRouteFunctions = {
+  [K in NativeRoute]: ApiFunction
+}
+
 export type AppRouteFunctions = {
   [K in AppRoute]: ApiFunction
 }
@@ -96,7 +108,8 @@ export type FileManagerRouteFunctions = {
   [K in FileManagerRoute]: ApiFunction
 }
 
-export type APIFunctions = AppRouteFunctions &
+export type APIFunctions = NativeRouteFunctions &
+  AppRouteFunctions &
   AppEventFunctions &
   DownloadRouteFunctions &
   DownloadEventFunctions &
@@ -104,11 +117,13 @@ export type APIFunctions = AppRouteFunctions &
   FileSystemRouteFunctions &
   FileManagerRoute
 
-export const APIRoutes = [
+export const CoreRoutes = [
   ...Object.values(AppRoute),
   ...Object.values(DownloadRoute),
   ...Object.values(ExtensionRoute),
   ...Object.values(FileSystemRoute),
   ...Object.values(FileManagerRoute),
 ]
+
+export const APIRoutes = [...CoreRoutes, ...Object.values(NativeRoute)]
 export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]

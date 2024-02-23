@@ -1,0 +1,40 @@
+name: Jan Build Docker Nightly or Manual
+
+on:
+  push:
+    branches:
+      - main
+      - feature/helmchart-and-ci-jan-server
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+  schedule:
+    - cron: '0 20 * * 1,2,3' # At 8 PM UTC on Monday, Tuesday, and Wednesday which is 3 AM UTC+7 Tuesday, Wednesday, and Thursday
+  workflow_dispatch:
+
+jobs:
+  # Job create Update app version based on latest release tag with build number and save to output
+  get-update-version:
+    uses: ./.github/workflows/template-get-update-version.yml
+
+  build-cpu:
+    uses: ./.github/workflows/template-build-jan-server.yml
+    permissions:
+      packages: write
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      dockerfile_path: ./Dockerfile
+      docker_image_tag: "ghcr.io/janhq/jan-server:dev-cpu-latest,ghcr.io/janhq/jan-server:dev-cpu-${{ needs.get-update-version.outputs.new_version }}"
+
+  build-gpu:
+    uses: ./.github/workflows/template-build-jan-server.yml
+    permissions:
+      packages: write
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      dockerfile_path: ./Dockerfile.gpu
+      docker_image_tag: "ghcr.io/janhq/jan-server:dev-cuda-12.2-latest,ghcr.io/janhq/jan-server:dev-cuda-12.2-${{ needs.get-update-version.outputs.new_version }}"
+    
+

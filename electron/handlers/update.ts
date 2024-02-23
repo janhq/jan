@@ -11,7 +11,8 @@ export function handleAppUpdates() {
   /* New Update Available */
   autoUpdater.on('update-available', async (_info: any) => {
     const action = await dialog.showMessageBox({
-      message: `Update available. Do you want to download the latest update?`,
+      title: 'Update Available',
+      message: 'Would you like to download and install it now?',
       buttons: ['Download', 'Later'],
     })
     if (action.response === 0) await autoUpdater.downloadUpdate()
@@ -36,7 +37,7 @@ export function handleAppUpdates() {
   autoUpdater.on('error', (info: any) => {
     WindowManager.instance.currentWindow?.webContents.send(
       AppEvent.onAppUpdateDownloadError,
-      {}
+      info
     )
   })
 

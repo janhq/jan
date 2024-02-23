@@ -1,96 +1,140 @@
-import { atom, useSetAtom, useAtomValue } from 'jotai'
+import { DownloadState } from '@janhq/core'
+import { atom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import {
+  configuredModelsAtom,
+  downloadedModelsAtom,
+  removeDownloadingModelAtom,
+} from '@/helpers/atoms/Model.atom'
+
 // download states
-const modelDownloadStateAtom = atom<Record<string, DownloadState>>({})
+export const modelDownloadStateAtom = atom<Record<string, DownloadState>>({})
 
-const setDownloadStateAtom = atom(null, (get, set, state: DownloadState) => {
-  const currentState = { ...get(modelDownloadStateAtom) }
-  console.debug(
-    `current download state for ${state.modelId} is ${JSON.stringify(state)}`
-  )
-  currentState[state.modelId] = state
-  set(modelDownloadStateAtom, currentState)
-})
-
-const setDownloadStateSuccessAtom = atom(null, (get, set, modelId: string) => {
-  const currentState = { ...get(modelDownloadStateAtom) }
-  const state = currentState[modelId]
-  if (!state) {
-    console.debug(`Cannot find download state for ${modelId}`)
-    return
-  }
-  delete currentState[modelId]
-  set(modelDownloadStateAtom, currentState)
-  toaster({
-    title: 'Download Completed',
-    description: `Download ${modelId} completed`,
-    type: 'success',
-  })
-})
-
-const setDownloadStateFailedAtom = atom(
+/**
+ * Used to set the download state for a particular model.
+ */
+export const setDownloadStateAtom = atom(
   null,
-  (get, set, modelId: string, error: string) => {
+  (get, set, state: DownloadState) => {
     const currentState = { ...get(modelDownloadStateAtom) }
-    const state = currentState[modelId]
-    if (!state) {
-      console.debug(`Cannot find download state for ${modelId}`)
-      return
-    }
-    if (error.includes('certificate')) {
-      error += '. To fix enable "Ignore SSL Certificates" in Advanced settings.'
-    }
-    toaster({
-      title: 'Download Failed',
-      description: `Model ${modelId} download failed: ${error}`,
-      type: 'error',
-    })
 
-    delete currentState[modelId]
+    if (state.downloadState === 'end') {
+      const modelDownloadState = currentState[state.modelId]
+
+      const updatedChildren: DownloadState[] =
+        modelDownloadState.children!.filter(
+          (m) => m.fileName !== state.fileName
+        )
+      updatedChildren.push(state)
+      modelDownloadState.children = updatedChildren
+      currentState[state.modelId] = modelDownloadState
+
+      const isAllChildrenDownloadEnd = modelDownloadState.children?.every(
+        (m) => m.downloadState === 'end'
+      )
+
+      if (isAllChildrenDownloadEnd) {
+        // download successfully
+        delete currentState[state.modelId]
+        set(removeDownloadingModelAtom, state.modelId)
+
+        const model = get(configuredModelsAtom).find(
+          (e) => e.id === state.modelId
+        )
+        if (model) set(downloadedModelsAtom, (prev) => [...prev, model])
+        toaster({
+          title: 'Download Completed',
+          description: `Download ${state.modelId} completed`,
+          type: 'success',
+        })
+      }
+    } else if (state.downloadState === 'error') {
+      // download error
+      delete currentState[state.modelId]
+      set(removeDownloadingModelAtom, state.modelId)
+      if (state.error === 'aborted') {
+        toaster({
+          title: 'Cancel Download',
+          description: `Model ${state.modelId} download cancelled`,
+          type: 'warning',
+        })
+      } else {
+        let error = state.error
+        if (
+          typeof error?.includes === 'function' &&
+          state.error?.includes('certificate')
+        ) {
+          error +=
+            '. To fix enable "Ignore SSL Certificates" in Advanced settings.'
+        }
+        toaster({
+          title: 'Download Failed',
+          description: `Model ${state.modelId} download failed: ${error}`,
+          type: 'error',
+        })
+      }
+    } else {
+      // download in progress
+      if (state.size.total === 0) {
+        // this is initial state, just set the state
+        currentState[state.modelId] = state
+        set(modelDownloadStateAtom, currentState)
+        return
+      }
+
+      const modelDownloadState = currentState[state.modelId]
+      if (!modelDownloadState) {
+        console.debug('setDownloadStateAtom: modelDownloadState not found')
+        return
+      }
+
+      // delete the children if the filename is matched and replace the new state
+      const updatedChildren: DownloadState[] =
+        modelDownloadState.children!.filter(
+          (m) => m.fileName !== state.fileName
+        )
+
+      updatedChildren.push(state)
+
+      // re-calculate the overall progress if we have all the children download data
+      const isAnyChildDownloadNotReady = updatedChildren.some(
+        (m) => m.size.total === 0
+      )
+
+      modelDownloadState.children = updatedChildren
+
+      if (isAnyChildDownloadNotReady) {
+        // just update the children
+        currentState[state.modelId] = modelDownloadState
+        set(modelDownloadStateAtom, currentState)
+
+        return
+      }
+
+      const parentTotalSize = modelDownloadState.size.total
+      if (parentTotalSize === 0) {
+        // calculate the total size of the parent by sum all children total size
+        const totalSize = updatedChildren.reduce(
+          (acc, m) => acc + m.size.total,
+          0
+        )
+
+        modelDownloadState.size.total = totalSize
+      }
+
+      // calculate the total transferred size by sum all children transferred size
+      const transferredSize = updatedChildren.reduce(
+        (acc, m) => acc + m.size.transferred,
+        0
+      )
+      modelDownloadState.size.transferred = transferredSize
+      modelDownloadState.percent =
+        parentTotalSize === 0 ? 0 : transferredSize / parentTotalSize
+      currentState[state.modelId] = modelDownloadState
+    }
+
     set(modelDownloadStateAtom, currentState)
   }
 )
-const setDownloadStateCancelledAtom = atom(
-  null,
-  (get, set, modelId: string) => {
-    const currentState = { ...get(modelDownloadStateAtom) }
-    const state = currentState[modelId]
-    if (!state) {
-      console.debug(`Cannot find download state for ${modelId}`)
-      toaster({
-        title: 'Cancel Download',
-        description: `Model ${modelId} cancel download`,
-        type: 'warning',
-      })
-
-      return
-    }
-    delete currentState[modelId]
-    set(modelDownloadStateAtom, currentState)
-  }
-)
-
-export function useDownloadState() {
-  const modelDownloadState = useAtomValue(modelDownloadStateAtom)
-  const setDownloadState = useSetAtom(setDownloadStateAtom)
-  const setDownloadStateSuccess = useSetAtom(setDownloadStateSuccessAtom)
-  const setDownloadStateFailed = useSetAtom(setDownloadStateFailedAtom)
-  const setDownloadStateCancelled = useSetAtom(setDownloadStateCancelledAtom)
-
-  const downloadStates: DownloadState[] = []
-  for (const [, value] of Object.entries(modelDownloadState)) {
-    downloadStates.push(value)
-  }
-
-  return {
-    modelDownloadStateAtom,
-    modelDownloadState,
-    setDownloadState,
-    setDownloadStateSuccess,
-    setDownloadStateFailed,
-    setDownloadStateCancelled,
-    downloadStates,
-  }
-}

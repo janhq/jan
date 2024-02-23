@@ -32,10 +32,14 @@ import { usePath } from '@/hooks/usePath'
 import { toGibibytes } from '@/utils/converter'
 import { displayDate } from '@/utils/datetime'
 
+import EditChatInput from '../EditChatInput'
 import Icon from '../FileUploadPreview/Icon'
 import MessageToolbar from '../MessageToolbar'
 
-import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import {
+  editMessageAtom,
+  getCurrentChatMessagesAtom,
+} from '@/helpers/atoms/ChatMessage.atom'
 
 function isMarkdownValue(value: string): boolean {
   const tokenTypes: string[] = []
@@ -54,6 +58,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   let text = ''
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
+  const editMessage = useAtomValue(editMessageAtom)
 
   if (props.content && props.content.length > 0) {
     text = props.content[0]?.text?.value ?? ''
@@ -276,16 +281,24 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           )}
 
           {isUser && !isMarkdownValue(text) ? (
-            <div
-              className={twMerge(
-                'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
-                isUser
-                  ? 'whitespace-pre-wrap break-words'
-                  : 'rounded-xl bg-secondary p-4'
+            <>
+              {editMessage === props.id ? (
+                <div>
+                  <EditChatInput message={props} />
+                </div>
+              ) : (
+                <div
+                  className={twMerge(
+                    'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
+                    isUser
+                      ? 'whitespace-pre-wrap break-words'
+                      : 'rounded-xl bg-secondary p-4'
+                  )}
+                >
+                  {text}
+                </div>
               )}
-            >
-              {text}
-            </div>
+            </>
           ) : (
             <div
               className={twMerge(

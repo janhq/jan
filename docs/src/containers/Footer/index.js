@@ -1,7 +1,7 @@
 import React from "react";
 
 import { AiOutlineGithub, AiOutlineTwitter } from "react-icons/ai";
-import { BiLogoDiscordAlt } from "react-icons/bi";
+import { BiLogoDiscordAlt, BiLogoLinkedin } from "react-icons/bi";
 
 const socials = [
   {
@@ -16,6 +16,10 @@ const socials = [
     icon: <AiOutlineGithub className="text-lg text-black dark:text-white" />,
     href: "https://github.com/janhq/jan",
   },
+  {
+    icon: <BiLogoLinkedin className="text-xl text-black dark:text-white" />,
+    href: "https://www.linkedin.com/company/janframework/",
+  }
 ];
 
 const menus = [
@@ -59,6 +63,11 @@ const menus = [
         path: "https://twitter.com/janframework",
         external: true,
       },
+      {
+        menu: "LinkedIn",
+        path: "https://www.linkedin.com/company/janframework/",
+        external: true,
+      }
     ],
   },
   {

@@ -6,6 +6,7 @@ import {
   ChatCompletionRole,
   ContentType,
   MessageRequest,
+  MessageRequestType,
   MessageStatus,
   ExtensionTypeEnum,
   Thread,
@@ -23,7 +24,11 @@ import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulid'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
-import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
+import {
+  currentPromptAtom,
+  editPromptAtom,
+  fileUploadAtom,
+} from '@/containers/Providers/Jotai'
 
 import { getBase64 } from '@/utils/base64'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
@@ -33,6 +38,7 @@ import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
   addNewMessageAtom,
+  deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
@@ -53,6 +59,8 @@ export default function useSendChatMessage() {
   const updateThread = useSetAtom(updateThreadAtom)
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
+  const deleteMessage = useSetAtom(deleteMessageAtom)
+  const setEditPrompt = useSetAtom(editPromptAtom)
 
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const { activeModel } = useActiveModel()
@@ -112,6 +120,7 @@ export default function useSendChatMessage() {
 
     const messageRequest: MessageRequest = {
       id: ulid(),
+      type: MessageRequestType.Thread,
       messages: messages,
       threadId: activeThread.id,
       model: activeThread.assistants[0].model ?? selectedModel,
@@ -124,6 +133,19 @@ export default function useSendChatMessage() {
       startModel(modelId)
       await waitForModelStarting(modelId)
       setQueuedMessage(false)
+    }
+
+    if (currentMessage.role !== ChatCompletionRole.User) {
+      // Delete last response before regenerating
+      deleteMessage(currentMessage.id ?? '')
+      if (activeThread) {
+        await extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.writeMessages(
+            activeThread.id,
+            currentMessages.filter((msg) => msg.id !== currentMessage.id)
+          )
+      }
     }
     events.emit(MessageEvent.OnMessageSent, messageRequest)
   }
@@ -145,6 +167,7 @@ export default function useSendChatMessage() {
     updateThreadWaiting(activeThread.id, true)
     const prompt = message.trim()
     setCurrentPrompt('')
+    setEditPrompt('')
 
     const base64Blob = fileUpload[0]
       ? await getBase64(fileUpload[0].file).then()
@@ -209,6 +232,7 @@ export default function useSendChatMessage() {
     }
     const messageRequest: MessageRequest = {
       id: msgId,
+      type: MessageRequestType.Thread,
       threadId: activeThread.id,
       messages,
       model: {
@@ -218,8 +242,8 @@ export default function useSendChatMessage() {
       },
       thread: activeThread,
     }
-    const timestamp = Date.now()
 
+    const timestamp = Date.now()
     const content: any = []
 
     if (base64Blob && fileUpload[0]?.type === 'image') {
@@ -273,6 +297,10 @@ export default function useSendChatMessage() {
     const updatedThread: Thread = {
       ...activeThread,
       updated: timestamp,
+      metadata: {
+        ...(activeThread.metadata ?? {}),
+        lastMessage: prompt,
+      },
     }
 
     // change last update thread when send message

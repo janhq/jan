@@ -8,7 +8,14 @@ import {
   ModelExtension,
   Model,
   getJanDataFolderPath,
+  events,
+  DownloadEvent,
+  DownloadRoute,
+  ModelEvent,
+  DownloadState,
 } from '@janhq/core'
+
+import { extractFileName } from './helpers/path'
 
 /**
  * A extension for models
@@ -29,6 +36,8 @@ export default class JanModelExtension extends ModelExtension {
    */
   async onLoad() {
     this.copyModelsToHomeDir()
+    // Handle Desktop Events
+    this.handleDesktopEvents()
   }
 
   /**
@@ -61,6 +70,8 @@ export default class JanModelExtension extends ModelExtension {
 
       // Finished migration
       localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION)
+
+      events.emit(ModelEvent.OnModelsUpdate, {})
     } catch (err) {
       console.error(err)
     }
@@ -83,31 +94,66 @@ export default class JanModelExtension extends ModelExtension {
     if (model.sources.length > 1) {
       // path to model binaries
       for (const source of model.sources) {
-        let path = this.extractFileName(source.url)
+        let path = extractFileName(
+          source.url,
+          JanModelExtension._supportedModelFormat
+        )
         if (source.filename) {
           path = await joinPath([modelDirPath, source.filename])
         }
 
         downloadFile(source.url, path, network)
       }
+      // TODO: handle multiple binaries for web later
     } else {
-      const fileName = this.extractFileName(model.sources[0]?.url)
+      const fileName = extractFileName(
+        model.sources[0]?.url,
+        JanModelExtension._supportedModelFormat
+      )
       const path = await joinPath([modelDirPath, fileName])
       downloadFile(model.sources[0]?.url, path, network)
+
+      if (window && window.core?.api && window.core.api.baseApiUrl) {
+        this.startPollingDownloadProgress(model.id)
+      }
     }
   }
 
   /**
-   *  try to retrieve the download file name from the source url
+   * Specifically for Jan server.
    */
-  private extractFileName(url: string): string {
-    const extractedFileName = url.split('/').pop()
-    const fileName = extractedFileName
-      .toLowerCase()
-      .endsWith(JanModelExtension._supportedModelFormat)
-      ? extractedFileName
-      : extractedFileName + JanModelExtension._supportedModelFormat
-    return fileName
+  private async startPollingDownloadProgress(modelId: string): Promise<void> {
+    // wait for some seconds before polling
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+
+    return new Promise((resolve) => {
+      const interval = setInterval(async () => {
+        fetch(
+          `${window.core.api.baseApiUrl}/v1/download/${DownloadRoute.getDownloadProgress}/${modelId}`,
+          {
+            method: 'GET',
+            headers: { contentType: 'application/json' },
+          }
+        ).then(async (res) => {
+          const state: DownloadState = await res.json()
+          if (state.downloadState === 'end') {
+            events.emit(DownloadEvent.onFileDownloadSuccess, state)
+            clearInterval(interval)
+            resolve()
+            return
+          }
+
+          if (state.downloadState === 'error') {
+            events.emit(DownloadEvent.onFileDownloadError, state)
+            clearInterval(interval)
+            resolve()
+            return
+          }
+
+          events.emit(DownloadEvent.onFileDownloadUpdate, state)
+        })
+      }, 1000)
+    })
   }
 
   /**
@@ -174,15 +220,20 @@ export default class JanModelExtension extends ModelExtension {
   async getDownloadedModels(): Promise<Model[]> {
     return await this.getModelsMetadata(
       async (modelDir: string, model: Model) => {
-        if (model.engine !== JanModelExtension._offlineInferenceEngine) {
+        if (model.engine !== JanModelExtension._offlineInferenceEngine)
           return true
-        }
+
+        // model binaries (sources) are absolute path & exist
+        const existFiles = await Promise.all(
+          model.sources.map((source) => fs.existsSync(source.url))
+        )
+        if (existFiles.every((exist) => exist)) return true
+
         return await fs
           .readdirSync(await joinPath([JanModelExtension._homeDir, modelDir]))
           .then((files: string[]) => {
-            // or model binary exists in the directory
-            // model binary name can match model ID or be a .gguf file and not be an incompleted model file
-            // TODO: Check diff between urls, filenames
+            // Model binary exists in the directory
+            // Model binary name can match model ID or be a .gguf file and not be an incompleted model file
             return (
               files.includes(modelDir) ||
               files.filter(
@@ -228,7 +279,18 @@ export default class JanModelExtension extends ModelExtension {
         if (await fs.existsSync(jsonPath)) {
           // if we have the model.json file, read it
           let model = await this.readModelMetadata(jsonPath)
+
           model = typeof model === 'object' ? model : JSON.parse(model)
+
+          // This to ensure backward compatibility with `model.json` with `source_url`
+          if (model['source_url'] != null) {
+            model['sources'] = [
+              {
+                filename: model.id,
+                url: model['source_url'],
+              },
+            ]
+          }
 
           if (selector && !(await selector?.(dirName, model))) {
             return
@@ -243,31 +305,18 @@ export default class JanModelExtension extends ModelExtension {
       })
       const results = await Promise.allSettled(readJsonPromises)
       const modelData = results.map((result) => {
-        if (result.status === 'fulfilled') {
+        if (result.status === 'fulfilled' && result.value) {
           try {
-            // This to ensure backward compatibility with `model.json` with `source_url`
-            const tmpModel =
+            const model =
               typeof result.value === 'object'
                 ? result.value
                 : JSON.parse(result.value)
-            if (tmpModel['source_url'] != null) {
-              tmpModel['source'] = [
-                {
-                  filename: tmpModel.id,
-                  url: tmpModel['source_url'],
-                },
-              ]
-            }
-
-            return tmpModel as Model
+            return model as Model
           } catch {
             console.debug(`Unable to parse model metadata: ${result.value}`)
-            return undefined
           }
-        } else {
-          console.error(result.reason)
-          return undefined
         }
+        return undefined
       })
 
       return modelData.filter((e) => !!e)
@@ -318,7 +367,7 @@ export default class JanModelExtension extends ModelExtension {
       return
     }
 
-    const defaultModel = await this.getDefaultModel() as Model
+    const defaultModel = (await this.getDefaultModel()) as Model
     if (!defaultModel) {
       console.error('Unable to find default model')
       return
@@ -381,5 +430,29 @@ export default class JanModelExtension extends ModelExtension {
    */
   async getConfiguredModels(): Promise<Model[]> {
     return this.getModelsMetadata()
+  }
+
+  handleDesktopEvents() {
+    if (window && window.electronAPI) {
+      window.electronAPI.onFileDownloadUpdate(
+        async (_event: string, state: DownloadState | undefined) => {
+          if (!state) return
+          state.downloadState = 'downloading'
+          events.emit(DownloadEvent.onFileDownloadUpdate, state)
+        }
+      )
+      window.electronAPI.onFileDownloadError(
+        async (_event: string, state: DownloadState) => {
+          state.downloadState = 'error'
+          events.emit(DownloadEvent.onFileDownloadError, state)
+        }
+      )
+      window.electronAPI.onFileDownloadSuccess(
+        async (_event: string, state: DownloadState) => {
+          state.downloadState = 'end'
+          events.emit(DownloadEvent.onFileDownloadSuccess, state)
+        }
+      )
+    }
   }
 }

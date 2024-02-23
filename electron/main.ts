@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 /**
  * Managers
@@ -9,12 +9,9 @@ import { log } from '@janhq/core/node'
 /**
  * IPC Handlers
  **/
-import { handleDownloaderIPCs } from './handlers/download'
-import { handleExtensionIPCs } from './handlers/extension'
-import { handleFileMangerIPCs } from './handlers/fileManager'
-import { handleAppIPCs } from './handlers/app'
+import { injectHandler } from './handlers/common'
 import { handleAppUpdates } from './handlers/update'
-import { handleFsIPCs } from './handlers/fs'
+import { handleAppIPCs } from './handlers/native'
 
 /**
  * Utils
@@ -25,25 +22,12 @@ import { migrateExtensions } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
 import { setupExtensions } from './utils/extension'
 import { setupCore } from './utils/setup'
+import { setupReactDevTool } from './utils/dev'
+import { cleanLogs } from './utils/log'
 
 app
   .whenReady()
-  .then(async () => {
-    if (!app.isPackaged) {
-      // Which means you're running from source code
-      const { default: installExtension, REACT_DEVELOPER_TOOLS } = await import(
-        'electron-devtools-installer'
-      ) // Don't use import on top level, since the installer package is dev-only
-      try {
-        const name = installExtension(REACT_DEVELOPER_TOOLS)
-        console.log(`Added Extension: ${name}`)
-      } catch (err) {
-        console.log('An error occurred while installing devtools:')
-        console.error(err)
-        // Only log the error and don't throw it because it's not critical
-      }
-    }
-  })
+  .then(setupReactDevTool)
   .then(setupCore)
   .then(createUserSpace)
   .then(migrateExtensions)
@@ -59,6 +43,7 @@ app
       }
     })
   })
+  .then(() => cleanLogs())
 
 app.once('window-all-closed', () => {
   cleanUpAndQuit()
@@ -92,23 +77,24 @@ function createMainWindow() {
 
   /* Open external links in the default browser */
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    require('electron').shell.openExternal(url)
+    shell.openExternal(url)
     return { action: 'deny' }
   })
 
   /* Enable dev tools for development */
   if (!app.isPackaged) mainWindow.webContents.openDevTools()
+  log(`Version: ${app.getVersion()}`)
 }
 
 /**
  * Handles various IPC messages from the renderer process.
  */
 function handleIPCs() {
-  handleFsIPCs()
-  handleDownloaderIPCs()
-  handleExtensionIPCs()
+  // Inject core handlers for IPCs
+  injectHandler()
+
+  // Handle native IPCs
   handleAppIPCs()
-  handleFileMangerIPCs()
 }
 
 /*

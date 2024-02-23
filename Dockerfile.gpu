@@ -1,0 +1,88 @@
+# Please change the base image to the appropriate CUDA version base on NVIDIA Driver Compatibility
+# Run nvidia-smi to check the CUDA version and the corresponding driver version
+# Then update the base image to the appropriate CUDA version refer https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags
+
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS base 
+
+# 1. Install dependencies only when needed
+FROM base AS builder
+
+# Install g++ 11
+RUN apt update && apt install -y gcc-11 g++-11 cpp-11 jq xsel curl gnupg make python3-dev && curl -sL https://deb.nodesource.com/setup_20.x | bash - && apt install nodejs -y && rm -rf /var/lib/apt/lists/*
+
+# Update alternatives for GCC and related tools
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 \
+                         --slave /usr/bin/g++ g++ /usr/bin/g++-11 \
+                         --slave /usr/bin/gcov gcov /usr/bin/gcov-11 \
+                         --slave /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-11 \
+                         --slave /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-11 && \
+    update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-11 110
+
+RUN npm install -g yarn
+
+WORKDIR /app
+
+# Install dependencies based on the preferred package manager
+COPY . ./
+
+RUN export NITRO_VERSION=$(cat extensions/inference-nitro-extension/bin/version.txt) && \
+    jq --arg nitroVersion $NITRO_VERSION '(.scripts."downloadnitro:linux" | gsub("\\${NITRO_VERSION}"; $nitroVersion)) | gsub("\r"; "")' extensions/inference-nitro-extension/package.json > /tmp/newcommand.txt && export NEW_COMMAND=$(sed 's/^"//;s/"$//' /tmp/newcommand.txt) && jq --arg newCommand "$NEW_COMMAND" '.scripts."downloadnitro:linux" = $newCommand' extensions/inference-nitro-extension/package.json > /tmp/package.json && mv /tmp/package.json extensions/inference-nitro-extension/package.json
+RUN make install-and-build
+
+# # 2. Rebuild the source code only when needed
+FROM base AS runner
+
+# Install g++ 11
+RUN apt update && apt install -y gcc-11 g++-11 cpp-11 jq xsel curl gnupg make python3-dev && curl -sL https://deb.nodesource.com/setup_20.x | bash - && apt-get install nodejs -y && rm -rf /var/lib/apt/lists/*
+
+# Update alternatives for GCC and related tools
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 \
+                         --slave /usr/bin/g++ g++ /usr/bin/g++-11 \
+                         --slave /usr/bin/gcov gcov /usr/bin/gcov-11 \
+                         --slave /usr/bin/gcc-ar gcc-ar /usr/bin/gcc-ar-11 \
+                         --slave /usr/bin/gcc-ranlib gcc-ranlib /usr/bin/gcc-ranlib-11 && \
+    update-alternatives --install /usr/bin/cpp cpp /usr/bin/cpp-11 110
+
+RUN npm install -g yarn
+
+WORKDIR /app
+
+# Copy the package.json and yarn.lock of root yarn space to leverage Docker cache
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules/
+COPY --from=builder /app/yarn.lock ./yarn.lock
+
+# Copy the package.json, yarn.lock, and build output of server yarn space to leverage Docker cache
+COPY --from=builder /app/core ./core/
+COPY --from=builder /app/server ./server/
+RUN cd core && yarn install && yarn run build
+RUN yarn workspace @janhq/server install && yarn workspace @janhq/server build
+COPY --from=builder /app/docs/openapi ./docs/openapi/
+
+# Copy pre-install dependencies
+COPY --from=builder /app/pre-install ./pre-install/
+
+# Copy the package.json, yarn.lock, and output of web yarn space to leverage Docker cache
+COPY --from=builder /app/uikit ./uikit/
+COPY --from=builder /app/web ./web/
+COPY --from=builder /app/models ./models/
+
+RUN yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build
+RUN yarn workspace jan-web install
+
+RUN npm install -g serve@latest
+
+EXPOSE 1337 3000 3928
+
+ENV LD_LIBRARY_PATH=/usr/local/cuda/targets/x86_64-linux/lib:/usr/local/cuda-12.0/compat${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+
+ENV JAN_API_HOST 0.0.0.0
+ENV JAN_API_PORT 1337
+
+ENV API_BASE_URL http://localhost:1337
+
+CMD ["sh", "-c", "export NODE_ENV=production && yarn workspace jan-web build && cd web && npx serve out & cd server && node build/main.js"]
+
+# pre-requisites: nvidia-docker
+# docker build -t jan-gpu . -f Dockerfile.gpu
+# docker run -p 1337:1337 -p 3000:3000 -p 3928:3928 --gpus all jan-gpu

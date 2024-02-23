@@ -1,22 +1,14 @@
-import { useCallback } from 'react'
+import { ExtensionTypeEnum, Thread, ConversationalExtension } from '@janhq/core'
 
-import {
-  InferenceEvent,
-  ExtensionTypeEnum,
-  Thread,
-  events,
-  ConversationalExtension,
-} from '@janhq/core'
-
-import { useSetAtom } from 'jotai'
-
-import { loadModelErrorAtom } from './useActiveModel'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { extensionManager } from '@/extension'
-import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import {
+  readyThreadsMessagesAtom,
+  setConvoMessagesAtom,
+} from '@/helpers/atoms/ChatMessage.atom'
 import {
   ModelParams,
-  isGeneratingResponseAtom,
   setActiveThreadIdAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -25,32 +17,22 @@ export default function useSetActiveThread() {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const setThreadMessage = useSetAtom(setConvoMessagesAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
-  const setLoadModelError = useSetAtom(loadModelErrorAtom)
+  const readyMessageThreads = useAtomValue(readyThreadsMessagesAtom)
 
-  const setActiveThread = useCallback(
-    async (thread: Thread) => {
-      setIsGeneratingResponse(false)
-      events.emit(InferenceEvent.OnInferenceStopped, thread.id)
-
-      // load the corresponding messages
+  const setActiveThread = async (thread: Thread) => {
+    // Load local messages only if there are no messages in the state
+    if (!readyMessageThreads[thread.id]) {
       const messages = await getLocalThreadMessage(thread.id)
       setThreadMessage(thread.id, messages)
+    }
 
-      setActiveThreadId(thread.id)
-      const modelParams: ModelParams = {
-        ...thread.assistants[0]?.model?.parameters,
-        ...thread.assistants[0]?.model?.settings,
-      }
-      setThreadModelParams(thread.id, modelParams)
-    },
-    [
-      setActiveThreadId,
-      setThreadMessage,
-      setThreadModelParams,
-      setIsGeneratingResponse,
-    ]
-  )
+    setActiveThreadId(thread.id)
+    const modelParams: ModelParams = {
+      ...thread.assistants[0]?.model?.parameters,
+      ...thread.assistants[0]?.model?.settings,
+    }
+    setThreadModelParams(thread.id, modelParams)
+  }
 
   return { setActiveThread }
 }
