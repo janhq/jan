@@ -1,0 +1,165 @@
+---
+sidebar_position: 3
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import janModel from './img/jan-model-hub.png';
+
+# Manual Import
+
+:::warning
+
+This is currently under development.
+
+:::
+
+This section will show you how to perform manual import. In this guide, we are using a GGUF model from [HuggingFace](https://huggingface.co/) and our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
+
+## Newer versions - nightly versions and v0.4.4+
+
+### 1. Create a Model Folder
+
+1. Navigate to the `App Settings` > `Advanced` > `Open App Directory` > `~/jan/models` folder.
+
+<Tabs>
+    <TabItem value="mac" label="MacOS" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+    <TabItem value="windows" label="Windows" default>
+        ```sh
+        C:/Users/<your_user_name>/jan/models
+        ```
+    </TabItem>
+    <TabItem value="linux" label="Linux" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+</Tabs>
+
+2. In the `models` folder, create a folder with the name of the model.
+
+```sh
+mkdir trinity-v1-7b
+```
+
+### 2. Drag & Drop the Model
+
+Drag and drop your model binary into this folder, ensuring the `modelname.gguf` is the same name as the folder name, e.g. `models/modelname`.
+
+### 3. Done!
+
+If your model doesn't show up in the **Model Selector** in conversations, **restart the app** or contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ).
+
+## Older versions - before v0.44
+
+### 1. Create a Model Folder
+
+1. Navigate to the `App Settings` > `Advanced` > `Open App Directory` > `~/jan/models` folder.
+
+<Tabs>
+    <TabItem value="mac" label="MacOS" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+    <TabItem value="windows" label="Windows" default>
+        ```sh
+        C:/Users/<your_user_name>/jan/models
+        ```
+    </TabItem>
+    <TabItem value="linux" label="Linux" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+</Tabs>
+
+2. In the `models` folder, create a folder with the name of the model.
+
+```sh
+mkdir trinity-v1-7b
+```
+
+### 2. Create a Model JSON
+
+Jan follows a folder-based, [standard model template](https://jan.ai/docs/engineering/models/) called a `model.json` to persist the model configurations on your local filesystem.
+
+This means that you can easily reconfigure your models, export them, and share your preferences transparently.
+
+<Tabs>
+    <TabItem value="mac" label="MacOS" default>
+        ```sh
+        cd trinity-v1-7b
+        touch model.json
+        ```
+    </TabItem>
+    <TabItem value="windows" label="Windows" default>
+        ```sh
+        cd trinity-v1-7b
+        echo {} > model.json
+        ```
+    </TabItem>
+    <TabItem value="linux" label="Linux" default>
+        ```sh
+        cd trinity-v1-7b
+        touch model.json
+        ```
+    </TabItem>
+</Tabs>
+
+To update `model.json`:
+
+ - Match `id` with folder name.
+ - Ensure GGUF filename matches `id`.
+ - Set `source.url` to direct download link ending in `.gguf`. In HuggingFace, you can find the direct links in the `Files and versions` tab.
+ - Verify that you are using the correct `prompt_template`. This is usually provided in the HuggingFace model's description page.
+
+```json title="model.json"
+{
+  "sources": [
+    {
+      "filename": "trinity-v1.Q4_K_M.gguf",
+      "url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf"
+    }
+  ],
+  "id": "trinity-v1-7b",
+  "object": "model",
+  "name": "Trinity-v1 7B Q4",
+  "version": "1.0",
+  "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "{system_message}\n### Instruction:\n{prompt}\n### Response:",
+    "llama_model_path": "trinity-v1.Q4_K_M.gguf"
+  },
+  "parameters": {
+    "max_tokens": 4096
+  },
+  "metadata": {
+    "author": "Jan",
+    "tags": ["7B", "Merged"],
+    "size": 4370000000
+  },
+  "engine": "nitro"
+}
+```
+### 3. Download the Model
+
+1. Restart Jan and navigate to the Hub. 
+2. Locate your model.
+3. Click **Download** button to download the model binary.
+
+<div class="text--center"> 
+    <img src={janModel} width={800} alt="jan-model-hub" />
+</div>
+
+:::info[Assistance and Support]
+
+If you have questions, please join our [Discord community](https://discord.gg/Dt7MxDyNNZ) for support, updates, and discussions.
+
+:::
