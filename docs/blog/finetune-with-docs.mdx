@@ -101,6 +101,7 @@ You can create your dataset by using the following example code.
 
 First, we need to define some helper functions to process the raw documents into QnA pairs.
 
+```python title="Define helper functions"
 # Reads and returns the content of a file.
 def read_file(filepath):
     with open(filepath, 'r', encoding='utf-8') as file:
@@ -113,7 +114,6 @@ def generate_chatgpt_response(messages, temperature=0.5, model="gpt-3.5-turbo", 
     )
     return response['choices'][0]['message']['content']
 
-```python title="Define helper functions"
 # Process Markdown files
 def process_markdown_file(file_path, markdown_splitter, text_splitter):
     with open(file_path, 'r') as file:
