@@ -19,7 +19,7 @@ keywords:
 
 # Acknowledgements
 
-We would like to express our gratitude to the following third-party libraries that have contributed to the development of the Jan app.
+We would like to express our gratitude to the following third-party libraries that have made the development of Jan possible.
 
 ### llama.cpp
 
