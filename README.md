@@ -314,7 +314,7 @@ This will start the web server and you can access Jan at `http://localhost:3000`
 
 > Note: RAG feature is not supported in Docker mode with s3fs yet.
 
-## [Acknowledgements](https://jan.ai/acknowledgements)
+## Acknowledgements
 
 Jan builds on top of other open-source projects:
 
