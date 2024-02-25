@@ -48,7 +48,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           {loadModelError === PORT_NOT_AVAILABLE ? (
             <div
               key={message.id}
-              className="flex flex-col items-center text-center text-sm font-medium text-gray-500 w-full"
+              className="flex w-full flex-col items-center text-center text-sm font-medium text-gray-500"
             >
               <p className="w-[90%]">
                 Port 3928 is currently unavailable. Check for conflicting apps,

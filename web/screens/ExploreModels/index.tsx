@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react'
 
-import { openExternalUrl } from '@janhq/core'
 import {
   Input,
   ScrollArea,
@@ -10,10 +9,13 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  Button,
 } from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
-import { SearchIcon } from 'lucide-react'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { Plus, SearchIcon } from 'lucide-react'
+
+import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ExploreModelList from './ExploreModelList'
 import { HuggingFaceModal } from './HuggingFaceModal'
@@ -23,13 +25,16 @@ import {
   downloadedModelsAtom,
 } from '@/helpers/atoms/Model.atom'
 
+const sortMenu = ['All Models', 'Recommended', 'Downloaded']
+
 const ExploreModelsScreen = () => {
   const configuredModels = useAtomValue(configuredModelsAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [searchValue, setsearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('All Models')
-  const sortMenu = ['All Models', 'Recommended', 'Downloaded']
+
   const [showHuggingFaceModal, setShowHuggingFaceModal] = useState(false)
+  const setImportModelStage = useSetAtom(setImportModelStageAtom)
 
   const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'Downloaded') {
@@ -47,9 +52,9 @@ const ExploreModelsScreen = () => {
     }
   })
 
-  const onHowToImportModelClick = useCallback(() => {
-    openExternalUrl('https://jan.ai/guides/using-models/import-manually/')
-  }, [])
+  const onImportModelClick = useCallback(() => {
+    setImportModelStage('SELECTING_MODEL')
+  }, [setImportModelStage])
 
   const onHuggingFaceConverterClick = () => {
     setShowHuggingFaceModal(true)
@@ -73,30 +78,29 @@ const ExploreModelsScreen = () => {
                 alt="Hub Banner"
                 className="w-full object-cover"
               />
-              <div className="absolute left-1/2 top-1/2 w-1/3 -translate-x-1/2 -translate-y-1/2">
-                <div className="relative">
-                  <SearchIcon
-                    size={20}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  />
-                  <Input
-                    placeholder="Search models"
-                    className="bg-white pl-9 dark:bg-background"
-                    onChange={(e) => {
-                      setsearchValue(e.target.value)
-                    }}
-                  />
-                </div>
-                <div className="mt-2 text-center">
-                  <p
-                    onClick={onHowToImportModelClick}
-                    className="cursor-pointer font-semibold text-white underline"
+              <div className="absolute left-1/2 top-1/2 w-1/3 -translate-x-1/2 -translate-y-1/2 space-y-2">
+                <div className="flex flex-row space-x-2">
+                  <div className="relative">
+                    <SearchIcon
+                      size={20}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <Input
+                      placeholder="Search models"
+                      className="bg-white pl-9 dark:bg-background"
+                      onChange={(e) => setsearchValue(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    themes={'primary'}
+                    className="space-x-2"
+                    onClick={onImportModelClick}
                   >
-                    How to manually import models
-                  </p>
+                    <Plus className="h-3 w-3" />
+                    <p>Import Model</p>
+                  </Button>
                 </div>
                 <div className="text-center">
-                  <p className="text-white">or</p>
                   <p
                     onClick={onHuggingFaceConverterClick}
                     className="cursor-pointer font-semibold text-white underline"

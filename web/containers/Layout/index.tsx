@@ -4,6 +4,8 @@ import { useTheme } from 'next-themes'
 
 import { motion as m } from 'framer-motion'
 
+import { useAtom, useAtomValue } from 'jotai'
+
 import BottomBar from '@/containers/Layout/BottomBar'
 import RibbonNav from '@/containers/Layout/Ribbon'
 
@@ -11,14 +13,21 @@ import TopBar from '@/containers/Layout/TopBar'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useMainViewState } from '@/hooks/useMainViewState'
+import { getImportModelStageAtom } from '@/hooks/useImportModel'
 
 import { SUCCESS_SET_NEW_DESTINATION } from '@/screens/Settings/Advanced/DataFolder'
+import CancelModelImportModal from '@/screens/Settings/CancelModelImportModal'
+import EditModelInfoModal from '@/screens/Settings/EditModelInfoModal'
+import ImportModelOptionModal from '@/screens/Settings/ImportModelOptionModal'
+import ImportingModelModal from '@/screens/Settings/ImportingModelModal'
+import SelectingModelModal from '@/screens/Settings/SelectingModelModal'
+
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 const BaseLayout = (props: PropsWithChildren) => {
   const { children } = props
-  const { mainViewState, setMainViewState } = useMainViewState()
-
+  const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
+  const importModelStage = useAtomValue(getImportModelStageAtom)
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
@@ -54,6 +63,11 @@ const BaseLayout = (props: PropsWithChildren) => {
           <BottomBar />
         </div>
       </div>
+      {importModelStage === 'SELECTING_MODEL' && <SelectingModelModal />}
+      {importModelStage === 'MODEL_SELECTED' && <ImportModelOptionModal />}
+      {importModelStage === 'IMPORTING_MODEL' && <ImportingModelModal />}
+      {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
+      {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
     </div>
   )
 }
