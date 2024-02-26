@@ -32,6 +32,8 @@ import { usePath } from '@/hooks/usePath'
 import { toGibibytes } from '@/utils/converter'
 import { displayDate } from '@/utils/datetime'
 
+import { openFileTitle } from '@/utils/titleUtils'
+
 import EditChatInput from '../EditChatInput'
 import Icon from '../FileUploadPreview/Icon'
 import MessageToolbar from '../MessageToolbar'
@@ -234,7 +236,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 </TooltipTrigger>
                 <TooltipPortal>
                   <TooltipContent side="top" className="max-w-[154px] px-3">
-                    <span>Show in finder</span>
+                    <span>{openFileTitle()}</span>
                     <TooltipArrow />
                   </TooltipContent>
                 </TooltipPortal>
@@ -261,7 +263,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 </TooltipTrigger>
                 <TooltipPortal>
                   <TooltipContent side="top" className="max-w-[154px] px-3">
-                    <span>Show in finder</span>
+                    <span>{openFileTitle()}</span>
                     <TooltipArrow />
                   </TooltipContent>
                 </TooltipPortal>

@@ -73,7 +73,7 @@ const SystemMonitor = () => {
       <div
         ref={setControl}
         className={twMerge(
-          'flex items-center gap-x-2 cursor-pointer p-2 rounded-md hover:bg-secondary',
+          'flex cursor-pointer items-center gap-x-2 rounded-md p-2 hover:bg-secondary',
           systemMonitorCollapse && 'bg-secondary'
         )}
         onClick={() => {
@@ -88,29 +88,29 @@ const SystemMonitor = () => {
         <div
           ref={setElementExpand}
           className={twMerge(
-            'fixed left-16 bottom-12 bg-background w-[calc(100%-64px)] z-50 border-t border-border flex flex-col flex-shrink-0',
+            'fixed bottom-12 left-16 z-50 flex w-[calc(100%-64px)] flex-shrink-0 flex-col border-t border-border bg-background',
             showFullScreen && 'h-[calc(100%-48px)]'
           )}
         >
-          <div className="h-12 flex items-center border-b border-border px-4 justify-between flex-shrink-0">
+          <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border px-4">
             <h6 className="font-bold">Running Models</h6>
-            <div className="flex items-center gap-x-2 unset-drag">
+            <div className="unset-drag flex items-center gap-x-2">
               {showFullScreen ? (
                 <ChevronDown
                   size={20}
-                  className="text-muted-foreground cursor-pointer"
+                  className="cursor-pointer text-muted-foreground"
                   onClick={() => setShowFullScreen(!showFullScreen)}
                 />
               ) : (
                 <ChevronUp
                   size={20}
-                  className="text-muted-foreground cursor-pointer"
+                  className="cursor-pointer text-muted-foreground"
                   onClick={() => setShowFullScreen(!showFullScreen)}
                 />
               )}
               <XIcon
                 size={16}
-                className="text-muted-foreground cursor-pointer"
+                className="cursor-pointer text-muted-foreground"
                 onClick={() => {
                   setSystemMonitorCollapse(false)
                   setShowFullScreen(false)
@@ -118,10 +118,10 @@ const SystemMonitor = () => {
               />
             </div>
           </div>
-          <div className="flex gap-4 h-full">
+          <div className="flex h-full gap-4">
             <TableActiveModel />
-            <div className="border-l border-border p-4 w-full">
-              <div className="mb-4 pb-4 border-b border-border">
+            <div className="w-full border-l border-border p-4">
+              <div className="mb-4 border-b border-border pb-4">
                 <h6 className="font-bold">CPU</h6>
                 <div className="flex items-center gap-x-4">
                   <Progress value={cpuUsage} className="h-2" />
@@ -130,7 +130,7 @@ const SystemMonitor = () => {
                   </span>
                 </div>
               </div>
-              <div className="mb-4 pb-4 border-b border-border">
+              <div className="mb-4 border-b border-border pb-4">
                 <div className="flex items-center gap-2">
                   <h6 className="font-bold">Memory</h6>
                   <span className="text-xs text-muted-foreground">
@@ -148,7 +148,7 @@ const SystemMonitor = () => {
                 </div>
               </div>
               {gpus.length > 0 && (
-                <div className="mb-4 pb-4 border-b border-border">
+                <div className="mb-4 border-b border-border pb-4">
                   <h6 className="font-bold">GPU</h6>
                   <div className="flex items-center gap-x-4">
                     <Progress value={calculateUtilization()} className="h-2" />
@@ -159,9 +159,9 @@ const SystemMonitor = () => {
                   {gpus.map((gpu, index) => (
                     <div
                       key={index}
-                      className="flex items-start justify-between mt-4 gap-4"
+                      className="mt-4 flex items-start justify-between gap-4"
                     >
-                      <span className="text-muted-foreground font-medium line-clamp-1 w-1/2">
+                      <span className="line-clamp-1 w-1/2 font-medium text-muted-foreground">
                         {gpu.name}
                       </span>
                       <div className="flex gap-x-2">

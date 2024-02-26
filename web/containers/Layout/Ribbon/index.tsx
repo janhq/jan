@@ -20,13 +20,12 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useMainViewState } from '@/hooks/useMainViewState'
-
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 export default function RibbonNav() {
-  const { mainViewState, setMainViewState } = useMainViewState()
+  const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const [serverEnabled] = useAtom(serverEnabledAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
 

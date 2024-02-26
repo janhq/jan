@@ -35,7 +35,7 @@ export function cleanLogs(
               console.error('Error deleting log file:', err)
               return
             }
-            console.log(
+            console.debug(
               `Deleted log file due to exceeding size limit: ${filePath}`
             )
           })
@@ -52,7 +52,7 @@ export function cleanLogs(
                 console.error('Error deleting log file:', err)
                 return
               }
-              console.log(`Deleted old log file: ${filePath}`)
+              console.debug(`Deleted old log file: ${filePath}`)
             })
           }
         }
