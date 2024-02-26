@@ -22,5 +22,5 @@ keywords:
 We would like to express our gratitude to the following third-party libraries that have made the development of Jan possible.
 
 - [llama.cpp](https://github.com/ggerganov/llama.cpp/blob/master/LICENSE)
-- [langchainjs](https://github.com/langchain-ai/langchainjs/blob/main/LICENSE)
+- [LangChain.js](https://github.com/langchain-ai/langchainjs/blob/main/LICENSE)
 - [TensorRT](https://github.com/NVIDIA/TensorRT/blob/main/LICENSE)
