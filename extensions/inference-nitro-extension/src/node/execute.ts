@@ -67,7 +67,7 @@ export const executableNitroFile = (): NitroExecutableOptions => {
 
     if (gpuInfo['vulkan'] === true) {
       binaryFolder = path.join(__dirname, '..', 'bin')
-      binaryFolder = path.join(binaryFolder, 'win-vulkan')
+      binaryFolder = path.join(binaryFolder, 'linux-vulkan')
       vkVisibleDevices = gpuInfo['gpus_in_use'].toString()
     }
   }

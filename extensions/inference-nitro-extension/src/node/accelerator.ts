@@ -23,10 +23,7 @@ const DEFALT_SETTINGS = {
   gpus_in_use: [],
   is_initial: true,
   // TODO: This needs to be set based on user toggle in settings
-  vulkan: {
-    enabled: true,
-    gpu_in_use: '1',
-  },
+  vulkan: false
 }
 
 /**
