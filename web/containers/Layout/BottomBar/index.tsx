@@ -34,7 +34,7 @@ const BottomBar = () => {
   const progress = useAtomValue(appDownloadProgress)
 
   return (
-    <div className="fixed bottom-0 left-16 z-20 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/80 px-3">
+    <div className="fixed bottom-0 left-16 z-50 flex h-12 w-[calc(100%-64px)] items-center justify-between border-t border-border bg-background/80 px-3">
       <div className="flex flex-shrink-0 items-center gap-x-2">
         <div className="flex items-center space-x-2">
           {progress && progress > 0 ? (

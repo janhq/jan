@@ -88,12 +88,12 @@ const SystemMonitor = () => {
         <div
           ref={setElementExpand}
           className={twMerge(
-            'fixed left-16 bottom-12 bg-white w-[calc(100%-64px)] z-50 border-t border-border flex flex-col flex-shrink-0',
+            'fixed left-16 bottom-12 bg-background w-[calc(100%-64px)] z-50 border-t border-border flex flex-col flex-shrink-0',
             showFullScreen && 'h-[calc(100%-48px)]'
           )}
         >
           <div className="h-12 flex items-center border-b border-border px-4 justify-between flex-shrink-0">
-            <h6 className="font-medium">Running Models</h6>
+            <h6 className="font-bold">Running Models</h6>
             <div className="flex items-center gap-x-2 unset-drag">
               {showFullScreen ? (
                 <ChevronDown
