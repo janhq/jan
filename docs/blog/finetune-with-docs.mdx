@@ -75,7 +75,7 @@ In this tutorial, the “data” we will use will be the [Nitro documentation](h
 
 ![About Nitro](img/about-nitro.png)
 
-**Fig 1. Example of Nitro’s documentation**
+**Fig 1. Example of Nitro's documentation.**
 
 At a basic level, documentation is just pages filled with just words. If we give these words to the LLM as they are, it can confuse the model about what is important. Moreover, the unstructured nature of plain text doesn't provide the contextual clues that LLMs need to understand and generate meaningful responses.
 
@@ -238,7 +238,7 @@ accelerate launch \
   scripts/run_sft.py recipes/nitro/sft/config_lora.yaml
 ```
 
-**Table 2. Training result of Nitro models**
+**Table 2. Training result of Nitro models.**
 
 | Model        | r   | alpha | Loss  | Time |
 |--------------|-----|-------|-------|------|
@@ -256,11 +256,11 @@ After training the model, it can be tested locally in the GGUF format using [Jan
 
 ![Finetuned Nitro Respond](img/finetuned-response.png)
 
-**Fig 2. Using Jan to run a new fine-tuned model**
+**Fig 2. Using Jan to run a new fine-tuned model.**
 
 ![Finetuned Nitro Respond 2](img/finetuned-respond-2.png)
 
-**Fig 3. Model answers a technical question related to Nitro**
+**Fig 3. Model answers a technical question related to Nitro.**
 
 As shown in `Fig 2`, the model successfully learned new information from Nitro's documentation. This indicates that it accurately understands details about Nitro.
 
