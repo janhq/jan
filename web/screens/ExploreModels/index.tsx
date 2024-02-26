@@ -16,6 +16,7 @@ import { useAtomValue } from 'jotai'
 import { SearchIcon } from 'lucide-react'
 
 import ExploreModelList from './ExploreModelList'
+import { HuggingFaceModal } from './HuggingFaceModal'
 
 import {
   configuredModelsAtom,
@@ -28,6 +29,7 @@ const ExploreModelsScreen = () => {
   const [searchValue, setsearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('All Models')
   const sortMenu = ['All Models', 'Recommended', 'Downloaded']
+  const [showHuggingFaceModal, setShowHuggingFaceModal] = useState(false)
 
   const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'Downloaded') {
@@ -49,6 +51,10 @@ const ExploreModelsScreen = () => {
     openExternalUrl('https://jan.ai/guides/using-models/import-manually/')
   }, [])
 
+  const onHuggingFaceConverterClick = () => {
+    setShowHuggingFaceModal(true)
+  }
+
   return (
     <div
       className="flex h-full w-full overflow-y-auto bg-background"
@@ -56,6 +62,10 @@ const ExploreModelsScreen = () => {
     >
       <div className="h-full w-full p-4">
         <div className="h-full">
+          <HuggingFaceModal
+            open={showHuggingFaceModal}
+            onOpenChange={setShowHuggingFaceModal}
+          />
           <ScrollArea>
             <div className="relative">
               <img
@@ -83,6 +93,15 @@ const ExploreModelsScreen = () => {
                     className="cursor-pointer font-semibold text-white underline"
                   >
                     How to manually import models
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-white">or</p>
+                  <p
+                    onClick={onHuggingFaceConverterClick}
+                    className="cursor-pointer font-semibold text-white underline"
+                  >
+                    Convert from Hugging Face
                   </p>
                 </div>
               </div>
