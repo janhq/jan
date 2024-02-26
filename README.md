@@ -304,7 +304,7 @@ This will build the app MacOS m1/m2 for production (with code signing already do
 
     ```bash
     # GPU mode with default file system
-    docker compose --profile gpu up -d
+    docker compose --profile gpu-fs up -d
 
     # GPU mode with S3 file system
     docker compose --profile gpu-s3fs up -d
