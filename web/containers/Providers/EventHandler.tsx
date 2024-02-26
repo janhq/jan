@@ -15,6 +15,7 @@ import {
   MessageRequestType,
   ModelEvent,
   Thread,
+  AppEvent,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulid'

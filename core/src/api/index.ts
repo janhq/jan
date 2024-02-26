@@ -31,6 +31,7 @@ export enum AppEvent {
   onAppUpdateDownloadUpdate = 'onAppUpdateDownloadUpdate',
   onAppUpdateDownloadError = 'onAppUpdateDownloadError',
   onAppUpdateDownloadSuccess = 'onAppUpdateDownloadSuccess',
+  onSelectedText = 'onSelectedText',
 }
 
 export enum DownloadRoute {

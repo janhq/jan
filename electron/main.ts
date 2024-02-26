@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, ipcRenderer, shell } from 'electron'
 import { join } from 'path'
 /**
  * Managers
@@ -25,6 +25,20 @@ import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
 import { cleanLogs } from './utils/log'
 
+import { getSelectedText, registerShortcut } from 'electron-selected-text'
+import { AppEvent } from '@janhq/core'
+
+const printSelectedText = (selectedText: any) => {
+  WindowManager.instance.currentWindow?.focus()
+  log(`Selected Text: ${selectedText}`)
+  WindowManager.instance.currentWindow?.webContents.send(
+    AppEvent.onSelectedText,
+    selectedText
+  )
+}
+
+getSelectedText().then(printSelectedText)
+
 app
   .whenReady()
   .then(setupReactDevTool)
@@ -42,6 +56,12 @@ app
         createMainWindow()
       }
     })
+
+    const ret = registerShortcut('CommandOrControl+J', printSelectedText)
+
+    if (!ret) {
+      console.warn('registration failed')
+    }
   })
   .then(() => cleanLogs())
 
