@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useContext, useState } from 'react'
 
 import {
   Input,
@@ -14,6 +14,8 @@ import {
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Plus, SearchIcon } from 'lucide-react'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
@@ -35,6 +37,8 @@ const ExploreModelsScreen = () => {
 
   const [showHuggingFaceModal, setShowHuggingFaceModal] = useState(false)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
+
+  const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'Downloaded') {
@@ -100,14 +104,16 @@ const ExploreModelsScreen = () => {
                     <p>Import Model</p>
                   </Button>
                 </div>
-                <div className="text-center">
-                  <p
-                    onClick={onHuggingFaceConverterClick}
-                    className="cursor-pointer font-semibold text-white underline"
-                  >
-                    Convert from Hugging Face
-                  </p>
-                </div>
+                {experimentalFeature && (
+                  <div className="text-center">
+                    <p
+                      onClick={onHuggingFaceConverterClick}
+                      className="cursor-pointer font-semibold text-white underline"
+                    >
+                      Convert from Hugging Face
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             <div className="mx-auto w-4/5 py-6">
