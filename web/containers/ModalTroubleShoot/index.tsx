@@ -69,7 +69,7 @@ const ModalTroubleShooting: React.FC = () => {
                   >
                     Discord
                   </a>
-                  &nbsp; & send it to #🆘|get-help channel for further support.
+                  &nbsp;& send it to #🆘|get-help channel for further support.
                 </p>
               </li>
             </ul>
