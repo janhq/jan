@@ -25,39 +25,41 @@ In this blog post, we discuss about:
 
 ## **The Moat of Data Ownership**
 
-The **secret sauce** of successful LLMs lies in the **quality and diversity of their training data**. Closed-source companies like OpenAI and Google hold the keys to these moats, granting them a unique advantage. This data advantage allows them to refine and adapt their models more effectively, potentially outperforming open-source models that rely on publicly available datasets.
+Closed-source companies possess a unique advantage: not only do they have access to vast, curated datasets, but they also hold the original pre-trained data used to create their models. This comprehensive data pool empowers them to refine, adapt, and fine-tune their LLMs more effectively, potentially exceeding the capabilities of open-source models reliant on publicly available datasets.
 
 ### **Why is data ownership so crucial?**
 
-It boils down to **catastrophic forgetting**, a phenomenon where models lose previously learned skills while acquiring new ones. Owning the original distribution allows these companies to fine-tune their models while minimizing this loss, essentially teaching them new tricks without compromising their core abilities.
+Catastrophic forgetting is a crucial challenge in LLM development. This phenomenon occurs when a model, while learning new information (e.g., about a new topic like "birds"), starts to forget previously learned information (e.g., about "cats and dogs"). Owning the original training data allows closed-source companies to address this issue effectively. By fine-tuning their models on this mixed data, they can introduce new knowledge while minimizing the loss of existing abilities.
 
 ![Catastrophic forgetting](img/catastrophic-demo.png)
 
 Fig 1. Demonstrate of catastrophic forgetting problem
 
-As we can see in the short comic, the AI which is trained only with a specific dataset (e.g information about Jan) it will change the behavior to only focus on answering everything else to Jan and starting to forgetting other topics. 
+**Understanding Catastrophic Forgetting with Gradient Descent**
 
-**The Gradient Descent Metaphor**
-Looking deeper into more scientific about this problem,
-Looking at the beginning of the AI field, every advancement comes from an algorithm called "Gradient Decent".
+During training, LLMs learn by adjusting their internal parameters to minimize a specific error function. This process can be visualized as a ball navigating a multidimensional landscape, where each dimension represents a different skill or piece of knowledge learned. Gradient descent guides the ball downhill towards an optimal point representing good performance on the training task.
+
+However, when we introduce a new task (Case A), pushing the ball towards a new optimal point can cause it to roll away from previously learned areas, leading to catastrophic forgetting.
 
 ![Gradient decent](img/gradient-decent.gif)
 
-Fig 2. (Do we have better images to represent this?)
+Fig 2. Gradient decent
 
-Look at the ball navigating a 3D space, where each axis represents different skills or knowledge it has learned. When we train the model on a new task (Case A), it's like pushing the ball towards a specific point representing that task. But this can cause it to roll away from other areas, forgetting previously learned skills - that's catastrophic forgetting.
+**The Advantage of Owning Original Data**
 
-The secret sauce of big corporations with their original data (Case B) is like having a map of this 3D space. They can push the ball towards new tasks while also using the map to avoid rolling off cliffs and forgetting old knowledge. This "map" is the diverse and balanced dataset that acts as an anchor, preventing the model from veering too far off course.
+Closed-source companies with access to their original training data have a significant advantage in this scenario. This data acts as a "map" of the learning landscape. By fine-tuning their models on this data (Case B), they can navigate towards new tasks while referencing the map to avoid forgetting previously learned information. This allows them to achieve better performance and retain previously acquired knowledge compared to models relying solely on publicly available datasets.
 
 ## **What does the community actually have after all?**
 
 ### **The Reality of Open-Source LLMs**
 
-While the open-source community boasts impressive fine-tuned variant models from Llama-2 or Mistral, we are still building things on their weights and don’t own the original distribution. They created for us the feeling we are owning everything from data sources to the models but after all we all care about the best model or in fact the model which can serve our need. We can see many of the controversy between open-source models surpass ChatGPT on some benchmarks 
+While the open-source community boasts impressive models like Llama-2 and Mistral, these are primarily fine-tuned variations based on pre-trained weights developed by others. Open-source communities lack access to the **original training data** (the "distribution") used to create these weights. This distinction is crucial, as access to original data unlocks further fine-tuning and adaptation, which can improve model performance and capabilities.
 
-but quote Karpathy’s statement “I pretty much only trust two LLM evals right now: Chatbot Arena and r/LocalLlama comments section”. In the Chatbot Arena, we don’t really see many open-source models. For further detailed result table in elo ranking please see the full leaderboard [here](https://chat.lmsys.org/)
+### **The Open-Source Disadvantage**
 
-Table 1. On top 5 of the **Chatbot Arena Leaderboard -** the elo ranking system for LLM based on human preferences, we only have Qwen is a "open-source" model
+While open-source models may occasionally outperform closed-source counterparts on specific benchmarks, the broader picture reveals a significant gap. In [Chatbot Arena Leaderboard](https://chat.lmsys.org/), a popular human-evaluated ranking system, none of the top five models are truly created and fine-tuned by the open-source community. The single model listed as "open-source" (Qwen) actually originates from Alibaba and does not represent a model developed solely by the open-source community. This highlights the current challenge faced by open-source LLMs in competing with their closed-source counterparts.
+
+Table 1. Top 5 Chatbot Arena Leaderboard (as of February 26, 2024):
 
 | Rank | Model               | Arena Elo | License       |
 |------|---------------------|-----------|---------------|
@@ -67,22 +69,22 @@ Table 1. On top 5 of the **Chatbot Arena Leaderboard -** the elo ranking system 
 | 4    | Qwen1.5-72B-Chat    | 1147      | Qianwen LICENSE |
 | 5    | Claude-2.0          | 1132      | Proprietary   |
 
-*Note: we keep only the best performance model of each organization*
+*Note: Only the best performing model from each organization is shown.*
 
-### **Data quality matters:**
+**Data quality matters:**
 
-Open-source projects often struggle with access to the vast, curated datasets that underpin big companies' LLMs. This can significantly impact model performance and capabilities. Even though thanks to big effort from the community, we have some open-source with high quality dataset like openhermes, intel orca dpo,… but after using those datasets, where can we find the next quality tokens?
+Open-source communities face significant challenges in accessing the vast, curated datasets that underpin the leading LLMs. These datasets are a critical ingredient for model performance and capabilities. While the community and also some big companies have made impressive strides with high-quality offerings like [NVIDIA's datasets](https://huggingface.co/datasets/nvidia/OpenMathInstruct-1), [Openhermes](https://huggingface.co/datasets/teknium/OpenHermes-2.5), [Intel Orca DPO](https://huggingface.co/datasets/Intel/orca_dpo_pairs), [Cohere Aya](https://huggingface.co/datasets/CohereForAI/aya_dataset) or [Argilla's distilabel project](https://huggingface.co/datasets/argilla/OpenHermes2.5-dpo-binarized-alpha), the sustainability of data acquisition remains a crucial question. Where can we find the next high-quality tokens to improve and bridge the gap with closed-source counterparts?
 
-### **Computational resources:**
+**Computational resources:**
 
-Training LLMs requires immense computational power, which can be a significant cost barrier for smaller institutions. Big companies often have dedicated infrastructure and resources for this. Even LoRA - a finetuing method could reduce the size of the update matrices by a factor of up to several thousand is popular these day, it remains several problems. With the small amount of data, we can’t really create a chatbot to serve our personal need with the best.
-
-Moreover, don’t have enough compute resource could also lead to the problem of creating the next tokens. We can’t create synthetic data for our tasks.
-
-Overall, community are in the position where we are feeling like we owning everything but nothing.
+Training LLMs is an extremely resource-intensive process requiring immense computational power. Unfortunately, many smaller institutions lack the necessary infrastructure and resources to compete with larger companies who can leverage dedicated hardware and cloud solutions. While techniques like LoRA aim to reduce the computational cost of fine-tuning, these methods might not be sufficient to bridge the gap entirely, especially for smaller entities. The limited computational resources further hinder the open-source community's ability to create LLMs that can personalize and tailor themselves for individual user needs.
 
 ## The spark of open data loop
 
-Institutions like AllenAI with their Dolma dataset and projects like Pythia open up their pretraining datasets. Although the quality cannot yet compare with OpenAI's, these valuable datasets could improve open-source models in the next iterations.
+While data ownership remains a significant advantage for closed-source companies, the open-source community is not standing still. Initiatives like [AllenAI's Dolma dataset](https://huggingface.co/datasets/allenai/dolma) and projects such as [Pythia](https://huggingface.co/EleutherAI/pythia-6.9b) are making strides by opening up pre-training datasets. Although these datasets may not yet match the quality of those used by leading companies, they offer valuable resources that can improve the performance of open-source models in future iterations.
 
+Furthermore, the growing availability of open-source datasets provides the community with additional tools to mitigate the data disadvantage. We can utilize techniques akin to [data shifting](https://towardsdatascience.com/understanding-dataset-shift-f2a5a262a766), a process analogous to adjusting the learning landscape. By training our models on these datasets and strategically shifting the distribution, we can gradually tailor them towards specific needs and applications. This approach, while not a complete solution, acts as a bridge-building exercise, gradually narrowing the gap between open-source and closed-source models.
 
+## Conclusion
+
+When it comes to building powerful Large Language Models (LLMs), owning **the original training data** is a major advantage. Big companies have built a significant edge by collecting and using exclusive datasets, giving their LLMs a big boost in performance. This makes it much harder for open-source projects to compete, even though they are actively developing innovative solutions and sharing resources. The key challenge isn't just having access to data, but having access to high-quality data in large quantities. Currently, only large companies have the resources to do this. To make LLM technology more accessible to everyone, data needs to be more open and readily available, instead of being used as a barrier by major companies. This would change the current situation and allow everyone to participate in the development of powerful LLMs.
