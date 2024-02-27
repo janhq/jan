@@ -2,6 +2,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TooltipPortal,
   TooltipArrow,
 } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
@@ -118,24 +119,26 @@ export default function RibbonNav() {
                           />
                         )}
                       </TooltipTrigger>
-                      {serverEnabled &&
-                      primary.state === MainViewState.Thread ? (
-                        <TooltipContent
-                          side="right"
-                          sideOffset={10}
-                          className="max-w-[180px]"
-                        >
-                          <span>
-                            Threads are disabled while the server is running
-                          </span>
-                          <TooltipArrow />
-                        </TooltipContent>
-                      ) : (
-                        <TooltipContent side="right" sideOffset={10}>
-                          <span>{primary.name}</span>
-                          <TooltipArrow />
-                        </TooltipContent>
-                      )}
+                      <TooltipPortal>
+                        {serverEnabled &&
+                        primary.state === MainViewState.Thread ? (
+                          <TooltipContent
+                            side="right"
+                            sideOffset={10}
+                            className="max-w-[180px]"
+                          >
+                            <span>
+                              Threads are disabled while the server is running
+                            </span>
+                            <TooltipArrow />
+                          </TooltipContent>
+                        ) : (
+                          <TooltipContent side="right" sideOffset={10}>
+                            <span>{primary.name}</span>
+                            <TooltipArrow />
+                          </TooltipContent>
+                        )}
+                      </TooltipPortal>
                     </Tooltip>
                   </div>
                 )
@@ -168,10 +171,12 @@ export default function RibbonNav() {
                           />
                         )}
                       </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={10}>
-                        <span>{secondary.name}</span>
-                        <TooltipArrow />
-                      </TooltipContent>
+                      <TooltipPortal>
+                        <TooltipContent side="right" sideOffset={10}>
+                          <span>{secondary.name}</span>
+                          <TooltipArrow />
+                        </TooltipContent>
+                      </TooltipPortal>
                     </Tooltip>
                   </div>
                 )
