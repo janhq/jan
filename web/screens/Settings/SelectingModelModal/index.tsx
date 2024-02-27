@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
-import { ImportingModel, fs } from '@janhq/core'
+import { ImportingModel, baseName, fs } from '@janhq/core'
 import { Modal, ModalContent, ModalHeader, ModalTitle } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -17,7 +17,7 @@ import {
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-import { FilePathWithSize, getFileNameFromPath } from '@/utils/file'
+import { FilePathWithSize } from '@/utils/file'
 
 import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
 
@@ -36,7 +36,7 @@ const SelectingModelModal: React.FC = () => {
       const fileStats = await fs.fileStat(filePath, true)
       if (!fileStats || fileStats.isDirectory) continue
 
-      const fileName = getFileNameFromPath(filePath)
+      const fileName = await baseName(filePath)
       sanitizedFilePaths.push({
         path: filePath,
         name: fileName,
