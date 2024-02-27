@@ -18,7 +18,7 @@ import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
-import { Marked, Renderer, marked as markedDefault } from 'marked'
+import { Marked, Renderer } from 'marked'
 
 import { markedHighlight } from 'marked-highlight'
 
@@ -42,19 +42,6 @@ import {
   editMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-
-function isMarkdownValue(value: string): boolean {
-  const tokenTypes: string[] = []
-  markedDefault(value, {
-    walkTokens: (token) => {
-      tokenTypes.push(token.type)
-    },
-  })
-  const isMarkdown = ['code', 'codespan'].some((tokenType) => {
-    return tokenTypes.includes(tokenType)
-  })
-  return isMarkdown
-}
 
 const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   let text = ''
@@ -282,7 +269,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             </div>
           )}
 
-          {isUser && !isMarkdownValue(text) ? (
+          {isUser ? (
             <>
               {editMessage === props.id ? (
                 <div>
