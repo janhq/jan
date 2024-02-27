@@ -1,0 +1,128 @@
+---
+sidebar_position: 2
+---
+
+import switchGPU from "./assets/janSwitchCPUtoGPU.gif";
+import openDirectory from "./assets/janOpenAppDirectory.gif";
+
+# Jan not using GPU
+
+The `Jan not using GPU` issue is caused due to Jan app does not utilize the GPU on Windows and Linux systems.
+
+### GPU Mode Requirements for Windows and Linux
+
+#### NVIDIA Driver
+
+- Install an NVIDIA driver supporting CUDA 11.7 or higher.
+  - Use the following command to verify the installation:
+
+```sh
+nvidia-smi
+```
+
+#### CUDA Toolkit
+
+- Install a CUDA toolkit compatible with your NVIDIA driver.
+  - Use the following command to verify the installation:
+
+```sh
+nvcc --version
+```
+
+#### Linux Specifics
+
+- Ensure that `gcc-11`, `g++-11`, `cpp-11`, or higher is installed.
+  - See [instructions](https://gcc.gnu.org/projects/cxx-status.html#cxx17) for Ubuntu installation.
+
+- **Post-Installation Actions**: Add CUDA libraries to `LD_LIBRARY_PATH`.
+  - Follow the [Post-installation Actions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions) instructions.
+
+### Switching CPU/GPU Modes
+
+Jan defaults to CPU mode but automatically switches to GPU mode if your system supports it, selecting the GPU with the highest VRAM. Check this setting in `Settings` > `Advanced Settings`.
+
+<div class="text--center" > 
+    <img src={ switchGPU } width = { 800 } alt = "janSwitchCPUtoGPU" />
+</div>
+
+#### Troubleshooting Tips
+
+If GPU mode isn't enabled by default:
+
+1. Confirm that you have installed an NVIDIA driver supporting CUDA 11.7 or higher. Refer to [CUDA compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+2. Ensure compatibility of the CUDA toolkit with your NVIDIA driver. Refer to [CUDA compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+3. For Linux, add CUDA's `.so` libraries to the `LD_LIBRARY_PATH`. For Windows, ensure that CUDA's `.dll` libraries are in the PATH. Refer to [Windows setup](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#environment-setup).
+
+### Checking GPU Settings
+
+1. Navigate to `Settings` > `Advanced Settings` > `Jan Data Folder` to access GPU settings.
+
+<div class="text--center" > 
+    <img src={ openDirectory } width = { 800 } alt = "janOpenAppDirectory" />
+</div>
+
+2. Open the `settings.json` file in the `settings` folder. Here's an example:
+
+```json title="~/jan/settings/settings.json"
+{
+  "notify": true,
+  "run_mode": "gpu",
+  "nvidia_driver": {
+    "exist": true,
+    "version": "531.18"
+  },
+  "cuda": {
+    "exist": true,
+    "version": "12"
+  },
+  "gpus": [
+    {
+      "id": "0",
+      "vram": "12282"
+    },
+    {
+      "id": "1",
+      "vram": "6144"
+    },
+    {
+      "id": "2",
+      "vram": "6144"
+    }
+  ],
+  "gpu_highest_vram": "0"
+}
+```
+
+#### Troubleshooting Tips
+
+ - Ensure `nvidia_driver` and `cuda` fields indicate installed software.
+ - If `gpus` field is empty or lacks your GPU, check NVIDIA driver and CUDA toolkit installations.
+ - For further assistance, share the `settings.json` file.
+
+### Tested Configurations
+
+- **Windows 11 Pro 64-bit:**
+  - GPU: NVIDIA GeForce RTX 4070ti
+  - CUDA: 12.2
+  - NVIDIA driver: 531.18 (Bare metal)
+
+- **Ubuntu 22.04 LTS:**
+  - GPU: NVIDIA GeForce RTX 4070ti
+  - CUDA: 12.2
+  - NVIDIA driver: 545 (Bare metal)
+
+- **Ubuntu 20.04 LTS:**
+  - GPU: NVIDIA GeForce GTX 1660ti
+  - CUDA: 12.1
+  - NVIDIA driver: 535 (Proxmox VM passthrough GPU)
+
+- **Ubuntu 18.04 LTS:**
+  - GPU: NVIDIA GeForce GTX 1660ti
+  - CUDA: 12.1
+  - NVIDIA driver: 535 (Proxmox VM passthrough GPU)
+
+### Common Issues and Solutions
+
+1. If the issue persists, try installing the [Nightly version](https://jan.ai/install/nightly/).
+2. Ensure your (V)RAM is accessible; some users with virtual RAM may require additional configuration.
+3. Seek assistance in [Jan Discord](https://discord.gg/mY69SZaMaC).
