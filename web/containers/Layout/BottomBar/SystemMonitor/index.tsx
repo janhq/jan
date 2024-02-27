@@ -140,7 +140,7 @@ const SystemMonitor = () => {
               {gpus.length > 0 && (
                 <div className="mb-4 border-b border-border pb-4 last:border-none">
                   {gpus.map((gpu, index) => (
-                    <div key={index} className="mt-4 flex flex-col gap-2">
+                    <div key={index} className="mt-4 flex flex-col gap-x-2">
                       <div className="flex w-full items-start justify-between">
                         <span className="line-clamp-1 w-1/2 font-bold">
                           {gpu.name}
