@@ -47,7 +47,7 @@ export default function DownloadingState() {
                 </span>
               </Button>
               <span
-                className="absolute left-0 h-full rounded-md rounded-l-md bg-primary/20"
+                className="absolute left-0 h-full rounded-md rounded-l-md bg-blue-500/20"
                 style={{
                   width: `${totalPercentage}%`,
                 }}

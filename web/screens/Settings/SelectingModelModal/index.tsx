@@ -97,7 +97,7 @@ const SelectingModelModal: React.FC = () => {
   })
 
   const borderColor = isDragActive ? 'border-primary' : 'border-[#F4F4F5]'
-  const textColor = isDragActive ? 'text-primary' : 'text-[#71717A]'
+  const textColor = isDragActive ? 'text-blue-600' : 'text-[#71717A]'
   const dragAndDropBgColor = isDragActive ? 'bg-[#EFF6FF]' : 'bg-white'
 
   return (
@@ -128,7 +128,7 @@ const SelectingModelModal: React.FC = () => {
             </div>
 
             <div className="mt-4">
-              <span className="text-sm font-bold text-primary">
+              <span className="text-sm font-bold text-blue-600">
                 Click to upload
               </span>
               <span className={`text-sm ${textColor} font-medium`}>
