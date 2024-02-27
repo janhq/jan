@@ -8,17 +8,13 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish": "run-script-os"
+    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "rimraf": "^3.0.2",
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4",
-    "ts-loader": "^9.5.0",
-    "run-script-os": "^1.1.6"
+    "ts-loader": "^9.5.0"
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
