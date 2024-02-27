@@ -490,7 +490,6 @@ export default class JanModelExtension extends ModelExtension {
     }
 
     const binaryFileName = await baseName(modelBinaryPath)
-    console.log(`NamH importModelSymlink binaryFileName: ${binaryFileName}`)
 
     const model: Model = {
       ...defaultModel,
@@ -558,7 +557,6 @@ export default class JanModelExtension extends ModelExtension {
     optionType: OptionType
   ): Promise<Model> {
     const binaryName = (await baseName(model.path)).replace(/\s/g, '')
-    console.log(`NamH importModel binaryName: ${binaryName}`)
 
     let modelFolderName = binaryName
     if (binaryName.endsWith(JanModelExtension._supportedModelFormat)) {

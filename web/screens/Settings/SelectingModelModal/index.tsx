@@ -56,7 +56,7 @@ const SelectingModelModal: React.FC = () => {
         return {
           importId: uuidv4(),
           modelId: undefined,
-          name: name,
+          name: name.replace('.gguf', ''),
           description: '',
           path: path,
           tags: [],

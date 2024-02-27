@@ -18,8 +18,8 @@ export default function useDropModelBinaries() {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
 
   const onDropModels = useCallback(
-    (acceptedFiles: File[]) => {
-      const files = getFileInfoFromFile(acceptedFiles)
+    async (acceptedFiles: File[]) => {
+      const files = await getFileInfoFromFile(acceptedFiles)
 
       const unsupportedFiles = files.filter(
         (file) => !file.path.endsWith('.gguf')
@@ -29,7 +29,7 @@ export default function useDropModelBinaries() {
       const importingModels: ImportingModel[] = supportedFiles.map((file) => ({
         importId: uuidv4(),
         modelId: undefined,
-        name: file.name,
+        name: file.name.replace('.gguf', ''),
         description: '',
         path: file.path,
         tags: [],

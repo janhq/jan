@@ -17,7 +17,7 @@ export const getFileInfoFromFile = async (
   for (const file of files) {
     if (file.path && file.path.length > 0) {
       const fileName = await baseName(file.path)
-      console.log('namh getFileInfoFromFile', fileName)
+
       result.push({
         path: file.path,
         name: fileName,
