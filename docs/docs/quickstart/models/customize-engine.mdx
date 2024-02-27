@@ -1,62 +1,184 @@
 ---
-sidebar_position: 1
+sidebar_position: 3
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import janModel from './assets/jan-model-hub.png';
 
-# Customize Engine Settings
+# Manual Import
 
-In this guide, we'll walk you through the process of customizing your engine settings by tweaking the `nitro.json` file
+:::warning
 
-1. Navigate to the `App Settings` > `Advanced` > `Open App Directory` > `~/jan/engine` folder.
+This is currently under development.
+
+:::
+
+This section will show you how to perform manual import. In this guide, we are using a GGUF model from [HuggingFace](https://huggingface.co/) and our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
+
+## Newer versions - nightly versions and v0.4.4+
+
+### 1. Create a Model Folder
+
+1. Navigate to the `App Settings` > `Advanced` > `Open App Directory` > `~/jan/models` folder.
 
 <Tabs>
     <TabItem value="mac" label="MacOS" default>
         ```sh
-        cd ~/jan/engines
+        cd ~/jan/models
         ```
     </TabItem>
     <TabItem value="windows" label="Windows" default>
         ```sh
-        C:/Users/<your_user_name>/jan/engines
+        C:/Users/<your_user_name>/jan/models
         ```
     </TabItem>
     <TabItem value="linux" label="Linux" default>
         ```sh
-        cd ~/jan/engines
+        cd ~/jan/models
         ```
     </TabItem>
 </Tabs>
 
-2. Modify the `nitro.json` file based on your needs. The default settings are shown below.
+2. In the `models` folder, create a folder with the name of the model.
 
-```json title="~/jan/engines/nitro.json"
+```sh
+mkdir trinity-v1-7b
+```
+
+### 2. Drag & Drop the Model
+
+Drag and drop your model binary into this folder, ensuring the `modelname.gguf` is the same name as the folder name, e.g. `models/modelname`.
+
+### 3. Done!
+
+If your model doesn't show up in the **Model Selector** in conversations, **restart the app** or contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ).
+
+## Older versions - before v0.4.4
+
+### 1. Create a Model Folder
+
+1. Navigate to the `App Settings` > `Advanced` > `Open App Directory` > `~/jan/models` folder.
+
+<Tabs>
+    <TabItem value="mac" label="MacOS" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+    <TabItem value="windows" label="Windows" default>
+        ```sh
+        C:/Users/<your_user_name>/jan/models
+        ```
+    </TabItem>
+    <TabItem value="linux" label="Linux" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+</Tabs>
+
+2. In the `models` folder, create a folder with the name of the model.
+
+```sh
+mkdir trinity-v1-7b
+```
+
+### 2. Create a Model JSON
+
+Jan follows a folder-based, [standard model template](https://jan.ai/docs/engineering/models/) called a `model.json` to persist the model configurations on your local filesystem.
+
+This means that you can easily reconfigure your models, export them, and share your preferences transparently.
+
+<Tabs>
+    <TabItem value="mac" label="MacOS" default>
+        ```sh
+        cd trinity-v1-7b
+        touch model.json
+        ```
+    </TabItem>
+    <TabItem value="windows" label="Windows" default>
+        ```sh
+        cd trinity-v1-7b
+        echo {} > model.json
+        ```
+    </TabItem>
+    <TabItem value="linux" label="Linux" default>
+        ```sh
+        cd trinity-v1-7b
+        touch model.json
+        ```
+    </TabItem>
+</Tabs>
+
+To update `model.json`:
+
+ - Match `id` with folder name.
+ - Ensure GGUF filename matches `id`.
+ - Set `source.url` to direct download link ending in `.gguf`. In HuggingFace, you can find the direct links in the `Files and versions` tab.
+ - Verify that you are using the correct `prompt_template`. This is usually provided in the HuggingFace model's description page.
+
+```json title="model.json"
 {
-  "ctx_len": 2048,
-  "ngl": 100,
-  "cpu_threads": 1,
-  "cont_batching": false,
-  "embedding": false
+  "sources": [
+    {
+      "filename": "trinity-v1.Q4_K_M.gguf",
+      "url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf"
+    }
+  ],
+  "id": "trinity-v1-7b",
+  "object": "model",
+  "name": "Trinity-v1 7B Q4",
+  "version": "1.0",
+  "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "{system_message}\n### Instruction:\n{prompt}\n### Response:",
+    "llama_model_path": "trinity-v1.Q4_K_M.gguf"
+  },
+  "parameters": {
+    "max_tokens": 4096
+  },
+  "metadata": {
+    "author": "Jan",
+    "tags": ["7B", "Merged"],
+    "size": 4370000000
+  },
+  "engine": "nitro"
+}
+```
+#### Regarding `model.json`
+
+- In `settings`, two crucial values are:
+  - `ctx_len`: Defined based on the model's context size.
+  - `prompt_template`: Defined based on the model's trained template (e.g., ChatML, Alpaca).
+  - To set up the `prompt_template`:
+    1. Visit Hugging Face.
+    2. Locate the model (e.g., [Gemma 7b it](https://huggingface.co/google/gemma-7b-it)).
+    3. Review the text and identify the template.
+- In `parameters`, consider the following options. The fields in `parameters` are typically general and can be the same across models. An example is provided below:
+
+```json
+"parameters":{
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "stream": true,
+  "max_tokens": 4096,
+  "frequency_penalty": 0,
+  "presence_penalty": 0
 }
 ```
 
-The table below describes the parameters in the `nitro.json` file.
+### 3. Download the Model
 
-| Parameter | Type | Description |
-| --------- | ---- | ----------- |
-| `ctx_len` | **Integer** | The context length for the model operations. |
-| `ngl` | **Integer** | The number of GPU layers to use. |
-| `cpu_threads` | **Integer** | The number of threads to use for inferencing (CPU mode only) |
-| `cont_batching` | **Boolean** | Whether to use continuous batching. |
-| `embedding` | **Boolean** | Whether to use embedding in the model. |
+1. Restart Jan and navigate to the Hub. 
+2. Locate your model.
+3. Click **Download** button to download the model binary.
 
-:::tip
- - By default, the value of `ngl` is set to 100, which indicates that it will offload all. If you wish to offload only 50% of the GPU, you can set `ngl` to 15 because most models on Mistral or Llama are around ~ 30 layers.
- - To utilize the embedding feature, include the JSON parameter `"embedding": true`. It will enable Nitro to process inferences with embedding capabilities. Please refer to the [Embedding in the Nitro documentation](https://nitro.jan.ai/features/embed) for a more detailed explanation.
- - To utilize the continuous batching feature for boosting throughput and minimizing latency in large language model (LLM) inference, include `cont_batching: true`. For details, please refer to the [Continuous Batching in the Nitro documentation](https://nitro.jan.ai/features/cont-batch).
-
-:::
+<div class="text--center"> 
+    <img src={janModel} width={800} alt="jan-model-hub" />
+</div>
 
 :::info[Assistance and Support]
 
