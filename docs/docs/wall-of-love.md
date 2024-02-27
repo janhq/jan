@@ -4,7 +4,7 @@ title: Wall of Love ❤️
 
 ## Twitter
 
-Check out our amazing users and what they are saying about Jan! Please share your love for Jan on Twitter and tag us [@janframework](https://twitter.com/janframework)! We would love to hear from you!
+Check out our amazing users and what they are saying about Jan!
 
 <div>
 <blockquote class="twitter-tweet"><p lang="en" dir="ltr">I can confirm <a href="https://t.co/Hvrfp0iaf9">https://t.co/Hvrfp0iaf9</a> is awesome 👌</p>&mdash; Cristian (@cristianmoreno) <a href="https://twitter.com/cristianmoreno/status/1757504717519749292?ref_src=twsrc%5Etfw">February 13, 2024</a></blockquote> <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
@@ -33,6 +33,8 @@ Check out our amazing users and what they are saying about Jan! Please share you
 <div>
 <blockquote class="twitter-tweet"><p lang="en" dir="ltr"><a href="https://t.co/scBqJ3kIzj">https://t.co/scBqJ3kIzj</a> Great way to try open source all models, like Mixtral8x7b offline. Love to see</p>&mdash; Chubby♨️ (@kimmonismus) <a href="https://twitter.com/kimmonismus/status/1742843063938994469?ref_src=twsrc%5Etfw">January 4, 2024</a></blockquote> <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
 </div>
+
+Please share your love for Jan on Twitter and tag us [@janframework](https://twitter.com/janframework)! We would love to hear from you!
 
 ## YouTube
 
