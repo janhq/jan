@@ -12,7 +12,10 @@
     "download:llama:linux": "LLAMA_CPP_VERSION=$(cat ./scripts/version.txt) && download https://github.com/ggerganov/llama.cpp/archive/refs/tags/${LLAMA_CPP_VERSION}.tar.gz -o . --filename ./scripts/llama.cpp.tar.gz && tar -xzf ./scripts/llama.cpp.tar.gz --wildcards '*/convert.py' '*/convert-hf-to-gguf.py' '*/gguf-py' && cpx \"./llama.cpp-$LLAMA_CPP_VERSION/**\" \"scripts\" && rimraf \"./scripts/llama.cpp.tar.gz\" && rimraf \"./llama.cpp-$LLAMA_CPP_VERSION\"",
     "download:llama:darwin": "LLAMA_CPP_VERSION=$(cat ./scripts/version.txt) && download https://github.com/ggerganov/llama.cpp/archive/refs/tags/${LLAMA_CPP_VERSION}.tar.gz -o . --filename ./scripts/llama.cpp.tar.gz && tar -xzf ./scripts/llama.cpp.tar.gz '*/convert.py' '*/convert-hf-to-gguf.py' '*/gguf-py' && cpx \"./llama.cpp-$LLAMA_CPP_VERSION/**\" \"scripts\" && rimraf \"./scripts/llama.cpp.tar.gz\" && rimraf \"./llama.cpp-$LLAMA_CPP_VERSION\"",
     "download:llama:win32": "download.bat",
-    "build:publish": "rimraf *.tgz --glob && npm run build && npm run download:llama && cpx \"scripts/**\" \"dist/scripts\" && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm run download:llama && cpx \"scripts/**\" \"dist/scripts\" && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && npm run download:llama && cpx \"scripts/**\" \"dist/scripts\" && cpx \"bin/**\" \"dist/bin\" && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm run download:llama && cpx \"scripts/**\" \"dist/scripts\" && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish": "run-script-os"
   },
   "exports": {
     ".": "./dist/index.js",
