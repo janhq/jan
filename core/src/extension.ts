@@ -4,6 +4,7 @@ export enum ExtensionTypeEnum {
   Inference = 'inference',
   Model = 'model',
   SystemMonitoring = 'systemMonitoring',
+  HuggingFace = 'huggingFace',
 }
 
 export interface ExtensionType {

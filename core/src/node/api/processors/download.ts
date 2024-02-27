@@ -50,7 +50,7 @@ export class Downloader implements Processor {
           fileName,
           downloadState: 'downloading',
         }
-        console.log('progress: ', downloadState)
+        console.debug('progress: ', downloadState)
         observer?.(DownloadEvent.onFileDownloadUpdate, downloadState)
         DownloadManager.instance.downloadProgressMap[modelId] = downloadState
       })

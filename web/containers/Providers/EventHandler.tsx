@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ReactNode, useCallback, useEffect, useRef } from 'react'
+import { Fragment, ReactNode, useCallback, useEffect, useRef } from 'react'
 
 import {
   ChatCompletionMessage,
@@ -302,5 +302,5 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       events.off(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
     }
   }, [onNewMessageResponse, onMessageResponseUpdate])
-  return <>{children}</>
+  return <Fragment>{children}</Fragment>
 }

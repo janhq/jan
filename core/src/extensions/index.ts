@@ -23,3 +23,8 @@ export { AssistantExtension } from './assistant'
  * Model extension for managing models.
  */
 export { ModelExtension } from './model'
+
+/**
+ * Hugging Face extension for converting HF models to GGUF.
+ */
+export { HuggingFaceExtension } from './huggingface'

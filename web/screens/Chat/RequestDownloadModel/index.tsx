@@ -2,19 +2,18 @@ import React, { Fragment, useCallback } from 'react'
 
 import { Button } from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useMainViewState } from '@/hooks/useMainViewState'
-
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const RequestDownloadModel: React.FC = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const { setMainViewState } = useMainViewState()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
 
   const onClick = useCallback(() => {
     setMainViewState(MainViewState.Hub)

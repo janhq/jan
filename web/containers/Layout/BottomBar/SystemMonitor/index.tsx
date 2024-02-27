@@ -57,23 +57,12 @@ const SystemMonitor = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const calculateUtilization = () => {
-    let sum = 0
-    const util = gpus.map((x) => {
-      return Number(x['utilization'])
-    })
-    util.forEach((num) => {
-      sum += num
-    })
-    return sum
-  }
-
   return (
     <Fragment>
       <div
         ref={setControl}
         className={twMerge(
-          'flex items-center gap-x-2 cursor-pointer p-2 rounded-md hover:bg-secondary',
+          'flex cursor-pointer items-center gap-x-2 rounded-md p-2 hover:bg-secondary',
           systemMonitorCollapse && 'bg-secondary'
         )}
         onClick={() => {
@@ -88,29 +77,29 @@ const SystemMonitor = () => {
         <div
           ref={setElementExpand}
           className={twMerge(
-            'fixed left-16 bottom-12 bg-background w-[calc(100%-64px)] z-50 border-t border-border flex flex-col flex-shrink-0',
+            'fixed bottom-12 left-16 z-50 flex w-[calc(100%-64px)] flex-shrink-0 flex-col border-t border-border bg-background',
             showFullScreen && 'h-[calc(100%-48px)]'
           )}
         >
-          <div className="h-12 flex items-center border-b border-border px-4 justify-between flex-shrink-0">
+          <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border px-4">
             <h6 className="font-bold">Running Models</h6>
-            <div className="flex items-center gap-x-2 unset-drag">
+            <div className="unset-drag flex items-center gap-x-2">
               {showFullScreen ? (
                 <ChevronDown
                   size={20}
-                  className="text-muted-foreground cursor-pointer"
+                  className="cursor-pointer text-muted-foreground"
                   onClick={() => setShowFullScreen(!showFullScreen)}
                 />
               ) : (
                 <ChevronUp
                   size={20}
-                  className="text-muted-foreground cursor-pointer"
+                  className="cursor-pointer text-muted-foreground"
                   onClick={() => setShowFullScreen(!showFullScreen)}
                 />
               )}
               <XIcon
                 size={16}
-                className="text-muted-foreground cursor-pointer"
+                className="cursor-pointer text-muted-foreground"
                 onClick={() => {
                   setSystemMonitorCollapse(false)
                   setShowFullScreen(false)
@@ -118,10 +107,10 @@ const SystemMonitor = () => {
               />
             </div>
           </div>
-          <div className="flex gap-4 h-full">
+          <div className="flex h-full gap-4">
             <TableActiveModel />
-            <div className="border-l border-border p-4 w-full">
-              <div className="mb-4 pb-4 border-b border-border">
+            <div className="w-full border-l border-border p-4">
+              <div className="mb-4 border-b border-border pb-4">
                 <h6 className="font-bold">CPU</h6>
                 <div className="flex items-center gap-x-4">
                   <Progress value={cpuUsage} className="h-2" />
@@ -130,11 +119,12 @@ const SystemMonitor = () => {
                   </span>
                 </div>
               </div>
-              <div className="mb-4 pb-4 border-b border-border">
-                <div className="flex items-center gap-2">
+              <div className="mb-4 border-b border-border pb-4">
+                <div className="flex items-center justify-between gap-2">
                   <h6 className="font-bold">Memory</h6>
-                  <span className="text-xs text-muted-foreground">
-                    {toGibibytes(usedRam)} of {toGibibytes(totalRam)} used
+                  <span className="text-sm text-muted-foreground">
+                    {toGibibytes(usedRam, { hideUnit: true })}/
+                    {toGibibytes(totalRam, { hideUnit: true })} GB
                   </span>
                 </div>
                 <div className="flex items-center gap-x-4">
@@ -148,30 +138,29 @@ const SystemMonitor = () => {
                 </div>
               </div>
               {gpus.length > 0 && (
-                <div className="mb-4 pb-4 border-b border-border">
-                  <h6 className="font-bold">GPU</h6>
-                  <div className="flex items-center gap-x-4">
-                    <Progress value={calculateUtilization()} className="h-2" />
-                    <span className="flex-shrink-0 text-muted-foreground">
-                      {calculateUtilization()}%
-                    </span>
-                  </div>
+                <div className="mb-4 border-b border-border pb-4 last:border-none">
                   {gpus.map((gpu, index) => (
-                    <div
-                      key={index}
-                      className="flex items-start justify-between mt-4 gap-4"
-                    >
-                      <span className="text-muted-foreground font-medium line-clamp-1 w-1/2">
-                        {gpu.name}
-                      </span>
-                      <div className="flex gap-x-2">
-                        <span className="font-semibold">
+                    <div key={index} className="mt-4 flex flex-col gap-2">
+                      <div className="flex w-full items-start justify-between">
+                        <span className="line-clamp-1 w-1/2 font-bold">
+                          {gpu.name}
+                        </span>
+                        <div className="flex gap-x-2">
+                          <div className="text-muted-foreground">
+                            <span>
+                              {gpu.memoryTotal - gpu.memoryFree}/
+                              {gpu.memoryTotal}
+                            </span>
+                            <span> MB</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-x-4">
+                        <Progress value={gpu.utilization} className="h-2" />
+                        <span className="flex-shrink-0 text-muted-foreground">
                           {gpu.utilization}%
                         </span>
-                        <div>
-                          <span className="font-semibold">{gpu.vram}</span>
-                          <span>MB VRAM</span>
-                        </div>
                       </div>
                     </div>
                   ))}

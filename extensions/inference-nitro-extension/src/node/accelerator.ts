@@ -23,10 +23,7 @@ const DEFALT_SETTINGS = {
   gpus_in_use: [],
   is_initial: true,
   // TODO: This needs to be set based on user toggle in settings
-  vulkan: {
-    enabled: true,
-    gpu_in_use: '1',
-  },
+  vulkan: false
 }
 
 /**
@@ -152,7 +149,7 @@ export function updateCudaExistence(
 
   data['cuda'].exist = cudaExists
   data['cuda'].version = cudaVersion
-  console.log(data['is_initial'], data['gpus_in_use'])
+  console.debug(data['is_initial'], data['gpus_in_use'])
   if (cudaExists && data['is_initial'] && data['gpus_in_use'].length > 0) {
     data.run_mode = 'gpu'
   }

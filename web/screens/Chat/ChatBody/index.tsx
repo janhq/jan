@@ -4,27 +4,24 @@ import ScrollToBottom from 'react-scroll-to-bottom'
 
 import { InferenceEngine, MessageStatus } from '@janhq/core'
 import { Button } from '@janhq/uikit'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useMainViewState } from '@/hooks/useMainViewState'
-
 import ChatItem from '../ChatItem'
 
 import ErrorMessage from '../ErrorMessage'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-
-  const { setMainViewState } = useMainViewState()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
 
   if (downloadedModels.length === 0)
     return (
