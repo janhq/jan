@@ -2,6 +2,6 @@
   @apply bg-secondary relative h-4 w-full overflow-hidden rounded-full;
 
   &-indicator {
-    @apply bg-primary h-full w-full flex-1 transition-all;
+    @apply h-full w-full flex-1 bg-blue-600 transition-all;
   }
 }

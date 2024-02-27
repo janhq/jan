@@ -91,7 +91,7 @@ const ExploreModelsScreen = () => {
                     />
                     <Input
                       placeholder="Search models"
-                      className="bg-white pl-9 dark:bg-background"
+                      className="bg-white pl-9"
                       onChange={(e) => setsearchValue(e.target.value)}
                     />
                   </div>

@@ -282,7 +282,7 @@ const Advanced = () => {
                 disabled={gpuList.length === 0 || !gpuEnabled}
                 value={selectedGpu.join()}
               >
-                <SelectTrigger className="w-[340px] bg-white dark:bg-gray-500">
+                <SelectTrigger className="w-[340px] bg-white">
                   <SelectValue placeholder={gpuSelectionPlaceHolder}>
                     <span className="line-clamp-1 w-full pr-8">
                       {selectedGpu.join()}
