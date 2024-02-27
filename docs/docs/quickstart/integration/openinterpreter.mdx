@@ -1,0 +1,49 @@
+---
+sidebar_position: 6
+---
+
+# Open Interpreter
+
+## Overview
+
+This tutorial illustrates how to integrate with Open Interpreter using Jan. [Open Interpreter](https://github.com/KillianLucas/open-interpreter/) lets LLMs run code (Python, Javascript, Shell, and more) locally. You can chat with Open Interpreter through a ChatGPT-like interface in your terminal by running `interpreter` after installing.
+
+## How to Integrate Open Interpreter with Jan
+
+### Step 1: Install Open Interpreter
+
+Install Open Interpreter by running:
+
+```sh
+pip install open-interpreter
+```
+
+A Rust compiler is required to install Open Interpreter. If not already installed, run the following command or go to [this page](https://rustup.rs/) if you are running on windows:
+
+```zsh
+sudo apt install rustc
+```
+
+### Step 2: Configure Jan's Local API Server
+
+Before using Open Interpreter, configure the model in `Settings` > `My Model` for Jan and activate its local API server.
+
+#### Enabling Jan API Server
+
+1. Click the `<>` button to access the **Local API Server** section in Jan.
+
+2. Configure the server settings, including **IP Port**, **Cross-Origin-Resource-Sharing (CORS)**, and **Verbose Server Logs**.
+
+3. Click **Start Server**.
+
+### Step 3: Run Open Interpreter with Specific Parameters
+
+For integration, provide the API Base (`http://localhost:1337/v1`) and the model ID (e.g., `mistral-ins-7b-q4`) when running Open Interpreter.
+
+For instance, if using **Mistral Instruct 7B Q4** as the model, execute:
+
+```zsh
+interpreter --api_base http://localhost:1337/v1 --model mistral-ins-7b-q4
+```
+
+Open Interpreter is now ready for use!

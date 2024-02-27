@@ -2,19 +2,15 @@
 sidebar_position: 3
 ---
 
-import azure from './img/azure.png';
+import azure from './assets/azure.png';
 
-# Azure Raycast
+# Azure OpenAI
 
 ## Overview
 
 This guide will show you how to integrate Azure OpenAI Service with Jan. The [Azure OpenAI Service](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview?source=docs) offers robust APIs, making it simple for you to incorporate OpenAI's language models into your applications.
 
-## How to Integrate Azure
-
-<div class="text--center"> 
-    <img src={azure} width={800} alt="azure" />
-</div>
+## How to Integrate Azure OpenAI with Jan
 
 ### Step 1: Configure Azure OpenAI Service API Key
 
@@ -31,16 +27,15 @@ This guide will show you how to integrate Azure OpenAI Service with Jan. The [Az
 }
 ```
 
-### Step 2: Modify a JSON Model
+### Step 2: Model Configuration
 
 1. Go to the `~/jan/models` directory. 
 2. Make a new folder called `(your-deployment-name)`, like `gpt-35-hieu-jan`.
 3. Create a `model.json` file inside the folder with the specified configurations:
-    - Ensure the file is named `model.json`.
-    - Match the `id` property with both the folder name and your deployment name.
-    - Set the `format` property as `api`.
-    - Choose `openai` for the `engine` property.
-    - Set the `state` property as `ready`.
+  - Match the `id` property with both the folder name and your deployment name.
+  - Set the `format` property as `api`.
+  - Choose `openai` for the `engine` property.
+  - Set the `state` property as `ready`.
 
 ```json title="~/jan/models/gpt-35-hieu-jan/model.json"
 {
@@ -63,6 +58,28 @@ This guide will show you how to integrate Azure OpenAI Service with Jan. The [Az
     "tags": ["General", "Big Context Length"]
   },
   "engine": "openai"
+}
+```
+
+#### Regarding `model.json`
+
+- In `settings`, two crucial values are:
+  - `ctx_len`: Defined based on the model's context size.
+  - `prompt_template`: Defined based on the model's trained template (e.g., ChatML, Alpaca).
+  - To set up the `prompt_template`:
+    1. Visit Hugging Face.
+    2. Locate the model (e.g., [Gemma 7b it](https://huggingface.co/google/gemma-7b-it)).
+    3. Review the text and identify the template.
+- In `parameters`, consider the following options. The fields in `parameters` are typically general and can be the same across models. An example is provided below:
+
+```json
+"parameters":{
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "stream": true,
+  "max_tokens": 4096,
+  "frequency_penalty": 0,
+  "presence_penalty": 0
 }
 ```
 

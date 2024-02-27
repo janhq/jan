@@ -1,0 +1,60 @@
+---
+sidebar_position: 5
+---
+
+import discord_repo from './assets/jan-ai-discord-repo.png';
+
+# Discord
+
+## Overview
+
+This tutorial demonstrates the process of integrating with a Discord bot using Jan.
+
+Using a Discord bot enhances server interaction. Integrating Jan with it can significantly boost responsiveness and user engagement.
+
+## How to Integrate Discord Bot with Jan
+
+### Step 1: Clone the repository
+
+To make this integration successful, it is necessary to clone the discord bot's [repository](https://github.com/jakobdylanc/discord-llm-chatbot).
+
+<div class="text--center"> 
+    <img src={discord_repo} width={600} alt="jan-ai-discord-repo" />
+</div>
+
+### Step 2: Install the requirement libraries
+
+After cloning the repository, run the following command:
+
+```sh
+pip install -r requirements.txt
+```
+
+### Step 3: Create a copy of `.env.example`, named `.env`, and set it up
+
+| Setting | Instructions |
+| ------- | ------------ |
+| DISCORD_BOT_TOKEN | Generate a new Discord application at [discord.com/developers/applications](https://discord.com/developers/applications), obtain a token from the Bot tab, and enable MESSAGE CONTENT INTENT. |
+| LLM | For [Jan](https://jan.ai/), set to `local/openai/(MODEL_NAME)`, where `(MODEL_NAME)` is your loaded model's name. |
+| CUSTOM_SYSTEM_PROMPT | Adjust the bot's behavior as needed. |
+| CUSTOM_DISCORD_STATUS | Set a custom message for the bot's Discord profile. (Max 128 characters) | 
+| ALLOWED_CHANNEL_IDS | Enter Discord channel IDs where the bot can send messages, separated by commas. Leave blank to allow all channels. |
+| ALLOWED_ROLE_IDS | Enter Discord role IDs allowed to use the bot, separated by commas. Leave blank to allow everyone. Including at least one role also disables DMs. |
+| MAX_IMAGES | Max number of image attachments allowed per message when using a vision model. (Default: `5`) |
+| MAX_MESSAGES | Max messages allowed in a reply chain. (Default: `20`) |
+| LOCAL_SERVER_URL | URL of your local API server for LLMs starting with `local/`. (Default: `http://localhost:5000/v1`) |
+| LOCAL_API_KEY | API key for your local API server with LLMs starting with `local/`. Usually safe to leave blank. |
+
+### Step 4: Invite the bot to your Discord server using this URL (replace `CLIENT_ID` with your Discord application's client ID from the OAuth2 tab)
+
+```
+https://discord.com/api/oauth2/authorize?client_id=(CLIENT_ID)&permissions=412317273088&scope=bot
+```
+
+### STep 5: Run the bot
+
+Run the bot by using the following command in your command prompt:
+
+```sh
+python llmcord.py
+```
