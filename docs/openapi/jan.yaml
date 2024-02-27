@@ -113,38 +113,10 @@ paths:
                 $ref: specs/models.yaml#/components/schemas/ListModelsResponse
       x-codeSamples:
         - lang: cURL
-          source: |-
+          source: |
             curl -X 'GET' \
               'http://localhost:1337/v1/models' \
               -H 'accept: application/json'
-        - lang: JavaScript
-          source: |-
-            const response = await fetch('http://localhost:1337/v1/models', {
-              method: 'GET',
-              headers: {Accept: 'application/json'}
-            });
-            const data = await response.json();
-        - lang: Python
-          source: |-
-            import requests
-
-            url = 'http://localhost:1337/v1/models'
-            headers = {'Accept': 'application/json'}
-            response = requests.get(url, headers=headers)
-            data = response.json()
-        - lang: Node.js
-          source: |-
-            const fetch = require('node-fetch');
-
-            const url = 'http://localhost:1337/v1/models';
-            const options = {
-              method: 'GET',
-              headers: { Accept: 'application/json' }
-            };
-
-            fetch(url, options)
-              .then(res => res.json())
-              .then(json => console.log(json));
   /models/download/{model_id}:
     get:
       operationId: downloadModel
@@ -171,10 +143,40 @@ paths:
                 $ref: specs/models.yaml#/components/schemas/DownloadModelResponse
       x-codeSamples:
         - lang: cURL
-          source: |
-            curl -X 'GET' \
-              'http://localhost:1337/v1/models/download/{model_id}' \
+          source: |-
+            curl -X 'GET' \  
+              'http://localhost:1337/v1/models/download/{model_id}' \  
               -H 'accept: application/json'
+        - lang: JavaScript
+          source: >-
+            const response = await
+            fetch('http://localhost:1337/v1/models/download/{model_id}', {
+              method: 'GET',
+              headers: {accept: 'application/json'}
+            });
+
+
+            const data = await response.json();
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            fetch('http://localhost:1337/v1/models/download/{model_id}', {
+              method: 'GET',
+              headers: {accept: 'application/json'}
+            })
+            .then(res => res.json())
+            .then(data => console.log(data));
+        - lang: Python
+          source: >-
+            import requests
+
+
+            response =
+            requests.get('http://localhost:1337/v1/models/download/{model_id}',
+            headers={'accept': 'application/json'})
+
+            data = response.json()
   /models/{model_id}:
     get:
       operationId: retrieveModel
