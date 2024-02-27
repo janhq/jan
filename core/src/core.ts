@@ -65,7 +65,7 @@ const joinPath: (paths: string[]) => Promise<string> = (paths) => global.core.ap
  * @param path - The path to retrieve.
  * @returns {Promise<string>} A promise that resolves with the basename.
  */
-const baseName: (paths: string[]) => Promise<string> = (path) => global.core.api?.baseName(path)
+const baseName: (paths: string) => Promise<string> = (path) => global.core.api?.baseName(path)
 
 /**
  * Opens an external URL in the default web browser.

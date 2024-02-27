@@ -71,7 +71,7 @@ const Sidebar: React.FC = () => {
   return (
     <div
       className={twMerge(
-        'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background pb-6 transition-all duration-100 dark:bg-background/20',
+        'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background pb-6 transition-all duration-100',
         showing
           ? 'w-80 translate-x-0 opacity-100'
           : 'w-0 translate-x-full opacity-0'
@@ -87,7 +87,7 @@ const Sidebar: React.FC = () => {
           <div>
             <label
               id="thread-title"
-              className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
+              className="mb-2 inline-block font-bold text-gray-600"
             >
               Title
             </label>
@@ -106,7 +106,7 @@ const Sidebar: React.FC = () => {
           <div className="flex flex-col">
             <label
               id="thread-title"
-              className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
+              className="mb-2 inline-block font-bold text-zinc-500"
             >
               Threads ID
             </label>
@@ -127,7 +127,7 @@ const Sidebar: React.FC = () => {
             <div>
               <label
                 id="thread-title"
-                className="mb-2 inline-block font-bold text-zinc-500 dark:text-gray-300"
+                className="mb-2 inline-block font-bold text-zinc-500"
               >
                 Instructions
               </label>
@@ -203,14 +203,14 @@ const Sidebar: React.FC = () => {
                       <div className="flex items-center justify-between">
                         <label
                           id="retrieval"
-                          className="inline-flex items-center font-bold text-zinc-500 dark:text-gray-300"
+                          className="inline-flex items-center font-bold text-zinc-500"
                         >
                           Retrieval
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <InfoIcon
                                 size={16}
-                                className="ml-2 flex-shrink-0 text-black dark:text-gray-500"
+                                className="ml-2 flex-shrink-0 text-black"
                               />
                             </TooltipTrigger>
                             <TooltipPortal>
@@ -269,7 +269,7 @@ const Sidebar: React.FC = () => {
                           <div className="item-center mb-2 flex">
                             <label
                               id="embedding-model"
-                              className="inline-flex font-bold text-zinc-500 dark:text-gray-300"
+                              className="inline-flex font-bold text-zinc-500"
                             >
                               Embedding Model
                             </label>
@@ -277,7 +277,7 @@ const Sidebar: React.FC = () => {
                               <TooltipTrigger asChild>
                                 <InfoIcon
                                   size={16}
-                                  className="ml-2 flex-shrink-0 dark:text-gray-500"
+                                  className="ml-2 flex-shrink-0"
                                 />
                               </TooltipTrigger>
                               <TooltipPortal>
@@ -309,7 +309,7 @@ const Sidebar: React.FC = () => {
                           <div className="mb-2 flex items-center">
                             <label
                               id="vector-database"
-                              className="inline-block font-bold text-zinc-500 dark:text-gray-300"
+                              className="inline-block font-bold text-zinc-500"
                             >
                               Vector Database
                             </label>
@@ -317,7 +317,7 @@ const Sidebar: React.FC = () => {
                               <TooltipTrigger asChild>
                                 <InfoIcon
                                   size={16}
-                                  className="ml-2 flex-shrink-0 dark:text-gray-500"
+                                  className="ml-2 flex-shrink-0"
                                 />
                               </TooltipTrigger>
                               <TooltipPortal>
