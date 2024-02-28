@@ -11,7 +11,7 @@ import {
   Badge,
 } from '@janhq/uikit'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { DatabaseIcon, CpuIcon } from 'lucide-react'
 
 import { showSelectModelModalAtom } from '@/containers/Providers/KeyListener'
@@ -19,13 +19,13 @@ import { showSelectModelModalAtom } from '@/containers/Providers/KeyListener'
 import { MainViewState } from '@/constants/screens'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-import { useMainViewState } from '@/hooks/useMainViewState'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 export default function CommandListDownloadedModel() {
-  const { setMainViewState } = useMainViewState()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { activeModel, startModel, stopModel } = useActiveModel()
   const [serverEnabled] = useAtom(serverEnabledAtom)

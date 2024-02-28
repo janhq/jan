@@ -13,6 +13,9 @@ import {
   DownloadRoute,
   ModelEvent,
   DownloadState,
+  OptionType,
+  ImportingModel,
+  LocalImportModelEvent,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -158,18 +161,18 @@ export default class JanModelExtension extends ModelExtension {
 
   /**
    * Cancels the download of a specific machine learning model.
+   *
    * @param {string} modelId - The ID of the model whose download is to be cancelled.
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   async cancelModelDownload(modelId: string): Promise<void> {
-    const model = await this.getConfiguredModels()
-    return abortDownload(
-      await joinPath([JanModelExtension._homeDir, modelId, modelId])
-    ).then(async () => {
-      fs.unlinkSync(
-        await joinPath([JanModelExtension._homeDir, modelId, modelId])
-      )
-    })
+    const path = await joinPath([JanModelExtension._homeDir, modelId, modelId])
+    try {
+      await abortDownload(path)
+      await fs.unlinkSync(path)
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   /**
@@ -180,6 +183,20 @@ export default class JanModelExtension extends ModelExtension {
   async deleteModel(modelId: string): Promise<void> {
     try {
       const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
+      const jsonFilePath = await joinPath([
+        dirPath,
+        JanModelExtension._modelMetadataFileName,
+      ])
+      const modelInfo = JSON.parse(
+        await this.readModelMetadata(jsonFilePath)
+      ) as Model
+
+      const isUserImportModel =
+        modelInfo.metadata?.author?.toLowerCase() === 'user'
+      if (isUserImportModel) {
+        // just delete the folder
+        return fs.rmdirSync(dirPath)
+      }
 
       // remove all files under dirPath except model.json
       const files = await fs.readdirSync(dirPath)
@@ -389,7 +406,7 @@ export default class JanModelExtension extends ModelExtension {
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
-      description: `${dirName} - user self import model`,
+      description: '',
       metadata: {
         size: binaryFileSize,
         author: 'User',
@@ -454,5 +471,183 @@ export default class JanModelExtension extends ModelExtension {
         }
       )
     }
+  }
+
+  private async importModelSymlink(
+    modelBinaryPath: string,
+    modelFolderName: string,
+    modelFolderPath: string
+  ): Promise<Model> {
+    const fileStats = await fs.fileStat(modelBinaryPath, true)
+    const binaryFileSize = fileStats.size
+
+    // Just need to generate model.json there
+    const defaultModel = (await this.getDefaultModel()) as Model
+    if (!defaultModel) {
+      console.error('Unable to find default model')
+      return
+    }
+
+    const binaryFileName = extractFileName(modelBinaryPath, '')
+
+    const model: Model = {
+      ...defaultModel,
+      id: modelFolderName,
+      name: modelFolderName,
+      sources: [
+        {
+          url: modelBinaryPath,
+          filename: binaryFileName,
+        },
+      ],
+      settings: {
+        ...defaultModel.settings,
+        llama_model_path: binaryFileName,
+      },
+      created: Date.now(),
+      description: '',
+      metadata: {
+        size: binaryFileSize,
+        author: 'User',
+        tags: [],
+      },
+    }
+
+    const modelFilePath = await joinPath([
+      modelFolderPath,
+      JanModelExtension._modelMetadataFileName,
+    ])
+
+    await fs.writeFileSync(modelFilePath, JSON.stringify(model, null, 2))
+
+    return model
+  }
+
+  async updateModelInfo(modelInfo: Partial<Model>): Promise<Model> {
+    const modelId = modelInfo.id
+    if (modelInfo.id == null) throw new Error('Model ID is required')
+
+    const janDataFolderPath = await getJanDataFolderPath()
+    const jsonFilePath = await joinPath([
+      janDataFolderPath,
+      'models',
+      modelId,
+      JanModelExtension._modelMetadataFileName,
+    ])
+    const model = JSON.parse(
+      await this.readModelMetadata(jsonFilePath)
+    ) as Model
+
+    const updatedModel: Model = {
+      ...model,
+      ...modelInfo,
+      metadata: {
+        ...model.metadata,
+        tags: modelInfo.metadata?.tags ?? [],
+      },
+    }
+
+    await fs.writeFileSync(jsonFilePath, JSON.stringify(updatedModel, null, 2))
+    return updatedModel
+  }
+
+  private async importModel(
+    model: ImportingModel,
+    optionType: OptionType
+  ): Promise<Model> {
+    const binaryName = extractFileName(model.path, '').replace(/\s/g, '')
+
+    let modelFolderName = binaryName
+    if (binaryName.endsWith(JanModelExtension._supportedModelFormat)) {
+      modelFolderName = binaryName.replace(
+        JanModelExtension._supportedModelFormat,
+        ''
+      )
+    }
+
+    const modelFolderPath = await this.getModelFolderName(modelFolderName)
+    await fs.mkdirSync(modelFolderPath)
+
+    const uniqueFolderName = modelFolderPath.split('/').pop()
+    const modelBinaryFile = binaryName.endsWith(
+      JanModelExtension._supportedModelFormat
+    )
+      ? binaryName
+      : `${binaryName}${JanModelExtension._supportedModelFormat}`
+
+    const binaryPath = await joinPath([modelFolderPath, modelBinaryFile])
+
+    if (optionType === 'SYMLINK') {
+      return this.importModelSymlink(
+        model.path,
+        uniqueFolderName,
+        modelFolderPath
+      )
+    }
+
+    const srcStat = await fs.fileStat(model.path, true)
+
+    // interval getting the file size to calculate the percentage
+    const interval = setInterval(async () => {
+      const destStats = await fs.fileStat(binaryPath, true)
+      const percentage = destStats.size / srcStat.size
+      events.emit(LocalImportModelEvent.onLocalImportModelUpdate, {
+        ...model,
+        percentage,
+      })
+    }, 1000)
+
+    await fs.copyFile(model.path, binaryPath)
+
+    clearInterval(interval)
+
+    // generate model json
+    return this.generateModelMetadata(uniqueFolderName)
+  }
+
+  private async getModelFolderName(
+    modelFolderName: string,
+    count?: number
+  ): Promise<string> {
+    const newModelFolderName = count
+      ? `${modelFolderName}-${count}`
+      : modelFolderName
+
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelFolderPath = await joinPath([
+      janDataFolderPath,
+      'models',
+      newModelFolderName,
+    ])
+
+    const isFolderExist = await fs.existsSync(modelFolderPath)
+    if (!isFolderExist) {
+      return modelFolderPath
+    } else {
+      const newCount = (count ?? 0) + 1
+      return this.getModelFolderName(modelFolderName, newCount)
+    }
+  }
+
+  async importModels(
+    models: ImportingModel[],
+    optionType: OptionType
+  ): Promise<void> {
+    const importedModels: Model[] = []
+
+    for (const model of models) {
+      events.emit(LocalImportModelEvent.onLocalImportModelUpdate, model)
+      const importedModel = await this.importModel(model, optionType)
+
+      events.emit(LocalImportModelEvent.onLocalImportModelSuccess, {
+        ...model,
+        modelId: importedModel.id,
+      })
+      importedModels.push(importedModel)
+    }
+    events.emit(
+      LocalImportModelEvent.onLocalImportModelFinished,
+      importedModels
+    )
   }
 }

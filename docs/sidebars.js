@@ -51,6 +51,7 @@ const sidebars = {
         "how-we-work/website-docs/website-docs",
       ],
     },
+    "acknowledgements",
   ],
   productSidebar: [
     {

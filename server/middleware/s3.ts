@@ -38,7 +38,7 @@ export const s3 = (req: any, reply: any, done: any) => {
         reply.status(200).send(result)
         return
       } catch (ex) {
-        console.log(ex)
+        console.error(ex)
       }
     }
   }

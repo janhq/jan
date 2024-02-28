@@ -1,0 +1,57 @@
+{
+  "name": "@janhq/huggingface-extension",
+  "version": "1.0.0",
+  "description": "Hugging Face extension for converting HF models to GGUF",
+  "main": "dist/index.js",
+  "node": "dist/node/index.cjs.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "build": "tsc --module commonjs && rollup -c rollup.config.ts --configPlugin @rollup/plugin-typescript --bundleConfigAsCjs",
+    "download:llama": "run-script-os",
+    "download:llama:linux": "LLAMA_CPP_VERSION=$(cat ./scripts/version.txt) && download https://github.com/ggerganov/llama.cpp/archive/refs/tags/${LLAMA_CPP_VERSION}.tar.gz -o . --filename ./scripts/llama.cpp.tar.gz && tar -xzf ./scripts/llama.cpp.tar.gz --wildcards '*/convert.py' '*/convert-hf-to-gguf.py' '*/gguf-py' && cpx \"./llama.cpp-$LLAMA_CPP_VERSION/**\" \"scripts\" && rimraf \"./scripts/llama.cpp.tar.gz\" && rimraf \"./llama.cpp-$LLAMA_CPP_VERSION\"",
+    "download:llama:darwin": "LLAMA_CPP_VERSION=$(cat ./scripts/version.txt) && download https://github.com/ggerganov/llama.cpp/archive/refs/tags/${LLAMA_CPP_VERSION}.tar.gz -o . --filename ./scripts/llama.cpp.tar.gz && tar -xzf ./scripts/llama.cpp.tar.gz '*/convert.py' '*/convert-hf-to-gguf.py' '*/gguf-py' && cpx \"./llama.cpp-$LLAMA_CPP_VERSION/**\" \"scripts\" && rimraf \"./scripts/llama.cpp.tar.gz\" && rimraf \"./llama.cpp-$LLAMA_CPP_VERSION\"",
+    "download:llama:win32": "download.bat",
+    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm run download:llama && cpx \"scripts/**\" \"dist/scripts\" && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && npm run download:llama && cpx \"scripts/**\" \"dist/scripts\" && cpx \"bin/**\" \"dist/bin\" && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm run download:llama && cpx \"scripts/**\" \"dist/scripts\" && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish": "run-script-os"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/node/index.cjs.js"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-replace": "^5.0.5",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@types/node": "^20.11.16",
+    "cpx": "^1.5.0",
+    "download-cli": "^1.1.1",
+    "rimraf": "^5.0.5",
+    "rollup": "^4.9.6",
+    "rollup-plugin-sourcemaps": "^0.6.3",
+    "rollup-plugin-typescript2": "^0.36.0",
+    "run-script-os": "^1.1.6",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@janhq/core": "file:../../core",
+    "hyllama": "^0.1.2",
+    "python-shell": "^5.0.0",
+    "ts-loader": "^9.5.0"
+  },
+  "bundledDependencies": [
+    "python-shell"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ]
+}

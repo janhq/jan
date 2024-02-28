@@ -1,8 +1,8 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useState } from 'react'
 
 import { fs, AppConfiguration, isSubdirectory } from '@janhq/core'
 import { Button, Input } from '@janhq/uikit'
-import { useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
 import Loader from '@/containers/Loader'
@@ -21,22 +21,17 @@ import ModalErrorSetDestGlobal, {
 
 import ModalSameDirectory, { showSamePathModalAtom } from './ModalSameDirectory'
 
+import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+
 const DataFolder = () => {
-  const [janDataFolderPath, setJanDataFolderPath] = useState('')
   const [showLoader, setShowLoader] = useState(false)
   const setShowDirectoryConfirm = useSetAtom(showDirectoryConfirmModalAtom)
   const setShowSameDirectory = useSetAtom(showSamePathModalAtom)
   const setShowChangeFolderError = useSetAtom(showChangeFolderErrorAtom)
   const showDestNotEmptyConfirm = useSetAtom(showDestNotEmptyConfirmAtom)
-  const [destinationPath, setDestinationPath] = useState(undefined)
 
-  useEffect(() => {
-    window.core?.api
-      ?.getAppConfigurations()
-      ?.then((appConfig: AppConfiguration) => {
-        setJanDataFolderPath(appConfig.data_folder)
-      })
-  }, [])
+  const [destinationPath, setDestinationPath] = useState(undefined)
+  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
 
   const onChangeFolderClick = useCallback(async () => {
     const destFolder = await window.core?.api?.selectDirectory()
@@ -56,8 +51,7 @@ const DataFolder = () => {
       return
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const newDestChildren: any[] = await fs.readdirSync(destFolder)
+    const newDestChildren: string[] = await fs.readdirSync(destFolder)
     const isNotEmpty =
       newDestChildren.filter((x) => x !== '.DS_Store').length > 0
 
