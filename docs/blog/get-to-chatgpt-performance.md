@@ -23,7 +23,7 @@ authors:
 
 ## Abstract
 
-A strong foundation model such as Mistral sets the stage for advanced opensource model capabilities. By merging math, coding and generalist models, and further enriching with a synthetic instruction dataset created from proprietary content, we achieve a new fine-tuned model outperforms GPT-3.5 in technical documentation understanding tasks. The implication is clear: adopting this straightforward methodology enables everyone to custom-train models not only for enhanced technical reasoning but also for various specific domain tasks, offering a practical blueprint for opensource models development.
+A strong foundation model such as Mistral sets the stage for advanced open-source model capabilities. By merging math, coding and generalist models, and further enriching with a synthetic instruction dataset created from proprietary content, we achieve a **new fine-tuned model outperforms GPT-3.5** in technical documentation understanding tasks. Adopting this straightforward methodology enables everyone to custom-train models not only for enhanced technical reasoning but also for various specific domain tasks, offering a practical blueprint for open-source models development.
 
 ## Choosing strong foundational model
 
