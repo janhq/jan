@@ -1,6 +1,6 @@
 ---
 title: "Data is a moat and OpenAI has it"
-description: "Finetune LLMs with personal dataset"
+description: "Uncover the pivotal role of data ownership in training the next iteration of LLM."
 slug: /data-is-a-moat
 tags: [OpenAI has a moat]
 authors:
@@ -16,12 +16,9 @@ authors:
         email: alan@jan.ai
 ---
 
-LLMs have grown increasingly capable in recent years across a wide variety of tasks. The leap forward has been astonishing - even for those who have built AI systems for years. The AI space is now crowded with not only closed-source AI of high quality like OpenAI-ChatGPT or Gemini-Google but also many more open-source alternatives like Meta's Llama2 or MistralAI's Mistral. With the consciousness of the whole AI community, there are variant of good fine-tuned models that claim to beat ChatGPT at some points. But actually, is that really true? and Why do these companies don't release their training dataset?
+The AI space is now crowded with not only closed-source AI of high quality like OpenAI-ChatGPT or Gemini-Google but also many more open-source alternatives like Meta's Llama2 or MistralAI's Mistral. With the consciousness of the whole AI community, there are variant of good fine-tuned models that claim to beat ChatGPT at some points. But actually, is that really true? and Why do these companies don't release their training dataset?
 
-In this blog post, we discuss about:
-
-- **Why is data ownership so crucial?**
-- **What are our partial solutions?**
+In this blog post, we will unveil the truth and delve deeper into the critical importance of data ownership and our proposed partial solutions.
 
 ## **Big corporations have their own moat**
 
