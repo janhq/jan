@@ -16,7 +16,7 @@ authors:
         email: alan@jan.ai
 ---
 
-The AI space is now crowded with not only closed-source AI of high quality like OpenAI-ChatGPT or Gemini-Google but also many more open-source alternatives like Meta's Llama2 or MistralAI's Mistral. With the consciousness of the whole AI community, there are variant of good fine-tuned models that claim to beat ChatGPT at some points. But actually, is that really true? and Why do these companies don't release their training dataset?
+The AI space is now crowded with not only closed-source AI of high quality like OpenAI-ChatGPT or Gemini-Google but also many more open-source alternatives like Meta's Llama2 or MistralAI's Mistral. With the consciousness of the whole AI community, there are variants of good fine-tuned models that claim to beat ChatGPT at some points. But actually, is that really the truth? And why these companies don't release their training dataset?
 
 In this blog post, we will unveil the truth and delve deeper into the critical importance of data ownership and our proposed partial solutions.
 
