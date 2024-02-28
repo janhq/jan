@@ -2,7 +2,7 @@
 title: "Data is a moat and OpenAI has it"
 description: "Finetune LLMs with personal dataset"
 slug: /data-is-a-moat
-tags: [Large Language Models, Data is a moat, Original distribution]
+tags: [OpenAI has a moat]
 authors:
     -   name: Rex Ha
         title: LLM Researcher & Content Writer
@@ -16,26 +16,28 @@ authors:
         email: alan@jan.ai
 ---
 
-**The rise of Large Language Models (LLMs) has been a game-changer, pushing the boundaries of what AI can achieve.** But within this exciting landscape, a crucial question arises: are open-source models truly competing on equal ground with their closed-source counterparts? This blog post delves into the **hidden advantage of data ownership**, exploring the challenges faced by the open-source LLM community and offering insights into the future of this dynamic field.
+LLMs have grown increasingly capable in recent years across a wide variety of tasks. The leap forward has been astonishing - even for those who have built AI systems for years. The AI space is now crowded with not only closed-source AI of high quality like OpenAI-ChatGPT or Gemini-Google but also many more open-source alternatives like Meta's Llama2 or MistralAI's Mistral. With the consciousness of the whole AI community, there are variant of good fine-tuned models that claim to beat ChatGPT at some points. But actually, is that really true? and Why do these companies don't release their training dataset?
 
 In this blog post, we discuss about:
 
 - **Why is data ownership so crucial?**
-- **What does the community actually have after all?**
+- **What are our partial solutions?**
 
-## **The Moat of Data Ownership**
+## **Big corporations have their own moat**
 
-Closed-source companies possess a unique advantage: not only do they have access to vast, curated datasets, but they also hold the original pre-trained data used to create their models. This comprehensive data pool empowers them to refine, adapt, and fine-tune their LLMs more effectively, potentially exceeding the capabilities of open-source models reliant on publicly available datasets.
+OpenAI has effectively constructed a moat in areas where even Google may struggle to compete, leveraging its unique position with ChatGPT. This platform enables OpenAI to aggregate a vast amount of user interactions, providing a comprehensive view of every daily use cases. Such insights allow for targeted model training improvements process, directly addressing real-world applications.
 
-### **Why is data ownership so crucial?**
+Crucially, OpenAI has a master key to improve their ChatGPT iterations: the "Pretrained dataset". This foundational dataset enables the them to unlock high-performance solutions across a spectrum of niche use cases, setting the stage for tailored advancements that meet specific user needs. This strategic asset not only differentiates OpenAI but also reinforces its competitive edge by facilitating continuous enhancement without quality degradation.
 
-Catastrophic forgetting is a crucial challenge in LLM development. This phenomenon occurs when a model, while learning new information (e.g., about a new topic like "birds"), starts to forget previously learned information (e.g., about "cats and dogs"). Owning the original training data allows closed-source companies to address this issue effectively. By fine-tuning their models on this mixed data, they can introduce new knowledge while minimizing the loss of existing abilities.
+### **Why owning the original pre-train is important?**
+
+This is a huge problem called "Catastrophic forgetting" in LLM development. This phenomenon occurs when a model, while learning new information (e.g., about a new topic like "birds"), starts to forget previously learned information (e.g., about "cats and dogs"). Owning the original training data allows closed-source companies to address this issue effectively. By fine-tuning their models on this mixed data, they can introduce new knowledge while minimizing the loss of existing abilities.
 
 ![Catastrophic forgetting](img/catastrophic-demo.png)
 
-Fig 1. Demonstrate of catastrophic forgetting problem
+Figure 1. Demonstration of catastrophic forgetting problem
 
-**Understanding Catastrophic Forgetting with Gradient Descent**
+**Understanding Catastrophic Forgetting with mathematic**
 
 During training, LLMs learn by adjusting their internal parameters to minimize a specific error function. This process can be visualized as a ball navigating a multidimensional landscape, where each dimension represents a different skill or piece of knowledge learned. Gradient descent guides the ball downhill towards an optimal point representing good performance on the training task.
 
@@ -43,7 +45,7 @@ However, when we introduce a new task (Case A), pushing the ball towards a new o
 
 ![Gradient decent](img/gradient-decent.gif)
 
-Fig 2. Gradient decent
+Figure 2. Gradient decent
 
 **The Advantage of Owning Original Data**
 
