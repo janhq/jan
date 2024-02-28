@@ -1,4 +1,10 @@
 .theme-doc-markdown {
+  a,
+  p,
+  span,
+  li {
+    @apply leading-loose;
+  }
   a {
     @apply text-blue-600 dark:text-blue-400;
   }
@@ -10,9 +16,9 @@
   }
   ul,
   ol {
-    padding-left: 16px;
+    padding-left: 28px;
     li {
-      @apply leading-normal;
+      @apply leading-loose;
       p {
         margin-bottom: 0;
       }

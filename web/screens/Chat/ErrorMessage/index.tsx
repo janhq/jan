@@ -48,13 +48,13 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           {loadModelError === PORT_NOT_AVAILABLE ? (
             <div
               key={message.id}
-              className="flex flex-col items-center text-center text-sm font-medium text-gray-500 w-full"
+              className="flex w-full flex-col items-center text-center text-sm font-medium text-gray-500"
             >
               <p className="w-[90%]">
                 Port 3928 is currently unavailable. Check for conflicting apps,
                 or access&nbsp;
                 <span
-                  className="cursor-pointer text-primary dark:text-blue-400"
+                  className="cursor-pointer text-blue-600"
                   onClick={() => setModalTroubleShooting(true)}
                 >
                   troubleshooting assistance
@@ -72,7 +72,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               <p>
                 Jan’s in beta. Access&nbsp;
                 <span
-                  className="cursor-pointer text-primary dark:text-blue-400"
+                  className="cursor-pointer text-blue-600"
                   onClick={() => setModalTroubleShooting(true)}
                 >
                   troubleshooting assistance

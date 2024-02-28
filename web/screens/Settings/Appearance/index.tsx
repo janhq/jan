@@ -1,9 +1,8 @@
-import ToggleAccent from '@/screens/Settings/Appearance/TogglePrimary'
 import ToggleTheme from '@/screens/Settings/Appearance/ToggleTheme'
 
 export default function AppearanceOptions() {
   return (
-    <div className="block w-full">
+    <div className="m-4 block w-full">
       <div className="flex w-full items-center justify-between border-b border-border py-3 first:pt-0 last:border-none">
         <div className="flex-shrink-0 space-y-1">
           <h6 className="text-sm font-semibold capitalize">
@@ -22,7 +21,6 @@ export default function AppearanceOptions() {
             Choose the primary accent color used throughout the app.
           </p>
         </div>
-        <ToggleAccent />
       </div>
     </div>
   )

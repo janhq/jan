@@ -30,7 +30,6 @@ import { MainViewState } from '@/constants/screens'
 import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { useClipboard } from '@/hooks/useClipboard'
-import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
@@ -41,6 +40,7 @@ import { toGibibytes } from '@/utils/converter'
 import ModelLabel from '../ModelLabel'
 import OpenAiKeyInput from '../OpenAiKeyInput'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 import {
@@ -64,11 +64,13 @@ const DropdownListSidebar = ({
   const [isTabActive, setIsTabActive] = useState(0)
   const { stateModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
-  const { setMainViewState } = useMainViewState()
+
+  const setMainViewState = useSetAtom(mainViewStateAtom)
   const [loader, setLoader] = useState(0)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
   const { updateModelParameter } = useUpdateModelParameters()
   const clipboard = useClipboard({ timeout: 1000 })
+
   const [copyId, setCopyId] = useState('')
 
   const localModel = downloadedModels.filter(
@@ -201,15 +203,14 @@ const DropdownListSidebar = ({
                 isTabActive === 1 && '[&_.select-scroll-down-button]:hidden'
               )}
             >
-              <div className="relative px-2 py-2 dark:bg-secondary/50">
-                <ul className="inline-flex w-full space-x-2 rounded-lg bg-zinc-100 px-1 dark:bg-secondary">
+              <div className="relative px-2 py-2">
+                <ul className="inline-flex w-full space-x-2 rounded-lg bg-zinc-100 px-1">
                   {engineOptions.map((name, i) => {
                     return (
                       <li
                         className={twMerge(
                           'relative my-1 flex w-full cursor-pointer items-center justify-center space-x-2 px-2 py-2',
-                          isTabActive === i &&
-                            'rounded-md bg-background dark:bg-white'
+                          isTabActive === i && 'rounded-md bg-background'
                         )}
                         key={i}
                         onClick={() => setIsTabActive(i)}
@@ -228,8 +229,7 @@ const DropdownListSidebar = ({
                         <span
                           className={twMerge(
                             'relative z-50 font-medium text-muted-foreground',
-                            isTabActive === i &&
-                              'font-bold text-foreground dark:text-black'
+                            isTabActive === i && 'font-bold text-foreground'
                           )}
                         >
                           {name}

@@ -38,7 +38,7 @@ const ModalTroubleShooting: React.FC = () => {
             <a
               href="https://jan.ai/guides/troubleshooting"
               target="_blank"
-              className="text-blue-600 hover:underline dark:text-blue-300"
+              className="text-blue-600 hover:underline"
             >
               troubleshooting guide
             </a>
@@ -65,11 +65,11 @@ const ModalTroubleShooting: React.FC = () => {
                   <a
                     href="https://discord.gg/AsJ8krTT3N"
                     target="_blank"
-                    className="text-blue-600 hover:underline dark:text-blue-300"
+                    className="text-blue-600 hover:underline"
                   >
                     Discord
                   </a>
-                  &nbsp; & send it to #🆘|get-help channel for further support.
+                  &nbsp;& send it to #🆘|get-help channel for further support.
                 </p>
               </li>
             </ul>
@@ -77,8 +77,8 @@ const ModalTroubleShooting: React.FC = () => {
 
           <div className="flex flex-col pt-4">
             {/* TODO @faisal replace this once we have better tabs component UI */}
-            <div className="relative bg-zinc-100 px-4 py-2 dark:bg-secondary/50">
-              <ul className="inline-flex space-x-2 rounded-lg bg-zinc-200 px-1 dark:bg-secondary">
+            <div className="relative bg-zinc-100 px-4 py-2">
+              <ul className="inline-flex space-x-2 rounded-lg bg-zinc-200 px-1">
                 {logOption.map((name, i) => {
                   return (
                     <li
@@ -89,15 +89,14 @@ const ModalTroubleShooting: React.FC = () => {
                       <span
                         className={twMerge(
                           'relative z-50 font-medium text-muted-foreground',
-                          isTabActive === i &&
-                            'font-bold text-foreground dark:text-black'
+                          isTabActive === i && 'font-bold text-foreground'
                         )}
                       >
                         {name}
                       </span>
                       {isTabActive === i && (
                         <m.div
-                          className="absolute left-0 top-1 h-[calc(100%-8px)] w-full rounded-md bg-background dark:bg-white"
+                          className="absolute left-0 top-1 h-[calc(100%-8px)] w-full rounded-md bg-background"
                           layoutId="log-state-active"
                         />
                       )}

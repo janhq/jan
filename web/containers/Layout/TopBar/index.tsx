@@ -20,7 +20,6 @@ import { MainViewState } from '@/constants/screens'
 
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
-import { useMainViewState } from '@/hooks/useMainViewState'
 
 import { usePath } from '@/hooks/usePath'
 
@@ -28,18 +27,19 @@ import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 
 import { openFileTitle } from '@/utils/titleUtils'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const TopBar = () => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const { mainViewState } = useMainViewState()
+  const mainViewState = useAtomValue(mainViewStateAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const assistants = useAtomValue(assistantsAtom)
   const [showRightSideBar, setShowRightSideBar] = useAtom(showRightSideBarAtom)
   const [showLeftSideBar, setShowLeftSideBar] = useAtom(showLeftSideBarAtom)
   const showing = useAtomValue(showRightSideBarAtom)
-  const { onReviewInFinder, onViewJson } = usePath()
+  const { onRevealInFinder, onViewJson } = usePath()
   const [more, setMore] = useState(false)
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
@@ -151,7 +151,7 @@ const TopBar = () => {
                         <div
                           className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
                           onClick={() => {
-                            onReviewInFinder('Thread')
+                            onRevealInFinder('Thread')
                             setMore(false)
                           }}
                         >
@@ -159,7 +159,7 @@ const TopBar = () => {
                             size={16}
                             className="text-muted-foreground"
                           />
-                          <span className="font-medium text-black dark:text-muted-foreground">
+                          <span className="font-medium text-black ">
                             {openFileTitle()}
                           </span>
                         </div>
@@ -175,7 +175,7 @@ const TopBar = () => {
                             className="mt-0.5 flex-shrink-0 text-muted-foreground"
                           />
                           <div className="flex flex-col">
-                            <span className="font-medium text-black dark:text-muted-foreground">
+                            <span className="font-medium text-black ">
                               Edit Threads Settings
                             </span>
                             <span className="mt-1 text-muted-foreground">
@@ -195,7 +195,7 @@ const TopBar = () => {
                         <div
                           className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary"
                           onClick={() => {
-                            onReviewInFinder('Model')
+                            onRevealInFinder('Model')
                             setMore(false)
                           }}
                         >
@@ -204,7 +204,7 @@ const TopBar = () => {
                             className="text-muted-foreground"
                           />
                           <div className="flex flex-col">
-                            <span className="font-medium text-black dark:text-muted-foreground">
+                            <span className="font-medium text-black ">
                               {openFileTitle()}
                             </span>
                           </div>

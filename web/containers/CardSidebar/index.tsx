@@ -38,14 +38,14 @@ export default function CardSidebar({
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   const activeThread = useAtomValue(activeThreadAtom)
-  const { onReviewInFinder, onViewJson } = usePath()
+  const { onRevealInFinder, onViewJson } = usePath()
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
   return (
     <div
       className={twMerge(
-        'flex w-full flex-col border-t border-border bg-zinc-100 dark:bg-zinc-900',
+        'flex w-full flex-col border-t border-border bg-zinc-100',
         asChild ? 'rounded-lg border' : 'border-t'
       )}
     >
@@ -61,7 +61,7 @@ export default function CardSidebar({
               if (!children) return
               setShow(!show)
             }}
-            className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 py-2 pr-2 dark:bg-zinc-900"
+            className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 py-2 pr-2"
           >
             <ChevronDownIcon
               className={twMerge(
@@ -79,7 +79,7 @@ export default function CardSidebar({
               {!hideMoreVerticalAction && (
                 <div
                   ref={setToggle}
-                  className="cursor-pointer rounded-lg bg-zinc-100 p-2 px-3 dark:bg-zinc-900"
+                  className="cursor-pointer rounded-lg bg-zinc-100 p-2 px-3"
                   onClick={() => setMore(!more)}
                 >
                   <MoreVerticalIcon className="h-5 w-5" />
@@ -100,7 +100,7 @@ export default function CardSidebar({
                 title === 'Model' ? 'items-start' : 'items-center'
               )}
               onClick={() => {
-                onReviewInFinder && onReviewInFinder(title)
+                onRevealInFinder && onRevealInFinder(title)
                 setMore(false)
               }}
             >
@@ -114,7 +114,7 @@ export default function CardSidebar({
               <>
                 {title === 'Model' ? (
                   <div className="flex flex-col">
-                    <span className="font-medium text-black dark:text-muted-foreground">
+                    <span className="font-medium text-black">
                       {openFileTitle()}
                     </span>
                     <span className="mt-1 text-muted-foreground">
@@ -122,7 +122,7 @@ export default function CardSidebar({
                     </span>
                   </div>
                 ) : (
-                  <span className="text-bold text-black dark:text-muted-foreground">
+                  <span className="text-bold text-black">
                     {openFileTitle()}
                   </span>
                 )}
@@ -141,7 +141,7 @@ export default function CardSidebar({
               />
               <>
                 <div className="flex flex-col">
-                  <span className="line-clamp-1 font-medium text-black dark:text-muted-foreground">
+                  <span className="line-clamp-1 font-medium text-black">
                     Edit Global Defaults for{' '}
                     <span
                       className="font-bold"
@@ -175,7 +175,7 @@ export default function CardSidebar({
       {show && (
         <div
           className={twMerge(
-            'flex flex-col gap-2 bg-white px-2 dark:bg-background',
+            'flex flex-col gap-2 bg-white px-2',
             asChild && 'rounded-b-lg'
           )}
         >

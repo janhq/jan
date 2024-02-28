@@ -9,7 +9,7 @@ export const usePath = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
 
-  const onReviewInFinder = async (type: string) => {
+  const onRevealInFinder = async (type: string) => {
     // TODO: this logic should be refactored.
     if (type !== 'Model' && !activeThread) return
 
@@ -96,7 +96,7 @@ export const usePath = () => {
   }
 
   return {
-    onReviewInFinder,
+    onRevealInFinder,
     onViewJson,
     onViewFile,
     onViewFileContainer,

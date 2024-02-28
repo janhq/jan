@@ -1,6 +1,5 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useContext, useState } from 'react'
 
-import { openExternalUrl } from '@janhq/core'
 import {
   Input,
   ScrollArea,
@@ -10,24 +9,36 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  Button,
 } from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
-import { SearchIcon } from 'lucide-react'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { UploadIcon, SearchIcon } from 'lucide-react'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
+
+import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ExploreModelList from './ExploreModelList'
+import { HuggingFaceModal } from './HuggingFaceModal'
 
 import {
   configuredModelsAtom,
   downloadedModelsAtom,
 } from '@/helpers/atoms/Model.atom'
 
+const sortMenu = ['All Models', 'Recommended', 'Downloaded']
+
 const ExploreModelsScreen = () => {
   const configuredModels = useAtomValue(configuredModelsAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [searchValue, setsearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('All Models')
-  const sortMenu = ['All Models', 'Recommended', 'Downloaded']
+
+  const [showHuggingFaceModal, setShowHuggingFaceModal] = useState(false)
+  const setImportModelStage = useSetAtom(setImportModelStageAtom)
+
+  const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'Downloaded') {
@@ -45,9 +56,13 @@ const ExploreModelsScreen = () => {
     }
   })
 
-  const onHowToImportModelClick = useCallback(() => {
-    openExternalUrl('https://jan.ai/guides/using-models/import-manually/')
-  }, [])
+  const onImportModelClick = useCallback(() => {
+    setImportModelStage('SELECTING_MODEL')
+  }, [setImportModelStage])
+
+  const onHuggingFaceConverterClick = () => {
+    setShowHuggingFaceModal(true)
+  }
 
   return (
     <div
@@ -56,6 +71,10 @@ const ExploreModelsScreen = () => {
     >
       <div className="h-full w-full p-4">
         <div className="h-full">
+          <HuggingFaceModal
+            open={showHuggingFaceModal}
+            onOpenChange={setShowHuggingFaceModal}
+          />
           <ScrollArea>
             <div className="relative">
               <img
@@ -63,28 +82,38 @@ const ExploreModelsScreen = () => {
                 alt="Hub Banner"
                 className="w-full object-cover"
               />
-              <div className="absolute left-1/2 top-1/2 w-1/3 -translate-x-1/2 -translate-y-1/2">
-                <div className="relative">
-                  <SearchIcon
-                    size={20}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  />
-                  <Input
-                    placeholder="Search models"
-                    className="bg-white pl-9 dark:bg-background"
-                    onChange={(e) => {
-                      setsearchValue(e.target.value)
-                    }}
-                  />
-                </div>
-                <div className="mt-2 text-center">
-                  <p
-                    onClick={onHowToImportModelClick}
-                    className="cursor-pointer font-semibold text-white underline"
+              <div className="absolute left-1/2 top-1/2 w-1/3 -translate-x-1/2 -translate-y-1/2 space-y-2">
+                <div className="flex flex-row space-x-2">
+                  <div className="relative">
+                    <SearchIcon
+                      size={20}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <Input
+                      placeholder="Search models"
+                      className="bg-white pl-9"
+                      onChange={(e) => setsearchValue(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    themes="outline"
+                    className="gap-2 bg-white"
+                    onClick={onImportModelClick}
                   >
-                    How to manually import models
-                  </p>
+                    <UploadIcon size={16} />
+                    Import Model
+                  </Button>
                 </div>
+                {experimentalFeature && (
+                  <div className="text-center">
+                    <p
+                      onClick={onHuggingFaceConverterClick}
+                      className="cursor-pointer font-semibold text-white underline"
+                    >
+                      Convert from Hugging Face
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             <div className="mx-auto w-4/5 py-6">

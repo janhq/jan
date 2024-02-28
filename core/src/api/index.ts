@@ -7,6 +7,7 @@ export enum NativeRoute {
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
   selectDirectory = 'selectDirectory',
+  selectModelFiles = 'selectModelFiles',
   relaunch = 'relaunch',
 }
 
@@ -46,6 +47,13 @@ export enum DownloadEvent {
   onFileDownloadSuccess = 'onFileDownloadSuccess',
 }
 
+export enum LocalImportModelEvent {
+  onLocalImportModelUpdate = 'onLocalImportModelUpdate',
+  onLocalImportModelFailed = 'onLocalImportModelFailed',
+  onLocalImportModelSuccess = 'onLocalImportModelSuccess',
+  onLocalImportModelFinished = 'onLocalImportModelFinished',
+}
+
 export enum ExtensionRoute {
   baseExtensions = 'baseExtensions',
   getActiveExtensions = 'getActiveExtensions',
@@ -67,6 +75,7 @@ export enum FileSystemRoute {
 }
 export enum FileManagerRoute {
   syncFile = 'syncFile',
+  copyFile = 'copyFile',
   getJanDataFolderPath = 'getJanDataFolderPath',
   getResourcePath = 'getResourcePath',
   getUserHomePath = 'getUserHomePath',
@@ -126,4 +135,8 @@ export const CoreRoutes = [
 ]
 
 export const APIRoutes = [...CoreRoutes, ...Object.values(NativeRoute)]
-export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]
+export const APIEvents = [
+  ...Object.values(AppEvent),
+  ...Object.values(DownloadEvent),
+  ...Object.values(LocalImportModelEvent),
+]

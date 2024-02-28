@@ -1,6 +1,5 @@
 import { join } from 'path'
 import fs from 'fs'
-import { FileManagerRoute } from '../../../api'
 import { appResourcePath, normalizeFilePath } from '../../helper/path'
 import { getJanDataFolderPath, getJanDataFolderPath as getPath } from '../../helper'
 import { Processor } from './Processor'
@@ -48,10 +47,12 @@ export class FSExt implements Processor {
   }
 
   // handle fs is directory here
-  fileStat(path: string) {
+  fileStat(path: string, outsideJanDataFolder?: boolean) {
     const normalizedPath = normalizeFilePath(path)
 
-    const fullPath = join(getJanDataFolderPath(), normalizedPath)
+    const fullPath = outsideJanDataFolder
+      ? normalizedPath
+      : join(getJanDataFolderPath(), normalizedPath)
     const isExist = fs.existsSync(fullPath)
     if (!isExist) return undefined
 
@@ -74,5 +75,17 @@ export class FSExt implements Processor {
     } catch (err) {
       console.error(`writeFile ${path} result: ${err}`)
     }
+  }
+
+  copyFile(src: string, dest: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      fs.copyFile(src, dest, (err) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve()
+        }
+      })
+    })
   }
 }

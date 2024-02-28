@@ -25,8 +25,8 @@ const TableActiveModel = () => {
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
   return (
-    <div className="flex-shrink-0 m-4 mr-0 w-2/3">
-      <div className="rounded-lg border border-border shadow-sm overflow-hidden">
+    <div className="m-4 mr-0 w-2/3 flex-shrink-0">
+      <div className="overflow-hidden rounded-lg border border-border shadow-sm">
         <table className="w-full px-8">
           <thead className="w-full border-b border-border bg-secondary">
             <tr>
