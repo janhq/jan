@@ -85,26 +85,28 @@ Edit the `config.json` file and include the following configuration.
 ```
 
 - Ensure that the `provider` is `openai`.
-- Ensure that the `model` is the same as the one you enabled in the Jan API Server.
+- Ensure that the `model` is the ID of the running model. You can check for the respective ID in System Monitor.
 - Ensure that the `apiBase` is `http://localhost:1337/v1`.
 - Ensure that the `apiKey` is `EMPTY`.
 
-### 4. Ensure the Using Model Is Activated in Jan
+### 4. Double Check the Model is Running
 
-Navigate to `Settings` > `Models`. Activate the model that you want to use in Jan by clicking the **three dots (⋮)** and **start model**.
+Open up the `System Monitor` to check that your model is currently running.
+
+If there are not active models, go to `Settings` > `My Models`. Click on the **three dots (⋮)** and **start model**.
 
 ![Active Models](assets/01-start-model.png)
 
-### 5. Try Out the Integration of Jan and Continue in VS Code
+### 5. Use Continue in VS Code
 
 #### Asking questions about the code
 
-- Highlight a code snippet and press `Command + Shift + M` to open the **Left Panel**.
+- Highlight a code snippet and press `Command + M` to open the Continue Extension in VSCode.
 - Select Jan at the bottom and ask a question about the code, for example, `Explain this code`.
 
 ![Continue Interactions](assets/01-continue-ask.png)
 
-#### Editing the code with the help of a large language model
+#### Editing the code directly
 
 - Highlight a code snippet and press `Command + Shift + L` and input your edit request, for example, `Write comments for this code`.
 

@@ -86,6 +86,10 @@ const menus = [
         path: "https://janai.bamboohr.com/careers",
         external: true,
       },
+      {
+        menu: "Newsletter",
+        path: "/community#newsletter",
+      }
     ],
   },
 ];
