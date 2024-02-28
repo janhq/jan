@@ -1,11 +1,11 @@
----
 openapi: 3.0.0
 info:
   title: API Reference
   description: >
     # Introduction
 
-    Jan API is compatible with the [OpenAI API](https://platform.openai.com/docs/api-reference).
+    Jan API is compatible with the [OpenAI
+    API](https://platform.openai.com/docs/api-reference).
 version: 0.1.8
 contact:
   name: Jan Discord
@@ -20,12 +20,12 @@ tags:
     description: List and describe the various models available in the API.
   - name: Chat
     description: >
-      Given a list of messages comprising a conversation, the model will
-      return a response.
+      Given a list of messages comprising a conversation, the model will return
+      a response.
   - name: Messages
     description: >
-      Messages capture a conversation's content. This can include the
-      content from LLM responses and other metadata from [chat
+      Messages capture a conversation's content. This can include the content
+      from LLM responses and other metadata from [chat
       completions](/specs/chats).
   - name: Threads
   - name: Assistants
@@ -49,16 +49,16 @@ paths:
       summary: |
         Create chat completion
       description: >
-        Creates a model response for the given chat conversation.  <a  href
-        = "https://platform.openai.com/docs/api-reference/chat/create">
-        Equivalent to OpenAI's create chat completion. </a>
+        Creates a model response for the given chat conversation.  <a  href =
+        "https://platform.openai.com/docs/api-reference/chat/create"> Equivalent
+        to OpenAI's create chat completion. </a>
       requestBody:
         content:
           application/json:
             schema:
               $ref: specs/chat.yaml#/components/schemas/ChatCompletionRequest
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -100,12 +100,12 @@ paths:
         - Models
       summary: List models
       description: >
-        Lists the currently available models, and provides basic
-        information about each one such as the owner and availability.  <a  href
-        = "https://platform.openai.com/docs/api-reference/models/list">
-        Equivalent to OpenAI's list model. </a>
+        Lists the currently available models, and provides basic information
+        about each one such as the owner and availability.  <a  href =
+        "https://platform.openai.com/docs/api-reference/models/list"> Equivalent
+        to OpenAI's list model. </a>
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -117,7 +117,7 @@ paths:
             curl -X 'GET' \
               'http://localhost:1337/v1/models' \
               -H 'accept: application/json'
-  "/models/download/{model_id}":
+  /models/download/{model_id}:
     get:
       operationId: downloadModel
       tags:
@@ -135,7 +135,7 @@ paths:
           description: |
             The ID of the model to use for this request.
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -147,15 +147,15 @@ paths:
             curl -X 'GET' \
               'http://localhost:1337/v1/models/download/{model_id}' \
               -H 'accept: application/json'
-  "/models/{model_id}":
+  /models/{model_id}:
     get:
       operationId: retrieveModel
       tags:
         - Models
       summary: Retrieve model
       description: >
-        Get a model instance, providing basic information about the model
-        such as the owner and permissioning.  <a  href =
+        Get a model instance, providing basic information about the model such
+        as the owner and permissioning.  <a  href =
         "https://platform.openai.com/docs/api-reference/models/retrieve">
         Equivalent to OpenAI's retrieve model. </a>
       parameters:
@@ -168,7 +168,7 @@ paths:
           description: |
             The ID of the model to use for this request.
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -199,7 +199,7 @@ paths:
           description: |
             The model id to delete
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -228,7 +228,7 @@ paths:
             schema:
               $ref: specs/threads.yaml#/components/schemas/CreateThreadObject
       responses:
-        "200":
+        '200':
           description: Thread created successfully
           content:
             application/json:
@@ -257,7 +257,7 @@ paths:
       description: |
         Retrieves a list of all threads available in the system.
       responses:
-        "200":
+        '200':
           description: List of threads retrieved successfully
           content:
             application/json:
@@ -285,7 +285,7 @@ paths:
           source: |
             curl http://localhost:1337/v1/threads \
               -H "Content-Type: application/json" \
-  "/threads/{thread_id}":
+  /threads/{thread_id}:
     get:
       operationId: getThread
       tags:
@@ -305,7 +305,7 @@ paths:
           description: |
             The ID of the thread to retrieve.
       responses:
-        "200":
+        '200':
           description: Thread details retrieved successfully
           content:
             application/json:
@@ -345,7 +345,7 @@ paths:
                   items:
                     $ref: specs/threads.yaml#/components/schemas/ThreadMessageObject
       responses:
-        "200":
+        '200':
           description: Thread modified successfully
           content:
             application/json:
@@ -384,7 +384,7 @@ paths:
           description: |
             The ID of the thread to be deleted.
       responses:
-        "200":
+        '200':
           description: Thread deleted successfully
           content:
             application/json:
@@ -405,7 +405,7 @@ paths:
         "https://platform.openai.com/docs/api-reference/assistants/listAssistants">
         Equivalent to OpenAI's list assistants. </a>
       responses:
-        "200":
+        '200':
           description: List of assistants retrieved successfully
           content:
             application/json:
@@ -442,10 +442,36 @@ paths:
                     metadata: {}
       x-codeSamples:
         - lang: cURL
-          source: |
+          source: |-
             curl http://localhost:1337/v1/assistants \
-              -H "Content-Type: application/json" \
-  "/assistants/{assistant_id}":
+              -H "Content-Type: application/json"
+        - lang: JavaScript
+          source: |-
+            fetch('http://localhost:1337/v1/assistants', {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            })
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            fetch('http://localhost:1337/v1/assistants', {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            })
+        - lang: Python
+          source: |-
+            import requests
+
+            url = 'http://localhost:1337/v1/assistants'
+            headers = {'Content-Type': 'application/json'}
+
+            response = requests.get(url, headers=headers)
+  /assistants/{assistant_id}:
     get:
       operationId: getAssistant
       tags:
@@ -465,18 +491,19 @@ paths:
           description: |
             The ID of the assistant to retrieve.
       responses:
-        "200":
+        '200':
           description: null
           content:
             application/json:
               schema:
-                $ref: specs/assistants.yaml#/components/schemas/RetrieveAssistantResponse
+                $ref: >-
+                  specs/assistants.yaml#/components/schemas/RetrieveAssistantResponse
       x-codeSamples:
         - lang: cURL
           source: |
             curl http://localhost:1337/v1/assistants/{assistant_id} \
               -H "Content-Type: application/json" \
-  "/threads/{thread_id}/messages":
+  /threads/{thread_id}/messages:
     get:
       operationId: listMessages
       tags:
@@ -495,7 +522,7 @@ paths:
           description: |
             The ID of the thread from which to retrieve messages.
       responses:
-        "200":
+        '200':
           description: List of messages retrieved successfully
           content:
             application/json:
@@ -547,7 +574,7 @@ paths:
                 - role
                 - content
       responses:
-        "200":
+        '200':
           description: Message created successfully
           content:
             application/json:
@@ -562,7 +589,7 @@ paths:
                 "role": "user",
                 "content": "How does AI work? Explain it in simple terms."
               }'
-  "/threads/{thread_id}/messages/{message_id}":
+  /threads/{thread_id}/messages/{message_id}:
     get:
       operationId: retrieveMessage
       tags:
@@ -589,7 +616,7 @@ paths:
           description: |
             The ID of the message to retrieve.
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -598,8 +625,8 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: >
-            curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}
-            \
+            curl
+            http://localhost:1337/v1/threads/{thread_id}/messages/{message_id} \
               -H "Content-Type: application/json"
 x-webhooks:
   ModelObject:
@@ -621,10 +648,9 @@ x-webhooks:
     post:
       summary: The assistant object
       description: >
-        Build assistants that can call models and use tools to perform
-        tasks. <a  href =
-        "https://platform.openai.com/docs/api-reference/assistants"> Equivalent
-        to OpenAI's assistants object. </a>
+        Build assistants that can call models and use tools to perform tasks.
+        <a  href = "https://platform.openai.com/docs/api-reference/assistants">
+        Equivalent to OpenAI's assistants object. </a>
       operationId: AssistantObjects
       tags:
         - Assistants
@@ -651,7 +677,8 @@ x-webhooks:
   ThreadObject:
     post:
       summary: The thread object
-      description: Represents a thread that contains messages. <a  href =
+      description: >-
+        Represents a thread that contains messages. <a  href =
         "https://platform.openai.com/docs/api-reference/threads/object">
         Equivalent to OpenAI's thread object. </a>
       operationId: ThreadObject
