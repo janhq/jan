@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
-import { ImportingModel, fs } from '@janhq/core'
+import { ImportingModel, baseName, fs } from '@janhq/core'
 import { Modal, ModalContent, ModalHeader, ModalTitle } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -9,16 +9,15 @@ import { UploadCloudIcon } from 'lucide-react'
 
 import { v4 as uuidv4 } from 'uuid'
 
+import { snackbar } from '@/containers/Toast'
+
+import useDropModelBinaries from '@/hooks/useDropModelBinaries'
 import {
   getImportModelStageAtom,
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-import {
-  FilePathWithSize,
-  getFileInfoFromFile,
-  getFileNameFromPath,
-} from '@/utils/file'
+import { FilePathWithSize } from '@/utils/file'
 
 import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
 
@@ -26,6 +25,7 @@ const SelectingModelModal: React.FC = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const setImportingModels = useSetAtom(importingModelsAtom)
+  const { onDropModels } = useDropModelBinaries()
 
   const onSelectFileClick = useCallback(async () => {
     const filePaths = await window.core?.api?.selectModelFiles()
@@ -36,7 +36,7 @@ const SelectingModelModal: React.FC = () => {
       const fileStats = await fs.fileStat(filePath, true)
       if (!fileStats || fileStats.isDirectory) continue
 
-      const fileName = getFileNameFromPath(filePath)
+      const fileName = await baseName(filePath)
       sanitizedFilePaths.push({
         path: filePath,
         name: fileName,
@@ -44,12 +44,19 @@ const SelectingModelModal: React.FC = () => {
       })
     }
 
-    const importingModels: ImportingModel[] = sanitizedFilePaths.map(
+    const unsupportedFiles = sanitizedFilePaths.filter(
+      (file) => !file.path.endsWith('.gguf')
+    )
+    const supportedFiles = sanitizedFilePaths.filter((file) =>
+      file.path.endsWith('.gguf')
+    )
+
+    const importingModels: ImportingModel[] = supportedFiles.map(
       ({ path, name, size }: FilePathWithSize) => {
         return {
           importId: uuidv4(),
           modelId: undefined,
-          name: name,
+          name: name.replace('.gguf', ''),
           description: '',
           path: path,
           tags: [],
@@ -59,45 +66,26 @@ const SelectingModelModal: React.FC = () => {
         }
       }
     )
+    if (unsupportedFiles.length > 0) {
+      snackbar({
+        description: `File has to be a .gguf file`,
+        type: 'error',
+      })
+    }
     if (importingModels.length === 0) return
 
     setImportingModels(importingModels)
     setImportModelStage('MODEL_SELECTED')
   }, [setImportingModels, setImportModelStage])
 
-  const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      const filePathWithSize = getFileInfoFromFile(acceptedFiles)
-
-      const importingModels: ImportingModel[] = filePathWithSize.map(
-        (file) => ({
-          importId: uuidv4(),
-          modelId: undefined,
-          name: file.name,
-          description: '',
-          path: file.path,
-          tags: [],
-          size: file.size,
-          status: 'PREPARING',
-          format: 'gguf',
-        })
-      )
-      if (importingModels.length === 0) return
-
-      setImportingModels(importingModels)
-      setImportModelStage('MODEL_SELECTED')
-    },
-    [setImportModelStage, setImportingModels]
-  )
-
   const { isDragActive, getRootProps } = useDropzone({
     noClick: true,
     multiple: true,
-    onDrop,
+    onDrop: onDropModels,
   })
 
   const borderColor = isDragActive ? 'border-primary' : 'border-[#F4F4F5]'
-  const textColor = isDragActive ? 'text-primary' : 'text-[#71717A]'
+  const textColor = isDragActive ? 'text-blue-600' : 'text-[#71717A]'
   const dragAndDropBgColor = isDragActive ? 'bg-[#EFF6FF]' : 'bg-white'
 
   return (
@@ -128,7 +116,7 @@ const SelectingModelModal: React.FC = () => {
             </div>
 
             <div className="mt-4">
-              <span className="text-sm font-bold text-primary">
+              <span className="text-sm font-bold text-blue-600">
                 Click to upload
               </span>
               <span className={`text-sm ${textColor} font-medium`}>

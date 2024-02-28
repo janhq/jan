@@ -2,7 +2,6 @@ import { useCallback, useState } from 'react'
 
 import { useDropzone } from 'react-dropzone'
 
-import { ImportingModel } from '@janhq/core'
 import { Button, Input, ScrollArea } from '@janhq/uikit'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -10,60 +9,29 @@ import { Plus, SearchIcon, UploadCloudIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
-import { v4 as uuidv4 } from 'uuid'
-
+import useDropModelBinaries from '@/hooks/useDropModelBinaries'
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
-
-import { getFileInfoFromFile } from '@/utils/file'
 
 import RowModel from './Row'
 
-import {
-  downloadedModelsAtom,
-  importingModelsAtom,
-} from '@/helpers/atoms/Model.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const Column = ['Name', 'Model ID', 'Size', 'Version', 'Status', '']
 
 const Models: React.FC = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
-  const setImportingModels = useSetAtom(importingModelsAtom)
   const [searchValue, setsearchValue] = useState('')
+  const { onDropModels } = useDropModelBinaries()
 
   const filteredDownloadedModels = downloadedModels
     .filter((x) => x.name?.toLowerCase().includes(searchValue.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name))
 
-  const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      const filePathWithSize = getFileInfoFromFile(acceptedFiles)
-
-      const importingModels: ImportingModel[] = filePathWithSize.map(
-        (file) => ({
-          importId: uuidv4(),
-          modelId: undefined,
-          name: file.name,
-          description: '',
-          path: file.path,
-          tags: [],
-          size: file.size,
-          status: 'PREPARING',
-          format: 'gguf',
-        })
-      )
-      if (importingModels.length === 0) return
-
-      setImportingModels(importingModels)
-      setImportModelStage('MODEL_SELECTED')
-    },
-    [setImportModelStage, setImportingModels]
-  )
-
   const { getRootProps, isDragActive } = useDropzone({
     noClick: true,
     multiple: true,
-    onDrop,
+    onDrop: onDropModels,
   })
 
   const onImportModelClick = useCallback(() => {
