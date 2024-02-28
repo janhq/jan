@@ -48,7 +48,7 @@ const ImportingModelState: React.FC = () => {
               className="h-2 w-24"
               value={transferredSize / totalSize}
             />
-            <span className="text-xs font-bold	text-primary">
+            <span className="text-xs font-bold text-blue-600">
               {progress.toFixed(2)}%
             </span>
           </div>

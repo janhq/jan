@@ -79,7 +79,7 @@ export default function ThreadList() {
           <div
             key={thread.id}
             className={twMerge(
-              `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-gray-100 hover:dark:bg-secondary/50`
+              `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-gray-100`
             )}
             onClick={() => {
               onThreadClick(thread)
@@ -90,7 +90,7 @@ export default function ThreadList() {
                 {thread.updated && displayDate(thread.updated)}
               </p>
               <h2 className="line-clamp-1 font-bold">{thread.title}</h2>
-              <p className="mt-1 line-clamp-1 text-xs text-gray-700 group-hover/message:max-w-[160px] dark:text-gray-300">
+              <p className="mt-1 line-clamp-1 text-xs text-gray-700 group-hover/message:max-w-[160px]">
                 {threadStates[thread.id]?.lastMessage
                   ? threadStates[thread.id]?.lastMessage
                   : 'No new message'}
@@ -98,7 +98,7 @@ export default function ThreadList() {
             </div>
             <div
               className={twMerge(
-                `group/icon invisible absolute bottom-2 right-2 z-20 rounded-lg p-1 text-muted-foreground hover:bg-gray-200 group-hover/message:visible hover:dark:bg-secondary`
+                `group/icon invisible absolute bottom-2 right-2 z-20 rounded-lg p-1 text-muted-foreground hover:bg-gray-200 group-hover/message:visible`
               )}
             >
               <MoreVerticalIcon />
@@ -109,7 +109,7 @@ export default function ThreadList() {
             </div>
             {activeThreadId === thread.id && (
               <m.div
-                className="absolute inset-0 left-0 h-full w-full rounded-lg bg-gray-100 p-4 dark:bg-secondary/50"
+                className="absolute inset-0 left-0 h-full w-full rounded-lg bg-gray-100 p-4"
                 layoutId="active-thread"
               />
             )}

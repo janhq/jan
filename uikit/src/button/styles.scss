@@ -5,11 +5,11 @@
   @apply disabled:pointer-events-none disabled:bg-zinc-100 disabled:text-zinc-400;
 
   &-primary {
-    @apply bg-primary hover:bg-primary/90 text-white;
+    @apply bg-blue-600 text-white hover:bg-blue-600/90;
   }
 
   &-secondary-blue {
-    @apply bg-blue-200 text-blue-600 hover:bg-blue-300/50 dark:hover:bg-blue-200/80;
+    @apply bg-blue-200 text-blue-600 hover:bg-blue-300/50;
   }
 
   &-danger {
@@ -17,7 +17,7 @@
   }
 
   &-secondary-danger {
-    @apply bg-red-200 text-red-600 hover:bg-red-300/50 dark:hover:bg-red-200/80;
+    @apply bg-red-200 text-red-600 hover:bg-red-300/50;
   }
 
   &-outline {
@@ -66,7 +66,7 @@
 [type='reset'],
 [type='submit'] {
   &.btn-primary {
-    @apply bg-primary hover:bg-primary/90;
+    @apply bg-blue-600 hover:bg-blue-600/90;
     @apply disabled:pointer-events-none disabled:bg-zinc-100 disabled:text-zinc-400;
   }
   &.btn-secondary {
