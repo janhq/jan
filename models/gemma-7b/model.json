@@ -1,8 +1,8 @@
 {
   "sources": [
     {
-      "filename": "gemma-7b-it.Q4_K_M.gguf",
-      "url": "https://huggingface.co/mlabonne/gemma-7b-it-GGUF/resolve/main/gemma-7b-it.Q4_K_M.gguf"
+      "filename": "gemma-7b-it-q4_K_M.gguf",
+      "url": "https://huggingface.co/mmnga/gemma-7b-it-gguf/resolve/main/gemma-7b-it-q4_K_M.gguf"
     }
   ],
   "id": "gemma-7b",
@@ -14,7 +14,7 @@
   "settings": {
     "ctx_len": 4096,
     "prompt_template": "<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model",
-    "llama_model_path": "gemma-7b-it.Q4_K_M.gguf"
+    "llama_model_path": "gemma-7b-it-q4_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
