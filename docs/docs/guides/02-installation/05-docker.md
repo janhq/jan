@@ -108,7 +108,7 @@ sudo sh ./get-docker.sh --dry-run
 
     ```bash
     # GPU mode with default file system
-    docker compose --profile gpu up -d
+    docker compose --profile gpu-fs up -d
 
     # GPU mode with S3 file system
     docker compose --profile gpu-s3fs up -d
