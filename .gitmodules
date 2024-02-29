@@ -1,0 +1,3 @@
+[submodule "triton_tensorrtllm_backend"]
+	path = triton_tensorrtllm_backend
+	url = https://github.com/triton-inference-server/tensorrtllm_backend
