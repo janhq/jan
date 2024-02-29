@@ -1,24 +1,37 @@
 ---
+title: Azure OpenAI
 sidebar_position: 3
+description: A step-by-step guide on how to integrate Jan with Azure OpenAI.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    integration,
+    Azure OpenAI Service,
+  ]
 ---
 
 import azure from './assets/azure.png';
 
-# Azure OpenAI
-
-A step-by-step guide on how to integrate Jan with Azure OpenAI.
-
----
-
-## Overview
-
-This guide will show you how to integrate Azure OpenAI Service with Jan. The [Azure OpenAI Service](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview?source=docs) offers robust APIs, making it simple for you to incorporate OpenAI's language models into your applications.
-
 ## How to Integrate Azure OpenAI with Jan
+
+The [Azure OpenAI Service](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview?source=docs) offers robust APIs, making it simple for you to incorporate OpenAI's language models into your applications.
+
+<div class="text--center" > 
+    <img src={ azure } width = { 800} alt = "azure" />
+</div>
+
+You can integrate Azure OpenAI with Jan by following the steps below:
 
 ### Step 1: Configure Azure OpenAI Service API Key
 
-1. Set yp and deploy the Azure OpenAI Service.
+1. Set up and deploy the Azure OpenAI Service.
 2. Once you've set up and deployed Azure OpenAI Service, you can find the endpoint and API key in [Azure OpenAI Studio](https://oai.azure.com/) under `Chat` > `View code`.
 
 3. Set up the endpoint and API key for Azure OpenAI Service in the `~/jan/engines/openai.json` file.
@@ -34,7 +47,7 @@ This guide will show you how to integrate Azure OpenAI Service with Jan. The [Az
 ### Step 2: Model Configuration
 
 1. Go to the `~/jan/models` directory. 
-2. Make a new folder called `(your-deployment-name)`, like `gpt-35-hieu-jan`.
+2. Make a new folder called `(your-deployment-name)`, for example `gpt-35-hieu-jan`.
 3. Create a `model.json` file inside the folder with the specified configurations:
   - Match the `id` property with both the folder name and your deployment name.
   - Set the `format` property as `api`.
@@ -65,6 +78,29 @@ This guide will show you how to integrate Azure OpenAI Service with Jan. The [Az
 }
 ```
 
+### Regarding `model.json`
+
+- In `settings`, two crucial values are:
+  - `ctx_len`: Defined based on the model's context size.
+  - `prompt_template`: Defined based on the model's trained template (e.g., ChatML, Alpaca).
+  - To set up the `prompt_template`:
+    1. Visit [Hugging Face](https://huggingface.co/), an open-source machine learning platform.
+    2. Find the current model that you're using (e.g., [Gemma 7b it](https://huggingface.co/google/gemma-7b-it)).
+    3. Review the text and identify the template.
+- In `parameters`, consider the following options. The fields in `parameters` are typically general and can be the same across models. An example is provided below:
+
+```json
+"parameters":{
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "stream": true,
+  "max_tokens": 4096,
+  "frequency_penalty": 0,
+  "presence_penalty": 0
+}
+```
+
 ### Step 3: Start the Model
 
-Restart Jan and go to the Hub. Find your model and click on the Use button.
+1. Restart Jan and go to the Hub. 
+2. Find your model in Jan application and click on the Use button.

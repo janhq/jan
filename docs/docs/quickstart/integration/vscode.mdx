@@ -1,23 +1,37 @@
 ---
+title: Continue
 sidebar_position: 1
+description: A step-by-step guide on how to integrate Jan with Continue and VS Code.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    Continue integration,
+    VSCode integration,
+  ]
 ---
 import continue_ask from './assets/jan-ai-continue-ask.png';
 import continue_comment from './assets/jan-ai-continue-comment.gif';
 import vscode from './assets/vscode.png';
+import flow from './assets/cont.png';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Continue Integration for Visual Studio Code
-
-A step-by-step guide on how to integrate Jan with Continue and VS Code.
-
----
-
-## Overview
-
-This guide showcases integrating Continue with Jan and VS Code to boost your coding using the local AI language model's features. [Continue](https://continue.dev/docs/intro) is an open-source autopilot compatible with Visual Studio Code and JetBrains, offering the simplest method to code with any LLM (Local Language Model).
-
 ## How to Integrate with Continue VS Code
+
+[Continue](https://continue.dev/docs/intro) is an open-source autopilot compatible with Visual Studio Code and JetBrains, offering the simplest method to code with any LLM (Local Language Model).
+
+<div class="text--center" > 
+    <img src={ flow } width = { 800} alt = "Continue" />
+</div>
+
+To integrate Jan with a local AI language model, follow the steps below:
 
 ### Step 1: Installing Continue on Visal Studio Code
 
@@ -62,7 +76,7 @@ To set up Continue for use with Jan's Local Server, you must activate the Jan AP
       "provider": "openai",
       "model": "mistral-ins-7b-q4",
       "apiKey": "EMPTY",
-      "apiBase": "http://localhost:1337/v1"
+      "apiBase": "http://localhost:1337"
     }
   ]
 }
@@ -70,7 +84,7 @@ To set up Continue for use with Jan's Local Server, you must activate the Jan AP
 2. Ensure the file has the following configurations:
     - Ensure `openai` is selected as the `provider`.
     - Match the `model` with the one enabled in the Jan API Server.
-    - Set `apiBase` to `http://localhost:1337/v1`.
+    - Set `apiBase` to `http://localhost:1337`.
     - Leave the `apiKey` field to `EMPTY`.
 
 ### Step 4: Ensure the Using Model Is Activated in Jan
@@ -78,8 +92,7 @@ To set up Continue for use with Jan's Local Server, you must activate the Jan AP
 1. Navigate to `Settings` > `Models`.
 2. Activate the model you want to use in Jan by clicking the **three dots (⋮)** and select **Start Model**.
 
-## Use cases for Jan integration with Visual Studio Code
-Below are examples of the integration:
+## Try out Jan integration with Continue in Visual Studio Code
 
 ### 1. Asking questions about the code
 
