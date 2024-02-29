@@ -1,18 +1,22 @@
 ---
+title: Remote Server Integration
 sidebar_position: 2
+description: A step-by-step guide on how to set up Jan to connect with any remote or local API server.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    import-models-manually,
+    remote server,
+    OAI compatible,
+  ]
 ---
-
-# Remote Server Integration
-
-A step-by-step guide on how to set up Jan to connect with any remote or local API server.
-
----
-
-:::warning
-
-This is currently under development.
-
-:::
 
 This guide will show you how to configure Jan as a client and point it to any remote & local (self-hosted) API server.
 
@@ -156,11 +160,34 @@ Please note that currently, the code that supports any OpenAI-compatible endpoin
   },
   "engine": "openai"
 }
+
+```
+### Regarding `model.json`
+
+- In `settings`, two crucial values are:
+  - `ctx_len`: Defined based on the model's context size.
+  - `prompt_template`: Defined based on the model's trained template (e.g., ChatML, Alpaca).
+  - To set up the `prompt_template`:
+    1. Visit [Hugging Face](https://huggingface.co/), an open-source machine learning platform.
+    2. Find the current model that you're using (e.g., [Gemma 7b it](https://huggingface.co/google/gemma-7b-it)).
+    3. Review the text and identify the template.
+- In `parameters`, consider the following options. The fields in `parameters` are typically general and can be the same across models. An example is provided below:
+
+```json
+"parameters":{
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "stream": true,
+  "max_tokens": 4096,
+  "frequency_penalty": 0,
+  "presence_penalty": 0
+}
 ```
 
 ### 3. Start the Model
 
-Restart Jan and navigate to the **Hub**. Locate your model and click the **Use** button.
+1. Restart Jan and navigate to the **Hub**.
+2. Locate your model and click the **Use** button.
 
 :::info[Assistance and Support]
 
