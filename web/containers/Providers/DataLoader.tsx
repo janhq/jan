@@ -2,7 +2,7 @@
 
 import { Fragment, ReactNode, useEffect } from 'react'
 
-import { AppConfiguration } from '@janhq/core/.'
+import { AppConfiguration } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import useAssistants from '@/hooks/useAssistants'

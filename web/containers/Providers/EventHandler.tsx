@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Fragment, ReactNode, useCallback, useEffect, useRef } from 'react'
 
 import {
@@ -15,6 +14,7 @@ import {
   MessageRequestType,
   ModelEvent,
   Thread,
+  ModelInitFailed,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulid'
@@ -113,15 +113,14 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   }, [setActiveModel, setStateModel])
 
   const onModelInitFailed = useCallback(
-    (res: any) => {
-      const errorMessage = res?.error ?? res
-      console.error('Failed to load model: ', errorMessage)
+    (res: ModelInitFailed) => {
+      console.error('Failed to load model: ', res.error.message)
       setStateModel(() => ({
         state: 'start',
         loading: false,
-        model: res.modelId,
+        model: res.id,
       }))
-      setLoadModelError(errorMessage)
+      setLoadModelError(res.error.message)
       setQueuedMessage(false)
     },
     [setStateModel, setQueuedMessage, setLoadModelError]
