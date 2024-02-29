@@ -5,9 +5,9 @@
       "url": "https://huggingface.co/lmstudio-ai/gemma-2b-it-GGUF/resolve/main/gemma-2b-it-q4_k_m.gguf"
     }
   ],
-  "id": "gemma-7b",
+  "id": "gemma-2b",
   "object": "model",
-  "name": "Gemma 7B Q4",
+  "name": "Gemma 2B Q4",
   "version": "1.0",
   "description": "Gemma is built from the same technology with Google's Gemini.",
   "format": "gguf",
