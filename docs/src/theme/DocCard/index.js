@@ -42,6 +42,10 @@ import issue from './assets/issue.png';
 import amiss from './assets/amiss.png';
 import broken from './assets/broken.png';
 import gpu from './assets/gpu.png';
+import mistral from './assets/mistral.png';
+import lm from './assets/lm.png';
+import ollama from './assets/ollama.png';
+
 function CardContainer({href, children}) {
   return (
     <Link
@@ -140,7 +144,7 @@ function CardLink({item}) {
     <img src={setup} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Import Extensions") ? (
     <img src={importex} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
-  ) : (item.label === "Continue Integration") ? (
+  ) : (item.label === "Continue") ? (
     <img src={continueint} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "OpenRouter") ? (
     <img src={openrouter} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
@@ -164,6 +168,12 @@ function CardLink({item}) {
     <img src={broken} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Jan not using GPU") ? (
     <img src={gpu} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "Mistral AI") ? (
+    <img src={mistral} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "LM Studio") ? (
+    <img src={lm} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "Ollama") ? (
+    <img src={ollama} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (
     // If not "Customize Engine Settings", use default icon
     '📄️'
