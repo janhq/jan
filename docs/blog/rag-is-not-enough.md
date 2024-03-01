@@ -35,7 +35,7 @@ Mistral 7B continues to outshine [Meta's Llama-2 7B](https://huggingface.co/meta
 
 Having a robust base model is critical. In our experiments, using Mistral as a starting point ensured the highest accuracy for subsequent specialized adaptations.
 
-![Mistral vs LLama](img/mistral-comparasion.png)
+![Mistral vs LLama vs Gemma](img/mistral-comparasion.png)
 
 *Figure 1. Mistral 7B excels in benchmarks, ranking among the top foundational models.*
 
@@ -94,3 +94,7 @@ Training was done with supervised finetuning (SFT) from the [Hugging Face's alig
 We used consumer-grade, dual Nvidia RTX 4090s for the training. The end-to-end training took 18 minutes. We found optimal hyperparameters in LoRA for this specific task to be `r = 256` and `alpha = 512`.
 
 This final model can be found [here on Huggingface](https://huggingface.co/jan-hq/nitro-v1.2-e3).
+
+![Using LLM locally](img/nitro-on-jan.png)
+
+*Figure 3. Using the new finetuned model in [Jan](https://jan.ai/)*
