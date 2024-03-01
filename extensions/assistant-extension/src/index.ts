@@ -10,6 +10,7 @@ import {
   executeOnMain,
   AssistantExtension,
   AssistantEvent,
+  ChatCompletionMessageContentType,
 } from '@janhq/core'
 
 export default class JanAssistantExtension extends AssistantExtension {

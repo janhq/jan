@@ -119,8 +119,8 @@ export type ModelSettingParams = {
   llama_model_path?: string
   mmproj?: string
   cont_batching?: boolean
-  visionModel?: boolean
-  textModel?: boolean
+  vision_model?: boolean
+  text_model?: boolean
 }
 
 /**

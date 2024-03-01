@@ -16,8 +16,8 @@
   "description": "BakLlava 1 can bring vision understanding to Jan",
   "format": "gguf",
   "settings": {
-    "visionModel": true,
-    "textModel": false,
+    "vision_model": true,
+    "text_model": false,
     "ctx_len": 4096,
     "prompt_template": "\n### Instruction:\n{prompt}\n### Response:\n",
     "llama_model_path": "ggml-model-q5_k.gguf",

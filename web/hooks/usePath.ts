@@ -1,4 +1,9 @@
-import { openFileExplorer, joinPath, getJanDataFolderPath } from '@janhq/core'
+import {
+  openFileExplorer,
+  joinPath,
+  getJanDataFolderPath,
+  baseName,
+} from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
@@ -78,6 +83,8 @@ export const usePath = () => {
 
     const userSpace = await getJanDataFolderPath()
     let filePath = undefined
+
+    id = await baseName(id)
     filePath = await joinPath(['threads', `${activeThread.id}/files`, `${id}`])
     if (!filePath) return
     const fullPath = await joinPath([userSpace, filePath])

@@ -11,7 +11,7 @@
   "description": "OpenAI GPT 4 with Vision model is extremely good in preview",
   "format": "api",
   "settings": {
-    "visionModel": true,
+    "vision_model": true,
     "textModel": false
   },
   "parameters": {
