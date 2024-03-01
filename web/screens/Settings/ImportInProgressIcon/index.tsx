@@ -15,7 +15,8 @@ const ImportInProgressIcon: React.FC<Props> = ({
   const [isHovered, setIsHovered] = useState(false)
 
   const onMouseOver = () => {
-    setIsHovered(true)
+    // for now we don't allow user to cancel importing
+    setIsHovered(false)
   }
 
   const onMouseOut = () => {

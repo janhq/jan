@@ -57,17 +57,6 @@ const SystemMonitor = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const calculateUtilization = () => {
-    let sum = 0
-    const util = gpus.map((x) => {
-      return Number(x['utilization'])
-    })
-    util.forEach((num) => {
-      sum += num
-    })
-    return sum
-  }
-
   return (
     <Fragment>
       <div
@@ -131,10 +120,11 @@ const SystemMonitor = () => {
                 </div>
               </div>
               <div className="mb-4 border-b border-border pb-4">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-2">
                   <h6 className="font-bold">Memory</h6>
-                  <span className="text-xs text-muted-foreground">
-                    {toGibibytes(usedRam)} of {toGibibytes(totalRam)} used
+                  <span className="text-sm text-muted-foreground">
+                    {toGibibytes(usedRam, { hideUnit: true })}/
+                    {toGibibytes(totalRam, { hideUnit: true })} GB
                   </span>
                 </div>
                 <div className="flex items-center gap-x-4">
@@ -148,30 +138,29 @@ const SystemMonitor = () => {
                 </div>
               </div>
               {gpus.length > 0 && (
-                <div className="mb-4 border-b border-border pb-4">
-                  <h6 className="font-bold">GPU</h6>
-                  <div className="flex items-center gap-x-4">
-                    <Progress value={calculateUtilization()} className="h-2" />
-                    <span className="flex-shrink-0 text-muted-foreground">
-                      {calculateUtilization()}%
-                    </span>
-                  </div>
+                <div className="mb-4 border-b border-border pb-4 last:border-none">
                   {gpus.map((gpu, index) => (
-                    <div
-                      key={index}
-                      className="mt-4 flex items-start justify-between gap-4"
-                    >
-                      <span className="line-clamp-1 w-1/2 font-medium text-muted-foreground">
-                        {gpu.name}
-                      </span>
-                      <div className="flex gap-x-2">
-                        <span className="font-semibold">
+                    <div key={index} className="mt-4 flex flex-col gap-x-2">
+                      <div className="flex w-full items-start justify-between">
+                        <span className="line-clamp-1 w-1/2 font-bold">
+                          {gpu.name}
+                        </span>
+                        <div className="flex gap-x-2">
+                          <div className="text-muted-foreground">
+                            <span>
+                              {gpu.memoryTotal - gpu.memoryFree}/
+                              {gpu.memoryTotal}
+                            </span>
+                            <span> MB</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-x-4">
+                        <Progress value={gpu.utilization} className="h-2" />
+                        <span className="flex-shrink-0 text-muted-foreground">
                           {gpu.utilization}%
                         </span>
-                        <div>
-                          <span className="font-semibold">{gpu.vram}</span>
-                          <span>MB VRAM</span>
-                        </div>
                       </div>
                     </div>
                   ))}

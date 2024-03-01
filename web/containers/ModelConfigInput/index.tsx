@@ -30,12 +30,10 @@ const ModelConfigInput: React.FC<Props> = ({
   return (
     <div className="flex flex-col">
       <div className="mb-2 flex items-center gap-x-2">
-        <p className="text-sm font-semibold text-zinc-500 dark:text-gray-300">
-          {title}
-        </p>
+        <p className="text-sm font-semibold text-zinc-500">{title}</p>
         <Tooltip>
           <TooltipTrigger asChild>
-            <InfoIcon size={16} className="flex-shrink-0 dark:text-gray-500" />
+            <InfoIcon size={16} className="flex-shrink-0" />
           </TooltipTrigger>
           <TooltipPortal>
             <TooltipContent side="top" className="max-w-[240px]">
