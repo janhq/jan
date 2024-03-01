@@ -20,6 +20,8 @@ function HomepageHeader() {
             appId={process.env.ALGOLIA_APP_ID}
             apiKey={process.env.ALGOLIA_API_KEY}
             indexName="jan_docs"
+            contextualSearch={true}
+            insight={true}
           />
         </div>
         {/* <div className={styles.searchBar}>
