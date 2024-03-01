@@ -58,3 +58,11 @@ We ended up with [Stealth](https://huggingface.co/jan-hq/stealth-v1.3), a [SLERP
 - Our own [Trinity](https://huggingface.co/jan-hq/trinity-v1.2) model for its versatility across general tasks
 
 This particular combination yielded the best tradeoff across mathematical & technical reasoning while retaining the most pre-merge performance on general tasks.
+
+## **DPO finetuning**
+
+Merging different LLMs can lead to the mixed answering style because each model was originally trained on different types of data.
+
+Thus, we applied Direct Preference Optimization ([DPO](https://arxiv.org/abs/2305.18290)) using the [Intel's Orca DPO pairs](https://huggingface.co/datasets/Intel/orca_dpo_pairs) dataset, chosen for its helpful answering style in general, math and coding concentration.
+
+This approach allowed us to have a final model, with minimal loss, and realign to our technical preferences.
