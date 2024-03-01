@@ -23,11 +23,11 @@ authors:
 
 ## Abstract
 
-We present a straightforward approach to adapting small, open-source models for specialized use-cases, that can surpass GPT 3.5 performance with RAG. With it, we were able to get superior results on Q&A over [technical documentation](https://nitro.jan.ai/docs) describing a small [codebase](https://github.com/janhq/nitro).
+We present a straightforward approach to adapting small, open-source models for specialized use cases, that can surpass GPT 3.5 performance with RAG. With it, we were able to get superior results on Q&A over [technical documentation](https://nitro.jan.ai/docs) describing a small [codebase](https://github.com/janhq/nitro).
 
 In short, (1) extending a general foundation model like [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.1) with strong math and coding, and (2) training it over a high-quality, synthetic dataset generated from the intended corpus, and (3) adding RAG capabilities, can lead to significant accuracy improvements.
 
-Problems still arise with catastrophic forgetting in general tasks, commonly observed during specilizied domain fine-tuning. In our case, this is likely exacerbated by our lack of access to Mistral’s original training dataset and various compression techniques used in our approach to keep the model small.
+Problems still arise with catastrophic forgetting in general tasks, commonly observed during specialized domain fine-tuning. In our case, this is likely exacerbated by our lack of access to Mistral’s original training dataset and various compression techniques used in our approach to keep the model small.
 
 ## Selecting a strong foundation model
 
@@ -39,7 +39,7 @@ Problems still arise with catastrophic forgetting in general tasks, commonly obs
 
 *Note: we are not sponsored by the Mistral team. Though many folks in their community do like to run Mistral locally using our desktop client - [Jan](https://jan.ai/).*
 
-## Cost effectively improving the base model
+## Cost-effectively improving the base model
 
 Mistral alone has known, poor math capabilities, which we needed for our highly technical use case. Thus, we tested all model variants on top of Mistral, from foundation models to finetunes to model merges, in order to find a stronger base model to receive our own finetuning.
 
@@ -59,11 +59,11 @@ This particular combination yielded the best tradeoff across mathematical & tech
 
 ## **DPO finetuning**
 
-Merging different LLMs can lead to the mixed answering style because each model was originally trained on different types of data.
+Merging different LLMs can lead to a mixed answering style because each model was originally trained on different types of data.
 
 Thus, we applied Direct Preference Optimization ([DPO](https://arxiv.org/abs/2305.18290)) using the [Intel's Orca DPO pairs](https://huggingface.co/datasets/Intel/orca_dpo_pairs) dataset, chosen for its helpful answering style in general, math and coding concentration.
 
-This approach result in a final model - [Stealth 7B v1.2](https://huggingface.co/jan-hq/stealth-v1.2), with minimal loss, and realign to our technical preferences.
+This approach results in a final model - [Stealth 7B v1.2](https://huggingface.co/jan-hq/stealth-v1.2), with minimal loss, and realign to our technical preferences.
 
 ## **Using our own technical documentation**
 
@@ -87,7 +87,7 @@ The chunks were then given to GPT-4 with 8k context length to generate 3800 Q&A 
 
 ## **Training**
 
-Training was done with supervised finetuning (SFT) from the [Hugging Face's alignment-handbook](https://github.com/huggingface/alignment-handbook), per [Huggingface's Zephyr Beta](https://github.com/huggingface/alignment-handbook/tree/main/recipes/zephyr-7b-beta) guidelines. 
+The training was done with supervised finetuning (SFT) from the [Hugging Face's alignment handbook](https://github.com/huggingface/alignment-handbook), per [Huggingface's Zephyr Beta](https://github.com/huggingface/alignment-handbook/tree/main/recipes/zephyr-7b-beta) guidelines. 
 
 We used consumer-grade, dual Nvidia RTX 4090s for the training. The end-to-end training took 18 minutes. We found optimal hyperparameters in LoRA for this specific task to be `r = 256` and `alpha = 512`.
 
@@ -109,7 +109,7 @@ We curated a new set of [50 multiple-choice questions](https://github.com/janhq/
 
 ![Opensource model outperforms GPT](assets/rag-comparasion.png)
 
-*Figure 4. Comparation between finetuned model and OpenAI's GPT*
+*Figure 4. Comparison between fine-tuned model and OpenAI's GPT.*
 
 **Results**
 
