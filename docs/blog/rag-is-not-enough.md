@@ -25,7 +25,7 @@ authors:
 
 We present a straightforward approach to adapting small, open-source models for specialized use-cases, that can surpass GPT 3.5 performance with RAG. With it, we were able to get superior results on Q&A over [technical documentation](https://nitro.jan.ai/docs) describing a small [codebase](https://github.com/janhq/nitro).
 
-In short, (1) extending a general foundation model like [](https://huggingface.co/jan-hq/stealth-v1.3)Mistral with strong math and coding, and (2) training it over a high-quality, synthetic dataset generated from the intended corpus, and (3) adding RAG capabilities, can lead to significant accuracy improvements.
+In short, (1) extending a general foundation model like [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.1) with strong math and coding, and (2) training it over a high-quality, synthetic dataset generated from the intended corpus, and (3) adding RAG capabilities, can lead to significant accuracy improvements.
 
 Problems still arise with catastrophic forgetting in general tasks, commonly observed during continued fine-tuning [1]. In our case, this is likely exacerbated by our lack of access to Mistral’s original training dataset and various compression techniques used in our approach to keep the model small.
 
@@ -117,8 +117,8 @@ We curated a new set of [50 multiple-choice questions](https://github.com/janhq/
 
 - GPT-3.5 with RAG: 56.7%
 - GPT-4 with RAG: 64.3%
-- Merged 7B Model ([Stealth](https://huggingface.co/jan-hq/stealth-v1.3)) with RAG: 47.7%
-- Finetuned 7B Model (Nitro) with RAG: 57.8%
+- Merged 7B Model ([Stealth 7B](https://huggingface.co/jan-hq/stealth-v1.3)) with RAG: 47.7%
+- Finetuned 7B Model (Nitro 7B) with RAG: 57.8%
 
 This indicates that with task-specific training, we can improve an open-source, Small Language Model to the level of GPT-3.5 on domain knowledge. 
 
@@ -131,3 +131,13 @@ We conclude that this combination of model merging + finetuning + RAG yields pro
 Anecdotally, we’ve had some success using this model in practice to onboard new team members to the Nitro codebase.
 
 A full research report with more statistics can be found [here](https://github.com/janhq/open-foundry/blob/main/rag-is-not-enough/README.md).
+
+# References
+
+- [Catastrophic forgetting](https://arxiv.org/abs/2308.08747)
+- [Math specialization](https://arxiv.org/abs/2308.09583)
+- [Code specialization](https://arxiv.org/abs/2306.08568)
+- [Search specialization](https://github.com/SciPhi-AI/agent-search)
+- [Evol Instruct](https://github.com/nlpxucan/WizardLM)
+- [Lost in the middle](https://arxiv.org/abs/2307.03172)
+- [Instruction tuning](https://arxiv.org/pdf/2109.01652.pdf)
