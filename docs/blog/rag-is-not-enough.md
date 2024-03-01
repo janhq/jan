@@ -78,3 +78,11 @@ So, we directed our efforts toward training a model to answer user questions bas
 Specifically, we trained it on Nitro [docs](https://nitro.jan.ai/docs). For context, Nitro is the default inference engine for Jan. It’s a serious server implementation of LlamaCPP, written in C++, with multimodal, queues, and other production-level server capabilities. 
 
 It made an interesting corpus because it was rife with post-2023 technical jargon, edge cases, and poor informational layout.
+
+## Generating a training dataset for GPT-4 and training
+
+The first step was to transform Nitro’s unstructured format into a synthetic Q&A dataset designed for [instruction tuning](https://arxiv.org/pdf/2109.01652.pdf). 
+
+The text was split into chunks of 300-token segments with 30-token overlaps. This was to target a GPT-4 with 8k context length. This helped to avoid a [lost-in-the-middle](https://arxiv.org/abs/2307.03172) problem where LLM can’t use context efficiently to answer given questions. 
+
+The chunks were then given to **GPT-4** to generate 3800 Q&A pairs. You can find the [open-sourced dataset here](https://huggingface.co/datasets/jan-hq/nitro_binarized_v2) on HuggingFace. 
