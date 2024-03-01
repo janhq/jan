@@ -31,7 +31,7 @@ Problems still arise with catastrophic forgetting in general tasks, commonly obs
 
 ## Selecting a strong foundation model
 
-Mistral 7B continues to outshine [Meta's Llama-2 7B](https://huggingface.co/meta-llama/Llama-2-7b) and [Google's Gemma 7B](https://huggingface.co/google/gemma-7b) on meaningful benchmarks, so we selected this as a starting point. 
+[Mistral 7B](https://huggingface.co/mistralai/Mistral-7B-v0.1) continues to outshine [Meta's Llama-2 7B](https://huggingface.co/meta-llama/Llama-2-7b) and [Google's Gemma 7B](https://huggingface.co/google/gemma-7b) on meaningful benchmarks, so we selected this as a starting point. 
 
 Having a robust base model is critical. In our experiments, using Mistral as a starting point ensured the highest accuracy for subsequent specialized adaptations.
 
@@ -51,7 +51,7 @@ Mistral alone has known, poor math capabilities, which we needed for our highly 
 
 We found model merging to be a viable approach where each iteration is cost-effective + fast to deploy.
 
-We ended up with [Stealth v1.1](https://huggingface.co/jan-hq/stealth-v1.1), a [SLERP](https://github.com/Digitous/LLM-SLERP-Merge) merge of Mistral with the following:
+We ended up with [Stealth 7B v1.1](https://huggingface.co/jan-hq/stealth-v1.1), a [SLERP](https://github.com/Digitous/LLM-SLERP-Merge) merge of Mistral with the following:
 
 - [WizardMath](https://huggingface.co/WizardLM/WizardMath-7B-V1.1) for its math capabilities
 - [WizardCoder](https://huggingface.co/WizardLM/WizardCoder-Python-7B-V1.0) for its coding capabilities
@@ -65,7 +65,7 @@ Merging different LLMs can lead to the mixed answering style because each model 
 
 Thus, we applied Direct Preference Optimization ([DPO](https://arxiv.org/abs/2305.18290)) using the [Intel's Orca DPO pairs](https://huggingface.co/datasets/Intel/orca_dpo_pairs) dataset, chosen for its helpful answering style in general, math and coding concentration.
 
-This approach result in a final model - [Stealth v1.2](https://huggingface.co/jan-hq/stealth-v1.2), with minimal loss, and realign to our technical preferences.
+This approach result in a final model - [Stealth 7B v1.2](https://huggingface.co/jan-hq/stealth-v1.2), with minimal loss, and realign to our technical preferences.
 
 ## **Using our own technical documentation**
 
