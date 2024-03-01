@@ -33,7 +33,7 @@ Problems still arise with catastrophic forgetting in general tasks, commonly obs
 
 [Mistral 7B](https://huggingface.co/mistralai/Mistral-7B-v0.1) outshines both [Meta's Llama-2 7B](https://huggingface.co/meta-llama/Llama-2-7b) and [Google's Gemma 7B](https://huggingface.co/google/gemma-7b) in key benchmarks, making it our choice for a base model. Starting with a strong foundation like Mistral allowed us to achieve greater accuracy in our specialized adaptations.
 
-![Mistral vs LLama vs Gemma](img/mistral-comparasion.png)
+![Mistral vs LLama vs Gemma](assets/mistral-comparasion.png)
 
 *Figure 1. Mistral 7B excels in benchmarks, ranking among the top foundational models.*
 
@@ -43,7 +43,7 @@ Problems still arise with catastrophic forgetting in general tasks, commonly obs
 
 Mistral alone has known, poor math capabilities, which we needed for our highly technical use case. Thus, we tested all model variants on top of Mistral, from foundation models to finetunes to model merges, in order to find a stronger base model to receive our own finetuning.
 
-![Merged model vs finetuned models](img/stealth-comparasion.png)
+![Merged model vs finetuned models](assets/stealth-comparasion.png)
 
 *Figure 2: The merged model, Stealth, doubles the mathematical capabilities of its foundational model while retaining the performance in other tasks.*
 
@@ -93,7 +93,7 @@ We used consumer-grade, dual Nvidia RTX 4090s for the training. The end-to-end t
 
 This final model can be found [here on Huggingface](https://huggingface.co/jan-hq/nitro-v1.2-e3).
 
-![Using LLM locally](img/nitro-on-jan.png)
+![Using LLM locally](assets/nitro-on-jan.png)
 
 *Figure 3. Using the new finetuned model in [Jan](https://jan.ai/)*
 
@@ -107,7 +107,7 @@ A simple RAG setup was done using **[Llamaindex](https://www.llamaindex.ai/)** a
 
 We curated a new set of [50 multiple-choice questions](https://github.com/janhq/open-foundry/blob/main/rag-is-not-enough/rag/mcq_nitro.csv) (MCQ) based on the Nitro docs. The questions had varying levels of difficulty and had trick components that challenged the model's ability to discern misleading information.
 
-![Opensource model outperforms GPT](img/rag-comparasion.png)
+![Opensource model outperforms GPT](assets/rag-comparasion.png)
 
 *Figure 4. Comparation between finetuned model and OpenAI's GPT*
 
