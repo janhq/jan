@@ -51,7 +51,7 @@ Mistral alone has known, poor math capabilities, which we needed for our highly 
 
 We found model merging to be a viable approach where each iteration is cost-effective + fast to deploy.
 
-We ended up with [Stealth](https://huggingface.co/jan-hq/stealth-v1.3), a [SLERP](https://github.com/Digitous/LLM-SLERP-Merge) merge of Mistral with the following:
+We ended up with [Stealth v1.1](https://huggingface.co/jan-hq/stealth-v1.1), a [SLERP](https://github.com/Digitous/LLM-SLERP-Merge) merge of Mistral with the following:
 
 - [WizardMath](https://huggingface.co/WizardLM/WizardMath-7B-V1.1) for its math capabilities
 - [WizardCoder](https://huggingface.co/WizardLM/WizardCoder-Python-7B-V1.0) for its coding capabilities
@@ -65,4 +65,16 @@ Merging different LLMs can lead to the mixed answering style because each model 
 
 Thus, we applied Direct Preference Optimization ([DPO](https://arxiv.org/abs/2305.18290)) using the [Intel's Orca DPO pairs](https://huggingface.co/datasets/Intel/orca_dpo_pairs) dataset, chosen for its helpful answering style in general, math and coding concentration.
 
-This approach allowed us to have a final model, with minimal loss, and realign to our technical preferences.
+This approach result in a final model - [Stealth v1.2](https://huggingface.co/jan-hq/stealth-v1.2), with minimal loss, and realign to our technical preferences.
+
+## **Using our own technical documentation**
+
+With the base model ready, we started on our specific use case.
+
+Jan is an open-source & bootstrapped project - at one point during our unanticipated growth, we received 1 customer support ticket per minute, with no one to handle customer service.
+
+So, we directed our efforts toward training a model to answer user questions based on existing technical documentation.  
+
+Specifically, we trained it on Nitro [docs](https://nitro.jan.ai/docs). For context, Nitro is the default inference engine for Jan. It’s a serious server implementation of LlamaCPP, written in C++, with multimodal, queues, and other production-level server capabilities. 
+
+It made an interesting corpus because it was rife with post-2023 technical jargon, edge cases, and poor informational layout.
