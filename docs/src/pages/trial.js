@@ -1,12 +1,12 @@
-import clsx from 'clsx';
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import Layout from '@theme/Layout';
-import Heading from '@theme/Heading';
-import styles from './trial.module.css';
-import HomepagePrimaryFeatures from "../components/HomepagePrimaryFeatures";
-import HomepageSecondaryFeatures from "../components/HomepageSecondaryFeatures";
-import HomepageTerinaryFeatures from "../components/HomepageTerinaryFeatures";
-import { DocSearch } from '@docsearch/react';
+import clsx from 'clsx'
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
+import Layout from '@theme/Layout'
+import Heading from '@theme/Heading'
+import styles from './trial.module.css'
+import HomepagePrimaryFeatures from '../components/HomepagePrimaryFeatures'
+import HomepageSecondaryFeatures from '../components/HomepageSecondaryFeatures'
+import HomepageTerinaryFeatures from '../components/HomepageTerinaryFeatures'
+import { DocSearch } from '@docsearch/react'
 
 function HomepageHeader() {
   return (
@@ -16,7 +16,11 @@ function HomepageHeader() {
           Hello, how can we help?
         </Heading>
         <div className={styles.searchBar}>
-          <DocSearch />
+          <DocSearch
+            appId={process.env.ALGOLIA_APP_ID}
+            apiKey={process.env.ALGOLIA_API_KEY}
+            indexName="jan_docs"
+          />
         </div>
         {/* <div className={styles.searchBar}>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill={"currentColor"}>
@@ -24,29 +28,30 @@ function HomepageHeader() {
             <input placeholder={"Search for questions or topics ..."}/>
             <button>Search</button>
         </div> */}
-          <p className={clsx(styles.heroSubtitle)}>
-              Open-source ChatGPT alternative that runs 100% offline on your computer.
-          </p>
+        <p className={clsx(styles.heroSubtitle)}>
+          Open-source ChatGPT alternative that runs 100% offline on your
+          computer.
+        </p>
       </div>
     </header>
-  );
+  )
 }
 
 export default function Home() {
-  const {siteConfig} = useDocusaurusContext();
+  const { siteConfig } = useDocusaurusContext()
   return (
     <Layout
       title={`Home | ${siteConfig.title}`}
       description="Description will go into a meta tag in <head />"
-      >
+    >
       <div className={clsx(styles.homeBg)}>
-          <HomepageHeader />
-          <main style={{backgroundColor: "whitesmoke"}}>
-            <HomepagePrimaryFeatures />
-            <HomepageSecondaryFeatures />
-            <HomepageTerinaryFeatures />
-          </main>
+        <HomepageHeader />
+        <main style={{ backgroundColor: 'whitesmoke' }}>
+          <HomepagePrimaryFeatures />
+          <HomepageSecondaryFeatures />
+          <HomepageTerinaryFeatures />
+        </main>
       </div>
     </Layout>
-  );
+  )
 }
