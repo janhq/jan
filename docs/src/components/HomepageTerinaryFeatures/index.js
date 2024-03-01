@@ -12,7 +12,7 @@ export default function HomepageTerinaryFeatures() {
                             <h3>Get Started</h3>
                         </div>
                         <div className={styles.cardContent}>
-                            <p>Dive into the Jan basics and get set up quickly.</p>
+                            <p>Dive into the basics and get set up quickly.</p>
                             <ul>
                                 <li>Quickstart</li>
                                 <li>Installation</li>
@@ -23,20 +23,21 @@ export default function HomepageTerinaryFeatures() {
                     <div className={clsx(styles.card)}>
                         <div className={styles.cardHeader}>
                             <img alt={"Icon"} src={"/img/homepage-new/buku.png"}/>
-                            <h3>Best Practices</h3>
+                            <h3>Settings</h3>
                         </div>
                         <div className={styles.cardContent}>
                             <p>Learn the best practices for optimizing thread management and local server use.</p>
                             <ul>
                                 <li>Thread Management</li>
                                 <li>Local Server</li>
+                                <li>Advance Settings</li>
                             </ul>
                         </div>
                     </div>
                     <div className={clsx(styles.card)}>
                         <div className={styles.cardHeader}>
                             <img alt={"Icon"} src={"/img/homepage-new/setting.png"}/>
-                            <h3>Features:</h3>
+                            <h3>Features</h3>
                         </div>
                         <div className={styles.cardContent}>
                             <p>Explore our key features designed to enhance your experience.</p>
