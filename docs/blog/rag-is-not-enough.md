@@ -83,6 +83,14 @@ It made an interesting corpus because it was rife with post-2023 technical jargo
 
 The first step was to transform Nitro’s unstructured format into a synthetic Q&A dataset designed for [instruction tuning](https://arxiv.org/pdf/2109.01652.pdf). 
 
-The text was split into chunks of 300-token segments with 30-token overlaps. This was to target a GPT-4 with 8k context length. This helped to avoid a [lost-in-the-middle](https://arxiv.org/abs/2307.03172) problem where LLM can’t use context efficiently to answer given questions. 
+The text was split into chunks of 300-token segments with 30-token overlaps. This helped to avoid a [lost-in-the-middle](https://arxiv.org/abs/2307.03172) problem where LLM can’t use context efficiently to answer given questions.
 
-The chunks were then given to **GPT-4** to generate 3800 Q&A pairs. You can find the [open-sourced dataset here](https://huggingface.co/datasets/jan-hq/nitro_binarized_v2) on HuggingFace. 
+The chunks were then given to GPT-4 with 8k context length to generate 3800 Q&A pairs. The [training dataset](https://huggingface.co/datasets/jan-hq/nitro_binarized_v2) is available on HuggingFace.
+
+## **Training**
+
+Training was done with supervised finetuning (SFT) from the [Hugging Face's alignment-handbook](https://github.com/huggingface/alignment-handbook), per [Huggingface's Zephyr Beta](https://github.com/huggingface/alignment-handbook/tree/main/recipes/zephyr-7b-beta) guidelines. 
+
+We used consumer-grade, dual Nvidia RTX 4090s for the training. The end-to-end training took 18 minutes. We found optimal hyperparameters in LoRA for this specific task to be `r = 256` and `alpha = 512`.
+
+This final model can be found [here on Huggingface](https://huggingface.co/jan-hq/nitro-v1.2-e3).
