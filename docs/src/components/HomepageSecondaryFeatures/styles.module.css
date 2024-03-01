@@ -1,0 +1,79 @@
+.features {
+    padding-top: 2rem;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.cards {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 2rem;
+}
+
+@media screen and (max-width: 768px) {
+    .cards {
+        gap: 2rem;
+    }
+}
+
+.card {
+    background-color: #ECECEF;
+    width: 30%;
+    border-radius: 15px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.cardContent {
+    margin-top: 3rem;
+    padding: 2rem;
+}
+
+.cardLogo {
+    height: 130px;
+    width: 100%;
+}
+
+.cardFooter {
+    padding-left: 2rem;
+    padding-right: 2rem;
+    padding-bottom: 2rem;
+    padding-top: 0;
+}
+
+.cardLogo img {
+    object-fit: cover;
+}
+
+.card p {
+    font-size: 1rem;
+    padding-top: 1rem;
+}
+
+.card h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.card a {
+    all: unset;
+    color: white;
+    background-color: #1C1E21;
+    padding: 0.75rem 1.25rem;
+    border-radius: 6px;
+}
+
+.card a svg {
+    padding-top: 12px;
+    height: 1.5rem;
+    width: 1.5rem;
+    color: white;
+}
+
+.card a:hover {
+    cursor: pointer;
+}

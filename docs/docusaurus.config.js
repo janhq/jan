@@ -322,6 +322,11 @@ const config = {
           ],
         },
         {
+          to: "trial",
+          label: "Trial",
+          position: "right",
+        },
+        {
           to: "blog",
           label: "Blog",
           position: "right",
