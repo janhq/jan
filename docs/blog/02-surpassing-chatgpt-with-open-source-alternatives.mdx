@@ -91,7 +91,7 @@ The training was done with supervised finetuning (SFT) from the [Hugging Face's 
 
 We used consumer-grade, dual Nvidia RTX 4090s for the training. The end-to-end training took 18 minutes. We found optimal hyperparameters in LoRA for this specific task to be `r = 256` and `alpha = 512`.
 
-This final model can be found [here on Huggingface](https://huggingface.co/jan-hq/nitro-v1.2-e3).
+This final model is publicly available at https://huggingface.co/jan-hq/nitro-v1.2-e3.
 
 ![Using LLM locally](assets/nitro-on-jan.png)
 
@@ -113,18 +113,20 @@ We curated a new set of [50 multiple-choice questions](https://github.com/janhq/
 
 **Results**
 
-- GPT-3.5 with RAG: 56.7%
-- GPT-4 with RAG: 64.3%
-- Merged 7B Model ([Stealth 7B](https://huggingface.co/jan-hq/stealth-v1.3)) with RAG: 47.7%
-- Finetuned 7B Model (Nitro 7B) with RAG: 57.8%
+| Approach                                  | Performance |
+| ------------------------------------      | ----------- |
+| GPT-3.5 with RAG                          | 56.7%       |
+| GPT-4 with RAG                            | 64.3%       |
+| Merged 7B Model ([Stealth 7B](https://huggingface.co/jan-hq/stealth-v1.3)) with RAG   | 47.7%       |
+| Finetuned 7B Model (Nitro 7B) with RAG                                                | 57.8%        |
 
 This indicates that with task-specific training, we can improve an open-source, Small Language Model to the level of GPT-3.5 on domain knowledge. 
 
-Notably, the finetuned + RAG approach also demonstrated more consistency across benchmarking, as indicated by its lower standard deviation.
+Notably, the finetuned with RAG approach also demonstrated more consistency across benchmarking, as indicated by its lower standard deviation.
 
 ## Conclusion
 
-We conclude that this combination of model merging + finetuning + RAG yields promise. This finding is relevant for teams and individuals that need specialized, technical SLMs that need to run in resource-constrained or highly secured environments, where GPT may not be an option.
+We conclude that this combination of model merging finetuning and RAG yields promise. This finding is relevant for teams and individuals that need specialized, technical SLMs that need to run in resource-constrained or highly secured environments, where GPT may not be an option.
 
 Anecdotally, we’ve had some success using this model in practice to onboard new team members to the Nitro codebase.
 
