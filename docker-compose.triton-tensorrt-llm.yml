@@ -1,0 +1,44 @@
+version: '3.7'
+
+services:
+  app_gpu_fs:
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+    image: jan-gpu:latest
+    volumes:
+      - app_data_gpu_fs:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    restart: always
+    environment:
+      API_BASE_URL: http://localhost:1337
+    profiles:
+      - gpu-fs
+    ports:
+      - "3000:3000"
+      - "1337:1337"
+      - "3928:3928"
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.6
+
+volumes:
+  minio_data:
+  app_data_cpu_s3fs:
+  app_data_gpu_s3fs:
+  app_data_cpu_fs:
+  app_data_gpu_fs:
+
+networks:
+  vpcbr:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.5.0.0/16
+         gateway: 10.5.0.1
