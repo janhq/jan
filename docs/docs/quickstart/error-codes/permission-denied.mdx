@@ -1,11 +1,20 @@
 ---
+title: Permission Denied
 sidebar_position: 1
----
-
-# Permission Denied
-
-A step-by-step guide to fix the issue when access is denied due to insufficient permissions.
-
+description: A step-by-step guide to fix the issue when access is denied due to insufficient permissions.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    troubleshooting,
+    permission denied,
+  ]
 ---
 
 When running Jan, you might encounter the following error message:
@@ -25,5 +34,6 @@ This error mainly caused by permission problem during installation. To resolve t
 ```sh
 sudo chown -R $(whoami) ~/.npm
 ```
-
+:::note
 This command ensures that the necessary permissions are granted for Jan installation, resolving the encountered error.
+:::
