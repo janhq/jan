@@ -35,8 +35,26 @@ Mistral 7B continues to outshine [Meta's Llama-2 7B](https://huggingface.co/meta
 
 Having a robust base model is critical. In our experiments, using Mistral as a starting point ensured the highest accuracy for subsequent specialized adaptations.
 
-![Mistral benchmark](img/mistral-comparasion.png)
+![Mistral vs LLama](img/mistral-comparasion.png)
 
 *Figure 1. Mistral 7B excels in benchmarks, ranking among the top foundational models.*
 
 *Note: we are not sponsored by the Mistral team. Though many folks in their community do like to run Mistral locally using our desktop client - [Jan](https://jan.ai/).*
+
+## Cost effectively improving the base model
+
+Mistral alone has known, poor math capabilities, which we needed for our highly technical use case. Thus, we tested all model variants on top of Mistral, from foundation models to finetunes to model merges, in order to find a stronger base model to receive our own finetuning.
+
+![Merged model vs finetuned models](img/stealth-comparasion.png)
+
+*Figure 2: The merged model, Stealth, doubles the mathematical capabilities of its foundational model while retaining the performance in other tasks.*
+
+We found model merging to be a viable approach where each iteration is cost-effective + fast to deploy.
+
+We ended up with [Stealth](https://huggingface.co/jan-hq/stealth-v1.3), a [SLERP](https://github.com/Digitous/LLM-SLERP-Merge) merge of Mistral with the following:
+
+- [WizardMath](https://huggingface.co/WizardLM/WizardMath-7B-V1.1) for its math capabilities
+- [WizardCoder](https://huggingface.co/WizardLM/WizardCoder-Python-7B-V1.0) for its coding capabilities
+- Our own [Trinity](https://huggingface.co/jan-hq/trinity-v1.2) model for its versatility across general tasks
+
+This particular combination yielded the best tradeoff across mathematical & technical reasoning while retaining the most pre-merge performance on general tasks.
