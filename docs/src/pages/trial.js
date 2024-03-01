@@ -9,6 +9,8 @@ import HomepageTerinaryFeatures from '../components/HomepageTerinaryFeatures'
 import { DocSearch } from '@docsearch/react'
 
 function HomepageHeader() {
+  const { siteConfig } = useDocusaurusContext()
+
   return (
     <header className={clsx(styles.heroBanner)}>
       <div className="container">
@@ -17,9 +19,9 @@ function HomepageHeader() {
         </Heading>
         <div className={styles.searchBar}>
           <DocSearch
-            appId={process.env.ALGOLIA_APP_ID}
-            apiKey={process.env.ALGOLIA_API_KEY}
-            indexName="jan_docs"
+            appId={siteConfig.themeConfig.algolia.appId}
+            apiKey={siteConfig.themeConfig.algolia.apiKey}
+            indexName={siteConfig.themeConfig.algolia.indexName}
             contextualSearch={true}
             insight={true}
           />
