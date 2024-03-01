@@ -31,9 +31,7 @@ Problems still arise with catastrophic forgetting in general tasks, commonly obs
 
 ## Selecting a strong foundation model
 
-[Mistral 7B](https://huggingface.co/mistralai/Mistral-7B-v0.1) continues to outshine [Meta's Llama-2 7B](https://huggingface.co/meta-llama/Llama-2-7b) and [Google's Gemma 7B](https://huggingface.co/google/gemma-7b) on meaningful benchmarks, so we selected this as a starting point. 
-
-Having a robust base model is critical. In our experiments, using Mistral as a starting point ensured the highest accuracy for subsequent specialized adaptations.
+[Mistral 7B](https://huggingface.co/mistralai/Mistral-7B-v0.1) outshines both [Meta's Llama-2 7B](https://huggingface.co/meta-llama/Llama-2-7b) and [Google's Gemma 7B](https://huggingface.co/google/gemma-7b) in key benchmarks, making it our choice for a base model. Starting with a strong foundation like Mistral allowed us to achieve greater accuracy in our specialized adaptations.
 
 ![Mistral vs LLama vs Gemma](img/mistral-comparasion.png)
 
@@ -49,13 +47,13 @@ Mistral alone has known, poor math capabilities, which we needed for our highly 
 
 *Figure 2: The merged model, Stealth, doubles the mathematical capabilities of its foundational model while retaining the performance in other tasks.*
 
-We found model merging to be a viable approach where each iteration is cost-effective + fast to deploy.
+We found merging models is quick and cost-effective, enabling fast adjustments based on the result of each iteration.
 
 We ended up with [Stealth 7B v1.1](https://huggingface.co/jan-hq/stealth-v1.1), a [SLERP](https://github.com/Digitous/LLM-SLERP-Merge) merge of Mistral with the following:
 
-- [WizardMath](https://huggingface.co/WizardLM/WizardMath-7B-V1.1) for its math capabilities
-- [WizardCoder](https://huggingface.co/WizardLM/WizardCoder-Python-7B-V1.0) for its coding capabilities
-- Our own [Trinity](https://huggingface.co/jan-hq/trinity-v1.2) model for its versatility across general tasks
+- [WizardMath](https://huggingface.co/WizardLM/WizardMath-7B-V1.1) for its math capabilities.
+- [WizardCoder](https://huggingface.co/WizardLM/WizardCoder-Python-7B-V1.0) for its coding capabilities.
+- Our own [Trinity](https://huggingface.co/jan-hq/trinity-v1.2) model for its versatility across general tasks.
 
 This particular combination yielded the best tradeoff across mathematical & technical reasoning while retaining the most pre-merge performance on general tasks.
 
