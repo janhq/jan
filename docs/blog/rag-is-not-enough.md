@@ -98,3 +98,9 @@ This final model can be found [here on Huggingface](https://huggingface.co/jan-h
 ![Using LLM locally](img/nitro-on-jan.png)
 
 *Figure 3. Using the new finetuned model in [Jan](https://jan.ai/)*
+
+# Improving results with RAG
+
+As an additional step, we also added [Retrieval Augmented Generation (RAG)](https://blogs.nvidia.com/blog/what-is-retrieval-augmented-generation/) as an experiment parameter.
+
+A simple RAG setup was done using **[Llamaindex](https://www.llamaindex.ai/)** and the **[bge-en-base-v1.5 embedding](https://huggingface.co/BAAI/bge-base-en-v1.5)** model for efficient documentation retrieval and question-answering. You can find the RAG implementation [here](https://github.com/janhq/open-foundry).
