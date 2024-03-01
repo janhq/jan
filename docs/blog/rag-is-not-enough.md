@@ -103,11 +103,11 @@ This final model can be found [here on Huggingface](https://huggingface.co/jan-h
 
 As an additional step, we also added [Retrieval Augmented Generation (RAG)](https://blogs.nvidia.com/blog/what-is-retrieval-augmented-generation/) as an experiment parameter.
 
-A simple RAG setup was done using **[Llamaindex](https://www.llamaindex.ai/)** and the **[bge-en-base-v1.5 embedding](https://huggingface.co/BAAI/bge-base-en-v1.5)** model for efficient documentation retrieval and question-answering. You can find the RAG implementation [here](https://github.com/janhq/open-foundry).
+A simple RAG setup was done using **[Llamaindex](https://www.llamaindex.ai/)** and the **[bge-en-base-v1.5 embedding](https://huggingface.co/BAAI/bge-base-en-v1.5)** model for efficient documentation retrieval and question-answering. You can find the RAG implementation [here](https://github.com/janhq/open-foundry/blob/main/rag-is-not-enough/rag/nitro_rag.ipynb).
 
 ## Benchmarking the Results
 
-We curated a new set of [50 multiple-choice questions](https://github.com/janhq/open-foundry) (MCQ) based on the Nitro docs. The questions had varying levels of difficulty and had trick components that challenged the model's ability to discern misleading information.
+We curated a new set of [50 multiple-choice questions](https://github.com/janhq/open-foundry/blob/main/rag-is-not-enough/rag/mcq_nitro.csv) (MCQ) based on the Nitro docs. The questions had varying levels of difficulty and had trick components that challenged the model's ability to discern misleading information.
 
 ![Opensource model outperforms GPT](img/rag-comparasion.png)
 
@@ -130,4 +130,4 @@ We conclude that this combination of model merging + finetuning + RAG yields pro
 
 Anecdotally, we’ve had some success using this model in practice to onboard new team members to the Nitro codebase.
 
-A full research report with more statistics can be found [here](https://github.com/janhq/open-foundry).
+A full research report with more statistics can be found [here](https://github.com/janhq/open-foundry/blob/main/rag-is-not-enough/README.md).
