@@ -99,8 +99,35 @@ This final model can be found [here on Huggingface](https://huggingface.co/jan-h
 
 *Figure 3. Using the new finetuned model in [Jan](https://jan.ai/)*
 
-# Improving results with RAG
+## Improving results with RAG
 
 As an additional step, we also added [Retrieval Augmented Generation (RAG)](https://blogs.nvidia.com/blog/what-is-retrieval-augmented-generation/) as an experiment parameter.
 
 A simple RAG setup was done using **[Llamaindex](https://www.llamaindex.ai/)** and the **[bge-en-base-v1.5 embedding](https://huggingface.co/BAAI/bge-base-en-v1.5)** model for efficient documentation retrieval and question-answering. You can find the RAG implementation [here](https://github.com/janhq/open-foundry).
+
+## Benchmarking the Results
+
+We curated a new set of [50 multiple-choice questions](https://github.com/janhq/open-foundry) (MCQ) based on the Nitro docs. The questions had varying levels of difficulty and had trick components that challenged the model's ability to discern misleading information.
+
+![Opensource model outperforms GPT](img/rag-comparasion.png)
+
+*Figure 4. Comparation between finetuned model and OpenAI's GPT*
+
+**Results**
+
+- GPT-3.5 with RAG: 56.7%
+- GPT-4 with RAG: 64.3%
+- Merged 7B Model ([Stealth](https://huggingface.co/jan-hq/stealth-v1.3)) with RAG: 47.7%
+- Finetuned 7B Model (Nitro) with RAG: 57.8%
+
+This indicates that with task-specific training, we can improve an open-source, Small Language Model to the level of GPT-3.5 on domain knowledge. 
+
+Notably, the finetuned + RAG approach also demonstrated more consistency across benchmarking, as indicated by its lower standard deviation.
+
+## Conclusion
+
+We conclude that this combination of model merging + finetuning + RAG yields promise. This finding is relevant for teams and individuals that need specialized, technical SLMs that need to run in resource-constrained or highly secured environments, where GPT may not be an option.
+
+Anecdotally, we’ve had some success using this model in practice to onboard new team members to the Nitro codebase.
+
+A full research report with more statistics can be found [here](https://github.com/janhq/open-foundry).
