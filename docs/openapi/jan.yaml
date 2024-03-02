@@ -93,6 +93,110 @@ paths:
                 "temperature": 0.7,
                 "top_p": 0.95
               }'
+        - lang: JavaScript
+          source: |-
+            const data = {
+              messages: [
+                {
+                  content: 'You are a helpful assistant.',
+                  role: 'system'
+                },
+                {
+                  content: 'Hello!',
+                  role: 'user'
+                }
+              ],
+              model: 'tinyllama-1.1b',
+              stream: true,
+              max_tokens: 2048,
+              stop: ['hello'],
+              frequency_penalty: 0,
+              presence_penalty: 0,
+              temperature: 0.7,
+              top_p: 0.95
+            };
+
+            fetch('http://localhost:1337/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify(data)
+            })
+              .then(response => response.json())
+              .then(data => console.log(data));
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            const data = {
+              messages: [
+                {
+                  content: 'You are a helpful assistant.',
+                  role: 'system'
+                },
+                {
+                  content: 'Hello!',
+                  role: 'user'
+                }
+              ],
+              model: 'tinyllama-1.1b',
+              stream: true,
+              max_tokens: 2048,
+              stop: ['hello'],
+              frequency_penalty: 0,
+              presence_penalty: 0,
+              temperature: 0.7,
+              top_p: 0.95
+            };
+
+            fetch('http://localhost:1337/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify(data)
+            })
+              .then(response => response.json())
+              .then(data => console.log(data));
+        - lang: Python
+          source: >-
+            import requests
+
+            import json
+
+
+            data = {
+              "messages": [
+                {
+                  "content": "You are a helpful assistant.",
+                  "role": "system"
+                },
+                {
+                  "content": "Hello!",
+                  "role": "user"
+                }
+              ],
+              "model": "tinyllama-1.1b",
+              "stream": true,
+              "max_tokens": 2048,
+              "stop": [
+                "hello"
+              ],
+              "frequency_penalty": 0,
+              "presence_penalty": 0,
+              "temperature": 0.7,
+              "top_p": 0.95
+            }
+
+
+            response =
+            requests.post('http://localhost:1337/v1/chat/completions',
+            json=data)
+
+            print(response.json())
   /models:
     get:
       operationId: listModels
@@ -113,10 +217,38 @@ paths:
                 $ref: specs/models.yaml#/components/schemas/ListModelsResponse
       x-codeSamples:
         - lang: cURL
-          source: |
+          source: |-
             curl -X 'GET' \
               'http://localhost:1337/v1/models' \
               -H 'accept: application/json'
+        - lang: JavaScript
+          source: |-
+            const response = await fetch('http://localhost:1337/v1/models', {
+              method: 'GET',
+              headers: {Accept: 'application/json'}
+            });
+            const data = await response.json();
+        - lang: Python
+          source: |-
+            import requests
+
+            url = 'http://localhost:1337/v1/models'
+            headers = {'Accept': 'application/json'}
+            response = requests.get(url, headers=headers)
+            data = response.json()
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            const url = 'http://localhost:1337/v1/models';
+            const options = {
+              method: 'GET',
+              headers: { Accept: 'application/json' }
+            };
+
+            fetch(url, options)
+              .then(res => res.json())
+              .then(json => console.log(json));
   /models/download/{model_id}:
     get:
       operationId: downloadModel
@@ -143,10 +275,40 @@ paths:
                 $ref: specs/models.yaml#/components/schemas/DownloadModelResponse
       x-codeSamples:
         - lang: cURL
-          source: |
-            curl -X 'GET' \
-              'http://localhost:1337/v1/models/download/{model_id}' \
+          source: |-
+            curl -X 'GET' \  
+              'http://localhost:1337/v1/models/download/{model_id}' \  
               -H 'accept: application/json'
+        - lang: JavaScript
+          source: >-
+            const response = await
+            fetch('http://localhost:1337/v1/models/download/{model_id}', {
+              method: 'GET',
+              headers: {accept: 'application/json'}
+            });
+
+
+            const data = await response.json();
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            fetch('http://localhost:1337/v1/models/download/{model_id}', {
+              method: 'GET',
+              headers: {accept: 'application/json'}
+            })
+            .then(res => res.json())
+            .then(data => console.log(data));
+        - lang: Python
+          source: >-
+            import requests
+
+
+            response =
+            requests.get('http://localhost:1337/v1/models/download/{model_id}',
+            headers={'accept': 'application/json'})
+
+            data = response.json()
   /models/{model_id}:
     get:
       operationId: retrieveModel
@@ -176,10 +338,47 @@ paths:
                 $ref: specs/models.yaml#/components/schemas/GetModelResponse
       x-codeSamples:
         - lang: cURL
-          source: |
-            curl -X 'GET' \
-              'http://localhost:1337/v1/models/{model_id}' \
+          source: |-
+            curl -X 'GET' \  
+              'http://localhost:1337/v1/models/{model_id}' \  
               -H 'accept: application/json'
+        - lang: JavaScript
+          source: |-
+            const fetch = require('node-fetch');
+
+            const modelId = 'mistral-ins-7b-q4';
+
+            fetch(`http://localhost:1337/v1/models/${modelId}`, {
+              method: 'GET',
+              headers: {'accept': 'application/json'}
+            })
+            .then(res => res.json())
+            .then(json => console.log(json));
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            const modelId = 'mistral-ins-7b-q4';
+
+            fetch(`http://localhost:1337/v1/models/${modelId}`, {
+              method: 'GET',
+              headers: {'accept': 'application/json'}
+            })
+            .then(res => res.json())
+            .then(json => console.log(json));
+        - lang: Python
+          source: >-
+            import requests
+
+
+            model_id = 'mistral-ins-7b-q4'
+
+
+            response =
+            requests.get(f'http://localhost:1337/v1/models/{model_id}',
+            headers={'accept': 'application/json'})
+
+            print(response.json())
     delete:
       operationId: deleteModel
       tags:
@@ -207,10 +406,45 @@ paths:
                 $ref: specs/models.yaml#/components/schemas/DeleteModelResponse
       x-codeSamples:
         - lang: cURL
-          source: |
+          source: |-
             curl -X 'DELETE' \
               'http://localhost:1337/v1/models/{model_id}' \
               -H 'accept: application/json'
+        - lang: JavaScript
+          source: |-
+            const fetch = require('node-fetch');
+
+            const modelId = 'mistral-ins-7b-q4';
+
+            fetch(`http://localhost:1337/v1/models/${modelId}`, {
+              method: 'DELETE',
+              headers: { 'accept': 'application/json' }
+            })
+              .then(res => res.json())
+              .then(json => console.log(json));
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            const modelId = 'mistral-ins-7b-q4';
+
+            fetch(`http://localhost:1337/v1/models/${modelId}`, {
+              method: 'DELETE',
+              headers: { 'accept': 'application/json' }
+            })
+              .then(res => res.json())
+              .then(json => console.log(json));
+        - lang: Python
+          source: >-
+            import requests
+
+
+            model_id = 'mistral-ins-7b-q4'
+
+
+            response =
+            requests.delete(f'http://localhost:1337/v1/models/{model_id}',
+            headers={'accept': 'application/json'})
   /threads:
     post:
       operationId: createThread
