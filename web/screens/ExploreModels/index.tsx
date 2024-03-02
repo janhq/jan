@@ -13,7 +13,7 @@ import {
 } from '@janhq/uikit'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { Plus, SearchIcon } from 'lucide-react'
+import { UploadIcon, SearchIcon } from 'lucide-react'
 
 import { FeatureToggleContext } from '@/context/FeatureToggle'
 
@@ -91,17 +91,17 @@ const ExploreModelsScreen = () => {
                     />
                     <Input
                       placeholder="Search models"
-                      className="bg-white pl-9 dark:bg-background"
+                      className="bg-white pl-9"
                       onChange={(e) => setsearchValue(e.target.value)}
                     />
                   </div>
                   <Button
-                    themes={'primary'}
-                    className="space-x-2"
+                    themes="outline"
+                    className="gap-2 bg-white"
                     onClick={onImportModelClick}
                   >
-                    <Plus className="h-3 w-3" />
-                    <p>Import Model</p>
+                    <UploadIcon size={16} />
+                    Import Model
                   </Button>
                 </div>
                 {experimentalFeature && (

@@ -1,6 +1,6 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-import { openFileExplorer } from '@janhq/core'
+import { joinPath, openFileExplorer } from '@janhq/core'
 import {
   Button,
   Modal,
@@ -31,7 +31,15 @@ const ImportingModelModal: React.FC = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const janDataFolder = useAtomValue(janDataFolderPathAtom)
 
-  const modelFolder = useMemo(() => `${janDataFolder}/models`, [janDataFolder])
+  const [modelFolder, setModelFolder] = useState('')
+
+  useEffect(() => {
+    const getModelPath = async () => {
+      const modelPath = await joinPath([janDataFolder, 'models'])
+      setModelFolder(modelPath)
+    }
+    getModelPath()
+  }, [janDataFolder])
 
   const finishedImportModel = importingModels.filter(
     (model) => model.status === 'IMPORTED'

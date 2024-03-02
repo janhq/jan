@@ -16,6 +16,7 @@ import {
   OptionType,
   ImportingModel,
   LocalImportModelEvent,
+  baseName,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -488,7 +489,7 @@ export default class JanModelExtension extends ModelExtension {
       return
     }
 
-    const binaryFileName = extractFileName(modelBinaryPath, '')
+    const binaryFileName = await baseName(modelBinaryPath)
 
     const model: Model = {
       ...defaultModel,
@@ -555,7 +556,7 @@ export default class JanModelExtension extends ModelExtension {
     model: ImportingModel,
     optionType: OptionType
   ): Promise<Model> {
-    const binaryName = extractFileName(model.path, '').replace(/\s/g, '')
+    const binaryName = (await baseName(model.path)).replace(/\s/g, '')
 
     let modelFolderName = binaryName
     if (binaryName.endsWith(JanModelExtension._supportedModelFormat)) {
@@ -568,7 +569,7 @@ export default class JanModelExtension extends ModelExtension {
     const modelFolderPath = await this.getModelFolderName(modelFolderName)
     await fs.mkdirSync(modelFolderPath)
 
-    const uniqueFolderName = modelFolderPath.split('/').pop()
+    const uniqueFolderName = await baseName(modelFolderPath)
     const modelBinaryFile = binaryName.endsWith(
       JanModelExtension._supportedModelFormat
     )
@@ -637,14 +638,21 @@ export default class JanModelExtension extends ModelExtension {
 
     for (const model of models) {
       events.emit(LocalImportModelEvent.onLocalImportModelUpdate, model)
-      const importedModel = await this.importModel(model, optionType)
-
-      events.emit(LocalImportModelEvent.onLocalImportModelSuccess, {
-        ...model,
-        modelId: importedModel.id,
-      })
-      importedModels.push(importedModel)
+      try {
+        const importedModel = await this.importModel(model, optionType)
+        events.emit(LocalImportModelEvent.onLocalImportModelSuccess, {
+          ...model,
+          modelId: importedModel.id,
+        })
+        importedModels.push(importedModel)
+      } catch (err) {
+        events.emit(LocalImportModelEvent.onLocalImportModelFailed, {
+          ...model,
+          error: err,
+        })
+      }
     }
+
     events.emit(
       LocalImportModelEvent.onLocalImportModelFinished,
       importedModels

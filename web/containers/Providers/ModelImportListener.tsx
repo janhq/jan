@@ -12,6 +12,7 @@ import { useSetAtom } from 'jotai'
 import { snackbar } from '../Toast'
 
 import {
+  setImportingModelErrorAtom,
   setImportingModelSuccessAtom,
   updateImportingModelProgressAtom,
 } from '@/helpers/atoms/Model.atom'
@@ -21,6 +22,7 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
     updateImportingModelProgressAtom
   )
   const setImportingModelSuccess = useSetAtom(setImportingModelSuccessAtom)
+  const setImportingModelFailed = useSetAtom(setImportingModelErrorAtom)
 
   const onImportModelUpdate = useCallback(
     async (state: ImportingModel) => {
@@ -28,6 +30,14 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
       updateImportingModelProgress(state.importId, state.percentage ?? 0)
     },
     [updateImportingModelProgress]
+  )
+
+  const onImportModelFailed = useCallback(
+    async (state: ImportingModel) => {
+      if (!state.importId) return
+      setImportingModelFailed(state.importId, state.error ?? '')
+    },
+    [setImportingModelFailed]
   )
 
   const onImportModelSuccess = useCallback(
@@ -62,6 +72,10 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
       LocalImportModelEvent.onLocalImportModelFinished,
       onImportModelFinished
     )
+    events.on(
+      LocalImportModelEvent.onLocalImportModelFailed,
+      onImportModelFailed
+    )
 
     return () => {
       console.debug('ModelImportListener: unregistering event listeners...')
@@ -77,8 +91,17 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
         LocalImportModelEvent.onLocalImportModelFinished,
         onImportModelFinished
       )
+      events.off(
+        LocalImportModelEvent.onLocalImportModelFailed,
+        onImportModelFailed
+      )
     }
-  }, [onImportModelUpdate, onImportModelSuccess, onImportModelFinished])
+  }, [
+    onImportModelUpdate,
+    onImportModelSuccess,
+    onImportModelFinished,
+    onImportModelFailed,
+  ])
 
   return <Fragment>{children}</Fragment>
 }

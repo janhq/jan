@@ -16,7 +16,7 @@ const DeviceSpecs = () => {
       <div className="absolute -top-11 right-2">
         <Button
           themes="outline"
-          className="bg-white dark:bg-secondary/50"
+          className="bg-white"
           onClick={() => {
             clipboard.copy(userAgent ?? '')
           }}
