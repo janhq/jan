@@ -1,11 +1,11 @@
+---
 openapi: 3.0.0
 info:
   title: API Reference
   description: >
     # Introduction
 
-    Jan API is compatible with the [OpenAI
-    API](https://platform.openai.com/docs/api-reference).
+    Jan API is compatible with the [OpenAI API](https://platform.openai.com/docs/api-reference).
 version: 0.1.8
 contact:
   name: Jan Discord
@@ -20,12 +20,12 @@ tags:
     description: List and describe the various models available in the API.
   - name: Chat
     description: >
-      Given a list of messages comprising a conversation, the model will return
-      a response.
+      Given a list of messages comprising a conversation, the model will
+      return a response.
   - name: Messages
     description: >
-      Messages capture a conversation's content. This can include the content
-      from LLM responses and other metadata from [chat
+      Messages capture a conversation's content. This can include the
+      content from LLM responses and other metadata from [chat
       completions](/specs/chats).
   - name: Threads
   - name: Assistants
@@ -49,9 +49,9 @@ paths:
       summary: |
         Create chat completion
       description: >
-        Creates a model response for the given chat conversation.  <a  href =
-        "https://platform.openai.com/docs/api-reference/chat/create"> Equivalent
-        to OpenAI's create chat completion. </a>
+        Creates a model response for the given chat conversation.  <a  href
+        = "https://platform.openai.com/docs/api-reference/chat/create">
+        Equivalent to OpenAI's create chat completion. </a>
       requestBody:
         content:
           application/json:
@@ -192,9 +192,7 @@ paths:
             }
 
 
-            response =
-            requests.post('http://localhost:1337/v1/chat/completions',
-            json=data)
+            response = requests.post('http://localhost:1337/v1/chat/completions', json=data)
 
             print(response.json())
   /models:
@@ -204,10 +202,10 @@ paths:
         - Models
       summary: List models
       description: >
-        Lists the currently available models, and provides basic information
-        about each one such as the owner and availability.  <a  href =
-        "https://platform.openai.com/docs/api-reference/models/list"> Equivalent
-        to OpenAI's list model. </a>
+        Lists the currently available models, and provides basic
+        information about each one such as the owner and availability.  <a  href
+        = "https://platform.openai.com/docs/api-reference/models/list">
+        Equivalent to OpenAI's list model. </a>
       responses:
         '200':
           description: OK
@@ -228,14 +226,7 @@ paths:
               headers: {Accept: 'application/json'}
             });
             const data = await response.json();
-        - lang: Python
-          source: |-
-            import requests
 
-            url = 'http://localhost:1337/v1/models'
-            headers = {'Accept': 'application/json'}
-            response = requests.get(url, headers=headers)
-            data = response.json()
         - lang: Node.js
           source: |-
             const fetch = require('node-fetch');
@@ -249,7 +240,15 @@ paths:
             fetch(url, options)
               .then(res => res.json())
               .then(json => console.log(json));
-  /models/download/{model_id}:
+        - lang: Python
+          source: |-
+            import requests
+
+            url = 'http://localhost:1337/v1/models'
+            headers = {'Accept': 'application/json'}
+            response = requests.get(url, headers=headers)
+            data = response.json()
+  '/models/download/{model_id}':
     get:
       operationId: downloadModel
       tags:
@@ -304,20 +303,18 @@ paths:
             import requests
 
 
-            response =
-            requests.get('http://localhost:1337/v1/models/download/{model_id}',
-            headers={'accept': 'application/json'})
+            response = requests.get('http://localhost:1337/v1/models/download/{model_id}', headers={'accept': 'application/json'})
 
             data = response.json()
-  /models/{model_id}:
+  '/models/{model_id}':
     get:
       operationId: retrieveModel
       tags:
         - Models
       summary: Retrieve model
       description: >
-        Get a model instance, providing basic information about the model such
-        as the owner and permissioning.  <a  href =
+        Get a model instance, providing basic information about the model
+        such as the owner and permissioning.  <a  href =
         "https://platform.openai.com/docs/api-reference/models/retrieve">
         Equivalent to OpenAI's retrieve model. </a>
       parameters:
@@ -374,9 +371,7 @@ paths:
             model_id = 'mistral-ins-7b-q4'
 
 
-            response =
-            requests.get(f'http://localhost:1337/v1/models/{model_id}',
-            headers={'accept': 'application/json'})
+            response = requests.get(f'http://localhost:1337/v1/models/{model_id}', headers={'accept': 'application/json'})
 
             print(response.json())
     delete:
@@ -442,9 +437,7 @@ paths:
             model_id = 'mistral-ins-7b-q4'
 
 
-            response =
-            requests.delete(f'http://localhost:1337/v1/models/{model_id}',
-            headers={'accept': 'application/json'})
+            response = requests.delete(f'http://localhost:1337/v1/models/{model_id}', headers={'accept': 'application/json'})
   /threads:
     post:
       operationId: createThread
@@ -613,7 +606,7 @@ paths:
 
             response = requests.get(url, headers=headers)
             print(response.json())
-  /threads/{thread_id}:
+  '/threads/{thread_id}':
     get:
       operationId: getThread
       tags:
@@ -799,7 +792,7 @@ paths:
             headers = {'Content-Type': 'application/json'}
 
             response = requests.get(url, headers=headers)
-  /assistants/{assistant_id}:
+  '/assistants/{assistant_id}':
     get:
       operationId: getAssistant
       tags:
@@ -824,8 +817,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: >-
-                  specs/assistants.yaml#/components/schemas/RetrieveAssistantResponse
+                $ref: specs/assistants.yaml#/components/schemas/RetrieveAssistantResponse
       x-codeSamples:
         - lang: cURL
           source: |-
@@ -863,10 +855,8 @@ paths:
             assistant_id = 'abc123'
 
 
-            response =
-            requests.get(f'http://localhost:1337/v1/assistants/{assistant_id}',
-            headers={'Content-Type': 'application/json'})
-  /threads/{thread_id}/messages:
+            response = requests.get(f'http://localhost:1337/v1/assistants/{assistant_id}', headers={'Content-Type': 'application/json'})
+  '/threads/{thread_id}/messages':
     get:
       operationId: listMessages
       tags:
@@ -952,7 +942,7 @@ paths:
                 "role": "user",
                 "content": "How does AI work? Explain it in simple terms."
               }'
-  /threads/{thread_id}/messages/{message_id}:
+  '/threads/{thread_id}/messages/{message_id}':
     get:
       operationId: retrieveMessage
       tags:
@@ -988,8 +978,8 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: >
-            curl
-            http://localhost:1337/v1/threads/{thread_id}/messages/{message_id} \
+            curl http://localhost:1337/v1/threads/{thread_id}/messages/{message_id}
+            \
               -H "Content-Type: application/json"
 x-webhooks:
   ModelObject:
@@ -1011,9 +1001,10 @@ x-webhooks:
     post:
       summary: The assistant object
       description: >
-        Build assistants that can call models and use tools to perform tasks.
-        <a  href = "https://platform.openai.com/docs/api-reference/assistants">
-        Equivalent to OpenAI's assistants object. </a>
+        Build assistants that can call models and use tools to perform
+        tasks. <a  href =
+        "https://platform.openai.com/docs/api-reference/assistants"> Equivalent
+        to OpenAI's assistants object. </a>
       operationId: AssistantObjects
       tags:
         - Assistants
@@ -1040,8 +1031,7 @@ x-webhooks:
   ThreadObject:
     post:
       summary: The thread object
-      description: >-
-        Represents a thread that contains messages. <a  href =
+      description: Represents a thread that contains messages. <a  href =
         "https://platform.openai.com/docs/api-reference/threads/object">
         Equivalent to OpenAI's thread object. </a>
       operationId: ThreadObject
