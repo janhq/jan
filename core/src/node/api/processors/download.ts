@@ -42,6 +42,24 @@ export class Downloader implements Processor {
     // Downloading file to a temp file first
     const downloadingTempFile = `${destination}.download`
 
+    // adding initial download state
+    const initialDownloadState: DownloadState = {
+      modelId,
+      fileName,
+      time: {
+        elapsed: 0,
+        remaining: 0,
+      },
+      speed: 0,
+      percent: 0,
+      size: {
+        total: 0,
+        transferred: 0,
+      },
+      downloadState: 'downloading',
+    }
+    DownloadManager.instance.downloadProgressMap[modelId] = initialDownloadState
+
     progress(rq, {})
       .on('progress', (state: any) => {
         const downloadState: DownloadState = {
