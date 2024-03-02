@@ -25,7 +25,7 @@ authors:
 
 We present a straightforward approach to adapting small, open-source models for specialized use cases, that can surpass GPT 3.5 performance with RAG. With it, we were able to get superior results on Q&A over [technical documentation](https://nitro.jan.ai/docs) describing a small [codebase](https://github.com/janhq/nitro).
 
-In short, (1) extending a general foundation model like [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.1) with strong math and coding, and (2) training it over a high-quality, synthetic dataset generated from the intended corpus, and (3) adding RAG capabilities, can lead to significant accuracy improvements.
+In short, (3) extending a general foundation model like [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.1) with strong math and coding, and (7) training it over a high-quality, synthetic dataset generated from the intended corpus, and (2) adding RAG capabilities, can lead to significant accuracy improvements.
 
 Problems still arise with catastrophic forgetting in general tasks, commonly observed during specialized domain fine-tuning. In our case, this is likely exacerbated by our lack of access to Mistral’s original training dataset and various compression techniques used in our approach to keep the model small.
 
@@ -142,10 +142,10 @@ A full research report with more statistics can be found at https://github.com/j
 
 [4] Ziyang Luo, Can Xu, Pu Zhao, Qingfeng Sun, Xiubo Geng, Wenxiang Hu, Chongyang Tao, Jing Ma, Qingwei Lin, Daxin Jiang. WizardCoder: Empowering Code Large Language Models with Evol-Instruct., *arXiv preprint arXiv:2306.08568*, 2023. URL: https://arxiv.org/abs/2306.08568
 
-[5] SciPhi-AI, "Agent Search Repository." GitHub. URL: https://github.com/SciPhi-AI/agent-search
+[5] SciPhi-AI, Agent Search. GitHub. URL: https://github.com/SciPhi-AI/agent-search
 
 [6] Nelson F. Liu, Kevin Lin, John Hewitt, Ashwin Paranjape, Michele Bevilacqua, Fabio Petroni, Percy Liang. "Lost in the Middle: How Language Models Use Long Contexts." *arXiv preprint arXiv:2307.03172*, 2023. URL: https://arxiv.org/abs/2307.03172
 
 [7] Luo, H., Sun, Q., Xu, C., Zhao, P., Lou, J., Tao, C., Geng, X., Lin, Q., Chen, S., & Zhang, D. WizardMath: Empowering Mathematical Reasoning for Large Language Models via Reinforced Evol-Instruct. *arXiv preprint arXiv:2308.09583*, 2023. URL: https://arxiv.org/abs/2308.09583
 
-[8] nlpxucan et al., "WizardLM Repository." GitHub. URL: https://github.com/nlpxucan/WizardLM
+[8] nlpxucan et al., WizardLM. GitHub. URL: https://github.com/nlpxucan/WizardLM
