@@ -770,9 +770,35 @@ paths:
                     metadata: {}
       x-codeSamples:
         - lang: cURL
-          source: |
+          source: |-
             curl http://localhost:1337/v1/assistants \
-              -H "Content-Type: application/json" \
+              -H "Content-Type: application/json"
+        - lang: JavaScript
+          source: |-
+            fetch('http://localhost:1337/v1/assistants', {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            })
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            fetch('http://localhost:1337/v1/assistants', {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            })
+        - lang: Python
+          source: |-
+            import requests
+
+            url = 'http://localhost:1337/v1/assistants'
+            headers = {'Content-Type': 'application/json'}
+
+            response = requests.get(url, headers=headers)
   /assistants/{assistant_id}:
     get:
       operationId: getAssistant
