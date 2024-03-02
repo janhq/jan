@@ -49,7 +49,7 @@ export enum DownloadEvent {
 
 export enum LocalImportModelEvent {
   onLocalImportModelUpdate = 'onLocalImportModelUpdate',
-  onLocalImportModelError = 'onLocalImportModelError',
+  onLocalImportModelFailed = 'onLocalImportModelFailed',
   onLocalImportModelSuccess = 'onLocalImportModelSuccess',
   onLocalImportModelFinished = 'onLocalImportModelFinished',
 }

@@ -67,6 +67,24 @@ export const updateImportingModelProgressAtom = atom(
   }
 )
 
+export const setImportingModelErrorAtom = atom(
+  null,
+  (get, set, importId: string, error: string) => {
+    const model = get(importingModelsAtom).find((x) => x.importId === importId)
+    if (!model) return
+    const newModel: ImportingModel = {
+      ...model,
+      status: 'FAILED',
+    }
+
+    console.error(`Importing model ${model} failed`, error)
+    const newList = get(importingModelsAtom).map((m) =>
+      m.importId === importId ? newModel : m
+    )
+    set(importingModelsAtom, newList)
+  }
+)
+
 export const setImportingModelSuccessAtom = atom(
   null,
   (get, set, importId: string, modelId: string) => {

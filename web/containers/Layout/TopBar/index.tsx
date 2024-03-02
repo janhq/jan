@@ -159,7 +159,7 @@ const TopBar = () => {
                             size={16}
                             className="text-muted-foreground"
                           />
-                          <span className="font-medium text-black dark:text-muted-foreground">
+                          <span className="font-medium text-black ">
                             {openFileTitle()}
                           </span>
                         </div>
@@ -175,7 +175,7 @@ const TopBar = () => {
                             className="mt-0.5 flex-shrink-0 text-muted-foreground"
                           />
                           <div className="flex flex-col">
-                            <span className="font-medium text-black dark:text-muted-foreground">
+                            <span className="font-medium text-black ">
                               Edit Threads Settings
                             </span>
                             <span className="mt-1 text-muted-foreground">
@@ -204,7 +204,7 @@ const TopBar = () => {
                             className="text-muted-foreground"
                           />
                           <div className="flex flex-col">
-                            <span className="font-medium text-black dark:text-muted-foreground">
+                            <span className="font-medium text-black ">
                               {openFileTitle()}
                             </span>
                           </div>

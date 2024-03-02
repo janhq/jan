@@ -15,7 +15,6 @@ const SettingMenu: React.FC<Props> = ({ activeMenu, onMenuClick }) => {
   useEffect(() => {
     setMenus([
       'My Models',
-      'My Settings',
       'Advanced Settings',
       ...(window.electronAPI ? ['Extensions'] : []),
     ])
@@ -39,7 +38,7 @@ const SettingMenu: React.FC<Props> = ({ activeMenu, onMenuClick }) => {
 
                 {isActive && (
                   <m.div
-                    className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/50"
+                    className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-gray-200"
                     layoutId="active-static-menu"
                   />
                 )}

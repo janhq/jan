@@ -108,11 +108,11 @@ export function toaster(props: Props) {
       return (
         <div
           className={twMerge(
-            'unset-drag dark:bg-zinc-white relative flex animate-enter items-center gap-x-4 rounded-lg bg-foreground px-4 py-2 text-white dark:border dark:border-border',
+            'unset-drag relative flex animate-enter items-center gap-x-4 rounded-lg bg-foreground px-4 py-2 text-white',
             t.visible ? 'animate-enter' : 'animate-leave'
           )}
         >
-          <div className="flex items-start gap-x-3 dark:text-black">
+          <div className="flex items-start gap-x-3">
             <div className="mt-1">{renderIcon(type)}</div>
             <div className="pr-4">
               <h1 className="font-bold">{title}</h1>
@@ -120,7 +120,7 @@ export function toaster(props: Props) {
             </div>
             <XIcon
               size={24}
-              className="absolute right-2 top-2 w-4 cursor-pointer dark:text-black"
+              className="absolute right-2 top-2 w-4 cursor-pointer"
               onClick={() => toast.dismiss(t.id)}
             />
           </div>
@@ -138,16 +138,16 @@ export function snackbar(props: Props) {
       return (
         <div
           className={twMerge(
-            'unset-drag dark:bg-zinc-white relative bottom-2 flex animate-enter items-center gap-x-4 rounded-lg bg-foreground px-4 py-2 text-white dark:border dark:border-border',
+            'unset-drag relative bottom-2 flex animate-enter items-center gap-x-4 rounded-lg bg-foreground px-4 py-2 text-white',
             t.visible ? 'animate-enter' : 'animate-leave'
           )}
         >
-          <div className="flex items-start gap-x-3 dark:text-black">
+          <div className="flex items-start gap-x-3">
             <div>{renderIcon(type)}</div>
             <p className="pr-4">{description}</p>
             <XIcon
               size={24}
-              className="absolute right-2 top-1/2 w-4 -translate-y-1/2 cursor-pointer dark:text-black"
+              className="absolute right-2 top-1/2 w-4 -translate-y-1/2 cursor-pointer"
               onClick={() => toast.dismiss(t.id)}
             />
           </div>
