@@ -204,10 +204,47 @@ paths:
                 $ref: specs/models.yaml#/components/schemas/GetModelResponse
       x-codeSamples:
         - lang: cURL
-          source: |
-            curl -X 'GET' \
-              'http://localhost:1337/v1/models/{model_id}' \
+          source: |-
+            curl -X 'GET' \  
+              'http://localhost:1337/v1/models/{model_id}' \  
               -H 'accept: application/json'
+        - lang: JavaScript
+          source: |-
+            const fetch = require('node-fetch');
+
+            const modelId = 'mistral-ins-7b-q4';
+
+            fetch(`http://localhost:1337/v1/models/${modelId}`, {
+              method: 'GET',
+              headers: {'accept': 'application/json'}
+            })
+            .then(res => res.json())
+            .then(json => console.log(json));
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            const modelId = 'mistral-ins-7b-q4';
+
+            fetch(`http://localhost:1337/v1/models/${modelId}`, {
+              method: 'GET',
+              headers: {'accept': 'application/json'}
+            })
+            .then(res => res.json())
+            .then(json => console.log(json));
+        - lang: Python
+          source: >-
+            import requests
+
+
+            model_id = 'mistral-ins-7b-q4'
+
+
+            response =
+            requests.get(f'http://localhost:1337/v1/models/{model_id}',
+            headers={'accept': 'application/json'})
+
+            print(response.json())
     delete:
       operationId: deleteModel
       tags:
@@ -235,10 +272,45 @@ paths:
                 $ref: specs/models.yaml#/components/schemas/DeleteModelResponse
       x-codeSamples:
         - lang: cURL
-          source: |
+          source: |-
             curl -X 'DELETE' \
               'http://localhost:1337/v1/models/{model_id}' \
               -H 'accept: application/json'
+        - lang: JavaScript
+          source: |-
+            const fetch = require('node-fetch');
+
+            const modelId = 'mistral-ins-7b-q4';
+
+            fetch(`http://localhost:1337/v1/models/${modelId}`, {
+              method: 'DELETE',
+              headers: { 'accept': 'application/json' }
+            })
+              .then(res => res.json())
+              .then(json => console.log(json));
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            const modelId = 'mistral-ins-7b-q4';
+
+            fetch(`http://localhost:1337/v1/models/${modelId}`, {
+              method: 'DELETE',
+              headers: { 'accept': 'application/json' }
+            })
+              .then(res => res.json())
+              .then(json => console.log(json));
+        - lang: Python
+          source: >-
+            import requests
+
+
+            model_id = 'mistral-ins-7b-q4'
+
+
+            response =
+            requests.delete(f'http://localhost:1337/v1/models/{model_id}',
+            headers={'accept': 'application/json'})
   /threads:
     post:
       operationId: createThread
