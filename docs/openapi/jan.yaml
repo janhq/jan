@@ -471,8 +471,8 @@ paths:
       x-codeSamples:
         - lang: cURL
           source: |
-            curl -X POST http://localhost:1337/v1/threads \
-              -H "Content-Type: application/json" \
+            curl -X POST http://localhost:1337/v1/threads \  
+              -H "Content-Type: application/json" \  
               -d '{
                   "messages": [{
                       "role": "user",
@@ -483,6 +483,73 @@ paths:
                       "content": "How does AI work? Explain it in simple terms."
                   }]
               }'
+        - lang: JavaScript
+          source: |-
+            const fetch = require('node-fetch');
+
+            fetch('http://localhost:1337/v1/threads', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                messages: [
+                  {
+                    role: 'user',
+                    content: 'Hello, what is AI?',
+                    file_ids: ['file-abc123']
+                  },
+                  {
+                    role: 'user',
+                    content: 'How does AI work? Explain it in simple terms.'
+                  }
+                ]
+              })
+            });
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            fetch('http://localhost:1337/v1/threads', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                messages: [
+                  {
+                    role: 'user',
+                    content: 'Hello, what is AI?',
+                    file_ids: ['file-abc123']
+                  },
+                  {
+                    role: 'user',
+                    content: 'How does AI work? Explain it in simple terms.'
+                  }
+                ]
+              })
+            });
+        - lang: Python
+          source: |-
+            import requests
+
+            url = 'http://localhost:1337/v1/threads'
+            payload = {
+              'messages': [
+                {
+                  'role': 'user',
+                  'content': 'Hello, what is AI?',
+                  'file_ids': ['file-abc123']
+                },
+                {
+                  'role': 'user',
+                  'content': 'How does AI work? Explain it in simple terms.'
+                }
+              ]
+            }
+
+            response = requests.post(url, json=payload)
+            print(response.text)
     get:
       operationId: listThreads
       tags:
@@ -516,9 +583,36 @@ paths:
                     metadata: {}
       x-codeSamples:
         - lang: cURL
-          source: |
-            curl http://localhost:1337/v1/threads \
-              -H "Content-Type: application/json" \
+          source: |-
+            curl http://localhost:1337/v1/threads \ 
+             -H "Content-Type: application/json"
+        - lang: JavaScript
+          source: |-
+            const fetch = require('node-fetch'); 
+
+            fetch('http://localhost:1337/v1/threads', { 
+             method: 'GET', 
+             headers: {'Content-Type': 'application/json'} 
+            }).then(res => res.json()) 
+            .then(json => console.log(json));
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            fetch('http://localhost:1337/v1/threads', {
+             method: 'GET',
+             headers: {'Content-Type': 'application/json'}
+            }).then(res => res.json())
+            .then(json => console.log(json));
+        - lang: Python
+          source: |-
+            import requests
+
+            url = 'http://localhost:1337/v1/threads'
+            headers = {'Content-Type': 'application/json'}
+
+            response = requests.get(url, headers=headers)
+            print(response.json())
   /threads/{thread_id}:
     get:
       operationId: getThread
