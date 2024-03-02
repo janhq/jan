@@ -19,4 +19,5 @@ export type ImportingModel = {
   status: ImportingModelStatus
   format: string
   percentage?: number
+  error?: string
 }
