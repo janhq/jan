@@ -58,7 +58,7 @@ paths:
             schema:
               $ref: specs/chat.yaml#/components/schemas/ChatCompletionRequest
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -207,7 +207,7 @@ paths:
         = "https://platform.openai.com/docs/api-reference/models/list">
         Equivalent to OpenAI's list model. </a>
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -226,7 +226,6 @@ paths:
               headers: {Accept: 'application/json'}
             });
             const data = await response.json();
-
         - lang: Node.js
           source: |-
             const fetch = require('node-fetch');
@@ -248,7 +247,7 @@ paths:
             headers = {'Accept': 'application/json'}
             response = requests.get(url, headers=headers)
             data = response.json()
-  '/models/download/{model_id}':
+  "/models/download/{model_id}":
     get:
       operationId: downloadModel
       tags:
@@ -266,7 +265,7 @@ paths:
           description: |
             The ID of the model to use for this request.
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -306,7 +305,7 @@ paths:
             response = requests.get('http://localhost:1337/v1/models/download/{model_id}', headers={'accept': 'application/json'})
 
             data = response.json()
-  '/models/{model_id}':
+  "/models/{model_id}":
     get:
       operationId: retrieveModel
       tags:
@@ -327,7 +326,7 @@ paths:
           description: |
             The ID of the model to use for this request.
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -393,7 +392,7 @@ paths:
           description: |
             The model id to delete
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
@@ -455,7 +454,7 @@ paths:
             schema:
               $ref: specs/threads.yaml#/components/schemas/CreateThreadObject
       responses:
-        '200':
+        "200":
           description: Thread created successfully
           content:
             application/json:
@@ -551,7 +550,7 @@ paths:
       description: |
         Retrieves a list of all threads available in the system.
       responses:
-        '200':
+        "200":
           description: List of threads retrieved successfully
           content:
             application/json:
@@ -606,7 +605,7 @@ paths:
 
             response = requests.get(url, headers=headers)
             print(response.json())
-  '/threads/{thread_id}':
+  "/threads/{thread_id}":
     get:
       operationId: getThread
       tags:
@@ -626,7 +625,7 @@ paths:
           description: |
             The ID of the thread to retrieve.
       responses:
-        '200':
+        "200":
           description: Thread details retrieved successfully
           content:
             application/json:
@@ -666,7 +665,7 @@ paths:
                   items:
                     $ref: specs/threads.yaml#/components/schemas/ThreadMessageObject
       responses:
-        '200':
+        "200":
           description: Thread modified successfully
           content:
             application/json:
@@ -705,7 +704,7 @@ paths:
           description: |
             The ID of the thread to be deleted.
       responses:
-        '200':
+        "200":
           description: Thread deleted successfully
           content:
             application/json:
@@ -726,7 +725,7 @@ paths:
         "https://platform.openai.com/docs/api-reference/assistants/listAssistants">
         Equivalent to OpenAI's list assistants. </a>
       responses:
-        '200':
+        "200":
           description: List of assistants retrieved successfully
           content:
             application/json:
@@ -792,7 +791,7 @@ paths:
             headers = {'Content-Type': 'application/json'}
 
             response = requests.get(url, headers=headers)
-  '/assistants/{assistant_id}':
+  "/assistants/{assistant_id}":
     get:
       operationId: getAssistant
       tags:
@@ -812,7 +811,7 @@ paths:
           description: |
             The ID of the assistant to retrieve.
       responses:
-        '200':
+        "200":
           description: null
           content:
             application/json:
@@ -856,7 +855,7 @@ paths:
 
 
             response = requests.get(f'http://localhost:1337/v1/assistants/{assistant_id}', headers={'Content-Type': 'application/json'})
-  '/threads/{thread_id}/messages':
+  "/threads/{thread_id}/messages":
     get:
       operationId: listMessages
       tags:
@@ -875,7 +874,7 @@ paths:
           description: |
             The ID of the thread from which to retrieve messages.
       responses:
-        '200':
+        "200":
           description: List of messages retrieved successfully
           content:
             application/json:
@@ -927,7 +926,7 @@ paths:
                 - role
                 - content
       responses:
-        '200':
+        "200":
           description: Message created successfully
           content:
             application/json:
@@ -942,7 +941,7 @@ paths:
                 "role": "user",
                 "content": "How does AI work? Explain it in simple terms."
               }'
-  '/threads/{thread_id}/messages/{message_id}':
+  "/threads/{thread_id}/messages/{message_id}":
     get:
       operationId: retrieveMessage
       tags:
@@ -969,7 +968,7 @@ paths:
           description: |
             The ID of the message to retrieve.
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
