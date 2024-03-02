@@ -171,10 +171,40 @@ paths:
                 $ref: specs/models.yaml#/components/schemas/DownloadModelResponse
       x-codeSamples:
         - lang: cURL
-          source: |
-            curl -X 'GET' \
-              'http://localhost:1337/v1/models/download/{model_id}' \
+          source: |-
+            curl -X 'GET' \  
+              'http://localhost:1337/v1/models/download/{model_id}' \  
               -H 'accept: application/json'
+        - lang: JavaScript
+          source: >-
+            const response = await
+            fetch('http://localhost:1337/v1/models/download/{model_id}', {
+              method: 'GET',
+              headers: {accept: 'application/json'}
+            });
+
+
+            const data = await response.json();
+        - lang: Node.js
+          source: |-
+            const fetch = require('node-fetch');
+
+            fetch('http://localhost:1337/v1/models/download/{model_id}', {
+              method: 'GET',
+              headers: {accept: 'application/json'}
+            })
+            .then(res => res.json())
+            .then(data => console.log(data));
+        - lang: Python
+          source: >-
+            import requests
+
+
+            response =
+            requests.get('http://localhost:1337/v1/models/download/{model_id}',
+            headers={'accept': 'application/json'})
+
+            data = response.json()
   /models/{model_id}:
     get:
       operationId: retrieveModel
