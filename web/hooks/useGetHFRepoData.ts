@@ -20,7 +20,9 @@ export const useGetHFRepoData = () => {
       const data = await res.json()
       setRepoData(data)
     } catch (err) {
-      setFetchError(err as Error)
+      setFetchError(
+        Error("The repo does not exist or you don't have access to it.")
+      )
     }
     setLoading(false)
   }
