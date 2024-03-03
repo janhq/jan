@@ -116,6 +116,11 @@ const EditModelInfoModal: React.FC = () => {
     return null
   }
 
+  const onTagsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const tags = e.target.value.split(',')
+    setTags(tags)
+  }
+
   return (
     <Modal
       open={importModelStage === 'EDIT_MODEL_INFO'}
@@ -128,21 +133,23 @@ const EditModelInfoModal: React.FC = () => {
 
         <div className="flex flex-row space-x-4 rounded-xl border p-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-400">
-            <Paperclip />
+            <Paperclip color="#fff" />
           </div>
 
-          <div className="flex flex-col">
+          <div className="flex flex-1 flex-col">
             <p>{editingModel.name}</p>
             <div className="flex flex-row">
               <span className="mr-2 text-sm text-[#71717A]">
                 {toGibibytes(editingModel.size)}
               </span>
-              <span className="text-sm font-semibold text-[#71717A]">
-                Format:{' '}
-              </span>
-              <span className="text-sm font-normal text-[#71717A]">
-                {editingModel.format.toUpperCase()}
-              </span>
+              <div className="flex flex-row space-x-1">
+                <span className="text-sm font-semibold text-[#71717A]">
+                  Format:
+                </span>
+                <span className="text-sm font-normal text-[#71717A]">
+                  {editingModel.format.toUpperCase()}
+                </span>
+              </div>
             </div>
             <div className="mt-1 flex flex-row items-center space-x-2">
               <span className="line-clamp-1 text-xs font-normal text-[#71717A]">
@@ -189,7 +196,7 @@ const EditModelInfoModal: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <label className="mb-1">Tags</label>
-            <Input />
+            <Input value={tags.join(',')} onChange={onTagsChange} />
           </div>
         </form>
 
