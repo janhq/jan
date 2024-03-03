@@ -93,12 +93,12 @@ export function handleAppIPCs() {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Select model files',
       buttonLabel: 'Select',
-      properties: ['openFile', 'multiSelections'],
+      properties: ['openFile', 'openDirectory', 'multiSelections'],
     })
     if (canceled) {
       return
-    } else {
-      return filePaths
     }
+
+    return filePaths
   })
 }

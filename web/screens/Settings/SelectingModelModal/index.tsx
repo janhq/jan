@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
-import { ImportingModel, baseName, fs } from '@janhq/core'
+import { ImportingModel, baseName, fs, joinPath } from '@janhq/core'
 import { Modal, ModalContent, ModalHeader, ModalTitle } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -34,14 +34,31 @@ const SelectingModelModal: React.FC = () => {
     const sanitizedFilePaths: FilePathWithSize[] = []
     for (const filePath of filePaths) {
       const fileStats = await fs.fileStat(filePath, true)
-      if (!fileStats || fileStats.isDirectory) continue
+      if (!fileStats) continue
 
-      const fileName = await baseName(filePath)
-      sanitizedFilePaths.push({
-        path: filePath,
-        name: fileName,
-        size: fileStats.size,
-      })
+      if (!fileStats.isDirectory) {
+        const fileName = await baseName(filePath)
+        sanitizedFilePaths.push({
+          path: filePath,
+          name: fileName,
+          size: fileStats.size,
+        })
+      } else {
+        // allowing only one level of directory
+        const files = await fs.readdirSync(filePath)
+
+        for (const file of files) {
+          const fullPath = await joinPath([filePath, file])
+          const fileStats = await fs.fileStat(fullPath, true)
+          if (!fileStats || fileStats.isDirectory) continue
+
+          sanitizedFilePaths.push({
+            path: fullPath,
+            name: file,
+            size: fileStats.size,
+          })
+        }
+      }
     }
 
     const unsupportedFiles = sanitizedFilePaths.filter(
@@ -68,7 +85,7 @@ const SelectingModelModal: React.FC = () => {
     )
     if (unsupportedFiles.length > 0) {
       snackbar({
-        description: `File has to be a .gguf file`,
+        description: `Only files with .gguf extension can be imported.`,
         type: 'error',
       })
     }
