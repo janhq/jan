@@ -53,7 +53,7 @@ export const HuggingFaceRepoDataLoadedModal = () => {
             ? '❌ This model is not supported!'
             : '✅ This model is supported!'}
         </p>
-        {repoData.tags.includes('gguf') ? (
+        {repoData.tags?.includes('gguf') ? (
           <p>...But you can import it manually!</p>
         ) : null}
       </div>
