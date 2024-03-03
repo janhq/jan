@@ -1,5 +1,3 @@
-import { useContext } from 'react'
-
 import {
   Assistant,
   ConversationalExtension,
@@ -17,8 +15,6 @@ import { atom, useAtomValue, useSetAtom } from 'jotai'
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { generateThreadId } from '@/utils/thread'
 
 import useRecommendedModel from './useRecommendedModel'
@@ -27,6 +23,7 @@ import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
 
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   threadsAtom,
   threadStatesAtom,
@@ -59,7 +56,8 @@ export const useCreateNewThread = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const { experimentalFeature } = useContext(FeatureToggleContext)
+
+  const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
@@ -94,7 +92,7 @@ export const useCreateNewThread = () => {
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
       assistant_name: assistant.name,
-      tools: experimentalFeature ? [assistantTools] : assistant.tools,
+      tools: experimentalEnabled ? [assistantTools] : assistant.tools,
       model: {
         id: defaultModel?.id ?? '*',
         settings: defaultModel?.settings ?? {},

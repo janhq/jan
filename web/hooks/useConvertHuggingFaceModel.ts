@@ -1,5 +1,3 @@
-import { useContext } from 'react'
-
 import {
   ExtensionTypeEnum,
   HuggingFaceExtension,
@@ -7,18 +5,18 @@ import {
   Quantization,
 } from '@janhq/core'
 
-import { useSetAtom } from 'jotai'
-
-import { FeatureToggleContext } from '@/context/FeatureToggle'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { extensionManager } from '@/extension/ExtensionManager'
+import { ignoreSslAtom, proxyAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   conversionStatusAtom,
   conversionErrorAtom,
 } from '@/helpers/atoms/HFConverter.atom'
 
 export const useConvertHuggingFaceModel = () => {
-  const { ignoreSSL, proxy } = useContext(FeatureToggleContext)
+  const proxy = useAtomValue(proxyAtom)
+  const ignoreSSL = useAtomValue(ignoreSslAtom)
   const setConversionStatus = useSetAtom(conversionStatusAtom)
   const setConversionError = useSetAtom(conversionErrorAtom)
 
