@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useContext } from 'react'
+import React from 'react'
 
 import {
   Input,
@@ -24,8 +23,6 @@ import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
@@ -37,6 +34,7 @@ import ModelSetting from '../ModelSetting'
 
 import SettingComponentBuilder from '../ModelSetting/SettingComponent'
 
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   activeThreadAtom,
   getActiveThreadModelParamsAtom,
@@ -50,7 +48,7 @@ const Sidebar: React.FC = () => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
-  const { experimentalFeature } = useContext(FeatureToggleContext)
+  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
   const modelEngineParams = toSettingParams(activeModelParams)
   const modelRuntimeParams = toRuntimeParams(activeModelParams)
@@ -174,7 +172,7 @@ const Sidebar: React.FC = () => {
                   <div className="px-2 py-4">
                     <SettingComponentBuilder
                       componentData={componentDataEngineSetting}
-                      selector={(x: any) => x.name === 'prompt_template'}
+                      selector={(x) => x.name === 'prompt_template'}
                     />
                   </div>
                 </CardSidebar>
