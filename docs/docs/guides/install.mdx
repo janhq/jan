@@ -44,7 +44,7 @@ import installImageURL from './assets/jan-ai-download.png';
 
 :::warning
 
-If you are stuck in a broken build, go to the [Broken Build](/quickstart/common-error/broken-build) section of Common Errors.
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build) section of Common Errors.
 
 :::
 
@@ -86,7 +86,7 @@ If you are stuck in a broken build, go to the [Broken Build](/quickstart/common-
 
 :::warning
 
-If you are stuck in a broken build, go to the [Broken Build](/quickstart/common-error/broken-build) section of Common Errors.
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build) section of Common Errors.
 
 :::
 
@@ -154,7 +154,7 @@ If you are stuck in a broken build, go to the [Broken Build](/quickstart/common-
 
 :::warning
 
-If you are stuck in a broken build, go to the [Broken Build](/quickstart/common-error/broken-build) section of Common Errors.
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build) section of Common Errors.
 
 :::
     </TabItem>
@@ -173,29 +173,6 @@ If you are stuck in a broken build, go to the [Broken Build](/quickstart/common-
 - If you have not installed Docker, follow the instructions [here](https://docs.docker.com/engine/install/ubuntu/).
 - If you have not installed the required file for GPU support, follow the instructions [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 :::
-
-        ### Docker Compose Profile and Environment
-        Before dive in into the steps to run Jan in Docker, ensure that you have understand the following docker compose profile and the environment variable listed below:
-        
-        #### Docker Compose Profile
-
-        | Profile   | Description                               |
-        |-----------|-------------------------------------------|
-        | cpu-fs    | Run Jan in CPU mode with default file system |
-        | cpu-s3fs  | Run Jan in CPU mode with S3 file system   |
-        | gpu-fs    | Run Jan in GPU mode with default file system |
-        | gpu-s3fs  | Run Jan in GPU mode with S3 file system   |
-
-        #### Environment Variables
-
-        | Environment Variable     | Description                                                |
-        |--------------------------|------------------------------------------------------------|
-        | S3_BUCKET_NAME           | S3 bucket name - leave blank for default file system       |
-        | AWS_ACCESS_KEY_ID        | AWS access key ID - leave blank for default file system    |
-        | AWS_SECRET_ACCESS_KEY    | AWS secret access key - leave blank for default file system|
-        | AWS_ENDPOINT             | AWS endpoint URL - leave blank for default file system     |
-        | AWS_REGION               | AWS region - leave blank for default file system           |
-        | API_BASE_URL             | Jan Server URL, please modify it as your public ip address or domain name default http://localhost:1377 |
 
         ### Run Jan in Docker
         You can run Jan in Docker with two methods:
@@ -263,10 +240,33 @@ If you are stuck in a broken build, go to the [Broken Build](/quickstart/common-
 
             </TabItem>
         </Tabs>
+        ### Docker Compose Profile and Environment
+        The available Docker Compose profile and the environment variables listed below:
+        
+        #### Docker Compose Profile
+
+        | Profile   | Description                               |
+        |-----------|-------------------------------------------|
+        | cpu-fs    | Run Jan in CPU mode with default file system |
+        | cpu-s3fs  | Run Jan in CPU mode with S3 file system   |
+        | gpu-fs    | Run Jan in GPU mode with default file system |
+        | gpu-s3fs  | Run Jan in GPU mode with S3 file system   |
+
+        #### Environment Variables
+
+        | Environment Variable     | Description                                                |
+        |--------------------------|------------------------------------------------------------|
+        | S3_BUCKET_NAME           | S3 bucket name - leave blank for default file system       |
+        | AWS_ACCESS_KEY_ID        | AWS access key ID - leave blank for default file system    |
+        | AWS_SECRET_ACCESS_KEY    | AWS secret access key - leave blank for default file system|
+        | AWS_ENDPOINT             | AWS endpoint URL - leave blank for default file system     |
+        | AWS_REGION               | AWS region - leave blank for default file system           |
+        | API_BASE_URL             | Jan Server URL, please modify it as your public ip address or domain name default http://localhost:1377 |
+
 
 :::warning
 
-If you are stuck in a broken build, go to the [Broken Build](/quickstart/common-error/broken-build/) section of Common Errors.
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build/) section of Common Errors.
 
 :::
 
