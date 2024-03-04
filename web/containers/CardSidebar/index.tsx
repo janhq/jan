@@ -45,7 +45,7 @@ export default function CardSidebar({
   return (
     <div
       className={twMerge(
-        'flex w-full flex-col border-t border-border bg-zinc-100',
+        'flex w-full flex-col border-t border-border bg-zinc-100 dark:bg-zinc-900',
         asChild ? 'rounded-lg border' : 'border-t'
       )}
     >
@@ -61,7 +61,7 @@ export default function CardSidebar({
               if (!children) return
               setShow(!show)
             }}
-            className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 py-2 pr-2"
+            className="flex w-full flex-1 items-center space-x-2 rounded-lg bg-zinc-100 py-2 pr-2 dark:bg-zinc-900"
           >
             <ChevronDownIcon
               className={twMerge(
@@ -79,7 +79,7 @@ export default function CardSidebar({
               {!hideMoreVerticalAction && (
                 <div
                   ref={setToggle}
-                  className="cursor-pointer rounded-lg bg-zinc-100 p-2 px-3"
+                  className="cursor-pointer rounded-lg bg-zinc-100 p-2 px-3 dark:bg-zinc-900"
                   onClick={() => setMore(!more)}
                 >
                   <MoreVerticalIcon className="h-5 w-5" />
@@ -114,7 +114,7 @@ export default function CardSidebar({
               <>
                 {title === 'Model' ? (
                   <div className="flex flex-col">
-                    <span className="font-medium text-black">
+                    <span className="font-medium text-black dark:text-muted-foreground">
                       {openFileTitle()}
                     </span>
                     <span className="mt-1 text-muted-foreground">
@@ -122,7 +122,7 @@ export default function CardSidebar({
                     </span>
                   </div>
                 ) : (
-                  <span className="text-bold text-black">
+                  <span className="text-bold text-black dark:text-muted-foreground">
                     {openFileTitle()}
                   </span>
                 )}
@@ -141,7 +141,7 @@ export default function CardSidebar({
               />
               <>
                 <div className="flex flex-col">
-                  <span className="line-clamp-1 font-medium text-black">
+                  <span className="line-clamp-1 font-medium text-black dark:text-muted-foreground">
                     Edit Global Defaults for{' '}
                     <span
                       className="font-bold"
@@ -175,7 +175,7 @@ export default function CardSidebar({
       {show && (
         <div
           className={twMerge(
-            'flex flex-col gap-2 bg-white px-2',
+            'flex flex-col gap-2 bg-white px-2 dark:bg-background',
             asChild && 'rounded-b-lg'
           )}
         >

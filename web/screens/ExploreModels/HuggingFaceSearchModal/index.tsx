@@ -26,7 +26,7 @@ export const HuggingFaceSearchModal = () => {
       </div>
       <Input
         placeholder="e.g. username/repo-name"
-        className="bg-white"
+        className="bg-white dark:bg-background"
         onChange={(e) => {
           setRepoID(e.target.value)
         }}
