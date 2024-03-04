@@ -37,11 +37,11 @@ const ImportingModelItem: React.FC<Props> = ({ model }) => {
   }, [model.status, model.size])
 
   return (
-    <div className="flex w-full flex-row items-center space-x-3 rounded-lg border px-4 py-3">
-      <p className="line-clamp-1 flex-1 font-semibold text-[#09090B]">
+    <div className="flex w-full flex-row items-center space-x-3 rounded-lg border border-border px-4 py-3">
+      <p className="line-clamp-1 flex-1 font-semibold text-muted-foreground">
         {model.name}
       </p>
-      <p className="text-[#71717A]">{displayStatus}</p>
+      <p className="text-muted-foreground">{displayStatus}</p>
 
       {model.status === 'IMPORTED' && (
         <ImportSuccessIcon onEditModelClick={onEditModelInfoClick} />

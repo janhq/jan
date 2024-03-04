@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@janhq/uikit'
 
-import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { Paintbrush, CodeIcon } from 'lucide-react'
 import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
@@ -53,12 +53,14 @@ import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
 
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
+import {
+  apiServerCorsEnabledAtom,
+  apiServerHostAtom,
+  apiServerPortAtom,
+  apiServerVerboseLogEnabledAtom,
+  hostOptions,
+} from '@/helpers/atoms/ApiServer.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
-
-const corsEnabledAtom = atom(true)
-const verboseEnabledAtom = atom(true)
-const hostAtom = atom('127.0.0.1')
-const portAtom = atom('1337')
 
 const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
@@ -73,13 +75,13 @@ const LocalServerScreen = () => {
   const modelEngineParams = toSettingParams(selectedModel?.settings)
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
-  const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
-  const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
-  const [host, setHost] = useAtom(hostAtom)
-  const [port, setPort] = useAtom(portAtom)
+  const [isCorsEnabled, setIsCorsEnabled] = useAtom(apiServerCorsEnabledAtom)
+  const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(
+    apiServerVerboseLogEnabledAtom
+  )
+  const [host, setHost] = useAtom(apiServerHostAtom)
+  const [port, setPort] = useAtom(apiServerPortAtom)
   const [loadModelError, setLoadModelError] = useAtom(loadModelErrorAtom)
-
-  const hostOptions = ['127.0.0.1', '0.0.0.0']
 
   const FIRST_TIME_VISIT_API_SERVER = 'firstTimeVisitAPIServer'
 
@@ -88,11 +90,7 @@ const LocalServerScreen = () => {
 
   const handleChangePort = useCallback(
     (value: string) => {
-      if (Number(value) <= 0 || Number(value) >= 65536) {
-        setErrorRangePort(true)
-      } else {
-        setErrorRangePort(false)
-      }
+      setErrorRangePort(Number(value) <= 0 || Number(value) >= 65536)
       setPort(value)
     },
     [setPort]
@@ -181,7 +179,7 @@ const LocalServerScreen = () => {
           <TooltipTrigger asChild>
             <div className="space-y-4 p-4">
               <div>
-                <p className="mb-2 block text-sm font-semibold text-zinc-500 ">
+                <p className="mb-2 block text-sm font-semibold text-zinc-500 dark:text-gray-300">
                   Server Options
                 </p>
                 <div className="flex w-full flex-shrink-0 items-center gap-x-2">
@@ -231,12 +229,15 @@ const LocalServerScreen = () => {
               <div>
                 <label
                   id="cors"
-                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500"
+                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
                 >
                   Cross-Origin-Resource-Sharing (CORS)
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <InfoIcon size={16} className="mt-0.5 flex-shrink-0" />
+                      <InfoIcon
+                        size={16}
+                        className="mt-0.5 flex-shrink-0 dark:text-gray-500"
+                      />
                     </TooltipTrigger>
                     <TooltipPortal>
                       <TooltipContent side="top" className="max-w-[240px]">
@@ -263,12 +264,15 @@ const LocalServerScreen = () => {
               <div>
                 <label
                   id="verbose"
-                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500"
+                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
                 >
                   Verbose Server Logs
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <InfoIcon size={16} className="mt-0.5 flex-shrink-0" />
+                      <InfoIcon
+                        size={16}
+                        className="mt-0.5 flex-shrink-0 dark:text-gray-500"
+                      />
                     </TooltipTrigger>
                     <TooltipPortal>
                       <TooltipContent side="top" className="max-w-[240px]">
@@ -309,13 +313,13 @@ const LocalServerScreen = () => {
 
       {/* Middle Bar */}
       <ScrollToBottom className="relative flex h-full w-full flex-col overflow-auto bg-background">
-        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2">
+        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-zinc-600">
           <h2 className="font-bold">Server Logs</h2>
           <div className="space-x-2">
             <Button
               size="sm"
               themes="outline"
-              className="bg-white"
+              className="bg-white dark:bg-secondary"
               onClick={() => openServerLog()}
             >
               <CodeIcon size={16} className="mr-2" />
@@ -324,7 +328,7 @@ const LocalServerScreen = () => {
             <Button
               size="sm"
               themes="outline"
-              className="bg-white"
+              className="bg-white dark:bg-secondary"
               onClick={() => clearServerLog()}
             >
               <Paintbrush size={16} className="mr-2" />
@@ -380,7 +384,7 @@ const LocalServerScreen = () => {
       {/* Right bar */}
       <div
         className={twMerge(
-          'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background transition-all duration-100',
+          'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background transition-all duration-100 dark:bg-background/20',
           showRightSideBar
             ? 'w-80 translate-x-0 opacity-100'
             : 'w-0 translate-x-full opacity-0'
@@ -416,7 +420,7 @@ const LocalServerScreen = () => {
               <span>
                 Model failed to start. Access{' '}
                 <span
-                  className="cursor-pointer text-blue-600"
+                  className="cursor-pointer text-primary dark:text-blue-400"
                   onClick={() => setModalTroubleShooting(true)}
                 >
                   troubleshooting assistance

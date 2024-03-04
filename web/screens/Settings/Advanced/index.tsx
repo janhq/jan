@@ -1,12 +1,6 @@
 'use client'
 
-import {
-  useContext,
-  useEffect,
-  useState,
-  useCallback,
-  ChangeEvent,
-} from 'react'
+import { useEffect, useState, useCallback, ChangeEvent } from 'react'
 
 import { openExternalUrl, fs } from '@janhq/core'
 
@@ -29,19 +23,26 @@ import {
   ScrollArea,
 } from '@janhq/uikit'
 
+import { useAtom } from 'jotai'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
 import ShortcutModal from '@/containers/ShortcutModal'
 
 import { snackbar, toaster } from '@/containers/Toast'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
 import FactoryReset from './FactoryReset'
+
+import {
+  experimentalFeatureEnabledAtom,
+  ignoreSslAtom,
+  proxyAtom,
+  proxyEnabledAtom,
+  vulkanEnabledAtom,
+} from '@/helpers/atoms/AppConfig.atom'
 
 type GPU = {
   id: string
@@ -50,22 +51,19 @@ type GPU = {
 }
 
 const Advanced = () => {
-  const {
-    experimentalFeature,
-    setExperimentalFeature,
-    ignoreSSL,
-    setIgnoreSSL,
-    proxy,
-    setProxy,
-    proxyEnabled,
-    setProxyEnabled,
-    vulkanEnabled,
-    setVulkanEnabled,
-  } = useContext(FeatureToggleContext)
+  const [experimentalEnabled, setExperimentalEnabled] = useAtom(
+    experimentalFeatureEnabledAtom
+  )
+  const [vulkanEnabled, setVulkanEnabled] = useAtom(vulkanEnabledAtom)
+  const [proxyEnabled, setProxyEnabled] = useAtom(proxyEnabledAtom)
+  const [proxy, setProxy] = useAtom(proxyAtom)
+  const [ignoreSSL, setIgnoreSSL] = useAtom(ignoreSslAtom)
+
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
   const [gpuList, setGpuList] = useState<GPU[]>([])
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
+
   const { readSettings, saveSettings, validateSettings, setShowNotification } =
     useSettings()
   const { stopModel } = useActiveModel()
@@ -169,8 +167,8 @@ const Advanced = () => {
             </p>
           </div>
           <Switch
-            checked={experimentalFeature}
-            onCheckedChange={setExperimentalFeature}
+            checked={experimentalEnabled}
+            onCheckedChange={setExperimentalEnabled}
           />
         </div>
 
@@ -282,7 +280,7 @@ const Advanced = () => {
                 disabled={gpuList.length === 0 || !gpuEnabled}
                 value={selectedGpu.join()}
               >
-                <SelectTrigger className="w-[340px] bg-white">
+                <SelectTrigger className="w-[340px] bg-white dark:bg-gray-500">
                   <SelectValue placeholder={gpuSelectionPlaceHolder}>
                     <span className="line-clamp-1 w-full pr-8">
                       {selectedGpu.join()}
@@ -355,7 +353,7 @@ const Advanced = () => {
         )}
 
         {/* Vulkan for AMD GPU/ APU and Intel Arc GPU */}
-        {!isMac && experimentalFeature && (
+        {!isMac && experimentalEnabled && (
           <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
             <div className="flex-shrink-0 space-y-1.5">
               <div className="flex gap-x-2">
