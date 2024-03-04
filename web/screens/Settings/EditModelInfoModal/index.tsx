@@ -131,7 +131,7 @@ const EditModelInfoModal: React.FC = () => {
           <ModalTitle>Edit Model Information</ModalTitle>
         </ModalHeader>
 
-        <div className="flex flex-row space-x-4 rounded-xl border p-4">
+        <div className="flex flex-row space-x-4 rounded-xl border p-4 border-border">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-400">
             <Paperclip color="#fff" />
           </div>

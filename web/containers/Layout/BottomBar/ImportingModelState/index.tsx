@@ -38,17 +38,17 @@ const ImportingModelState: React.FC = () => {
           className="flex cursor-pointer flex-row items-center space-x-2"
           onClick={onClick}
         >
-          <p className="text-xs font-semibold	text-[#09090B]">
+          <p className="text-xs font-semibold text-muted-foreground">
             Importing model ({finishedImportModelCount}/{importingModels.length}
             )
           </p>
 
-          <div className="flex flex-row items-center justify-center space-x-2 rounded-md bg-[#F4F4F5] px-2 py-[2px]">
+          <div className="flex flex-row items-center justify-center space-x-2 rounded-md bg-secondary px-2 py-[2px]">
             <Progress
               className="h-2 w-24"
               value={transferredSize / totalSize}
             />
-            <span className="text-xs font-bold	text-primary">
+            <span className="text-xs font-bold text-muted-foreground">
               {progress.toFixed(2)}%
             </span>
           </div>

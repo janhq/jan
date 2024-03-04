@@ -101,9 +101,9 @@ const SelectingModelModal: React.FC = () => {
     onDrop: onDropModels,
   })
 
-  const borderColor = isDragActive ? 'border-primary' : 'border-[#F4F4F5]'
-  const textColor = isDragActive ? 'text-primary' : 'text-[#71717A]'
-  const dragAndDropBgColor = isDragActive ? 'bg-[#EFF6FF]' : 'bg-white'
+  const borderColor = isDragActive ? 'border-primary' : 'border-border'
+  const textColor = isDragActive ? 'text-primary' : 'text-muted-foreground'
+  const dragAndDropBgColor = isDragActive ? 'bg-[#EFF6FF] dark:bg-blue-50/10' : 'bg-background'
 
   return (
     <Modal
@@ -116,7 +116,7 @@ const SelectingModelModal: React.FC = () => {
         <ModalHeader>
           <ModalTitle>Import Model</ModalTitle>
 
-          <p className="text-sm font-medium text-[#71717A]">
+          <p className="text-sm font-medium text-muted-foreground">
             Import any model file (GGUF) or folder. Your imported model will be
             private to you.
           </p>

@@ -96,7 +96,7 @@ const ExploreModelsScreen = () => {
                   </div>
                   <Button
                     themes="outline"
-                    className="gap-2 bg-white"
+                    className="gap-2 bg-white dark:bg-secondary"
                     onClick={onImportModelClick}
                   >
                     <UploadIcon size={16} />
