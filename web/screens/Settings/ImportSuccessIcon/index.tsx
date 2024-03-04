@@ -30,7 +30,7 @@ const ImportSuccessIcon: React.FC<Props> = ({ onEditModelClick }) => {
 
 const SuccessIcon: React.FC = React.memo(() => (
   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white">
-    <Check  size={20}/>
+    <Check size={20} />
   </div>
 ))
 

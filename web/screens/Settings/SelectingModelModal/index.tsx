@@ -103,7 +103,9 @@ const SelectingModelModal: React.FC = () => {
 
   const borderColor = isDragActive ? 'border-primary' : 'border-border'
   const textColor = isDragActive ? 'text-primary' : 'text-muted-foreground'
-  const dragAndDropBgColor = isDragActive ? 'bg-[#EFF6FF] dark:bg-blue-50/10' : 'bg-background'
+  const dragAndDropBgColor = isDragActive
+    ? 'bg-[#EFF6FF] dark:bg-blue-50/10'
+    : 'bg-background'
 
   return (
     <Modal

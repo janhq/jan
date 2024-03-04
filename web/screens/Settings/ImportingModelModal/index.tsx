@@ -62,7 +62,9 @@ const ImportingModelModal: React.FC = () => {
             Importing model ({finishedImportModel}/{importingModels.length})
           </ModalTitle>
           <div className="flex flex-row items-center space-x-2">
-            <label className="text-xs text-muted-foreground">{modelFolder}</label>
+            <label className="text-xs text-muted-foreground">
+              {modelFolder}
+            </label>
             <Button
               themes="ghost"
               className="text-blue-500"
@@ -78,7 +80,7 @@ const ImportingModelModal: React.FC = () => {
             <ImportingModelItem key={model.importId} model={model} />
           ))}
         </div>
-        <ModalFooter className="mx-[-16px] mb-[-16px] flex flex-row rounded-b-lg bg-[#F4F4F5] dark:bg-secondary px-2 py-2	">
+        <ModalFooter className="mx-[-16px] mb-[-16px] flex flex-row rounded-b-lg bg-[#F4F4F5] px-2 py-2 dark:bg-secondary	">
           <AlertCircle size={20} />
           <p className="text-sm font-semibold text-muted-foreground">
             Own your model configurations, use at your own risk.
