@@ -7,25 +7,33 @@
 
 .cards {
     display: flex;
-    justify-content: center;
     flex-wrap: wrap;
+    justify-content: center; /* Center align the cards */
     gap: 2rem;
-}
-
-@media screen and (max-width: 768px) {
-    .cards {
-        gap: 2rem;
-    }
 }
 
 .card {
     background-color: #ECECEF;
-    width: 30%;
+    width: calc(33.33% - 2rem); /* Adjust width for responsiveness */
     border-radius: 15px;
     position: relative;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    margin-bottom: 2rem; /* Add margin between cards */
+    padding: 1rem; /* Add padding to cards */
+}
+
+@media screen and (max-width: 768px) {
+    .card {
+        width: calc(50% - 2rem); /* Adjust width for smaller screens */
+    }
+}
+
+@media screen and (max-width: 576px) {
+    .card {
+        width: calc(100% - 2rem); /* Adjust width for mobile screens */
+    }
 }
 
 .cardContent {
