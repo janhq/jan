@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@janhq/uikit'
 
-import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { Paintbrush, CodeIcon } from 'lucide-react'
 import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
@@ -53,12 +53,14 @@ import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
 
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
+import {
+  apiServerCorsEnabledAtom,
+  apiServerHostAtom,
+  apiServerPortAtom,
+  apiServerVerboseLogEnabledAtom,
+  hostOptions,
+} from '@/helpers/atoms/ApiServer.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
-
-const corsEnabledAtom = atom(true)
-const verboseEnabledAtom = atom(true)
-const hostAtom = atom('127.0.0.1')
-const portAtom = atom('1337')
 
 const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
@@ -73,13 +75,13 @@ const LocalServerScreen = () => {
   const modelEngineParams = toSettingParams(selectedModel?.settings)
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
 
-  const [isCorsEnabled, setIsCorsEnabled] = useAtom(corsEnabledAtom)
-  const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(verboseEnabledAtom)
-  const [host, setHost] = useAtom(hostAtom)
-  const [port, setPort] = useAtom(portAtom)
+  const [isCorsEnabled, setIsCorsEnabled] = useAtom(apiServerCorsEnabledAtom)
+  const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(
+    apiServerVerboseLogEnabledAtom
+  )
+  const [host, setHost] = useAtom(apiServerHostAtom)
+  const [port, setPort] = useAtom(apiServerPortAtom)
   const [loadModelError, setLoadModelError] = useAtom(loadModelErrorAtom)
-
-  const hostOptions = ['127.0.0.1', '0.0.0.0']
 
   const FIRST_TIME_VISIT_API_SERVER = 'firstTimeVisitAPIServer'
 
@@ -88,11 +90,7 @@ const LocalServerScreen = () => {
 
   const handleChangePort = useCallback(
     (value: string) => {
-      if (Number(value) <= 0 || Number(value) >= 65536) {
-        setErrorRangePort(true)
-      } else {
-        setErrorRangePort(false)
-      }
+      setErrorRangePort(Number(value) <= 0 || Number(value) >= 65536)
       setPort(value)
     },
     [setPort]

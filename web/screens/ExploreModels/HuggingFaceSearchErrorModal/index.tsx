@@ -18,7 +18,7 @@ export const HuggingFaceSearchErrorModal = () => {
         <p className="text-2xl font-bold">Error!</p>
         <p className="text-gray-500">Fetch error</p>
       </div>
-      <p>{fetchError.message}</p>
+      <p className="text-center">{fetchError.message}</p>
       <Button
         onClick={getRepoData}
         className="w-full"

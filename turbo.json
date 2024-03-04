@@ -1,0 +1,29 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "pipeline": {
+    "build": {
+      "outputs": [".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "cache": false
+    },
+    "web#build": {
+      "dependsOn": ["@janhq/core#build"]
+    },
+    "web:dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["@janhq/core#build", "@janhq/uikit#build"]
+    },
+    "electron:dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["@janhq/core#build", "@janhq/server#build", "jan#compile"]
+    },
+    "electron#build": {
+      "dependsOn": ["web#build", "server#build", "core#build"],
+      "cache": false
+    },
+    "type-check": {}
+  }
+}

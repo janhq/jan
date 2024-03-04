@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { InferenceEvent, MessageStatus, events } from '@janhq/core'
 
@@ -24,8 +24,6 @@ import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useClickOutside } from '@/hooks/useClickOutside'
 
@@ -34,6 +32,7 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
@@ -58,7 +57,7 @@ const ChatInput: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
-  const { experimentalFeature } = useContext(FeatureToggleContext)
+  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
   const threadStates = useAtomValue(threadStatesAtom)
 

@@ -39,7 +39,7 @@ export default function useDropModelBinaries() {
       }))
       if (unsupportedFiles.length > 0) {
         snackbar({
-          description: `File has to be a .gguf file`,
+          description: `Only files with .gguf extension can be imported.`,
           type: 'error',
         })
       }
