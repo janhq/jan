@@ -209,6 +209,12 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 This will start the development server and open the desktop app.
 
+3. (Optional) **Run the API server without frontend**
+
+   ```bash
+   yarn dev:server
+   ```
+
 ### For production build
 
 ```bash
