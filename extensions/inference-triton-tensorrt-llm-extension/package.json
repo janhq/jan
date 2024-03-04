@@ -1,5 +1,5 @@
 {
-  "name": "@janhq/inference-triton-trt-llm-extension",
+  "name": "@janhq/inference-triton-tensorrt-llm-extension",
   "version": "1.0.0",
   "description": "This extension enables Nvidia's TensorRT-LLM as an inference engine option",
   "main": "dist/index.js",

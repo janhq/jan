@@ -49,7 +49,7 @@ export default function RowModel(props: RowModelProps) {
 
   const isRemoteModel =
     props.data.engine === InferenceEngine.openai ||
-    props.data.engine === InferenceEngine.triton_trtllm
+    props.data.engine === InferenceEngine.triton_tensorrtllm
 
   const onModelActionClick = (modelId: string) => {
     if (activeModel && activeModel.id === modelId) {

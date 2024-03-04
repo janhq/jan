@@ -3,7 +3,7 @@
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  * @version 1.0.0
- * @module inference-nvidia-triton-trt-llm-extension/src/index
+ * @module inference-nvidia-triton-tensorrt-llm-extension/src/index
  */
 
 import {
@@ -31,7 +31,7 @@ import { EngineSettings } from './@types/global'
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceTritonTrtLLMExtension extends BaseExtension {
+export default class JanInferenceTritonTensorRtLlmExtension extends BaseExtension {
   private static readonly _homeDir = 'file://engines'
   private static readonly _engineMetadataFileName = 'triton_trtllm.json'
 
@@ -48,20 +48,20 @@ export default class JanInferenceTritonTrtLLMExtension extends BaseExtension {
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
-    if (!(await fs.existsSync(JanInferenceTritonTrtLLMExtension._homeDir)))
-      JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings()
+    if (!(await fs.existsSync(JanInferenceTritonTensorRtLlmExtension._homeDir)))
+      JanInferenceTritonTensorRtLlmExtension.writeDefaultEngineSettings()
 
     // Events subscription
     events.on(MessageEvent.OnMessageSent, (data) =>
-      JanInferenceTritonTrtLLMExtension.handleMessageRequest(data, this)
+      JanInferenceTritonTensorRtLlmExtension.handleMessageRequest(data, this)
     )
 
     events.on(ModelEvent.OnModelInit, (model: Model) => {
-      JanInferenceTritonTrtLLMExtension.handleModelInit(model)
+      JanInferenceTritonTensorRtLlmExtension.handleModelInit(model)
     })
 
     events.on(ModelEvent.OnModelStop, (model: Model) => {
-      JanInferenceTritonTrtLLMExtension.handleModelStop(model)
+      JanInferenceTritonTensorRtLlmExtension.handleModelStop(model)
     })
   }
 
@@ -85,18 +85,18 @@ export default class JanInferenceTritonTrtLLMExtension extends BaseExtension {
   static async writeDefaultEngineSettings() {
     try {
       const engine_json = join(
-        JanInferenceTritonTrtLLMExtension._homeDir,
-        JanInferenceTritonTrtLLMExtension._engineMetadataFileName
+        JanInferenceTritonTensorRtLlmExtension._homeDir,
+        JanInferenceTritonTensorRtLlmExtension._engineMetadataFileName
       )
       if (await fs.existsSync(engine_json)) {
         const engine = await fs.readFileSync(engine_json, 'utf-8')
-        JanInferenceTritonTrtLLMExtension._engineSettings =
+        JanInferenceTritonTensorRtLlmExtension._engineSettings =
           typeof engine === 'object' ? engine : JSON.parse(engine)
       } else {
         await fs.writeFileSync(
           engine_json,
           JSON.stringify(
-            JanInferenceTritonTrtLLMExtension._engineSettings,
+            JanInferenceTritonTensorRtLlmExtension._engineSettings,
             null,
             2
           )
@@ -122,18 +122,18 @@ export default class JanInferenceTritonTrtLLMExtension extends BaseExtension {
   }
 
   private static async handleModelInit(model: Model) {
-    if (model.engine !== 'triton_trtllm') {
+    if (model.engine !== 'triton_tensorrtllm') {
       return
     } else {
-      JanInferenceTritonTrtLLMExtension._currentModel = model
-      JanInferenceTritonTrtLLMExtension.writeDefaultEngineSettings()
+      JanInferenceTritonTensorRtLlmExtension._currentModel = model
+      JanInferenceTritonTensorRtLlmExtension.writeDefaultEngineSettings()
       // Todo: Check model list with API key
       events.emit(ModelEvent.OnModelReady, model)
     }
   }
 
   private static async handleModelStop(model: Model) {
-    if (model.engine !== 'triton_trtllm') {
+    if (model.engine !== 'triton_tensorrtllm') {
       return
     }
     events.emit(ModelEvent.OnModelStopped, model)
@@ -147,9 +147,9 @@ export default class JanInferenceTritonTrtLLMExtension extends BaseExtension {
    */
   private static async handleMessageRequest(
     data: MessageRequest,
-    instance: JanInferenceTritonTrtLLMExtension
+    instance: JanInferenceTritonTensorRtLlmExtension
   ) {
-    if (data.model.engine !== 'triton_trtllm') {
+    if (data.model.engine !== 'triton_tensorrtllm') {
       return
     }
 
@@ -174,7 +174,7 @@ export default class JanInferenceTritonTrtLLMExtension extends BaseExtension {
       data?.messages ?? [],
       this._engineSettings,
       {
-        ...JanInferenceTritonTrtLLMExtension._currentModel,
+        ...JanInferenceTritonTensorRtLlmExtension._currentModel,
         parameters: data.model.parameters,
       },
       instance.controller

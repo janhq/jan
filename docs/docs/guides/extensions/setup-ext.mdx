@@ -31,7 +31,7 @@ You can find the default extensions in the `Settings` > `Extensions`.
 | Conversational Extension | `v1.0.0` | This extension enables conversations and state persistence via your filesystem. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/conversational-extension) |
 | Inference Nitro Extension | `v1.0.0` | This extension embeds Nitro, a lightweight (3 MB) inference engine in C++. See nitro.jan.ai. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-nitro-extension) |
 | Inference Openai Extension | `v1.0.0` | This extension enables OpenAI chat completion API calls. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-openai-extension) |
-| Inference Triton Trt Llm Extension | `v1.0.0` | This extension enables Nvidia's TensorRT-LLM as an inference engine option. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-triton-trtllm-extension) |
+| Inference Triton TensorRT-LLM Extension | `v1.0.0` | This extension enables Nvidia's TensorRT-LLM as an inference engine option. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-triton-tensorrt-llm-extension) |
 | Model Extension | `v1.0.22` | Model Management Extension provides model exploration and seamless downloads. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/model-extension) |
 | Monitoring Extension | `v1.0.9` | This extension offers system health and OS-level data. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/monitoring-extension) |
 
@@ -100,16 +100,16 @@ To configure extension settings:
     "description": "This extension enables OpenAI chat completion API calls",
     "url": "extension://@janhq/inference-openai-extension/dist/index.js"
   },
-  "@janhq/inference-triton-trt-llm-extension": {
+  "@janhq/inference-triton-tensorrt-llm-extension": {
     "_active": true,
     "listeners": {},
-    "origin": "/Applications/Jan.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-inference-triton-trt-llm-extension-1.0.0.tgz",
+    "origin": "/Applications/Jan.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-inference-triton-tensorrt-llm-extension-1.0.0.tgz",
     "installOptions": { "version": false, "fullMetadata": false },
-    "name": "@janhq/inference-triton-trt-llm-extension",
+    "name": "@janhq/inference-triton-tensorrt-llm-extension",
     "version": "1.0.0",
     "main": "dist/index.js",
     "description": "This extension enables Nvidia's TensorRT-LLM as an inference engine option",
-    "url": "extension://@janhq/inference-triton-trt-llm-extension/dist/index.js"
+    "url": "extension://@janhq/inference-triton-tensorrt-llm-extension/dist/index.js"
   },
   "@janhq/model-extension": {
     "_active": true,
