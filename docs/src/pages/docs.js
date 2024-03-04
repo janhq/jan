@@ -7,12 +7,14 @@ import HomepagePrimaryFeatures from '../components/HomepagePrimaryFeatures'
 import HomepageSecondaryFeatures from '../components/HomepageSecondaryFeatures'
 import HomepageTerinaryFeatures from '../components/HomepageTerinaryFeatures'
 import { DocSearch } from '@docsearch/react'
+import NavbarExtended from '../theme/NavbarExtension'
 
 function HomepageHeader() {
   const { siteConfig } = useDocusaurusContext()
 
   return (
     <header className={clsx(styles.heroBanner)}>
+      <NavbarExtended />
       <div className="container">
         <Heading as="h1" className={clsx(styles.heroTitle)}>
           Hello, how can we help?
