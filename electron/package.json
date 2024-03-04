@@ -37,7 +37,7 @@
       "entitlements": "./entitlements.mac.plist",
       "entitlementsInherit": "./entitlements.mac.plist",
       "notarize": {
-        "teamId": "YT49P7GXG4"
+        "teamId": "F8AH6NHVY5"
       },
       "icon": "icons/icon.png"
     },
