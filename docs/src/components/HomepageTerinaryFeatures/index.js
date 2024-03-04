@@ -14,9 +14,21 @@ export default function HomepageTerinaryFeatures() {
                         <div className={styles.cardContent}>
                             <p>Dive into the basics and get set up quickly.</p>
                             <ul>
-                                <li>Quickstart</li>
-                                <li>Installation</li>
-                                <li>Pre-configured Models</li>
+                                <li>
+                                    <a href={"/guides/"}>
+                                    Quickstart
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href={"/guides/install/"}>
+                                    Installation
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href={"/guides/models-list/"}>
+                                    Pre-configured Models
+                                    </a>
+                                </li>
                             </ul>
                         </div>
                     </div>
@@ -28,9 +40,21 @@ export default function HomepageTerinaryFeatures() {
                         <div className={styles.cardContent}>
                             <p>Learn the best practices for optimizing thread management and local server use.</p>
                             <ul>
-                                <li>Thread Management</li>
-                                <li>Local Server</li>
-                                <li>Advance Settings</li>
+                                <li>
+                                    <a href={"/guides/start-server/"}>
+                                    Thread Management
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href={"/guides/start-server/"}>
+                                    Local Server
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href={"/guides/advanced-settings/"}>
+                                    Advance Settings
+                                    </a>
+                                </li> 
                             </ul>
                         </div>
                     </div>
@@ -42,9 +66,21 @@ export default function HomepageTerinaryFeatures() {
                         <div className={styles.cardContent}>
                             <p>Explore our key features designed to enhance your experience.</p>
                             <ul>
-                                <li>Advanced Models Setup</li>
-                                <li>Extensions</li>
-                                <li>Integrations</li>
+                                <li>
+                                    <a href={"/category/advanced-models-setup/"}>
+                                    Advanced Models Setup
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href={"/category/extensions/"}>
+                                    Extensions
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href={"/category/integrations/"}>
+                                    Integrations
+                                    </a>
+                                </li> 
                             </ul>
                         </div>
                     </div>
@@ -56,9 +92,21 @@ export default function HomepageTerinaryFeatures() {
                         <div className={styles.cardContent}>
                             <p>Find solutions to common issues, including error codes, frequent errors, and FAQs.</p>
                             <ul>
-                                <li>Error Codes</li>
-                                <li>Common Errors</li>
-                                <li>FAQ</li>
+                                <li>
+                                    <a href={"/category/error-codes/"}>
+                                    Error Codes
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href={"/category/common-error/"}>
+                                    Common Errors
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href={"/category/faq/"}>
+                                    FAQ
+                                    </a>
+                                </li> 
                             </ul>
                         </div>
                     </div>

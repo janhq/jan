@@ -12,7 +12,7 @@ export default function HomepagePrimaryFeatures() {
                             <h3>Set up Jan with our guide to install across multiple platform.</h3>
                         </div>
                         <div >
-                            <a href={"/quickstart/install"}>Get Started</a>
+                            <a href={"/guides/install"}>Get Started</a>
                         </div>
                         <div className={styles.cardImage}>
                             <img alt={"Card Image"} src={"/img/homepage-new/rocket.png"} />
@@ -24,7 +24,7 @@ export default function HomepagePrimaryFeatures() {
                             <h3>Explore the available pre-configured AI models. </h3>
                         </div>
                         <div >
-                            <a href={"/quickstart/models-list"}>Support</a>
+                            <a href={"/guides/models-list"}>Support</a>
                         </div>
                         <div className={styles.cardImage}>
                             <img alt={"Card Image"} src={"/img/homepage-new/chat.png"} />
