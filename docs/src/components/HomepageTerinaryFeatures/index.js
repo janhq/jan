@@ -12,7 +12,7 @@ export default function HomepageTerinaryFeatures() {
                             <h3>Get Started</h3>
                         </div>
                         <div className={styles.cardContent}>
-                            <p>Dive into the basics and get set up quickly.</p>
+                            <p>Kick off your journey with Jan easily and install your AI locally.</p>
                             <ul>
                                 <li>
                                     <a href={"/guides/"}>
@@ -38,10 +38,10 @@ export default function HomepageTerinaryFeatures() {
                             <h3>Settings</h3>
                         </div>
                         <div className={styles.cardContent}>
-                            <p>Learn the best practices for optimizing thread management and local server use.</p>
+                            <p>Learn how to manage the thread history and configure your installed AI.</p>
                             <ul>
                                 <li>
-                                    <a href={"/guides/start-server/"}>
+                                    <a href={"/guides/thread/"}>
                                     Thread Management
                                     </a>
                                 </li>
@@ -67,17 +67,17 @@ export default function HomepageTerinaryFeatures() {
                             <p>Explore our key features designed to enhance your experience.</p>
                             <ul>
                                 <li>
-                                    <a href={"/category/advanced-models-setup/"}>
-                                    Advanced Models Setup
+                                    <a href={"/guides/models-setup/"}>
+                                    Models Setup
                                     </a>
                                 </li>
                                 <li>
-                                    <a href={"/category/extensions/"}>
+                                    <a href={"/guides/extensions/"}>
                                     Extensions
                                     </a>
                                 </li>
                                 <li>
-                                    <a href={"/category/integrations/"}>
+                                    <a href={"/guides/integrations/"}>
                                     Integrations
                                     </a>
                                 </li> 
@@ -90,20 +90,20 @@ export default function HomepageTerinaryFeatures() {
                             <h3>Troubleshooting</h3>
                         </div>
                         <div className={styles.cardContent}>
-                            <p>Find solutions to common issues, including error codes, frequent errors, and FAQs.</p>
+                            <p>Find solutions to common issues, including error codes, and FAQs.</p>
                             <ul>
                                 <li>
-                                    <a href={"/category/error-codes/"}>
+                                    <a href={"/guides/error-codes/"}>
                                     Error Codes
                                     </a>
                                 </li>
                                 <li>
-                                    <a href={"/category/common-error/"}>
+                                    <a href={"/guides/common-error/"}>
                                     Common Errors
                                     </a>
                                 </li>
                                 <li>
-                                    <a href={"/category/faq/"}>
+                                    <a href={"/guides/faqs/"}>
                                     FAQ
                                     </a>
                                 </li> 
