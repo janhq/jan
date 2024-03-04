@@ -293,13 +293,9 @@ const config = {
         {
           type: "dropdown",
           label: "Docs",
+          to: "docs",
           position: "right",
           items: [
-            {
-              type: "docSidebar",
-              sidebarId: "quickstartSidebar",
-              label: "Quickstart",
-            },
             {
               type: "docSidebar",
               sidebarId: "guidesSidebar",
@@ -314,17 +310,12 @@ const config = {
               to: "/api-reference",
               label: "API Reference",
             },
-            {
-              type: "docSidebar",
-              sidebarId: "docsSidebar",
-              label: "Framework",
-            },
+            // {
+            //   type: "docSidebar",
+            //   sidebarId: "docsSidebar",
+            //   label: "Framework",
+            // },
           ],
-        },
-        {
-          to: "trial",
-          label: "Trial",
-          position: "right",
         },
         {
           to: "blog",

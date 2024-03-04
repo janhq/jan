@@ -1,6 +1,6 @@
 ---
 title: Overview
-slug: /docs
+slug: /framework
 ---
 
 The following low-level docs are aimed at core contributors.
