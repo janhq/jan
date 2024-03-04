@@ -1,6 +1,18 @@
 ---
-title: Overview
-slug: /framework
+title: Framework
+slug: /developer/framework/
+description: Jan Docs | Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+  ]
 ---
 
 The following low-level docs are aimed at core contributors.
