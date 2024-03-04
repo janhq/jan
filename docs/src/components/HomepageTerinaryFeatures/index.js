@@ -8,7 +8,7 @@ export default function HomepageTerinaryFeatures() {
                 <div className={clsx(styles.cards)}>
                     <div className={clsx(styles.card)}>
                         <div className={styles.cardHeader}>
-                            <img alt={"Icon"} src={"/img/homepage-new/roket.png"}/>
+                            <img alt={"Icon"} src={"/img/homepage-new/roket.png"} />
                             <h3>Get Started</h3>
                         </div>
                         <div className={styles.cardContent}>
@@ -16,17 +16,17 @@ export default function HomepageTerinaryFeatures() {
                             <ul>
                                 <li>
                                     <a href={"/guides/"}>
-                                    Quickstart
+                                        Quickstart
                                     </a>
                                 </li>
                                 <li>
                                     <a href={"/guides/install/"}>
-                                    Installation
+                                        Installation
                                     </a>
                                 </li>
                                 <li>
                                     <a href={"/guides/models-list/"}>
-                                    Pre-configured Models
+                                        Pre-configured Models
                                     </a>
                                 </li>
                             </ul>
@@ -34,7 +34,7 @@ export default function HomepageTerinaryFeatures() {
                     </div>
                     <div className={clsx(styles.card)}>
                         <div className={styles.cardHeader}>
-                            <img alt={"Icon"} src={"/img/homepage-new/buku.png"}/>
+                            <img alt={"Icon"} src={"/img/homepage-new/buku.png"} />
                             <h3>Settings</h3>
                         </div>
                         <div className={styles.cardContent}>
@@ -42,25 +42,25 @@ export default function HomepageTerinaryFeatures() {
                             <ul>
                                 <li>
                                     <a href={"/guides/thread/"}>
-                                    Thread Management
+                                        Thread Management
                                     </a>
                                 </li>
                                 <li>
                                     <a href={"/guides/start-server/"}>
-                                    Local Server
+                                        Local Server
                                     </a>
                                 </li>
                                 <li>
                                     <a href={"/guides/advanced-settings/"}>
-                                    Advance Settings
+                                        Advanced Settings
                                     </a>
-                                </li> 
+                                </li>
                             </ul>
                         </div>
                     </div>
                     <div className={clsx(styles.card)}>
                         <div className={styles.cardHeader}>
-                            <img alt={"Icon"} src={"/img/homepage-new/setting.png"}/>
+                            <img alt={"Icon"} src={"/img/homepage-new/setting.png"} />
                             <h3>Features</h3>
                         </div>
                         <div className={styles.cardContent}>
@@ -68,25 +68,25 @@ export default function HomepageTerinaryFeatures() {
                             <ul>
                                 <li>
                                     <a href={"/guides/models-setup/"}>
-                                    Models Setup
+                                        Models Setup
                                     </a>
                                 </li>
                                 <li>
                                     <a href={"/guides/extensions/"}>
-                                    Extensions
+                                        Extensions
                                     </a>
                                 </li>
                                 <li>
                                     <a href={"/guides/integrations/"}>
-                                    Integrations
+                                        Integrations
                                     </a>
-                                </li> 
+                                </li>
                             </ul>
                         </div>
                     </div>
                     <div className={clsx(styles.card)}>
                         <div className={styles.cardHeader}>
-                            <img alt={"Icon"} src={"/img/homepage-new/doa.png"}/>
+                            <img alt={"Icon"} src={"/img/homepage-new/doa.png"} />
                             <h3>Troubleshooting</h3>
                         </div>
                         <div className={styles.cardContent}>
@@ -94,19 +94,19 @@ export default function HomepageTerinaryFeatures() {
                             <ul>
                                 <li>
                                     <a href={"/guides/error-codes/"}>
-                                    Error Codes
+                                        Error Codes
                                     </a>
                                 </li>
                                 <li>
                                     <a href={"/guides/common-error/"}>
-                                    Common Errors
+                                        Common Errors
                                     </a>
                                 </li>
                                 <li>
                                     <a href={"/guides/faqs/"}>
-                                    FAQ
+                                        FAQ
                                     </a>
-                                </li> 
+                                </li>
                             </ul>
                         </div>
                     </div>
