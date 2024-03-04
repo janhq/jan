@@ -61,6 +61,8 @@
     "test:e2e": "playwright test --workers=1",
     "copy:assets": "rimraf --glob \"./pre-install/*.tgz\" && cpx \"../pre-install/*.tgz\" \"./pre-install\"",
     "dev": "yarn copy:assets && tsc -p . && electron .",
+    "compile": "tsc -p .",
+    "start": "electron .",
     "build": "yarn copy:assets && run-script-os",
     "build:test": "yarn copy:assets && run-script-os",
     "build:test:darwin": "tsc -p . && electron-builder -p never -m --dir",
