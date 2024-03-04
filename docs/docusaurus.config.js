@@ -68,11 +68,11 @@ const config = {
         redirects: [
           {
             from: "/troubleshooting/failed-to-fetch",
-            to: "/troubleshooting/somethings-amiss",
+            to: "/guides/error-codes/something-amiss/",
           },
           {
             from: "/guides/troubleshooting/gpu-not-used/",
-            to: "/troubleshooting/gpu-not-used",
+            to: "/guides/common-error/not-using-gpu/",
           },
         ],
       },
