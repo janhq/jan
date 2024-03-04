@@ -45,7 +45,7 @@ export default function RibbonNav() {
           size={20}
           className={twMerge(
             'flex-shrink-0 text-muted-foreground',
-            serverEnabled && 'text-gray-300'
+            serverEnabled && 'text-gray-300 dark:text-gray-700'
           )}
         />
       ),
@@ -114,7 +114,7 @@ export default function RibbonNav() {
                         </div>
                         {isActive && (
                           <m.div
-                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200"
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200 dark:bg-secondary"
                             layoutId="active-state-primary"
                           />
                         )}
@@ -166,7 +166,7 @@ export default function RibbonNav() {
                         </div>
                         {isActive && (
                           <m.div
-                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200"
+                            className="absolute inset-0 left-0 h-full w-full rounded-md bg-gray-200 dark:bg-secondary"
                             layoutId="active-state-secondary"
                           />
                         )}

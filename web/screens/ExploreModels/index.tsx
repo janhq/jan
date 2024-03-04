@@ -90,13 +90,13 @@ const ExploreModelsScreen = () => {
                     />
                     <Input
                       placeholder="Search models"
-                      className="bg-white pl-9"
+                      className="bg-white pl-9 dark:bg-background"
                       onChange={(e) => setsearchValue(e.target.value)}
                     />
                   </div>
                   <Button
                     themes="outline"
-                    className="gap-2 bg-white"
+                    className="gap-2 bg-white dark:bg-secondary"
                     onClick={onImportModelClick}
                   >
                     <UploadIcon size={16} />
