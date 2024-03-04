@@ -1,0 +1,86 @@
+---
+title: Mistral AI
+sidebar_position: 7
+description: A step-by-step guide on how to integrate Jan with Mistral AI.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    Mistral integration,
+  ]
+---
+
+## How to Integrate Mistral AI with Jan
+
+[Mistral AI](https://docs.mistral.ai/) provides two ways to use their Large Language Models (LLM): 
+1. API
+2. Open-source models on Hugging Face. 
+
+To integrate Jan with Mistral AI, follow the steps below:
+
+:::note
+This tutorial demonstrates integrating Mistral AI with Jan using the API.
+:::
+
+### Step 1: Configure Mistral API Key
+
+1. Obtain Mistral API keys from your [Mistral](https://console.mistral.ai/user/api-keys/) dashboard.
+2. Insert the Mistral AI API key into `~/jan/engines/openai.json`.
+
+```json title="~/jan/engines/openai.json"
+{
+  "full_url": "https://api.mistral.ai/v1/chat/completions",
+  "api_key": "<your-mistral-ai-api-key>"
+}
+```
+
+### Step 2: Model Configuration
+
+1. Navigate to `~/jan/models`.
+2. Create a folder named `mistral-(modelname)` (e.g., `mistral-tiny`).
+3. Inside, create a `model.json` file with these settings:
+    - Set `id` to the Mistral AI model ID.
+    - Set `format` to `api`.
+    - Set `engine` to `openai`.
+    - Set `state` to `ready`.
+
+```json title="~/jan/models/mistral-tiny/model.json"
+{
+  "sources": [
+    {
+      "filename": "mistral-tiny",
+      "url": "https://mistral.ai/"
+    }
+  ],
+  "id": "mistral-tiny",
+  "object": "model",
+  "name": "Mistral-7B-v0.2 (Tiny Endpoint)",
+  "version": "1.0",
+  "description": "Currently powered by Mistral-7B-v0.2, a better fine-tuning of the initial Mistral-7B released, inspired by the fantastic work of the community.",
+  "format": "api",
+  "settings": {},
+  "parameters": {},
+  "metadata": {
+    "author": "Mistral AI",
+    "tags": ["General", "Big Context Length"]
+  },
+  "engine": "openai"
+}
+
+```
+
+:::note
+- For more details regarding the `model.json` settings and parameters fields,  please see [here](../models/integrate-remote.mdx#modeljson).
+- Mistral AI offers various endpoints. Refer to their [endpoint documentation](https://docs.mistral.ai/platform/endpoints/) to select the one that fits your requirements. Here, we use the `mistral-tiny` model as an example.
+:::
+
+### Step 3: Start the Model
+
+1. Restart Jan and navigate to the **Hub**. 
+2. Locate your model and click the **Use** button.

@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
-import { ImportingModel, baseName, fs } from '@janhq/core'
+import { ImportingModel, baseName, fs, joinPath } from '@janhq/core'
 import { Modal, ModalContent, ModalHeader, ModalTitle } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -34,14 +34,31 @@ const SelectingModelModal: React.FC = () => {
     const sanitizedFilePaths: FilePathWithSize[] = []
     for (const filePath of filePaths) {
       const fileStats = await fs.fileStat(filePath, true)
-      if (!fileStats || fileStats.isDirectory) continue
+      if (!fileStats) continue
 
-      const fileName = await baseName(filePath)
-      sanitizedFilePaths.push({
-        path: filePath,
-        name: fileName,
-        size: fileStats.size,
-      })
+      if (!fileStats.isDirectory) {
+        const fileName = await baseName(filePath)
+        sanitizedFilePaths.push({
+          path: filePath,
+          name: fileName,
+          size: fileStats.size,
+        })
+      } else {
+        // allowing only one level of directory
+        const files = await fs.readdirSync(filePath)
+
+        for (const file of files) {
+          const fullPath = await joinPath([filePath, file])
+          const fileStats = await fs.fileStat(fullPath, true)
+          if (!fileStats || fileStats.isDirectory) continue
+
+          sanitizedFilePaths.push({
+            path: fullPath,
+            name: file,
+            size: fileStats.size,
+          })
+        }
+      }
     }
 
     const unsupportedFiles = sanitizedFilePaths.filter(
@@ -68,7 +85,7 @@ const SelectingModelModal: React.FC = () => {
     )
     if (unsupportedFiles.length > 0) {
       snackbar({
-        description: `File has to be a .gguf file`,
+        description: `Only files with .gguf extension can be imported.`,
         type: 'error',
       })
     }
@@ -84,9 +101,11 @@ const SelectingModelModal: React.FC = () => {
     onDrop: onDropModels,
   })
 
-  const borderColor = isDragActive ? 'border-primary' : 'border-[#F4F4F5]'
-  const textColor = isDragActive ? 'text-blue-600' : 'text-[#71717A]'
-  const dragAndDropBgColor = isDragActive ? 'bg-[#EFF6FF]' : 'bg-white'
+  const borderColor = isDragActive ? 'border-primary' : 'border-border'
+  const textColor = isDragActive ? 'text-primary' : 'text-muted-foreground'
+  const dragAndDropBgColor = isDragActive
+    ? 'bg-[#EFF6FF] dark:bg-blue-50/10'
+    : 'bg-background'
 
   return (
     <Modal
@@ -99,7 +118,7 @@ const SelectingModelModal: React.FC = () => {
         <ModalHeader>
           <ModalTitle>Import Model</ModalTitle>
 
-          <p className="text-sm font-medium text-[#71717A]">
+          <p className="text-sm font-medium text-muted-foreground">
             Import any model file (GGUF) or folder. Your imported model will be
             private to you.
           </p>
@@ -116,7 +135,7 @@ const SelectingModelModal: React.FC = () => {
             </div>
 
             <div className="mt-4">
-              <span className="text-sm font-bold text-blue-600">
+              <span className="text-sm font-bold text-primary">
                 Click to upload
               </span>
               <span className={`text-sm ${textColor} font-medium`}>

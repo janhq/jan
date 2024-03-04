@@ -1,0 +1,77 @@
+.features {
+    display: flex;
+    align-items: center;
+    padding: 5rem 0;
+    width: 100%;
+}
+
+.cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4rem;
+}
+
+@media screen and (max-width: 768px) {
+    .cards {
+        gap: 2rem;
+    }
+}
+
+.card {
+    min-width: 250px;
+    min-height: 275px;
+    max-height: 325px;
+    flex: 1;
+    border-radius: 15px;
+    padding: 2rem 1.5rem;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.card p {
+    font-size: 1.25rem;
+}
+
+.cardImage {
+    position: absolute;
+    right: 1rem;
+    bottom: 1rem;
+}
+
+.cardImage img {
+    height: 100px;
+}
+
+@media screen and (max-width: 1024px) {
+    .cardImage {
+        display: none;
+    }
+}
+
+.cardBluish {
+    background: linear-gradient(90deg, rgba(238,238,238,1) 0%, rgba(185,202,237,1) 100%);
+}
+
+.cardPinkish {
+    background: linear-gradient(90deg, rgba(238,238,238,1) 0%, rgba(215,194,238,1) 100%);
+}
+
+.card h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    padding-top: 1rem;
+}
+
+.card a {
+    all: unset;
+    color: white;
+    background-color: #1C1E21;
+    padding: 0.75rem 1.25rem;
+    border-radius: 6px;
+}
+
+.card a:hover {
+    cursor: pointer;
+}

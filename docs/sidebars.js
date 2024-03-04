@@ -174,6 +174,6 @@ const sidebars = {
       dirName: 'blog',
     },
   ],
-}
+};
 
 module.exports = sidebars

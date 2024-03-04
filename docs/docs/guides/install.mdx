@@ -1,0 +1,274 @@
+---
+title: Installation
+sidebar_position: 2
+hide_table_of_contents: true
+description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+  ]
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import installImageURL from './assets/jan-ai-download.png';
+
+<Tabs>
+    <TabItem value="mac" label = "Mac" default>
+
+        ### Pre-requisites
+        Ensure that your MacOS version is 13 or higher to run Jan.
+
+        ### Stable Releases
+
+        To download stable releases, go to [Jan.ai](https://jan.ai/) > select **Download for Mac**.
+
+        The download should be available as a `.dmg`.
+
+        ### Nightly Releases
+
+        We provide the Nightly Release so that you can test new features and see what might be coming in a future stable release. Please be aware that there might be bugs!
+
+        You can download it from [Jan's Discord](https://discord.gg/FTk2MvZwJH) in the [`#nightly-builds`](https://discord.gg/q8szebnxZ7) channel.
+
+        ### Experimental Model
+        
+        To enable the experimental mode, go to **Settings** > **Advanced Settings** and toggle the **Experimental Mode**
+
+:::warning
+
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build) section of Common Errors.
+
+:::
+
+    </TabItem>
+    <TabItem value = "windows" label = "Windows">
+
+        ### Pre-requisites
+        Ensure that your system meets the following requirements:
+         - Windows 10 or higher is required to run Jan.
+        
+        To enable GPU support, you will need:
+         - NVIDIA GPU with CUDA Toolkit 11.7 or higher
+         - NVIDIA driver 470.63.01 or higher
+
+        ### Stable Releases
+
+        To download stable releases, go to [Jan.ai](https://jan.ai/) > select **Download for Windows**.
+        
+        The download should be available as a `.exe` file.
+
+        ### Nightly Releases
+
+        We provide the Nightly Release so that you can test new features and see what might be coming in a future stable release. Please be aware that there might be bugs!
+
+        You can download it from [Jan's Discord](https://discord.gg/FTk2MvZwJH) in the [`#nightly-builds`](https://discord.gg/q8szebnxZ7) channel.
+
+        ### Experimental Model
+        
+        To enable the experimental mode, go to **Settings** > **Advanced Settings** and toggle the **Experimental Mode**
+
+        ### Default Installation Directory
+
+        By default, Jan is installed in the following directory:
+
+        ```sh
+        # Default installation directory
+        C:\Users\{username}\AppData\Local\Programs\Jan
+        ```
+
+:::warning
+
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build) section of Common Errors.
+
+:::
+
+    </TabItem>
+    <TabItem value = "linux" label = "Linux">
+
+        ### Pre-requisites
+        Ensure that your system meets the following requirements:
+         - glibc 2.27 or higher (check with `ldd --version`)
+         - gcc 11, g++ 11, cpp 11, or higher, refer to this link for more information.
+
+        To enable GPU support, you will need:
+         - NVIDIA GPU with CUDA Toolkit 11.7 or higher
+         - NVIDIA driver 470.63.01 or higher
+
+        ### Stable Releases
+
+        To download stable releases, go to [Jan.ai](https://jan.ai/) > select **Download for Linux**.
+        
+        The download should be available as a `.AppImage` file or a `.deb` file.
+
+        ### Nightly Releases
+
+        We provide the Nightly Release so that you can test new features and see what might be coming in a future stable release. Please be aware that there might be bugs!
+
+        You can download it from [Jan's Discord](https://discord.gg/FTk2MvZwJH) in the [`#nightly-builds`](https://discord.gg/q8szebnxZ7) channel.
+
+        ### Experimental Model
+        
+        To enable the experimental mode, go to **Settings** > **Advanced Settings** and toggle the **Experimental Mode**
+
+        <Tabs groupId = "linux_type">
+            <TabItem value="linux_main" label = "Linux">
+            
+                To install Jan, you should use your package manager's install or `dpkg`.
+        
+            </TabItem>
+            <TabItem value = "deb_ub" label = "Debian / Ubuntu">
+            
+                To install Jan, run the following command:
+
+                ```sh
+                # Install Jan using dpkg
+                sudo dpkg -i jan-linux-amd64-{version}.deb
+
+                # Install Jan using apt-get
+                sudo apt-get install ./jan-linux-amd64-{version}.deb
+                # where jan-linux-amd64-{version}.deb is path to the Jan package
+                ```
+
+            </TabItem>
+            <TabItem value = "other" label = "Others">
+
+                To install Jan, run the following commands:
+
+                ```sh
+                # Install Jan using AppImage
+                chmod +x jan-linux-x86_64-{version}.AppImage
+                ./jan-linux-x86_64-{version}.AppImage
+                # where jan-linux-x86_64-{version}.AppImage is path to the Jan package
+                ```
+
+            </TabItem>
+        </Tabs>
+
+:::warning
+
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build) section of Common Errors.
+
+:::
+    </TabItem>
+    <TabItem value="docker" label = "Docker" default>
+
+        ### Pre-requisites
+        Ensure that your system meets the following requirements:
+         - Linux or WSL2 Docker
+         - Latest Docker Engine and Docker Compose
+
+        To enable GPU support, you will need:
+         - `nvidia-driver`
+         - `nvidia-docker2`
+        
+:::note
+- If you have not installed Docker, follow the instructions [here](https://docs.docker.com/engine/install/ubuntu/).
+- If you have not installed the required file for GPU support, follow the instructions [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+:::
+
+        ### Run Jan in Docker
+        You can run Jan in Docker with two methods:
+        1. Run Jan in CPU mode
+        2. Run Jan in GPU mode
+        <Tabs groupId = "ldocker_type">
+            <TabItem value="docker_cpu" label = "CPU">
+            
+                To run Jan in Docker CPU mode, by using the following code:
+                
+                ```bash
+                # cpu mode with default file system
+                docker compose --profile cpu-fs up -d
+
+                # cpu mode with S3 file system
+                docker compose --profile cpu-s3fs up -d
+                ```
+        
+            </TabItem>
+            <TabItem value="docker_gpu" label = "GPU">
+            
+                To run Jan in Docker CPU mode, follow the steps below:
+                1. Check CUDA compatibility with your NVIDIA driver by running nvidia-smi and check the CUDA version in the output as shown below:
+                ```sh
+                nvidia-smi
+
+                # Output
+                +---------------------------------------------------------------------------------------+
+                | NVIDIA-SMI 531.18                 Driver Version: 531.18       CUDA Version: 12.1     |
+                |-----------------------------------------+----------------------+----------------------+
+                | GPU  Name                      TCC/WDDM | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+                | Fan  Temp  Perf            Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+                |                                         |                      |               MIG M. |
+                |=========================================+======================+======================|
+                |   0  NVIDIA GeForce RTX 4070 Ti    WDDM | 00000000:01:00.0  On |                  N/A |
+                |  0%   44C    P8               16W / 285W|   1481MiB / 12282MiB |      2%      Default |
+                |                                         |                      |                  N/A |
+                +-----------------------------------------+----------------------+----------------------+
+                |   1  NVIDIA GeForce GTX 1660 Ti    WDDM | 00000000:02:00.0 Off |                  N/A |
+                |  0%   49C    P8               14W / 120W|      0MiB /  6144MiB |      0%      Default |
+                |                                         |                      |                  N/A |
+                +-----------------------------------------+----------------------+----------------------+
+                |   2  NVIDIA GeForce GTX 1660 Ti    WDDM | 00000000:05:00.0 Off |                  N/A |
+                | 29%   38C    P8               11W / 120W|      0MiB /  6144MiB |      0%      Default |
+                |                                         |                      |                  N/A |
+                +-----------------------------------------+----------------------+----------------------+
+
+                +---------------------------------------------------------------------------------------+
+                | Processes:                                                                            |
+                |  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+                |        ID   ID                                                             Usage      |
+                |=======================================================================================|
+                ```
+                2. Visit [NVIDIA NGC Catalog](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda/tags) and find the smallest minor version of image tag that matches your CUDA version (e.g., 12.1 -> 12.1.0)
+                3. Update the `Dockerfile.gpu` line number 5 with the latest minor version of the image tag from step 2 (e.g. change `FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS base` to `FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS base`)
+                4. Run Jan in GPU mode by using the following command:
+                
+                ```bash
+                # GPU mode with default file system
+                docker compose --profile gpu-fs up -d
+
+                # GPU mode with S3 file system
+                docker compose --profile gpu-s3fs up -d
+                ```
+
+            </TabItem>
+        </Tabs>
+        ### Docker Compose Profile and Environment
+        The available Docker Compose profile and the environment variables listed below:
+        
+        #### Docker Compose Profile
+
+        | Profile   | Description                               |
+        |-----------|-------------------------------------------|
+        | cpu-fs    | Run Jan in CPU mode with default file system |
+        | cpu-s3fs  | Run Jan in CPU mode with S3 file system   |
+        | gpu-fs    | Run Jan in GPU mode with default file system |
+        | gpu-s3fs  | Run Jan in GPU mode with S3 file system   |
+
+        #### Environment Variables
+
+        | Environment Variable     | Description                                                |
+        |--------------------------|------------------------------------------------------------|
+        | S3_BUCKET_NAME           | S3 bucket name - leave blank for default file system       |
+        | AWS_ACCESS_KEY_ID        | AWS access key ID - leave blank for default file system    |
+        | AWS_SECRET_ACCESS_KEY    | AWS secret access key - leave blank for default file system|
+        | AWS_ENDPOINT             | AWS endpoint URL - leave blank for default file system     |
+        | AWS_REGION               | AWS region - leave blank for default file system           |
+        | API_BASE_URL             | Jan Server URL, please modify it as your public ip address or domain name default http://localhost:1377 |
+
+
+:::warning
+
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build/) section of Common Errors.
+
+:::
+
+    </TabItem>
+</Tabs>

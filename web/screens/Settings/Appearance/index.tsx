@@ -1,3 +1,4 @@
+import ToggleAccent from '@/screens/Settings/Appearance/TogglePrimary'
 import ToggleTheme from '@/screens/Settings/Appearance/ToggleTheme'
 
 export default function AppearanceOptions() {
@@ -21,6 +22,7 @@ export default function AppearanceOptions() {
             Choose the primary accent color used throughout the app.
           </p>
         </div>
+        <ToggleAccent />
       </div>
     </div>
   )

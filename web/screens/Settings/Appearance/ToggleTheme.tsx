@@ -28,7 +28,7 @@ export default function ToggleTheme() {
             </button>
             {isActive ? (
               <m.div
-                className="absolute inset-0 h-full w-full rounded-md border border-primary/50 bg-blue-500/20"
+                className="absolute inset-0 h-full w-full rounded-md border border-primary/50 bg-primary/20"
                 layoutId="active-theme-menu"
               />
             ) : null}

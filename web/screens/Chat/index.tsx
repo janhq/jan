@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 import { useDropzone } from 'react-dropzone'
 
@@ -18,8 +18,6 @@ import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
 import { snackbar } from '@/containers/Toast'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { activeModelAtom } from '@/hooks/useActiveModel'
 import { queuedMessageAtom, reloadModelAtom } from '@/hooks/useSendChatMessage'
 
@@ -31,6 +29,7 @@ import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
 import Sidebar from './Sidebar'
 
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   activeThreadAtom,
   engineParamsUpdateAtom,
@@ -63,7 +62,7 @@ const ChatScreen: React.FC = () => {
   const reloadModel = useAtomValue(reloadModelAtom)
   const [dragRejected, setDragRejected] = useState({ code: '' })
   const setFileUpload = useSetAtom(fileUploadAtom)
-  const { experimentalFeature } = useContext(FeatureToggleContext)
+  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
   const activeModel = useAtomValue(activeModelAtom)
 

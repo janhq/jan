@@ -3,7 +3,8 @@
 
 require('dotenv').config()
 
-const darkCodeTheme = require('prism-react-renderer/themes/dracula')
+const darkCodeTheme = require("prism-react-renderer/themes/dracula");
+const path = require('path');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -66,16 +67,19 @@ const config = {
       {
         redirects: [
           {
-            from: '/troubleshooting/failed-to-fetch',
-            to: '/troubleshooting/somethings-amiss',
+            from: "/troubleshooting/failed-to-fetch",
+            to: "/guides/error-codes/something-amiss/",
           },
           {
-            from: '/guides/troubleshooting/gpu-not-used/',
-            to: '/troubleshooting/gpu-not-used',
+            from: "/guides/troubleshooting/gpu-not-used/",
+            to: "/guides/common-error/not-using-gpu/",
           },
         ],
       },
     ],
+
+    //To input custom Plugin
+    path.resolve(__dirname, 'plugins', 'changelog-plugin'),
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
@@ -287,9 +291,10 @@ const config = {
         // },
         // Navbar right
         {
-          type: 'dropdown',
-          label: 'Docs',
-          position: 'right',
+          type: "dropdown",
+          label: "Docs",
+          to: "docs",
+          position: "right",
           items: [
             {
               type: 'docSidebar',
@@ -305,11 +310,11 @@ const config = {
               to: '/api-reference',
               label: 'API Reference',
             },
-            {
-              type: 'docSidebar',
-              sidebarId: 'docsSidebar',
-              label: 'Framework',
-            },
+            // {
+            //   type: "docSidebar",
+            //   sidebarId: "docsSidebar",
+            //   label: "Framework",
+            // },
           ],
         },
         {
@@ -338,7 +343,11 @@ const config = {
       respectPrefersColorScheme: false,
     },
   },
-  themes: ['@docusaurus/theme-live-codeblock', '@docusaurus/theme-mermaid'],
-}
+  customFields: {
+    githubAccessToken: process.env.GITHUB_ACCESS_TOKEN || "XXXX",
+  },
+
+  themes: ["@docusaurus/theme-live-codeblock", "@docusaurus/theme-mermaid"],
+};
 
 module.exports = config
