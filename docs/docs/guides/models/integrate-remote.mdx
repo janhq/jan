@@ -53,17 +53,32 @@ This guide will show you how to configure Jan as a client and point it to any re
 }
 ```
 
-#### Regarding `model.json`
+### `model.json`
 
-- In `settings`, two crucial values are:
-  - `ctx_len`: Defined based on the model's context size.
-  - `prompt_template`: Defined based on the model's trained template (e.g., ChatML, Alpaca).
-  - To set up the `prompt_template`:
+The `model.json` file is used to set up your local models. 
+:::note
+- If you've set up your model's configuration in `nitro.json`, please note that `model.json` can overwrite the settings. 
+- When using OpenAI models like GPT-3.5 and GPT-4, you can use the default settings in `model.json` file.
+:::
+
+There are two important fields in model.json that you need to setup:
+
+#### Settings
+This is the field where to set your engine configurations, there are two imporant field that you need to define for your local models:
+
+| Term              | Description                                             |
+|-------------------|---------------------------------------------------------|
+| `ctx_len`         | Defined based on the model's context size.              |
+| `prompt_template` | Defined based on the model's trained template (e.g., ChatML, Alpaca). |
+
+To set up the `prompt_template` based on your model, follow the steps below:
     1. Visit [Hugging Face](https://huggingface.co/), an open-source machine learning platform.
     2. Find the current model that you're using (e.g., [Gemma 7b it](https://huggingface.co/google/gemma-7b-it)).
     3. Review the text and identify the template.
-- In `parameters`, consider the following options. The fields in `parameters` are typically general and can be the same across models. An example is provided below:
 
+#### Parameters
+`parameters` is the adjustable settings that affect how your model operates or processes the data.
+The fields in `parameters` are typically general and can be the same across models. An example is provided below:
 
 ```json
 "parameters":{
@@ -75,6 +90,7 @@ This guide will show you how to configure Jan as a client and point it to any re
   "presence_penalty": 0
 }
 ```
+
 
 :::tip
 
@@ -136,7 +152,11 @@ Please note that currently, the code that supports any OpenAI-compatible endpoin
 
 1. In `~/jan/models`, create a folder named `mistral-ins-7b-q4`.
 
-2. In this folder, add a `model.json` file with Filename as `model.json`, `id` matching folder name, `Format` as `api`, `Engine` as `openai`, and `State` as `ready`.
+2. In this folder, add a `model.json` file with Filename as `model.json`, ensure the following configurations:
+  - `id` matching folder name.
+  - `Format` set to `api`.
+  - `Engine` set to `openai`
+  - `State` set to `ready`.
 
 
 ```json title="~/jan/models/mistral-ins-7b-q4/model.json"
@@ -163,28 +183,6 @@ Please note that currently, the code that supports any OpenAI-compatible endpoin
 }
 
 ```
-### Regarding `model.json`
-
-- In `settings`, two crucial values are:
-  - `ctx_len`: Defined based on the model's context size.
-  - `prompt_template`: Defined based on the model's trained template (e.g., ChatML, Alpaca).
-  - To set up the `prompt_template`:
-    1. Visit [Hugging Face](https://huggingface.co/), an open-source machine learning platform.
-    2. Find the current model that you're using (e.g., [Gemma 7b it](https://huggingface.co/google/gemma-7b-it)).
-    3. Review the text and identify the template.
-- In `parameters`, consider the following options. The fields in `parameters` are typically general and can be the same across models. An example is provided below:
-
-```json
-"parameters":{
-  "temperature": 0.7,
-  "top_p": 0.95,
-  "stream": true,
-  "max_tokens": 4096,
-  "frequency_penalty": 0,
-  "presence_penalty": 0
-}
-```
-
 ### 3. Start the Model
 
 1. Restart Jan and navigate to the **Hub**.

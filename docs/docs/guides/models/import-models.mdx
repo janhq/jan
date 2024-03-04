@@ -223,27 +223,9 @@ To update `model.json`:
 }
 ```
 
-#### Regarding `model.json`
-
-- In `settings`, two crucial values are:
-  - `ctx_len`: Defined based on the model's context size.
-  - `prompt_template`: Defined based on the model's trained template (e.g., ChatML, Alpaca).
-  - To set up the `prompt_template`:
-    1. Visit [Hugging Face](https://huggingface.co/), an open-source machine learning platform.
-    2. Find the current model that you're using (e.g., [Gemma 7b it](https://huggingface.co/google/gemma-7b-it)).
-    3. Review the text and identify the template.
-- In `parameters`, consider the following options. The fields in `parameters` are typically general and can be the same across models. An example is provided below:
-
-```json
-"parameters":{
-  "temperature": 0.7,
-  "top_p": 0.95,
-  "stream": true,
-  "max_tokens": 4096,
-  "frequency_penalty": 0,
-  "presence_penalty": 0
-}
-```
+:::note
+For more details regarding the `model.json` settings and parameters fields,  please see [here](/docs/guides/models/integrate-remote.mdx#modeljson).
+:::
 
 ### 3. Download the Model
 
