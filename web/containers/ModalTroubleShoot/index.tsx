@@ -38,7 +38,7 @@ const ModalTroubleShooting: React.FC = () => {
             <a
               href="https://jan.ai/guides/troubleshooting"
               target="_blank"
-              className="text-blue-600 hover:underline"
+              className="text-blue-600 hover:underline dark:text-blue-300"
             >
               troubleshooting guide
             </a>
@@ -65,7 +65,7 @@ const ModalTroubleShooting: React.FC = () => {
                   <a
                     href="https://discord.gg/AsJ8krTT3N"
                     target="_blank"
-                    className="text-blue-600 hover:underline"
+                    className="text-blue-600 hover:underline dark:text-blue-300"
                   >
                     Discord
                   </a>
@@ -77,8 +77,8 @@ const ModalTroubleShooting: React.FC = () => {
 
           <div className="flex flex-col pt-4">
             {/* TODO @faisal replace this once we have better tabs component UI */}
-            <div className="relative bg-zinc-100 px-4 py-2">
-              <ul className="inline-flex space-x-2 rounded-lg bg-zinc-200 px-1">
+            <div className="relative bg-zinc-100 px-4 py-2 dark:bg-secondary/50">
+              <ul className="inline-flex space-x-2 rounded-lg bg-zinc-200 px-1 dark:bg-secondary">
                 {logOption.map((name, i) => {
                   return (
                     <li
@@ -89,14 +89,15 @@ const ModalTroubleShooting: React.FC = () => {
                       <span
                         className={twMerge(
                           'relative z-50 font-medium text-muted-foreground',
-                          isTabActive === i && 'font-bold text-foreground'
+                          isTabActive === i &&
+                            'font-bold text-foreground dark:text-black'
                         )}
                       >
                         {name}
                       </span>
                       {isTabActive === i && (
                         <m.div
-                          className="absolute left-0 top-1 h-[calc(100%-8px)] w-full rounded-md bg-background"
+                          className="absolute left-0 top-1 h-[calc(100%-8px)] w-full rounded-md bg-background dark:bg-white"
                           layoutId="log-state-active"
                         />
                       )}

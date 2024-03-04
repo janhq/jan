@@ -6,9 +6,17 @@ import { ThemeProvider } from 'next-themes'
 
 import { motion as m } from 'framer-motion'
 
+import { useBodyClass } from '@/hooks/useBodyClass'
+
+import { useUserConfigs } from '@/hooks/useUserConfigs'
+
 export default function ThemeWrapper({ children }: PropsWithChildren) {
+  const [config] = useUserConfigs()
+
+  useBodyClass(config.primaryColor || 'primary-yellow')
+
   return (
-    <ThemeProvider attribute="class" forcedTheme="light">
+    <ThemeProvider attribute="class" enableSystem>
       <m.div
         initial={{ opacity: 0, y: -10 }}
         animate={{

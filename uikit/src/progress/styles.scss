@@ -1,7 +1,7 @@
 .progress {
-  @apply relative h-4 w-full overflow-hidden rounded-full bg-gray-100;
+  @apply bg-secondary relative h-4 w-full overflow-hidden rounded-full;
 
   &-indicator {
-    @apply h-full w-full flex-1 bg-blue-600 transition-all;
+    @apply bg-primary h-full w-full flex-1 transition-all;
   }
 }
