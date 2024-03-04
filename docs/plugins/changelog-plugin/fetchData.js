@@ -2,12 +2,11 @@ const fs = require('fs');
 const path = require('path');
 
 async function fetchData(siteConfig) {
-  const accessToken = siteConfig.customFields.githubAccessToken;
-  const owner = siteConfig.customFields.organizationName;
-  const repo = siteConfig.customFields.projectName;
+  const owner = siteConfig.organizationName;
+  const repo = siteConfig.projectName;
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases`;
 
-  const outputDirectory = path.join(__dirname, '../../docs/quickstart/changelogs-v2');
+  const outputDirectory = path.join(__dirname, '../../docs/guides/changelogs');
 
   if (!fs.existsSync(outputDirectory)) {
     fs.mkdirSync(outputDirectory);
@@ -29,7 +28,6 @@ async function fetchData(siteConfig) {
       method: 'GET',
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `Bearer ${accessToken}`,
       },
     });
 
@@ -52,8 +50,6 @@ async function fetchData(siteConfig) {
         method: 'GET',
         headers: {
           'Accept': 'application/vnd.github+json',
-          'Authorization': `Bearer ${accessToken}`,
-          'X-GitHub-Api-Version': '2022-11-28',
         },
       });
 
@@ -100,7 +96,7 @@ async function fetchData(siteConfig) {
 
   // Create _category_.json file
   const categoryContent = {
-    label: 'Changelog-v2',
+    label: 'Changelogs',
     position: 5,
     link: {
       type: 'generated-index',
