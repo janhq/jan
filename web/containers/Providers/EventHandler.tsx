@@ -245,18 +245,12 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
       if (!threadMessages || threadMessages.length === 0) return
 
-      const summarizeFirstPrompt = `Summarize this text "${threadMessages[0].content[0].text.value}" for a conversation title in less than 10 words`
       // Prompt: Given this query from user {query}, return to me the summary in 5 words as the title
       const msgId = ulid()
       const messages: ChatCompletionMessage[] = [
         {
-          role: ChatCompletionRole.System,
-          content:
-            'The conversation below is for a text summarization, user asks assistant to summarize a text and assistant should response in just less than 10 words',
-        },
-        {
           role: ChatCompletionRole.User,
-          content: summarizeFirstPrompt,
+          content: `Summarize this text "${threadMessages[0].content[0].text.value}" for a conversation title in less than 10 words`,
         },
       ]
 
@@ -274,9 +268,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       }
 
       // 2. Update the title with the result of the inference
-      setTimeout(() => {
-        events.emit(MessageEvent.OnMessageSent, messageRequest)
-      }, 1000)
+      events.emit(MessageEvent.OnMessageSent, messageRequest)
     }
   }
 
