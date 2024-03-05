@@ -6,10 +6,10 @@ export default function HomepageTerinaryFeatures() {
                     <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
                         <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/roket.png"} />
-                            <h3 className="text-gray-700 dark:text-gray-200">Get Started</h3>
+                            <h5 className="text-gray-700 dark:text-gray-200">Get Started</h5>
                         </div>
                         <div className="mt-5 justify-center">
-                            <p className="text-gray-700 dark:text-gray-200">Kick off your journey with Jan easily and install your AI locally.</p>
+                            <p className="text-gray-700 dark:text-gray-200">Easily kick off your journey with Jan by installing your AI locally.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
                                     <a href={"/guides/"} className="    dark:text-blue-400">
@@ -35,7 +35,7 @@ export default function HomepageTerinaryFeatures() {
                             <h5 className="text-gray-700 dark:text-gray-200">Settings</h5>
                         </div>
                         <div className="mt-5 justify-center">
-                            <p className="text-gray-700 dark:text-gray-200">Learn how to manage the thread history and configure your installed AI.</p>
+                            <p className="text-gray-700 dark:text-gray-200">Discover how to manage Jan and configure your installed AI.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
                                     <a href={"/guides/thread/"} className="dark:text-blue-400">
@@ -61,7 +61,7 @@ export default function HomepageTerinaryFeatures() {
                             <h5 className="text-gray-700 dark:text-gray-200">Features</h5>
                         </div>
                         <div className="mt-5 justify-center">
-                            <p className="text-gray-700 dark:text-gray-200">Explore our key features designed to enhance your experience.</p>
+                            <p className="text-gray-700 dark:text-gray-200">Explore key features designed to enhance your experience with Jan.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
                                     <a href={"/guides/models-setup/"} className="dark:text-blue-400">

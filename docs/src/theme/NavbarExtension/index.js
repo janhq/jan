@@ -5,7 +5,7 @@ export default function NavBarExtension() {
   const location = useLocation();
 
   return (
-    <nav className="bg-white dark:bg-gray-800 h-12 px-10 pt-3 flex items-center justify-between fixed top-14 left-0 w-full z-10 hidden md:block">
+    <nav className="bg-white dark:bg-gray-800 h-12 px-10 pt-3 flex items-center justify-between fixed top-14 left-0 w-full z-50 hidden md:block">
       <div className="flex items-center space-x-16">
         <NavLink
           to="/docs"
@@ -40,7 +40,7 @@ export default function NavBarExtension() {
           className="text-gray-700 font-medium hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-200"
           activeClassName={location.pathname === "/guides/changelog" ? "text-gray-900 dark:text-gray-100 font-semibold border-b-2 border-gray-900 dark:border-gray-100" : ""}
         >
-          Changelogs
+          Changelog 
         </NavLink>
       </div>
     </nav>
