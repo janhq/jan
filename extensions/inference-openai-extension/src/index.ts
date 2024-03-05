@@ -216,6 +216,7 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
         }
         message.content = [messageContent]
         message.status = MessageStatus.Error
+        message.error_code = err.code
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
     })

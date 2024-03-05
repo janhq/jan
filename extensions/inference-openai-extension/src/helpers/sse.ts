@@ -1,3 +1,4 @@
+import { ErrorCode } from '@janhq/core'
 import { Observable } from 'rxjs'
 
 /**
@@ -40,9 +41,12 @@ export function requestInference(
     })
       .then(async (response) => {
         if (!response.ok) {
-          subscriber.next(
-            (await response.json()).error?.message ?? 'Error occurred.'
-          )
+          const data = await response.json()
+          const error = {
+            message: data.error?.message ?? 'Error occurred.',
+            code: data.error?.code ?? ErrorCode.Unknown,
+          }
+          subscriber.error(error)
           subscriber.complete()
           return
         }
