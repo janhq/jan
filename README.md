@@ -76,31 +76,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-win-x64-0.4.7-295.exe'>
+      <a href='https://delta.jan.ai/latest/jan-win-x64-0.4.7-297.exe'>
         <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-mac-x64-0.4.7-295.dmg'>
+      <a href='https://delta.jan.ai/latest/jan-mac-x64-0.4.7-297.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-mac-arm64-0.4.7-295.dmg'>
+      <a href='https://delta.jan.ai/latest/jan-mac-arm64-0.4.7-297.dmg'>
         <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-linux-amd64-0.4.7-295.deb'>
+      <a href='https://delta.jan.ai/latest/jan-linux-amd64-0.4.7-297.deb'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-linux-x86_64-0.4.7-295.AppImage'>
+      <a href='https://delta.jan.ai/latest/jan-linux-x86_64-0.4.7-297.AppImage'>
         <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
