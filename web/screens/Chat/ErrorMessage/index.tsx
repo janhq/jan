@@ -1,4 +1,4 @@
-import { MessageStatus, ThreadMessage } from '@janhq/core'
+import { ErrorCode, MessageStatus, ThreadMessage } from '@janhq/core'
 import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
@@ -9,6 +9,8 @@ import ModalTroubleShooting, {
 
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
+
+import { getErrorTitle } from '@/utils/errorMessage'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
@@ -24,6 +26,8 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     const message = messages[lastMessageIndex]
     resendChatMessage(message)
   }
+
+  const errorTitle = getErrorTitle(message.error_code ?? ErrorCode.Unknown)
 
   return (
     <div className="mt-10">
@@ -68,7 +72,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               key={message.id}
               className="flex flex-col items-center text-center text-sm font-medium text-gray-500"
             >
-              <p>{`Apologies, something’s amiss!`}</p>
+              <p>{errorTitle}</p>
               <p>
                 Jan’s in beta. Access&nbsp;
                 <span
