@@ -24,6 +24,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const loadModelError = useAtomValue(loadModelErrorAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
   const PORT_NOT_AVAILABLE = 'PORT_NOT_AVAILABLE'
+  const OUT_OF_MEMORY = 'OUT_OF_MEMORY'
 
   const regenerateMessage = async () => {
     const lastMessageIndex = messages.length - 1
@@ -92,6 +93,11 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
                 to continue using it.
               </p>
             </div>
+          ) : loadModelError === OUT_OF_MEMORY ? (
+            <p>
+              Oops! Model size exceeds available RAM. Consider selecting a
+              smaller model or upgrading your RAM for smoother performance.
+            </p>
           ) : (
             <div
               key={message.id}
