@@ -33,7 +33,7 @@ import { EngineSettings } from './@types/global'
  */
 export default class JanInferenceTritonTensorRtLlmExtension extends BaseExtension {
   private static readonly _homeDir = 'file://engines'
-  private static readonly _engineMetadataFileName = 'triton_trtllm.json'
+  private static readonly _engineMetadataFileName = 'triton_tensorrtllm.json'
 
   static _currentModel: Model
 
