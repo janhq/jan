@@ -42,6 +42,8 @@ export const toSettingParams = (
     prompt_template: undefined,
     llama_model_path: undefined,
     mmproj: undefined,
+    vision_model: undefined,
+    text_model: undefined,
   }
   const settingParams: ModelSettingParams = {}
 

@@ -165,7 +165,8 @@ const ChatInput: React.FC = () => {
                   if (
                     fileUpload.length > 0 ||
                     (activeThread?.assistants[0].tools &&
-                      !activeThread?.assistants[0].tools[0]?.enabled)
+                      !activeThread?.assistants[0].tools[0]?.enabled &&
+                      !activeThread?.assistants[0].model.settings.vision_model)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -177,7 +178,8 @@ const ChatInput: React.FC = () => {
             <TooltipPortal>
               {fileUpload.length > 0 ||
                 (activeThread?.assistants[0].tools &&
-                  !activeThread?.assistants[0].tools[0]?.enabled && (
+                  !activeThread?.assistants[0].tools[0]?.enabled &&
+                  !activeThread?.assistants[0].model.settings.vision_model && (
                     <TooltipContent side="top" className="max-w-[154px] px-3">
                       {fileUpload.length !== 0 && (
                         <span>
