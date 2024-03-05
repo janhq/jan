@@ -1,0 +1,24 @@
+{
+  "sources": [
+    {
+      "url": "https://github.com/triton-inference-server/tensorrtllm_backend"
+    }
+  ],
+  "id": "tensorrt_llm_bls",
+  "object": "model",
+  "name": "Triton Inference Server with TensorRT-LLM backend - mistral 7B model",
+  "version": "1.0",
+  "description": "Triton Inference Server with TensorRT-LLM backend - mistral 7B model",
+  "format": "api",
+  "settings": {},
+  "parameters": {
+    "max_tokens": 2048,
+    "temperature": 0.7,
+    "stream": true
+  },
+  "metadata": {
+    "author": "NVIDIA",
+    "tags": ["triton", "tensorrt", "llm", "mistral", "7B"]
+  },
+  "engine": "triton_tensorrtllm"
+}
