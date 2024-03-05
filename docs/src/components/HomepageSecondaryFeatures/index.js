@@ -1,67 +1,51 @@
-import styles from "../HomepageSecondaryFeatures/styles.module.css";
-import clsx from "clsx";
+import React from "react";
 
 export default function HomepageSecondaryFeatures() {
     return (
-        <section className={styles.features}>
+        <section className="py-8 md:py-16 bg-gray-100 dark:bg-gray-800 flex items-center">
             <div className="container">
-                <div className={clsx(styles.cards)}>
-                    <div className={clsx(styles.card)}>
-                        <div>
-                            <div className={styles.cardLogo}>
-                                <img alt={"Feature logo"} src={"/img/homepage-new/bg-rocket.png"}/>
-                            </div>
-                            <div className={styles.cardContent}>
-                                <h3>Quickstart</h3>
-                                <p>Jump right in with our Quickstart guide, designed to get you going with simple steps and clear instructions for a smooth setup.</p>
-                            </div>
-                        </div>
-                        <div className={styles.cardFooter}>
-                            <a href={"/guides/"}>Learn Here
-                                {/* <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" fill={"currentColor"}>
-                                    <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z"/>
-                                </svg> */}
-                            </a>
-                        </div>
-                    </div>
-                    <div className={clsx(styles.card)}>
-                        <div>
-                            <div className={styles.cardLogo}>
-                                <img alt={"Feature logo"} src={"/img/homepage-new/bg-wrench.png"}/>
-                            </div>
-                            <div className={styles.cardContent}>
-                                <h3>Integrations</h3>
-                                <p>Discover how Jan seamlessly integrates with 9 different system, streamlining your application for maximum efficiency.</p>
-                            </div>
-                        </div>
-                        <div className={styles.cardFooter}>
-                            <a href={"/guides/integrations/"}>Learn Here
-                                {/* <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" fill={"currentColor"}>
-                                    <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z"/>
-                                </svg> */}
-                            </a>
-                        </div>
-                    </div>
-                    <div className={clsx(styles.card)}>
-                        <div>
-                            <div className={styles.cardLogo}>
-                                <img alt={"Feature logo"} src={"/img/homepage-new/bg-book.png"}/>
-                            </div>
-                            <div className={styles.cardContent}>
-                                <h3>Error Codes</h3>
-                                <p>Navigate through common error codes with explanations and solutions to resolve them quickly.</p>
-                            </div>
-                        </div>
-                        <div className={styles.cardFooter}>
-                            <a href={"/guides/error-codes/"}>Learn Here
-                                {/* <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" fill={"currentColor"}>
-                                    <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z"/>
-                                </svg> */}
-                            </a>
-                        </div>
-                    </div>
+                <div className="flex flex-col md:flex-row justify-center gap-8">
+                    <FeatureCard
+                        imgSrc="/img/homepage-new/bg-rocket.png"
+                        title="Quickstart"
+                        description="Jump right in with our Quickstart guide, designed to get you going with simple steps and clear instructions for a smooth setup."
+                        href="/guides/"
+                    />
+                    <FeatureCard
+                        imgSrc="/img/homepage-new/bg-wrench.png"
+                        title="Integrations"
+                        description="Discover how Jan seamlessly integrates with 9 different systems, streamlining your application for maximum efficiency."
+                        href="/guides/integrations/"
+                    />
+                    <FeatureCard
+                        imgSrc="/img/homepage-new/bg-book.png"
+                        title="Error Codes"
+                        description="Navigate through common error codes with explanations and solutions to resolve them quickly."
+                        href="/guides/error-codes/"
+                    />
                 </div>
             </div>
         </section>
+    );
+}
+
+function FeatureCard({ imgSrc, title, description, href }) {
+    return (
+        <div className="bg-gray-200 dark:bg-gray-700 w-full rounded-lg relative flex flex-col justify-between mb-8 md:mb-0 md:mr-8 p-2">
+            <div>
+                <div className="h-32 w-full">
+                    <img alt={"Feature logo"} src={imgSrc} />
+                </div>
+                <div className="mt-12 p-8">
+                    <h3 className="text-lg font-semibold">{title}</h3>
+                    <p>{description}</p>
+                </div>
+            </div>
+            <div className="p-8 mb-2 pt-0">
+                <a href={href} className="btn bg-black hover:bg-gray-600 dark:bg-blue-500 text-white font-normal py-2 px-4 rounded-xl">
+                    Learn Here
+                </a>
+            </div>
+        </div>
     );
 }
