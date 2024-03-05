@@ -81,7 +81,6 @@
     "@janhq/core": "link:./core",
     "@janhq/server": "link:./server",
     "@npmcli/arborist": "^7.1.0",
-    "@uiball/loaders": "^1.3.0",
     "electron-selected-text": "^1.1.2",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7",
@@ -90,8 +89,7 @@
     "pacote": "^17.0.4",
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
-    "ulid": "^2.3.0",
-    "use-debounce": "^9.0.4"
+    "ulid": "^2.3.0"
   },
   "devDependencies": {
     "@electron/notarize": "^2.1.0",
@@ -100,15 +98,17 @@
     "@types/pacote": "^11.1.7",
     "@types/request": "^2.48.12",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
+    "eslint": "8.57.0",
     "@typescript-eslint/parser": "^6.7.3",
     "electron": "28.0.0",
-    "electron-builder": "^24.9.1",
+    "electron-builder": "^24.13.3",
+    "electron-builder-squirrel-windows": "^24.13.3",
     "electron-devtools-installer": "^3.2.0",
     "electron-playwright-helpers": "^1.6.0",
-    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react": "^7.34.0",
     "rimraf": "^5.0.5",
     "run-script-os": "^1.1.6",
-    "typescript": "^5.2.2"
+    "typescript": "^5.3.3"
   },
   "installConfig": {
     "hoistingLimits": "workspaces"
