@@ -57,7 +57,11 @@ module.exports = {
         "sans-serif",
       ],
     },
-    extend: {},
+    extend: {
+      backgroundImage: {
+        'custom-img': "url('/img/homepage-new/bg.png')",
+      }
+    },
   },
   plugins: [require("tailwindcss-animate")],
 };
