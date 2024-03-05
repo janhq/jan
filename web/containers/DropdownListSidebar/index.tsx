@@ -139,11 +139,16 @@ const DropdownListSidebar = ({
 
         // Update model parameter to the thread file
         if (model)
-          updateModelParameter(activeThread.id, {
-            params: modelParams,
-            modelId: model.id,
-            engine: model.engine,
-          })
+          updateModelParameter(
+            activeThread.id,
+            {
+              params: modelParams,
+              modelId: model.id,
+              engine: model.engine,
+            },
+            // Overwrite the existing model parameter
+            true
+          )
       }
     },
     [

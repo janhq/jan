@@ -165,7 +165,8 @@ const ChatInput: React.FC = () => {
                   if (
                     fileUpload.length > 0 ||
                     (activeThread?.assistants[0].tools &&
-                      !activeThread?.assistants[0].tools[0]?.enabled)
+                      !activeThread?.assistants[0].tools[0]?.enabled &&
+                      !activeThread?.assistants[0].model.settings.vision_model)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -177,7 +178,8 @@ const ChatInput: React.FC = () => {
             <TooltipPortal>
               {fileUpload.length > 0 ||
                 (activeThread?.assistants[0].tools &&
-                  !activeThread?.assistants[0].tools[0]?.enabled && (
+                  !activeThread?.assistants[0].tools[0]?.enabled &&
+                  !activeThread?.assistants[0].model.settings.vision_model && (
                     <TooltipContent side="top" className="max-w-[154px] px-3">
                       {fileUpload.length !== 0 && (
                         <span>
@@ -206,15 +208,41 @@ const ChatInput: React.FC = () => {
             className="absolute bottom-10 right-0 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
           >
             <ul>
-              <li className="flex w-full cursor-not-allowed  items-center space-x-2 px-4 py-2 text-muted-foreground opacity-50 hover:bg-secondary">
+              <li
+                className={twMerge(
+                  'flex w-full items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
+                  activeThread?.assistants[0].model.settings.vision_model
+                    ? 'cursor-pointer'
+                    : 'cursor-not-allowed opacity-50'
+                )}
+                onClick={() => {
+                  if (activeThread?.assistants[0].model.settings.vision_model) {
+                    imageInputRef.current?.click()
+                    setShowAttacmentMenus(false)
+                  }
+                }}
+              >
                 <ImageIcon size={16} />
                 <span className="font-medium">Image</span>
               </li>
               <li
-                className="flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary"
+                className={twMerge(
+                  'flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
+                  activeThread?.assistants[0].model.settings.vision_model &&
+                    activeThread?.assistants[0].model.settings.text_model ===
+                      false
+                    ? 'cursor-not-allowed opacity-50'
+                    : 'cursor-pointer'
+                )}
                 onClick={() => {
-                  fileInputRef.current?.click()
-                  setShowAttacmentMenus(false)
+                  if (
+                    !activeThread?.assistants[0].model.settings.vision_model ||
+                    activeThread?.assistants[0].model.settings.text_model !==
+                      false
+                  ) {
+                    fileInputRef.current?.click()
+                    setShowAttacmentMenus(false)
+                  }
                 }}
               >
                 <FileTextIcon size={16} />

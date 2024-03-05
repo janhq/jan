@@ -37,7 +37,8 @@ export default function useUpdateModelParameters() {
 
   const updateModelParameter = async (
     threadId: string,
-    settings: UpdateModelParameter
+    settings: UpdateModelParameter,
+    overwrite: boolean = false
   ) => {
     const thread = threads.find((thread) => thread.id === threadId)
     if (!thread) {
@@ -66,8 +67,14 @@ export default function useUpdateModelParameters() {
         const runtimeParams = toRuntimeParams(updatedModelParams)
         const settingParams = toSettingParams(updatedModelParams)
 
-        assistant.model.parameters = runtimeParams
-        assistant.model.settings = settingParams
+        assistant.model.parameters = {
+          ...(overwrite ? {} : assistant.model.parameters),
+          ...runtimeParams,
+        }
+        assistant.model.settings = {
+          ...(overwrite ? {} : assistant.model.settings),
+          ...settingParams,
+        }
         if (selectedModel) {
           assistant.model.id = settings.modelId ?? selectedModel?.id
           assistant.model.engine = settings.engine ?? selectedModel?.engine
