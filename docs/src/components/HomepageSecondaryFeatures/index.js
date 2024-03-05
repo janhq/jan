@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react'
 
 export default function HomepageSecondaryFeatures() {
     return (
@@ -26,7 +26,7 @@ export default function HomepageSecondaryFeatures() {
                 </div>
             </div>
         </section>
-    );
+    )
 }
 
 function FeatureCard({ imgSrc, title, description, href }) {
@@ -34,7 +34,7 @@ function FeatureCard({ imgSrc, title, description, href }) {
         <div className="bg-gray-200 dark:bg-gray-700 w-full rounded-lg relative flex flex-col justify-between mb-8 md:mb-0 md:mr-8 p-2">
             <div>
                 <div className="h-32 w-full">
-                    <img alt={"Feature logo"} src={imgSrc} />
+                    <img alt={'Feature logo'} src={imgSrc} />
                 </div>
                 <div className="mt-12 p-8">
                     <h3 className="text-lg font-semibold">{title}</h3>
@@ -42,10 +42,13 @@ function FeatureCard({ imgSrc, title, description, href }) {
                 </div>
             </div>
             <div className="p-8 mb-2 pt-0">
-                <a href={href} className="btn bg-black hover:bg-gray-600 dark:bg-blue-500 text-white font-normal py-2 px-4 rounded-xl">
-                    Learn Here
+                <a
+                    href={href}
+                    className="btn bg-black hover:bg-gray-600 dark:bg-blue-500 text-white font-normal py-2 px-4 rounded-xl"
+                >
+                    Learn more
                 </a>
             </div>
         </div>
-    );
+    )
 }
