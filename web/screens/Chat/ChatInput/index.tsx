@@ -53,10 +53,10 @@ const ChatInput: React.FC = () => {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
+  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
-  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
   const threadStates = useAtomValue(threadStatesAtom)
@@ -184,7 +184,7 @@ const ChatInput: React.FC = () => {
                       {fileUpload.length !== 0 && (
                         <span>
                           Currently, we only support 1 attachment at the same
-                          time
+                          time.
                         </span>
                       )}
                       {activeThread?.assistants[0].tools &&
@@ -192,7 +192,7 @@ const ChatInput: React.FC = () => {
                           false && (
                           <span>
                             Turn on Retrieval in Assistant Settings to use this
-                            feature
+                            feature.
                           </span>
                         )}
                       <TooltipArrow />
@@ -208,46 +208,86 @@ const ChatInput: React.FC = () => {
             className="absolute bottom-10 right-0 z-30 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
           >
             <ul>
-              <li
-                className={twMerge(
-                  'flex w-full items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
-                  activeThread?.assistants[0].model.settings.vision_model
-                    ? 'cursor-pointer'
-                    : 'cursor-not-allowed opacity-50'
-                )}
-                onClick={() => {
-                  if (activeThread?.assistants[0].model.settings.vision_model) {
-                    imageInputRef.current?.click()
-                    setShowAttacmentMenus(false)
-                  }
-                }}
-              >
-                <ImageIcon size={16} />
-                <span className="font-medium">Image</span>
-              </li>
-              <li
-                className={twMerge(
-                  'flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
-                  activeThread?.assistants[0].model.settings.vision_model &&
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <li
+                    className={twMerge(
+                      'flex w-full items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
+                      activeThread?.assistants[0].model.settings.vision_model
+                        ? 'cursor-pointer'
+                        : 'cursor-not-allowed opacity-50'
+                    )}
+                    onClick={() => {
+                      if (
+                        activeThread?.assistants[0].model.settings.vision_model
+                      ) {
+                        imageInputRef.current?.click()
+                        setShowAttacmentMenus(false)
+                      }
+                    }}
+                  >
+                    <ImageIcon size={16} />
+                    <span className="font-medium">Image</span>
+                  </li>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  {!activeThread?.assistants[0].model.settings.vision_model && (
+                    <TooltipContent side="top" className="max-w-[154px] px-3">
+                      <span>This feature only supports multimodal models.</span>
+                      <TooltipArrow />
+                    </TooltipContent>
+                  )}
+                </TooltipPortal>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <li
+                    className={twMerge(
+                      'flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
+                      activeThread?.assistants[0].model.settings.vision_model &&
+                        activeThread?.assistants[0].model.settings
+                          .text_model === false
+                        ? 'cursor-not-allowed opacity-50'
+                        : 'cursor-pointer'
+                    )}
+                    onClick={() => {
+                      if (
+                        !activeThread?.assistants[0].model.settings
+                          .vision_model ||
+                        activeThread?.assistants[0].model.settings
+                          .text_model !== false
+                      ) {
+                        fileInputRef.current?.click()
+                        setShowAttacmentMenus(false)
+                      }
+                    }}
+                  >
+                    <FileTextIcon size={16} />
+                    <span className="font-medium">Document</span>
+                  </li>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  {(!activeThread?.assistants[0].tools ||
+                    !activeThread?.assistants[0].tools[0]?.enabled ||
                     activeThread?.assistants[0].model.settings.text_model ===
-                      false
-                    ? 'cursor-not-allowed opacity-50'
-                    : 'cursor-pointer'
-                )}
-                onClick={() => {
-                  if (
-                    !activeThread?.assistants[0].model.settings.vision_model ||
-                    activeThread?.assistants[0].model.settings.text_model !==
-                      false
-                  ) {
-                    fileInputRef.current?.click()
-                    setShowAttacmentMenus(false)
-                  }
-                }}
-              >
-                <FileTextIcon size={16} />
-                <span className="font-medium">Document</span>
-              </li>
+                      false) && (
+                    <TooltipContent side="top" className="max-w-[154px] px-3">
+                      {activeThread?.assistants[0].model.settings.text_model ===
+                      false ? (
+                        <span>
+                          This model does not support text-based retrieval.
+                        </span>
+                      ) : (
+                        <span>
+                          Turn on Retrieval in Assistant Settings to use this
+                          feature.
+                        </span>
+                      )}
+                      <TooltipArrow />
+                    </TooltipContent>
+                  )}
+                </TooltipPortal>
+              </Tooltip>
             </ul>
           </div>
         )}
