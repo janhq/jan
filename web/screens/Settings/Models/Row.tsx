@@ -152,7 +152,7 @@ export default function RowModel(props: RowModelProps) {
                   ) : (
                     <PlayIcon size={16} className="text-muted-foreground" />
                   )}
-                  <span className="text-bold capitalize text-black">
+                  <span className="text-bold capitalize text-black dark:text-muted-foreground">
                     {isActiveModel ? stateModel.state : 'Start'}
                     &nbsp;Model
                   </span>
@@ -189,7 +189,9 @@ export default function RowModel(props: RowModelProps) {
               }}
             >
               <Trash2Icon size={16} className="text-muted-foreground" />
-              <span className="text-bold text-black">Delete Model</span>
+              <span className="text-bold text-black dark:text-muted-foreground">
+                Delete Model
+              </span>
             </div>
           </div>
         )}

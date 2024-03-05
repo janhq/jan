@@ -1,0 +1,95 @@
+/**
+ * CSS files with the .module.css suffix will be treated as CSS modules
+ * and scoped locally.
+ */
+
+.heroBanner {
+  padding: 4rem 0;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 2rem;
+  }
+}
+
+@media screen and (max-width: 1400px) {
+  .homeBg {
+    background-size: auto 600px !important;
+  }
+}
+
+.homeBg {
+  background-image: url('/img/homepage-new/bg.png') !important;
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.heroTitle {
+  font-size: 3rem;
+  font-weight: 600;
+  color: white;
+  margin-top: 4rem;
+  margin-bottom: 3rem;
+}
+
+@media screen and (max-width: 1024px) {
+  .heroTitle {
+    font-size: 2rem;
+  }
+}
+
+.searchBar {
+  background-color: white;
+  max-width: 580px;
+  height: 50px;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 25px;
+  display: flex;
+  margin-bottom: 4rem;
+}
+
+.searchBar svg {
+  width: 20px;
+  height: 20px;
+  align-self: center;
+  margin-left: 16px;
+  margin-right: 8px;
+  color: #b8c2c8;
+}
+
+.searchBar input {
+  flex: auto;
+  border: none;
+  outline: none;
+  margin: 6px 8px 6px 6px;
+}
+
+.searchBar input:focus {
+  border: none;
+  outline: none;
+}
+
+.searchBar input::placeholder {
+  color: #b8c2c8;
+}
+
+.searchBar button {
+  height: 40px;
+  width: 100%;
+  border-radius: 20px;
+  background-color: white;
+  color: gray;
+  align-self: center;
+  padding: 0px 5px;
+  margin: 0px 10px;
+}
+
+.heroSubtitle {
+  font-size: 1.25rem;
+  color: white;
+}

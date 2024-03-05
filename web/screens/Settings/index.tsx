@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import Advanced from '@/screens/Settings/Advanced'
-
+import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 
 import Models from '@/screens/Settings/Models'
@@ -13,6 +13,9 @@ const handleShowOptions = (menu: string) => {
   switch (menu) {
     case 'Extensions':
       return <ExtensionCatalog />
+
+    case 'My Settings':
+      return <AppearanceOptions />
 
     case 'Advanced Settings':
       return <Advanced />

@@ -7,7 +7,7 @@ export type ModelInfo = {
   settings: ModelSettingParams
   parameters: ModelRuntimeParams
   engine?: InferenceEngine
-  proxyEngine?: InferenceEngine
+  proxy_model?: InferenceEngine
 }
 
 /**
@@ -93,12 +93,7 @@ export type Model = {
    */
   engine: InferenceEngine
 
-  proxyEngine?: InferenceEngine
-
-  /**
-   * Is multimodal or not.
-   */
-  visionModel?: boolean
+  proxy_model?: InferenceEngine
 }
 
 export type ModelMetadata = {
@@ -124,6 +119,8 @@ export type ModelSettingParams = {
   llama_model_path?: string
   mmproj?: string
   cont_batching?: boolean
+  vision_model?: boolean
+  text_model?: boolean
 }
 
 /**

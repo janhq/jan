@@ -139,11 +139,16 @@ const DropdownListSidebar = ({
 
         // Update model parameter to the thread file
         if (model)
-          updateModelParameter(activeThread.id, {
-            params: modelParams,
-            modelId: model.id,
-            engine: model.engine,
-          })
+          updateModelParameter(
+            activeThread.id,
+            {
+              params: modelParams,
+              modelId: model.id,
+              engine: model.engine,
+            },
+            // Overwrite the existing model parameter
+            true
+          )
       }
     },
     [
@@ -203,14 +208,15 @@ const DropdownListSidebar = ({
                 isTabActive === 1 && '[&_.select-scroll-down-button]:hidden'
               )}
             >
-              <div className="relative px-2 py-2">
-                <ul className="inline-flex w-full space-x-2 rounded-lg bg-zinc-100 px-1">
+              <div className="relative px-2 py-2 dark:bg-secondary/50">
+                <ul className="inline-flex w-full space-x-2 rounded-lg bg-zinc-100 px-1 dark:bg-secondary">
                   {engineOptions.map((name, i) => {
                     return (
                       <li
                         className={twMerge(
                           'relative my-1 flex w-full cursor-pointer items-center justify-center space-x-2 px-2 py-2',
-                          isTabActive === i && 'rounded-md bg-background'
+                          isTabActive === i &&
+                            'rounded-md bg-background dark:bg-white'
                         )}
                         key={i}
                         onClick={() => setIsTabActive(i)}
@@ -229,7 +235,8 @@ const DropdownListSidebar = ({
                         <span
                           className={twMerge(
                             'relative z-50 font-medium text-muted-foreground',
-                            isTabActive === i && 'font-bold text-foreground'
+                            isTabActive === i &&
+                              'font-bold text-foreground dark:text-black'
                           )}
                         >
                           {name}

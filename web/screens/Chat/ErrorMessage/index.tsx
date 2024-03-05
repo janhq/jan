@@ -54,7 +54,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
                 Port 3928 is currently unavailable. Check for conflicting apps,
                 or access&nbsp;
                 <span
-                  className="cursor-pointer text-blue-600"
+                  className="cursor-pointer text-primary dark:text-blue-400"
                   onClick={() => setModalTroubleShooting(true)}
                 >
                   troubleshooting assistance
@@ -72,7 +72,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               <p>
                 Jan’s in beta. Access&nbsp;
                 <span
-                  className="cursor-pointer text-blue-600"
+                  className="cursor-pointer text-primary dark:text-blue-400"
                   onClick={() => setModalTroubleShooting(true)}
                 >
                   troubleshooting assistance

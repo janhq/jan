@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { InferenceEvent, MessageStatus, events } from '@janhq/core'
 
@@ -24,8 +24,6 @@ import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useClickOutside } from '@/hooks/useClickOutside'
 
@@ -34,6 +32,7 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
@@ -58,7 +57,7 @@ const ChatInput: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
-  const { experimentalFeature } = useContext(FeatureToggleContext)
+  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
   const threadStates = useAtomValue(threadStatesAtom)
 
@@ -204,18 +203,44 @@ const ChatInput: React.FC = () => {
         {showAttacmentMenus && (
           <div
             ref={refAttachmentMenus}
-            className="absolute bottom-10 right-0 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
+            className="absolute bottom-10 right-0 z-30 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
           >
             <ul>
-              <li className="flex w-full cursor-not-allowed  items-center space-x-2 px-4 py-2 text-muted-foreground opacity-50 hover:bg-secondary">
+              <li
+                className={twMerge(
+                  'flex w-full items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
+                  activeThread?.assistants[0].model.settings.vision_model
+                    ? 'cursor-pointer'
+                    : 'cursor-not-allowed opacity-50'
+                )}
+                onClick={() => {
+                  if (activeThread?.assistants[0].model.settings.vision_model) {
+                    imageInputRef.current?.click()
+                    setShowAttacmentMenus(false)
+                  }
+                }}
+              >
                 <ImageIcon size={16} />
                 <span className="font-medium">Image</span>
               </li>
               <li
-                className="flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary"
+                className={twMerge(
+                  'flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
+                  activeThread?.assistants[0].model.settings.vision_model &&
+                    activeThread?.assistants[0].model.settings.text_model ===
+                      false
+                    ? 'cursor-not-allowed opacity-50'
+                    : 'cursor-pointer'
+                )}
                 onClick={() => {
-                  fileInputRef.current?.click()
-                  setShowAttacmentMenus(false)
+                  if (
+                    !activeThread?.assistants[0].model.settings.vision_model ||
+                    activeThread?.assistants[0].model.settings.text_model !==
+                      false
+                  ) {
+                    fileInputRef.current?.click()
+                    setShowAttacmentMenus(false)
+                  }
                 }}
               >
                 <FileTextIcon size={16} />

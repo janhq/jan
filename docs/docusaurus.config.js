@@ -4,6 +4,7 @@
 require("dotenv").config();
 
 const darkCodeTheme = require("prism-react-renderer/themes/dracula");
+const path = require('path');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -67,15 +68,18 @@ const config = {
         redirects: [
           {
             from: "/troubleshooting/failed-to-fetch",
-            to: "/troubleshooting/somethings-amiss",
+            to: "/guides/error-codes/something-amiss/",
           },
           {
             from: "/guides/troubleshooting/gpu-not-used/",
-            to: "/troubleshooting/gpu-not-used",
+            to: "/guides/common-error/not-using-gpu/",
           },
         ],
       },
     ],
+
+    //To input custom Plugin
+    path.resolve(__dirname, 'plugins', 'changelog-plugin'),
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
@@ -289,6 +293,7 @@ const config = {
         {
           type: "dropdown",
           label: "Docs",
+          to: "docs",
           position: "right",
           items: [
             {
@@ -305,11 +310,11 @@ const config = {
               to: "/api-reference",
               label: "API Reference",
             },
-            {
-              type: "docSidebar",
-              sidebarId: "docsSidebar",
-              label: "Framework",
-            },
+            // {
+            //   type: "docSidebar",
+            //   sidebarId: "docsSidebar",
+            //   label: "Framework",
+            // },
           ],
         },
         {
@@ -337,6 +342,11 @@ const config = {
       respectPrefersColorScheme: false,
     },
   },
+
+  customFields: {
+    githubAccessToken: process.env.GITHUB_ACCESS_TOKEN || "XXXX",
+  },
+
   themes: ["@docusaurus/theme-live-codeblock", "@docusaurus/theme-mermaid"],
 };
 

@@ -1,4 +1,4 @@
-import { useCallback, useContext, useState } from 'react'
+import { useCallback, useState } from 'react'
 
 import {
   Input,
@@ -15,13 +15,12 @@ import {
 import { useAtomValue, useSetAtom } from 'jotai'
 import { UploadIcon, SearchIcon } from 'lucide-react'
 
-import { FeatureToggleContext } from '@/context/FeatureToggle'
-
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ExploreModelList from './ExploreModelList'
 import { HuggingFaceModal } from './HuggingFaceModal'
 
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   configuredModelsAtom,
   downloadedModelsAtom,
@@ -38,7 +37,7 @@ const ExploreModelsScreen = () => {
   const [showHuggingFaceModal, setShowHuggingFaceModal] = useState(false)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
 
-  const { experimentalFeature } = useContext(FeatureToggleContext)
+  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
   const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'Downloaded') {
@@ -91,13 +90,13 @@ const ExploreModelsScreen = () => {
                     />
                     <Input
                       placeholder="Search models"
-                      className="bg-white pl-9"
+                      className="bg-white pl-9 dark:bg-background"
                       onChange={(e) => setsearchValue(e.target.value)}
                     />
                   </div>
                   <Button
                     themes="outline"
-                    className="gap-2 bg-white"
+                    className="gap-2 bg-white dark:bg-secondary"
                     onClick={onImportModelClick}
                   >
                     <UploadIcon size={16} />
