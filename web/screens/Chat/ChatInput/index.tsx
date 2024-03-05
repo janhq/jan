@@ -165,8 +165,7 @@ const ChatInput: React.FC = () => {
                   if (
                     fileUpload.length > 0 ||
                     (activeThread?.assistants[0].tools &&
-                      !activeThread?.assistants[0].tools[0]?.enabled &&
-                      !activeThread?.assistants[0].model.settings.vision_model)
+                      !activeThread?.assistants[0].tools[0]?.enabled)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -178,8 +177,7 @@ const ChatInput: React.FC = () => {
             <TooltipPortal>
               {fileUpload.length > 0 ||
                 (activeThread?.assistants[0].tools &&
-                  !activeThread?.assistants[0].tools[0]?.enabled &&
-                  !activeThread?.assistants[0].model.settings.vision_model && (
+                  !activeThread?.assistants[0].tools[0]?.enabled && (
                     <TooltipContent side="top" className="max-w-[154px] px-3">
                       {fileUpload.length !== 0 && (
                         <span>
@@ -205,7 +203,7 @@ const ChatInput: React.FC = () => {
         {showAttacmentMenus && (
           <div
             ref={refAttachmentMenus}
-            className="absolute bottom-10 right-0 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
+            className="absolute bottom-10 right-0 z-30 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
           >
             <ul>
               <li
