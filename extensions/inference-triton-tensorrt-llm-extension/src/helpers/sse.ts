@@ -19,13 +19,16 @@ export function requestInference(
     const text_input = recentMessages.map((message) => message.text).join('\n')
     const requestBody = JSON.stringify({
       text_input: text_input,
-      max_tokens: 4096,
-      temperature: 0,
-      bad_words: '',
-      stop_words: '[DONE]',
-      stream: true,
+      parameters: model.parameters,
     })
-    fetch(`${engine.base_url}/v2/models/ensemble/generate_stream`, {
+    let url = ''
+    if (model.parameters.stream === false) {
+      url = `${engine.base_url}/v2/models/${model.id}/generate`
+    } else {
+      url = `${engine.base_url}/v2/models/${model.id}/generate_stream`
+    }
+
+    fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
