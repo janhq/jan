@@ -39,11 +39,14 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const onDeleteClick = async () => {
     deleteMessage(message.id ?? '')
     if (thread) {
+      // Should also delete error messages to clear out the error state
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.writeMessages(
           thread.id,
-          messages.filter((msg) => msg.id !== message.id)
+          messages.filter(
+            (msg) => msg.id !== message.id && msg.status !== MessageStatus.Error
+          )
         )
     }
   }
