@@ -56,11 +56,7 @@ app
     }
   })
   .then(() => {
-    let iconPath = 'icons/icon.png'
-    if (!app.isPackaged) {
-      iconPath = join(app.getAppPath(), 'icons', 'icon-tray.png')
-    }
-
+    const iconPath = join(app.getAppPath(), 'icons', 'icon-tray.png')
     const tray = new Tray(iconPath)
     tray.setToolTip(app.getName())
 
@@ -82,10 +78,6 @@ app
 
 app.on('ready', () => {
   registerGlobalShortcuts()
-})
-
-app.once('window-all-closed', () => {
-  cleanUpAndQuit()
 })
 
 app.once('quit', () => {

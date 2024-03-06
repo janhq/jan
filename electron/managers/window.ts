@@ -35,6 +35,11 @@ class WindowManager {
       shell.openExternal(url)
       return { action: 'deny' }
     })
+
+    this.mainWindow.on('close', (e) => {
+      e.preventDefault()
+      this.hideMainWindow()
+    })
   }
 
   createQuickAskWindow(preloadPath: string, startUrl: string): void {
