@@ -205,7 +205,7 @@ export default class JanInferenceTritonTrtLLMExtension extends BaseExtension {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
           text: {
-            value: 'Error occurred: ' + err.message,
+            value: 'An error occurred. ' + err.message,
             annotations: [],
           },
         }

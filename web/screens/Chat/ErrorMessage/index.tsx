@@ -27,7 +27,10 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     resendChatMessage(message)
   }
 
-  const errorTitle = getErrorTitle(message.error_code ?? ErrorCode.Unknown)
+  const errorTitle = getErrorTitle(
+    message.error_code ?? ErrorCode.Unknown,
+    message.content[0]?.text?.value
+  )
 
   return (
     <div className="mt-10">
