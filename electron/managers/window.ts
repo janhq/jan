@@ -29,7 +29,6 @@ class WindowManager {
 
     /* Load frontend app to the window */
     this.mainWindow.loadURL(startUrl)
-    windowManager.hideMainWindow()
 
     /* Open external links in the default browser */
     this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {

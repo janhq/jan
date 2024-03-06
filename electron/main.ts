@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut } from 'electron'
+import { app, BrowserWindow, globalShortcut, Tray } from 'electron'
 
 import { join } from 'path'
 /**
@@ -56,6 +56,19 @@ app
     }
   })
   .then(() => {
+    let iconPath = 'icons/icon.png'
+    if (!app.isPackaged) {
+      iconPath = join(app.getAppPath(), 'icons', 'icon-tray.png')
+    }
+
+    const tray = new Tray(iconPath)
+    tray.setToolTip(app.getName())
+
+    tray.on('click', () => {
+      windowManager.showQuickAskWindow()
+    })
+  })
+  .then(() => {
     log(`Version: ${app.getVersion()}`)
   })
   .then(() => {
@@ -95,7 +108,6 @@ function registerGlobalShortcuts() {
     const selectedText = ''
     // const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
     if (!windowManager.isQuickAskWindowVisible()) {
-      windowManager.hideMainWindow()
       windowManager.showQuickAskWindow()
       windowManager.sendQuickAskSelectedText(selectedText)
     } else {

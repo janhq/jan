@@ -5,6 +5,7 @@ export const mainWindowConfig: Electron.BrowserWindowConstructorOptions = {
   width: DEFAULT_WIDTH,
   minWidth: DEFAULT_WIDTH,
   height: DEFAULT_HEIGHT,
+  skipTaskbar: true,
   show: true,
   trafficLightPosition: {
     x: 10,

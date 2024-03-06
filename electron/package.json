@@ -16,13 +16,15 @@
       "pre-install",
       "models/**/*",
       "docs/**/*",
-      "scripts/**/*"
+      "scripts/**/*",
+      "icons/**/*"
     ],
     "asarUnpack": [
       "pre-install",
       "models",
       "docs",
-      "scripts"
+      "scripts",
+      "icons"
     ],
     "publish": [
       {
@@ -38,6 +40,9 @@
       "entitlementsInherit": "./entitlements.mac.plist",
       "notarize": {
         "teamId": "F8AH6NHVY5"
+      },
+      "extendInfo": {
+        "LSUIElement": true
       },
       "icon": "icons/icon.png"
     },
