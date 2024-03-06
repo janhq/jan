@@ -1,4 +1,4 @@
-import { BrowserWindow, shell } from 'electron'
+import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { AppEvent } from '@janhq/core'
 import { mainWindowConfig } from './mainWindowConfig'
@@ -6,6 +6,8 @@ import { mainWindowConfig } from './mainWindowConfig'
 /**
  * Manages the current window instance.
  */
+// TODO: refactor this
+let isAppQuitting = false
 class WindowManager {
   public mainWindow?: BrowserWindow
   private _quickAskWindow: BrowserWindow | undefined = undefined
@@ -36,9 +38,15 @@ class WindowManager {
       return { action: 'deny' }
     })
 
-    this.mainWindow.on('close', (e) => {
-      e.preventDefault()
-      this.hideMainWindow()
+    app.on('before-quit', function () {
+      isAppQuitting = true
+    })
+
+    windowManager.mainWindow?.on('close', function (evt) {
+      if (!isAppQuitting) {
+        evt.preventDefault()
+        windowManager.hideMainWindow()
+      }
     })
   }
 
