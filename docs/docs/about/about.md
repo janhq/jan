@@ -26,6 +26,8 @@ You can:
 
 Longer-term, Jan is building a cognitive framework for future robots. We envision a world where we have personal or company robots that we continually improve and customize, growing together with us.
 
+Example change
+
 ![Human repairing a Droid](/img/star-wars-droids.png)
 
 ## Why do we exist
