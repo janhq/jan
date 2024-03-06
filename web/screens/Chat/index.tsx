@@ -90,8 +90,9 @@ const ChatScreen: React.FC = () => {
       if (!experimentalFeature) return
       if (
         e.dataTransfer.items.length === 1 &&
-        activeThread?.assistants[0].tools &&
-        activeThread?.assistants[0].tools[0]?.enabled
+        ((activeThread?.assistants[0].tools &&
+          activeThread?.assistants[0].tools[0]?.enabled) ||
+          activeThread?.assistants[0].model.settings.vision_model)
       ) {
         setDragOver(true)
       } else if (
@@ -112,7 +113,8 @@ const ChatScreen: React.FC = () => {
         files.length !== 1 ||
         rejectFiles.length !== 0 ||
         (activeThread?.assistants[0].tools &&
-          !activeThread?.assistants[0].tools[0]?.enabled)
+          !activeThread?.assistants[0].tools[0]?.enabled &&
+          !activeThread?.assistants[0].model.settings.vision_model)
       )
         return
       const imageType = files[0]?.type.includes('image')
