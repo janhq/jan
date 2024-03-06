@@ -45,6 +45,7 @@ import gpu from './assets/gpu.png';
 import mistral from './assets/mistral.png';
 import lm from './assets/lm.png';
 import ollama from './assets/ollama.png';
+import logsError from './assets/logs-error.png';
 
 function CardContainer({href, children}) {
   return (
@@ -166,7 +167,7 @@ function CardLink({item}) {
     <img src={amiss} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Broken Build") ? (
     <img src={broken} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
-  ) : (item.label === "Jan not using GPU") ? (
+  ) : (item.label === "Troubleshooting NVIDIA GPU") ? (
     <img src={gpu} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Mistral AI") ? (
     <img src={mistral} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
@@ -174,10 +175,15 @@ function CardLink({item}) {
     <img src={lm} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Ollama") ? (
     <img src={ollama} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "How to Get Error Logs") ? (
+    <img src={logsError} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (
     // If not "Customize Engine Settings", use default icon
     '📄️'
-  );
+  );  
+
+
+  
   const doc = useDocById(item.docId ?? undefined);
   return (
     <CardLayout
