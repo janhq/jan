@@ -32,7 +32,8 @@ export default function Layout(props) {
 
   const location = useLocation();
 
-  const isAllowedPath = allowedPaths.includes(location.pathname);
+  const isAllowedPath = allowedPaths.some(path => location.pathname.startsWith(path));
+
   return (
     <LayoutProvider>
       <PageMetadata title={title} description={description} />
