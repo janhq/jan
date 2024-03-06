@@ -17,9 +17,9 @@ export default function NavBarExtension() {
         <NavLink
           to="/guides"
           className="text-gray-700 font-medium hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-200"
-          activeClassName={location.pathname !== "/guides/changelog" && location.pathname === "/guides" ? "text-gray-900 dark:text-gray-100 font-semibold border-b-2 border-gray-900 dark:border-gray-100" : ""}
+          activeClassName="text-gray-900 dark:text-gray-100 font-bold border-b-2 border-gray-900 dark:border-gray-100"
         >
-          Guide
+          Guides
         </NavLink>
         <NavLink
           to="/developer"
@@ -36,9 +36,9 @@ export default function NavBarExtension() {
           API Reference
         </NavLink>
         <NavLink
-          to="/guides/changelog"
+          to="/changelog"
           className="text-gray-700 font-medium hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-200"
-          activeClassName={location.pathname === "/guides/changelog" ? "text-gray-900 dark:text-gray-100 font-semibold border-b-2 border-gray-900 dark:border-gray-100" : ""}
+          activeClassName="text-gray-900 dark:text-gray-100 font-bold border-b-2 border-gray-900 dark:border-gray-100"
         >
           Changelog 
         </NavLink>

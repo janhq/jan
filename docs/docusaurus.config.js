@@ -299,7 +299,7 @@ const config = {
             {
               type: "docSidebar",
               sidebarId: "guidesSidebar",
-              label: "User Guide",
+              label: "Guides",
             },
             {
               type: "docSidebar",
@@ -309,6 +309,11 @@ const config = {
             {
               to: "/api-reference",
               label: "API Reference",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "releasesSidebar",
+              label: "Changelog",
             },
             // {
             //   type: "docSidebar",
@@ -341,10 +346,6 @@ const config = {
       disableSwitch: false,
       respectPrefersColorScheme: false,
     },
-  },
-
-  customFields: {
-    githubAccessToken: process.env.GITHUB_ACCESS_TOKEN || "XXXX",
   },
 
   themes: ["@docusaurus/theme-live-codeblock", "@docusaurus/theme-mermaid"],
