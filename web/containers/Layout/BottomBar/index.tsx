@@ -17,6 +17,7 @@ import { appDownloadProgress } from '@/containers/Providers/Jotai'
 
 import ImportingModelState from './ImportingModelState'
 import SystemMonitor from './SystemMonitor'
+import UpdatedFailedModal from './UpdateFailedModal'
 
 const menuLinks = [
   {
@@ -44,6 +45,7 @@ const BottomBar = () => {
         </div>
         <ImportingModelState />
         <DownloadingState />
+        <UpdatedFailedModal />
       </div>
       <div className="flex items-center gap-x-3">
         <SystemMonitor />
