@@ -20,7 +20,6 @@ import { setImportModelStageAtom } from '@/hooks/useImportModel'
 import ExploreModelList from './ExploreModelList'
 import { HuggingFaceModal } from './HuggingFaceModal'
 
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   configuredModelsAtom,
   downloadedModelsAtom,
@@ -36,8 +35,6 @@ const ExploreModelsScreen = () => {
 
   const [showHuggingFaceModal, setShowHuggingFaceModal] = useState(false)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
-
-  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
   const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'Downloaded') {
@@ -58,10 +55,6 @@ const ExploreModelsScreen = () => {
   const onImportModelClick = useCallback(() => {
     setImportModelStage('SELECTING_MODEL')
   }, [setImportModelStage])
-
-  const onHuggingFaceConverterClick = () => {
-    setShowHuggingFaceModal(true)
-  }
 
   return (
     <div
@@ -103,7 +96,7 @@ const ExploreModelsScreen = () => {
                     Import Model
                   </Button>
                 </div>
-                {experimentalFeature && (
+                {/* {experimentalFeature && (
                   <div className="text-center">
                     <p
                       onClick={onHuggingFaceConverterClick}
@@ -112,7 +105,7 @@ const ExploreModelsScreen = () => {
                       Convert from Hugging Face
                     </p>
                   </div>
-                )}
+                )} */}
               </div>
             </div>
             <div className="mx-auto w-4/5 py-6">
