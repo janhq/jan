@@ -1,0 +1,117 @@
+---
+title: HTTPS Proxy
+sidebar_position: 2
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    advanced-settings,
+    https-proxy,
+  ]
+---
+
+
+## Why HTTPS Proxy?
+
+HTTPS Proxy encrypts data between your browser and the internet, making it hard for outsiders to intercept or read. It also helps you to maintain your privacy and security while being able to bypass regional restrictions on internet.
+
+:::note
+
+When configuring Jan using an HTTPS proxy, the speed of the downloading model may be affected due to the encryption and decryption process. It also depends on the networking of the cloud service provider.
+
+:::
+
+## Setting Up Your Own HTTPS Proxy Server
+This guide provides a simple overview of setting up an HTTPS proxy server using **Squid**, a widely used open-source proxy software.
+
+:::note
+Other software options are also available depending on your requirements.
+:::
+
+### Step 1: Choosing a Server
+1. Firstly, you need to choose a server to host your proxy server.
+:::note
+We recommend using a well-known cloud provider service like:
+- Amazon AWS
+- Google Cloud
+- Microsoft Azure
+- Digital Ocean
+:::
+
+2. Ensure that your server has a public IP address and is accessible from the internet.
+
+### Step 2: Installing Squid
+Instal **Squid** using the following command:
+```bash
+sudo apt-get update
+sudo apt-get install squid
+```
+
+### Step 3: Configure Squid for HTTPS
+
+To enable HTTPS, you will need to configure Squid with SSL support.
+
+1. Squid requires an SSL certificate to be able to handle HTTPS traffic. You can generate a self-signed certificate or obtain one from a Certificate Authority (CA). For a self-signed certificate, you can use OpenSSL:
+
+```bash
+openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout squid-proxy.pem -out squid-proxy.pem
+```
+
+2. Edit the Squid configuration file `/etc/squid/squid.conf` to include the path to your SSL certificate and enable the HTTPS port:
+
+```bash
+http_port 3128 ssl-bump cert=/path/to/your/squid-proxy.pem
+ssl_bump server-first all
+ssl_bump bump all
+```
+
+3. To intercept HTTPS traffic, Squid uses a process called SSL Bumping. This process allows Squid to decrypt and re-encrypt HTTPS traffic. To enable SSL Bumping, ensure the `ssl_bump` directives are configured correctly in your `squid.conf` file.
+
+### Step 4 (Optional): Configure ACLs and Authentication
+
+1. You can define rules to control who can access your proxy. This is done by editing the squid.conf file and defining ACLs:
+
+```bash
+acl allowed_ips src "/etc/squid/allowed_ips.txt"
+http_access allow allowed_ips
+```
+
+2. If you want to add an authentication layer, Squid supports several authentication schemes. Basic authentication setup might look like this:
+
+```bash
+auth_param basic program /usr/lib/squid/basic_ncsa_auth /etc/squid/passwords
+acl authenticated proxy_auth REQUIRED
+http_access allow authenticated
+```
+
+### Step 5: Restart and Test Your Proxy
+
+1. After configuring, restart Squid to apply the changes:
+
+```bash
+sudo systemctl restart squid
+```
+
+2. To test, configure your browser or another client to use the proxy server with its IP address and port (default is 3128).
+3. Check if you can access the internet through your proxy.
+
+:::tip
+
+Tips for Secure Your Proxy:
+- **Firewall rules**: Ensure that only intended users or IP addresses can connect to your proxy server. This can be achieved by setting up appropriate firewall rules.
+- **Regular updates**: Keep your server and proxy software updated to ensure that you are protected against known vulnerabilities.
+- **Monitoring and logging**: Monitor your proxy server for unusual activity and enable logging to keep track of the traffic passing through your proxy.
+
+::: 
+
+## Setting Up Jan to Use Your HTTPS Proxy
+
+Once you have your HTTPS proxy server set up, you can configure Jan to use it.
+1. Navigate to `Settings` > `Advanced Settings` and specify the HTTPS proxy (proxy auto-configuration and SOCKS not supported).
+2. You can turn on the feature `Ignore SSL Certificates` if you are using a self-signed certificate. This feature allows self-signed or unverified certificates.

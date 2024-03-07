@@ -210,12 +210,13 @@ export default class JanInferenceOpenAIExtension extends BaseExtension {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
           text: {
-            value: 'Error occurred: ' + err.message,
+            value: 'An error occurred. ' + err.message,
             annotations: [],
           },
         }
         message.content = [messageContent]
         message.status = MessageStatus.Error
+        message.error_code = err.code
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
     })

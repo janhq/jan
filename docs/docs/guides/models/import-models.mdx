@@ -1,0 +1,241 @@
+---
+title: Manual Import
+slug: /guides/using-models/import-manually/
+sidebar_position: 3
+description: A step-by-step guide on how to perform manual import feature.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    import-models-manually,
+    absolute-filepath,
+  ]
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import janModel from './assets/jan-model-hub.png';
+
+
+This guide will show you how to perform manual import. In this guide, we are using a GGUF model from [HuggingFace](https://huggingface.co/) and our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
+
+## Newer versions - nightly versions and v0.4.7+
+
+Starting from version 0.4.7, Jan has introduced the capability to import models using an absolute file path. It allows you to import models from any directory on your computer.
+
+### 1. Get the Absolute Filepath of the Model
+
+After downloading the model from HuggingFace, get the absolute filepath of the model.
+
+### 2. Configure the Model JSON
+
+1. Navigate to the `~/jan/models` folder. 
+2. Create a folder named `<modelname>`, for example, `tinyllama`.
+3. Create a `model.json` file inside the folder, including the following configurations:
+
+- Ensure the `id` property matches the folder name you created.
+- Ensure the `url` property is the direct binary download link ending in `.gguf`. Now, you can use the absolute filepath of the model file.
+- Ensure the `engine` property is set to `nitro`.
+
+```json
+{
+  "sources": [
+    {
+      "filename": "tinyllama.gguf",
+      // highlight-next-line
+      "url": "<absolute-filepath-of-the-model-file>"
+    }
+  ],
+  "id": "tinyllama-1.1b",
+  "object": "model",
+  "name": "(Absolute Path) TinyLlama Chat 1.1B Q4",
+  "version": "1.0",
+  "description": "TinyLlama is a tiny model with only 1.1B. It's a good model for less powerful computers.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "<|system|>\n{system_message}<|user|>\n{prompt}<|assistant|>",
+    "llama_model_path": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 2048,
+    "stop": [],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "TinyLlama",
+    "tags": ["Tiny", "Foundation Model"],
+    "size": 669000000
+  },
+  "engine": "nitro"
+}
+```
+
+:::warning
+
+- If you are using Windows, you need to use double backslashes in the url property, for example: `C:\\Users\\username\\filename.gguf`.
+
+:::
+
+### 3. Done!
+
+If your model doesn't show up in the **Model Selector** in conversations, **restart the app** or contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ).
+
+## Newer versions - nightly versions and v0.4.4+
+
+### 1. Create a Model Folder
+
+1. Navigate to the `App Settings` > `Advanced` > `Open App Directory` > `~/jan/models` folder.
+
+<Tabs groupId = "operating-systems" >
+    <TabItem value="mac" label = "MacOS" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+    <TabItem value = "windows" label = "Windows" default>
+        ```sh
+        C:/Users/<your_user_name>/jan/models
+        ```
+    </TabItem>
+    <TabItem value = "linux" label = "Linux" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+</Tabs>
+
+2. In the `models` folder, create a folder with the name of the model.
+
+```sh
+mkdir trinity-v1-7b
+```
+
+### 2. Drag & Drop the Model
+
+Drag and drop your model binary into this folder, ensuring the `modelname.gguf` is the same name as the folder name, e.g. `models/modelname`.
+
+### 3. Done!
+
+If your model doesn't show up in the **Model Selector** in conversations, **restart the app** or contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ).
+
+## Older versions - before v0.44
+
+### 1. Create a Model Folder
+
+1. Navigate to the `App Settings` > `Advanced` > `Open App Directory` > `~/jan/models` folder.
+
+<Tabs groupId = "operating-systems" >
+    <TabItem value="mac" label = "MacOS" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+    <TabItem value = "windows" label = "Windows" default>
+        ```sh
+        C:/Users/<your_user_name>/jan/models
+        ```
+    </TabItem>
+    <TabItem value = "linux" label = "Linux" default>
+        ```sh
+        cd ~/jan/models
+        ```
+    </TabItem>
+</Tabs>
+
+2. In the `models` folder, create a folder with the name of the model.
+
+```sh
+mkdir trinity-v1-7b
+```
+
+### 2. Create a Model JSON
+
+Jan follows a folder-based, [standard model template](https://jan.ai/docs/engineering/models/) called a `model.json` to persist the model configurations on your local filesystem.
+
+This means that you can easily reconfigure your models, export them, and share your preferences transparently.
+
+<Tabs groupId = "operating-systems" >
+    <TabItem value="mac" label = "MacOS" default>
+        ```sh
+        cd trinity-v1-7b
+        touch model.json
+        ```
+    </TabItem>
+    <TabItem value = "windows" label = "Windows" default>
+        ```sh
+        cd trinity-v1-7b
+        echo {} > model.json
+        ```
+    </TabItem>
+    <TabItem value = "linux" label = "Linux" default>
+        ```sh
+        cd trinity-v1-7b
+        touch model.json
+        ```
+    </TabItem>
+</Tabs>
+
+To update `model.json`:
+
+ - Match `id` with folder name.
+ - Ensure GGUF filename matches `id`.
+ - Set `source.url` to direct download link ending in `.gguf`. In HuggingFace, you can find the direct links in the `Files and versions` tab.
+ - Verify that you are using the correct `prompt_template`. This is usually provided in the HuggingFace model's description page.
+
+```json title="model.json"
+{
+  "sources": [
+    {
+      "filename": "trinity-v1.Q4_K_M.gguf",
+      "url": "https://huggingface.co/janhq/trinity-v1-GGUF/resolve/main/trinity-v1.Q4_K_M.gguf"
+    }
+  ],
+  "id": "trinity-v1-7b",
+  "object": "model",
+  "name": "Trinity-v1 7B Q4",
+  "version": "1.0",
+  "description": "Trinity is an experimental model merge of GreenNodeLM & LeoScorpius using the Slerp method. Recommended for daily assistance purposes.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "{system_message}\n### Instruction:\n{prompt}\n### Response:",
+    "llama_model_path": "trinity-v1.Q4_K_M.gguf"
+  },
+  "parameters": {
+    "max_tokens": 4096
+  },
+  "metadata": {
+    "author": "Jan",
+    "tags": ["7B", "Merged"],
+    "size": 4370000000
+  },
+  "engine": "nitro"
+}
+```
+
+:::note
+For more details regarding the `model.json` settings and parameters fields,  please see [here](/docs/guides/models/integrate-remote.mdx#modeljson).
+:::
+
+### 3. Download the Model
+
+1. Restart Jan and navigate to the Hub. 
+2. Locate your model.
+3. Click **Download** button to download the model binary.
+
+:::info[Assistance and Support]
+
+If you have questions, please join our [Discord community](https://discord.gg/Dt7MxDyNNZ) for support, updates, and discussions.
+
+:::

@@ -41,7 +41,8 @@
     "build:extensions": "run-script-os",
     "build:test": "yarn copy:assets && yarn build:web && yarn workspace jan build:test",
     "build": "yarn build:web && yarn build:electron",
-    "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish"
+    "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish",
+    "turbo:electron": "turbo run dev --parallel --filter=!@janhq/server"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",

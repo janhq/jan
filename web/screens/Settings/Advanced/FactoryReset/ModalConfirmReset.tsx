@@ -2,7 +2,6 @@ import React, { useCallback, useState } from 'react'
 
 import {
   Modal,
-  ModalPortal,
   ModalContent,
   ModalHeader,
   ModalTitle,
@@ -33,7 +32,6 @@ const ModalConfirmReset = () => {
       open={modalValidation}
       onOpenChange={() => setModalValidation(false)}
     >
-      <ModalPortal />
       <ModalContent>
         <ModalHeader>
           <ModalTitle>

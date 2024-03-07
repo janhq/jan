@@ -11,8 +11,6 @@ import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 import ThemeWrapper from '@/containers/Providers/Theme'
 
-import FeatureToggleWrapper from '@/context/FeatureToggle'
-
 import { setupCoreServices } from '@/services/coreService'
 import {
   isCoreExtensionInstalled,
@@ -81,15 +79,13 @@ const Providers = (props: PropsWithChildren) => {
         {settingUp && <Loader description="Preparing Update..." />}
         {setupCore && activated && (
           <KeyListener>
-            <FeatureToggleWrapper>
-              <EventListenerWrapper>
-                <TooltipProvider delayDuration={0}>
-                  <DataLoader>{children}</DataLoader>
-                </TooltipProvider>
-                {!isMac && <GPUDriverPrompt />}
-              </EventListenerWrapper>
-              <Toaster />
-            </FeatureToggleWrapper>
+            <EventListenerWrapper>
+              <TooltipProvider delayDuration={0}>
+                <DataLoader>{children}</DataLoader>
+              </TooltipProvider>
+              {!isMac && <GPUDriverPrompt />}
+            </EventListenerWrapper>
+            <Toaster />
           </KeyListener>
         )}
       </ThemeWrapper>

@@ -14,6 +14,11 @@ import Footer from "@site/src/containers/Footer";
 import LayoutProvider from "@theme/Layout/Provider";
 import ErrorPageContent from "@theme/ErrorPageContent";
 import styles from "./styles.module.scss";
+import NavBarExtension from "../NavbarExtension";
+import { useLocation } from "react-router-dom";
+
+const allowedPaths = ["/docs/", "/developer/", "/api-reference/", "/guides/", "/guides", "/docs", "/developer", "/api-reference", "/changelog"];  
+
 export default function Layout(props) {
   const {
     children,
@@ -24,6 +29,11 @@ export default function Layout(props) {
     description,
   } = props;
   useKeyboardNavigation();
+
+  const location = useLocation();
+
+  const isAllowedPath = allowedPaths.some(path => location.pathname.startsWith(path));
+
   return (
     <LayoutProvider>
       <PageMetadata title={title} description={description} />
@@ -32,14 +42,20 @@ export default function Layout(props) {
 
       <AnnouncementBar />
 
-      <Navbar />
+      <Navbar/>
+
+      {isAllowedPath ? <NavBarExtension /> : ""}
+
+      {/* {console.log("Is allowed path?", location.pathname)} */}
+
 
       <div
         id={SkipToContentFallbackId}
         className={clsx(
           ThemeClassNames.wrapper.main,
           styles.mainWrapper,
-          wrapperClassName
+          wrapperClassName,
+          isAllowedPath && "mt-0 md:mt-11"
         )}
       >
         <ErrorBoundary fallback={(params) => <ErrorPageContent {...params} />}>

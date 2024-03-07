@@ -1,0 +1,103 @@
+---
+sidebar_position: 3
+slug: /changelog/changelog-v0.4.5
+---
+# v0.4.5
+
+For more details, [GitHub Issues](https://github.com/janhq/jan/releases/tag/v0.4.5)
+
+Highlighted Issue:  [Issue #1758: bug: Correct text for Windows](https://github.com/janhq/jan/issues/1758)
+
+## Changes
+
+- fix(Wording): #1758 correct text for windows @namchuai (#1768)
+- fix(Log): server log is not display in windows @namchuai (#1764)
+- Release Cut v0.4.5 @louis-jan (#1752)
+- chore(nitro): 0.2.11 -> 0.2.12 @hiro-v (#1754)
+- fix: Nitro CPU threads with correct physical/ performance CPU count @hiro-v (#1726)
+- fix(Model): #1662 imported model does not use gpu @namchuai (#1723)
+- fix(API): #1720 host/port provided in the local API server does not fully applied @namchuai (#1721)
+- fix: server API reference @hiro-v (#1670)
+- fix(Model): refactor model label @namchuai (#1596)
+- docs/postmortem v 0.4.4 @hieu-jan (#1617)
+- chore(ShortcutModal): clean up shortcut modal @namchuai (#1614)
+- chore(Dependencies): upgrade node-fetch to fix vulnerable issue @namchuai (#1598)
+
+## 🚀 Features
+
+- feat: update UI allow user change folder @urmauur (#1738)
+- feat: error message when not enough RAM @urmauur (#1706)
+- feat: improvement ux for local api server @urmauur (#1704)
+- feat: allow user to move jan folder @namchuai (#1649)
+- feat: HTTP proxy support @markmehere (#1562)
+- Feature add schedule clean cloudflare page and r2 @hiento09 (#1653)
+- feat: relayout left panel setting page @urmauur (#1648)
+- Update CI follow git flow @hiento09 (#1625)
+- feat: Implement UI page API server dashboard @urmauur (#1636)
+- fix: #1545 long thread title @lucido-simon (#1605)
+
+## 🐛 Fixes
+
+- fix: model selection does not show in API settings page @louis-jan (#1828)
+- fix: user can't view model setting in local api server @namchuai (#1807)
+- fix: cannot change jan data folder @namchuai (#1805)
+- fix: model selection does not show in API settings page @louis-jan (#1802)
+- fix: user can't use a model in model hub @namchuai (#1801)
+- fix: stop openai inference raises something amiss @louis-jan (#1799)
+- regression fix: input disabled darkmode @urmauur (#1800)
+- fix: clean last message when user clean thread message @namchuai (#1793)
+- fix: app log not being printed @namchuai (#1790)
+- fix: api settings are not applied on changes @louis-jan (#1789)
+- fix: could not delete model @louis-jan (#1779)
+- fix: can not start model when server is not enabled from model settings page @louis-jan (#1774)
+- regression fix: input port not accept alphabets @urmauur (#1772)
+- Correct bash script syntax in ci @hiento09 (#1769)
+- Hotfix CI pre-release not trigger  @hiento09 (#1757)
+- fix: bring back open app directory @louis-jan (#1756)
+- fix: input port have range validation @urmauur (#1741)
+- Fix error nightly build schedule run failed @hiento09 (#1736)
+- fix: active model when start server @urmauur (#1719)
+- fix: Change to fixed `localhost` instead of using host variable @hiro-v (#1729)
+- Fix autoupdater nightly build error @hiento09 (#1727)
+- Correct download url readme @hiento09 (#1724)
+- fix: API chat/completion is blocked by CORS @louis-jan (#1705)
+- fix: Jan server - v1/chat/completions is throwing ERR\_REQUIRE\_ESM @louis-jan (#1703)
+- fix: Jan server is showing blank page @louis-jan (#1702)
+- fix: switching loader from remote to local model from thread right panel @urmauur (#1692)
+- fix: hot-fix algolia search @hieu-jan (#1700)
+- fix: disable api key field while server is running @urmauur (#1694)
+- fix: stoping model show starting model @urmauur (#1693)
+- fix bug #1650 hogging resources @hiento09 (#1663)
+- fix: auto select text when collapse panel @urmauur (#1645)
+- fix: wrong selected model ref @louis-jan (#1638)
+- fix: enable check for update on all supported platforms @louis-jan (#1626)
+- fix: correct footer @hieu-jan (#1628)
+
+## 🧰 Maintenance
+
+- Docs publish to github page trigger on push to docs branch @hiento09 (#1783)
+- Correct bash script syntax in ci @hiento09 (#1769)
+- Combine 2 ci pipeline pre-release and nightly into one @hiento09 (#1767)
+- Hotfix CI pre-release not trigger  @hiento09 (#1757)
+- Fix error nightly build schedule run failed @hiento09 (#1736)
+- docs: add troubleshoot unexpected token @hieu-jan (#1711)
+- docs: fix about pages @0xSage (#1699)
+- refactor: deprecate extension type implementation @louis-jan (#1677)
+- refactor: file prefix replace utils \& add unit test @louis-jan (#1676)
+- Correct ref branch for update url on README.md file @hiento09 (#1672)
+- docs: update 02-somethings-amiss @hieu-jan (#1668)
+- Cherrypick cicd to main branch to apply new gitflow @hiento09 (#1665)
+- docs: add user and developer guides for extensions @hieu-jan (#1657)
+- docs: add QA Script @hieu-jan (#1660)
+- chore: Bump nitro to 0.2.11 @hiro-v (#1655)
+- chore: Bump version nitro to 0.2.10 @hiro-v (#1644)
+- docs: add antivirus compatibility testing @hieu-jan (#1641)
+- refactor: introduce node module in nitro extension @louis-jan (#1630)
+- Update 02-somethings-amiss.mdx @Ssstars (#1634)
+- docs: add integration AzureOpenAI @hieu-jan (#1632)
+- docs: add troubleshooting permission denied @hieu-jan (#1631)
+
+## Contributor
+
+@0xSage, @Ssstars, @hiento09, @hientominh, @hieu-jan, @hiro-v, @jan-service-account, @louis-jan, @lucido-simon, @markmehere, @namchuai and @urmauur
+

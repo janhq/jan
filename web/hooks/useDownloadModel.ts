@@ -1,4 +1,4 @@
-import { useCallback, useContext } from 'react'
+import { useCallback } from 'react'
 
 import {
   Model,
@@ -10,17 +10,22 @@ import {
   DownloadState,
 } from '@janhq/core'
 
-import { useSetAtom } from 'jotai'
-
-import { FeatureToggleContext } from '@/context/FeatureToggle'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from './useDownloadState'
 
 import { extensionManager } from '@/extension/ExtensionManager'
+import {
+  ignoreSslAtom,
+  proxyAtom,
+  proxyEnabledAtom,
+} from '@/helpers/atoms/AppConfig.atom'
 import { addDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useDownloadModel() {
-  const { ignoreSSL, proxy, proxyEnabled } = useContext(FeatureToggleContext)
+  const ignoreSSL = useAtomValue(ignoreSslAtom)
+  const proxy = useAtomValue(proxyAtom)
+  const proxyEnabled = useAtomValue(proxyEnabledAtom)
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
 

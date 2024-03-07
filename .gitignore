@@ -31,3 +31,7 @@ extensions/inference-nitro-extension/bin/saved-*
 extensions/inference-nitro-extension/bin/*.tar.gz
 extensions/inference-nitro-extension/bin/vulkaninfoSDK.exe
 extensions/inference-nitro-extension/bin/vulkaninfo
+
+
+# Turborepo
+.turbo

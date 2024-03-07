@@ -83,4 +83,22 @@ export function handleAppIPCs() {
       return filePaths[0]
     }
   })
+
+  ipcMain.handle(NativeRoute.selectModelFiles, async () => {
+    const mainWindow = WindowManager.instance.currentWindow
+    if (!mainWindow) {
+      console.error('No main window found')
+      return
+    }
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select model files',
+      buttonLabel: 'Select',
+      properties: ['openFile', 'openDirectory', 'multiSelections'],
+    })
+    if (canceled) {
+      return
+    }
+
+    return filePaths
+  })
 }

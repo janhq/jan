@@ -1,0 +1,53 @@
+---
+title: Something's Amiss
+sidebar_position: 4
+description: A step-by-step guide to resolve an unspecified or general error.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+
+When you start a chat with a model and encounter with a Something's Amiss error, here's how to resolve it:
+1. Ensure your OS is up to date.
+2. Choose a model smaller than 80% of your hardware's V/RAM. For example, on an 8GB machine, opt for models smaller than 6GB.
+3. Install the latest [Nightly release](https://jan.ai/install/nightly/) or [clear the application cache](https://jan.ai/troubleshooting/stuck-on-broken-build/) when reinstalling Jan.
+4. Confirm your V/RAM accessibility, particularly if using virtual RAM.
+5. Nvidia GPU users should download [CUDA](https://developer.nvidia.com/cuda-downloads).
+6. Linux users, ensure your system meets the requirements of gcc 11, g++ 11, cpp 11, or higher. Refer to this [link](https://jan.ai/guides/troubleshooting/gpu-not-used/#specific-requirements-for-linux) for details.
+7. You might use the wrong port when you [check the app logs](https://jan.ai/troubleshooting/how-to-get-error-logs/) and encounter the Bind address failed at 127.0.0.1:3928 error. To check the port status, try use the `netstat` command, like the following:
+
+<Tabs>
+    <TabItem value="mac" label="MacOS" default>
+        ```sh
+        netstat -an | grep 3928
+        ```
+    </TabItem>
+    <TabItem value="windows" label="Windows" default>
+        ```sh
+        netstat -ano | find "3928" 
+        tasklist /fi "PID eq 3928"
+        ```
+    </TabItem>
+    <TabItem value="linux" label="Linux" default>
+        ```sh
+        netstat -anpe | grep "3928" 
+        ```
+    </TabItem>
+</Tabs>
+
+:::note
+
+`Netstat` displays the contents of various network-related data structures for active connections
+
+:::
+
+:::tip
+
+Jan uses the following ports:
+
+- Nitro: `3928`
+- Jan API Server: `1337`
+- Jan Documentation: `3001`
+
+:::

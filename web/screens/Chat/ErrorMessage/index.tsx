@@ -1,4 +1,4 @@
-import { MessageStatus, ThreadMessage } from '@janhq/core'
+import { ErrorCode, MessageStatus, ThreadMessage } from '@janhq/core'
 import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
@@ -9,6 +9,8 @@ import ModalTroubleShooting, {
 
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
+
+import { getErrorTitle } from '@/utils/errorMessage'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
@@ -24,6 +26,11 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     const message = messages[lastMessageIndex]
     resendChatMessage(message)
   }
+
+  const errorTitle = getErrorTitle(
+    message.error_code ?? ErrorCode.Unknown,
+    message.content[0]?.text?.value
+  )
 
   return (
     <div className="mt-10">
@@ -48,7 +55,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           {loadModelError === PORT_NOT_AVAILABLE ? (
             <div
               key={message.id}
-              className="flex flex-col items-center text-center text-sm font-medium text-gray-500 w-full"
+              className="flex w-full flex-col items-center text-center text-sm font-medium text-gray-500"
             >
               <p className="w-[90%]">
                 Port 3928 is currently unavailable. Check for conflicting apps,
@@ -68,7 +75,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               key={message.id}
               className="flex flex-col items-center text-center text-sm font-medium text-gray-500"
             >
-              <p>{`Apologies, something’s amiss!`}</p>
+              <p>{errorTitle}</p>
               <p>
                 Jan’s in beta. Access&nbsp;
                 <span

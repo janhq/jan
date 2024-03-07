@@ -2,6 +2,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TooltipPortal,
   TooltipArrow,
 } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
@@ -10,7 +11,6 @@ import { useAtom, useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
-  MonitorIcon,
   LayoutGridIcon,
   SquareCodeIcon,
 } from 'lucide-react'
@@ -21,13 +21,12 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useMainViewState } from '@/hooks/useMainViewState'
-
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 export default function RibbonNav() {
-  const { mainViewState, setMainViewState } = useMainViewState()
+  const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const [serverEnabled] = useAtom(serverEnabledAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
 
@@ -76,16 +75,6 @@ export default function RibbonNav() {
       state: MainViewState.LocalServer,
     },
     {
-      name: 'System Monitor',
-      icon: (
-        <MonitorIcon
-          size={20}
-          className="flex-shrink-0 text-muted-foreground"
-        />
-      ),
-      state: MainViewState.SystemMonitor,
-    },
-    {
       name: 'Settings',
       icon: (
         <SettingsIcon
@@ -130,24 +119,26 @@ export default function RibbonNav() {
                           />
                         )}
                       </TooltipTrigger>
-                      {serverEnabled &&
-                      primary.state === MainViewState.Thread ? (
-                        <TooltipContent
-                          side="right"
-                          sideOffset={10}
-                          className="max-w-[180px]"
-                        >
-                          <span>
-                            Threads are disabled while the server is running
-                          </span>
-                          <TooltipArrow />
-                        </TooltipContent>
-                      ) : (
-                        <TooltipContent side="right" sideOffset={10}>
-                          <span>{primary.name}</span>
-                          <TooltipArrow />
-                        </TooltipContent>
-                      )}
+                      <TooltipPortal>
+                        {serverEnabled &&
+                        primary.state === MainViewState.Thread ? (
+                          <TooltipContent
+                            side="right"
+                            sideOffset={10}
+                            className="max-w-[180px]"
+                          >
+                            <span>
+                              Threads are disabled while the server is running
+                            </span>
+                            <TooltipArrow />
+                          </TooltipContent>
+                        ) : (
+                          <TooltipContent side="right" sideOffset={10}>
+                            <span>{primary.name}</span>
+                            <TooltipArrow />
+                          </TooltipContent>
+                        )}
+                      </TooltipPortal>
                     </Tooltip>
                   </div>
                 )
@@ -180,10 +171,12 @@ export default function RibbonNav() {
                           />
                         )}
                       </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={10}>
-                        <span>{secondary.name}</span>
-                        <TooltipArrow />
-                      </TooltipContent>
+                      <TooltipPortal>
+                        <TooltipContent side="right" sideOffset={10}>
+                          <span>{secondary.name}</span>
+                          <TooltipArrow />
+                        </TooltipContent>
+                      </TooltipPortal>
                     </Tooltip>
                   </div>
                 )

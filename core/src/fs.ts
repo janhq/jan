@@ -69,14 +69,20 @@ const syncFile: (src: string, dest: string) => Promise<any> = (src, dest) =>
  */
 const copyFileSync = (...args: any[]) => global.core.api?.copyFileSync(...args)
 
+const copyFile: (src: string, dest: string) => Promise<void> = (src, dest) =>
+  global.core.api?.copyFile(src, dest)
+
 /**
  * Gets the file's stats.
  *
  * @param path - The path to the file.
+ * @param outsideJanDataFolder - Whether the file is outside the Jan data folder.
  * @returns {Promise<FileStat>} - A promise that resolves with the file's stats.
  */
-const fileStat: (path: string) => Promise<FileStat | undefined> = (path) =>
-  global.core.api?.fileStat(path)
+const fileStat: (path: string, outsideJanDataFolder?: boolean) => Promise<FileStat | undefined> = (
+  path,
+  outsideJanDataFolder
+) => global.core.api?.fileStat(path, outsideJanDataFolder)
 
 // TODO: Export `dummy` fs functions automatically
 // Currently adding these manually
@@ -90,6 +96,7 @@ export const fs = {
   unlinkSync,
   appendFileSync,
   copyFileSync,
+  copyFile,
   syncFile,
   fileStat,
   writeBlob,

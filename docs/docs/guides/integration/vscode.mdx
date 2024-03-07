@@ -1,0 +1,99 @@
+---
+title: Continue
+sidebar_position: 1
+description: A step-by-step guide on how to integrate Jan with Continue and VS Code.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    Continue integration,
+    VSCode integration,
+  ]
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+## How to Integrate with Continue VS Code
+
+[Continue](https://continue.dev/docs/intro) is an open-source autopilot compatible with Visual Studio Code and JetBrains, offering the simplest method to code with any LLM (Local Language Model).
+
+To integrate Jan with a local AI language model, follow the steps below:
+
+### Step 1: Installing Continue on Visal Studio Code
+
+Follow this [guide to install the Continue extension on Visual Studio Code](https://continue.dev/docs/quickstart)
+
+### Step 2: Enable the Jan API Server
+
+To set up Continue for use with Jan's Local Server, you must activate the Jan API Server with your chosen model.
+
+1. Press the `<>` button. Jan will take you to the **Local API Server** section.
+
+2. Setup the server, which includes the **IP Port**, **Cross-Origin-Resource-Sharing (CORS)** and **Verbose Server Logs**.
+
+3. Press the **Start Server** button
+
+### Step 3: Configure Continue to Use Jan's Local Server
+1. Go to the `~/.continue` directory.
+
+<Tabs>
+    <TabItem value="mac" label="Mac" default>
+    ```sh
+    cd ~/.continue
+    ```
+    </TabItem>
+    <TabItem value="windows" label="Windows">
+    ```sh
+    C:/Users/<your_user_name>/.continue
+    ```
+    </TabItem>
+    <TabItem value="linux" label="Linux">
+    ```sh
+    cd ~/.continue
+    ```
+    </TabItem>
+</Tabs>
+
+```json title="~/.continue/config.json"
+{
+  "models": [
+    {
+      "title": "Jan",
+      "provider": "openai",
+      "model": "mistral-ins-7b-q4",
+      "apiKey": "EMPTY",
+      "apiBase": "http://localhost:1337"
+    }
+  ]
+}
+```
+2. Ensure the file has the following configurations:
+    - Ensure `openai` is selected as the `provider`.
+    - Match the `model` with the one enabled in the Jan API Server.
+    - Set `apiBase` to `http://localhost:1337`.
+    - Leave the `apiKey` field to `EMPTY`.
+
+### Step 4: Ensure the Using Model Is Activated in Jan
+
+1. Navigate to `Settings` > `Models`.
+2. Activate the model you want to use in Jan by clicking the **three dots (⋮)** and select **Start Model**.
+
+## Try out Jan integration with Continue in Visual Studio Code
+
+### 1. Asking questions about the code
+
+1. Highlight a code snippet and press `Command + Shift + M` to open the Left Panel.
+2. Select Jan at the bottom and ask a question about the code, for example, `Explain this code`.
+
+ ### 2. Editing the code with the help of a large language model
+
+1. Select a code snippet and use `Command + Shift + L`.
+2. Enter your editing request, such as `Add comments to this code`.
+ 

@@ -1,0 +1,88 @@
+---
+title: Ollama
+sidebar_position: 9
+description: A step-by-step guide on how to integrate Jan with Ollama.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    Ollama integration,
+  ]
+---
+
+## How to Integrate Ollama with Jan
+
+Ollama provides you with largen language that you can run locally. There are two methods to integrate Ollama with Jan:
+1. Integrate Ollama server with Jan.
+2. Migrate the downloaded model from Ollama to Jan.
+
+To integrate Ollama with Jan, follow the steps below:
+
+:::note
+In this tutorial, we'll show how to integrate Ollama with Jan using the first method. We will use the [llama2](https://ollama.com/library/llama2) model as an example.
+:::
+
+### Step 1: Start the Ollama Server
+
+1. Choose your model from the [Ollama library](https://ollama.com/library).
+2. Run your model with this command:
+
+```sh
+ollama run <model-name>
+```
+
+3. According to the [Ollama documentation on OpenAI compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md), you can connect to the Ollama server using the web address `http://localhost:11434/v1/chat/completions`. To do this, change the `openai.json` file in the `~/jan/engines` folder to add the Ollama server's full web address:
+
+
+```json title="~/jan/engines/openai.json"
+{
+  "full_url": "http://localhost:11434/v1/chat/completions"
+}
+```
+
+### Step 2: Model Configuration
+
+1. Navigate to the `~/jan/models` folder.
+2. Create a folder named `(ollam-modelname)`, for example, `lmstudio-phi-2`.
+3. Create a `model.json` file inside the folder including the following configurations:
+  - Set the `id` property to the model name as Ollama model name.
+  - Set the `format` property to `api`.
+  - Set the `engine` property to `openai`.
+  - Set the `state` property to `ready`.
+
+```json title="~/jan/models/llama2/model.json"
+{
+  "sources": [
+    {
+      "filename": "llama2",
+      "url": "https://ollama.com/library/llama2"
+    }
+  ],
+  "id": "llama2",
+  "object": "model",
+  "name": "Ollama - Llama2",
+  "version": "1.0",
+  "description": "Llama 2 is a collection of foundation language models ranging from 7B to 70B parameters.",
+  "format": "api",
+  "settings": {},
+  "parameters": {},
+  "metadata": {
+    "author": "Meta",
+    "tags": ["General", "Big Context Length"]
+  },
+  "engine": "openai"
+}
+```
+:::note
+For more details regarding the `model.json` settings and parameters fields,  please see [here](../models/integrate-remote.mdx#modeljson).
+:::
+
+### Step 3: Start the Model
+1. Restart Jan and navigate to the **Hub**. 
+2. Locate your model and click the **Use** button.

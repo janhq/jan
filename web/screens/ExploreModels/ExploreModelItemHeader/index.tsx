@@ -11,7 +11,7 @@ import {
   TooltipTrigger,
 } from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { ChevronDownIcon } from 'lucide-react'
 
@@ -24,10 +24,9 @@ import { MainViewState } from '@/constants/screens'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 
-import { useMainViewState } from '@/hooks/useMainViewState'
-
 import { toGibibytes } from '@/utils/converter'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
@@ -70,7 +69,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const totalRam = useAtomValue(totalRamAtom)
 
   const nvidiaTotalVram = useAtomValue(nvidiaTotalVramAtom)
-  const { setMainViewState } = useMainViewState()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
 
   // Default nvidia returns vram in MB, need to convert to bytes to match the unit of totalRamW
   let ram = nvidiaTotalVram * 1024 * 1024

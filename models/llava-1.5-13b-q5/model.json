@@ -12,10 +12,12 @@
   "id": "llava-1.5-13b-q5",
   "object": "model",
   "name": "LlaVa 1.5 13B Q5 K",
-  "version": "1.0",
+  "version": "1.1",
   "description": "LlaVa 1.5 can bring vision understanding to Jan",
   "format": "gguf",
   "settings": {
+    "vision_model": true,
+    "text_model": false,
     "ctx_len": 4096,
     "prompt_template": "\n### Instruction:\n{prompt}\n### Response:\n",
     "llama_model_path": "ggml-model-q5_k.gguf",

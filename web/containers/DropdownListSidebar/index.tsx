@@ -30,7 +30,6 @@ import { MainViewState } from '@/constants/screens'
 import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { useClipboard } from '@/hooks/useClipboard'
-import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
@@ -41,6 +40,7 @@ import { toGibibytes } from '@/utils/converter'
 import ModelLabel from '../ModelLabel'
 import OpenAiKeyInput from '../OpenAiKeyInput'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 import {
@@ -64,11 +64,13 @@ const DropdownListSidebar = ({
   const [isTabActive, setIsTabActive] = useState(0)
   const { stateModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
-  const { setMainViewState } = useMainViewState()
+
+  const setMainViewState = useSetAtom(mainViewStateAtom)
   const [loader, setLoader] = useState(0)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
   const { updateModelParameter } = useUpdateModelParameters()
   const clipboard = useClipboard({ timeout: 1000 })
+
   const [copyId, setCopyId] = useState('')
 
   const localModel = downloadedModels.filter(

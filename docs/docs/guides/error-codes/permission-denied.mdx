@@ -1,0 +1,39 @@
+---
+title: Permission Denied
+sidebar_position: 1
+description: A step-by-step guide to fix the issue when access is denied due to insufficient permissions.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    troubleshooting,
+    permission denied,
+  ]
+---
+
+When running Jan, you might encounter the following error message:
+
+```
+Uncaught (in promise) Error: Error invoking layout-480796bff433a3a3.js:538 remote method 'installExtension':
+Error Package /Applications/Jan.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-assistant-extension-1.0.0.tgz does not contain a valid manifest:
+Error EACCES: permission denied, mkdtemp '/Users/username/.npm/_cacache/tmp/ueCMn4'
+```
+
+This error mainly caused by permission problem during installation. To resolve this issue, follow these steps:
+
+1. Open your terminal.
+
+2. Execute the following command to change ownership of the `~/.npm` directory to the current user:
+
+```sh
+sudo chown -R $(whoami) ~/.npm
+```
+:::note
+This command ensures that the necessary permissions are granted for Jan installation, resolving the encountered error.
+:::

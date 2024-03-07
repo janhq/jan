@@ -4,6 +4,7 @@
 require("dotenv").config();
 
 const darkCodeTheme = require("prism-react-renderer/themes/dracula");
+const path = require('path');
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -67,15 +68,50 @@ const config = {
         redirects: [
           {
             from: "/troubleshooting/failed-to-fetch",
-            to: "/troubleshooting/somethings-amiss",
+            to: "/guides/error-codes/something-amiss/",
           },
           {
             from: "/guides/troubleshooting/gpu-not-used/",
-            to: "/troubleshooting/gpu-not-used",
+            to: "/guides/common-error/not-using-gpu/",
+          },
+          {
+            from: "/guides/troubleshooting/",
+            to: "/guides/error-codes/",
+          },
+          {
+            from: "/troubleshooting/stuck-on-broken-build/",
+            to: "/guides/common-error/broken-build/",
+          },
+          {
+            from: "/guides/troubleshooting/",
+            to: "/guides/error-codes/",
+          },
+          {
+            from: "/troubleshooting/somethings-amiss/",
+            to: "/guides/error-codes/something-amiss/",
+          },
+          {
+            from: "/troubleshooting/how-to-get-error-logs/",
+            to: "/guides/error-codes/how-to-get-error-logs/",
+          },
+          {
+            from: "/troubleshooting/permission-denied/",
+            to: "/guides/error-codes/permission-denied/",
+          },
+          {
+            from: "/troubleshooting/unexpected-token/",
+            to: "/guides/error-codes/unexpected-token/",
+          },
+          {
+            from: "/troubleshooting/undefined-issue/",
+            to: "/guides/error-codes/undefined-issue/",
           },
         ],
       },
     ],
+
+    //To input custom Plugin
+    path.resolve(__dirname, 'plugins', 'changelog-plugin'),
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
@@ -224,7 +260,7 @@ const config = {
           description:
             "Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.",
           keywords:
-            "Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
+            "Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ",
           applicationCategory: "BusinessApplication",
           operatingSystem: "Multiple",
           url: "https://jan.ai/",
@@ -239,40 +275,89 @@ const config = {
       },
       items: [
         // Navbar Left
+        // {
+        //   type: "docSidebar",
+        //   sidebarId: "aboutSidebar",
+        //   position: "left",
+        //   label: "About",
+        // },
         {
-          type: "docSidebar",
-          sidebarId: "guidesSidebar",
+          type: "dropdown",
+          label: "About",
           position: "left",
-          label: "Guides",
+          items: [
+            {
+              type: "doc",
+              label: "What is Jan?",
+              docId: "about/about",
+            },
+            {
+              type: "doc",
+              label: "Who we are",
+              docId: "team/team",
+            },
+            {
+              type: "doc",
+              label: "Wall of love",
+              docId: "wall-of-love",
+            },
+          ],
         },
         {
           type: "docSidebar",
-          sidebarId: "developerSidebar",
-          position: "left",
-          label: "Developer",
-        },
-        {
-          position: "left",
-          to: "/api-reference",
-          label: "API Reference",
+          sidebarId: "productSidebar",
+          positionL: "left",
+          label: "Product",
         },
         {
           type: "docSidebar",
+          sidebarId: "ecosystemSidebar",
           position: "left",
-          sidebarId: "docsSidebar",
-          label: "Framework",
+          label: "Ecosystem",
         },
+        // {
+        //   type: "docSidebar",
+        //   sidebarId: "pricingSidebar",
+        //   positionL: "left",
+        //   label: "Pricing",
+        // },
         // Navbar right
+        {
+          type: "dropdown",
+          label: "Docs",
+          to: "docs",
+          position: "right",
+          items: [
+            {
+              type: "docSidebar",
+              sidebarId: "guidesSidebar",
+              label: "Guides",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "developerSidebar",
+              label: "Developer",
+            },
+            {
+              to: "/api-reference",
+              label: "API Reference",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "releasesSidebar",
+              label: "Changelog",
+            },
+            // {
+            //   type: "docSidebar",
+            //   sidebarId: "docsSidebar",
+            //   label: "Framework",
+            // },
+          ],
+        },
         {
           to: "blog",
           label: "Blog",
           position: "right",
-        },
-        {
-          type: "docSidebar",
-          sidebarId: "aboutSidebar",
-          position: "right",
-          label: "About",
         },
       ],
     },
@@ -294,6 +379,7 @@ const config = {
       respectPrefersColorScheme: false,
     },
   },
+
   themes: ["@docusaurus/theme-live-codeblock", "@docusaurus/theme-mermaid"],
 };
 

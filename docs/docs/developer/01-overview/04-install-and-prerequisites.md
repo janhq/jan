@@ -24,7 +24,7 @@ keywords:
 
 Ensure your system meets the following specifications to guarantee a smooth development experience:
 
-- [Hardware Requirements](../../guides/02-installation/06-hardware.md)
+- Hardware Requirements
 
 ### System Requirements
 

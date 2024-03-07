@@ -1,0 +1,80 @@
+---
+title: Azure OpenAI
+sidebar_position: 3
+description: A step-by-step guide on how to integrate Jan with Azure OpenAI.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    integration,
+    Azure OpenAI Service,
+  ]
+---
+
+## How to Integrate Azure OpenAI with Jan
+
+The [Azure OpenAI Service](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview?source=docs) offers robust APIs, making it simple for you to incorporate OpenAI's language models into your applications. You can integrate Azure OpenAI with Jan by following the steps below:
+
+### Step 1: Configure Azure OpenAI Service API Key
+
+1. Set up and deploy the Azure OpenAI Service.
+2. Once you've set up and deployed Azure OpenAI Service, you can find the endpoint and API key in [Azure OpenAI Studio](https://oai.azure.com/) under `Chat` > `View code`.
+
+3. Set up the endpoint and API key for Azure OpenAI Service in the `~/jan/engines/openai.json` file.
+
+```json title="~/jan/engines/openai.json"
+{
+  // https://hieujan.openai.azure.com/openai/deployments/gpt-35-hieu-jan/chat/completions?api-version=2023-07-01-preview
+  "full_url": "https://<your-resource-name>.openai.azure.com/openai/deployments/<your-deployment-name>/chat/completions?api-version=<api-version>",
+  "api_key": "<your-api-key>"
+}
+```
+
+### Step 2: Model Configuration
+
+1. Go to the `~/jan/models` directory. 
+2. Make a new folder called `(your-deployment-name)`, for example `gpt-35-hieu-jan`.
+3. Create a `model.json` file inside the folder with the specified configurations:
+  - Match the `id` property with both the folder name and your deployment name.
+  - Set the `format` property as `api`.
+  - Choose `openai` for the `engine` property.
+  - Set the `state` property as `ready`.
+
+```json title="~/jan/models/gpt-35-hieu-jan/model.json"
+{
+  "sources": [
+    {
+      "filename": "azure_openai",
+      "url": "https://hieujan.openai.azure.com"
+    }
+  ],
+  "id": "gpt-35-hieu-jan",
+  "object": "model",
+  "name": "Azure OpenAI GPT 3.5",
+  "version": "1.0",
+  "description": "Azure Open AI GPT 3.5 model is extremely good",
+  "format": "api",
+  "settings": {},
+  "parameters": {},
+  "metadata": {
+    "author": "OpenAI",
+    "tags": ["General", "Big Context Length"]
+  },
+  "engine": "openai"
+}
+```
+
+:::note
+For more details regarding the `model.json` settings and parameters fields,  please see [here](../models/integrate-remote.mdx#modeljson).
+:::
+
+### Step 3: Start the Model
+
+1. Restart Jan and go to the Hub. 
+2. Find your model in Jan application and click on the Use button.

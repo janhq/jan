@@ -3,6 +3,8 @@ import { WindowManager } from './../managers/window'
 import { autoUpdater } from 'electron-updater'
 import { AppEvent } from '@janhq/core'
 
+export let waitingToInstallVersion: string | undefined = undefined
+
 export function handleAppUpdates() {
   /* Should not check for update during development */
   if (!app.isPackaged) {
@@ -29,6 +31,7 @@ export function handleAppUpdates() {
       buttons: ['Restart', 'Later'],
     })
     if (action.response === 0) {
+      waitingToInstallVersion = _info?.version
       autoUpdater.quitAndInstall()
     }
   })
@@ -37,7 +40,7 @@ export function handleAppUpdates() {
   autoUpdater.on('error', (info: any) => {
     WindowManager.instance.currentWindow?.webContents.send(
       AppEvent.onAppUpdateDownloadError,
-      info
+      { failedToInstallVersion: waitingToInstallVersion, info }
     )
   })
 

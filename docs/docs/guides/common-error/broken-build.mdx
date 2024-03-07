@@ -1,0 +1,159 @@
+---
+title: Broken Build
+sidebar_position: 1
+hide_table_of_contents: true
+description: A step-by-step guide to fix errors that prevent the project from compiling or running successfully.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    troubleshooting,
+  ]
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+This guide provides you steps to troubleshoot and to resolve the issue where your Jan is stuck in a broken build after installation.
+
+<Tabs>
+    <TabItem value="mac" label="Mac" default>
+        ### 1. Uninstall Jan
+
+        Delete Jan from your `/Applications` folder.
+
+        ### 2. Delete Application Data, Cache, and User Data
+
+        ```zsh
+        # Step 1: Delete the application data
+        ## Newer versions
+        rm -rf ~/Library/Application\ Support/jan
+        ## Versions 0.2.0 and older
+        rm -rf ~/Library/Application\ Support/jan-electron
+
+        # Step 2: Clear application cache
+        rm -rf ~/Library/Caches/jan*
+
+        # Step 3: Remove all user data
+        rm -rf ~/jan
+        ```
+
+        ### 3. Additional Step for Versions Before 0.4.2
+
+        If you are using a version before `0.4.2`, you need to run the following commands:
+
+        ```zsh
+        ps aux | grep nitro
+        # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
+        kill -9 <PID>
+        ```
+
+        ### 4. Download the Latest Version
+
+        Download the latest version of Jan from our [homepage](https://jan.ai/).
+    </TabItem>
+
+    <TabItem value="windows" label="Windows">
+        ### 1. Uninstall Jan
+
+        To uninstall Jan on Windows, use the [Windows Control Panel](https://support.microsoft.com/en-us/windows/uninstall-or-remove-apps-and-programs-in-windows-4b55f974-2cc6-2d2b-d092-5905080eaf98).
+
+        ### 2. Delete Application Data, Cache, and User Data
+
+        ```sh
+        # You can delete the `/Jan` directory in Windows's AppData Directory by visiting the following path `%APPDATA%\Jan`
+        cd C:\Users\%USERNAME%\AppData\Roaming
+        rmdir /S jan
+        ```
+
+        ### 3. Additional Step for Versions Before 0.4.2
+
+        If you are using a version before `0.4.2`, you need to run the following commands:
+
+        ```sh
+        # Find the process ID (PID) of the nitro process by filtering the list by process name
+        tasklist | findstr "nitro"
+        # Once you have the PID of the process you want to terminate, run the `taskkill`
+        taskkill /F /PID <PID>
+        ```
+
+        ### 4. Download the Latest Version
+
+        Download the latest version of Jan from our [homepage](https://jan.ai/).
+    </TabItem>
+
+    <TabItem value="linux" label="Linux">
+    
+        ### 1. Uninstall Jan
+
+        <Tabs groupId = "linux_type">
+            <TabItem value="linux_main" label = "Linux">
+
+                To uninstall Jan, you should use your package manager's uninstall or remove option. 
+
+                This will return your system to its state before the installation of Jan.
+
+                This method can also reset all settings if you are experiencing any issues with Jan.
+        
+            </TabItem>
+            <TabItem value = "deb_ub" label = "Debian / Ubuntu">
+            
+                To uninstall Jan, run the following command.MDXContent
+
+                ```sh
+                sudo apt-get remove jan
+                # where jan is the name of Jan package
+                ```
+
+                This will return your system to its state before the installation of Jan.
+
+                This method can also be used to reset all settings if you are experiencing any issues with Jan.
+
+            </TabItem>
+            <TabItem value = "other" label = "Others">
+            
+                To uninstall Jan, you can uninstall Jan by deleting the `.AppImage` file.
+
+                If you wish to completely remove all user data associated with Jan after uninstallation, you can delete the user data at `~/jan`.
+
+                This method can also reset all settings if you are experiencing any issues with Jan.
+                
+            </TabItem>
+        </Tabs>
+
+        ### 2. Delete Application Data, Cache, and User Data
+
+        ```sh
+        # You can delete the user data folders located at the following `~/jan`
+        rm -rf ~/jan
+        ```
+
+        ### 3. Additional Step for Versions Before 0.4.2
+
+        If you are using a version before `0.4.2`, you need to run the following commands:
+
+        ```zsh
+        ps aux | grep nitro
+        # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
+        kill -9 <PID>
+        ```
+
+        ### 4. Download the Latest Version
+
+        Download the latest version of Jan from our [homepage](https://jan.ai/).
+    </TabItem>
+</Tabs>
+
+By following these steps, you can cleanly uninstall and reinstall Jan, ensuring a smooth and error-free experience with the latest version.
+
+:::note
+
+Before reinstalling Jan, ensure it's completely removed from all shared spaces if it's installed on multiple user accounts on your device.
+
+:::

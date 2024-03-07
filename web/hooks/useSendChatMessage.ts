@@ -30,7 +30,7 @@ import {
   fileUploadAtom,
 } from '@/containers/Providers/Jotai'
 
-import { getBase64 } from '@/utils/base64'
+import { compressImage, getBase64 } from '@/utils/base64'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
@@ -109,8 +109,9 @@ export default function useSendChatMessage() {
         currentMessages
           .filter(
             (e) =>
-              currentMessage.role === ChatCompletionRole.User ||
-              e.id !== currentMessage.id
+              (currentMessage.role === ChatCompletionRole.User ||
+                e.id !== currentMessage.id) &&
+              e.status !== MessageStatus.Error
           )
           .map<ChatCompletionMessage>((msg) => ({
             role: msg.role,
@@ -169,11 +170,21 @@ export default function useSendChatMessage() {
     setCurrentPrompt('')
     setEditPrompt('')
 
-    const base64Blob = fileUpload[0]
-      ? await getBase64(fileUpload[0].file).then()
+    let base64Blob = fileUpload[0]
+      ? await getBase64(fileUpload[0].file)
       : undefined
 
+    const fileContentType = fileUpload[0]?.type
+
     const msgId = ulid()
+
+    const isDocumentInput = base64Blob && fileContentType === 'pdf'
+    const isImageInput = base64Blob && fileContentType === 'image'
+
+    if (isImageInput && base64Blob) {
+      // Compress image
+      base64Blob = await compressImage(base64Blob, 512)
+    }
 
     const messages: ChatCompletionMessage[] = [
       activeThread.assistants[0]?.instructions,
@@ -188,6 +199,7 @@ export default function useSendChatMessage() {
       })
       .concat(
         currentMessages
+          .filter((e) => e.status !== MessageStatus.Error)
           .map<ChatCompletionMessage>((msg) => ({
             role: msg.role,
             content: msg.content[0]?.text.value ?? '',
@@ -202,13 +214,23 @@ export default function useSendChatMessage() {
                         type: ChatCompletionMessageContentType.Text,
                         text: prompt,
                       },
-                      {
-                        type: ChatCompletionMessageContentType.Doc,
-                        doc_url: {
-                          url: `threads/${activeThread.id}/files/${msgId}.pdf`,
-                        },
-                      },
-                    ]
+                      isDocumentInput
+                        ? {
+                            type: ChatCompletionMessageContentType.Doc,
+                            doc_url: {
+                              url: `threads/${activeThread.id}/files/${msgId}.pdf`,
+                            },
+                          }
+                        : null,
+                      isImageInput
+                        ? {
+                            type: ChatCompletionMessageContentType.Image,
+                            image_url: {
+                              url: base64Blob,
+                            },
+                          }
+                        : null,
+                    ].filter((e) => e !== null)
                   : prompt,
             } as ChatCompletionMessage,
           ])
@@ -226,8 +248,13 @@ export default function useSendChatMessage() {
     ) {
       modelRequest = {
         ...modelRequest,
-        engine: InferenceEngine.tool_retrieval_enabled,
-        proxyEngine: modelRequest.engine,
+        // Tool retrieval support document input only for now
+        ...(isDocumentInput
+          ? {
+              engine: InferenceEngine.tool_retrieval_enabled,
+              proxy_model: modelRequest.engine,
+            }
+          : {}),
       }
     }
     const messageRequest: MessageRequest = {

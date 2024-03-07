@@ -1,20 +1,21 @@
 'use client'
 
+import { useAtomValue } from 'jotai'
+
 import BaseLayout from '@/containers/Layout'
 
 import { MainViewState } from '@/constants/screens'
-
-import { useMainViewState } from '@/hooks/useMainViewState'
 
 import ChatScreen from '@/screens/Chat'
 import ExploreModelsScreen from '@/screens/ExploreModels'
 
 import LocalServerScreen from '@/screens/LocalServer'
 import SettingsScreen from '@/screens/Settings'
-import SystemMonitorScreen from '@/screens/SystemMonitor'
+
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 export default function Page() {
-  const { mainViewState } = useMainViewState()
+  const mainViewState = useAtomValue(mainViewStateAtom)
 
   let children = null
   switch (mainViewState) {
@@ -24,10 +25,6 @@ export default function Page() {
 
     case MainViewState.Settings:
       children = <SettingsScreen />
-      break
-
-    case MainViewState.SystemMonitor:
-      children = <SystemMonitorScreen />
       break
 
     case MainViewState.LocalServer:

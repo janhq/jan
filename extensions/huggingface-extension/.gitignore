@@ -1,0 +1,3 @@
+bin
+scripts/convert*
+scripts/gguf-py
