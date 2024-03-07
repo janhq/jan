@@ -123,7 +123,7 @@ const config = {
         docs: {
           routeBasePath: "/",
           sidebarPath: require.resolve("./sidebars.js"),
-          editUrl: "https://github.com/janhq/jan/tree/main/docs",
+          editUrl: "https://github.com/janhq/jan/tree/dev/docs",
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
         },

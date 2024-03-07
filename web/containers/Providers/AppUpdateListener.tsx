@@ -3,10 +3,11 @@ import { Fragment, PropsWithChildren, useEffect } from 'react'
 
 import { useSetAtom } from 'jotai'
 
-import { appDownloadProgress } from './Jotai'
+import { appDownloadProgress, updateVersionError } from './Jotai'
 
 const AppUpdateListener = ({ children }: PropsWithChildren) => {
   const setProgress = useSetAtom(appDownloadProgress)
+  const setUpdateVersionError = useSetAtom(updateVersionError)
 
   useEffect(() => {
     if (window && window.electronAPI) {
@@ -18,9 +19,13 @@ const AppUpdateListener = ({ children }: PropsWithChildren) => {
       )
 
       window.electronAPI.onAppUpdateDownloadError(
-        (_event: string, callback: any) => {
-          console.error('Download error', callback)
+        (_event: string, error: any) => {
+          console.error('Download error: ', error)
           setProgress(-1)
+
+          // Can not install update
+          // Prompt user to download the update manually
+          setUpdateVersionError(error.failedToInstallVersion)
         }
       )
 
