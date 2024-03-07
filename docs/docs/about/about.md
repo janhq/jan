@@ -12,10 +12,13 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
+    about Jan,
+    desktop application,
+    thinking machine,
   ]
 ---
 
-Jan turns computers into a thinking machine to change how you use computers. 
+Jan turns computers into a thinking machine to change how you use computers.
 Jan is created and maintained by Jan Labs, a robotics company.
 
 With Jan, you can:
@@ -35,16 +38,16 @@ Jan aims for long-term human-robot collaboration, envisioning AI as a harmonious
 
 ![Human repairing a Droid](/img/star-wars-droids.png)
 
-## Jan’s Principles
+## Jan’s principles
 
-- **Ownership**: Jan is committed to developing a product that fully belong to users. You're the true owner, free from data tracking and storage by us.
+- **Ownership**: Jan is committed to developing a product that fully belongs to users. You're the true owner, free from data tracking and storage by us.
 - **Privacy**: Jan works locally by default, allowing use without an internet connection. Your data stays on your device in a universal format, giving you complete privacy control.
-- **100% User Supported**: Every user can access, develop, and customize Jan codebases to suit their needs.
+- **100% User Supported**: Every user can access, develop, and customize Jan's codebases to suit their needs.
 - **Rejecting Dark Patterns**: We never use tricks to extract more money or lock you into an ecosystem.
 
 ## Why do we exist?
 
-> *"I do not fear computers. I fear the lack of them." - Isaac Asimov*
+> _"I do not fear computers. I fear the lack of them." - Isaac Asimov_
 
 Jan was founded on the belief that AI should coexist with humans, not replace them. Our mission is to democratize AI access, ensuring everyone can easily utilize it with full ownership and control over their data, free from privacy concerns.
 
@@ -54,17 +57,17 @@ We are committed to creating open, local-first products that extend individual f
 
 #### What's different about it?
 
-|                | Status Quo          | Jan                         |
-|----------------|---------------------|-----------------------------|
-| **Ownership**  | Owned by Big Tech   | Fully owned by you          |
-| **Openness**   | Closed-source       | [Open-source (AGPLv3)](https://github.com/janhq/jan/blob/main/LICENSE) |
-| **Your Role**  | Consumer            | Creator                     |
-| **Approach**   | Cloud-based         | [Local-first](https://www.inkandswitch.com/local-first/) |
-| **Data Handling** | Stored on external servers | Stored locally, openly accessible |
-| **Privacy**    | Questionable        | Private and offline         |
-| **Transparency** | Opaque "Black Box" | Open-source and customizable |
-| **Outage Resilience** | Potential data hostage | Continues to work on your device |
-| **Philosophy** | User monetization   | Empowerment with the right to repair |
+|                       | Status Quo                 | Jan                                                                    |
+| --------------------- | -------------------------- | ---------------------------------------------------------------------- |
+| **Ownership**         | Owned by Big Tech          | Fully owned by you                                                     |
+| **Openness**          | Closed-source              | [Open-source (AGPLv3)](https://github.com/janhq/jan/blob/main/LICENSE) |
+| **Your Role**         | Consumer                   | Creator                                                                |
+| **Approach**          | Cloud-based                | [Local-first](https://www.inkandswitch.com/local-first/)               |
+| **Data Handling**     | Stored on external servers | Stored locally, openly accessible                                      |
+| **Privacy**           | Questionable               | Private and offline                                                    |
+| **Transparency**      | Opaque "Black Box"         | Open-source and customizable                                           |
+| **Outage Resilience** | Potential data hostage     | Continues to work on your device                                       |
+| **Philosophy**        | User monetization          | Empowerment with the right to repair                                   |
 
 ## How we work
 
@@ -76,7 +79,7 @@ Jan has a fully-remote team, primarily based in the APAC timezone, and we use Di
 
 ## How to get it?
 
-You can install and start using Jan in less than 5 minutes, from [jan.ai](https://jan.ai) or our [Github repo](https://github.com/janhq/jan).
+You can install and start using Jan in less than 5 minutes, from [Jan.ai](https://jan.ai) or our [Github repo](https://github.com/janhq/jan).
 
 ## What license is the code under?
 
