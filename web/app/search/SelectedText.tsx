@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 
 import { selectedTextAtom } from '@/containers/Providers/Jotai'
 
-const SelectedText: React.FC = () => {
+const SelectedText = ({ onCleared }: { onCleared?: () => void }) => {
   const [text, setText] = useAtom(selectedTextAtom)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -13,13 +13,16 @@ const SelectedText: React.FC = () => {
     if (text.trim().length === 0) {
       window.core?.api?.quickAskSizeUpdated(0)
     } else {
-      window.core?.api?.quickAskSizeUpdated(containerRef.current?.offsetHeight)
+      window.core?.api?.quickAskSizeUpdated(
+        (containerRef.current?.offsetHeight ?? 0) + 14
+      )
     }
   })
 
   const onClearClicked = useCallback(() => {
     setText('')
-  }, [setText])
+    onCleared?.()
+  }, [setText, onCleared])
 
   const shouldShowSelectedText = text.trim().length > 0
 

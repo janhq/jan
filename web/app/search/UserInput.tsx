@@ -66,7 +66,7 @@ const UserInput: React.FC = () => {
           <LogoMark width={28} height={28} className="mx-auto" />
           <input
             ref={inputRef}
-            className="flex-1 bg-transparent font-bold focus:outline-none"
+            className="flex-1 bg-transparent font-bold text-black focus:outline-none"
             type="text"
             value={inputValue}
             onChange={handleChange}
@@ -78,7 +78,7 @@ const UserInput: React.FC = () => {
         </div>
       </form>
 
-      <SelectedText />
+      <SelectedText onCleared={() => inputRef?.current?.focus()} />
     </div>
   )
 }

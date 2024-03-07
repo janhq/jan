@@ -26,7 +26,7 @@ import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
 import { cleanLogs } from './utils/log'
 
-import { registerShortcut } from 'electron-selected-text'
+import { registerShortcut } from './utils/selectedText'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -62,17 +62,18 @@ app
 
     const contextMenu = Menu.buildFromTemplate([
       {
-        label: 'Show main window',
+        label: 'Open Jan',
         type: 'normal',
         click: () => windowManager.showMainWindow(),
+      },
+      {
+        label: 'Open Quick Ask',
+        type: 'normal',
+        click: () => windowManager.showQuickAskWindow(),
       },
       { label: 'Quit', type: 'normal', click: () => app.quit() },
     ])
     tray.setContextMenu(contextMenu)
-
-    tray.on('click', () => {
-      windowManager.showQuickAskWindow()
-    })
   })
   .then(() => {
     log(`Version: ${app.getVersion()}`)
@@ -106,9 +107,9 @@ function createMainWindow() {
 
 function registerGlobalShortcuts() {
   // TODO: Toggle below line when build production
-  const ret = globalShortcut.register(quickAskHotKey, () => {
-    const selectedText = ''
-    // const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
+  // const ret = globalShortcut.register(quickAskHotKey, () => {
+  // const selectedText = ''
+  const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
     if (!windowManager.isQuickAskWindowVisible()) {
       windowManager.showQuickAskWindow()
       windowManager.sendQuickAskSelectedText(selectedText)

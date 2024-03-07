@@ -244,7 +244,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
       if (!threadMessages || threadMessages.length === 0) return
 
-      const summarizeFirstPrompt = `Summarize this text "${threadMessages[0].content[0].text.value}" for a conversation title in less than 10 words`
+      const summarizeFirstPrompt = `Summarize in a 5-word Title. Give the title only. "${threadMessages[0].content[0].text.value}"`
       // Prompt: Given this query from user {query}, return to me the summary in 5 words as the title
       const msgId = ulid()
       const messages: ChatCompletionMessage[] = [

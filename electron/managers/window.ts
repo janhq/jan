@@ -74,11 +74,15 @@ class WindowManager {
   hideMainWindow(): void {
     this.mainWindow?.hide()
     this._mainWindowVisible = false
+    // Only macos
+    if (process.platform === 'darwin') app.dock.hide()
   }
 
   showMainWindow(): void {
     this.mainWindow?.show()
     this._mainWindowVisible = true
+    // Only macos
+    if (process.platform === 'darwin') app.dock.show()
   }
 
   hideQuickAskWindow(): void {
@@ -98,12 +102,6 @@ class WindowManager {
   expandQuickAskWindow(heightOffset: number): void {
     const width = quickAskWindowConfig.width!
     const height = quickAskWindowConfig.height! + heightOffset
-    this._quickAskWindow?.setSize(width, height, true)
-  }
-
-  shrinkQuickAskWindow(): void {
-    const width = quickAskWindowConfig.width!
-    const height = quickAskWindowConfig.height!
     this._quickAskWindow?.setSize(width, height, true)
   }
 
