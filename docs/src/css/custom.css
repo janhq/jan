@@ -6,3 +6,18 @@
 [data-theme="dark"] .DocSearch {
   --docsearch-hit-active-color: #090a11; /* Keep the color unchanged */
 }
+
+/* sidebarStyles.css */
+.head_Menu div {
+  font-weight: bold;
+  background-color: whitesmoke;
+  margin-left: 0.7rem;
+  font-size: larger;
+}
+
+.head_Menu li {
+  /* Custom styles for the sidebar items */
+  font-weight: normal;
+  background-color: white;
+  margin-bottom: 5px; /* Adjust margin as needed */
+}
