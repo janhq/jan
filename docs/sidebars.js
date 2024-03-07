@@ -178,7 +178,6 @@ const sidebars = {
         "guides/best-practices",
         "guides/thread",
         "guides/faq",
-        "guides/hardware-requiement",
       ]
     },
     {
