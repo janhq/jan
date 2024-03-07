@@ -15,14 +15,12 @@ export function requestInference(
   controller?: AbortController
 ): Observable<string> {
   return new Observable((subscriber) => {
-    let model_id: string = model.id
-    if (engine.full_url.includes(GROQ_DOMAIN)) {
-      model_id = engine.full_url.split('/')[5]
-    }
+    // let model_id: string = model.id
+
     const requestBody = JSON.stringify({
       messages: recentMessages,
       stream: true,
-      model: model_id,
+      model: model.id,
       ...model.parameters,
     })
     fetch(`${engine.full_url}`, {

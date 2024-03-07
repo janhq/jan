@@ -36,5 +36,40 @@ export const useEngineSettings = () => {
       settingFilePath
     )
   }
-  return { readOpenAISettings, saveOpenAISettings }
+
+  const readGroqSettings = useCallback(async () => {
+    if (
+      !(await fs.existsSync(await joinPath(['file://engines', 'groq.json'])))
+    )
+      return {}
+    const settings = await fs.readFileSync(
+      await joinPath(['file://engines', 'groq.json']),
+      'utf-8'
+    )
+    if (settings) {
+      return typeof settings === 'object' ? settings : JSON.parse(settings)
+    }
+    return {}
+  }, [])
+
+  const saveGroqSettings = async ({
+    apiKey,
+  }: {
+    apiKey: string | undefined
+  }) => {
+    const settings = await readGroqSettings()
+    const settingFilePath = await joinPath(['file://engines', 'groq.json'])
+
+    settings.api_key = apiKey
+
+    await fs.writeFileSync(settingFilePath, JSON.stringify(settings))
+
+    // Sec: Don't attach the settings data to the event
+    events.emit(
+      AppConfigurationEventName.OnConfigurationUpdate,
+      settingFilePath
+    )
+  }
+
+  return { readOpenAISettings, saveOpenAISettings, readGroqSettings, saveGroqSettings }
 }
