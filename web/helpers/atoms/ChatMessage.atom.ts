@@ -110,7 +110,10 @@ export const deleteMessageAtom = atom(null, (get, set, id: string) => {
   }
   const threadId = get(getActiveThreadIdAtom)
   if (threadId) {
-    newData[threadId] = newData[threadId].filter((e) => e.id !== id)
+    // Should also delete error messages to clear out the error state
+    newData[threadId] = newData[threadId].filter(
+      (e) => e.id !== id && e.status !== MessageStatus.Error
+    )
     set(chatMessages, newData)
   }
 })

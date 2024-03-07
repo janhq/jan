@@ -21,7 +21,7 @@ const ModalErrorSetDestGlobal = () => {
       <ModalPortal />
       <ModalContent>
         <ModalHeader>
-          <ModalTitle>Error Occurred</ModalTitle>
+          <ModalTitle>An Error Occurred</ModalTitle>
         </ModalHeader>
         <p className="text-muted-foreground">
           Oops! Something went wrong. Jan data folder remains the same. Please

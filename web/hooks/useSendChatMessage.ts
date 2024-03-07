@@ -109,8 +109,9 @@ export default function useSendChatMessage() {
         currentMessages
           .filter(
             (e) =>
-              currentMessage.role === ChatCompletionRole.User ||
-              e.id !== currentMessage.id
+              (currentMessage.role === ChatCompletionRole.User ||
+                e.id !== currentMessage.id) &&
+              e.status !== MessageStatus.Error
           )
           .map<ChatCompletionMessage>((msg) => ({
             role: msg.role,
@@ -198,6 +199,7 @@ export default function useSendChatMessage() {
       })
       .concat(
         currentMessages
+          .filter((e) => e.status !== MessageStatus.Error)
           .map<ChatCompletionMessage>((msg) => ({
             role: msg.role,
             content: msg.content[0]?.text.value ?? '',

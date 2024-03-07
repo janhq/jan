@@ -17,7 +17,7 @@ import styles from "./styles.module.scss";
 import NavBarExtension from "../NavbarExtension";
 import { useLocation } from "react-router-dom";
 
-const allowedPaths = ["/docs/", "/developer/", "/api-reference/", "/guides/", "/guides", "/docs", "/developer", "/api-reference", "/guides/changelog"];  
+const allowedPaths = ["/docs/", "/developer/", "/api-reference/", "/guides/", "/guides", "/docs", "/developer", "/api-reference", "/changelog"];  
 
 export default function Layout(props) {
   const {
@@ -32,7 +32,8 @@ export default function Layout(props) {
 
   const location = useLocation();
 
-  const isAllowedPath = allowedPaths.includes(location.pathname);
+  const isAllowedPath = allowedPaths.some(path => location.pathname.startsWith(path));
+
   return (
     <LayoutProvider>
       <PageMetadata title={title} description={description} />

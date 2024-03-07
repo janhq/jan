@@ -1,0 +1,118 @@
+---
+sidebar_position: 1
+slug: /changelog/changelog-v0.4.7
+---
+# v0.4.7
+
+For more details, [GitHub Issues](https://github.com/janhq/jan/releases/tag/v0.4.7)
+
+Highlighted Issue:  [Issue #2121: Release cut v0.4.7](https://github.com/janhq/jan/pull/2121)
+
+## Changes
+
+- Release cut v0.4.7 @louis-jan (#2121)
+- chore: update models @hahuyhoang411 (#1829)
+- add docs for entire advanced settings @hieu-jan (#2063)
+- docs: Fix #2040 : added /v1 path to apiBase @ldebs (#2041)
+- fix: ui for disabled state of gpu acceleration @namchuai (#2034)
+- feat: Initialize POM structure with fixtures on Playwright @Van-QA (#2015)
+- Alternative solution for `Thread titles should auto-summarize Topic` @0xgokuz (#1976)
+- Update authors.yml Rex @hahuyhoang411 (#1956)
+- Update authors.yml Louis @louis-jan (#1955)
+- Change env Dockerfile.gpu and update README @hiento09 (#1963)
+- chore: Update authors.yml for Van Pham @Van-QA (#1954)
+- Sync dev branch to docs branch @hieu-jan (#1948)
+- sync current docs branch to dev branch @hieu-jan (#1947)
+- feat: Playwright capture screenshot of Electron desktop app (Jan) on failures @Van-QA (#1934)
+- Sync main to dev after release 0.4.6 @hiento09 (#1929)
+
+## 🚀 Features
+
+- feat: Add nitro vulkan to support AMD GPU/ APU and Intel Arc GPU @hiro-v (#2056)
+- fix: flow edit message @urmauur (#2113)
+- Feature helmchart and ci jan server @hiento09 (#2106)
+- feat: improvementUI GPU acceleration  @urmauur (#1990)
+- feat: add edit messages users @urmauur (#1974)
+- feat: revamp ui dropdown list model option @urmauur (#1977)
+- feat: add modal troubleshooting guideline @urmauur (#1968)
+- feat: integrate umami script locally @hieu-jan (#1958)
+- feat: User Selectable GPUs and GPU-based Model Recommendations @hiento09 (#1730)
+
+## 🐛 Fixes
+
+- fix: correct vulkan settings @louis-jan (#2128)
+- fix: chore UI @louis-jan (#2125)
+- Regression: bump nitro to 0.3.13 @hiento09 (#2124)
+- Regression: Linux vulkan binary path @hiento09 (#2123)
+- fix: revert back menu actions @louis-jan (#2120)
+- fix: mismatching between nightly build and version - jan about @louis-jan (#2114)
+- fix: flow edit message @urmauur (#2113)
+- fix: tools section should be expanded by default @louis-jan (#2110)
+- fix: failed to bind port - nitro error message copy @louis-jan (#2101)
+- fix: remove caret down icon when tab selected into remote model @urmauur (#2102)
+- fix: openai client sdk compatible @louis-jan (#2096)
+- Fix bug #2005 docker blank website @hiento09 (#2093)
+- fix: check if port is occupied before start local server @namchuai (#2098)
+- fix: broken model.json update @louis-jan (#2099)
+- fix: make text input scrollable @urmauur (#2083)
+- fix: failed to send message blocks thread creation @louis-jan (#2091)
+- fix: server crashes on missing module @louis-jan (#2089)
+- fix: expand assistant and model settings by default @louis-jan (#2081)
+- fix: move jan data folder - error handling for no write permission granted @louis-jan (#2077)
+- fix: check for updates should show no update are available on the latest build @louis-jan (#2075)
+- fix: infinity showed when haven't get total size @namchuai (#2066)
+- fix: should stop running the model when GPU settings are changed @louis-jan (#2067)
+- fix: settings page state loop and dark theme @louis-jan (#2065)
+- fix: Fix Nitro windows with error 3221225781 @hiro-v (#2057)
+- fix: message should only be interrupted when i start another thread @louis-jan (#2053)
+- fix: local server start error should not change to started state @louis-jan (#2052)
+- fix: update copy of message queue @louis-jan (#2051)
+- fix: download mutilple binaries @namchuai (#2043)
+- fix: disable gpu drop down box if there's no GPU ready @namchuai (#2046)
+- fix: app should generate thread title with length restriction @louis-jan (#2037)
+- fix: factory reset not remove jan data folder @namchuai (#2027)
+- fix: content setting right panel default to collapse @urmauur (#2026)
+- fix: local server blank parameters if there is no thread selected @louis-jan (#2028)
+- fix: model path backward compatible @louis-jan (#2018)
+- fix: resolve state update loop infinitive rerendering @louis-jan (#2017)
+- fix: lack of auto-cleaning mechanism for logs @louis-jan (#2003)
+- fix: app stuck regenerating assistant response @louis-jan (#2001)
+- fix: decouple thread summary update @louis-jan (#1994)
+- fix: app fails gracefully with clear error messages @louis-jan (#1993)
+- fix: retrieval stuck at generating response @louis-jan (#1988)
+- Fix macos auto update failed on nightly build @hiento09 (#1991)
+- fix: model downloads broken on nightly @louis-jan (#1984)
+- fix: RAG enhancements @urmauur (#1965)
+- Update docs run Jan Server in Docker mode @hiento09 (#1960)
+- fix: update conditional check last status message @urmauur (#1951)
+- fix: markdown render for chat completion role user @urmauur (#1944)
+- fix: avoid users to create so many threads at the same time @urmauur (#1930)
+- fix: download model will close panel item hub @urmauur (#1923)
+
+## 🧰 Maintenance
+
+- docs: improve integrations guide \& import model using absolute path @hieu-jan (#2076)
+- chore: add app version into log @namchuai (#2116)
+- docs: add integration docs Mistral AI API @hieu-jan (#2070)
+- docs:add-advanced-settings-https-proxy @hieu-jan (#2054)
+- chore: refactor watch system resource hook @louis-jan (#2048)
+- docs: Updates Guide Using the Local Server @SamPatt (#1924)
+- server install core using link instead of file @hiento09 (#2025)
+- chore: prettier fix @louis-jan (#2019)
+- chore: bump nitro 0.3.9 @louis-jan (#2016)
+- refactor: reduce IPC \& API handlers - shared node logics @louis-jan (#2011)
+- docs: update 03-gpu-not-used with RTX issues @hieu-jan (#1992)
+- docs: add Jan installation using Docker @hieu-jan (#1981)
+- chore: reduce bundle size @louis-jan (#1970)
+- docs: add author.yml @hieu-jan (#1973)
+- Update authors.yml hien @hiento09 (#1953)
+- chore: server download progress + S3 @louis-jan (#1925)
+- chore: add author james @namchuai (#1952)
+- chore: Add author - Ashley @imtuyethan (#1950)
+- chore: Add Author - Hiro @hiro-v (#1949)
+- docs: adding new feature for v0.4.6 to release checklist @Van-QA (#1927)
+
+## Contributor
+
+@0xSage, @0xgokuz, @SamPatt, @Van-QA, @hahuyhoang411, @hiento09, @hieu-jan, @hiro-v, @imtuyethan, @jan-service-account, @ldebs, @louis-jan, @namchuai, @urmauur and James
+
