@@ -7,8 +7,8 @@ declare interface EngineSettings {
 }
 
 enum GroqChatCompletionModelName {
-  'mixtral-8x7b-ins-v0.1' = 'mixtral-8x7b-32768',
-  'llama2-70b' = 'llama2-70b-4096',
+  'groq-mixtral-8x7b-instruct' = 'mixtral-8x7b-32768',
+  'groq-llama2-70b' = 'llama2-70b-4096',
 }
 
 declare type GroqModel = Omit<Model, 'id'> & {
