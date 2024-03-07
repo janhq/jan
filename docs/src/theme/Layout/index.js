@@ -17,7 +17,7 @@ import styles from "./styles.module.scss";
 import NavBarExtension from "../NavbarExtension";
 import { useLocation } from "react-router-dom";
 
-const allowedPaths = ["/docs/", "/developer/", "/api-reference/", "/guides/", "/guides", "/docs", "/developer", "/api-reference", "/guides/changelog"];  
+const allowedPaths = ["/docs/", "/developer/", "/api-reference/", "/guides/", "/guides", "/docs", "/developer", "/api-reference", "/changelog"];  
 
 export default function Layout(props) {
   const {

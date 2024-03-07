@@ -74,6 +74,38 @@ const config = {
             from: "/guides/troubleshooting/gpu-not-used/",
             to: "/guides/common-error/not-using-gpu/",
           },
+          {
+            from: "/guides/troubleshooting/",
+            to: "/guides/error-codes/",
+          },
+          {
+            from: "/troubleshooting/stuck-on-broken-build/",
+            to: "/guides/common-error/broken-build/",
+          },
+          {
+            from: "/guides/troubleshooting/",
+            to: "/guides/error-codes/",
+          },
+          {
+            from: "/troubleshooting/somethings-amiss/",
+            to: "/guides/error-codes/something-amiss/",
+          },
+          {
+            from: "/troubleshooting/how-to-get-error-logs/",
+            to: "/guides/error-codes/how-to-get-error-logs/",
+          },
+          {
+            from: "/troubleshooting/permission-denied/",
+            to: "/guides/error-codes/permission-denied/",
+          },
+          {
+            from: "/troubleshooting/unexpected-token/",
+            to: "/guides/error-codes/unexpected-token/",
+          },
+          {
+            from: "/troubleshooting/undefined-issue/",
+            to: "/guides/error-codes/undefined-issue/",
+          },
         ],
       },
     ],
@@ -299,7 +331,7 @@ const config = {
             {
               type: "docSidebar",
               sidebarId: "guidesSidebar",
-              label: "User Guide",
+              label: "Guides",
             },
             {
               type: "docSidebar",
@@ -309,6 +341,11 @@ const config = {
             {
               to: "/api-reference",
               label: "API Reference",
+            },
+            {
+              type: "docSidebar",
+              sidebarId: "releasesSidebar",
+              label: "Changelog",
             },
             // {
             //   type: "docSidebar",
@@ -341,10 +378,6 @@ const config = {
       disableSwitch: false,
       respectPrefersColorScheme: false,
     },
-  },
-
-  customFields: {
-    githubAccessToken: process.env.GITHUB_ACCESS_TOKEN || "XXXX",
   },
 
   themes: ["@docusaurus/theme-live-codeblock", "@docusaurus/theme-mermaid"],
