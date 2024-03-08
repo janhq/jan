@@ -22,7 +22,7 @@ keywords:
 This guide provides step-by-step instructions on integrating the Groq API with Jan, enabling users to leverage Groq's capabilities within Jan's conversational interface.
 
 Before proceeding, ensure you have the following:
-- Access to the Jan platform
+- Access to the Jan Application
 - Groq API credentials
 
 ## Integration Steps
@@ -38,7 +38,7 @@ Obtain Groq API keys from your [Groq Console](https://console.groq.com/keys).
 
 ```json title="~/jan/engines/openai.json"
 {
-  "full_url": "https://api.groq.com/openai/v1",
+  "full_url": "https://api.groq.com/openai/v1/chat/completions",
   "api_key": "<your-groq-api-key>"
 }
 ```
@@ -52,7 +52,7 @@ To set up the configuration for Groq in Jan, follow these steps:
 3. Inside the groq folder, create a model.json file with the specified settings:
 ```json title="~/jan/models/groq/model.json
 {
-  "id": "groq",
+  "id": "mixtral-8x7b-32768",
   "object": "model",
   "name": "Groq Integration",
   "version": "1.0",
@@ -62,10 +62,10 @@ To set up the configuration for Groq in Jan, follow these steps:
   "settings": {},
   "parameters": {},
   "metadata": {
-    "author": "Your Name",
+    "author": "Mistral ",
     "tags": ["Groq Integration"]
   },
-  "engine": "groq"
+  "engine": "openai"
 }
 ```
 
