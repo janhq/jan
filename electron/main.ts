@@ -1,9 +1,10 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, Menu, Tray } from 'electron'
+
 import { join } from 'path'
 /**
  * Managers
  **/
-import { WindowManager } from './managers/window'
+import { windowManager } from './managers/window'
 import { log } from '@janhq/core/node'
 
 /**
@@ -25,6 +26,18 @@ import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
 import { cleanLogs } from './utils/log'
 
+import { registerShortcut } from './utils/selectedText'
+
+const preloadPath = join(__dirname, 'preload.js')
+const rendererPath = join(__dirname, '..', 'renderer')
+const quickAskPath = join(rendererPath, 'search.html')
+const mainPath = join(rendererPath, 'index.html')
+
+const mainUrl = 'http://localhost:3000'
+const quickAskUrl = `${mainUrl}/search`
+
+const quickAskHotKey = 'CommandOrControl+J'
+
 app
   .whenReady()
   .then(setupReactDevTool)
@@ -35,7 +48,36 @@ app
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
+  .then(createQuickAskWindow)
   .then(createMainWindow)
+  .then(() => {
+    if (!app.isPackaged) {
+      windowManager.mainWindow?.webContents.openDevTools()
+    }
+  })
+  .then(() => {
+    const iconPath = join(app.getAppPath(), 'icons', 'icon-tray.png')
+    const tray = new Tray(iconPath)
+    tray.setToolTip(app.getName())
+
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Open Jan',
+        type: 'normal',
+        click: () => windowManager.showMainWindow(),
+      },
+      {
+        label: 'Open Quick Ask',
+        type: 'normal',
+        click: () => windowManager.showQuickAskWindow(),
+      },
+      { label: 'Quit', type: 'normal', click: () => app.quit() },
+    ])
+    tray.setContextMenu(contextMenu)
+  })
+  .then(() => {
+    log(`Version: ${app.getVersion()}`)
+  })
   .then(() => {
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
@@ -45,45 +87,42 @@ app
   })
   .then(() => cleanLogs())
 
-app.once('window-all-closed', () => {
-  cleanUpAndQuit()
+app.on('ready', () => {
+  registerGlobalShortcuts()
 })
 
 app.once('quit', () => {
   cleanUpAndQuit()
 })
 
+function createQuickAskWindow() {
+  const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
+  windowManager.createQuickAskWindow(preloadPath, startUrl)
+}
+
 function createMainWindow() {
-  /* Create main window */
-  const mainWindow = WindowManager.instance.createWindow({
-    webPreferences: {
-      nodeIntegration: true,
-      preload: join(__dirname, 'preload.js'),
-      webSecurity: false,
-    },
+  const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
+  windowManager.createMainWindow(preloadPath, startUrl)
+}
+
+function registerGlobalShortcuts() {
+  // TODO: Toggle below line when build production
+  // const ret = globalShortcut.register(quickAskHotKey, () => {
+  // const selectedText = ''
+  const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
+    if (!windowManager.isQuickAskWindowVisible()) {
+      windowManager.showQuickAskWindow()
+      windowManager.sendQuickAskSelectedText(selectedText)
+    } else {
+      windowManager.hideQuickAskWindow()
+    }
   })
 
-  const startURL = app.isPackaged
-    ? `file://${join(__dirname, '..', 'renderer', 'index.html')}`
-    : 'http://localhost:3000'
-
-  /* Load frontend app to the window */
-  mainWindow.loadURL(startURL)
-
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
-  mainWindow.on('closed', () => {
-    if (process.platform !== 'darwin') app.quit()
-  })
-
-  /* Open external links in the default browser */
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
-    return { action: 'deny' }
-  })
-
-  /* Enable dev tools for development */
-  if (!app.isPackaged) mainWindow.webContents.openDevTools()
-  log(`Version: ${app.getVersion()}`)
+  if (!ret) {
+    console.error('Global shortcut registration failed')
+  } else {
+    console.log('Global shortcut registered successfully')
+  }
 }
 
 /**

@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 import { events, Model, ModelEvent } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -24,6 +26,12 @@ export function useActiveModel() {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
+  const downloadedModelsRef = useRef<Model[]>([])
+
+  useEffect(() => {
+    downloadedModelsRef.current = downloadedModels
+  }, [downloadedModels])
+
   const startModel = async (modelId: string) => {
     if (
       (activeModel && activeModel.id === modelId) ||
@@ -39,7 +47,7 @@ export function useActiveModel() {
 
     setStateModel({ state: 'start', loading: true, model: modelId })
 
-    let model = downloadedModels.find((e) => e.id === modelId)
+    let model = downloadedModelsRef?.current.find((e) => e.id === modelId)
 
     if (!model) {
       toaster({
