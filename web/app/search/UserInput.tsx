@@ -18,10 +18,10 @@ const UserInput: React.FC = () => {
   const selectedText = useAtomValue(selectedTextAtom)
 
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus()
-    }
+    inputRef.current?.focus()
+  })
 
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         window.core?.api?.hideQuickAskWindow()
