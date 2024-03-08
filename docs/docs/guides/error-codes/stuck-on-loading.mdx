@@ -16,11 +16,13 @@ keywords:
   ]
 ---
 
+## 1. Missing Windows Management Instrumentation Command-line (WMIC)
+
 Encountering an stuck on loading model issue in Jan is caused by errors related the `Windows Management Instrumentation Command-line (WMIC)` path not being included in the system's PATH environment variable.
 
 It can be resolved through the following steps:
 
-#### Adding WMIC Path to Environment Variables:
+### Adding WMIC Path to Environment Variables:
 
 1. **Open System Properties:**
    - Press `Windows key + R`.
@@ -43,3 +45,14 @@ It can be resolved through the following steps:
 6. **Verify Installation:**
    - Restart any command prompts or terminals.
    - Run `where wmic` to verify. Expected output: `C:\Windows\System32\wbem\WMIC.exe`.
+
+
+## 2. CPU without AVX
+
+Encountering an issue with models stuck on loading in Jan can be due to the use of older generation CPUs that do not support Advanced Vector Extensions (AVX).
+
+To check if your CPU supports AVX, visit the following link: [CPUs with AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX)
+
+:::warning [Please use this with caution]
+As a workaround, consider using an [emulator](https://www.intel.com/content/www/us/en/developer/articles/tool/software-development-emulator.html) to simulate AVX support.
+:::
