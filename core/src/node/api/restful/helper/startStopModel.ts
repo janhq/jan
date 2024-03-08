@@ -41,7 +41,7 @@ const runModel = async (modelId: string, settingParams?: ModelSettingParams): Pr
   const modelFolderFullPath = join(janDataFolderPath, 'models', modelId)
 
   if (!fs.existsSync(modelFolderFullPath)) {
-    throw `Model not found: ${modelId}`
+    throw new Error(`Model not found: ${modelId}`)
   }
 
   const files: string[] = fs.readdirSync(modelFolderFullPath)
@@ -53,7 +53,7 @@ const runModel = async (modelId: string, settingParams?: ModelSettingParams): Pr
   const modelMetadata: Model = JSON.parse(fs.readFileSync(modelMetadataPath, 'utf-8'))
 
   if (!ggufBinFile) {
-    throw 'No GGUF model file found'
+    throw new Error('No GGUF model file found')
   }
   const modelBinaryPath = join(modelFolderFullPath, ggufBinFile)
 
@@ -76,7 +76,7 @@ const runModel = async (modelId: string, settingParams?: ModelSettingParams): Pr
     const promptTemplate = modelMetadata.settings.prompt_template
     const prompt = promptTemplateConverter(promptTemplate)
     if (prompt?.error) {
-      return Promise.reject(prompt.error)
+      throw new Error(prompt.error)
     }
     nitroModelSettings.system_prompt = prompt.system_prompt
     nitroModelSettings.user_prompt = prompt.user_prompt

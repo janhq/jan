@@ -1,13 +1,13 @@
 import { app, ipcMain, dialog, shell } from 'electron'
 import { join } from 'path'
-import { WindowManager } from '../managers/window'
+import { windowManager } from '../managers/window'
 import {
   ModuleManager,
   getJanDataFolderPath,
   getJanExtensionsPath,
   init,
 } from '@janhq/core/node'
-import { NativeRoute } from '@janhq/core'
+import { AppEvent, NativeRoute } from '@janhq/core'
 
 export function handleAppIPCs() {
   /**
@@ -62,12 +62,12 @@ export function handleAppIPCs() {
         // Path to install extension to
         extensionsPath: getJanExtensionsPath(),
       })
-      WindowManager.instance.currentWindow?.reload()
+      windowManager.mainWindow?.reload()
     }
   })
 
   ipcMain.handle(NativeRoute.selectDirectory, async () => {
-    const mainWindow = WindowManager.instance.currentWindow
+    const mainWindow = windowManager.mainWindow
     if (!mainWindow) {
       console.error('No main window found')
       return
@@ -85,7 +85,7 @@ export function handleAppIPCs() {
   })
 
   ipcMain.handle(NativeRoute.selectModelFiles, async () => {
-    const mainWindow = WindowManager.instance.currentWindow
+    const mainWindow = windowManager.mainWindow
     if (!mainWindow) {
       console.error('No main window found')
       return
@@ -101,4 +101,35 @@ export function handleAppIPCs() {
 
     return filePaths
   })
+
+  ipcMain.handle(
+    NativeRoute.hideQuickAskWindow,
+    async (): Promise<void> => windowManager.hideQuickAskWindow()
+  )
+
+  ipcMain.handle(
+    NativeRoute.sendQuickAskInput,
+    async (_event, input: string): Promise<void> => {
+      windowManager.mainWindow?.webContents.send(
+        AppEvent.onUserSubmitQuickAsk,
+        input
+      )
+    }
+  )
+
+  ipcMain.handle(
+    NativeRoute.hideMainWindow,
+    async (): Promise<void> => windowManager.hideMainWindow()
+  )
+
+  ipcMain.handle(
+    NativeRoute.showMainWindow,
+    async (): Promise<void> => windowManager.showMainWindow()
+  )
+
+  ipcMain.handle(
+    NativeRoute.quickAskSizeUpdated,
+    async (_event, heightOffset: number): Promise<void> =>
+      windowManager.expandQuickAskWindow(heightOffset)
+  )
 }
