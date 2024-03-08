@@ -1,0 +1,45 @@
+---
+title: Stuck on loading model
+slug: /troubleshooting/stuck-on-loading
+description: Troubleshooting steps to resolve issues related to loading model.
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    troubleshooting,
+  ]
+---
+
+Encountering an stuck on loading model issue in Jan is caused by errors related the `Windows Management Instrumentation Command-line (WMIC)` path not being included in the system's PATH environment variable.
+
+It can be resolved through the following steps:
+
+#### Adding WMIC Path to Environment Variables:
+
+1. **Open System Properties:**
+   - Press `Windows key + R`.
+   - Type `sysdm.cpl` and press `Enter`.
+
+2. **Access Environment Variables:**
+   - Go to the "Advanced" tab.
+   - Click "Environment Variables" button.
+
+3. **Edit System PATH:**
+   - Under "System Variables," find and select `Path`.
+   - Click "Edit."
+
+4. **Add WMIC Path:**
+   - Click "New" and enter `C:\Windows\System32\Wbem`.
+
+5. **Save Changes:**
+   - Click "OK" to close and save your changes.
+
+6. **Verify Installation:**
+   - Restart any command prompts or terminals.
+   - Run `where wmic` to verify. Expected output: `C:\Windows\System32\wbem\WMIC.exe`.
