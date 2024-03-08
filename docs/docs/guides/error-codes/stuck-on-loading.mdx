@@ -16,13 +16,16 @@ keywords:
   ]
 ---
 
-## 1. Missing Windows Management Instrumentation Command-line (WMIC)
+## 1. Issue: Missing Windows Management Instrumentation Command-line (WMIC)
 
 Encountering an stuck on loading model issue in Jan is caused by errors related the `Windows Management Instrumentation Command-line (WMIC)` path not being included in the system's PATH environment variable.
 
-It can be resolved through the following steps:
+Error message:
+```
+index.js:47 Uncaught (in promise) Error: Error invoking remote method 'invokeExtensionFunc': Error: Command failed: WMIC CPU Get NumberOfCores
+```
 
-### Adding WMIC Path to Environment Variables:
+It can be resolved through the following steps:
 
 1. **Open System Properties:**
    - Press `Windows key + R`.
@@ -47,7 +50,7 @@ It can be resolved through the following steps:
    - Run `where wmic` to verify. Expected output: `C:\Windows\System32\wbem\WMIC.exe`.
 
 
-## 2. CPU without AVX
+## 2. Issue: Model Loading Stuck Due to CPU without AVX
 
 Encountering an issue with models stuck on loading in Jan can be due to the use of older generation CPUs that do not support Advanced Vector Extensions (AVX).
 
