@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, Menu, Tray } from 'electron'
+import { app, BrowserWindow, Menu, Tray } from 'electron'
 
 import { join } from 'path'
 /**
@@ -106,9 +106,6 @@ function createMainWindow() {
 }
 
 function registerGlobalShortcuts() {
-  // TODO: Toggle below line when build production
-  // const ret = globalShortcut.register(quickAskHotKey, () => {
-  // const selectedText = ''
   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
     if (!windowManager.isQuickAskWindowVisible()) {
       windowManager.showQuickAskWindow()

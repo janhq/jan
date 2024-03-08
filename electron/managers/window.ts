@@ -64,7 +64,6 @@ class WindowManager {
     this._quickAskWindow.on('blur', () => {
       this.hideQuickAskWindow()
     })
-    this.hideQuickAskWindow()
   }
 
   isMainWindowVisible(): boolean {
