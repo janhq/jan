@@ -19,7 +19,7 @@ import useImportModel, {
 
 import ImportModelOptionSelection from './ImportModelOptionSelection'
 
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { importingModelsAtom } from '@/helpers/atoms/ImportingModel.atom'
 
 const importOptions: ModelImportOption[] = [
   {

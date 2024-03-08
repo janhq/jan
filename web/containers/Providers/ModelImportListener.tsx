@@ -12,10 +12,10 @@ import { useSetAtom } from 'jotai'
 import { snackbar } from '../Toast'
 
 import {
-  setImportingModelErrorAtom,
-  setImportingModelSuccessAtom,
   updateImportingModelProgressAtom,
-} from '@/helpers/atoms/Model.atom'
+  setImportingModelSuccessAtom,
+  setImportingModelErrorAtom,
+} from '@/helpers/atoms/ImportingModel.atom'
 
 const ModelImportListener = ({ children }: PropsWithChildren) => {
   const updateImportingModelProgress = useSetAtom(

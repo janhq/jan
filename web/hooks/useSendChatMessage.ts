@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef } from 'react'
 
 import {
@@ -18,6 +17,7 @@ import {
   InferenceEngine,
   ChatCompletionMessageContentType,
   AssistantTool,
+  ThreadContent,
 } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -71,9 +71,10 @@ export default function useSendChatMessage() {
   const modelRef = useRef<Model | undefined>()
   const loadModelFailedRef = useRef<string | undefined>()
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-  const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
+  const [engineParamsUpdate, setEngineParamsUpdate] = useAtom(
+    engineParamsUpdateAtom
+  )
 
-  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const setReloadModel = useSetAtom(reloadModelAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
@@ -283,7 +284,7 @@ export default function useSendChatMessage() {
     }
 
     const timestamp = Date.now()
-    const content: any = []
+    const content: ThreadContent[] = []
 
     if (base64Blob && fileUpload[0]?.type === 'image') {
       content.push({
