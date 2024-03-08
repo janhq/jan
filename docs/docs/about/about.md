@@ -1,7 +1,7 @@
 ---
 title: About Jan
 slug: /about
-description: Jan is a productivity tool to customize AI to your needs and workflows.
+description: Jan is a desktop application that turns computers into thinking machines.
 keywords:
   [
     Jan AI,
@@ -12,53 +12,80 @@ keywords:
     conversational AI,
     no-subscription fee,
     large language model,
+    about Jan,
+    desktop application,
+    thinking machine,
   ]
 ---
 
-Jan is a [open-source](https://en.wikipedia.org/wiki/Open_source), [local-first](https://www.inkandswitch.com/local-first/) tool to [create, customize and use AI](https://www.gatesnotes.com/AI-agents) for everyday tasks.
+Jan turns computers into a thinking machine to change how you use computers.
+Jan is created and maintained by Jan Labs, a robotics company.
 
-You can:
+With Jan, you can:
 
-- Run locally using [open-source LLMs](https://huggingface.co/models?pipeline_tag=text-generation) or connect to cloud AIs like [ChatGPT](https://openai.com/blog/openai-api) or [Google](https://ai.google.dev/)
-- Fine-tune AI with specific knowledge
-- Search the web and other databases
-- Connect AI to your everyday tools and (with your permission) do work on your behalf
+- Run [open-source LLMs](https://huggingface.co/models?pipeline_tag=text-generation) locally or connect to cloud AIs like [ChatGPT](https://openai.com/blog/openai-api) or [Google](https://ai.google.dev/).
+- Fine-tune AI with specific knowledge.
+- Supercharge your productivity by leveraging AI.
+- Search the web and databases.
+- Integrate AI with everyday tools to work on your behalf (with permission).
+- Customize and add features with Extensions.
 
-Longer-term, Jan is building a cognitive framework for future robots. We envision a world where we have personal or company robots that we continually improve and customize, growing together with us.
+:::tip
+
+Jan aims for long-term human-robot collaboration, envisioning AI as a harmonious extension of human capabilities. Our goal is to build customizable robots that we continually improve and customize, growing together.
+
+:::
 
 ![Human repairing a Droid](/img/star-wars-droids.png)
 
-## Why do we exist
+## Jan’s principles
 
-At Jan, our mission is to advance human-machine collaboration. We achieve this through delivering the best open-source, local-first tools to allow users to run, customize and tinker with AI.
+- **Ownership**: Jan is committed to developing a product that fully belongs to users. You're the true owner, free from data tracking and storage by us.
+- **Privacy**: Jan works locally by default, allowing use without an internet connection. Your data stays on your device in a universal format, giving you complete privacy control.
+- **100% User Supported**: Every user can access, develop, and customize Jan's codebases to suit their needs.
+- **Rejecting Dark Patterns**: We never use tricks to extract more money or lock you into an ecosystem.
 
-## What's different about it?
+## Why do we exist?
 
-|                                                            | Status Quo                                                                 | Jan                                                                                                                           |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Ownership                                                  | AI Monopolies owned by Big Tech                                            | AI that you own and control                                                                                                   |
-| Openness?                                                  | Closed-source                                                              | [Open-source (AGPLv3)](https://github.com/janhq/jan/blob/main/LICENSE)                                                        |
-| Your role                                                  | Consume                                                                    | Create, Tinker and Customize                                                                                                  |
-| Approach                                                   | Cloud                                                                      | [Local-first](https://www.inkandswitch.com/local-first/), running 100% on your devices                                        |
-| Data                                                       | Data stored on their servers                                               | Data stored in your local filesystem in open, non-proprietary file formats                                                    |
-| Privacy                                                    | 😂                                                                         | Runs 100% on your own machine, predictably, privately and offline                                                             |
-| Transparency                                               | "Black Box"                                                                | Runs predictability with code available to tinker and customize                                                               |
-| What happens if there's an outage or goes out of business? | Your life's work held hostage in the cloud in proprietary data formats[^1] | Continues to run 100% on your computer, your data is safe in your local folder                                                |
-| Driving Philosophy                                         | Monetize your users                                                        | [Privacy as a human right](https://en.wikipedia.org/wiki/Right_to_privacy) and the [Right to Repair](https://www.repair.org/) |
+> _"I do not fear computers. I fear the lack of them." - Isaac Asimov_
 
-## How do I get it?
+Jan was founded on the belief that AI should coexist with humans, not replace them. Our mission is to democratize AI access, ensuring everyone can easily utilize it with full ownership and control over their data, free from privacy concerns.
 
-You can install and start using Jan in less than 5 minutes, from [jan.ai](https://jan.ai) or our [Github repo](https://github.com/janhq/jan).
+### What are the things Jan committed on?
 
-You can read the [User Guide](/docs/user-guide) if you need some help to get started.
+We are committed to creating open, local-first products that extend individual freedom, rejecting dark patterns and ecosystem lock-ins, and embracing an open-source ethos.
+
+#### What's different about it?
+
+|                       | Status Quo                 | Jan                                                                    |
+| --------------------- | -------------------------- | ---------------------------------------------------------------------- |
+| **Ownership**         | Owned by Big Tech          | Fully owned by you                                                     |
+| **Openness**          | Closed-source              | [Open-source (AGPLv3)](https://github.com/janhq/jan/blob/main/LICENSE) |
+| **Your Role**         | Consumer                   | Creator                                                                |
+| **Approach**          | Cloud-based                | [Local-first](https://www.inkandswitch.com/local-first/)               |
+| **Data Handling**     | Stored on external servers | Stored locally, openly accessible                                      |
+| **Privacy**           | Questionable               | Private and offline                                                    |
+| **Transparency**      | Opaque "Black Box"         | Open-source and customizable                                           |
+| **Outage Resilience** | Potential data hostage     | Continues to work on your device                                       |
+| **Philosophy**        | User monetization          | Empowerment with the right to repair                                   |
+
+## How we work
+
+Jan is an open-source product with transparent development and future features. Users have the right to modify and customize Jan. We are committed to building an open-source AI ecosystem.
+
+Jan is building in public using GitHub, where anyone is welcome to join. Key resources include Jan's [Kanban](https://github.com/orgs/janhq/projects/5/views/7) and Jan's [Roadmap](https://github.com/orgs/janhq/projects/5/views/29).
+
+Jan has a fully-remote team, primarily based in the APAC timezone, and we use Discord and GitHub for collaboration. Our community is central to our operations, and we embrace asynchronous work. We hold meetings only for synchronization and vision sharing, using [Excalidraw](https://excalidraw.com/) or [Miro](https://miro.com/) for visualization and sharing notes on Discord for alignment. We also use [HackMD](https://hackmd.io/) to document our ideas and build a Jan library.
+
+## How to get it?
+
+You can install and start using Jan in less than 5 minutes, from [Jan.ai](https://jan.ai) or our [Github repo](https://github.com/janhq/jan).
 
 ## What license is the code under?
 
 Jan is licensed under the [AGPLv3 License](https://github.com/janhq/jan/blob/main/LICENSE).
 
 We happily accept pull requests, however, we do ask that you sign a [Contributor License Agreement](https://en.wikipedia.org/wiki/Contributor_License_Agreement) so that we have the right to relicense your contributions[^2].
-
-We also have a [Contributor Program](/docs/team/contributor-program) to provide ownership and upside to contributors who have made significant contributions to the project.
 
 ## What was it built with?
 
@@ -73,11 +100,9 @@ We follow [clean architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/
 
 Architecturally, we have made similar choices to the [Next.js Enterprise Javascript Stack](https://vercel.com/templates/next.js/nextjs-enterprise-boilerplate), which is a [battle-tested](https://nextjs.org/showcase/enterprise) framework for building enterprise-grade applications that scale.
 
-:::tip
+## Join the team
 
-**At its core, Jan is a software development kit to build and run copilots on personal devices**. The Desktop Client many folks use is, rather, a specific set of extensions packaged by default. We're excited to see what developers do with the SDK (once its in better shape).
-
-:::
+Join us on this journey at Jan Labs, where we embrace open-source collaboration and transparency. Together, let's shape a future where Jan becomes an essential companion in the open-source community. Explore [careers](https://janai.bamboohr.com/careers) with us.
 
 ## Contact
 
