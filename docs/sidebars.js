@@ -177,7 +177,6 @@ const sidebars = {
       items: [
         "guides/best-practices",
         "guides/thread",
-        "guides/faq",
       ]
     },
     {
@@ -186,24 +185,54 @@ const sidebars = {
       collapsible: false,
       className: "head_Menu",
       items: [
-        "guides/models/README",
-        "guides/models/customize-engine",
-        "guides/models/import-models",
-        "guides/models/integrate-remote",
-        "guides/extensions/README",
-        "guides/extensions/import-ext",
-        "guides/extensions/setup-ext",
-        "guides/integration/README",
-        "guides/integration/azure",
-        "guides/integration/discord",
-        "guides/integration/groq",
-        "guides/integration/lmstudio",
-        "guides/integration/mistral",
-        "guides/integration/ollama",
-        "guides/integration/openinterpreter",
-        "guides/integration/openrouter",
-        "guides/integration/raycast",
-        "guides/integration/vscode",
+        {
+          type: "category",
+          label: "Advanced Model Setup",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/models/README",
+          },
+          items: [
+            "guides/models/customize-engine",
+            "guides/models/import-models",
+            "guides/models/integrate-remote",
+          ]
+        },
+        {
+          type: "category",
+          label: "Extensions",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/extensions/README",
+          },
+          items: [
+            "guides/extensions/import-ext",
+            "guides/extensions/setup-ext",  
+          ]
+        },
+         {
+          type: "category",
+          label: "Integrations",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/integration/README",
+          },
+          items: [ 
+            "guides/integration/azure",
+            "guides/integration/discord",
+            "guides/integration/groq",
+            "guides/integration/lmstudio",
+            "guides/integration/mistral",
+            "guides/integration/ollama",
+            "guides/integration/openinterpreter",
+            "guides/integration/openrouter",
+            "guides/integration/raycast",
+            "guides/integration/vscode",   
+          ]
+        },
       ]
     },
     {
@@ -212,15 +241,35 @@ const sidebars = {
       collapsible: false,
       className: "head_Menu",
       items: [
-        "guides/common-error/README",
-        "guides/common-error/broken-build",
-        "guides/common-error/not-using-gpu",
-        "guides/error-codes/README",
-        "guides/error-codes/how-to-get-error-logs",
-        "guides/error-codes/permission-denied",
-        "guides/error-codes/something-amiss",
-        "guides/error-codes/undefined-issue",
-        "guides/error-codes/unexpected-token",
+        {
+          type: "category",
+          label: "Error Codes",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/error-codes/README",
+          },
+          items: [
+            "guides/error-codes/how-to-get-error-logs",
+            "guides/error-codes/permission-denied",
+            "guides/error-codes/something-amiss",
+            "guides/error-codes/undefined-issue",
+            "guides/error-codes/unexpected-token",
+          ]
+        },
+        {
+          type: "category",
+          label: "Common Error",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/common-error/README",
+          },
+          items: [
+            "guides/common-error/broken-build",
+            "guides/common-error/not-using-gpu",
+          ]
+        },
         "guides/faq"
       ]
     },

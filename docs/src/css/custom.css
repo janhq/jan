@@ -21,3 +21,10 @@
   background-color: white;
   margin-bottom: 5px; /* Adjust margin as needed */
 }
+
+.head_SubMenu div {
+  font-weight: normal;
+  background-color: white;
+  margin-left: 0rem;
+  font-size: medium;
+}
