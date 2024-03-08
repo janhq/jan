@@ -73,8 +73,9 @@ const DropdownListSidebar = ({
 
   const [copyId, setCopyId] = useState('')
 
+  // TODO: Update filter condition for the local model
   const localModel = downloadedModels.filter(
-    (model) => model.engine === InferenceEngine.nitro
+    (model) => model.engine !== InferenceEngine.openai
   )
   const remoteModel = downloadedModels.filter(
     (model) => model.engine === InferenceEngine.openai

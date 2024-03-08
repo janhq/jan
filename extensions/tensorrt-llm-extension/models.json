@@ -1,0 +1,29 @@
+[
+  {
+    "sources": [
+      {
+        "filename": "file_name_goes_here",
+        "url": "url_goes_here"
+      }
+    ],
+    "id": "operhermes-mistral",
+    "object": "model",
+    "name": "Nitro Tensor LLM Model",
+    "version": "1.0",
+    "description": "description goes here",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 2048
+    },
+    "parameters": {
+      "stream": true,
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "operhermes-mistral",
+      "tags": ["Recommended", "7B", "Finetuned"],
+      "size": 4370000000
+    },
+    "engine": "nitro-tensorrt-llm"
+  }
+]
