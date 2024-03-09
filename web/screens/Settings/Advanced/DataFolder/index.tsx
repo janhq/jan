@@ -5,6 +5,8 @@ import { Button, Input } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
+import { twMerge } from 'tailwind-merge'
+
 import Loader from '@/containers/Loader'
 
 export const SUCCESS_SET_NEW_DESTINATION = 'successSetNewDestination'
@@ -23,7 +25,11 @@ import ModalSameDirectory, { showSamePathModalAtom } from './ModalSameDirectory'
 
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 
-const DataFolder = () => {
+type Props = {
+  onBoarding?: boolean
+}
+
+const DataFolder = ({ onBoarding = false }: Props) => {
   const [showLoader, setShowLoader] = useState(false)
   const setShowDirectoryConfirm = useSetAtom(showDirectoryConfirmModalAtom)
   const setShowSameDirectory = useSetAtom(showSamePathModalAtom)
@@ -87,50 +93,39 @@ const DataFolder = () => {
       setTimeout(() => {
         setShowLoader(false)
       }, 1200)
-      await window.core?.api?.relaunch()
+      !onBoarding && (await window.core?.api?.relaunch())
     } catch (e) {
       console.error(e)
       setShowLoader(false)
       setShowChangeFolderError(true)
     }
-  }, [destinationPath, setShowChangeFolderError])
+  }, [destinationPath, onBoarding, setShowChangeFolderError])
 
   return (
     <Fragment>
-      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="flex-shrink-0 space-y-1.5">
-          <div className="flex gap-x-2">
-            <h6 className="text-sm font-semibold capitalize">
-              Jan Data Folder
-            </h6>
-          </div>
-          <p className="leading-relaxed">
-            Where messages, model configurations, and other user data are
-            placed.
-          </p>
-        </div>
-        <div className="flex items-center gap-x-3">
-          <div className="relative">
-            <Input
-              value={janDataFolderPath}
-              className="w-[240px] pr-8"
-              disabled
-            />
+      <div className="flex w-full items-center gap-x-3">
+        <div className="relative w-full">
+          <Input
+            value={janDataFolderPath}
+            className={twMerge(onBoarding ? 'w-full' : 'w-[240px] pr-8')}
+            disabled
+          />
+          {!onBoarding && (
             <FolderOpenIcon
               size={16}
               className="absolute right-2 top-1/2 z-10 -translate-y-1/2 cursor-pointer"
               onClick={() => window.core?.api?.openAppDirectory()}
             />
-          </div>
-          <Button
-            size="sm"
-            themes="outline"
-            className="h-9 w-9 p-0"
-            onClick={onChangeFolderClick}
-          >
-            <PencilIcon size={16} />
-          </Button>
+          )}
         </div>
+        <Button
+          size="sm"
+          themes={onBoarding ? 'primary' : 'outline'}
+          className="h-9 w-9 flex-shrink-0 p-0"
+          onClick={onChangeFolderClick}
+        >
+          <PencilIcon size={16} />
+        </Button>
       </div>
       <ModalSameDirectory onChangeFolderClick={onChangeFolderClick} />
       <ModalChangeDirectory

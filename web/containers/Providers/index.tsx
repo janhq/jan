@@ -25,6 +25,8 @@ import DataLoader from './DataLoader'
 
 import KeyListener from './KeyListener'
 
+import OnBoardingListener from './OnboardingListener'
+
 import { extensionManager } from '@/extension'
 
 const Providers = (props: PropsWithChildren) => {
@@ -81,7 +83,9 @@ const Providers = (props: PropsWithChildren) => {
           <KeyListener>
             <EventListenerWrapper>
               <TooltipProvider delayDuration={0}>
-                <DataLoader>{children}</DataLoader>
+                <DataLoader>
+                  <OnBoardingListener>{children}</OnBoardingListener>
+                </DataLoader>
               </TooltipProvider>
               {!isMac && <GPUDriverPrompt />}
             </EventListenerWrapper>
