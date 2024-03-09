@@ -21,7 +21,6 @@ export default function ToggleTheme() {
               )}
               onClick={async () => {
                 setTheme(theme.name)
-                // handeleNativeTheme(theme.name)
               }}
             >
               {theme.name}
