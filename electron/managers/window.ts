@@ -10,7 +10,7 @@ import { registerShortcut } from '../utils/selectedText'
  */
 // TODO: refactor this
 let isAppQuitting = false
-const isAppOnboarding = true
+
 class WindowManager {
   public mainWindow?: BrowserWindow
   private _quickAskWindow: BrowserWindow | undefined = undefined
@@ -55,7 +55,8 @@ class WindowManager {
     this.mainWindow?.webContents
       .executeJavaScript('({...localStorage});', true)
       .then((localStorage) => {
-        if (JSON.parse(localStorage.appOnBoarding)) {
+        console.log(localStorage)
+        if (JSON.parse(localStorage.appOnBoardingFinish)) {
           registerGlobalShortcuts(
             localStorage.quickAskHotkey || 'CommandOrControl+J'
           )
@@ -145,7 +146,7 @@ function registerGlobalShortcuts(hotkey: string) {
   if (!ret) {
     console.error('Global shortcut registration failed')
   } else {
-    console.log('Global shortcut registered successfully')
+    console.log('Global shortcut registered successfully', hotkey)
   }
 }
 

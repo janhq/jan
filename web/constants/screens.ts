@@ -4,4 +4,5 @@ export enum MainViewState {
   Settings,
   Thread,
   LocalServer,
+  Onboarding,
 }
