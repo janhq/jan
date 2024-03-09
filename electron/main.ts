@@ -37,7 +37,7 @@ const mainPath = join(rendererPath, 'index.html')
 const mainUrl = 'http://localhost:3000'
 const quickAskUrl = `${mainUrl}/search`
 
-const quickAskHotKey = 'CommandOrControl+J'
+// const quickAskHotKey = 'CommandOrControl+J'
 
 app
   .whenReady()
@@ -69,6 +69,11 @@ app
   })
   .then(() => cleanLogs())
 
+app.on('ready', () => {
+  console.log('hallo')
+  // registerGlobalShortcuts()
+})
+
 app.once('quit', () => {
   cleanUpAndQuit()
 })
@@ -82,6 +87,24 @@ function createMainWindow() {
   const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
   windowManager.createMainWindow(preloadPath, startUrl)
 }
+
+// function registerGlobalShortcuts() {
+//   console.log(windowManager.isAppOnBoarding())
+//   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
+//     if (!windowManager.isQuickAskWindowVisible()) {
+//       windowManager.showQuickAskWindow()
+//       windowManager.sendQuickAskSelectedText(selectedText)
+//     } else {
+//       windowManager.hideQuickAskWindow()
+//     }
+//   })
+
+//   if (!ret) {
+//     console.error('Global shortcut registration failed')
+//   } else {
+//     console.log('Global shortcut registered successfully')
+//   }
+// }
 
 /**
  * Handles various IPC messages from the renderer process.
