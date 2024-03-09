@@ -4,43 +4,45 @@
 }
 
 /* For dark theme */
-[data-theme="dark"] .DocSearch {
+[data-theme='dark'] .DocSearch {
   --docsearch-hit-active-color: #090a11; /* Keep the color unchanged */
 }
-
-/* Sidebar styles */
-.head_Menu div {
+/* Sidebar styles based on Docusaurus light theme */
+[data-theme='light'] .head_Menu div {
   font-weight: bold;
-  background-color: whitesmoke;
+  background-color: var(--ifm-background-color);
   margin-left: 0.7rem;
   font-size: larger;
+  color: var(--ifm-font-color-base);
 }
 
-.head_Menu li {
+[data-theme='light'] .head_Menu li {
   font-weight: normal;
-  background-color: white;
+  background-color: var(--ifm-background-color);
   margin-bottom: 5px;
+  color: var(--ifm-font-color-base);
 }
 
-.head_SubMenu div {
+[data-theme='light'] .head_SubMenu div {
   font-weight: normal;
-  background-color: white;
+  background-color: var(--ifm-background-color);
   margin-left: 0rem;
   font-size: medium;
+  color: var(--ifm-font-color-base);
 }
 
 /* Dark mode styles based on Docusaurus dark theme */
-[data-theme="dark"] .head_Menu div {
+[data-theme='dark'] .head_Menu div {
   background-color: var(--ifm-background-color);
   color: var(--ifm-font-color-base);
 }
 
-[data-theme="dark"] .head_Menu li {
+[data-theme='dark'] .head_Menu li {
   background-color: var(--ifm-background-color);
   color: var(--ifm-font-color-base);
 }
 
-[data-theme="dark"] .head_SubMenu div {
+[data-theme='dark'] .head_SubMenu div {
   background-color: var(--ifm-background-color);
   color: var(--ifm-font-color-base);
 }
