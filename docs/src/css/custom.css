@@ -1,3 +1,4 @@
+/* Hide descriptions in cards without a description */
 .DocCardList--no-description .card p {
   display: none;
 }
@@ -7,7 +8,7 @@
   --docsearch-hit-active-color: #090a11; /* Keep the color unchanged */
 }
 
-/* sidebarStyles.css */
+/* Sidebar styles */
 .head_Menu div {
   font-weight: bold;
   background-color: whitesmoke;
@@ -16,10 +17,9 @@
 }
 
 .head_Menu li {
-  /* Custom styles for the sidebar items */
   font-weight: normal;
   background-color: white;
-  margin-bottom: 5px; /* Adjust margin as needed */
+  margin-bottom: 5px;
 }
 
 .head_SubMenu div {
@@ -27,4 +27,20 @@
   background-color: white;
   margin-left: 0rem;
   font-size: medium;
+}
+
+/* Dark mode styles based on Docusaurus dark theme */
+[data-theme="dark"] .head_Menu div {
+  background-color: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+}
+
+[data-theme="dark"] .head_Menu li {
+  background-color: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+}
+
+[data-theme="dark"] .head_SubMenu div {
+  background-color: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
 }
