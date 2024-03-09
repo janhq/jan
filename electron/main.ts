@@ -87,10 +87,6 @@ app
   })
   .then(() => cleanLogs())
 
-app.on('ready', () => {
-  registerGlobalShortcuts()
-})
-
 app.once('quit', () => {
   cleanUpAndQuit()
 })
@@ -103,23 +99,6 @@ function createQuickAskWindow() {
 function createMainWindow() {
   const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
   windowManager.createMainWindow(preloadPath, startUrl)
-}
-
-function registerGlobalShortcuts() {
-  const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
-    if (!windowManager.isQuickAskWindowVisible()) {
-      windowManager.showQuickAskWindow()
-      windowManager.sendQuickAskSelectedText(selectedText)
-    } else {
-      windowManager.hideQuickAskWindow()
-    }
-  })
-
-  if (!ret) {
-    console.error('Global shortcut registration failed')
-  } else {
-    console.log('Global shortcut registered successfully')
-  }
 }
 
 /**
