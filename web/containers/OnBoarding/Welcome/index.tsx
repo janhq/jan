@@ -1,3 +1,5 @@
+import { useTheme } from 'next-themes'
+
 import { Button } from '@janhq/uikit'
 
 import { useAtom } from 'jotai'
@@ -10,6 +12,7 @@ import { onBoardingStepAtom } from '..'
 
 const WelcomeOnBoarding = () => {
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
+  const { resolvedTheme } = useTheme()
 
   return (
     <div className="flex h-screen w-screen flex-col items-center justify-end gap-8">
@@ -35,7 +38,11 @@ const WelcomeOnBoarding = () => {
         </div>
         <div className="w-3/4">
           <img
-            src="images/app-onboarding-frame.png"
+            src={
+              resolvedTheme === 'dark'
+                ? 'images/app-onboarding-frame-dark.png'
+                : 'images/app-onboarding-frame.png'
+            }
             alt="App Frame OnBoarding"
           />
         </div>

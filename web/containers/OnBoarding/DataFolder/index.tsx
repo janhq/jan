@@ -1,3 +1,5 @@
+import { useTheme } from 'next-themes'
+
 import { Button } from '@janhq/uikit'
 import { useAtom } from 'jotai'
 
@@ -9,14 +11,15 @@ import { onBoardingStepAtom } from '..'
 
 const DataFolderOnBoarding = () => {
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
+  const { resolvedTheme } = useTheme()
 
   return (
     <div className="flex w-full p-2">
-      <div className="item-center flex h-full w-3/5 flex-shrink-0 flex-col items-center justify-between rounded-lg bg-white px-8 py-14 dark:bg-background/50">
+      <div className="item-center flex h-full w-3/5 flex-shrink-0 flex-col items-center justify-between rounded-lg bg-white px-8 py-14 dark:bg-background/60">
         <div className="w-full text-center">
           <h1 className="mt-2 text-3xl font-bold">
             Choose a{' '}
-            <span className="rounded-l-lg border-r-4 border-blue-500 bg-blue-100 p-1 px-2">
+            <span className="rounded-l-lg border-r-4 border-blue-500 bg-blue-100 p-1 px-2 dark:bg-blue-400">
               Data Folder
             </span>
           </h1>
@@ -48,7 +51,11 @@ const DataFolderOnBoarding = () => {
       </div>
       <div className="flex items-center justify-center">
         <img
-          src="images/app-onboarding-data-folder.png"
+          src={
+            resolvedTheme === 'dark'
+              ? 'images/app-onboarding-data-folder-dark.png'
+              : 'images/app-onboarding-data-folder.png'
+          }
           alt="Data folder OnBoarding"
         />
       </div>
