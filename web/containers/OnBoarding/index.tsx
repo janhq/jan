@@ -8,6 +8,7 @@ import HotkeyOnBoarding from './Hotkey'
 import WelcomeOnBoarding from './Welcome'
 
 export const onBoardingStepAtom = atom<number>(0)
+export const modalOnboardingAccesibilityAtom = atom<boolean>(false)
 
 const OnBoarding = () => {
   const onBoardingStep = useAtomValue(onBoardingStepAtom)
