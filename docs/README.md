@@ -1,18 +1,18 @@
-# Website
+This website is built using [Docusaurus 3.0](https://docusaurus.io/), a modern static website generator.
 
-This website is built using [Docusaurus 2](https://docusaurus.io/), a modern static website generator.
-
-## Information Architecture
+### Information Architecture
 
 We try to **keep routes consistent** to maintain SEO.
 
-- `/guides`: Guides on how to use the Jan application, with GIFs. For end users who are directly using Jan. Always assume users are not technical.
+- **`/guides/`**: Guides on how to use the Jan application. For end users who are directly using Jan.
 
-- `/developer`: Developer docs on how to extend Jan. These pages are about what people can build with our software. We must hide the complexity of HOW the app is built, but explain just enough of the high level architecture so devs know enough to build on top of it.
+- **`/developer/`**: Developer docs on how to extend Jan. These pages are about what people can build with our software.
 
-- `/api-reference`: Reference documentation, written in Swagger/OpenAPI format.
+- **`/api-reference/`**: Reference documentation for the Jan API server, written in Swagger/OpenAPI format.
 
-- `/docs`: Engineering specs and product specs, i.e. HOW the app is built. Mostly for internal reference and for our core contributors who are building the SDK itself.
+- **`/changelog/`**: A list of changes made to the Jan application with each release.
+
+- **`/blog/`**: A blog for the Jan application.
 
 ### Sidebar Autogeneration
 
@@ -20,34 +20,36 @@ The order of each page is either explicitly defined in `sidebar.js` or follows t
 
 Important slugs are hardcoded at the document level (and shouldn't be rerouted):
 
-```md
+```
 ---
 title: Overview
 slug: /docs
 ---
 ```
 
-## Contributing
+## How to Contribute
 
-### Installation
+Refer to the [Contributing Guide](https://github.com/janhq/jan/blob/dev/CONTRIBUTING.md) for more comprehensive information on how to contribute to the Jan project.
 
-```
-$ yarn
-```
+### Pre-requisites and Installation
 
-### Local Development
+- [Node.js](https://nodejs.org/en/) (version 20.0.0 or higher)
+- [yarn](https://yarnpkg.com/) (version 1.22.0 or higher)
 
-```
-$ cp .env.example .env
-$ yarn start
+#### Installation
+
+```bash
+cd jan/docs
+yarn install
+yarn start
 ```
 
 This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
 
-### Build
+#### Build
 
-```
-$ yarn build
+```bash
+yarn build
 ```
 
 This command generates static content into the `build` directory and can be served using any static contents hosting service.
@@ -56,25 +58,27 @@ This command generates static content into the `build` directory and can be serv
 
 Using SSH:
 
-```
-$ USE_SSH=true yarn deploy
+```bash
+USE_SSH=true yarn deploy
 ```
 
 Not using SSH:
 
-```
-$ GIT_USER=<Your GitHub username> yarn deploy
+```bash
+GIT_USER=<Your GitHub username> yarn deploy
 ```
 
 If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
 
 ### Preview URL, Pre-release and Publishing Documentation
 
-When a PR is created, the preview URL will be automatically commented on the PR.
+- When a pull request is created, the preview URL will be automatically commented on the pull request.
 
-The documentation will then be published to [https://jan.ai/](https://jan.ai/) when the PR is merged to `main`.
+- The documentation will then be published to [https://dev.jan.ai/](https://dev.jan.ai/) when the pull request is merged to `dev`.
+
+- Our open-source maintainers will sync the updated content from `dev` to `docs` branch, which will then be published to [https://jan.ai/](https://jan.ai/).
 
 ### Additional Plugins
 
 - @docusaurus/theme-live-codeblock
-- [Redocusaurus](https://redocusaurus.vercel.app/): manually upload swagger files at `/openapi/OpenAPISpec.json`
+- [Redocusaurus](https://redocusaurus.vercel.app/): manually upload swagger files at `/openapi/jan.yaml` to update the API reference documentation.
