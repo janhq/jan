@@ -1,14 +1,14 @@
 import { SubmitHandler, useForm } from 'react-hook-form'
 
 import { Button, Input } from '@janhq/uikit'
-import { useAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 
 import { ArrowLeftIcon, ExternalLinkIcon } from 'lucide-react'
 import { AiOutlineGithub } from 'react-icons/ai'
 import { BiLogoDiscordAlt, BiLogoLinkedin } from 'react-icons/bi'
 import { FaSquareXTwitter } from 'react-icons/fa6'
 
-import { onBoardingStepAtom } from '..'
+import { modalOnboardingAccesibilityAtom, onBoardingStepAtom } from '..'
 
 type FormMail = {
   email: string
@@ -41,6 +41,7 @@ const socials = [
 
 const AllSetOnBoarding = () => {
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
+  const setAccessibilityCheckbox = useSetAtom(modalOnboardingAccesibilityAtom)
   const { register, handleSubmit } = useForm<FormMail>()
   const onSubmit: SubmitHandler<FormMail> = async (data) => {
     window.core?.api?.relaunch()
@@ -73,7 +74,10 @@ const AllSetOnBoarding = () => {
             type="button"
             themes="outline"
             className="w-12 p-0"
-            onClick={() => setOnBoardingStep(onBoardingStep - 1)}
+            onClick={() => {
+              setAccessibilityCheckbox(false)
+              setOnBoardingStep(onBoardingStep - 1)
+            }}
           >
             <ArrowLeftIcon size={20} />
           </Button>

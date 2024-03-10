@@ -55,7 +55,7 @@ class WindowManager {
     this.mainWindow?.webContents
       .executeJavaScript('({...localStorage});', true)
       .then((localStorage) => {
-        console.log(localStorage)
+        // console.log(localStorage)
         if (JSON.parse(localStorage.appOnBoardingFinish)) {
           registerGlobalShortcuts(
             localStorage.quickAskHotkey || 'CommandOrControl+J'
