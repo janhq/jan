@@ -1,7 +1,10 @@
 import { Fragment, useEffect, useState } from 'react'
 
+import { useTheme } from 'next-themes'
+
 import {
   Button,
+  Checkbox,
   TooltipArrow,
   TooltipContent,
   TooltipPortal,
@@ -13,19 +16,16 @@ import { ArrowLeftIcon, CommandIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
-import { APP_ONBOARDING_FINISH } from '@/containers/Providers/OnboardingListener'
-
 import useRecordHotkeys from '@/hooks/useRecordHotkeys'
 
 import { onBoardingStepAtom } from '..'
 
 const HotkeyOnBoarding = () => {
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
+  const { resolvedTheme } = useTheme()
 
   const { keys, start, stop, isRecording, error, isValid, isHotkeyModifier } =
     useRecordHotkeys()
-
-  console.log(keys)
 
   const getModifierSymbol = (key: string) => {
     if (isHotkeyModifier(key)) {
@@ -39,11 +39,11 @@ const HotkeyOnBoarding = () => {
 
   return (
     <div className="flex w-full cursor-pointer p-2">
-      <div className="item-center flex h-full w-3/5 flex-shrink-0 flex-col items-center justify-between rounded-lg bg-white px-8 py-14 dark:bg-background/50">
+      <div className="item-center flex h-full w-3/5 flex-shrink-0 flex-col items-center justify-between rounded-lg bg-white px-8 py-14 dark:bg-background/70">
         <div className="w-full text-center">
           <h1 className="mt-2 text-3xl font-bold">
             Enable{' '}
-            <span className="rounded-l-lg border-r-4 border-yellow-500 bg-yellow-100 p-1 px-2">
+            <span className="rounded-l-lg border-r-4 border-yellow-500 bg-yellow-100 p-1 px-2 dark:bg-yellow-700">
               Accessibility
             </span>{' '}
             Permissions
@@ -85,7 +85,7 @@ const HotkeyOnBoarding = () => {
                             <div
                               key={key}
                               className={twMerge(
-                                'keycaps uppercase',
+                                'keycaps uppercase text-black',
                                 key.length < 8 && 'small'
                               )}
                             >
@@ -135,7 +135,7 @@ const HotkeyOnBoarding = () => {
                           <div
                             key={key}
                             className={twMerge(
-                              'keycaps uppercase',
+                              'keycaps uppercase text-black',
                               key.length < 8 && 'small'
                             )}
                           >
@@ -145,10 +145,12 @@ const HotkeyOnBoarding = () => {
                       })}
                       {Array.from(keys).length === 0 && (
                         <>
-                          <div className="keycaps small uppercase">
+                          <div className="keycaps small uppercase text-black">
                             {getModifierSymbol(isMac ? 'meta' : 'ctrl')}
                           </div>
-                          <div className="keycaps small uppercase">J</div>
+                          <div className="keycaps small uppercase text-black">
+                            J
+                          </div>
                         </>
                       )}
                     </Fragment>
@@ -183,37 +185,60 @@ const HotkeyOnBoarding = () => {
           </div>
         </div>
 
-        <div className="flex w-3/4 gap-4">
-          <Button
-            size="lg"
-            themes="outline"
-            className="w-12 p-0"
-            onClick={() => setOnBoardingStep(onBoardingStep - 1)}
-          >
-            <ArrowLeftIcon size={20} />
-          </Button>
-          <Button
-            block
-            size="lg"
-            onClick={() => {
-              setOnBoardingStep(onBoardingStep + 1)
-              if (isValid && keys.size > 0) {
-                const key = Array.from(keys)
-                  .map((key) => key.charAt(0).toUpperCase() + key.slice(1))
-                  .join('+')
-                localStorage.setItem('quickAskHotkey', key)
-                localStorage.setItem(APP_ONBOARDING_FINISH, 'true')
-                window.core?.api.relaunch()
-              } else {
-                localStorage.setItem('quickAskHotkey', 'CommandOrControl+J')
-              }
-            }}
-          >
-            Continue
-          </Button>
+        <div className="flex w-full flex-col items-center justify-center">
+          <div className="mb-20 mt-10 flex flex-shrink-0 items-center space-x-2">
+            <Checkbox id="accessibility" checked />
+            <label
+              htmlFor="accessibility"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              Enable accessibility permissions for quick selection
+            </label>
+          </div>
+
+          <div className="flex w-3/4 gap-4">
+            <Button
+              size="lg"
+              themes="outline"
+              className="w-12 p-0"
+              onClick={() => setOnBoardingStep(onBoardingStep - 1)}
+            >
+              <ArrowLeftIcon size={20} />
+            </Button>
+            <Button
+              block
+              size="lg"
+              onClick={() => {
+                setOnBoardingStep(onBoardingStep + 1)
+                if (isValid && keys.size > 0) {
+                  // const key = Array.from(keys)
+                  //   .map((key) => key.charAt(0).toUpperCase() + key.slice(1))
+                  //   .join('+')
+                  // localStorage.setItem('quickAskHotkey', key)
+                  // localStorage.setItem(APP_ONBOARDING_FINISH, 'true')
+                } else {
+                  // localStorage.setItem('quickAskHotkey', 'CommandOrControl+J')
+                }
+              }}
+            >
+              Continue
+            </Button>
+          </div>
         </div>
       </div>
-      <div className="flex flex-shrink-0 items-center justify-center"></div>
+      <div className="flex items-center justify-center">
+        <div className="relative -right-2 flex h-full w-full">
+          <object
+            type="image/svg+xml"
+            data={
+              resolvedTheme === 'dark'
+                ? 'images/quick-ask-animation-dark.svg'
+                : 'images/quick-ask-animation.svg'
+            }
+            className="mx-auto h-full w-full"
+          />
+        </div>
+      </div>
     </div>
   )
 }
