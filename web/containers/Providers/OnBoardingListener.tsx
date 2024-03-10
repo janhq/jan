@@ -32,7 +32,7 @@ const OnboardingListener = ({ children }: PropsWithChildren) => {
 
   if (localStorage.getItem(APP_ONBOARDING_FINISH) === 'false') {
     return (
-      <div className="flex h-screen">
+      <div className="flex h-screen w-full flex-shrink-0">
         <Onboarding />
       </div>
     )
