@@ -42,7 +42,10 @@ const socials = [
 const AllSetOnBoarding = () => {
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
   const { register, handleSubmit } = useForm<FormMail>()
-  const onSubmit: SubmitHandler<FormMail> = (data) => console.log(data)
+  const onSubmit: SubmitHandler<FormMail> = async (data) => {
+    window.core?.api?.relaunch()
+    console.log(data)
+  }
 
   return (
     <div className="flex w-full cursor-pointer p-2">

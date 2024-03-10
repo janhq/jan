@@ -31,6 +31,7 @@ type Props = {
 
 const DataFolder = ({ onBoarding = false }: Props) => {
   const [showLoader, setShowLoader] = useState(false)
+  const [tmpDirVal, setTmpDirVal] = useState('')
   const setShowDirectoryConfirm = useSetAtom(showDirectoryConfirmModalAtom)
   const setShowSameDirectory = useSetAtom(showSamePathModalAtom)
   const setShowChangeFolderError = useSetAtom(showChangeFolderErrorAtom)
@@ -47,6 +48,8 @@ const DataFolder = ({ onBoarding = false }: Props) => {
       setShowSameDirectory(true)
       return
     }
+
+    setTmpDirVal(destFolder)
 
     const appConfiguration: AppConfiguration =
       await window.core?.api?.getAppConfigurations()
@@ -106,7 +109,7 @@ const DataFolder = ({ onBoarding = false }: Props) => {
       <div className="flex w-full items-center gap-x-3">
         <div className="relative w-full">
           <Input
-            value={janDataFolderPath}
+            value={tmpDirVal || janDataFolderPath}
             className={twMerge(onBoarding ? 'w-full' : 'w-[240px] pr-8')}
             disabled
           />
