@@ -39,8 +39,8 @@
     "@types/tcp-port-used": "^1.0.4",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
-    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react": "^7.34.0",
     "run-script-os": "^1.1.6",
-    "typescript": "^5.2.2"
+    "typescript": "^5.3.3"
   }
 }

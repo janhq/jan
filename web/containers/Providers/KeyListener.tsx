@@ -24,6 +24,10 @@ export default function KeyListener({ children }: Props) {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        window.core?.api?.hideMainWindow()
+      }
+
       const prefixKey = isMac ? e.metaKey : e.ctrlKey
 
       if (e.key === 'b' && prefixKey) {

@@ -1,26 +1,32 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Fragment, PropsWithChildren, useEffect } from 'react'
 
+import { AppUpdateInfo } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
-import { appDownloadProgress } from './Jotai'
+import { appDownloadProgress, updateVersionError } from './Jotai'
 
 const AppUpdateListener = ({ children }: PropsWithChildren) => {
   const setProgress = useSetAtom(appDownloadProgress)
+  const setUpdateVersionError = useSetAtom(updateVersionError)
 
   useEffect(() => {
     if (window && window.electronAPI) {
       window.electronAPI.onAppUpdateDownloadUpdate(
-        (_event: string, progress: any) => {
-          setProgress(progress.percent)
-          console.debug('app update progress:', progress.percent)
+        (_event: string, appUpdateInfo: AppUpdateInfo) => {
+          setProgress(appUpdateInfo.percent)
+          console.debug('app update progress:', appUpdateInfo.percent)
         }
       )
 
       window.electronAPI.onAppUpdateDownloadError(
-        (_event: string, callback: any) => {
-          console.error('Download error', callback)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (_event: string, error: any) => {
+          console.error('Download error: ', error)
           setProgress(-1)
+
+          // Can not install update
+          // Prompt user to download the update manually
+          setUpdateVersionError(error.failedToInstallVersion)
         }
       )
 
@@ -28,8 +34,7 @@ const AppUpdateListener = ({ children }: PropsWithChildren) => {
         setProgress(-1)
       })
     }
-    return () => {}
-  }, [setProgress])
+  }, [setProgress, setUpdateVersionError])
 
   return <Fragment>{children}</Fragment>
 }
