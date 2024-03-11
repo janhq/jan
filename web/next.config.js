@@ -32,6 +32,7 @@ const nextConfig = {
         VERSION: JSON.stringify(packageJson.version),
         ANALYTICS_ID: JSON.stringify(process.env.ANALYTICS_ID),
         ANALYTICS_HOST: JSON.stringify(process.env.ANALYTICS_HOST),
+        API_KEY_BREVO: JSON.stringify(process.env.API_KEY_BREVO),
         API_BASE_URL: JSON.stringify(
           process.env.API_BASE_URL ?? 'http://localhost:1337'
         ),
