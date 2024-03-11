@@ -79,6 +79,8 @@ export default function useSendChatMessage() {
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
   const activeThreadRef = useRef<Thread | undefined>()
 
+  const selectedModelRef = useRef<Model | undefined>()
+
   useEffect(() => {
     modelRef.current = activeModel
   }, [activeModel])
@@ -90,6 +92,10 @@ export default function useSendChatMessage() {
   useEffect(() => {
     activeThreadRef.current = activeThread
   }, [activeThread])
+
+  useEffect(() => {
+    selectedModelRef.current = selectedModel
+  }, [selectedModel])
 
   const resendChatMessage = async (currentMessage: ThreadMessage) => {
     if (!activeThreadRef.current) {
@@ -128,11 +134,13 @@ export default function useSendChatMessage() {
       type: MessageRequestType.Thread,
       messages: messages,
       threadId: activeThreadRef.current.id,
-      model: activeThreadRef.current.assistants[0].model ?? selectedModel,
+      model:
+        activeThreadRef.current.assistants[0].model ?? selectedModelRef.current,
     }
 
     const modelId =
-      selectedModel?.id ?? activeThreadRef.current.assistants[0].model.id
+      selectedModelRef.current?.id ??
+      activeThreadRef.current.assistants[0].model.id
 
     if (modelRef.current?.id !== modelId) {
       setQueuedMessage(true)
@@ -213,7 +221,7 @@ export default function useSendChatMessage() {
             {
               role: ChatCompletionRole.User,
               content:
-                selectedModel && base64Blob
+                selectedModelRef.current && base64Blob
                   ? [
                       {
                         type: ChatCompletionMessageContentType.Text,
@@ -242,7 +250,7 @@ export default function useSendChatMessage() {
       )
 
     let modelRequest =
-      selectedModel ?? activeThreadRef.current.assistants[0].model
+      selectedModelRef?.current ?? activeThreadRef.current.assistants[0].model
     if (runtimeParams.stream == null) {
       runtimeParams.stream = true
     }
@@ -344,7 +352,8 @@ export default function useSendChatMessage() {
       ?.addNewMessage(threadMessage)
 
     const modelId =
-      selectedModel?.id ?? activeThreadRef.current.assistants[0].model.id
+      selectedModelRef.current?.id ??
+      activeThreadRef.current.assistants[0].model.id
 
     if (modelRef.current?.id !== modelId) {
       setQueuedMessage(true)
