@@ -41,7 +41,6 @@
       "notarize": {
         "teamId": "F8AH6NHVY5"
       },
-     
       "icon": "icons/icon.png"
     },
     "linux": {
@@ -92,7 +91,7 @@
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
     "ulid": "^2.3.0",
-    "@hurdlegroup/robotjs": "^0.11.4"
+    "@nut-tree/nut-js": "^4.0.0"
   },
   "devDependencies": {
     "@electron/notarize": "^2.1.0",
