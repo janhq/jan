@@ -2,6 +2,7 @@ import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { AppEvent } from '@janhq/core'
 import { mainWindowConfig } from './mainWindowConfig'
+import { registerShortcut } from '../utils/selectedText'
 
 /**
  * Manages the current window instance.
@@ -110,6 +111,24 @@ class WindowManager {
       AppEvent.onSelectedText,
       selectedText
     )
+  }
+
+  // TODO: refactor this part since we have a duplicated code at main.ts also.
+  setQuickAskHotKey(hotKey: string): void {
+    const ret = registerShortcut(hotKey, (selectedText: string) => {
+      if (!windowManager.isQuickAskWindowVisible()) {
+        windowManager.showQuickAskWindow()
+        windowManager.sendQuickAskSelectedText(selectedText)
+      } else {
+        windowManager.hideQuickAskWindow()
+      }
+    })
+
+    if (!ret) {
+      console.error('Global shortcut registration failed')
+    } else {
+      console.log('Global shortcut registered successfully')
+    }
   }
 
   cleanUp(): void {
