@@ -25,8 +25,11 @@ import { onBoardingStepAtom, modalOnboardingAccesibilityAtom } from '..'
 
 import ModalAccesibility from './ModalAccesibility'
 
+import { updateAppConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
+
 const HotkeyOnBoarding = () => {
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
+  const updateAppConfiguration = useSetAtom(updateAppConfigurationAtom)
   const setModalOnboardingAccesibility = useSetAtom(
     modalOnboardingAccesibilityAtom
   )
@@ -56,16 +59,9 @@ const HotkeyOnBoarding = () => {
 
     if (isValid && keys.size > 0) {
       const keyCombination = convertKeyToAccelerator(Array.from(keys)).join('+')
-
-      await window.core?.api?.setQuickAskHotKey(keyCombination)
-      await window.core?.api?.updateAppConfiguration({
-        quick_ask_hotkey: keyCombination,
-      })
+      updateAppConfiguration({ quick_ask_hotkey: keyCombination })
     } else {
-      await window.core?.api?.setQuickAskHotKey(defaultQuickAskHotKey)
-      await window.core?.api?.updateAppConfiguration({
-        quick_ask_hotkey: defaultQuickAskHotKey,
-      })
+      updateAppConfiguration({ quick_ask_hotkey: defaultQuickAskHotKey })
     }
   }
 

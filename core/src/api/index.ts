@@ -18,6 +18,7 @@ export enum NativeRoute {
 
   quickAskSizeUpdated = 'quickAskSizeUpdated',
   setQuickAskHotKey = 'setQuickAskHotKey',
+  notifyOnboardingComplete = 'notifyOnboardingComplete',
 }
 
 /**
@@ -43,6 +44,7 @@ export enum AppEvent {
 
   onUserSubmitQuickAsk = 'onUserSubmitQuickAsk',
   onSelectedText = 'onSelectedText',
+  onboardingComplete = 'onboardingComplete',
 }
 
 export enum DownloadRoute {

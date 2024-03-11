@@ -2,14 +2,18 @@
 import { SubmitHandler, useForm } from 'react-hook-form'
 
 import { Button, Input } from '@janhq/uikit'
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { ArrowLeftIcon, ExternalLinkIcon } from 'lucide-react'
 import { AiOutlineGithub } from 'react-icons/ai'
 import { BiLogoDiscordAlt, BiLogoLinkedin } from 'react-icons/bi'
 import { FaSquareXTwitter } from 'react-icons/fa6'
 
+import { defaultQuickAskHotKey } from '@/utils/config'
+
 import { modalOnboardingAccesibilityAtom, onBoardingStepAtom } from '..'
+
+import { appConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
 
 type FormMail = {
   email: string
@@ -43,12 +47,19 @@ const socials = [
 const AllSetOnBoarding = () => {
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
   const setAccessibilityCheckbox = useSetAtom(modalOnboardingAccesibilityAtom)
+  const appConfiguration = useAtomValue(appConfigurationAtom)
   const { register, handleSubmit } = useForm<FormMail>()
 
-  const onFinish = () => {
-    window.core?.api?.updateAppConfiguration({
+  const onFinish = async () => {
+    const quickAskHotKey =
+      appConfiguration?.quick_ask_hotkey ?? defaultQuickAskHotKey
+    await window.core?.api?.setQuickAskHotKey(quickAskHotKey)
+    await window.core?.api?.updateAppConfiguration({
+      quick_ask_hotkey: quickAskHotKey,
       finish_onboarding: true,
     })
+    await window.core?.api?.notifyOnboardingComplete()
+
     window.core?.api?.relaunch()
   }
 

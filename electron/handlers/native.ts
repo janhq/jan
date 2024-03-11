@@ -139,4 +139,11 @@ export function handleAppIPCs() {
       windowManager.setQuickAskHotKey(hotKey)
     }
   )
+
+  ipcMain.handle(
+    NativeRoute.notifyOnboardingComplete,
+    async (): Promise<void> => {
+      windowManager.notifyQuickAskOnboardingComplete()
+    }
+  )
 }

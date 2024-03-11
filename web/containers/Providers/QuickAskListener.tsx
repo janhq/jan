@@ -11,6 +11,7 @@ import { showRightSideBarAtom } from '@/screens/Chat/Sidebar'
 import { showLeftSideBarAtom } from './KeyListener'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { updateAppConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
 
 type Props = {
   children: ReactNode
@@ -21,6 +22,7 @@ const QuickAskListener: React.FC<Props> = ({ children }) => {
   const setShowRightSideBar = useSetAtom(showRightSideBarAtom)
   const setShowLeftSideBar = useSetAtom(showLeftSideBarAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
+  const updateAppConfig = useSetAtom(updateAppConfigurationAtom)
 
   const previousMessage = useRef('')
 
@@ -31,6 +33,11 @@ const QuickAskListener: React.FC<Props> = ({ children }) => {
     setShowLeftSideBar(false)
     sendChatMessage(input)
     previousMessage.current = input
+  })
+
+  window.electronAPI.onboardingComplete(() => {
+    console.debug('Onboarding complete')
+    updateAppConfig({ finish_onboarding: true })
   })
 
   return <Fragment>{children}</Fragment>

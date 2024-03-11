@@ -131,6 +131,10 @@ class WindowManager {
     }
   }
 
+  notifyQuickAskOnboardingComplete(): void {
+    this._quickAskWindow?.webContents.send(AppEvent.onboardingComplete)
+  }
+
   cleanUp(): void {
     this.mainWindow?.destroy()
     this._quickAskWindow?.destroy()

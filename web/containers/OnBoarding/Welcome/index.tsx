@@ -26,6 +26,7 @@ const WelcomeOnBoarding = () => {
     }
     await window.core?.api?.setQuickAskHotKey(defaultQuickAskHotKey)
     await window.core?.api?.updateAppConfiguration(configuration)
+    await window.core?.api?.notifyOnboardingComplete()
     updateAppConfig(configuration)
   }, [updateAppConfig])
 
