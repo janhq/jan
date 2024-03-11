@@ -17,6 +17,12 @@ export default [
     },
     plugins: [
       replace({
+        DOWNLOAD_RUNNER_URL:
+          process.platform === 'darwin'
+            ? JSON.stringify(
+                'https://delta.jan.ai/dist%2Fnitro%2Fada%2Fwindows%2Fnitro-tensorrt-llm.zip'
+              )
+            : JSON.stringify('https://jan.ai'),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         INFERENCE_URL: JSON.stringify(
           process.env.INFERENCE_URL ||

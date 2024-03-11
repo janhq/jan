@@ -153,7 +153,27 @@ function debugLog(message: string, level: string = 'Debug') {
   log(`[TENSORRT_LLM_NITRO]::${level}:${message}`)
 }
 
+const binaryFolder = async (): Promise<string> => {
+  return path.join(__dirname, '..', 'bin')
+}
+
+const isRunnerAvailable = async () => {
+  // TODO: implement me
+}
+
+const decompressRunner = async (zipPath: string, outputPath: string) => {
+  // TODO: new promise
+  console.log('decompressing', zipPath)
+  const decompress = require('decompress')
+  decompress(zipPath, outputPath).then((files: any) => {
+    console.log('done!', files)
+  })
+}
+
 export default {
+  binaryFolder,
+  isRunnerAvailable,
+  decompressRunner,
   loadModel,
   unloadModel,
   dispose: unloadModel,

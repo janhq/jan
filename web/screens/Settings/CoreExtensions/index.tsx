@@ -4,11 +4,12 @@ import React, { useState, useEffect, useRef } from 'react'
 
 import { Button, ScrollArea } from '@janhq/uikit'
 
+import Loader from '@/containers/Loader'
+
 import { formatExtensionsName } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
-import Loader from '@/containers/Loader'
 
 const ExtensionCatalog = () => {
   const [activeExtensions, setActiveExtensions] = useState<Extension[]>([])

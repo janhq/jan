@@ -5,7 +5,7 @@ import { getJanDataFolderPath } from '../../helper'
 import { DownloadManager } from '../../helper/download'
 import { createWriteStream, renameSync } from 'fs'
 import { Processor } from './Processor'
-import { DownloadState } from '../../../types'
+import { DownloadState, NetworkConfig } from '../../../types'
 
 export class Downloader implements Processor {
   observer?: Function
@@ -20,7 +20,7 @@ export class Downloader implements Processor {
     return func(this.observer, ...args)
   }
 
-  downloadFile(observer: any, url: string, localPath: string, network: any) {
+  downloadFile(observer: any, url: string, localPath: string, network?: NetworkConfig) {
     const request = require('request')
     const progress = require('request-progress')
 
