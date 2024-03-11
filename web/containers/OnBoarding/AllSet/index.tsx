@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 import { SubmitHandler, useForm } from 'react-hook-form'
 
 import { Button, Input } from '@janhq/uikit'
@@ -45,12 +46,32 @@ const AllSetOnBoarding = () => {
   const { register, handleSubmit } = useForm<FormMail>()
 
   const onSubmit: SubmitHandler<FormMail> = async (data) => {
-    await window.core?.api?.updateAppConfiguration({
-      finish_onboarding: true,
-    })
+    const { email } = data
+    const options = {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'api-key':
+          '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',
+      },
+      body: JSON.stringify({
+        updateEnabled: false,
+        email,
+        listIds: [10],
+      }),
+    }
 
-    window.core?.api?.relaunch()
-    console.log(data)
+    fetch('https://api.brevo.com/v3/contacts', options)
+      .then((response) => response.json())
+      .then((response) => console.log(response))
+      .catch((err) => console.error(err))
+      .then(async () => {
+        await window.core?.api?.updateAppConfiguration({
+          finish_onboarding: true,
+        })
+        window.core?.api?.relaunch()
+      })
   }
 
   return (
