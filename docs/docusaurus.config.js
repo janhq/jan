@@ -1,6 +1,5 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
-
 require("dotenv").config();
 
 const darkCodeTheme = require("prism-react-renderer/themes/dracula");
@@ -105,6 +104,9 @@ const config = {
           {
             from: "/troubleshooting/undefined-issue/",
             to: "/guides/error-codes/undefined-issue/",
+          },  {
+            from: "/install/",
+            to: "/guides/install/",
           },
         ],
       },
