@@ -1,36 +1,22 @@
-import { Fragment, PropsWithChildren, useEffect } from 'react'
+import { Fragment, PropsWithChildren } from 'react'
 
-import { useAtom } from 'jotai'
+import { useAtomValue } from 'jotai'
 
 import Onboarding from '@/containers/OnBoarding'
 
-import { MainViewState } from '@/constants/screens'
+import { appConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+const OnBoardingListener = ({ children }: PropsWithChildren) => {
+  const appConfig = useAtomValue(appConfigurationAtom)
 
-export const APP_ONBOARDING_FINISH = 'appOnBoardingFinish'
+  if (!appConfig) {
+    return <Fragment>{children}</Fragment>
+  }
 
-const OnboardingListener = ({ children }: PropsWithChildren) => {
-  const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
+  const shouldShowOnboarding =
+    appConfig.finish_onboarding == null || appConfig.finish_onboarding === false
 
-  useEffect(() => {
-    if (localStorage.getItem(APP_ONBOARDING_FINISH) === null) {
-      localStorage.setItem(APP_ONBOARDING_FINISH, 'false')
-      setMainViewState(MainViewState.Onboarding)
-    } else if (
-      localStorage.getItem(APP_ONBOARDING_FINISH) === 'false' &&
-      mainViewState !== MainViewState.Onboarding
-    ) {
-      setMainViewState(MainViewState.Onboarding)
-    } else if (
-      localStorage.getItem(APP_ONBOARDING_FINISH) === 'true' &&
-      mainViewState === MainViewState.Onboarding
-    ) {
-      setMainViewState(MainViewState.Thread)
-    }
-  }, [mainViewState, setMainViewState])
-
-  if (localStorage.getItem(APP_ONBOARDING_FINISH) === 'false') {
+  if (shouldShowOnboarding) {
     return (
       <div className="flex h-screen w-full flex-shrink-0">
         <Onboarding />
@@ -41,4 +27,4 @@ const OnboardingListener = ({ children }: PropsWithChildren) => {
   return <Fragment>{children}</Fragment>
 }
 
-export default OnboardingListener
+export default OnBoardingListener

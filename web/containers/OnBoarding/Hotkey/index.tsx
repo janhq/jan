@@ -11,7 +11,7 @@ import {
   TooltipTrigger,
 } from '@janhq/uikit'
 import { Tooltip } from '@janhq/uikit'
-import { useAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 import { ArrowLeftIcon, CommandIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -24,7 +24,7 @@ import ModalAccesibility from './ModalAccesibility'
 
 const HotkeyOnBoarding = () => {
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
-  const [modalOnboardingAccesibility, setModalOnboardingAccesibility] = useAtom(
+  const setModalOnboardingAccesibility = useSetAtom(
     modalOnboardingAccesibilityAtom
   )
   const [checkboxState, setCheckboxState] = useState(true)

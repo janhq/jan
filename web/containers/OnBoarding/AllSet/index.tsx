@@ -43,7 +43,12 @@ const AllSetOnBoarding = () => {
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
   const setAccessibilityCheckbox = useSetAtom(modalOnboardingAccesibilityAtom)
   const { register, handleSubmit } = useForm<FormMail>()
+
   const onSubmit: SubmitHandler<FormMail> = async (data) => {
+    await window.core?.api?.updateAppConfiguration({
+      finish_onboarding: true,
+    })
+
     window.core?.api?.relaunch()
     console.log(data)
   }

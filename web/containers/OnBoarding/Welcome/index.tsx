@@ -1,18 +1,28 @@
+import { useCallback } from 'react'
+
 import { useTheme } from 'next-themes'
 
 import { Button } from '@janhq/uikit'
 
-import { useAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import { APP_ONBOARDING_FINISH } from '@/containers/Providers/OnboardingListener'
-
 import { onBoardingStepAtom } from '..'
 
+import { updateAppConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
+
 const WelcomeOnBoarding = () => {
+  const updateAppConfig = useSetAtom(updateAppConfigurationAtom)
   const [onBoardingStep, setOnBoardingStep] = useAtom(onBoardingStepAtom)
   const { resolvedTheme } = useTheme()
+
+  const onSkipOnboardingClick = useCallback(async () => {
+    await window.core?.api?.updateAppConfiguration({
+      finish_onboarding: true,
+    })
+    updateAppConfig({ finish_onboarding: true })
+  }, [updateAppConfig])
 
   return (
     <div className="flex h-screen w-screen flex-col items-center justify-end gap-8">
@@ -26,13 +36,7 @@ const WelcomeOnBoarding = () => {
 
       <div className="flex w-full items-end justify-center">
         <div className="flex-shrink-0 pb-8">
-          <Button
-            themes="ghost"
-            onClick={() => {
-              localStorage.setItem(APP_ONBOARDING_FINISH, 'true')
-              window.core?.api.relaunch()
-            }}
-          >
+          <Button themes="ghost" onClick={onSkipOnboardingClick}>
             Skip Setup
           </Button>
         </div>
