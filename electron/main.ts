@@ -27,6 +27,7 @@ import { setupReactDevTool } from './utils/dev'
 import { cleanLogs } from './utils/log'
 
 import { registerShortcut } from './utils/selectedText'
+import { createSystemTray } from './utils/tray'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -48,33 +49,14 @@ app
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
-  .then(createQuickAskWindow)
+  .then(() => process.env.CI !== 'e2e' && createQuickAskWindow())
   .then(createMainWindow)
   .then(() => {
     if (!app.isPackaged) {
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
-  .then(() => {
-    const iconPath = join(app.getAppPath(), 'icons', 'icon-tray.png')
-    const tray = new Tray(iconPath)
-    tray.setToolTip(app.getName())
-
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Open Jan',
-        type: 'normal',
-        click: () => windowManager.showMainWindow(),
-      },
-      {
-        label: 'Open Quick Ask',
-        type: 'normal',
-        click: () => windowManager.showQuickAskWindow(),
-      },
-      { label: 'Quit', type: 'normal', click: () => app.quit() },
-    ])
-    tray.setContextMenu(contextMenu)
-  })
+  .then(() => process.env.CI !== 'e2e' && createSystemTray())
   .then(() => {
     log(`Version: ${app.getVersion()}`)
   })
