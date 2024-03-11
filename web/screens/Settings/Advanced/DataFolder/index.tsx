@@ -106,8 +106,10 @@ const DataFolder = ({ onBoarding = false }: Props) => {
 
   return (
     <Fragment>
-      <div className="flex w-full items-center gap-x-3">
-        <div className="relative w-full">
+      <div
+        className={twMerge('flex items-center gap-x-3', onBoarding && 'w-full')}
+      >
+        <div className={twMerge('relative', onBoarding && 'w-full')}>
           <Input
             value={tmpDirVal || (appConfig?.data_folder ?? '')}
             className={twMerge(onBoarding ? 'w-full' : 'w-[240px] pr-8')}
