@@ -50,7 +50,7 @@ const HotkeyOnBoarding = () => {
   const onContinueClick = async () => {
     if (checkboxState) {
       setOnBoardingStep(onBoardingStep + 1)
-      await window.core?.api?.getSelectedText()
+      isMac && (await window.core?.api?.getSelectedText())
     } else {
       setModalOnboardingAccesibility(true)
     }
@@ -229,19 +229,21 @@ const HotkeyOnBoarding = () => {
           </div>
 
           <div className="flex w-full flex-col items-center justify-center">
-            <div className="mb-20 mt-10 flex flex-shrink-0 items-center space-x-2">
-              <Checkbox
-                id="accessibility"
-                checked={checkboxState}
-                onCheckedChange={(check) => setCheckboxState(Boolean(check))}
-              />
-              <label
-                htmlFor="accessibility"
-                className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-              >
-                Enable accessibility permissions for quick selection
-              </label>
-            </div>
+            {isMac && (
+              <div className="mb-20 mt-10 flex flex-shrink-0 items-center space-x-2">
+                <Checkbox
+                  id="accessibility"
+                  checked={checkboxState}
+                  onCheckedChange={(check) => setCheckboxState(Boolean(check))}
+                />
+                <label
+                  htmlFor="accessibility"
+                  className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Enable accessibility permissions for quick selection
+                </label>
+              </div>
+            )}
 
             <div className="flex w-3/4 gap-4">
               <Button
