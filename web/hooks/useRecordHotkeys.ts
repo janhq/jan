@@ -51,75 +51,69 @@ export default function useRecordHotkeys() {
   const [error, setError] = useState('')
 
   const resetKeys = useCallback(() => {
-    setError('')
+    document.removeEventListener('keyup', onKeyup)
     setKeys(new Set<string>())
+    setError('')
     document.addEventListener('keydown', onKeydown)
   }, [])
 
   const onKeyup = useCallback(() => {
     resetKeys()
-  }, [resetKeys])
+  }, [])
 
   const verify = useCallback((hotkey: Set<string>) => {
     const hasModifier = reservedModifierKeywords.some((modifier) =>
       hotkey.has(modifier)
     )
+
     const hasNormalKey = Array.from(hotkey).some(
       (key) => !reservedModifierKeywords.includes(key)
     )
 
-    return hasModifier && hasNormalKey && !error
+    return hasModifier && hasNormalKey
   }, [])
 
   const isValid = verify(keys)
 
-  const onKeydown = useCallback(
-    (event: KeyboardEvent) => {
-      const prefixKey = isMac ? event.metaKey : event.ctrlKey
-      event.preventDefault()
-      event.stopPropagation()
+  const onKeydown = useCallback((event: KeyboardEvent) => {
+    const prefixKey = isMac ? event.metaKey : event.ctrlKey
+    event.preventDefault()
+    event.stopPropagation()
 
-      const mappedKeys = mapKey(event.code)
+    const mappedKeys = mapKey(event.code)
 
-      setKeys((prev) => {
-        const newKeys = new Set(prev)
-        newKeys.add(mappedKeys)
-
-        if (Array.from(newKeys).length >= 3) {
-          document.removeEventListener('keydown', onKeydown)
-        }
-
-        if (event.key === 'h' && prefixKey) {
-          setError('This key is already used by the menu item Hide Jan')
-          document.addEventListener('keyup', onKeyup)
-        }
-
-        if (event.key === 'k' && prefixKey) {
-          document.addEventListener('keyup', onKeyup)
-          setError('This key is already used for Show list navigation pages')
-        }
-
-        if (event.key === 'r' && prefixKey && event.shiftKey) {
-          document.addEventListener('keyup', onKeyup)
-          setError('This key is already used for hard refresh')
-        }
-
-        if (!isHotkeyModifier(Array.from(newKeys)[0])) {
-          document.removeEventListener('keydown', onKeydown)
-          document.addEventListener('keyup', onKeyup)
-          setError('At least 1 modifier should be included.')
-        }
-
-        if (verify(newKeys)) {
-          setIsRecording(false)
-          document.removeEventListener('keydown', onKeydown)
-        }
-
-        return newKeys
-      })
-    },
-    [onKeyup]
-  )
+    setKeys((prev) => {
+      const newKeys = new Set(prev)
+      newKeys.add(mappedKeys)
+      if (Array.from(newKeys).length > 3) {
+        document.removeEventListener('keydown', onKeydown)
+      } else if (event.key === 'h' && prefixKey) {
+        document.removeEventListener('keydown', onKeydown)
+        document.addEventListener('keyup', onKeyup)
+        setError('This key is already used by the menu item Hide Jan')
+      } else if (event.key === 'k' && prefixKey) {
+        document.removeEventListener('keydown', onKeydown)
+        document.addEventListener('keyup', onKeyup)
+        setError('This key is already used for Show list navigation pages')
+      } else if (event.key === 'r' && prefixKey && event.shiftKey) {
+        document.removeEventListener('keydown', onKeydown)
+        document.addEventListener('keyup', onKeyup)
+        setError('This key is already used for hard refresh')
+      } else if (event.key === 'r' && prefixKey) {
+        document.removeEventListener('keydown', onKeydown)
+        document.addEventListener('keyup', onKeyup)
+        setError('This key is already used for refresh')
+      } else if (!isHotkeyModifier(Array.from(newKeys)[0])) {
+        document.removeEventListener('keydown', onKeydown)
+        document.addEventListener('keyup', onKeyup)
+        setError('At least 1 modifier should be included.')
+      } else if (verify(newKeys)) {
+        setIsRecording(false)
+        document.removeEventListener('keydown', onKeydown)
+      }
+      return newKeys
+    })
+  }, [])
 
   const stop = useCallback(() => {
     setIsRecording(false)
@@ -132,6 +126,7 @@ export default function useRecordHotkeys() {
     document.addEventListener('keydown', onKeydown)
     setKeys(new Set<string>())
     setIsRecording(true)
+    setError('')
   }, [onKeydown, setIsRecording])
 
   return {
