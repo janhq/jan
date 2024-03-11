@@ -47,12 +47,19 @@ const getConfigurationFilePath = () =>
     configurationFileName
   )
 
-export const updateAppConfiguration = (configuration: AppConfiguration): Promise<void> => {
-  const configurationFile = getConfigurationFilePath()
-  console.debug('updateAppConfiguration, configurationFile: ', configurationFile)
+export const updateAppConfiguration = (configuration: Partial<AppConfiguration>): void => {
+  const path = getConfigurationFilePath()
+  const currentConfig = getAppConfigurations()
+  console.debug('updateAppConfiguration, configurationFilePath: ', path)
 
-  fs.writeFileSync(configurationFile, JSON.stringify(configuration))
-  return Promise.resolve()
+  fs.writeFileSync(
+    path,
+    JSON.stringify({
+      ...currentConfig,
+      ...configuration,
+    })
+  )
+  Promise.resolve()
 }
 
 /**

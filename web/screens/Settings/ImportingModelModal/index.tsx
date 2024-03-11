@@ -22,24 +22,24 @@ import { openFileTitle } from '@/utils/titleUtils'
 
 import ImportingModelItem from './ImportingModelItem'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import { appConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
 import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const ImportingModelModal: React.FC = () => {
   const importingModels = useAtomValue(importingModelsAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
-  const janDataFolder = useAtomValue(janDataFolderPathAtom)
+  const appConfig = useAtomValue(appConfigurationAtom)
 
   const [modelFolder, setModelFolder] = useState('')
 
   useEffect(() => {
     const getModelPath = async () => {
-      const modelPath = await joinPath([janDataFolder, 'models'])
+      const modelPath = await joinPath([appConfig?.data_folder ?? '', 'models'])
       setModelFolder(modelPath)
     }
     getModelPath()
-  }, [janDataFolder])
+  }, [appConfig])
 
   const finishedImportModel = importingModels.filter(
     (model) => model.status === 'IMPORTED'
