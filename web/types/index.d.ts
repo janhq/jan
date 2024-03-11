@@ -5,6 +5,7 @@ export {}
 
 declare global {
   declare const VERSION: string
+  declare const API_KEY_BREVO: string
   declare const ANALYTICS_ID: string
   declare const ANALYTICS_HOST: string
   declare const API_BASE_URL: string

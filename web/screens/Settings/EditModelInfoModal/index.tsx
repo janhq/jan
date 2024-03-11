@@ -31,7 +31,7 @@ import { toGibibytes } from '@/utils/converter'
 
 import { openFileTitle } from '@/utils/titleUtils'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import { appConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   importingModelsAtom,
   updateImportingModelAtom,
@@ -50,7 +50,7 @@ const EditModelInfoModal: React.FC = () => {
   const [description, setDescription] = useState('')
   const [tags, setTags] = useState<string[]>([])
 
-  const janDataFolder = useAtomValue(janDataFolderPathAtom)
+  const appConfig = useAtomValue(appConfigurationAtom)
   const updateImportingModel = useSetAtom(updateImportingModelAtom)
   const { updateModelInfo } = useImportModel()
   const [modelPath, setModelPath] = useState<string>('')
@@ -99,11 +99,15 @@ const EditModelInfoModal: React.FC = () => {
     const getModelPath = async () => {
       const modelId = editingModel?.modelId
       if (!modelId) return ''
-      const path = await joinPath([janDataFolder, 'models', modelId])
+      const path = await joinPath([
+        appConfig?.data_folder ?? '',
+        'models',
+        modelId,
+      ])
       setModelPath(path)
     }
     getModelPath()
-  }, [janDataFolder, editingModel])
+  }, [appConfig, editingModel])
 
   const onShowInFinderClick = useCallback(() => {
     openFileExplorer(modelPath)

@@ -21,19 +21,16 @@ const defaultAppConfig: AppConfiguration = {
 export const getAppConfigurations = (): AppConfiguration => {
   // Retrieve Application Support folder path
   // Fallback to user home directory if not found
-  const configurationFile = getConfigurationFilePath()
-
-  if (!fs.existsSync(configurationFile)) {
+  const path = getConfigurationFilePath()
+  if (!fs.existsSync(path)) {
     // create default app config if we don't have one
-    console.debug(`App config not found, creating default config at ${configurationFile}`)
-    fs.writeFileSync(configurationFile, JSON.stringify(defaultAppConfig))
+    console.debug(`App config not found, creating default config at ${path}`)
+    fs.writeFileSync(path, JSON.stringify(defaultAppConfig))
     return defaultAppConfig
   }
 
   try {
-    const appConfigurations: AppConfiguration = JSON.parse(
-      fs.readFileSync(configurationFile, 'utf-8')
-    )
+    const appConfigurations: AppConfiguration = JSON.parse(fs.readFileSync(path, 'utf-8'))
     return appConfigurations
   } catch (err) {
     console.error(`Failed to read app config, return default config instead! Err: ${err}`)
@@ -47,12 +44,19 @@ const getConfigurationFilePath = () =>
     configurationFileName
   )
 
-export const updateAppConfiguration = (configuration: AppConfiguration): Promise<void> => {
-  const configurationFile = getConfigurationFilePath()
-  console.debug('updateAppConfiguration, configurationFile: ', configurationFile)
+export const updateAppConfiguration = (configuration: Partial<AppConfiguration>): void => {
+  const path = getConfigurationFilePath()
+  const currentConfig = getAppConfigurations()
+  console.debug('updateAppConfiguration, configurationFilePath: ', path)
 
-  fs.writeFileSync(configurationFile, JSON.stringify(configuration))
-  return Promise.resolve()
+  fs.writeFileSync(
+    path,
+    JSON.stringify({
+      ...currentConfig,
+      ...configuration,
+    })
+  )
+  Promise.resolve()
 }
 
 /**

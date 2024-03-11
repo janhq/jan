@@ -13,7 +13,7 @@ import { useUserConfigs } from '@/hooks/useUserConfigs'
 export default function ThemeWrapper({ children }: PropsWithChildren) {
   const [config] = useUserConfigs()
 
-  useBodyClass(config.primaryColor || 'primary-yellow')
+  useBodyClass(config.primaryColor || 'primary-blue')
 
   return (
     <ThemeProvider attribute="class" enableSystem>

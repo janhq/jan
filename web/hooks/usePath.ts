@@ -3,11 +3,11 @@ import { useAtomValue } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import { appConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const usePath = () => {
-  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
+  const appConfig = useAtomValue(appConfigurationAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
 
@@ -36,7 +36,7 @@ export const usePath = () => {
     }
 
     if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
+    const fullPath = await joinPath([appConfig?.data_folder ?? '', filePath])
     openFileExplorer(fullPath)
   }
 
@@ -69,7 +69,7 @@ export const usePath = () => {
     }
 
     if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
+    const fullPath = await joinPath([appConfig?.data_folder ?? '', filePath])
     openFileExplorer(fullPath)
   }
 
@@ -81,7 +81,7 @@ export const usePath = () => {
     id = await baseName(id)
     filePath = await joinPath(['threads', `${activeThread.id}/files`, `${id}`])
     if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
+    const fullPath = await joinPath([appConfig?.data_folder ?? '', filePath])
     openFileExplorer(fullPath)
   }
 
@@ -91,7 +91,7 @@ export const usePath = () => {
     let filePath = undefined
     filePath = await joinPath(['threads', `${activeThread.id}/files`])
     if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
+    const fullPath = await joinPath([appConfig?.data_folder ?? '', filePath])
     openFileExplorer(fullPath)
   }
 
