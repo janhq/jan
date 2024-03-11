@@ -68,11 +68,7 @@ app
     } else {
       app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
         // Someone tried to run a second instance, we should focus our window.
-        if (windowManager.mainWindow) {
-          if (windowManager.mainWindow.isMinimized())
-            windowManager.mainWindow.restore()
-          windowManager.mainWindow.focus()
-        }
+        windowManager.showMainWindow()
       })
     }
     app.on('activate', () => {
@@ -107,7 +103,12 @@ function createMainWindow() {
 
 function registerGlobalShortcuts() {
   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
-    windowManager.showMainWindow()
+    if (!windowManager.isQuickAskWindowVisible()) {
+      windowManager.showQuickAskWindow()
+      windowManager.sendQuickAskSelectedText(selectedText)
+    } else {
+      windowManager.hideQuickAskWindow()
+    }
   })
 
   if (!ret) {
