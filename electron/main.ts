@@ -5,7 +5,7 @@ import { join } from 'path'
  * Managers
  **/
 import { windowManager } from './managers/window'
-import { log } from '@janhq/core/node'
+import { getAppConfigurations, log } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -36,8 +36,6 @@ const mainPath = join(rendererPath, 'index.html')
 const mainUrl = 'http://localhost:3000'
 const quickAskUrl = `${mainUrl}/search`
 
-const quickAskHotKey = 'CommandOrControl+J'
-
 app
   .whenReady()
   .then(setupReactDevTool)
@@ -50,6 +48,17 @@ app
   .then(handleAppUpdates)
   .then(createQuickAskWindow)
   .then(createMainWindow)
+  .then(() => {
+    const config = getAppConfigurations()
+    const quickAskHotKey = config.quick_ask_hotkey
+    if (!quickAskHotKey) {
+      console.warn(
+        'No quick_ask_hotkey found in the configuration. Ignore registering global shortcut!'
+      )
+      return
+    }
+    registerGlobalShortcuts(quickAskHotKey)
+  })
   .then(() => {
     if (!app.isPackaged) {
       windowManager.mainWindow?.webContents.openDevTools()
@@ -87,10 +96,6 @@ app
   })
   .then(() => cleanLogs())
 
-// app.on('ready', () => {
-//   registerGlobalShortcuts()
-// })
-
 app.once('quit', () => {
   cleanUpAndQuit()
 })
@@ -105,22 +110,22 @@ function createMainWindow() {
   windowManager.createMainWindow(preloadPath, startUrl)
 }
 
-// function registerGlobalShortcuts() {
-//   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
-//     if (!windowManager.isQuickAskWindowVisible()) {
-//       windowManager.showQuickAskWindow()
-//       windowManager.sendQuickAskSelectedText(selectedText)
-//     } else {
-//       windowManager.hideQuickAskWindow()
-//     }
-//   })
+function registerGlobalShortcuts(hotkey: string) {
+  const ret = registerShortcut(hotkey, (selectedText: string) => {
+    if (!windowManager.isQuickAskWindowVisible()) {
+      windowManager.showQuickAskWindow()
+      windowManager.sendQuickAskSelectedText(selectedText)
+    } else {
+      windowManager.hideQuickAskWindow()
+    }
+  })
 
-//   if (!ret) {
-//     console.error('Global shortcut registration failed')
-//   } else {
-//     console.log('Global shortcut registered successfully')
-//   }
-// }
+  if (!ret) {
+    console.error('Global shortcut registration failed')
+  } else {
+    console.log('Global shortcut registered successfully')
+  }
+}
 
 /**
  * Handles various IPC messages from the renderer process.

@@ -18,6 +18,8 @@ import { twMerge } from 'tailwind-merge'
 
 import useRecordHotkeys from '@/hooks/useRecordHotkeys'
 
+import { convertKeyToAccelerator } from '@/utils/keyboard'
+
 import { onBoardingStepAtom, modalOnboardingAccesibilityAtom } from '..'
 
 import ModalAccesibility from './ModalAccesibility'
@@ -42,6 +44,26 @@ const HotkeyOnBoarding = () => {
       }
     }
     return key
+  }
+
+  const onContinueClick = async () => {
+    if (checkboxState) {
+      setOnBoardingStep(onBoardingStep + 1)
+    } else {
+      setModalOnboardingAccesibility(true)
+    }
+
+    if (isValid && keys.size > 0) {
+      const keyCombination = convertKeyToAccelerator(Array.from(keys)).join('+')
+
+      await window.core?.api?.updateAppConfiguration({
+        quick_ask_hotkey: keyCombination,
+      })
+    } else {
+      await window.core?.api?.updateAppConfiguration({
+        quick_ask_hotkey: 'CommandOrControl+J',
+      })
+    }
   }
 
   return (
@@ -215,29 +237,7 @@ const HotkeyOnBoarding = () => {
               >
                 <ArrowLeftIcon size={20} />
               </Button>
-              <Button
-                block
-                size="lg"
-                onClick={() => {
-                  if (checkboxState) {
-                    setOnBoardingStep(onBoardingStep + 1)
-                  } else {
-                    setModalOnboardingAccesibility(true)
-                  }
-                  // console.log(checkboxState)
-                  // setOnBoardingStep(onBoardingStep + 1)
-                  // setModalOnboardingAccesibility(checkboxState)
-                  if (isValid && keys.size > 0) {
-                    const key = Array.from(keys)
-                      .map((key) => key.charAt(0).toUpperCase() + key.slice(1))
-                      .join('+')
-                    localStorage.setItem('quickAskHotkey', key)
-                    // localStorage.setItem(APP_ONBOARDING_FINISH, 'true')
-                  } else {
-                    // localStorage.setItem('quickAskHotkey', 'CommandOrControl+J')
-                  }
-                }}
-              >
+              <Button block size="lg" onClick={onContinueClick}>
                 Continue
               </Button>
             </div>
