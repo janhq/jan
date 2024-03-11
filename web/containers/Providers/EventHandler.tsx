@@ -16,11 +16,12 @@ import {
   Thread,
   ModelInitFailed,
 } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import {
   activeModelAtom,
+  activeModelSettingAtom,
   loadModelErrorAtom,
   stateModelAtom,
 } from '@/hooks/useActiveModel'
@@ -45,21 +46,23 @@ import {
 
 export default function EventHandler({ children }: { children: ReactNode }) {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
+  const [activeModel, setActiveModel] = useAtom(activeModelAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const threads = useAtomValue(threadsAtom)
+
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
-  const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const activeModel = useAtomValue(activeModelAtom)
-  const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
   const setQueuedMessage = useSetAtom(queuedMessageAtom)
   const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
-  const threads = useAtomValue(threadsAtom)
-  const modelsRef = useRef(downloadedModels)
-  const threadsRef = useRef(threads)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
   const updateThread = useSetAtom(updateThreadAtom)
+  const setActiveModelSetting = useSetAtom(activeModelSettingAtom)
+
+  const modelsRef = useRef(downloadedModels)
+  const threadsRef = useRef(threads)
   const messagesRef = useRef(messages)
   const activeModelRef = useRef(activeModel)
 
@@ -91,6 +94,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const onModelReady = useCallback(
     (model: Model) => {
       setActiveModel(model)
+      setActiveModelSetting(model.settings)
       toaster({
         title: 'Success!',
         description: `Model ${model.id} has been started.`,
@@ -102,7 +106,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         model: model.id,
       }))
     },
-    [setActiveModel, setStateModel]
+    [setActiveModel, setStateModel, setActiveModelSetting]
   )
 
   const onModelStopped = useCallback(() => {

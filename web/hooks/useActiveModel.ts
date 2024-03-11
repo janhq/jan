@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-import { events, Model, ModelEvent } from '@janhq/core'
+import { events, Model, ModelEvent, ModelSettingParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -11,6 +11,9 @@ import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
+export const activeModelSettingAtom = atom<ModelSettingParams | undefined>(
+  undefined
+)
 export const loadModelErrorAtom = atom<string | undefined>(undefined)
 
 export const stateModelAtom = atom({
@@ -24,6 +27,7 @@ export function useActiveModel() {
   const activeThread = useAtomValue(activeThreadAtom)
   const [stateModel, setStateModel] = useAtom(stateModelAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+
   const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
   const downloadedModelsRef = useRef<Model[]>([])

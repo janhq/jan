@@ -2,7 +2,6 @@ import { Model } from '@janhq/core'
 import { atom } from 'jotai'
 
 export const stateModel = atom({ state: 'start', loading: false, model: '' })
-export const activeAssistantModelAtom = atom<Model | undefined>(undefined)
 
 /**
  * Stores the list of models which are being downloaded.
