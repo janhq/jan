@@ -3,8 +3,6 @@ import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { AppEvent } from '@janhq/core'
 import { mainWindowConfig } from './mainWindowConfig'
 
-import { registerShortcut } from '../utils/selectedText'
-
 /**
  * Manages the current window instance.
  */
