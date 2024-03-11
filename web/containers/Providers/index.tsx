@@ -25,7 +25,7 @@ import DataLoader from './DataLoader'
 
 import KeyListener from './KeyListener'
 
-import OnBoardingListener from './OnboardingListener'
+import OnBoardingListener from './OnBoardingListener'
 
 import { extensionManager } from '@/extension'
 

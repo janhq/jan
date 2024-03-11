@@ -23,7 +23,7 @@ import ModalErrorSetDestGlobal, {
 
 import ModalSameDirectory, { showSamePathModalAtom } from './ModalSameDirectory'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import { appConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
 
 type Props = {
   onBoarding?: boolean
@@ -38,13 +38,13 @@ const DataFolder = ({ onBoarding = false }: Props) => {
   const showDestNotEmptyConfirm = useSetAtom(showDestNotEmptyConfirmAtom)
 
   const [destinationPath, setDestinationPath] = useState(undefined)
-  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
+  const appConfig = useAtomValue(appConfigurationAtom)
 
   const onChangeFolderClick = useCallback(async () => {
     const destFolder = await window.core?.api?.selectDirectory()
     if (!destFolder) return
 
-    if (destFolder === janDataFolderPath) {
+    if (destFolder === appConfig?.data_folder ?? '') {
       setShowSameDirectory(true)
       return
     }
@@ -72,7 +72,7 @@ const DataFolder = ({ onBoarding = false }: Props) => {
     setDestinationPath(destFolder)
     setShowDirectoryConfirm(true)
   }, [
-    janDataFolderPath,
+    appConfig,
     setShowDirectoryConfirm,
     setShowSameDirectory,
     showDestNotEmptyConfirm,
@@ -109,7 +109,7 @@ const DataFolder = ({ onBoarding = false }: Props) => {
       <div className="flex w-full items-center gap-x-3">
         <div className="relative w-full">
           <Input
-            value={tmpDirVal || janDataFolderPath}
+            value={tmpDirVal || (appConfig?.data_folder ?? '')}
             className={twMerge(onBoarding ? 'w-full' : 'w-[240px] pr-8')}
             disabled
           />
