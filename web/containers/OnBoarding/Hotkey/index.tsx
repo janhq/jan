@@ -133,8 +133,10 @@ const HotkeyOnBoarding = () => {
                         <TooltipContent
                           side="top"
                           className={twMerge(
-                            Boolean(error) && 'bg-red-500',
-                            isValid && !error && 'bg-green-500'
+                            Boolean(error) && 'bg-red-500 dark:bg-red-500',
+                            isValid &&
+                              !error &&
+                              'bg-green-500 dark:bg-green-500'
                           )}
                           sideOffset={20}
                         >
@@ -147,8 +149,11 @@ const HotkeyOnBoarding = () => {
                           </span>
                           <TooltipArrow
                             className={twMerge(
-                              Boolean(error) && 'fill-red-500',
-                              isValid && !error && 'fill-green-500'
+                              Boolean(error) &&
+                                'fill-red-500 dark:fill-red-500',
+                              isValid &&
+                                !error &&
+                                'fill-green-500 dark:fill-green-500'
                             )}
                           />
                         </TooltipContent>
@@ -190,13 +195,17 @@ const HotkeyOnBoarding = () => {
                   <TooltipPortal>
                     <TooltipContent
                       side="top"
-                      className={twMerge('bg-green-500')}
+                      className={twMerge('bg-green-500 dark:bg-green-500')}
                       sideOffset={20}
                     >
                       <span className={twMerge(Boolean(error) && 'text-white')}>
                         Your new key is set!
                       </span>
-                      <TooltipArrow className={twMerge('fill-green-500')} />
+                      <TooltipArrow
+                        className={twMerge(
+                          'fill-green-500 dark:fill-green-500'
+                        )}
+                      />
                     </TooltipContent>
                   </TooltipPortal>
                 </Tooltip>

@@ -45,6 +45,13 @@ const AllSetOnBoarding = () => {
   const setAccessibilityCheckbox = useSetAtom(modalOnboardingAccesibilityAtom)
   const { register, handleSubmit } = useForm<FormMail>()
 
+  const onFinish = () => {
+    window.core?.api?.updateAppConfiguration({
+      finish_onboarding: true,
+    })
+    window.core?.api?.relaunch()
+  }
+
   const onSubmit: SubmitHandler<FormMail> = async (data) => {
     const { email } = data
     const options = {
@@ -52,8 +59,7 @@ const AllSetOnBoarding = () => {
       headers: {
         'accept': 'application/json',
         'content-type': 'application/json',
-        'api-key':
-          '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',
+        'api-key': API_KEY_BREVO,
       },
       body: JSON.stringify({
         updateEnabled: false,
@@ -62,16 +68,18 @@ const AllSetOnBoarding = () => {
       }),
     }
 
-    fetch('https://api.brevo.com/v3/contacts', options)
-      .then((response) => response.json())
-      .then((response) => console.log(response))
-      .catch((err) => console.error(err))
-      .then(async () => {
-        await window.core?.api?.updateAppConfiguration({
-          finish_onboarding: true,
+    if (email) {
+      fetch('https://api.brevo.com/v3/contacts', options)
+        .then((response) => response.json())
+        .then((response) => {
+          if (response.id) {
+            onFinish()
+          }
         })
-        window.core?.api?.relaunch()
-      })
+        .catch((err) => console.error(err))
+    } else {
+      onFinish()
+    }
   }
 
   return (
@@ -90,7 +98,6 @@ const AllSetOnBoarding = () => {
               {...register('email')}
               type="email"
               placeholder="Enter your email address (optional)"
-              onChange={(e) => console.log(e.target.value)}
             />
           </div>
         </div>
