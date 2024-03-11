@@ -92,11 +92,13 @@ const DataFolder = ({ onBoarding = false }: Props) => {
       console.debug(
         `File sync finished from ${currentJanDataFolder} to ${destinationPath}`
       )
-      localStorage.setItem(SUCCESS_SET_NEW_DESTINATION, 'true')
+      if (!onBoarding) {
+        localStorage.setItem(SUCCESS_SET_NEW_DESTINATION, 'true')
+        await window.core?.api?.relaunch()
+      }
       setTimeout(() => {
         setShowLoader(false)
       }, 1200)
-      !onBoarding && (await window.core?.api?.relaunch())
     } catch (e) {
       console.error(e)
       setShowLoader(false)
