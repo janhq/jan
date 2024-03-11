@@ -29,7 +29,6 @@ const HotkeyOnBoarding = () => {
   )
   const [checkboxState, setCheckboxState] = useState(true)
 
-  console.log(checkboxState)
   const { resolvedTheme } = useTheme()
 
   const { keys, start, stop, isRecording, error, isValid, isHotkeyModifier } =
@@ -51,15 +50,13 @@ const HotkeyOnBoarding = () => {
         <div className="item-center flex h-full w-3/5 flex-shrink-0 flex-col items-center justify-between rounded-lg bg-white px-8 py-14 dark:bg-background/70">
           <div className="w-full text-center">
             <h1 className="mt-2 text-3xl font-bold">
-              Enable{' '}
               <span className="rounded-l-lg border-r-4 border-yellow-500 bg-yellow-100 p-1 px-2 dark:bg-yellow-700">
-                Accessibility
+                Hotkey
               </span>{' '}
-              Permissions
+              for Jan
             </h1>
             <p className="mx-auto mt-2 w-full text-base font-medium text-muted-foreground lg:w-3/5">
-              Jan’s Quick Ask feature allows you to summon and use AI in any
-              application using the following Hotkey:
+              You can ask Jan from anywhere using the following hotkey:
             </p>
 
             {/* UI of keycaps */}
@@ -95,7 +92,7 @@ const HotkeyOnBoarding = () => {
                                 key={key}
                                 className={twMerge(
                                   'keycaps uppercase text-black',
-                                  key.length < 8 && 'small'
+                                  key.length <= 5 && 'small'
                                 )}
                               >
                                 {getModifierSymbol(key)}
@@ -112,7 +109,7 @@ const HotkeyOnBoarding = () => {
                           side="top"
                           className={twMerge(
                             Boolean(error) && 'bg-red-500',
-                            isValid && 'bg-green-500'
+                            isValid && !error && 'bg-green-500'
                           )}
                           sideOffset={20}
                         >
@@ -126,7 +123,7 @@ const HotkeyOnBoarding = () => {
                           <TooltipArrow
                             className={twMerge(
                               Boolean(error) && 'fill-red-500',
-                              isValid && 'fill-green-500'
+                              isValid && !error && 'fill-green-500'
                             )}
                           />
                         </TooltipContent>
@@ -135,7 +132,7 @@ const HotkeyOnBoarding = () => {
                   )}
                 </>
               ) : (
-                <Tooltip open={isValid}>
+                <Tooltip open={(isValid && !error) || keys.size > 0}>
                   <TooltipTrigger asChild>
                     <div className="flex gap-4">
                       <Fragment>
@@ -145,7 +142,7 @@ const HotkeyOnBoarding = () => {
                               key={key}
                               className={twMerge(
                                 'keycaps uppercase text-black',
-                                key.length < 8 && 'small'
+                                key.length <= 5 && 'small'
                               )}
                             >
                               {getModifierSymbol(key)}
@@ -231,10 +228,10 @@ const HotkeyOnBoarding = () => {
                   // setOnBoardingStep(onBoardingStep + 1)
                   // setModalOnboardingAccesibility(checkboxState)
                   if (isValid && keys.size > 0) {
-                    // const key = Array.from(keys)
-                    //   .map((key) => key.charAt(0).toUpperCase() + key.slice(1))
-                    //   .join('+')
-                    // localStorage.setItem('quickAskHotkey', key)
+                    const key = Array.from(keys)
+                      .map((key) => key.charAt(0).toUpperCase() + key.slice(1))
+                      .join('+')
+                    localStorage.setItem('quickAskHotkey', key)
                     // localStorage.setItem(APP_ONBOARDING_FINISH, 'true')
                   } else {
                     // localStorage.setItem('quickAskHotkey', 'CommandOrControl+J')
