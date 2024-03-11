@@ -132,4 +132,11 @@ export function handleAppIPCs() {
     async (_event, heightOffset: number): Promise<void> =>
       windowManager.expandQuickAskWindow(heightOffset)
   )
+
+  ipcMain.handle(
+    NativeRoute.setQuickAskHotKey,
+    async (_event, hotKey: string) => {
+      windowManager.setQuickAskHotKey(hotKey)
+    }
+  )
 }

@@ -18,6 +18,7 @@ import { twMerge } from 'tailwind-merge'
 
 import useRecordHotkeys from '@/hooks/useRecordHotkeys'
 
+import { defaultQuickAskHotKey } from '@/utils/config'
 import { convertKeyToAccelerator } from '@/utils/keyboard'
 
 import { onBoardingStepAtom, modalOnboardingAccesibilityAtom } from '..'
@@ -56,12 +57,14 @@ const HotkeyOnBoarding = () => {
     if (isValid && keys.size > 0) {
       const keyCombination = convertKeyToAccelerator(Array.from(keys)).join('+')
 
+      await window.core?.api?.setQuickAskHotKey(keyCombination)
       await window.core?.api?.updateAppConfiguration({
         quick_ask_hotkey: keyCombination,
       })
     } else {
+      await window.core?.api?.setQuickAskHotKey(defaultQuickAskHotKey)
       await window.core?.api?.updateAppConfiguration({
-        quick_ask_hotkey: 'CommandOrControl+J',
+        quick_ask_hotkey: defaultQuickAskHotKey,
       })
     }
   }
