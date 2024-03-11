@@ -30,8 +30,13 @@ export default function useFactoryReset() {
       // set the default jan data folder to user's home directory
       const configuration: AppConfiguration = {
         data_folder: defaultJanDataFolder,
+        finish_onboarding: false,
       }
       await window.core?.api?.updateAppConfiguration(configuration)
+    } else {
+      await window.core?.api?.updateAppConfiguration({
+        finish_onboarding: false,
+      })
     }
     await fs.rmdirSync(janDataFolderPath, { recursive: true })
 
