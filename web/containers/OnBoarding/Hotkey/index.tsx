@@ -218,7 +218,10 @@ const HotkeyOnBoarding = () => {
                   Cancel
                 </span>
               ) : (
-                <span className="cursor-pointer" onClick={start}>
+                <span
+                  className="cursor-pointer text-blue-500 dark:text-blue-300"
+                  onClick={start}
+                >
                   Edit Hotkey
                 </span>
               )}
