@@ -3,8 +3,6 @@ import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { AppEvent } from '@janhq/core'
 import { mainWindowConfig } from './mainWindowConfig'
 
-import { registerShortcut } from '../utils/selectedText'
-
 /**
  * Manages the current window instance.
  */
@@ -51,17 +49,6 @@ class WindowManager {
         windowManager.hideMainWindow()
       }
     })
-
-    // this.mainWindow?.webContents
-    //   .executeJavaScript('({...localStorage});', true)
-    //   .then((localStorage) => {
-    //     // console.log(localStorage)
-    //     if (JSON.parse(localStorage.appOnBoardingFinish)) {
-    //       registerGlobalShortcuts(
-    //         localStorage.quickAskHotkey || 'CommandOrControl+J'
-    //       )
-    //     }
-    //   })
   }
 
   createQuickAskWindow(preloadPath: string, startUrl: string): void {
@@ -130,23 +117,6 @@ class WindowManager {
     this._quickAskWindow?.destroy()
     this._quickAskWindowVisible = false
     this._mainWindowVisible = false
-  }
-}
-
-function registerGlobalShortcuts(hotkey: string) {
-  const ret = registerShortcut(hotkey, (selectedText: string) => {
-    if (!windowManager.isQuickAskWindowVisible()) {
-      windowManager.showQuickAskWindow()
-      windowManager.sendQuickAskSelectedText(selectedText)
-    } else {
-      windowManager.hideQuickAskWindow()
-    }
-  })
-
-  if (!ret) {
-    console.error('Global shortcut registration failed')
-  } else {
-    console.log('Global shortcut registered successfully', hotkey)
   }
 }
 
