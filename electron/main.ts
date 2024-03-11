@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray } from 'electron'
+import { app, BrowserWindow, Tray } from 'electron'
 
 import { join } from 'path'
 /**
@@ -27,7 +27,7 @@ import { setupReactDevTool } from './utils/dev'
 import { cleanLogs } from './utils/log'
 
 import { registerShortcut } from './utils/selectedText'
-import { createSystemTray } from './utils/tray'
+import { trayManager } from './managers/tray'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -38,6 +38,8 @@ const mainUrl = 'http://localhost:3000'
 const quickAskUrl = `${mainUrl}/search`
 
 const quickAskHotKey = 'CommandOrControl+J'
+
+const gotTheLock = app.requestSingleInstanceLock()
 
 app
   .whenReady()
@@ -56,11 +58,23 @@ app
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
-  .then(() => process.env.CI !== 'e2e' && createSystemTray())
+  .then(() => process.env.CI !== 'e2e' && trayManager.createSystemTray())
   .then(() => {
     log(`Version: ${app.getVersion()}`)
   })
   .then(() => {
+    if (!gotTheLock) {
+      app.quit()
+    } else {
+      app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
+        // Someone tried to run a second instance, we should focus our window.
+        if (windowManager.mainWindow) {
+          if (windowManager.mainWindow.isMinimized())
+            windowManager.mainWindow.restore()
+          windowManager.mainWindow.focus()
+        }
+      })
+    }
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
         createMainWindow()
@@ -71,6 +85,10 @@ app
 
 app.on('ready', () => {
   registerGlobalShortcuts()
+})
+
+app.on('before-quit', function (evt) {
+  trayManager.destroyCurrentTray()
 })
 
 app.once('quit', () => {
@@ -89,12 +107,7 @@ function createMainWindow() {
 
 function registerGlobalShortcuts() {
   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
-    if (!windowManager.isQuickAskWindowVisible()) {
-      windowManager.showQuickAskWindow()
-      windowManager.sendQuickAskSelectedText(selectedText)
-    } else {
-      windowManager.hideQuickAskWindow()
-    }
+    windowManager.showMainWindow()
   })
 
   if (!ret) {
