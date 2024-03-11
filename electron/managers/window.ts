@@ -52,16 +52,16 @@ class WindowManager {
       }
     })
 
-    this.mainWindow?.webContents
-      .executeJavaScript('({...localStorage});', true)
-      .then((localStorage) => {
-        // console.log(localStorage)
-        if (JSON.parse(localStorage.appOnBoardingFinish)) {
-          registerGlobalShortcuts(
-            localStorage.quickAskHotkey || 'CommandOrControl+J'
-          )
-        }
-      })
+    // this.mainWindow?.webContents
+    //   .executeJavaScript('({...localStorage});', true)
+    //   .then((localStorage) => {
+    //     // console.log(localStorage)
+    //     if (JSON.parse(localStorage.appOnBoardingFinish)) {
+    //       registerGlobalShortcuts(
+    //         localStorage.quickAskHotkey || 'CommandOrControl+J'
+    //       )
+    //     }
+    //   })
   }
 
   createQuickAskWindow(preloadPath: string, startUrl: string): void {
