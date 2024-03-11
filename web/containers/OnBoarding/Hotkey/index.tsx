@@ -50,13 +50,13 @@ const HotkeyOnBoarding = () => {
   const onContinueClick = async () => {
     if (checkboxState) {
       setOnBoardingStep(onBoardingStep + 1)
+      await window.core?.api?.getSelectedText()
     } else {
       setModalOnboardingAccesibility(true)
     }
 
     if (isValid && keys.size > 0) {
       const keyCombination = convertKeyToAccelerator(Array.from(keys)).join('+')
-
       await window.core?.api?.setQuickAskHotKey(keyCombination)
       await window.core?.api?.updateAppConfiguration({
         quick_ask_hotkey: keyCombination,
@@ -259,17 +259,17 @@ const HotkeyOnBoarding = () => {
           </div>
         </div>
         <div className="flex items-center justify-center">
-          <div className="relative -right-2 flex h-full w-full">
-            <object
-              type="image/svg+xml"
-              data={
-                resolvedTheme === 'dark'
-                  ? 'images/quick-ask-animation-dark.svg'
-                  : 'images/quick-ask-animation.svg'
-              }
-              className="mx-auto h-full w-full"
-            />
-          </div>
+          {resolvedTheme === 'light' ? (
+            <div className="relative -right-2 flex h-full w-full">
+              <object
+                type="image/svg+xml"
+                data="images/quick-ask-animation.svg"
+                className="mx-auto h-full w-full"
+              />
+            </div>
+          ) : (
+            <img src="images/quick-ask-dark.png" alt="Dark mode" />
+          )}
         </div>
       </div>
       <ModalAccesibility />

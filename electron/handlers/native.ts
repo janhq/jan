@@ -139,4 +139,8 @@ export function handleAppIPCs() {
       windowManager.setQuickAskHotKey(hotKey)
     }
   )
+
+  ipcMain.handle(NativeRoute.getSelectedText, async (_event) => {
+    windowManager.getSelectedText()
+  })
 }

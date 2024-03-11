@@ -2,7 +2,7 @@ import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { AppEvent } from '@janhq/core'
 import { mainWindowConfig } from './mainWindowConfig'
-import { registerShortcut } from '../utils/selectedText'
+import { getSelectedText, registerShortcut } from '../utils/selectedText'
 
 /**
  * Manages the current window instance.
@@ -129,6 +129,10 @@ class WindowManager {
     } else {
       console.log('Global shortcut registered successfully')
     }
+  }
+
+  getSelectedText(): void {
+    getSelectedText()
   }
 
   cleanUp(): void {
