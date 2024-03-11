@@ -17,6 +17,7 @@ export enum NativeRoute {
   showMainWindow = 'showMainWindow',
 
   quickAskSizeUpdated = 'quickAskSizeUpdated',
+  setQuickAskHotKey = 'setQuickAskHotKey',
 }
 
 /**

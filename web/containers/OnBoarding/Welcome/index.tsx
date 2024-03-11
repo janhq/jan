@@ -8,6 +8,8 @@ import { useAtom, useSetAtom } from 'jotai'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
+import { defaultAppConfiguration, defaultQuickAskHotKey } from '@/utils/config'
+
 import { onBoardingStepAtom } from '..'
 
 import { updateAppConfigurationAtom } from '@/helpers/atoms/AppConfig.atom'
@@ -18,10 +20,13 @@ const WelcomeOnBoarding = () => {
   const { resolvedTheme } = useTheme()
 
   const onSkipOnboardingClick = useCallback(async () => {
-    await window.core?.api?.updateAppConfiguration({
+    const configuration = {
+      ...defaultAppConfiguration,
       finish_onboarding: true,
-    })
-    updateAppConfig({ finish_onboarding: true })
+    }
+    await window.core?.api?.setQuickAskHotKey(defaultQuickAskHotKey)
+    await window.core?.api?.updateAppConfiguration(configuration)
+    updateAppConfig(configuration)
   }, [updateAppConfig])
 
   return (
