@@ -23,48 +23,7 @@ export default class JanMonitoringExtension extends MonitoringExtension {
    * @returns A Promise that resolves to an object containing the GPU configuration.
    */
   async getGpuSetting(): Promise<GpuSetting | undefined> {
-    return {
-      notify: true,
-      run_mode: 'cpu',
-      nvidia_driver: {
-        exist: false,
-        version: '',
-      },
-      cuda: {
-        exist: false,
-        version: '',
-      },
-      gpus: [],
-      gpu_highest_vram: '',
-      gpus_in_use: [],
-      is_initial: true,
-      // TODO: This needs to be set based on user toggle in settings
-      vulkan: false,
-    }
-    // try {
-    //   const result = await executeOnMain(NODE, 'getGpuConfig')
-    //   return result
-    // } catch (error) {
-    //   // TODO: remove this. for testing on mac only
-    //   return {
-    //     notify: true,
-    //     run_mode: 'cpu',
-    //     nvidia_driver: {
-    //       exist: false,
-    //       version: '',
-    //     },
-    //     cuda: {
-    //       exist: false,
-    //       version: '',
-    //     },
-    //     gpus: [],
-    //     gpu_highest_vram: '',
-    //     gpus_in_use: [],
-    //     is_initial: true,
-    //     // TODO: This needs to be set based on user toggle in settings
-    //     vulkan: false,
-    //   }
-    // }
+    return executeOnMain(NODE, 'getGpuConfig')
   }
 
   /**

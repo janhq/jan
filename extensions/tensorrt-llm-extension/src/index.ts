@@ -45,6 +45,30 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
 
   // TODO: find a better name for this function
   async downloadRunner(gpuSetting: GpuSetting, network?: NetworkConfig) {
+    if (gpuSetting.gpus.length === 0) {
+      console.error('No GPU found. Please check your GPU setting.')
+      return
+    }
+
+    // TODO: we only check for the first graphics card. Need to refactor this later.
+    const firstGpu = gpuSetting.gpus[0]
+    if (!firstGpu.name.toLowerCase().includes('nvidia')) {
+      console.error('No Nvidia GPU found. Please check your GPU setting.')
+      return
+    }
+
+    let gpuArch: string | undefined = undefined
+
+    if (firstGpu.name.includes('20')) gpuArch = 'turing'
+    else if (firstGpu.name.includes('30')) gpuArch = 'ampere'
+    else if (firstGpu.name.includes('40')) gpuArch = 'ada'
+    else {
+      console.log(
+        `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
+      )
+      return
+    }
+
     const binaryFolderPath = await executeOnMain(
       this.nodeModule,
       'binaryFolder'
@@ -56,11 +80,9 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
     const placeholderUrl = DOWNLOAD_RUNNER_URL
     const tensorrtVersion = TENSORRT_VERSION
 
-    const gpuarch = 'ada'
-
     const url = placeholderUrl
       .replace(/<version>/g, tensorrtVersion)
-      .replace(/<gpuarch>/g, gpuarch)
+      .replace(/<gpuarch>/g, gpuArch)
 
     const tarball = await baseName(url)
 
