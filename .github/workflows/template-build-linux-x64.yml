@@ -100,6 +100,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
           ANALYTICS_HOST: ${{ secrets.JAN_APP_UMAMI_URL }}
+          API_KEY_BREVO: ${{ secrets.API_KEY_BREVO }}
 
       - name: Upload Artifact .deb file
         if: inputs.public_provider != 'github'

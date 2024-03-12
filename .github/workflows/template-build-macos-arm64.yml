@@ -152,6 +152,7 @@ jobs:
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
           ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
           ANALYTICS_HOST: ${{ secrets.JAN_APP_UMAMI_URL }}
+          API_KEY_BREVO: ${{ secrets.API_KEY_BREVO }}
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
