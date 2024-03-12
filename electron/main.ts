@@ -5,7 +5,7 @@ import { join } from 'path'
  * Managers
  **/
 import { windowManager } from './managers/window'
-import { log } from '@janhq/core/node'
+import { getAppConfigurations, log } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -95,7 +95,15 @@ app.once('quit', () => {
   cleanUpAndQuit()
 })
 
+app.once('window-all-closed', () => {
+  // Feature Toggle for Quick Ask
+  if (getAppConfigurations().quick_ask) return
+  cleanUpAndQuit()
+})
+
 function createQuickAskWindow() {
+  // Feature Toggle for Quick Ask
+  if (!getAppConfigurations().quick_ask) return
   const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
   windowManager.createQuickAskWindow(preloadPath, startUrl)
 }
@@ -107,6 +115,9 @@ function createMainWindow() {
 
 function registerGlobalShortcuts() {
   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
+    // Feature Toggle for Quick Ask
+    if (!getAppConfigurations().quick_ask) return
+
     if (!windowManager.isQuickAskWindowVisible()) {
       windowManager.showQuickAskWindow()
       windowManager.sendQuickAskSelectedText(selectedText)

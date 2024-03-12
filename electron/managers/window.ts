@@ -2,6 +2,7 @@ import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { AppEvent } from '@janhq/core'
 import { mainWindowConfig } from './mainWindowConfig'
+import { getAppConfigurations } from '@janhq/core/node'
 
 /**
  * Manages the current window instance.
@@ -43,6 +44,9 @@ class WindowManager {
     })
 
     windowManager.mainWindow?.on('close', function (evt) {
+      // Feature Toggle for Quick Ask
+      if (!getAppConfigurations().quick_ask) return
+      
       if (!isAppQuitting) {
         evt.preventDefault()
         windowManager.hideMainWindow()
