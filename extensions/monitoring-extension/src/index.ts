@@ -8,7 +8,10 @@ export default class JanMonitoringExtension extends MonitoringExtension {
   /**
    * Called when the extension is loaded.
    */
-  async onLoad() {}
+  async onLoad() {
+    // Attempt to fetch nvidia info
+    // await executeOnMain(NODE, 'updateNvidiaInfo')
+  }
 
   /**
    * Called when the extension is unloaded.
@@ -20,7 +23,7 @@ export default class JanMonitoringExtension extends MonitoringExtension {
    * @returns A Promise that resolves to an object containing information about the system resources.
    */
   getResourcesInfo(): Promise<any> {
-    return executeOnMain(MODULE, 'getResourcesInfo')
+    return executeOnMain(NODE, 'getResourcesInfo')
   }
 
   /**
@@ -28,6 +31,6 @@ export default class JanMonitoringExtension extends MonitoringExtension {
    * @returns A Promise that resolves to an object containing information about the current system load.
    */
   getCurrentLoad(): Promise<any> {
-    return executeOnMain(MODULE, 'getCurrentLoad')
+    return executeOnMain(NODE, 'getCurrentLoad')
   }
 }

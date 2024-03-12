@@ -29,7 +29,10 @@ export default class JanModelExtension extends ModelExtension {
   private static readonly _modelMetadataFileName = 'model.json'
   private static readonly _supportedModelFormat = '.gguf'
   private static readonly _incompletedModelFileName = '.download'
-  private static readonly _offlineInferenceEngine = InferenceEngine.nitro
+  private static readonly _offlineInferenceEngine = [
+    InferenceEngine.nitro,
+    InferenceEngine.nitro_tensorrt_llm,
+  ]
 
   private static readonly _configDirName = 'config'
   private static readonly _defaultModelFileName = 'default-model.json'
@@ -238,7 +241,7 @@ export default class JanModelExtension extends ModelExtension {
   async getDownloadedModels(): Promise<Model[]> {
     return await this.getModelsMetadata(
       async (modelDir: string, model: Model) => {
-        if (model.engine !== JanModelExtension._offlineInferenceEngine)
+        if (!JanModelExtension._offlineInferenceEngine.includes(model.engine))
           return true
 
         // model binaries (sources) are absolute path & exist

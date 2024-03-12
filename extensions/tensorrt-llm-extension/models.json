@@ -2,15 +2,35 @@
   {
     "sources": [
       {
-        "filename": "file_name_goes_here",
-        "url": "url_goes_here"
+        "filename": "config.json",
+        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/config.json"
+      },
+      {
+        "filename": "new_chatml_tokenizer.model",
+        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/new_chatml_tokenizer.model"
+      },
+      {
+        "filename": "rank0.engine",
+        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/rank0.engine"
+      },
+      {
+        "filename": "tokenizer.json",
+        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/tokenizer.json"
+      },
+      {
+        "filename": "tokenizer.model",
+        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/tokenizer.model"
+      },
+      {
+        "filename": "tokenizer_config.json",
+        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/tokenizer_config.json"
       }
     ],
-    "id": "operhermes-mistral",
+    "id": "llamacorn-1.1b-16bit",
     "object": "model",
-    "name": "Nitro Tensor LLM Model",
+    "name": "Llamacorn 1.1B 16bit",
     "version": "1.0",
-    "description": "description goes here",
+    "description": "Nitro Tensor LLM Model",
     "format": "gguf",
     "settings": {
       "ctx_len": 2048
@@ -20,8 +40,8 @@
       "max_tokens": 4096
     },
     "metadata": {
-      "author": "operhermes-mistral",
-      "tags": ["Recommended", "7B", "Finetuned"],
+      "author": "LLama",
+      "tags": ["Recommended", "1B", "Finetuned"],
       "size": 4370000000
     },
     "engine": "nitro-tensorrt-llm"

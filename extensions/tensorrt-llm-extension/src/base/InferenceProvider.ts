@@ -51,7 +51,9 @@ export abstract class InferenceProvider extends BaseExtension {
               return fs.writeFileSync(path, JSON.stringify(model, null, 2))
           })
         })
-        .catch((e: Error) => {})
+        .catch((e: Error) => {
+          console.error('Error', e)
+        })
     )
     Promise.all(prePoluateOperations).then(() =>
       // Emit event to update models

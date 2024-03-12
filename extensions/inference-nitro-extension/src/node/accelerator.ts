@@ -1,5 +1,5 @@
 import { writeFileSync, existsSync, readFileSync } from 'fs'
-import { exec, spawn } from 'child_process'
+import { exec } from 'child_process'
 import path from 'path'
 import { getJanDataFolderPath, log } from '@janhq/core/node'
 
@@ -7,7 +7,7 @@ import { getJanDataFolderPath, log } from '@janhq/core/node'
  * Default GPU settings
  * TODO: This needs to be refactored to support multiple accelerators
  **/
-const DEFALT_SETTINGS = {
+const DEFAULT_SETTINGS = {
   notify: true,
   run_mode: 'cpu',
   nvidia_driver: {
@@ -23,7 +23,7 @@ const DEFALT_SETTINGS = {
   gpus_in_use: [],
   is_initial: true,
   // TODO: This needs to be set based on user toggle in settings
-  vulkan: false
+  vulkan: false,
 }
 
 /**
@@ -57,7 +57,7 @@ export async function updateNvidiaInfo() {
     try {
       data = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
     } catch (error) {
-      data = DEFALT_SETTINGS
+      data = DEFAULT_SETTINGS
       writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
     }
     updateNvidiaDriverInfo()
@@ -112,7 +112,7 @@ export function checkFileExistenceInPaths(
  * Validate cuda for linux and windows
  */
 export function updateCudaExistence(
-  data: Record<string, any> = DEFALT_SETTINGS
+  data: Record<string, any> = DEFAULT_SETTINGS
 ): Record<string, any> {
   let filesCuda12: string[]
   let filesCuda11: string[]
