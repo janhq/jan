@@ -17,6 +17,7 @@ import {
   ImportingModel,
   LocalImportModelEvent,
   baseName,
+  GpuSetting,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -92,11 +93,46 @@ export default class JanModelExtension extends ModelExtension {
    */
   async downloadModel(
     model: Model,
+    gpuSettings?: GpuSetting,
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void> {
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
+
+    if (model.engine === InferenceEngine.nitro_tensorrt_llm) {
+      if (!gpuSettings || gpuSettings.gpus.length === 0) {
+        console.error('No GPU found. Please check your GPU setting.')
+        return
+      }
+      const firstGpu = gpuSettings.gpus[0]
+      if (!firstGpu.name.toLowerCase().includes('nvidia')) {
+        console.error('No Nvidia GPU found. Please check your GPU setting.')
+        return
+      }
+
+      let gpuArch: string | undefined = undefined
+
+      if (firstGpu.name.includes('20')) gpuArch = 'turing'
+      else if (firstGpu.name.includes('30')) gpuArch = 'ampere'
+      else if (firstGpu.name.includes('40')) gpuArch = 'ada'
+      else {
+        console.error(
+          `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
+        )
+        return
+      }
+
+      const os = 'windows' // TODO: remove this hard coded value
+
+      model.sources = model.sources.map((source) => {
+        const newSource = { ...source }
+        newSource.url.replace(/<os>/g, os).replace(/<gpuarch>/g, gpuArch)
+        return source
+      })
+    }
+
+    console.debug(`Download sources: ${JSON.stringify(model.sources)}`)
 
     if (model.sources.length > 1) {
       // path to model binaries

@@ -3,27 +3,27 @@
     "sources": [
       {
         "filename": "config.json",
-        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/config.json"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/config.json"
       },
       {
         "filename": "new_chatml_tokenizer.model",
-        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/new_chatml_tokenizer.model"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/new_chatml_tokenizer.model"
       },
       {
         "filename": "rank0.engine",
-        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/rank0.engine"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/rank0.engine"
       },
       {
         "filename": "tokenizer.json",
-        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/tokenizer.json"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/tokenizer.json"
       },
       {
         "filename": "tokenizer.model",
-        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/tokenizer.model"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/tokenizer.model"
       },
       {
         "filename": "tokenizer_config.json",
-        "url": "https://delta.jan.ai/dist/models/ada/windows/llamacorn-1.1b-16bit/tokenizer_config.json"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/tokenizer_config.json"
       }
     ],
     "id": "llamacorn-1.1b-16bit",
