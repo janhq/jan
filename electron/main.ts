@@ -43,6 +43,12 @@ const gotTheLock = app.requestSingleInstanceLock()
 
 app
   .whenReady()
+  .then(() => {
+    if (!gotTheLock) {
+      app.quit()
+      throw new Error('Another instance of the app is already running')
+    }
+  })
   .then(setupReactDevTool)
   .then(setupCore)
   .then(createUserSpace)
@@ -63,21 +69,19 @@ app
     log(`Version: ${app.getVersion()}`)
   })
   .then(() => {
-    if (!gotTheLock) {
-      app.quit()
-    } else {
-      app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
-        // Someone tried to run a second instance, we should focus our window.
-        windowManager.showMainWindow()
-      })
-    }
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
         createMainWindow()
+      } else {
+        windowManager.showMainWindow()
       }
     })
   })
   .then(() => cleanLogs())
+
+app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
+  windowManager.showMainWindow()
+})
 
 app.on('ready', () => {
   registerGlobalShortcuts()

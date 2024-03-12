@@ -73,15 +73,11 @@ class WindowManager {
   hideMainWindow(): void {
     this.mainWindow?.hide()
     this._mainWindowVisible = false
-    // Only macos
-    if (process.platform === 'darwin') app.dock.hide()
   }
 
   showMainWindow(): void {
     this.mainWindow?.show()
     this._mainWindowVisible = true
-    // Only macos
-    if (process.platform === 'darwin') app.dock.show()
   }
 
   hideQuickAskWindow(): void {
