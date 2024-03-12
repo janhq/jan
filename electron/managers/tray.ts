@@ -27,6 +27,7 @@ class TrayManager {
       { label: 'Quit', type: 'normal', click: () => app.quit() },
     ])
     tray.setContextMenu(contextMenu)
+    this.currentTray = tray
   }
 
   destroyCurrentTray() {
