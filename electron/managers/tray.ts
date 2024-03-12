@@ -13,20 +13,28 @@ class TrayManager {
     const tray = new Tray(iconPath)
     tray.setToolTip(app.getName())
 
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Open Jan',
-        type: 'normal',
-        click: () => windowManager.showMainWindow(),
-      },
-      {
-        label: 'Open Quick Ask',
-        type: 'normal',
-        click: () => windowManager.showQuickAskWindow(),
-      },
-      { label: 'Quit', type: 'normal', click: () => app.quit() },
-    ])
-    tray.setContextMenu(contextMenu)
+    tray.on('click', () => {
+      windowManager.showQuickAskWindow()
+    })
+
+    // Add context menu for windows only
+    if (process.platform === 'win32') {
+      const contextMenu = Menu.buildFromTemplate([
+        {
+          label: 'Open Jan',
+          type: 'normal',
+          click: () => windowManager.showMainWindow(),
+        },
+        {
+          label: 'Open Quick Ask',
+          type: 'normal',
+          click: () => windowManager.showQuickAskWindow(),
+        },
+        { label: 'Quit', type: 'normal', click: () => app.quit() },
+      ])
+
+      tray.setContextMenu(contextMenu)
+    }
     this.currentTray = tray
   }
 
