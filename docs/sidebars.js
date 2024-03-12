@@ -187,6 +187,18 @@ const sidebars = {
       items: [
         {
           type: "category",
+          label: "Advanced Settings",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/advanced-settings/advanced-settings",
+          },
+          items: [
+            "guides/advanced-settings/http-proxy",
+          ]
+        },
+        {
+          type: "category",
           label: "Advanced Model Setup",
           className: "head_SubMenu",
           link: {
