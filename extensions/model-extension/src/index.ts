@@ -33,7 +33,7 @@ export default class JanModelExtension extends ModelExtension {
     InferenceEngine.nitro,
     InferenceEngine.nitro_tensorrt_llm,
   ]
-
+  private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _configDirName = 'config'
   private static readonly _defaultModelFileName = 'default-model.json'
 
@@ -250,22 +250,32 @@ export default class JanModelExtension extends ModelExtension {
         )
         if (existFiles.every((exist) => exist)) return true
 
-        return await fs
+        const result = await fs
           .readdirSync(await joinPath([JanModelExtension._homeDir, modelDir]))
           .then((files: string[]) => {
             // Model binary exists in the directory
             // Model binary name can match model ID or be a .gguf file and not be an incompleted model file
             return (
               files.includes(modelDir) ||
-              files.filter(
-                (file) =>
+              files.filter((file) => {
+                if (
+                  file.endsWith(JanModelExtension._incompletedModelFileName)
+                ) {
+                  return false
+                }
+                return (
                   file
                     .toLowerCase()
-                    .includes(JanModelExtension._supportedModelFormat) &&
-                  !file.endsWith(JanModelExtension._incompletedModelFileName)
-              )?.length >= model.sources.length
+                    .includes(JanModelExtension._supportedModelFormat) ||
+                  file
+                    .toLowerCase()
+                    .includes(JanModelExtension._tensorRtEngineFormat)
+                )
+              })?.length > 0 // TODO: NamH find better way (can use basename to check the file name with source url)
             )
           })
+
+        return result
       }
     )
   }
