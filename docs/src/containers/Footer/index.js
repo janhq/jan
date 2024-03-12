@@ -1,100 +1,108 @@
-import React from "react";
+import React from 'react'
 
-import { AiOutlineGithub, AiOutlineTwitter } from "react-icons/ai";
-import { BiLogoDiscordAlt, BiLogoLinkedin } from "react-icons/bi";
+import { AiOutlineGithub, AiOutlineTwitter } from 'react-icons/ai'
+import { BiLogoDiscordAlt, BiLogoLinkedin } from 'react-icons/bi'
 
 const socials = [
   {
-    icon: <AiOutlineTwitter className="text-xl text-black dark:text-white" />,
-    href: "https://twitter.com/janframework",
+    icon: (
+      <AiOutlineTwitter className="text-xl text-black/60 dark:text-white/60" />
+    ),
+    href: 'https://twitter.com/janframework',
   },
   {
-    icon: <BiLogoDiscordAlt className="text-xl text-black dark:text-white" />,
-    href: "https://discord.com/invite/FTk2MvZwJH",
+    icon: (
+      <BiLogoDiscordAlt className="text-xl text-black/60 dark:text-white/60" />
+    ),
+    href: 'https://discord.com/invite/FTk2MvZwJH',
   },
   {
-    icon: <AiOutlineGithub className="text-lg text-black dark:text-white" />,
-    href: "https://github.com/janhq/jan",
+    icon: (
+      <AiOutlineGithub className="text-lg text-black/60 dark:text-white/60" />
+    ),
+    href: 'https://github.com/janhq/jan',
   },
   {
-    icon: <BiLogoLinkedin className="text-xl text-black dark:text-white" />,
-    href: "https://www.linkedin.com/company/janframework/",
-  }
-];
+    icon: (
+      <BiLogoLinkedin className="text-xl text-black/60 dark:text-white/60" />
+    ),
+    href: 'https://www.linkedin.com/company/janframework/',
+  },
+]
 
 const menus = [
   {
-    name: "For Developers",
+    name: 'For Developers',
     child: [
       {
-        menu: "Documentation",
-        path: "/developer",
+        menu: 'Documentation',
+        path: '/developer',
       },
       {
-        menu: "Hardware",
-        path: "/hardware",
+        menu: 'Hardware',
+        path: '/hardware',
       },
       {
-        menu: "API Reference",
-        path: "/api-reference",
+        menu: 'API Reference',
+        path: '/api-reference',
       },
       {
-        menu: "Changelog",
-        path: "https://github.com/janhq/jan/releases",
+        menu: 'Changelog',
+        path: 'https://github.com/janhq/jan/releases',
         external: true,
       },
     ],
   },
   {
-    name: "Community",
+    name: 'Community',
     child: [
       {
-        menu: "Github",
-        path: "https://github.com/janhq/jan",
+        menu: 'Github',
+        path: 'https://github.com/janhq/jan',
         external: true,
       },
       {
-        menu: "Discord",
-        path: "https://discord.gg/FTk2MvZwJH",
+        menu: 'Discord',
+        path: 'https://discord.gg/FTk2MvZwJH',
         external: true,
       },
       {
-        menu: "Twitter",
-        path: "https://twitter.com/janframework",
+        menu: 'Twitter',
+        path: 'https://twitter.com/janframework',
         external: true,
       },
       {
-        menu: "LinkedIn",
-        path: "https://www.linkedin.com/company/janframework/",
+        menu: 'LinkedIn',
+        path: 'https://www.linkedin.com/company/janframework/',
         external: true,
-      }
+      },
     ],
   },
   {
-    name: "Company",
+    name: 'Company',
     child: [
       {
-        menu: "About",
-        path: "/about",
+        menu: 'About',
+        path: '/about',
       },
       {
-        menu: "Blog",
-        path: "/blog",
+        menu: 'Blog',
+        path: '/blog',
       },
       {
-        menu: "Careers",
-        path: "https://janai.bamboohr.com/careers",
+        menu: 'Careers',
+        path: 'https://janai.bamboohr.com/careers',
         external: true,
       },
       {
-        menu: "Newsletter",
-        path: "/community#newsletter",
-      }
+        menu: 'Newsletter',
+        path: '/community#newsletter',
+      },
     ],
   },
-];
+]
 
-const getCurrentYear = new Date().getFullYear();
+const getCurrentYear = new Date().getFullYear()
 
 export default function Footer() {
   return (
@@ -106,30 +114,13 @@ export default function Footer() {
               <img alt="Jan Logo" src="/img/logo.svg" />
               <h2 className="h6">Jan</h2>
             </div>
-            <div className="w-full lg:w-1/2">
-              <p className="dark:text-gray-400 text-gray-600">
-                Jan is the open-source, self-hosted&nbsp;
+            <div className="w-full lg:w-1/2 mt-2">
+              <h6>The Soul of a New Machine</h6>
+              <p className="dark:text-gray-400 text-gray-600 mt-2">
+                Subscribe to our newsletter on AI{' '}
                 <br className="hidden lg:block" />
-                &nbsp;alternative to ChatGPT.
+                research and building Jan:
               </p>
-
-              <div className="mt-4">
-                <div className="flex items-center gap-x-3">
-                  {socials.map((social, i) => {
-                    return (
-                      <a
-                        aria-label={`social-${i}`}
-                        key={i}
-                        href={social.href}
-                        target="_blank"
-                        rel="noopener"
-                      >
-                        {social.icon}
-                      </a>
-                    );
-                  })}
-                </div>
-              </div>
             </div>
           </div>
           {menus.map((menu, i) => {
@@ -142,25 +133,42 @@ export default function Footer() {
                       <li key={i}>
                         <a
                           href={child.path}
-                          target={child.external ? "_blank" : "_self"}
+                          target={child.external ? '_blank' : '_self'}
                           className="inline-block py-1 dark:text-gray-400 text-gray-600"
                         >
                           {child.menu}
                         </a>
                       </li>
-                    );
+                    )
                   })}
                 </ul>
               </div>
-            );
+            )
           })}
         </div>
       </div>
-      <div className="container mt-6">
-        <span className="dark:text-gray-300 text-gray-700">
-          &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd.
-        </span>
+      <div className="container mt-8">
+        <div className="flex w-full justify-between items-center">
+          <span className="dark:text-gray-300 text-gray-700">
+            &copy;{getCurrentYear}&nbsp;Jan AI Pte Ltd.
+          </span>
+          <div className="flex items-center gap-x-3">
+            {socials.map((social, i) => {
+              return (
+                <a
+                  aria-label={`social-${i}`}
+                  key={i}
+                  href={social.href}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  {social.icon}
+                </a>
+              )
+            })}
+          </div>
+        </div>
       </div>
     </footer>
-  );
+  )
 }
