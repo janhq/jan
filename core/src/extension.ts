@@ -10,6 +10,12 @@ export enum ExtensionTypeEnum {
 export interface ExtensionType {
   type(): ExtensionTypeEnum | undefined
 }
+
+export interface Compatibility {
+  platform: string[]
+  version: string
+}
+
 /**
  * Represents a base extension.
  * This class should be extended by any class that represents an extension.
@@ -39,7 +45,7 @@ export abstract class BaseExtension implements ExtensionType {
    * This is used to check if the extension is compatible with the current environment.
    * @property {Array} platform
    */
-  compatibility(): any | undefined {
+  compatibility(): Compatibility | undefined {
     return undefined
   }
 }

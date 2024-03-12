@@ -3,6 +3,7 @@
  */
 
 import {
+  Compatibility,
   DownloadEvent,
   DownloadState,
   GpuSetting,
@@ -36,7 +37,7 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
   override nodeModule = NODE
 
   compatibility() {
-    return COMPATIBILITY
+    return COMPATIBILITY as unknown as Compatibility
   }
   /**
    * models implemented by the extension

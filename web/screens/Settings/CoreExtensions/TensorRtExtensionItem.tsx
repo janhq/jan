@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { Compatibility } from '@janhq/core'
 import {
   Button,
   Tooltip,
@@ -28,27 +29,25 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
   const { getGpuSettings } = useGpuSetting()
   const proxy = useAtomValue(proxyAtom)
   const ignoreSSL = useAtomValue(ignoreSslAtom)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [compatibility, setCompatibility] = useState<any>(null)
+  const [compatibility, setCompatibility] = useState<Compatibility | undefined>(
+    undefined
+  )
 
   useEffect(() => {
-    const extension = extensionManager.get('@janhq/tensorrt-llm-extension')
+    const extension = extensionManager.get(item.name ?? '')
     if (extension) setCompatibility(extension.compatibility?.())
-  }, [])
-  const onInstallClick = async () => {
-    // TODO: NamH remove this
-    const result = extensionManager.get('@janhq/tensorrt-llm-extension')
-    // console.log(result)
-    if (result) {
-      // @ts-ignore
-      const gpuSettings = await getGpuSettings()
-      // @ts-ignore
-      result.downloadRunner(gpuSettings, { proxy, ignoreSSL })
-    }
-  }
+  }, [setCompatibility, item.name])
 
-  function processName(e: any) {
-    return e === 'win32' ? 'Windows' : e === 'linux' ? 'Linux' : 'MacOS'
+  const onInstallClick = async () => {
+    const result = extensionManager.get(item.name ?? '')
+    if (result) {
+      const gpuSettings = await getGpuSettings()
+      if (
+        'downloadRunner' in result &&
+        typeof result.downloadRunner === 'function'
+      )
+        result.downloadRunner(gpuSettings, { proxy, ignoreSSL })
+    }
   }
 
   return (
@@ -82,8 +81,14 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
                 <TooltipContent side="top">
                   <span>
                     Only available on{' '}
-                    {compatibility['platform']
-                      ?.map((e: string) => processName(e))
+                    {compatibility.platform
+                      ?.map((e: string) =>
+                        e === 'win32'
+                          ? 'Windows'
+                          : e === 'linux'
+                            ? 'Linux'
+                            : 'MacOS'
+                      )
                       .join(', ')}
                   </span>
                   <TooltipArrow />
