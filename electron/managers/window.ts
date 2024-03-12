@@ -101,6 +101,7 @@ class WindowManager {
   expandQuickAskWindow(heightOffset: number): void {
     const width = quickAskWindowConfig.width!
     const height = quickAskWindowConfig.height! + heightOffset
+    this._quickAskWindow?.setMinimumSize(width, height)
     this._quickAskWindow?.setSize(width, height, true)
   }
 

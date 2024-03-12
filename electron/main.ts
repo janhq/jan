@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray } from 'electron'
+import { app, BrowserWindow, Tray } from 'electron'
 
 import { join } from 'path'
 /**
@@ -27,6 +27,7 @@ import { setupReactDevTool } from './utils/dev'
 import { cleanLogs } from './utils/log'
 
 import { registerShortcut } from './utils/selectedText'
+import { trayManager } from './managers/tray'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -38,6 +39,8 @@ const quickAskUrl = `${mainUrl}/search`
 
 const quickAskHotKey = 'CommandOrControl+J'
 
+const gotTheLock = app.requestSingleInstanceLock()
+
 app
   .whenReady()
   .then(setupReactDevTool)
@@ -48,37 +51,26 @@ app
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
-  .then(createQuickAskWindow)
+  .then(() => process.env.CI !== 'e2e' && createQuickAskWindow())
   .then(createMainWindow)
   .then(() => {
     if (!app.isPackaged) {
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
-  .then(() => {
-    const iconPath = join(app.getAppPath(), 'icons', 'icon-tray.png')
-    const tray = new Tray(iconPath)
-    tray.setToolTip(app.getName())
-
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Open Jan',
-        type: 'normal',
-        click: () => windowManager.showMainWindow(),
-      },
-      {
-        label: 'Open Quick Ask',
-        type: 'normal',
-        click: () => windowManager.showQuickAskWindow(),
-      },
-      { label: 'Quit', type: 'normal', click: () => app.quit() },
-    ])
-    tray.setContextMenu(contextMenu)
-  })
+  .then(() => process.env.CI !== 'e2e' && trayManager.createSystemTray())
   .then(() => {
     log(`Version: ${app.getVersion()}`)
   })
   .then(() => {
+    if (!gotTheLock) {
+      app.quit()
+    } else {
+      app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
+        // Someone tried to run a second instance, we should focus our window.
+        windowManager.showMainWindow()
+      })
+    }
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
         createMainWindow()
@@ -89,6 +81,10 @@ app
 
 app.on('ready', () => {
   registerGlobalShortcuts()
+})
+
+app.on('before-quit', function (evt) {
+  trayManager.destroyCurrentTray()
 })
 
 app.once('quit', () => {

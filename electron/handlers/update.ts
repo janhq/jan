@@ -7,6 +7,7 @@ import {
   autoUpdater,
 } from 'electron-updater'
 import { AppEvent } from '@janhq/core'
+import { trayManager } from '../managers/tray'
 
 export let waitingToInstallVersion: string | undefined = undefined
 
@@ -22,6 +23,7 @@ export function handleAppUpdates() {
       message: 'Would you like to download and install it now?',
       buttons: ['Download', 'Later'],
     })
+    trayManager.destroyCurrentTray()
     if (action.response === 0) await autoUpdater.downloadUpdate()
   })
 
