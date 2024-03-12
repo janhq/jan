@@ -1,4 +1,4 @@
-import { ResourceInfo } from '@janhq/core'
+import { GpuSetting, ResourceInfo } from '@janhq/core'
 import { getJanDataFolderPath, log } from '@janhq/core/node'
 import { mem, cpu } from 'node-os-utils'
 import { exec } from 'child_process'
@@ -14,8 +14,8 @@ export const GPU_INFO_FILE = path.join(
   'settings.json'
 )
 
-export const getGpuConfig = async (): Promise<GpuSetting> => {
-  if (process.platform === 'darwin') throw new Error('Not supported on macOS')
+export const getGpuConfig = async (): Promise<GpuSetting | undefined> => {
+  if (process.platform === 'darwin') return undefined
 
   return JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
 }

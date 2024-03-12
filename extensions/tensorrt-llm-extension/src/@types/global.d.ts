@@ -5,3 +5,4 @@ declare const TERMINATE_ENGINE_URL: string
 declare const ENGINE_HOST: string
 declare const ENGINE_PORT: string
 declare const DOWNLOAD_RUNNER_URL: string
+declare const TENSORRT_VERSION: string

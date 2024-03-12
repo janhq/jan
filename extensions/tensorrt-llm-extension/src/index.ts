@@ -5,7 +5,9 @@
 import {
   DownloadEvent,
   DownloadState,
+  GpuSetting,
   Model,
+  NetworkConfig,
   baseName,
   downloadFile,
   events,
@@ -42,9 +44,7 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
   }
 
   // TODO: find a better name for this function
-  // TODO: passing system info to the function
-  // TODO: passing network to here as well
-  async downloadRunner() {
+  async downloadRunner(gpuSetting: GpuSetting, network?: NetworkConfig) {
     const binaryFolderPath = await executeOnMain(
       this.nodeModule,
       'binaryFolder'
@@ -54,18 +54,18 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
     }
 
     const placeholderUrl = DOWNLOAD_RUNNER_URL
-    console.log(`NamH typeof ${typeof placeholderUrl} ${placeholderUrl}`)
-    const version = '0.1.0'
+    const tensorrtVersion = TENSORRT_VERSION
+
     const gpuarch = 'ada'
 
     const url = placeholderUrl
-      .replace(/<version>/g, version)
+      .replace(/<version>/g, tensorrtVersion)
       .replace(/<gpuarch>/g, gpuarch)
 
     const tarball = await baseName(url)
 
     const tarballFullPath = await joinPath([binaryFolderPath, tarball])
-    downloadFile(url, tarballFullPath)
+    downloadFile(url, tarballFullPath, network)
 
     const onFileDownloadSuccess = async (state: DownloadState) => {
       // if other download, ignore
