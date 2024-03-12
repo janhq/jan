@@ -1,5 +1,5 @@
 @layer base {
-  html[data-theme="light"] {
+  html[data-theme='light'] {
     --custom-radial-blur: #e1e7fd;
     --ifm-background-color: #fff;
     --ifm-color-primary: #2563eb; /* New Primary Blue */
@@ -14,7 +14,7 @@
     --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
   }
 
-  html[data-theme="dark"] {
+  html[data-theme='dark'] {
     --custom-radial-blur: #1d1b48;
     --ifm-background-color: #18181b;
     --ifm-color-primary: #ffffff; /* New Primary Blue */
@@ -35,7 +35,7 @@
   body {
     @apply text-base;
     @apply antialiased;
-    @apply bg-white dark:bg-[#18181B];
+    @apply bg-white dark:bg-[#0C0C0C];
   }
 
   img {

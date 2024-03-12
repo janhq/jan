@@ -1,32 +1,38 @@
-import React from "react";
+import React from 'react'
 
-import { useAppStars } from "@site/src/hooks/useAppStars";
-import { useAppRelease } from "@site/src/hooks/useAppRelease";
+import { useAppStars } from '@site/src/hooks/useAppStars'
+import { useAppRelease } from '@site/src/hooks/useAppRelease'
 
-import { AiOutlineGithub, AiOutlineTwitter } from "react-icons/ai";
-import { BiLogoDiscordAlt } from "react-icons/bi";
+import { AiOutlineGithub, AiOutlineTwitter } from 'react-icons/ai'
+import { BiLogoDiscordAlt } from 'react-icons/bi'
 
 const socials = [
   {
     icon: <AiOutlineTwitter className="text-xl text-white" />,
-    href: "https://twitter.com/janframework",
+    href: 'https://twitter.com/janframework',
   },
   {
     icon: <BiLogoDiscordAlt className="text-xl text-white" />,
-    href: "https://discord.com/invite/FTk2MvZwJH",
+    href: 'https://discord.com/invite/FTk2MvZwJH',
   },
   {
     icon: <AiOutlineGithub className="text-lg text-white" />,
-    href: "https://github.com/janhq/jan",
+    href: 'https://github.com/janhq/jan',
   },
-];
+]
 
 export default function AnnoncementBanner() {
-  const { stargazers } = useAppStars();
-  const { release } = useAppRelease();
+  const { stargazers } = useAppStars()
+  const { release } = useAppRelease()
 
   return (
-    <div className="h-10 w-full flex-shrink-0 bg-blue-600">
+    <div
+      className="h-10 w-full flex-shrink-0"
+      style={{
+        background:
+          'radial-gradient(58.83% 95.12% at 62.37% 97.91%, rgba(238, 203, 255, 0.59) 0%, rgba(255, 255, 255, 0.00) 100%), linear-gradient(249deg, rgba(67, 119, 233, 0.80) 79.81%, rgba(67, 119, 233, 0.80) 93.59%, rgba(194, 226, 255, 0.80) 110.85%)',
+      }}
+    >
       <div className="px-4 lg:px-10 flex h-full items-center justify-between py-0.5">
         <div className="flex h-6 items-center shadow-sm">
           <a
@@ -75,10 +81,10 @@ export default function AnnoncementBanner() {
               >
                 {social.icon}
               </a>
-            );
+            )
           })}
         </div>
       </div>
     </div>
-  );
+  )
 }

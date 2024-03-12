@@ -1,31 +1,31 @@
-import React from "react";
-import DownloadApp from "@site/src/containers/DownloadApp";
+import React from 'react'
+import DownloadApp from '@site/src/containers/DownloadApp'
 
-import useBaseUrl from "@docusaurus/useBaseUrl";
-import Layout from "@theme/Layout";
-import Banner from "@site/src/containers/Banner";
+import useBaseUrl from '@docusaurus/useBaseUrl'
+import Layout from '@theme/Layout'
+import Banner from '@site/src/containers/Banner'
 
-import ThemedImage from "@theme/ThemedImage";
+import ThemedImage from '@theme/ThemedImage'
 
-import SocialButton from "@site/src/containers/SocialButton";
+import SocialButton from '@site/src/containers/SocialButton'
 
-import { IoArrowDown } from "react-icons/io5";
+import { IoArrowDown } from 'react-icons/io5'
 
-import Dropdown from "@site/src/containers/Elements/dropdown";
+import Dropdown from '@site/src/containers/Elements/dropdown'
 
-import useIsBrowser from "@docusaurus/useIsBrowser";
+import useIsBrowser from '@docusaurus/useIsBrowser'
 
 export default function Home() {
-  const isBrowser = useIsBrowser();
+  const isBrowser = useIsBrowser()
 
   const handleAnchorLink = () => {
     document
-      .getElementById("download-section")
-      .scrollIntoView({ behavior: "smooth" });
-  };
+      .getElementById('download-section')
+      .scrollIntoView({ behavior: 'smooth' })
+  }
 
-  const userAgent = isBrowser && navigator.userAgent;
-  const isBrowserChrome = isBrowser && userAgent.includes("Chrome");
+  const userAgent = isBrowser && navigator.userAgent
+  const isBrowserChrome = isBrowser && userAgent.includes('Chrome')
 
   return (
     <>
@@ -35,78 +35,37 @@ export default function Home() {
         description="Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable."
       >
         <main>
-          <div className="grid grid-cols-1 lg:grid-cols-12 -mt-1 gap-8 items-center relative min-h-[calc(100vh-96px)] ">
-            <div className="col-span-full lg:col-start-2 lg:col-span-5 text-left relative z-10 px-4 py-6">
-              <img
-                src="/img/homepage/element-hero-blur.webp"
-                alt="Element blur"
-                className="hidden lg:block absolute blur-3xl opacity-30 right-32 -bottom-32"
-              />
-              <div className="flex items-center space-x-2 mb-3">
-                <img alt="Jan Logo" src="img/logo.svg" width={36} height={36} />
-                <span className="text-zinc-500 text-4xl font-medium">
-                  Meet Jan
-                </span>
-              </div>
-              <h1 className="text-5xl lg:text-7xl font-semibold leading-tight lg:leading-tight mt-2">
-                Bringing AI to <br /> your Desktop{" "}
-                <span className="relative w-16 h-16 inline-block">
-                  <img
-                    src="/img/homepage/element-hero-heading.png"
-                    alt="Element hero heading"
-                    className="object-contain inline-block"
-                    width={64}
-                    height={64}
-                  />
-                </span>
-              </h1>
-              <p className="text-2xl mt-3 leading-relaxed text-zinc-500">
-                Open-source ChatGPT alternative that runs{" "}
-                <br className="hidden lg:block" /> 100% offline on your
-                computer.
-              </p>
-              <div className="mt-8"></div>
-              <div className="mt-8">
-                {!isBrowserChrome ? (
-                  <div
-                    onClick={() => handleAnchorLink()}
-                    className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
-                  >
-                    <span>Download Jan for PC</span>
-                  </div>
-                ) : (
-                  <Dropdown />
-                )}
-              </div>
-
-              <div
-                onClick={() => handleAnchorLink()}
-                className="hidden lg:inline-block cursor-pointer"
-              >
-                <div className="mt-16 flex items-center space-x-2">
-                  <p>Find out more</p>
-                  <IoArrowDown size={24} className="animate-bounce-down" />
+          <div className="text-center py-24">
+            <h1 className="text-5xl lg:text-8xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
+              Rethink the Computer
+            </h1>
+            <p className="text-2xl -mt-1 leading-relaxed text-zinc-500">
+              Turn your computer into a{' '}
+              <span className="text-black dark:text-white font-semibold">
+                AI machine
+              </span>
+            </p>
+            <div className="mt-10">
+              {!isBrowserChrome ? (
+                <div
+                  onClick={() => handleAnchorLink()}
+                  className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
+                >
+                  <span>Download Jan for PC</span>
                 </div>
-              </div>
+              ) : (
+                <Dropdown />
+              )}
             </div>
-
-            <div className="col-span-full lg:col-span-6 h-full">
-              <div className="relative text-center h-full">
-                <ThemedImage
-                  className="w-full object-cover mr-auto h-full"
-                  alt="App screenshots"
-                  sources={{
-                    light: useBaseUrl(
-                      "/img/homepage/app-base-screen-light.webp"
-                    ),
-                    dark: useBaseUrl("/img/homepage/app-base-screen-dark.webp"),
-                  }}
-                />
-              </div>
-            </div>
+            <p className="mt-6 text-zinc-500">
+              <span className="text-blue-500 font-bold dark:text-blue-500">
+                400K+
+              </span>{' '}
+              downloads | Free & Open Source
+            </p>
           </div>
 
-          <div
+          {/* <div
             className="dark:bg-[#09090B]/20 border-t border-zinc-200 dark:border-gray-800 py-10 lg:py-16"
             id="download-section"
           >
@@ -115,9 +74,9 @@ export default function Home() {
                 <DownloadApp />
               </div>
             </div>
-          </div>
+          </div> */}
 
-          <div className="dark:bg-[#09090B]/20 pb-10 lg:pb-36">
+          {/* <div className="dark:bg-[#09090B]/20 pb-10 lg:pb-36">
             <div className="container h-full ">
               <div className="w-full lg:w-3/4 mx-auto relative rounded-xl py-10">
                 <img
@@ -157,9 +116,9 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
 
-          <div className="dark:bg-[#27272A] bg-zinc-100 pt-10 lg:pt-20 pb-10">
+          {/* <div className="dark:bg-[#27272A] bg-zinc-100 pt-10 lg:pt-20 pb-10">
             <div className="container">
               <div className="w-full lg:w-3/4 mx-auto relative">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
@@ -170,8 +129,8 @@ export default function Home() {
                     <p className="text-zinc-600 dark:text-zinc-400 mt-4 text-lg leading-relaxed">
                       <b className="text-bold text-black dark:text-white">
                         10x productivity
-                      </b>{" "}
-                      with customizable AI <br className="hidden lg:block" />{" "}
+                      </b>{' '}
+                      with customizable AI <br className="hidden lg:block" />{' '}
                       assistants, global hotkeys, and in-line AI.
                     </p>
                   </div>
@@ -182,10 +141,10 @@ export default function Home() {
                         alt="App screenshots"
                         sources={{
                           light: useBaseUrl(
-                            "/img/homepage/desktop-app-light.webp"
+                            '/img/homepage/desktop-app-light.webp'
                           ),
                           dark: useBaseUrl(
-                            "/img/homepage/desktop-app-dark.webp"
+                            '/img/homepage/desktop-app-dark.webp'
                           ),
                         }}
                       />
@@ -194,9 +153,9 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
 
-          <div className="dark:bg-[#27272A] bg-zinc-100 lg:pb-20 pb-10 pt-10">
+          {/* <div className="dark:bg-[#27272A] bg-zinc-100 lg:pb-20 pb-10 pt-10">
             <div className="container">
               <div className="w-full lg:w-3/4 mx-auto relative ">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
@@ -210,7 +169,7 @@ export default function Home() {
                       </span>
                     </div>
                     <p className="text-zinc-600 dark:text-zinc-400 mt-4 text-lg leading-relaxed">
-                      Take your AI assistants on the go.{" "}
+                      Take your AI assistants on the go.{' '}
                       <br className="hidden lg:block" /> Seamless integration
                       into your&nbsp;
                       <b className="text-bold text-black dark:text-white">
@@ -226,10 +185,10 @@ export default function Home() {
                         alt="App screenshots"
                         sources={{
                           light: useBaseUrl(
-                            "/img/homepage/mobile-app-light.webp"
+                            '/img/homepage/mobile-app-light.webp'
                           ),
                           dark: useBaseUrl(
-                            "/img/homepage/mobile-app-dark.webp"
+                            '/img/homepage/mobile-app-dark.webp'
                           ),
                         }}
                       />
@@ -238,9 +197,9 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
 
-          <div className="dark:bg-[#09090B]/20">
+          {/* <div className="dark:bg-[#09090B]/20">
             <div className="container py-12 lg:py-32">
               <div className="w-full xl:w-10/12 mx-auto relative">
                 <div className="text-center">
@@ -266,7 +225,7 @@ export default function Home() {
                       Offline and Local First
                     </h2>
                     <p className="mt-2 text-zinc-600 dark:text-zinc-400 text-lg leading-relaxed">
-                      Conversations, preferences, and model usage stay on{" "}
+                      Conversations, preferences, and model usage stay on{' '}
                       <br className="hidden lg:block" /> your computer—secure,
                       exportable, and can be deleted at any time.
                     </p>
@@ -278,12 +237,12 @@ export default function Home() {
                             OpenAI Compatible
                           </h2>
                           <p className="mt-4 leading-relaxed text-zinc-600 dark:text-zinc-400 text-lg">
-                            Jan provides an OpenAI-equivalent API{" "}
+                            Jan provides an OpenAI-equivalent API{' '}
                             <br className="hidden lg:block" /> server at&nbsp;
                             <b>localhost:</b>&nbsp;
                             <span className="bg-blue-600 text-white font-bold py-0.5 px-2 rounded-lg">
                               1337
-                            </span>{" "}
+                            </span>{' '}
                             that can be used as a drop-in replacement with
                             compatible apps.
                           </p>
@@ -332,9 +291,16 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
         </main>
+
+        {/* <main>
+          <div className="text-center py-24">
+            <h1 className="font-serif text-8xl">Rethink the Computer</h1>
+            <p>Turn your computer into a AI machine</p>
+          </div>
+        </main> */}
       </Layout>
     </>
-  );
+  )
 }

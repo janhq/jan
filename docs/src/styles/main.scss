@@ -1,15 +1,17 @@
-@import "tailwindcss/base";
-@import "tailwindcss/components";
-@import "tailwindcss/utilities";
+@import url('https://fonts.googleapis.com/css2?family=Arapey&family=Inter:wght@100..900&display=swap');
 
-@import "./components/base.scss";
-@import "./components/typography.scss";
-@import "./components/card.scss";
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
 
-@import "./tweaks/navbar.scss";
-@import "./tweaks/breadcrumb.scss";
-@import "./tweaks/markdown.scss";
-@import "./tweaks/redocusaurus.scss";
-@import "./tweaks/sidebar.scss";
+@import './components/base.scss';
+@import './components/typography.scss';
+@import './components/card.scss';
 
-@import "../css/custom.css";
+@import './tweaks/navbar.scss';
+@import './tweaks/breadcrumb.scss';
+@import './tweaks/markdown.scss';
+@import './tweaks/redocusaurus.scss';
+@import './tweaks/sidebar.scss';
+
+@import '../css/custom.css';
