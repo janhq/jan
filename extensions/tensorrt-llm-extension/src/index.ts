@@ -6,6 +6,7 @@ import {
   DownloadEvent,
   DownloadState,
   Model,
+  baseName,
   downloadFile,
   events,
   executeOnMain,
@@ -42,7 +43,6 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
 
   // TODO: find a better name for this function
   // TODO: passing system info to the function
-  // TODO: versioning of the runner
   // TODO: passing network to here as well
   async downloadRunner() {
     const binaryFolderPath = await executeOnMain(
@@ -52,21 +52,32 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
     if (!(await fs.existsSync(binaryFolderPath))) {
       await fs.mkdirSync(binaryFolderPath)
     }
-    const fileName = 'nitro-tensorrt-llm.zip'
 
-    const binaryPath = await joinPath([binaryFolderPath, fileName])
-    downloadFile(DOWNLOAD_RUNNER_URL, binaryPath)
+    const placeholderUrl = DOWNLOAD_RUNNER_URL
+    console.log(`NamH typeof ${typeof placeholderUrl} ${placeholderUrl}`)
+    const version = '0.1.0'
+    const gpuarch = 'ada'
+
+    const url = placeholderUrl
+      .replace(/<version>/g, version)
+      .replace(/<gpuarch>/g, gpuarch)
+
+    const tarball = await baseName(url)
+
+    const tarballFullPath = await joinPath([binaryFolderPath, tarball])
+    downloadFile(url, tarballFullPath)
+
     const onFileDownloadSuccess = async (state: DownloadState) => {
-      if (state.fileName !== fileName) return
-      console.debug('namh extensions onFileDownloadSuccess', state)
-      // TODO: check if state id url is matching with the runner url
+      // if other download, ignore
+      if (state.fileName !== tarball) return
+
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
 
       // unzip
       await executeOnMain(
         this.nodeModule,
         'decompressRunner',
-        binaryPath,
+        tarballFullPath,
         binaryFolderPath
       )
     }

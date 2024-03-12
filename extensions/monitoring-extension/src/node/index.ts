@@ -14,6 +14,12 @@ export const GPU_INFO_FILE = path.join(
   'settings.json'
 )
 
+export const getGpuConfig = async (): Promise<GpuSetting> => {
+  if (process.platform === 'darwin') throw new Error('Not supported on macOS')
+
+  return JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
+}
+
 export const getResourcesInfo = async (): Promise<ResourceInfo> => {
   const ramUsedInfo = await mem.used()
   const totalMemory = ramUsedInfo.totalMemMb * 1024 * 1024

@@ -19,6 +19,18 @@ export default class JanMonitoringExtension extends MonitoringExtension {
   onUnload(): void {}
 
   /**
+   * Returns the GPU configuration.
+   * @returns A Promise that resolves to an object containing the GPU configuration.
+   */
+  getGpuConfig(): Promise<any> {
+    try {
+      return executeOnMain(NODE, 'getGpuConfig')
+    } catch (error) {
+      return undefined
+    }
+  }
+
+  /**
    * Returns information about the system resources.
    * @returns A Promise that resolves to an object containing information about the system resources.
    */
