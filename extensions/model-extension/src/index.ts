@@ -125,11 +125,14 @@ export default class JanModelExtension extends ModelExtension {
 
       const os = 'windows' // TODO: remove this hard coded value
 
-      model.sources = model.sources.map((source) => {
+      const newSources = model.sources.map((source) => {
         const newSource = { ...source }
-        newSource.url.replace(/<os>/g, os).replace(/<gpuarch>/g, gpuArch)
-        return source
+        newSource.url = newSource.url
+          .replace(/<os>/g, os)
+          .replace(/<gpuarch>/g, gpuArch)
+        return newSource
       })
+      model.sources = newSources
     }
 
     console.debug(`Download sources: ${JSON.stringify(model.sources)}`)

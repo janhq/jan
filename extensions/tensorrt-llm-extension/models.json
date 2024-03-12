@@ -3,32 +3,32 @@
     "sources": [
       {
         "filename": "config.json",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/config.json"
-      },
-      {
-        "filename": "new_chatml_tokenizer.model",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/new_chatml_tokenizer.model"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-int4/config.json"
       },
       {
         "filename": "rank0.engine",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/rank0.engine"
-      },
-      {
-        "filename": "tokenizer.json",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/tokenizer.json"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-int4/rank0.engine"
       },
       {
         "filename": "tokenizer.model",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/tokenizer.model"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-int4/tokenizer.model"
+      },
+      {
+        "filename": "special_tokens_map.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-int4/special_tokens_map.json"
+      },
+      {
+        "filename": "tokenizer.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-int4/tokenizer.json"
       },
       {
         "filename": "tokenizer_config.json",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/llamacorn-1.1b-16bit/tokenizer_config.json"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-int4/tokenizer_config.json"
       }
     ],
-    "id": "llamacorn-1.1b-16bit",
+    "id": "LlamaCorn-1.1B-Chat-int4",
     "object": "model",
-    "name": "Llamacorn 1.1B 16bit",
+    "name": "LlamaCorn 1.1B Chat int4",
     "version": "1.0",
     "description": "Nitro Tensor LLM Model",
     "format": "gguf",

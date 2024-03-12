@@ -14,6 +14,29 @@ export const GPU_INFO_FILE = path.join(
   'settings.json'
 )
 
+/**
+ * Default GPU settings
+ * TODO: This needs to be refactored to support multiple accelerators
+ **/
+const DEFAULT_SETTINGS: GpuSetting = {
+  notify: true,
+  run_mode: 'cpu',
+  nvidia_driver: {
+    exist: false,
+    version: '',
+  },
+  cuda: {
+    exist: false,
+    version: '',
+  },
+  gpus: [],
+  gpu_highest_vram: '',
+  gpus_in_use: [],
+  is_initial: true,
+  // TODO: This needs to be set based on user toggle in settings
+  vulkan: false,
+}
+
 export const getGpuConfig = async (): Promise<GpuSetting | undefined> => {
   if (process.platform === 'darwin') return undefined
 
