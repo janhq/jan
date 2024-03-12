@@ -33,4 +33,13 @@ export abstract class BaseExtension implements ExtensionType {
    * Any cleanup logic for the extension should be put here.
    */
   abstract onUnload(): void
+
+  /**
+   * The compatibility of the extension.
+   * This is used to check if the extension is compatible with the current environment.
+   * @property {Array} platform
+   */
+  compatibility(): any | undefined {
+    return undefined
+  }
 }

@@ -10,15 +10,21 @@
     "host": "127.0.0.1",
     "port": "3928"
   },
+  "compatibility": {
+    "platform": [
+      "win32",
+      "linux"
+    ],
+    "app": [
+      "0.1.0"
+    ]
+  },
   "scripts": {
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
-    "downloadnitro:linux": "",
-    "downloadnitro:win32": "",
-    "downloadnitro:darwin": "",
     "downloadnitro": "run-script-os",
-    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm run downloadnitro && cpx \"bin/**\" \"dist/bin\" &&  npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && cpx \"bin/**\" \"dist/bin\" &&  npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && npm run build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:linux": "rimraf *.tgz --glob && npm run build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
     "build:publish": "run-script-os"
   },
   "exports": {

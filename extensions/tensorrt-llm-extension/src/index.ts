@@ -35,6 +35,9 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
   override inference_url = INFERENCE_URL
   override nodeModule = NODE
 
+  compatibility() {
+    return COMPATIBILITY
+  }
   /**
    * models implemented by the extension
    * define pre-populated models

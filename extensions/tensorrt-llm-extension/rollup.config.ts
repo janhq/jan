@@ -29,6 +29,7 @@ export default [
           process.env.INFERENCE_URL ||
             `${packageJson.config?.protocol ?? 'http'}://${packageJson.config?.host}:${packageJson.config?.port}/v1/chat/completions`
         ),
+        COMPATIBILITY: JSON.stringify(packageJson.compatibility),
       }),
       json(),
       typescript({ useTsconfigDeclarationDir: true }),
