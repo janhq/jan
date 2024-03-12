@@ -7,7 +7,7 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "config": {
-    "host": "0.0.0.0",
+    "host": "127.0.0.1",
     "port": "3928"
   },
   "scripts": {
