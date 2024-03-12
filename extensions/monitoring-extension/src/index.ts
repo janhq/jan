@@ -10,7 +10,7 @@ export default class JanMonitoringExtension extends MonitoringExtension {
    */
   async onLoad() {
     // Attempt to fetch nvidia info
-    // await executeOnMain(NODE, 'updateNvidiaInfo')
+    await executeOnMain(NODE, 'updateNvidiaInfo')
   }
 
   /**
