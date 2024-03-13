@@ -30,12 +30,11 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
    * Override custom function name for loading and unloading model
    * Which are implemented from node module
    */
-  // override loadModelFunctionName: string = 'loadModel'
-  // override unloadModelFunctionName: string = 'unloadModel'
-
   override provider = 'nitro-tensorrt-llm'
   override inference_url = INFERENCE_URL
   override nodeModule = NODE
+
+  private supportedGpuArch = ['turing', 'ampere', 'ada']
 
   compatibility() {
     return COMPATIBILITY as unknown as Compatibility
@@ -48,10 +47,15 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
     return models as unknown as Model[]
   }
 
-  // TODO: find a better name for this function
-  async downloadRunner(gpuSetting: GpuSetting, network?: NetworkConfig) {
-    if (gpuSetting.gpus.length === 0) {
-      console.error('No GPU found. Please check your GPU setting.')
+  // @ts-ignore
+  override async install(...args): Promise<void> {
+    console.debug(
+      `TensorRTLLMExtension installing pre-requisites... ${JSON.stringify(args)}`
+    )
+    const gpuSetting: GpuSetting | undefined = args[0]
+    const network: NetworkConfig | undefined = args[1]
+    if (gpuSetting === undefined || gpuSetting.gpus.length === 0) {
+      console.error('No GPU setting found. Please check your GPU setting.')
       return
     }
 
@@ -62,13 +66,13 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
       return
     }
 
-    let gpuArch: string | undefined = undefined
+    if (firstGpu.arch === undefined) {
+      console.error('No GPU architecture found. Please check your GPU setting.')
+      return
+    }
 
-    if (firstGpu.name.includes('20')) gpuArch = 'turing'
-    else if (firstGpu.name.includes('30')) gpuArch = 'ampere'
-    else if (firstGpu.name.includes('40')) gpuArch = 'ada'
-    else {
-      console.log(
+    if (!this.supportedGpuArch.includes(firstGpu.arch)) {
+      console.error(
         `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
       )
       return
@@ -87,31 +91,24 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
 
     const url = placeholderUrl
       .replace(/<version>/g, tensorrtVersion)
-      .replace(/<gpuarch>/g, gpuArch)
+      .replace(/<gpuarch>/g, firstGpu.arch)
 
     const tarball = await baseName(url)
 
     const tarballFullPath = await joinPath([binaryFolderPath, tarball])
     downloadFile(url, tarballFullPath, network)
 
+    // TODO: wrap this into a Promise
     const onFileDownloadSuccess = async (state: DownloadState) => {
       // if other download, ignore
       if (state.fileName !== tarball) return
-
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
-
-      // unzip
-      await executeOnMain(
-        this.nodeModule,
-        'decompressRunner',
-        tarballFullPath,
-        binaryFolderPath
-      )
+      await executeOnMain(this.nodeModule, 'decompressRunner', tarballFullPath)
     }
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
   }
 
-  async installationState(): Promise<InstallationState> {
+  override async installationState(): Promise<InstallationState> {
     // For now, we just check the executable of nitro x tensor rt
     const isNitroExecutableAvailable = await executeOnMain(
       this.nodeModule,

@@ -1,4 +1,4 @@
-import { GpuSetting, ResourceInfo } from '@janhq/core'
+import { GpuSetting, GpuSettingInfo, ResourceInfo } from '@janhq/core'
 import { getJanDataFolderPath, log } from '@janhq/core/node'
 import { mem, cpu } from 'node-os-utils'
 import { exec } from 'child_process'
@@ -39,7 +39,6 @@ const DEFAULT_SETTINGS: GpuSetting = {
 
 export const getGpuConfig = async (): Promise<GpuSetting | undefined> => {
   if (process.platform === 'darwin') return undefined
-
   return JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
 }
 
@@ -70,7 +69,7 @@ export const getCurrentLoad = async (): Promise<CpuGpuInfo> => {
   }
 
   if (data.run_mode === 'gpu' && data.gpus_in_use.length > 0) {
-    const gpuIds = data['gpus_in_use'].join(',')
+    const gpuIds = data.gpus_in_use.join(',')
     if (gpuIds !== '' && data['vulkan'] !== true) {
       exec(
         `nvidia-smi --query-gpu=index,name,temperature.gpu,utilization.gpu,memory.total,memory.free,utilization.memory --format=csv,noheader,nounits --id=${gpuIds}`,
@@ -166,6 +165,15 @@ const updateNvidiaDriverInfo = async () =>
     )
   })
 
+const getGpuArch = (gpuName: string): string => {
+  if (!gpuName.toLowerCase().includes('nvidia')) return 'unknown'
+
+  if (gpuName.includes('20')) return 'turing'
+  else if (gpuName.includes('30')) return 'ampere'
+  else if (gpuName.includes('40')) return 'ada'
+  else return 'unknown'
+}
+
 const updateGpuInfo = async () =>
   new Promise((resolve, reject) => {
     let data: GpuSetting = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
@@ -184,12 +192,13 @@ const updateGpuInfo = async () =>
             log(output)
             const gpuRegex = /GPU(\d+):(?:[\s\S]*?)deviceName\s*=\s*(.*)/g
 
-            let gpus = []
+            const gpus: GpuSettingInfo[] = []
             let match
             while ((match = gpuRegex.exec(output)) !== null) {
               const id = match[1]
               const name = match[2]
-              gpus.push({ id, vram: '0', name })
+              const arch = getGpuArch(name)
+              gpus.push({ id, vram: '0', name, arch })
             }
             data.gpus = gpus
 
@@ -214,17 +223,18 @@ const updateGpuInfo = async () =>
             // Get GPU info and gpu has higher memory first
             let highestVram = 0
             let highestVramId = '0'
-            let gpus = stdout
+            const gpus: GpuSettingInfo[] = stdout
               .trim()
               .split('\n')
               .map((line) => {
                 let [id, vram, name] = line.split(', ')
+                const arch = getGpuArch(name)
                 vram = vram.replace(/\r/g, '')
                 if (parseFloat(vram) > highestVram) {
                   highestVram = parseFloat(vram)
                   highestVramId = id
                 }
-                return { id, vram, name }
+                return { id, vram, name, arch }
               })
 
             data.gpus = gpus

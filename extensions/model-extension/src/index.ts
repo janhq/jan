@@ -37,6 +37,7 @@ export default class JanModelExtension extends ModelExtension {
   private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _configDirName = 'config'
   private static readonly _defaultModelFileName = 'default-model.json'
+  private static readonly _supportedGpuArch = ['turing', 'ampere', 'ada']
 
   /**
    * Called when the extension is loaded.
@@ -110,13 +111,15 @@ export default class JanModelExtension extends ModelExtension {
         console.error('No Nvidia GPU found. Please check your GPU setting.')
         return
       }
+      const gpuArch = firstGpu.arch
+      if (gpuArch === undefined) {
+        console.error(
+          'No GPU architecture found. Please check your GPU setting.'
+        )
+        return
+      }
 
-      let gpuArch: string | undefined = undefined
-
-      if (firstGpu.name.includes('20')) gpuArch = 'turing'
-      else if (firstGpu.name.includes('30')) gpuArch = 'ampere'
-      else if (firstGpu.name.includes('40')) gpuArch = 'ada'
-      else {
+      if (!JanModelExtension._supportedGpuArch.includes(gpuArch)) {
         console.error(
           `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
         )

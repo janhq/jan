@@ -67,4 +67,14 @@ export abstract class BaseExtension implements ExtensionType {
   async installationState(): Promise<InstallationState> {
     return 'NotRequired'
   }
+
+  /**
+   * Install the prerequisites for the extension.
+   *
+   * @returns {Promise<void>}
+   */
+  // @ts-ignore
+  async install(...args): Promise<void> {
+    return
+  }
 }

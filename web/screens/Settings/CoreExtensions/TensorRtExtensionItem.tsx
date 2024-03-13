@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Compatibility, InstallationState } from '@janhq/core'
 import {
@@ -52,17 +52,13 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     if (extension) setCompatibility(extension.compatibility?.())
   }, [setCompatibility, item.name])
 
-  const onInstallClick = async () => {
-    const result = extensionManager.get(item.name ?? '')
-    if (result) {
-      const gpuSettings = await getGpuSettings()
-      if (
-        'downloadRunner' in result &&
-        typeof result.downloadRunner === 'function'
-      )
-        result.downloadRunner(gpuSettings, { proxy, ignoreSSL })
-    }
-  }
+  const onInstallClick = useCallback(async () => {
+    const extension = extensionManager.get(item.name ?? '')
+    if (!extension) return
+
+    const gpuSettings = await getGpuSettings()
+    await extension.install(gpuSettings, { proxy, ignoreSSL })
+  }, [ignoreSSL, proxy, item.name, getGpuSettings])
 
   return (
     <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
@@ -79,7 +75,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           {item.description}
         </p>
       </div>
-      {!compatibility || compatibility['platform']?.includes('win32') ? (
+      {!compatibility || compatibility['platform']?.includes(PLATFORM) ? (
         <InstallStateIndicator
           installState={installState}
           onInstallClick={onInstallClick}

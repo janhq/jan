@@ -28,4 +28,5 @@ export type GpuSettingInfo = {
   id: string
   vram: string
   name: string
+  arch?: string
 }

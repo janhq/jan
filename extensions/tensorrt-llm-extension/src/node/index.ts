@@ -159,11 +159,12 @@ const binaryFolder = async (): Promise<string> => {
   return path.join(__dirname, '..', 'bin')
 }
 
-const decompressRunner = async (zipPath: string, outputPath: string) => {
-  console.debug('decompressing', zipPath)
+const decompressRunner = async (zipPath: string) => {
+  const output = path.join(__dirname, '..', 'bin')
+  console.debug(`Decompressing ${zipPath} to ${output}...`)
   try {
-    const files = await decompress(zipPath, outputPath)
-    console.debug('done!', files)
+    const files = await decompress(zipPath, output)
+    console.debug('Decompress finished!', files)
   } catch (err) {
     console.error(`Decompress ${zipPath} failed: ${err}`)
   }
