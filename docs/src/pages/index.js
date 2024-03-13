@@ -9,7 +9,8 @@ import Banner from '@site/src/containers/Banner'
 
 import ThemedImage from '@theme/ThemedImage'
 
-import { IoArrowDown } from 'react-icons/io5'
+import { BsArrowRight } from 'react-icons/bs'
+
 import { IoMapOutline } from 'react-icons/io5'
 import { useAppStars } from '@site/src/hooks/useAppStars'
 import { useDiscordWidget } from '@site/src/hooks/useDiscordWidget'
@@ -19,6 +20,42 @@ import { RiStarSFill } from 'react-icons/ri'
 import Dropdown from '@site/src/containers/Elements/dropdown'
 
 import useIsBrowser from '@docusaurus/useIsBrowser'
+
+const tabel = {
+  labels: [
+    'Ownership',
+    'Openness',
+    'Your Role',
+    'Approach',
+    'Data Handling',
+    'Privacy',
+    'Transparency',
+    'Outage Resilience',
+    'Philosophy',
+  ],
+  statusQuo: [
+    'Owned by Big Tech',
+    'Closed-source',
+    'Consumer',
+    'Cloud-based',
+    'Stored on external servers',
+    'Questionable',
+    'Opaque "Black Box',
+    'Potential data hostage',
+    'User monetization',
+  ],
+  jan: [
+    'Fully owned by you',
+    'Open-source (AGPLv3)',
+    'Creator',
+    'Local-first',
+    'Stored locally, openly accessible',
+    'Private and offline',
+    'Open-source and customizable',
+    'Continues to work on your device',
+    'Empower users with the right to repair',
+  ],
+}
 
 export default function Home() {
   const isBrowser = useIsBrowser()
@@ -72,15 +109,16 @@ export default function Home() {
       >
         <main>
           {/* Hero */}
-          <div className="text-center py-16">
-            <h1 className="text-5xl lg:text-8xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
+          <div className="text-center px-4 py-16">
+            <h1 className="text-6xl lg:text-8xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
               Rethink the Computer
             </h1>
             <p className="text-2xl -mt-1 leading-relaxed text-black/60 dark:text-white/60">
-              Turn your computer into an{' '}
+              Turn your computer into{' '}
               <span className="text-black dark:text-white font-semibold">
-                AI machine
-              </span>
+                an
+              </span>{' '}
+              AI machine
             </p>
             <div className="mt-10">
               {!isBrowserChrome ? (
@@ -111,7 +149,7 @@ export default function Home() {
           </div>
 
           {/* Build with Love */}
-          <div className="w-full xl:w-3/5 mx-auto relative py-8">
+          <div className="w-full px-4 xl:w-3/5 mx-auto relative py-8">
             <div className="text-center">
               <h1 className="text-5xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
                 Built with love
@@ -213,16 +251,20 @@ export default function Home() {
                 </h1>
               </div>
               <div className="mt-10 w-full lg:w-1/2 mr-auto text-right">
-                <p className="mt-6 text-blue-600 dark:text-blue-400">
-                  View Our Features
-                </p>
+                <a
+                  className="mt-6 text-blue-600 dark:text-blue-400 cursor-pointer"
+                  href="https://jan.ai/features/"
+                  target="_blank"
+                >
+                  View Our Features <BsArrowRight className="inline-block" />
+                </a>
               </div>
             </div>
           </div>
 
           {/* Philosophy */}
-          <div className="p-8 mt-20 border-y border-gray-300 dark:border-gray-800">
-            <div className="w-full xl:w-3/4 mx-auto relative py-8 text-center">
+          <div className="px-4 lg:px-8 mt-20 border-y border-gray-300 dark:border-gray-800">
+            <div className="w-full xl:w-3/4 mx-auto relative pt-8 text-center">
               <h1 className="text-5xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
                 Our Philosophy
               </h1>
@@ -425,6 +467,64 @@ export default function Home() {
                   </p>
                 </div>
               </div>
+
+              <div className="mt-20 flex dark:bg-[#181818] bg-[#FAFAFA] border border-gray-300 dark:border-gray-600 rounded-t-2xl border-b-0">
+                <div className="w-56 lg:w-80 border-r border-gray-300 dark:border-gray-600">
+                  <div className="p-7"></div>
+                  {tabel.labels.map((label, i) => {
+                    return (
+                      <div
+                        className="border-t border-gray-300 dark:border-gray-600 p-4 font-bold text-left"
+                        title={label}
+                        key={i}
+                      >
+                        <h6 className="line-clamp-1">{label}</h6>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="w-full lg:w-1/2 border-r border-gray-300 dark:border-gray-600 hidden md:block">
+                  <h6 className="p-4 mb-0">Status Quo</h6>
+                  {tabel.statusQuo.map((label, i) => {
+                    return (
+                      <div
+                        className="border-t border-gray-300 dark:border-gray-600 p-4"
+                        key={i}
+                        title={label}
+                      >
+                        <p className="text-black/60 dark:text-white/60 line-clamp-1">
+                          {label}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="w-full lg:w-1/2">
+                  <div className="flex p-4 items-center gap-x-2 justify-center">
+                    <img
+                      src="img/logo.svg"
+                      alt="logo-mark"
+                      width={20}
+                      height={20}
+                    />
+                    <h6 className="mb-0">Jan</h6>
+                  </div>
+                  {tabel.jan.map((label, i) => {
+                    return (
+                      <div
+                        className="border-t border-gray-300 dark:border-gray-600 p-4"
+                        key={i}
+                        title={label}
+                      >
+                        <p className="text-black/60 dark:text-white/60 line-clamp-1">
+                          {label}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -474,7 +574,7 @@ export default function Home() {
 
           {/* Location and statistic */}
           <div className="lg:w-4/5 w-full px-4 mx-auto py-10 lg:pb-20 lg:pt-32">
-            <div className="w-full lg:w-1/2 mx-auto pb-20">
+            <div className="w-full lg:w-3/4 mx-auto pb-20">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="text-center">
                   <h1>13</h1>
