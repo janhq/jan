@@ -22,6 +22,8 @@ import ImportModelOptionModal from '@/screens/Settings/ImportModelOptionModal'
 import ImportingModelModal from '@/screens/Settings/ImportingModelModal'
 import SelectingModelModal from '@/screens/Settings/SelectingModelModal'
 
+import InstallingExtensionModal from './BottomBar/InstallingExtension/InstallingExtensionModal'
+
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 const BaseLayout = (props: PropsWithChildren) => {
@@ -68,6 +70,7 @@ const BaseLayout = (props: PropsWithChildren) => {
       {importModelStage === 'IMPORTING_MODEL' && <ImportingModelModal />}
       {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
       {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
+      <InstallingExtensionModal />
     </div>
   )
 }

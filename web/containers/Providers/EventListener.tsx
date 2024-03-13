@@ -7,6 +7,10 @@ import { useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from '@/hooks/useDownloadState'
 
+import { formatExtensionsName } from '@/utils/converter'
+
+import { toaster } from '../Toast'
+
 import AppUpdateListener from './AppUpdateListener'
 import ClipboardListener from './ClipboardListener'
 import EventHandler from './EventHandler'
@@ -66,6 +70,11 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   const onFileUnzipSuccess = useCallback(
     (state: DownloadState) => {
       console.debug('onFileUnzipSuccess', state)
+      toaster({
+        title: 'Success',
+        description: `Extension ${formatExtensionsName(state.extensionId!)}`,
+        type: 'success',
+      })
       removeInstallingExtension(state.extensionId!)
     },
     [removeInstallingExtension]

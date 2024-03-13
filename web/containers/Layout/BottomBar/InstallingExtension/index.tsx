@@ -1,12 +1,17 @@
-import { Fragment } from 'react'
+import { Fragment, useCallback } from 'react'
 
 import { Progress } from '@janhq/uikit'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
+
+import { showInstallingExtensionModalAtom } from './InstallingExtensionModal'
 
 import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
 
 const InstallingExtension: React.FC = () => {
   const installingExtensions = useAtomValue(installingExtensionAtom)
+  const setShowInstallingExtensionModal = useSetAtom(
+    showInstallingExtensionModalAtom
+  )
   const shouldShowInstalling = installingExtensions.length > 0
 
   let totalPercentage = 0
@@ -17,10 +22,17 @@ const InstallingExtension: React.FC = () => {
   }
   const progress = (totalPercentage / totalExtensions) * 100
 
+  const onClick = useCallback(() => {
+    setShowInstallingExtensionModal(true)
+  }, [setShowInstallingExtensionModal])
+
   return (
     <Fragment>
       {shouldShowInstalling ? (
-        <div className="flex cursor-pointer flex-row items-center space-x-2">
+        <div
+          className="flex cursor-pointer flex-row items-center space-x-2"
+          onClick={onClick}
+        >
           <p className="text-xs font-semibold text-muted-foreground">
             Installing Extension
           </p>
