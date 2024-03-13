@@ -72,6 +72,7 @@ export class Downloader implements Processor {
         const downloadState: DownloadState = {
           ...currentDownloadState,
           ...state,
+          fileName: fileName,
           downloadState: 'downloading',
         }
         console.debug('progress: ', downloadState)
@@ -82,6 +83,7 @@ export class Downloader implements Processor {
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
         const downloadState: DownloadState = {
           ...currentDownloadState,
+          fileName: fileName,
           error: error.message,
           downloadState: 'error',
         }
@@ -96,6 +98,7 @@ export class Downloader implements Processor {
           renameSync(downloadingTempFile, destination)
           const downloadState: DownloadState = {
             ...currentDownloadState,
+            fileName: fileName,
             downloadState: 'end',
           }
           observer?.(DownloadEvent.onFileDownloadSuccess, downloadState)

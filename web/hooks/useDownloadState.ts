@@ -99,16 +99,19 @@ export const setDownloadStateAtom = atom(
 
         // re-calculate the overall progress if we have all the children download data
         const isAnyChildDownloadNotReady = updatedChildren.some(
-          (m) => m.size.total === 0
+          (m) =>
+            m.size.total === 0 &&
+            !modelDownloadState.children?.some(
+              (e) => e.fileName === m.fileName && e.downloadState === 'end'
+            ) &&
+            modelDownloadState.children?.some((e) => e.fileName === m.fileName)
         )
 
         modelDownloadState.children = updatedChildren
-
         if (isAnyChildDownloadNotReady) {
           // just update the children
           currentState[state.modelId] = modelDownloadState
           set(modelDownloadStateAtom, currentState)
-
           return
         }
 
