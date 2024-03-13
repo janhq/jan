@@ -6,24 +6,24 @@ import json from '@rollup/plugin-json'
 import replace from '@rollup/plugin-replace'
 const packageJson = require('./package.json')
 
-const pkg = require('./package.json')
-
 export default [
   {
     input: `src/index.ts`,
-    output: [{ file: pkg.main, format: 'es', sourcemap: true }],
+    output: [{ file: packageJson.main, format: 'es', sourcemap: true }],
     watch: {
       include: 'src/**',
     },
     plugins: [
       replace({
-        TENSORRT_VERSION: JSON.stringify('0.1.0'),
+        TENSORRT_VERSION: JSON.stringify('0.1.2'),
         DOWNLOAD_RUNNER_URL:
           process.platform === 'darwin' || process.platform === 'win32'
             ? JSON.stringify(
                 'https://github.com/janhq/nitro-tensorrt-llm/releases/download/windows-v<version>/nitro-windows-v<version>-amd64-tensorrt-llm-<gpuarch>.tar.gz'
               )
-            : JSON.stringify('https://jan.ai'), // TODO: add for linux later
+            : JSON.stringify(
+                'https://github.com/janhq/nitro-tensorrt-llm/releases/download/linux-v<version>/nitro-linux-v<version>-amd64-tensorrt-llm-<gpuarch>.tar.gz'
+              ),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         INFERENCE_URL: JSON.stringify(
           process.env.INFERENCE_URL ||

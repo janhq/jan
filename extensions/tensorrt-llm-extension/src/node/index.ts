@@ -3,6 +3,7 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
 import { log } from '@janhq/core/node'
+import { existsSync } from 'fs'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
@@ -170,6 +171,20 @@ const decompressRunner = async (zipPath: string, outputPath: string) => {
   })
 }
 
+const isNitroExecutableAvailable = async (): Promise<boolean> => {
+  // TODO: NamH remove the check for process darwin. Only for testing.
+  const binary = path.join(
+    __dirname,
+    '..',
+    'bin',
+    process.platform === 'win32' || process.platform === 'darwin'
+      ? 'nitro.exe'
+      : 'nitro'
+  )
+
+  return existsSync(binary)
+}
+
 export default {
   binaryFolder,
   isRunnerAvailable,
@@ -177,4 +192,5 @@ export default {
   loadModel,
   unloadModel,
   dispose: unloadModel,
+  isNitroExecutableAvailable,
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { Compatibility } from '@janhq/core'
+import { Compatibility, InstallationState } from '@janhq/core'
 import {
   Button,
   Tooltip,
@@ -32,6 +32,20 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
   const [compatibility, setCompatibility] = useState<Compatibility | undefined>(
     undefined
   )
+  const [installState, setInstallState] =
+    useState<InstallationState>('NotRequired')
+
+  useEffect(() => {
+    const getExtensionInstallationState = async () => {
+      const extension = extensionManager.get(item.name ?? '')
+      if (!extension) return
+
+      const installState = await extension.installationState()
+      setInstallState(installState)
+    }
+
+    getExtensionInstallationState()
+  }, [item.name])
 
   useEffect(() => {
     const extension = extensionManager.get(item.name ?? '')
@@ -65,10 +79,11 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           {item.description}
         </p>
       </div>
-      {!compatibility || compatibility['platform']?.includes(PLATFORM) ? (
-        <Button themes="secondaryBlue" size="sm" onClick={onInstallClick}>
-          Install
-        </Button>
+      {!compatibility || compatibility['platform']?.includes('win32') ? (
+        <InstallStateIndicator
+          installState={installState}
+          onInstallClick={onInstallClick}
+        />
       ) : (
         <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
           <div className="flex flex-row items-center justify-center gap-1">
@@ -100,6 +115,34 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
       )}
     </div>
   )
+}
+
+type InstallStateProps = {
+  installState: InstallationState
+  onInstallClick: () => void
+}
+
+const InstallStateIndicator: React.FC<InstallStateProps> = ({
+  installState,
+  onInstallClick,
+}) => {
+  // TODO: NamH check for dark mode here
+  switch (installState) {
+    case 'Installed':
+      return (
+        <div className="bg-success rounded-md px-3 py-1.5 text-sm font-semibold">
+          Installed
+        </div>
+      )
+    case 'NotInstalled':
+      return (
+        <Button themes="secondaryBlue" size="sm" onClick={onInstallClick}>
+          Install
+        </Button>
+      )
+    default:
+      return <div></div>
+  }
 }
 
 export default TensorRtExtensionItem

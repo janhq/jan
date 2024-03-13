@@ -7,6 +7,7 @@ import {
   DownloadEvent,
   DownloadState,
   GpuSetting,
+  InstallationState,
   Model,
   NetworkConfig,
   baseName,
@@ -110,11 +111,13 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
   }
 
-  /*
-   * Inference method
-   * @param data - The message request
-   */
-  // inference(data: MessageRequest) {
-  //   // Your customized inference logic here
-  // }
+  async installationState(): Promise<InstallationState> {
+    // For now, we just check the executable of nitro x tensor rt
+    const isNitroExecutableAvailable = await executeOnMain(
+      this.nodeModule,
+      'isNitroExecutableAvailable'
+    )
+
+    return isNitroExecutableAvailable ? 'Installed' : 'NotInstalled'
+  }
 }
