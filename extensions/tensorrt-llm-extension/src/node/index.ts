@@ -4,6 +4,7 @@ import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
 import { log } from '@janhq/core/node'
 import { existsSync } from 'fs'
+import decompress from 'decompress'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
@@ -158,17 +159,14 @@ const binaryFolder = async (): Promise<string> => {
   return path.join(__dirname, '..', 'bin')
 }
 
-const isRunnerAvailable = async () => {
-  // TODO: implement me
-}
-
 const decompressRunner = async (zipPath: string, outputPath: string) => {
-  // TODO: new promise
-  console.log('decompressing', zipPath)
-  const decompress = require('decompress')
-  decompress(zipPath, outputPath).then((files: any) => {
-    console.log('done!', files)
-  })
+  console.debug('decompressing', zipPath)
+  try {
+    const files = await decompress(zipPath, outputPath)
+    console.debug('done!', files)
+  } catch (err) {
+    console.error(`Decompress ${zipPath} failed: ${err}`)
+  }
 }
 
 const isNitroExecutableAvailable = async (): Promise<boolean> => {
@@ -187,7 +185,6 @@ const isNitroExecutableAvailable = async (): Promise<boolean> => {
 
 export default {
   binaryFolder,
-  isRunnerAvailable,
   decompressRunner,
   loadModel,
   unloadModel,
