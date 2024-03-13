@@ -437,33 +437,35 @@ const Advanced = () => {
           />
         </div>
 
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="flex-shrink-0 space-y-1.5">
-            <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">
-                Jan Quick Ask
-              </h6>
+        {experimentalEnabled && (
+          <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+            <div className="flex-shrink-0 space-y-1.5">
+              <div className="flex gap-x-2">
+                <h6 className="text-sm font-semibold capitalize">
+                  Jan Quick Ask
+                </h6>
+              </div>
+              <p className="leading-relaxed">
+                Enable Quick Ask to be triggered via the default hotkey{' '}
+                <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
+                  <span className="font-bold">{isMac ? '⌘' : 'Ctrl'} + J</span>
+                </div>{' '}
+                (reload needed).
+              </p>
             </div>
-            <p className="leading-relaxed">
-              Enable Quick Ask to be triggered via the default hotkey{' '}
-              <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
-                <span className="font-bold">{isMac ? '⌘' : 'Ctrl'} + J</span>
-              </div>{' '}
-              (reload needed).
-            </p>
+            <Switch
+              checked={quickAskEnabled}
+              onCheckedChange={() => {
+                toaster({
+                  title: 'Reload',
+                  description:
+                    'Quick Ask settings updated. Reload now to apply the changes.',
+                })
+                updateQuickAskEnabled(!quickAskEnabled)
+              }}
+            />
           </div>
-          <Switch
-            checked={quickAskEnabled}
-            onCheckedChange={() => {
-              toaster({
-                title: 'Reload',
-                description:
-                  'Quick Ask settings updated. Reload now to apply the changes.',
-              })
-              updateQuickAskEnabled(!quickAskEnabled)
-            }}
-          />
-        </div>
+        )}
 
         {/* Clear log */}
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
