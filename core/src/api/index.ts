@@ -34,6 +34,7 @@ export enum AppRoute {
   log = 'log',
   logServer = 'logServer',
   systemInformations = 'systemInformations',
+  showToast = 'showToast',
 }
 
 export enum AppEvent {

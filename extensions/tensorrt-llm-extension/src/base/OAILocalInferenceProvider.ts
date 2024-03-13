@@ -16,6 +16,7 @@ export abstract class OAILocalInferenceProvider extends OAIInferenceProvider {
   // The inference engine
   loadModelFunctionName: string = 'loadModel'
   unloadModelFunctionName: string = 'unloadModel'
+  isRunning: boolean = false
 
   /**
    * On extension load, subscribe to events.
@@ -57,15 +58,19 @@ export abstract class OAILocalInferenceProvider extends OAIInferenceProvider {
     } else {
       this.loadedModel = model
       events.emit(ModelEvent.OnModelReady, model)
+      this.isRunning = true
     }
   }
   /**
    * Stops the model.
    */
-  async onModelStop(model: Model) {
+  onModelStop(model: Model) {
     if (model.engine?.toString() !== this.provider) return
 
-    await executeOnMain(this.nodeModule, this.unloadModelFunctionName)
-    events.emit(ModelEvent.OnModelStopped, {})
+    this.isRunning = false
+
+    executeOnMain(this.nodeModule, this.unloadModelFunctionName).then(() => {
+      events.emit(ModelEvent.OnModelStopped, {})
+    })
   }
 }

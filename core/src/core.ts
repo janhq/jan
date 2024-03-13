@@ -111,6 +111,15 @@ const isSubdirectory: (from: string, to: string) => Promise<boolean> = (from: st
  * @returns {Promise<any>} - A promise that resolves with the system information.
  */
 const systemInformations: () => Promise<any> = () => global.core.api?.systemInformations()
+
+/**
+ * Show toast message from browser processes.
+ * @param title
+ * @param message
+ * @returns
+ */
+const showToast: (title: string, message: string) => void = (title, message) =>
+  global.core.api?.showToast(title, message)
 /**
  * Register extension point function type definition
  */
@@ -138,5 +147,6 @@ export {
   isSubdirectory,
   getUserHomePath,
   systemInformations,
+  showToast,
   FileStat,
 }

@@ -15,6 +15,7 @@ import {
   events,
   executeOnMain,
   joinPath,
+  showToast,
   systemInformations,
 } from '@janhq/core'
 import { OAILocalInferenceProvider } from './base/OAILocalInferenceProvider'
@@ -126,5 +127,11 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
     )
 
     return isNitroExecutableAvailable ? 'Installed' : 'NotInstalled'
+  }
+
+  override onInferenceStopped() {
+    if (!this.isRunning) return
+    showToast('Failed', 'This model does not support stopping inference yet.')
+    return Promise.resolve()
   }
 }
