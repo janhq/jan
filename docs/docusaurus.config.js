@@ -341,7 +341,7 @@ const config = {
         // {
         //   type: "docSidebar",
         //   sidebarId: "pricingSidebar",
-        //   positionL: "left",
+        //   positionl: "left",
         //   label: "Pricing",
         // },
         // Navbar right

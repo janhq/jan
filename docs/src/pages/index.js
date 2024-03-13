@@ -1,5 +1,7 @@
 import React from 'react'
 import DownloadApp from '@site/src/containers/DownloadApp'
+import { Tweet } from 'react-tweet'
+import { useForm } from 'react-hook-form'
 
 import useBaseUrl from '@docusaurus/useBaseUrl'
 import Layout from '@theme/Layout'
@@ -31,6 +33,35 @@ export default function Home() {
 
   const userAgent = isBrowser && navigator.userAgent
   const isBrowserChrome = isBrowser && userAgent.includes('Chrome')
+
+  const { register, handleSubmit } = useForm({
+    defaultValues: {
+      email: '',
+    },
+  })
+
+  const onSubmit = (data) => {
+    const { email } = data
+    const options = {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'api-key': process.env.API_KEY_BREVO,
+      },
+      body: JSON.stringify({
+        updateEnabled: false,
+        email,
+        listIds: [12],
+      }),
+    }
+
+    if (email) {
+      fetch('https://api.brevo.com/v3/contacts', options)
+        .then((response) => response.json())
+        .catch((err) => console.error(err))
+    }
+  }
 
   return (
     <>
@@ -416,15 +447,35 @@ export default function Home() {
                   <p className="leading-relaxed text-black/60 dark:text-white/60">
                     Follow our AI research and journey in building Jan
                   </p>
+
+                  <div className="w-full lg:w-1/2 mt-8 mx-auto">
+                    <form
+                      className="relative"
+                      onSubmit={handleSubmit(onSubmit)}
+                    >
+                      <input
+                        type="email"
+                        className="w-full h-16 p-4 pr-14 rounded-xl border border-gray-600 dark:bg-white/10"
+                        placeholder="Enter your email"
+                        {...register('email')}
+                      />
+                      <button
+                        type="submit"
+                        className="absolute flex p-2 px-4 items-center dark:text-black bg-black text-white dark:bg-white h-12 border border-gray-600 rounded-lg top-1/2 right-3 -translate-y-1/2 font-medium"
+                      >
+                        Subscribe
+                      </button>
+                    </form>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Location and statistic */}
-          <div className="w-4/5 mx-auto pb-20 pt-32">
-            <div className="w-1/2 mx-auto pb-20">
-              <div className="grid grid-cols-4">
+          <div className="lg:w-4/5 w-full px-4 mx-auto py-10 lg:pb-20 lg:pt-32">
+            <div className="w-full lg:w-1/2 mx-auto pb-20">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="text-center">
                   <h1>13</h1>
                   <p className="font-medium text-black/60 dark:text-white/60">
@@ -470,7 +521,7 @@ export default function Home() {
                   computers
                 </h1>
               </div>
-              <div className="mt-10 w-full lg:w-1/2 mr-auto text-right">
+              <div className="mt-10 w-full lg:w-1/2 mx-auto lg:mr-auto lg:text-right">
                 {!isBrowserChrome ? (
                   <div
                     onClick={() => handleAnchorLink()}
