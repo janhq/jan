@@ -1,4 +1,4 @@
-import { FileStat } from './types'
+import { DownloadRequest, FileStat, NetworkConfig } from './types'
 
 /**
  * Execute a extension module function in main process
@@ -17,18 +17,16 @@ const executeOnMain: (extension: string, method: string, ...args: any[]) => Prom
 
 /**
  * Downloads a file from a URL and saves it to the local file system.
- * @param {string} url - The URL of the file to download.
- * @param {string} fileName - The name to use for the downloaded file.
- * @param {object} network - Optional object to specify proxy/whether to ignore SSL certificates.
+ *
+ * @param {DownloadRequest} downloadRequest - The request to download the file.
+ * @param {NetworkConfig} network - Optional object to specify proxy/whether to ignore SSL certificates.
+ *
  * @returns {Promise<any>} A promise that resolves when the file is downloaded.
  */
-const downloadFile: (
-  url: string,
-  fileName: string,
-  network?: { proxy?: string; ignoreSSL?: boolean }
-) => Promise<any> = (url, fileName, network) => {
-  return global.core?.api?.downloadFile(url, fileName, network)
-}
+const downloadFile: (downloadRequest: DownloadRequest, network?: NetworkConfig) => Promise<any> = (
+  downloadRequest,
+  network
+) => global.core?.api?.downloadFile(downloadRequest, network)
 
 /**
  * Aborts the download of a specific file.

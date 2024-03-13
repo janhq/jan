@@ -18,6 +18,7 @@ import {
   LocalImportModelEvent,
   baseName,
   GpuSetting,
+  DownloadRequest,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -150,8 +151,11 @@ export default class JanModelExtension extends ModelExtension {
         if (source.filename) {
           path = await joinPath([modelDirPath, source.filename])
         }
-
-        downloadFile(source.url, path, network)
+        const downloadRequest: DownloadRequest = {
+          url: source.url,
+          localPath: path,
+        }
+        downloadFile(downloadRequest, network)
       }
       // TODO: handle multiple binaries for web later
     } else {
@@ -160,7 +164,11 @@ export default class JanModelExtension extends ModelExtension {
         JanModelExtension._supportedModelFormat
       )
       const path = await joinPath([modelDirPath, fileName])
-      downloadFile(model.sources[0]?.url, path, network)
+      const downloadRequest: DownloadRequest = {
+        url: model.sources[0]?.url,
+        localPath: path,
+      }
+      downloadFile(downloadRequest, network)
 
       if (window && window.core?.api && window.core.api.baseApiUrl) {
         this.startPollingDownloadProgress(model.id)

@@ -14,31 +14,55 @@ import EventHandler from './EventHandler'
 import ModelImportListener from './ModelImportListener'
 import QuickAskListener from './QuickAskListener'
 
+import {
+  InstallingExtensionState,
+  removeInstallingExtensionAtom,
+  setInstallingExtensionAtom,
+} from '@/helpers/atoms/Extension.atom'
+
 const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   const setDownloadState = useSetAtom(setDownloadStateAtom)
+  const setInstallingExtension = useSetAtom(setInstallingExtensionAtom)
+  const removeInstallingExtension = useSetAtom(removeInstallingExtensionAtom)
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadUpdate', state)
-      setDownloadState(state)
+      if (state.downloadType === 'extension') {
+        const downloadPercentage: InstallingExtensionState = {
+          extensionId: state.extensionId!,
+          percentage: state.percent,
+        }
+        setInstallingExtension(state.extensionId!, downloadPercentage)
+      } else {
+        setDownloadState(state)
+      }
     },
-    [setDownloadState]
+    [setDownloadState, setInstallingExtension]
   )
 
   const onFileDownloadError = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadError', state)
-      setDownloadState(state)
+      if (state.downloadType === 'extension') {
+        removeInstallingExtension(state.extensionId!)
+      } else {
+        setDownloadState(state)
+      }
     },
-    [setDownloadState]
+    [setDownloadState, removeInstallingExtension]
   )
 
   const onFileDownloadSuccess = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
-      setDownloadState(state)
+      if (state.downloadType === 'extension') {
+        removeInstallingExtension(state.extensionId!)
+      } else {
+        setDownloadState(state)
+      }
     },
-    [setDownloadState]
+    [setDownloadState, removeInstallingExtension]
   )
 
   useEffect(() => {

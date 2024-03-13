@@ -13,6 +13,7 @@ import {
   events,
   DownloadEvent,
   log,
+  DownloadRequest,
 } from '@janhq/core'
 import { ggufMetadata } from 'hyllama'
 
@@ -148,7 +149,11 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
 
       if (this.interrupted) return
       if (!(await fs.existsSync(localPath))) {
-        downloadFile(url, localPath, network)
+        const downloadRequest: DownloadRequest = {
+          url,
+          localPath,
+        }
+        downloadFile(downloadRequest, network)
         filePaths.push(filePath)
       }
     }

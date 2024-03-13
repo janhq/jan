@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Compatibility, InstallationState } from '@janhq/core'
 import {
   Button,
+  Progress,
   Tooltip,
   TooltipArrow,
   TooltipContent,
@@ -20,20 +21,32 @@ import { formatExtensionsName } from '@/utils/converter'
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
 import { ignoreSslAtom, proxyAtom } from '@/helpers/atoms/AppConfig.atom'
+import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
 
 type Props = {
   item: Extension
 }
 
 const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
-  const { getGpuSettings } = useGpuSetting()
   const proxy = useAtomValue(proxyAtom)
   const ignoreSSL = useAtomValue(ignoreSslAtom)
+
+  const { getGpuSettings } = useGpuSetting()
   const [compatibility, setCompatibility] = useState<Compatibility | undefined>(
     undefined
   )
   const [installState, setInstallState] =
     useState<InstallationState>('NotRequired')
+  const installingExtensions = useAtomValue(installingExtensionAtom)
+
+  const isInstalling = installingExtensions.some(
+    (e) => e.extensionId === item.name
+  )
+
+  const progress = isInstalling
+    ? installingExtensions.find((e) => e.extensionId === item.name)
+        ?.percentage ?? -1
+    : -1
 
   useEffect(() => {
     const getExtensionInstallationState = async () => {
@@ -45,11 +58,12 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     }
 
     getExtensionInstallationState()
-  }, [item.name])
+  }, [item.name, isInstalling])
 
   useEffect(() => {
     const extension = extensionManager.get(item.name ?? '')
-    if (extension) setCompatibility(extension.compatibility?.())
+    if (!extension) return
+    setCompatibility(extension.compatibility())
   }, [setCompatibility, item.name])
 
   const onInstallClick = useCallback(async () => {
@@ -75,8 +89,9 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           {item.description}
         </p>
       </div>
-      {!compatibility || compatibility['platform']?.includes(PLATFORM) ? (
+      {!compatibility || compatibility['platform']?.includes('win32') ? (
         <InstallStateIndicator
+          installProgress={progress}
           installState={installState}
           onInstallClick={onInstallClick}
         />
@@ -114,14 +129,28 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
 }
 
 type InstallStateProps = {
+  installProgress: number
   installState: InstallationState
   onInstallClick: () => void
 }
 
 const InstallStateIndicator: React.FC<InstallStateProps> = ({
+  installProgress,
   installState,
   onInstallClick,
 }) => {
+  if (installProgress !== -1) {
+    const progress = installProgress * 100
+    return (
+      <div className="flex flex-row items-center justify-center space-x-2 rounded-md bg-secondary px-2 py-[2px]">
+        <Progress className="h-2 w-24" value={progress} />
+        <span className="text-xs font-bold text-muted-foreground">
+          {progress.toFixed(2)}%
+        </span>
+      </div>
+    )
+  }
+
   // TODO: NamH check for dark mode here
   switch (installState) {
     case 'Installed':

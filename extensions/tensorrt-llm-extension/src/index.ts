@@ -5,6 +5,7 @@
 import {
   Compatibility,
   DownloadEvent,
+  DownloadRequest,
   DownloadState,
   GpuSetting,
   InstallationState,
@@ -35,6 +36,9 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
   override nodeModule = NODE
 
   private supportedGpuArch = ['turing', 'ampere', 'ada']
+  // TODO: this is a quick hack, NamH refactor this one so that main app does not
+  // need to know which extension is being installed
+  private extensionName = '@janhq/tensorrt-llm-extension'
 
   compatibility() {
     return COMPATIBILITY as unknown as Compatibility
@@ -96,7 +100,13 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
     const tarball = await baseName(url)
 
     const tarballFullPath = await joinPath([binaryFolderPath, tarball])
-    downloadFile(url, tarballFullPath, network)
+    const downloadRequest: DownloadRequest = {
+      url,
+      localPath: tarballFullPath,
+      extensionId: this.extensionName,
+      downloadType: 'extension',
+    }
+    downloadFile(downloadRequest, network)
 
     // TODO: wrap this into a Promise
     const onFileDownloadSuccess = async (state: DownloadState) => {
