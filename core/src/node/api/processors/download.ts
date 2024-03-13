@@ -66,6 +66,10 @@ export class Downloader implements Processor {
     }
     DownloadManager.instance.downloadProgressMap[modelId] = initialDownloadState
 
+    if (downloadRequest.downloadType === 'extension') {
+      observer?.(DownloadEvent.onFileDownloadUpdate, initialDownloadState)
+    }
+
     progress(rq, {})
       .on('progress', (state: any) => {
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
