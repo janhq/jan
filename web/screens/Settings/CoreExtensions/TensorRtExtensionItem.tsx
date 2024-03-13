@@ -77,8 +77,6 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     }
   }
 
-  const isCompatible = true
-
   return (
     <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1.5">
@@ -94,7 +92,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           {item.description}
         </p>
       </div>
-      {isCompatible ? (
+      {!compatibility || compatibility['platform']?.includes('win32') ? (
         <InstallStateIndicator
           installProgress={progress}
           installState={installState}
