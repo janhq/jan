@@ -152,6 +152,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-2">
           <span className="font-bold">{model.name}</span>
+          <EngineBadge engine={model.engine} />
         </div>
         <div className="inline-flex items-center space-x-2">
           <span className="mr-4 font-semibold text-muted-foreground">
@@ -170,6 +171,23 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
       </div>
     </div>
   )
+}
+
+type EngineBadgeProps = {
+  engine: string
+}
+
+const EngineBadge: React.FC<EngineBadgeProps> = ({ engine }) => {
+  switch (engine) {
+    case 'nitro-tensorrt-llm':
+      return (
+        <div className="flex items-center justify-center rounded-md bg-[#EFF6FF] px-2 py-[2px] font-semibold text-primary">
+          TensorRT-LLM
+        </div>
+      )
+    default:
+      return null
+  }
 }
 
 export default ExploreModelItemHeader
