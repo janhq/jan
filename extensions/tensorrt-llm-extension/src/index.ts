@@ -141,7 +141,10 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
 
   override onInferenceStopped() {
     if (!this.isRunning) return
-    showToast('Failed', 'This model does not support stopping inference yet.')
+    showToast(
+      'Unable to Stop Inference',
+      'The model does not support stopping inference.'
+    )
     return Promise.resolve()
   }
 }
