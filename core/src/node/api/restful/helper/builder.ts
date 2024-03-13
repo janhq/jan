@@ -10,7 +10,7 @@ import {
 } from 'fs'
 import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
-import { ContentType, MessageStatus, Model, ThreadMessage } from '../../../../index'
+import { ContentType, MessageStatus, Model, ThreadMessage } from '../../../../types'
 import { getEngineConfiguration, getJanDataFolderPath } from '../../../helper'
 import { DEFAULT_CHAT_COMPLETION_URL } from './consts'
 
