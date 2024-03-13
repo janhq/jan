@@ -17,17 +17,17 @@ import {
   joinPath,
   showToast,
   systemInformations,
+  LocalOAIEngine,
+  fs,
 } from '@janhq/core'
-import { OAILocalInferenceProvider } from './base/OAILocalInferenceProvider'
 import models from '../models.json'
-import { fs } from '@janhq/core'
 
 /**
- * TensorRTLLMExtension - Implementation of BaseOAILocalInferenceProvider
+ * TensorRTLLMExtension - Implementation of LocalOAIEngine
  * @extends BaseOAILocalInferenceProvider
  * Provide pre-populated models for TensorRTLLM
  */
-export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
+export default class TensorRTLLMExtension extends LocalOAIEngine {
   /**
    * Override custom function name for loading and unloading model
    * Which are implemented from node module
@@ -52,7 +52,6 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
     return models as unknown as Model[]
   }
 
-  // @ts-ignore
   override async install(): Promise<void> {
     const info = await systemInformations()
     console.debug(

@@ -1,26 +1,26 @@
-import {
-  MessageRequest,
-  MessageEvent,
-  events,
-  InferenceEvent,
-  Model,
-  ThreadMessage,
-  ChatCompletionRole,
-  MessageStatus,
-  MessageRequestType,
-  ThreadContent,
-  ContentType,
-  ModelInfo,
-} from '@janhq/core'
-import { requestInference } from '../helpers/sse'
+import { requestInference } from './helpers/sse'
 import { ulid } from 'ulid'
-import { InferenceProvider } from './InferenceProvider'
+import { AIEngine } from './AIEngine'
+import {
+  ChatCompletionRole,
+  ContentType,
+  InferenceEvent,
+  MessageEvent,
+  MessageRequest,
+  MessageRequestType,
+  MessageStatus,
+  Model,
+  ModelInfo,
+  ThreadContent,
+  ThreadMessage,
+} from '../../types'
+import { events } from '../../events'
 
 /**
  * Base OAI Inference Provider
  * Applicable to all OAI compatible inference providers
  */
-export abstract class OAIInferenceProvider extends InferenceProvider {
+export abstract class OAIEngine extends AIEngine {
   // The inference engine
   abstract inferenceUrl: string
   abstract nodeModule: string
@@ -37,12 +37,8 @@ export abstract class OAIInferenceProvider extends InferenceProvider {
    */
   onLoad() {
     super.onLoad()
-    events.on(MessageEvent.OnMessageSent, (data: MessageRequest) =>
-      this.inference(data)
-    )
-    events.on(InferenceEvent.OnInferenceStopped, () =>
-      this.onInferenceStopped()
-    )
+    events.on(MessageEvent.OnMessageSent, (data: MessageRequest) => this.inference(data))
+    events.on(InferenceEvent.OnInferenceStopped, () => this.onInferenceStopped())
   }
 
   /**
@@ -82,12 +78,7 @@ export abstract class OAIInferenceProvider extends InferenceProvider {
       ...data.model,
     }
 
-    requestInference(
-      this.inferenceUrl,
-      data.messages ?? [],
-      model,
-      this.controller
-    ).subscribe({
+    requestInference(this.inferenceUrl, data.messages ?? [], model, this.controller).subscribe({
       next: (content: any) => {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
@@ -100,9 +91,7 @@ export abstract class OAIInferenceProvider extends InferenceProvider {
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
       complete: async () => {
-        message.status = message.content.length
-          ? MessageStatus.Ready
-          : MessageStatus.Error
+        message.status = message.content.length ? MessageStatus.Ready : MessageStatus.Error
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
       error: async (err: any) => {
