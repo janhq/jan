@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Compatibility, InstallationState } from '@janhq/core'
+import { Compatibility, InstallationState, abortDownload } from '@janhq/core'
 import {
   Button,
   Progress,
@@ -68,6 +68,17 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     await extension.install()
   }, [item.name])
 
+  const onCancelInstallingClick = () => {
+    const extension = installingExtensions.find(
+      (e) => e.extensionId === item.name
+    )
+    if (extension?.localPath) {
+      abortDownload(extension.localPath)
+    }
+  }
+
+  const isCompatible = true
+
   return (
     <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1.5">
@@ -83,11 +94,12 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           {item.description}
         </p>
       </div>
-      {!compatibility || compatibility['platform']?.includes('win32') ? (
+      {isCompatible ? (
         <InstallStateIndicator
           installProgress={progress}
           installState={installState}
           onInstallClick={onInstallClick}
+          onCancelClick={onCancelInstallingClick}
         />
       ) : (
         <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
@@ -126,21 +138,29 @@ type InstallStateProps = {
   installProgress: number
   installState: InstallationState
   onInstallClick: () => void
+  onCancelClick: () => void
 }
 
 const InstallStateIndicator: React.FC<InstallStateProps> = ({
   installProgress,
   installState,
   onInstallClick,
+  onCancelClick,
 }) => {
+  // TODO: NamH support dark mode for this
   if (installProgress !== -1) {
     const progress = installProgress * 100
     return (
-      <div className="flex flex-row items-center justify-center space-x-2 rounded-md bg-secondary px-2 py-[2px]">
-        <Progress className="h-2 w-24" value={progress} />
-        <span className="text-xs font-bold text-muted-foreground">
-          {progress.toFixed(2)}%
-        </span>
+      <div className="flex h-10 flex-row items-center justify-center space-x-2 rounded-md bg-[#EFF8FF] px-4 text-primary">
+        <button onClick={onCancelClick} className="font-semibold text-primary">
+          Cancel
+        </button>
+        <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md bg-[#D1E9FF] px-2 py-[2px]">
+          <Progress className="h-1 w-[69px]" value={progress} />
+          <span className="text-xs font-bold text-primary">
+            {progress.toFixed(0)}%
+          </span>
+        </div>
       </div>
     )
   }

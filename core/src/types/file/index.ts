@@ -17,6 +17,7 @@ export type DownloadState = {
   error?: string
   extensionId?: string
   downloadType?: DownloadType
+  localPath?: string
 }
 
 export type DownloadType = 'model' | 'extension'

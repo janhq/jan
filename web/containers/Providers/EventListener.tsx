@@ -33,11 +33,12 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
     async (state: DownloadState) => {
       console.debug('onFileDownloadUpdate', state)
       if (state.downloadType === 'extension') {
-        const downloadPercentage: InstallingExtensionState = {
+        const installingExtensionState: InstallingExtensionState = {
           extensionId: state.extensionId!,
           percentage: state.percent,
+          localPath: state.localPath,
         }
-        setInstallingExtension(state.extensionId!, downloadPercentage)
+        setInstallingExtension(state.extensionId!, installingExtensionState)
       } else {
         setDownloadState(state)
       }

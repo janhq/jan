@@ -63,6 +63,7 @@ export class Downloader implements Processor {
       downloadState: 'downloading',
       extensionId: downloadRequest.extensionId,
       downloadType: downloadRequest.downloadType,
+      localPath: normalizedPath,
     }
     DownloadManager.instance.downloadProgressMap[modelId] = initialDownloadState
 

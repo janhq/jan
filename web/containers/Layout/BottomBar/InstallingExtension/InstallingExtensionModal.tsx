@@ -1,5 +1,6 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 
+import { abortDownload } from '@janhq/core'
 import {
   Button,
   Modal,
@@ -15,7 +16,10 @@ import {
   formatExtensionsName,
 } from '@/utils/converter'
 
-import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
+import {
+  InstallingExtensionState,
+  installingExtensionAtom,
+} from '@/helpers/atoms/Extension.atom'
 
 export const showInstallingExtensionModalAtom = atom(false)
 
@@ -24,7 +28,20 @@ const InstallingExtensionModal: React.FC = () => {
     useAtom(showInstallingExtensionModalAtom)
   const installingExtensions = useAtomValue(installingExtensionAtom)
 
-  const onAbortInstallingExtensionClick = useCallback(() => {}, [])
+  useEffect(() => {
+    if (installingExtensions.length === 0) {
+      setShowInstallingExtensionModal(false)
+    }
+  }, [installingExtensions, setShowInstallingExtensionModal])
+
+  const onAbortInstallingExtensionClick = useCallback(
+    (item: InstallingExtensionState) => {
+      if (item.localPath) {
+        abortDownload(item.localPath)
+      }
+    },
+    []
+  )
 
   return (
     <Modal
@@ -55,7 +72,7 @@ const InstallingExtensionModal: React.FC = () => {
               <Button
                 themes="outline"
                 size="sm"
-                onClick={onAbortInstallingExtensionClick}
+                onClick={() => onAbortInstallingExtensionClick(item)}
               >
                 Cancel
               </Button>

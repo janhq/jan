@@ -5,6 +5,7 @@ type ExtensionId = string
 export type InstallingExtensionState = {
   extensionId: ExtensionId
   percentage: number
+  localPath?: string
 }
 
 export const installingExtensionAtom = atom<InstallingExtensionState[]>([])
