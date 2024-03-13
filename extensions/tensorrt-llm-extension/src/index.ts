@@ -33,7 +33,7 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
    * Which are implemented from node module
    */
   override provider = 'nitro-tensorrt-llm'
-  override inference_url = INFERENCE_URL
+  override inferenceUrl = INFERENCE_URL
   override nodeModule = NODE
 
   private supportedGpuArch = ['turing', 'ampere', 'ada']

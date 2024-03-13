@@ -72,7 +72,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       console.debug('onFileUnzipSuccess', state)
       toaster({
         title: 'Success',
-        description: `Extension ${formatExtensionsName(state.extensionId!)}`,
+        description: `Install ${formatExtensionsName(state.extensionId!)} successfully.`,
         type: 'success',
       })
       removeInstallingExtension(state.extensionId!)

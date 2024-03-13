@@ -22,7 +22,7 @@ import { InferenceProvider } from './InferenceProvider'
  */
 export abstract class OAIInferenceProvider extends InferenceProvider {
   // The inference engine
-  abstract inference_url: string
+  abstract inferenceUrl: string
   abstract nodeModule: string
 
   // Controller to handle stop requests
@@ -83,7 +83,7 @@ export abstract class OAIInferenceProvider extends InferenceProvider {
     }
 
     requestInference(
-      this.inference_url,
+      this.inferenceUrl,
       data.messages ?? [],
       model,
       this.controller
