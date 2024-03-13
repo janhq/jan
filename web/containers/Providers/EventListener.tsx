@@ -56,13 +56,19 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   const onFileDownloadSuccess = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
-      if (state.downloadType === 'extension') {
-        removeInstallingExtension(state.extensionId!)
-      } else {
+      if (state.downloadType !== 'extension') {
         setDownloadState(state)
       }
     },
-    [setDownloadState, removeInstallingExtension]
+    [setDownloadState]
+  )
+
+  const onFileUnzipSuccess = useCallback(
+    (state: DownloadState) => {
+      console.debug('onFileUnzipSuccess', state)
+      removeInstallingExtension(state.extensionId!)
+    },
+    [removeInstallingExtension]
   )
 
   useEffect(() => {
@@ -70,14 +76,21 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
     events.on(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
     events.on(DownloadEvent.onFileDownloadError, onFileDownloadError)
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+    events.on(DownloadEvent.onFileUnzipSuccess, onFileUnzipSuccess)
 
     return () => {
       console.debug('EventListenerWrapper: unregistering event listeners...')
       events.off(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
       events.off(DownloadEvent.onFileDownloadError, onFileDownloadError)
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+      events.off(DownloadEvent.onFileUnzipSuccess, onFileUnzipSuccess)
     }
-  }, [onFileDownloadUpdate, onFileDownloadError, onFileDownloadSuccess])
+  }, [
+    onFileDownloadUpdate,
+    onFileDownloadError,
+    onFileDownloadSuccess,
+    onFileUnzipSuccess,
+  ])
 
   return (
     <AppUpdateListener>

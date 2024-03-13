@@ -58,6 +58,7 @@ export enum DownloadEvent {
   onFileDownloadUpdate = 'onFileDownloadUpdate',
   onFileDownloadError = 'onFileDownloadError',
   onFileDownloadSuccess = 'onFileDownloadSuccess',
+  onFileUnzipSuccess = 'onFileUnzipSuccess',
 }
 
 export enum LocalImportModelEvent {

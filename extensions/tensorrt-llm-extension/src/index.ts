@@ -115,6 +115,7 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
       if (state.fileName !== tarball) return
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
       await executeOnMain(this.nodeModule, 'decompressRunner', tarballFullPath)
+      events.emit(DownloadEvent.onFileUnzipSuccess, state)
     }
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
   }
