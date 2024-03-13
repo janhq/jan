@@ -46,7 +46,7 @@ export default function Home() {
               Rethink the Computer
             </h1>
             <p className="text-2xl -mt-1 leading-relaxed text-black/60 dark:text-white/60">
-              Turn your computer into a{' '}
+              Turn your computer into an{' '}
               <span className="text-black dark:text-white font-semibold">
                 AI machine
               </span>
@@ -64,10 +64,7 @@ export default function Home() {
               )}
             </div>
             <p className="mt-6 text-black/60 dark:text-white/60">
-              <span className="text-blue-500 font-bold dark:text-blue-500">
-                400K+
-              </span>{' '}
-              downloads | Free & Open Source
+              400K+ Downloads | Free & Open Source
             </p>
 
             <div className="w-4/5  mx-auto mt-10">
@@ -485,10 +482,7 @@ export default function Home() {
                   <Dropdown />
                 )}
                 <p className="mt-6 text-zinc-text-black/60 dark:text-white/60">
-                  <span className="text-blue-500 font-bold dark:text-blue-500">
-                    400K+
-                  </span>{' '}
-                  downloads | Free & Open Source
+                  400K+ Downloads | Free & Open Source
                 </p>
               </div>
             </div>
