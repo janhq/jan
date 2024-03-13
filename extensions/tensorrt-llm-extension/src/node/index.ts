@@ -59,7 +59,7 @@ function unloadModel(): Promise<any> {
       debugLog(
         `Could not kill running process on port ${ENGINE_PORT}. Might be another process running on the same port? ${err}`
       )
-      throw { error: 'PORT_NOT_AVAILABLE' }
+      throw 'PORT_NOT_AVAILABLE'
     })
 }
 /**

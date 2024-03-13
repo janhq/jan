@@ -26,11 +26,11 @@
         "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fl16/tokenizer_config.json"
       }
     ],
-    "id": "LlamaCorn-1.1B-Chat-int4",
+    "id": "LlamaCorn-1.1B-Chat-fl16",
     "object": "model",
-    "name": "LlamaCorn 1.1B Chat int4",
+    "name": "LlamaCorn 1.1B Chat fl16",
     "version": "1.0",
-    "description": "Nitro Tensor LLM Model",
+    "description": "TensorRT LLM Model",
     "format": "gguf",
     "settings": {
       "ctx_len": 2048

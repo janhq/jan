@@ -48,8 +48,10 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
    * models implemented by the extension
    * define pre-populated models
    */
-  models(): Model[] {
-    return models as unknown as Model[]
+  async models(): Promise<Model[]> {
+    if ((await this.installationState()) === 'Installed')
+      return models as unknown as Model[]
+    return []
   }
 
   override async install(): Promise<void> {
@@ -115,6 +117,14 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
       await executeOnMain(this.nodeModule, 'decompressRunner', tarballFullPath)
       events.emit(DownloadEvent.onFileUnzipSuccess, state)
+
+      // Prepopulate models as soon as it's ready
+      this.prePopulateModels().then(() => {
+        showToast(
+          'Extension installed successfully.',
+          'New models are added to Model Hub.'
+        )
+      })
     }
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
   }

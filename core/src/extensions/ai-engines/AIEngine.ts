@@ -14,7 +14,7 @@ export abstract class AIEngine extends BaseExtension {
   // The model folder
   modelFolder: string = 'models'
 
-  abstract models(): Model[]
+  abstract models(): Promise<Model[]>
 
   /**
    * On extension load, subscribe to events.
@@ -26,34 +26,35 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Pre-populate models to App Data Folder
    */
-  private prePopulateModels() {
-    const models = this.models()
-    const prePoluateOperations = models.map((model) =>
-      getJanDataFolderPath()
-        .then((janDataFolder) =>
-          // Attempt to create the model folder
-          joinPath([janDataFolder, this.modelFolder, model.id]).then((path) =>
-            fs
-              .mkdirSync(path)
-              .catch()
-              .then(() => path)
+  prePopulateModels(): Promise<void> {
+    return this.models().then((models) => {
+      const prePoluateOperations = models.map((model) =>
+        getJanDataFolderPath()
+          .then((janDataFolder) =>
+            // Attempt to create the model folder
+            joinPath([janDataFolder, this.modelFolder, model.id]).then((path) =>
+              fs
+                .mkdirSync(path)
+                .catch()
+                .then(() => path)
+            )
           )
-        )
-        .then((path) => joinPath([path, 'model.json']))
-        .then((path) => {
-          // Do not overwite existing model.json
-          return fs.existsSync(path).then((exist: any) => {
-            if (!exist) return fs.writeFileSync(path, JSON.stringify(model, null, 2))
+          .then((path) => joinPath([path, 'model.json']))
+          .then((path) => {
+            // Do not overwite existing model.json
+            return fs.existsSync(path).then((exist: any) => {
+              if (!exist) return fs.writeFileSync(path, JSON.stringify(model, null, 2))
+            })
           })
-        })
-        .catch((e: Error) => {
-          console.error('Error', e)
-        })
-    )
-    Promise.all(prePoluateOperations).then(() =>
-      // Emit event to update models
-      // So the UI can update the models list
-      events.emit(ModelEvent.OnModelsUpdate, {})
-    )
+          .catch((e: Error) => {
+            console.error('Error', e)
+          })
+      )
+      Promise.all(prePoluateOperations).then(() =>
+        // Emit event to update models
+        // So the UI can update the models list
+        events.emit(ModelEvent.OnModelsUpdate, {})
+      )
+    })
   }
 }
