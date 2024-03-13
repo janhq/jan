@@ -1,21 +1,17 @@
-import {
-  events,
-  ModelEvent,
-  Model,
-  executeOnMain,
-  joinPath,
-  getJanDataFolderPath,
-} from '@janhq/core'
-import { OAIInferenceProvider } from './OAIInferenceProvider'
+import { executeOnMain, getJanDataFolderPath, joinPath } from '../../core'
+import { events } from '../../events'
+import { Model, ModelEvent } from '../../types'
+import { OAIEngine } from './OAIEngine'
 
 /**
  * Base OAI Local Inference Provider
  * Added the implementation of loading and unloading model (applicable to local inference providers)
  */
-export abstract class OAILocalInferenceProvider extends OAIInferenceProvider {
+export abstract class LocalOAIEngine extends OAIEngine {
   // The inference engine
   loadModelFunctionName: string = 'loadModel'
   unloadModelFunctionName: string = 'unloadModel'
+  isRunning: boolean = false
 
   /**
    * On extension load, subscribe to events.
@@ -33,20 +29,12 @@ export abstract class OAILocalInferenceProvider extends OAIInferenceProvider {
   async onModelInit(model: Model) {
     if (model.engine.toString() !== this.provider) return
 
-    const modelFolder = await joinPath([
-      await getJanDataFolderPath(),
-      this.modelFolder,
-      model.id,
-    ])
+    const modelFolder = await joinPath([await getJanDataFolderPath(), this.modelFolder, model.id])
 
-    const res = await executeOnMain(
-      this.nodeModule,
-      this.loadModelFunctionName,
-      {
-        modelFolder,
-        model,
-      }
-    )
+    const res = await executeOnMain(this.nodeModule, this.loadModelFunctionName, {
+      modelFolder,
+      model,
+    })
 
     if (res?.error) {
       events.emit(ModelEvent.OnModelFail, {
@@ -57,15 +45,19 @@ export abstract class OAILocalInferenceProvider extends OAIInferenceProvider {
     } else {
       this.loadedModel = model
       events.emit(ModelEvent.OnModelReady, model)
+      this.isRunning = true
     }
   }
   /**
    * Stops the model.
    */
-  async onModelStop(model: Model) {
+  onModelStop(model: Model) {
     if (model.engine?.toString() !== this.provider) return
 
-    await executeOnMain(this.nodeModule, this.unloadModelFunctionName)
-    events.emit(ModelEvent.OnModelStopped, {})
+    this.isRunning = false
+
+    executeOnMain(this.nodeModule, this.unloadModelFunctionName).then(() => {
+      events.emit(ModelEvent.OnModelStopped, {})
+    })
   }
 }

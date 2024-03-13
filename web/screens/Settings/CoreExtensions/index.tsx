@@ -4,11 +4,14 @@ import React, { useState, useEffect, useRef } from 'react'
 
 import { Button, ScrollArea } from '@janhq/uikit'
 
+import Loader from '@/containers/Loader'
+
 import { formatExtensionsName } from '@/utils/converter'
+
+import TensorRtExtensionItem from './TensorRtExtensionItem'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
-import Loader from '@/containers/Loader'
 
 const ExtensionCatalog = () => {
   const [activeExtensions, setActiveExtensions] = useState<Extension[]>([])
@@ -75,6 +78,11 @@ const ExtensionCatalog = () => {
       <ScrollArea className="h-full w-full px-4">
         <div className="block w-full">
           {activeExtensions.map((item, i) => {
+            // TODO: this is bad code, rewrite it
+            if (item.name === '@janhq/tensorrt-llm-extension') {
+              return <TensorRtExtensionItem key={i} item={item} />
+            }
+
             return (
               <div
                 key={i}

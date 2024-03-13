@@ -1,5 +1,5 @@
-import { ModelRuntimeParams } from '@janhq/core'
 import { Observable } from 'rxjs'
+import { ModelRuntimeParams } from '../../../types'
 /**
  * Sends a request to the inference server to generate a response based on the recent messages.
  * @param recentMessages - An array of recent messages to use as context for the inference.
@@ -26,9 +26,7 @@ export function requestInference(
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Accept': model.parameters.stream
-          ? 'text/event-stream'
-          : 'application/json',
+        'Accept': model.parameters.stream ? 'text/event-stream' : 'application/json',
       },
       body: requestBody,
       signal: controller?.signal,

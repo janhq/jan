@@ -1,18 +1,14 @@
-import {
-  BaseExtension,
-  events,
-  Model,
-  joinPath,
-  getJanDataFolderPath,
-  fs,
-  ModelEvent,
-} from '@janhq/core'
+import { getJanDataFolderPath, joinPath } from '../../core'
+import { events } from '../../events'
+import { BaseExtension } from '../../extension'
+import { fs } from '../../fs'
+import { Model, ModelEvent } from '../../types'
 
 /**
- * Base Inference Provider
- * Applicable to all inference providers
+ * Base AIEngine
+ * Applicable to all AI Engines
  */
-export abstract class InferenceProvider extends BaseExtension {
+export abstract class AIEngine extends BaseExtension {
   // The inference engine
   abstract provider: string
   // The model folder
@@ -47,11 +43,12 @@ export abstract class InferenceProvider extends BaseExtension {
         .then((path) => {
           // Do not overwite existing model.json
           return fs.existsSync(path).then((exist: any) => {
-            if (!exist)
-              return fs.writeFileSync(path, JSON.stringify(model, null, 2))
+            if (!exist) return fs.writeFileSync(path, JSON.stringify(model, null, 2))
           })
         })
-        .catch((e: Error) => {})
+        .catch((e: Error) => {
+          console.error('Error', e)
+        })
     )
     Promise.all(prePoluateOperations).then(() =>
       // Emit event to update models

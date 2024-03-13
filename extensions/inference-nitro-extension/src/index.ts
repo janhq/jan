@@ -108,9 +108,6 @@ export default class JanInferenceNitroExtension extends InferenceExtension {
     events.on(InferenceEvent.OnInferenceStopped, () =>
       this.onInferenceStopped()
     )
-
-    // Attempt to fetch nvidia info
-    await executeOnMain(NODE, 'updateNvidiaInfo', {})
   }
 
   /**

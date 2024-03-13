@@ -2,15 +2,35 @@
   {
     "sources": [
       {
-        "filename": "file_name_goes_here",
-        "url": "url_goes_here"
+        "filename": "config.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fl16/config.json"
+      },
+      {
+        "filename": "rank0.engine",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fl16/rank0.engine"
+      },
+      {
+        "filename": "tokenizer.model",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fl16/tokenizer.model"
+      },
+      {
+        "filename": "special_tokens_map.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fl16/special_tokens_map.json"
+      },
+      {
+        "filename": "tokenizer.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fl16/tokenizer.json"
+      },
+      {
+        "filename": "tokenizer_config.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fl16/tokenizer_config.json"
       }
     ],
-    "id": "operhermes-mistral",
+    "id": "LlamaCorn-1.1B-Chat-int4",
     "object": "model",
-    "name": "Nitro Tensor LLM Model",
+    "name": "LlamaCorn 1.1B Chat int4",
     "version": "1.0",
-    "description": "description goes here",
+    "description": "Nitro Tensor LLM Model",
     "format": "gguf",
     "settings": {
       "ctx_len": 2048
@@ -20,8 +40,8 @@
       "max_tokens": 4096
     },
     "metadata": {
-      "author": "operhermes-mistral",
-      "tags": ["Recommended", "7B", "Finetuned"],
+      "author": "LLama",
+      "tags": ["Recommended", "1B", "Finetuned"],
       "size": 4370000000
     },
     "engine": "nitro-tensorrt-llm"

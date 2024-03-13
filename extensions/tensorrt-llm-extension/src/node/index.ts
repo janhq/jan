@@ -3,6 +3,8 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
 import { log } from '@janhq/core/node'
+import { existsSync } from 'fs'
+import decompress from 'decompress'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
@@ -153,8 +155,40 @@ function debugLog(message: string, level: string = 'Debug') {
   log(`[TENSORRT_LLM_NITRO]::${level}:${message}`)
 }
 
+const binaryFolder = async (): Promise<string> => {
+  return path.join(__dirname, '..', 'bin')
+}
+
+const decompressRunner = async (zipPath: string) => {
+  const output = path.join(__dirname, '..', 'bin')
+  console.debug(`Decompressing ${zipPath} to ${output}...`)
+  try {
+    const files = await decompress(zipPath, output)
+    console.debug('Decompress finished!', files)
+  } catch (err) {
+    console.error(`Decompress ${zipPath} failed: ${err}`)
+  }
+}
+
+const isNitroExecutableAvailable = async (): Promise<boolean> => {
+  // TODO: NamH remove the check for process darwin. Only for testing.
+  const binary = path.join(
+    __dirname,
+    '..',
+    'bin',
+    process.platform === 'win32' || process.platform === 'darwin'
+      ? 'nitro.exe'
+      : 'nitro'
+  )
+
+  return existsSync(binary)
+}
+
 export default {
+  binaryFolder,
+  decompressRunner,
   loadModel,
   unloadModel,
   dispose: unloadModel,
+  isNitroExecutableAvailable,
 }
