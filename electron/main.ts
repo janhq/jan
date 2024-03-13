@@ -5,7 +5,7 @@ import { join } from 'path'
  * Managers
  **/
 import { windowManager } from './managers/window'
-import { log } from '@janhq/core/node'
+import { getAppConfigurations, log } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -43,6 +43,12 @@ const gotTheLock = app.requestSingleInstanceLock()
 
 app
   .whenReady()
+  .then(() => {
+    if (!gotTheLock) {
+      app.quit()
+      throw new Error('Another instance of the app is already running')
+    }
+  })
   .then(setupReactDevTool)
   .then(setupCore)
   .then(createUserSpace)
@@ -63,21 +69,19 @@ app
     log(`Version: ${app.getVersion()}`)
   })
   .then(() => {
-    if (!gotTheLock) {
-      app.quit()
-    } else {
-      app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
-        // Someone tried to run a second instance, we should focus our window.
-        windowManager.showMainWindow()
-      })
-    }
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
         createMainWindow()
+      } else {
+        windowManager.showMainWindow()
       }
     })
   })
   .then(() => cleanLogs())
+
+app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
+  windowManager.showMainWindow()
+})
 
 app.on('ready', () => {
   registerGlobalShortcuts()
@@ -91,7 +95,15 @@ app.once('quit', () => {
   cleanUpAndQuit()
 })
 
+app.once('window-all-closed', () => {
+  // Feature Toggle for Quick Ask
+  if (getAppConfigurations().quick_ask) return
+  cleanUpAndQuit()
+})
+
 function createQuickAskWindow() {
+  // Feature Toggle for Quick Ask
+  if (!getAppConfigurations().quick_ask) return
   const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
   windowManager.createQuickAskWindow(preloadPath, startUrl)
 }
@@ -103,6 +115,9 @@ function createMainWindow() {
 
 function registerGlobalShortcuts() {
   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
+    // Feature Toggle for Quick Ask
+    if (!getAppConfigurations().quick_ask) return
+
     if (!windowManager.isQuickAskWindowVisible()) {
       windowManager.showQuickAskWindow()
       windowManager.sendQuickAskSelectedText(selectedText)
