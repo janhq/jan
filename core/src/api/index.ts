@@ -33,6 +33,7 @@ export enum AppRoute {
   stopServer = 'stopServer',
   log = 'log',
   logServer = 'logServer',
+  systemInformations = 'systemInformations',
 }
 
 export enum AppEvent {

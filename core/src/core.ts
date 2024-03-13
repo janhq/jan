@@ -107,6 +107,11 @@ const isSubdirectory: (from: string, to: string) => Promise<boolean> = (from: st
   global.core.api?.isSubdirectory(from, to)
 
 /**
+ * Get system information
+ * @returns {Promise<any>} - A promise that resolves with the system information.
+ */
+const systemInformations: () => Promise<any> = () => global.core.api?.systemInformations()
+/**
  * Register extension point function type definition
  */
 export type RegisterExtensionPoint = (
@@ -132,5 +137,6 @@ export {
   log,
   isSubdirectory,
   getUserHomePath,
+  systemInformations,
   FileStat,
 }

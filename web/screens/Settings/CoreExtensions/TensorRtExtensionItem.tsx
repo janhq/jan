@@ -14,13 +14,10 @@ import {
 import { InfoCircledIcon } from '@radix-ui/react-icons'
 import { useAtomValue } from 'jotai'
 
-import useGpuSetting from '@/hooks/useGpuSetting'
-
 import { formatExtensionsName } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
-import { ignoreSslAtom, proxyAtom } from '@/helpers/atoms/AppConfig.atom'
 import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
 
 type Props = {
@@ -28,10 +25,6 @@ type Props = {
 }
 
 const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
-  const proxy = useAtomValue(proxyAtom)
-  const ignoreSSL = useAtomValue(ignoreSslAtom)
-
-  const { getGpuSettings } = useGpuSetting()
   const [compatibility, setCompatibility] = useState<Compatibility | undefined>(
     undefined
   )
@@ -53,8 +46,10 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
       const extension = extensionManager.get(item.name ?? '')
       if (!extension) return
 
-      const installState = await extension.installationState()
-      setInstallState(installState)
+      if (typeof extension?.installationState === 'function') {
+        const installState = await extension.installationState()
+        setInstallState(installState)
+      }
     }
 
     getExtensionInstallationState()
@@ -70,9 +65,8 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     const extension = extensionManager.get(item.name ?? '')
     if (!extension) return
 
-    const gpuSettings = await getGpuSettings()
-    await extension.install(gpuSettings, { proxy, ignoreSSL })
-  }, [ignoreSSL, proxy, item.name, getGpuSettings])
+    await extension.install()
+  }, [item.name])
 
   return (
     <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">

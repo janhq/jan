@@ -10,12 +10,12 @@ import {
   GpuSetting,
   InstallationState,
   Model,
-  NetworkConfig,
   baseName,
   downloadFile,
   events,
   executeOnMain,
   joinPath,
+  systemInformations,
 } from '@janhq/core'
 import { OAILocalInferenceProvider } from './base/OAILocalInferenceProvider'
 import models from '../models.json'
@@ -52,12 +52,12 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
   }
 
   // @ts-ignore
-  override async install(...args): Promise<void> {
+  override async install(): Promise<void> {
+    const info = await systemInformations()
     console.debug(
-      `TensorRTLLMExtension installing pre-requisites... ${JSON.stringify(args)}`
+      `TensorRTLLMExtension installing pre-requisites... ${JSON.stringify(info)}`
     )
-    const gpuSetting: GpuSetting | undefined = args[0]
-    const network: NetworkConfig | undefined = args[1]
+    const gpuSetting: GpuSetting | undefined = info.gpuSetting
     if (gpuSetting === undefined || gpuSetting.gpus.length === 0) {
       console.error('No GPU setting found. Please check your GPU setting.')
       return
@@ -106,7 +106,7 @@ export default class TensorRTLLMExtension extends OAILocalInferenceProvider {
       extensionId: this.extensionName,
       downloadType: 'extension',
     }
-    downloadFile(downloadRequest, network)
+    downloadFile(downloadRequest)
 
     // TODO: wrap this into a Promise
     const onFileDownloadSuccess = async (state: DownloadState) => {
