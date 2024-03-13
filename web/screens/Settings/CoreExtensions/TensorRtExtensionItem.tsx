@@ -149,7 +149,7 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   switch (installState) {
     case 'Installed':
       return (
-        <div className="bg-success rounded-md px-3 py-1.5 text-sm font-semibold">
+        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
           Installed
         </div>
       )
