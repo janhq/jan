@@ -37,9 +37,6 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   override nodeModule = NODE
 
   private supportedGpuArch = ['turing', 'ampere', 'ada']
-  // TODO: this is a quick hack, NamH refactor this one so that main app does not
-  // need to know which extension is being installed
-  private extensionName = '@janhq/tensorrt-llm-extension'
 
   compatibility() {
     return COMPATIBILITY as unknown as Compatibility
@@ -105,7 +102,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     const downloadRequest: DownloadRequest = {
       url,
       localPath: tarballFullPath,
-      extensionId: this.extensionName,
+      extensionId: EXTENSION_NAME,
       downloadType: 'extension',
     }
     downloadFile(downloadRequest)

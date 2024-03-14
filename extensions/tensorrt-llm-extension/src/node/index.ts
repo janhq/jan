@@ -171,14 +171,11 @@ const decompressRunner = async (zipPath: string) => {
 }
 
 const isNitroExecutableAvailable = async (): Promise<boolean> => {
-  // TODO: NamH remove the check for process darwin. Only for testing.
   const binary = path.join(
     __dirname,
     '..',
     'bin',
-    process.platform === 'win32' || process.platform === 'darwin'
-      ? 'nitro.exe'
-      : 'nitro'
+    process.platform === 'win32' ? 'nitro.exe' : 'nitro'
   )
 
   return existsSync(binary)
