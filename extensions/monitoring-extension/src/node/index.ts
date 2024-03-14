@@ -2,17 +2,17 @@ import { GpuSetting, GpuSettingInfo, ResourceInfo } from '@janhq/core'
 import { getJanDataFolderPath, log } from '@janhq/core/node'
 import { mem, cpu } from 'node-os-utils'
 import { exec } from 'child_process'
-import { writeFileSync, existsSync, readFileSync } from 'fs'
+import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs'
 import path from 'path'
 
 /**
+ * Path to the settings directory
+ **/
+export const SETTINGS_DIR = path.join(getJanDataFolderPath(), 'settings')
+/**
  * Path to the settings file
  **/
-export const GPU_INFO_FILE = path.join(
-  getJanDataFolderPath(),
-  'settings',
-  'settings.json'
-)
+export const GPU_INFO_FILE = path.join(SETTINGS_DIR, 'settings.json')
 
 /**
  * Default GPU settings
@@ -136,6 +136,11 @@ export const updateNvidiaInfo = async () => {
   try {
     JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
   } catch (error) {
+    if (!existsSync(SETTINGS_DIR)) {
+      mkdirSync(SETTINGS_DIR, {
+        recursive: true,
+      })
+    }
     writeFileSync(GPU_INFO_FILE, JSON.stringify(DEFAULT_SETTINGS, null, 2))
   }
 
