@@ -20,6 +20,7 @@ import {
   LocalOAIEngine,
   fs,
   MessageRequest,
+  ModelEvent,
 } from '@janhq/core'
 import models from '../models.json'
 
@@ -125,6 +126,20 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       })
     }
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+  }
+
+  async onModelInit(model: Model): Promise<void> {
+    if ((await this.installationState()) === 'Installed')
+      return super.onModelInit(model)
+    else {
+      events.emit(ModelEvent.OnModelFail, {
+        ...model,
+        error: {
+          message: 'EXTENSION_IS_NOT_INSTALLED::TensorRT-LLM extension',
+        },
+      })
+      return
+    }
   }
 
   override async installationState(): Promise<InstallationState> {
