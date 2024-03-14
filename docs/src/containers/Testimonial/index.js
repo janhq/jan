@@ -93,20 +93,20 @@ const Testimonial = () => {
               {firstColumn.map((item, i) => {
                 if (item.type === 'tweet')
                   return (
-                    <div className="tweet-wrapper">
-                      <Tweet key={i} id={item.id} />
+                    <div key={i} className="tweet-wrapper">
+                      <Tweet id={item.id} />
                     </div>
                   )
                 if (item.type === 'youtube')
                   return (
-                    <div>
+                    <div key={i}>
                       <iframe
                         width="100%"
                         height="260"
                         src={`https://www.youtube.com/embed/${item.id}`}
                         title="Install Jan to Run LLM Offline and Local First"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowfullscreen
+                        allowFullScreen
                         className="rounded-xl"
                         loading="lazy"
                       />
@@ -118,20 +118,20 @@ const Testimonial = () => {
               {secondColumn.map((item, i) => {
                 if (item.type === 'tweet')
                   return (
-                    <div className="tweet-wrapper">
-                      <Tweet key={i} id={item.id} />
+                    <div key={i} className="tweet-wrapper">
+                      <Tweet id={item.id} />
                     </div>
                   )
                 if (item.type === 'youtube')
                   return (
-                    <div>
+                    <div key={i}>
                       <iframe
                         width="100%"
                         height="260"
                         src={`https://www.youtube.com/embed/${item.id}`}
                         title="Install Jan to Run LLM Offline and Local First"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowfullscreen
+                        allowFullScreen
                         className="rounded-xl"
                         loading="lazy"
                       />
@@ -143,20 +143,20 @@ const Testimonial = () => {
               {thirdColumn.map((item, i) => {
                 if (item.type === 'tweet')
                   return (
-                    <div className="tweet-wrapper">
-                      <Tweet key={i} id={item.id} />
+                    <div key={i} className="tweet-wrapper">
+                      <Tweet id={item.id} />
                     </div>
                   )
                 if (item.type === 'youtube')
                   return (
-                    <div>
+                    <div key={i}>
                       <iframe
                         width="100%"
                         height="260"
                         src={`https://www.youtube.com/embed/${item.id}`}
                         title="Install Jan to Run LLM Offline and Local First"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowfullscreen
+                        allowFullScreen
                         className="rounded-xl"
                         loading="lazy"
                       />
@@ -168,20 +168,20 @@ const Testimonial = () => {
               {fourthColumn.map((item, i) => {
                 if (item.type === 'tweet')
                   return (
-                    <div className="tweet-wrapper">
-                      <Tweet key={i} id={item.id} />
+                    <div key={i} className="tweet-wrapper">
+                      <Tweet id={item.id} />
                     </div>
                   )
                 if (item.type === 'youtube')
                   return (
-                    <div>
+                    <div key={i}>
                       <iframe
                         width="100%"
                         height="260"
                         src={`https://www.youtube.com/embed/${item.id}`}
                         title="Install Jan to Run LLM Offline and Local First"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowfullscreen
+                        allowFullScreen
                         className="rounded-xl"
                         loading="lazy"
                       />

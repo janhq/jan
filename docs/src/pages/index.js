@@ -186,8 +186,8 @@ export default function Home() {
                 className="object-cover w-full object-center mx-auto h-full lg:-left-4 relative"
                 alt="App screenshots"
                 sources={{
-                  light: useBaseUrl('/img/homepage/app-frame-light.png'),
-                  dark: useBaseUrl('/img/homepage/app-frame-dark.png'),
+                  light: useBaseUrl('/img/homepage/app-frame-light.webp'),
+                  dark: useBaseUrl('/img/homepage/app-frame-dark.webp'),
                 }}
               />
             </div>
@@ -338,8 +338,8 @@ export default function Home() {
                   <ThemedImage
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/features01.png'),
-                      dark: useBaseUrl('/img/homepage/features01dark.png'),
+                      light: useBaseUrl('/img/homepage/features01.webp'),
+                      dark: useBaseUrl('/img/homepage/features01dark.webp'),
                     }}
                   />
                 )}
@@ -347,8 +347,8 @@ export default function Home() {
                   <ThemedImage
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/features02.png'),
-                      dark: useBaseUrl('/img/homepage/features02dark.png'),
+                      light: useBaseUrl('/img/homepage/features02.webp'),
+                      dark: useBaseUrl('/img/homepage/features02dark.webp'),
                     }}
                   />
                 )}
@@ -356,8 +356,8 @@ export default function Home() {
                   <ThemedImage
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/features03.png'),
-                      dark: useBaseUrl('/img/homepage/features03dark.png'),
+                      light: useBaseUrl('/img/homepage/features03.webp'),
+                      dark: useBaseUrl('/img/homepage/features03dark.webp'),
                     }}
                   />
                 )}
@@ -365,8 +365,8 @@ export default function Home() {
                   <ThemedImage
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/features04.png'),
-                      dark: useBaseUrl('/img/homepage/features04dark.png'),
+                      light: useBaseUrl('/img/homepage/features04.webp'),
+                      dark: useBaseUrl('/img/homepage/features04dark.webp'),
                     }}
                   />
                 )}
@@ -649,8 +649,8 @@ export default function Home() {
                     className="w-28 mx-auto h-auto"
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/mac-system-black.png'),
-                      dark: useBaseUrl('/img/homepage/mac-system-white.png'),
+                      light: useBaseUrl('/img/homepage/mac-system-black.webp'),
+                      dark: useBaseUrl('/img/homepage/mac-system-white.webp'),
                     }}
                   />
                   <h1 className="text-5xl lg:text-7xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
@@ -718,8 +718,8 @@ export default function Home() {
               className="w-full mx-auto h-auto"
               alt="App screenshots"
               sources={{
-                light: useBaseUrl('/img/homepage/mapbase-light.png'),
-                dark: useBaseUrl('/img/homepage/mapbase.png'),
+                light: useBaseUrl('/img/homepage/mapbase-light.webp'),
+                dark: useBaseUrl('/img/homepage/mapbase.webp'),
               }}
             />
           </div>
