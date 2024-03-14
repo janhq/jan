@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import DownloadApp from '@site/src/containers/DownloadApp'
-import { Tweet } from 'react-tweet'
 import { useForm } from 'react-hook-form'
 
 import useBaseUrl from '@docusaurus/useBaseUrl'
@@ -26,6 +25,8 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import Svg from '@site/static/img/homepage/features01dark.svg'
 
 import { twMerge } from 'tailwind-merge'
+
+import Testimonial from '@site/src/containers/Testimonial'
 
 const table = {
   labels: [
@@ -280,16 +281,7 @@ export default function Home() {
           </div>
 
           {/* Wall of love */}
-          <div className="bg-[#F0F0F0] dark:bg-[#242424] p-8 mt-20">
-            <div className="w-full xl:w-3/5 mx-auto relative py-8 text-center">
-              <h1 className="text-5xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
-                People say nice things
-              </h1>
-              <p className="leading-relaxed mt-2 text-black/60 dark:text-white/60">
-                ...despite our bugs and fast moving releases
-              </p>
-            </div>
-          </div>
+          <Testimonial />
 
           {/* Feature */}
           <div className="w-full xl:w-10/12 mx-auto relative py-8">
@@ -729,6 +721,12 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {!isBrowserChrome && (
+            <div className="my-10" id="download-section">
+              <DownloadApp />
+            </div>
+          )}
         </main>
       </Layout>
     </>
