@@ -144,7 +144,8 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
               </TooltipTrigger>
               <TooltipPortal>
                 <TooltipContent side="top">
-                  {compatibility ? (
+                  {compatibility &&
+                  !compatibility['platform']?.includes(PLATFORM) ? (
                     <span>
                       Only available on{' '}
                       {compatibility?.platform
