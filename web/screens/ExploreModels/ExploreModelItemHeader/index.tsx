@@ -178,9 +178,10 @@ type EngineBadgeProps = {
 }
 
 const EngineBadge: React.FC<EngineBadgeProps> = ({ engine }) => {
+  const title = 'TensorRT-LLM'
+
   switch (engine) {
     case 'nitro-tensorrt-llm':
-      const title = 'TensorRT-LLM'
       return (
         <Badge themes="primary" className="line-clamp-1" title={title}>
           {title}
