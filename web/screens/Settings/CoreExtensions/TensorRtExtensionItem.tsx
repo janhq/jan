@@ -20,8 +20,6 @@ import {
 import { InfoCircledIcon } from '@radix-ui/react-icons'
 import { useAtomValue } from 'jotai'
 
-import { formatExtensionsName } from '@/utils/converter'
-
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
 import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
@@ -117,22 +115,24 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           <h6 className="text-sm font-semibold capitalize">
             TensorRT-LLM Extension
           </h6>
-          <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed ">
+          <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed">
             v{item.version}
           </p>
         </div>
-        <p className="whitespace-pre-wrap leading-relaxed ">
+        <p className="whitespace-pre-wrap leading-relaxed">
           {item.description}
         </p>
       </div>
       {(!compatibility || compatibility['platform']?.includes(PLATFORM)) &&
       isGpuSupported ? (
-        <InstallStateIndicator
-          installProgress={progress}
-          installState={installState}
-          onInstallClick={onInstallClick}
-          onCancelClick={onCancelInstallingClick}
-        />
+        <div className="flex min-w-[150px] flex-row justify-end">
+          <InstallStateIndicator
+            installProgress={progress}
+            installState={installState}
+            onInstallClick={onInstallClick}
+            onCancelClick={onCancelInstallingClick}
+          />
+        </div>
       ) : (
         <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
           <div className="flex flex-row items-center justify-center gap-1">
