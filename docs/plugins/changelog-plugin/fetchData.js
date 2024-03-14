@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 
-async function fetchData(siteConfig) {
+async function fetchData(siteConfig, forceRefresh = false) {
   const owner = siteConfig.organizationName;
   const repo = siteConfig.projectName;
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases`;
@@ -17,7 +17,7 @@ async function fetchData(siteConfig) {
   const cacheFilePath = path.join(outputDirectory, 'cache.json');
 
   let cachedData = {};
-  if (fs.existsSync(cacheFilePath)) {
+  if (fs.existsSync(cacheFilePath) && !forceRefresh) {
     cachedData = JSON.parse(fs.readFileSync(cacheFilePath, 'utf-8'));
   }
 
@@ -41,7 +41,7 @@ async function fetchData(siteConfig) {
   // Fetch releases from GitHub API or load from cache
   let releases = [];
   try {
-    if (cachedData.releases) {
+    if (cachedData.releases && !forceRefresh) {
       console.log('Loading releases from cache...');
       releases = cachedData.releases;
     } else {
