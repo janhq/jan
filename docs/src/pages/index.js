@@ -163,11 +163,7 @@ export default function Home() {
               Rethink the Computer
             </h1>
             <p className="text-2xl -mt-1 leading-relaxed text-black/60 dark:text-white/60">
-              Turn your computer into{' '}
-              <span className="text-black dark:text-white font-semibold">
-                an
-              </span>{' '}
-              AI machine
+              Turn your computer into an AI machine
             </p>
             <div className="mt-10">
               {!isBrowserChrome ? (
