@@ -1,6 +1,6 @@
 ---
-title: TensorRT-LLM Extension
-slug: /guides/engines/tensorrt-llm
+title: TensorRT-LLM
+slug: /guides/providers/tensorrt-llm
 ---
 
 Users with Nvidia GPUs can get 20-40% faster* token speeds on their laptop or desktops by using [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM).

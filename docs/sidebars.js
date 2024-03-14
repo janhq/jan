@@ -201,15 +201,15 @@ const sidebars = {
         },
         {
           type: "category",
-          label: "AI Engines",
+          label: "Inference Providers",
           className: "head_SubMenu",
           link: {
             type: 'doc',
-            id: "guides/engines/README",
+            id: "guides/providers/README",
           },
           items: [
-            "guides/engines/llama-cpp",
-            "guides/engines/tensorrt-llm",
+            "guides/providers/llama-cpp",
+            "guides/providers/tensorrt-llm",
           ]
         },
         {
