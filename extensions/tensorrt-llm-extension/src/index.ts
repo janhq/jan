@@ -129,6 +129,8 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   }
 
   async onModelInit(model: Model): Promise<void> {
+    if (model.engine !== this.provider) return
+
     if ((await this.installationState()) === 'Installed')
       return super.onModelInit(model)
     else {
@@ -138,7 +140,6 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
           message: 'EXTENSION_IS_NOT_INSTALLED::TensorRT-LLM extension',
         },
       })
-      return
     }
   }
 
@@ -162,6 +163,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   }
 
   inference(data: MessageRequest): void {
+    if (!this.isRunning) return
     // TensorRT LLM Extension supports streaming only
     if (data.model) data.model.parameters.stream = true
     super.inference(data)
