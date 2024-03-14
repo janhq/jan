@@ -113,11 +113,11 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
   return (
     <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1.5">
-        <div className="flex gap-x-2">
+        <div className="flex items-center gap-x-2">
           <h6 className="text-sm font-semibold capitalize">
             TensorRT-LLM Extension
           </h6>
-          <p className="whitespace-pre-wrap font-semibold leading-relaxed ">
+          <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed ">
             v{item.version}
           </p>
         </div>
