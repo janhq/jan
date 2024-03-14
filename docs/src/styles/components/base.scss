@@ -156,11 +156,14 @@
   }
 }
 
-.actions_node_modules-react-tweet-dist-twitter-theme-tweet-actions-module,
-.authorFollow_node_modules-react-tweet-dist-twitter-theme-tweet-header-module {
-  display: none !important;
-}
-
-.replies_node_modules-react-tweet-dist-twitter-theme-tweet-replies-module {
-  margin-top: 10px;
+.tweet-wrapper {
+  [class*='actions_'] {
+    display: none !important;
+  }
+  [class*='.authorFollow_'] {
+    display: none !important;
+  }
+  [class*='replies_'] {
+    margin-top: 10px;
+  }
 }

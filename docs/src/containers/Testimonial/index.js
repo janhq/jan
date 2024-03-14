@@ -91,7 +91,12 @@ const Testimonial = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-left">
             <div className="space-y-4">
               {firstColumn.map((item, i) => {
-                if (item.type === 'tweet') return <Tweet key={i} id={item.id} />
+                if (item.type === 'tweet')
+                  return (
+                    <div className="tweet-wrapper">
+                      <Tweet key={i} id={item.id} />
+                    </div>
+                  )
                 if (item.type === 'youtube')
                   return (
                     <div>
@@ -111,7 +116,12 @@ const Testimonial = () => {
             </div>
             <div className="space-y-4">
               {secondColumn.map((item, i) => {
-                if (item.type === 'tweet') return <Tweet key={i} id={item.id} />
+                if (item.type === 'tweet')
+                  return (
+                    <div className="tweet-wrapper">
+                      <Tweet key={i} id={item.id} />
+                    </div>
+                  )
                 if (item.type === 'youtube')
                   return (
                     <div>
@@ -131,7 +141,12 @@ const Testimonial = () => {
             </div>
             <div className="space-y-4">
               {thirdColumn.map((item, i) => {
-                if (item.type === 'tweet') return <Tweet key={i} id={item.id} />
+                if (item.type === 'tweet')
+                  return (
+                    <div className="tweet-wrapper">
+                      <Tweet key={i} id={item.id} />
+                    </div>
+                  )
                 if (item.type === 'youtube')
                   return (
                     <div>
@@ -151,7 +166,12 @@ const Testimonial = () => {
             </div>
             <div className="space-y-4">
               {fourthColumn.map((item, i) => {
-                if (item.type === 'tweet') return <Tweet key={i} id={item.id} />
+                if (item.type === 'tweet')
+                  return (
+                    <div className="tweet-wrapper">
+                      <Tweet key={i} id={item.id} />
+                    </div>
+                  )
                 if (item.type === 'youtube')
                   return (
                     <div>
