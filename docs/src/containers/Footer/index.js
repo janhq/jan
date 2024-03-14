@@ -1,5 +1,6 @@
 import React from 'react'
 
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import { AiOutlineGithub, AiOutlineTwitter } from 'react-icons/ai'
 import { BiLogoDiscordAlt, BiLogoLinkedin } from 'react-icons/bi'
 import { useForm } from 'react-hook-form'
@@ -106,11 +107,15 @@ const menus = [
 const getCurrentYear = new Date().getFullYear()
 
 export default function Footer() {
-  const { register, handleSubmit } = useForm({
+  const { register, handleSubmit, reset } = useForm({
     defaultValues: {
       email: '',
     },
   })
+
+  const {
+    siteConfig: { customFields },
+  } = useDocusaurusContext()
 
   const onSubmit = (data) => {
     const { email } = data
@@ -119,7 +124,7 @@ export default function Footer() {
       headers: {
         'accept': 'application/json',
         'content-type': 'application/json',
-        'api-key': process.env.API_KEY_BREVO,
+        'api-key': customFields.apiKeyBrevo,
       },
       body: JSON.stringify({
         updateEnabled: false,
@@ -131,6 +136,11 @@ export default function Footer() {
     if (email) {
       fetch('https://api.brevo.com/v3/contacts', options)
         .then((response) => response.json())
+        .then((response) => {
+          if (response.id) {
+            reset()
+          }
+        })
         .catch((err) => console.error(err))
     }
   }

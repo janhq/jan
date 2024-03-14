@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import DownloadApp from '@site/src/containers/DownloadApp'
 import { Tweet } from 'react-tweet'
 import { useForm } from 'react-hook-form'
@@ -21,7 +21,13 @@ import Dropdown from '@site/src/containers/Elements/dropdown'
 
 import useIsBrowser from '@docusaurus/useIsBrowser'
 
-const tabel = {
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
+
+import Svg from '@site/static/img/homepage/features01dark.svg'
+
+import { twMerge } from 'tailwind-merge'
+
+const table = {
   labels: [
     'Ownership',
     'Openness',
@@ -57,6 +63,26 @@ const tabel = {
   ],
 }
 
+const features = [
+  {
+    title: 'Run local AI or connect to remote APIs',
+    description:
+      'Choose between running AI models locally for privacy, like Llama or Mistral, or connect to remote APIs, like ChatGPT or Claude.',
+  },
+  {
+    title: 'Browse and download models',
+    description: `With Jan's Hub, instantly download popular AI models or import your own to expand your toolkit without hassle.`,
+  },
+  {
+    title: 'Use Jan in your natural workflows',
+    description: `Jan works with your workflow, ready to assist at a moment's notice without interrupting your work.`,
+  },
+  {
+    title: 'Customize and add features with Extensions',
+    description: `Tailor Jan exactly to your needs with Extensions, making your experience truly your own.`,
+  },
+]
+
 export default function Home() {
   const isBrowser = useIsBrowser()
   const { stargazers } = useAppStars()
@@ -71,11 +97,15 @@ export default function Home() {
   const userAgent = isBrowser && navigator.userAgent
   const isBrowserChrome = isBrowser && userAgent.includes('Chrome')
 
-  const { register, handleSubmit } = useForm({
+  const { register, handleSubmit, reset } = useForm({
     defaultValues: {
       email: '',
     },
   })
+
+  const {
+    siteConfig: { customFields },
+  } = useDocusaurusContext()
 
   const onSubmit = (data) => {
     const { email } = data
@@ -84,7 +114,7 @@ export default function Home() {
       headers: {
         'accept': 'application/json',
         'content-type': 'application/json',
-        'api-key': process.env.API_KEY_BREVO,
+        'api-key': customFields.apiKeyBrevo,
       },
       body: JSON.stringify({
         updateEnabled: false,
@@ -96,9 +126,29 @@ export default function Home() {
     if (email) {
       fetch('https://api.brevo.com/v3/contacts', options)
         .then((response) => response.json())
+        .then((response) => {
+          if (response.id) {
+            reset()
+          }
+        })
         .catch((err) => console.error(err))
     }
   }
+
+  const [activeFeature, setActiveFeature] = useState(0)
+
+  useEffect(() => {
+    if (activeFeature < 3) {
+      setTimeout(() => {
+        setActiveFeature(activeFeature + 1)
+      }, 5000)
+    }
+    if (activeFeature === 3) {
+      setTimeout(() => {
+        setActiveFeature(0)
+      }, 5000)
+    }
+  }, [activeFeature])
 
   return (
     <>
@@ -243,14 +293,14 @@ export default function Home() {
 
           {/* Feature */}
           <div className="w-full xl:w-10/12 mx-auto relative py-8">
-            <div className="flex p-4 lg:justify-between flex-col lg:flex-row items-end">
+            <div className="flex p-4 lg:px-0 lg:justify-between flex-col lg:flex-row items-end">
               <div className="w-full">
                 <h1 className="text-5xl lg:text-7xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
                   Jan redefines <br className="hidden lg:block" /> how we use
                   computers
                 </h1>
               </div>
-              <div className="mt-10 w-full lg:w-1/2 mr-auto text-right">
+              <div className="mt-10 w-full lg:w-1/2 mr-auto lg:text-right">
                 <a
                   className="mt-6 text-blue-600 dark:text-blue-400 cursor-pointer"
                   href="https://jan.ai/features/"
@@ -258,6 +308,47 @@ export default function Home() {
                 >
                   View Our Features <BsArrowRight className="inline-block" />
                 </a>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-8 mt-10">
+              <div className="w-full lg:w-2/5 px-4 lg:p-0">
+                {features.map((feature, i) => {
+                  const isActive = activeFeature === i
+                  return (
+                    <div
+                      key={i}
+                      className="mb-4 dark:bg-[#1F1F1F] bg-[#F5F5F5] p-6 rounded-xl cursor-pointer"
+                      onClick={() => setActiveFeature(i)}
+                    >
+                      <div
+                        className={twMerge(
+                          'flex items-center gap-4',
+                          isActive && 'items-start'
+                        )}
+                      >
+                        <h1 className="dark:text-[#4C4C4C] text-[#C4C4C4]">
+                          0{i + 1}
+                        </h1>
+                        <div>
+                          <h6 className="text-xl">{feature.title}</h6>
+                          <p
+                            className={twMerge(
+                              'mt-1 leading-relaxed text-black/60 dark:text-white/60 hidden',
+                              isActive && 'block'
+                            )}
+                          >
+                            {feature.description}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="relative w-full -right-[10%] rounded-l-3xl overflow-hidden">
+                <Svg />
               </div>
             </div>
           </div>
@@ -471,7 +562,7 @@ export default function Home() {
               <div className="mt-20 flex dark:bg-[#181818] bg-[#FAFAFA] border border-gray-300 dark:border-gray-600 rounded-t-2xl border-b-0">
                 <div className="w-56 lg:w-80 border-r border-gray-300 dark:border-gray-600">
                   <div className="p-7"></div>
-                  {tabel.labels.map((label, i) => {
+                  {table.labels.map((label, i) => {
                     return (
                       <div
                         className="border-t border-gray-300 dark:border-gray-600 p-4 font-bold text-left"
@@ -486,7 +577,7 @@ export default function Home() {
 
                 <div className="w-full lg:w-1/2 border-r border-gray-300 dark:border-gray-600 hidden md:block">
                   <h6 className="p-4 mb-0">Status Quo</h6>
-                  {tabel.statusQuo.map((label, i) => {
+                  {table.statusQuo.map((label, i) => {
                     return (
                       <div
                         className="border-t border-gray-300 dark:border-gray-600 p-4"
@@ -510,7 +601,7 @@ export default function Home() {
                     />
                     <h6 className="mb-0">Jan</h6>
                   </div>
-                  {tabel.jan.map((label, i) => {
+                  {table.jan.map((label, i) => {
                     return (
                       <div
                         className="border-t border-gray-300 dark:border-gray-600 p-4"
