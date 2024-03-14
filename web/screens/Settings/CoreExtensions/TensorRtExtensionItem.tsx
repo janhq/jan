@@ -115,7 +115,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
       <div className="flex-1 flex-shrink-0 space-y-1.5">
         <div className="flex gap-x-2">
           <h6 className="text-sm font-semibold capitalize">
-            {formatExtensionsName(item.name ?? item.description ?? '')}
+            TensorRT-LLM Extension
           </h6>
           <p className="whitespace-pre-wrap font-semibold leading-relaxed ">
             v{item.version}
@@ -158,8 +158,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
                     </span>
                   ) : (
                     <span>
-                      {' '}
-                      Your GPUs do not support to run this extension.{' '}
+                      Your GPUs are not compatible with running this extension
                     </span>
                   )}
                   <TooltipArrow />
