@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Compatibility, InstallationState, abortDownload } from '@janhq/core'
+import {
+  Compatibility,
+  GpuSetting,
+  InstallationState,
+  abortDownload,
+  systemInformations,
+} from '@janhq/core'
 import {
   Button,
   Progress,
@@ -31,6 +37,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
   const [installState, setInstallState] =
     useState<InstallationState>('NotRequired')
   const installingExtensions = useAtomValue(installingExtensionAtom)
+  const [isGpuSupported, setIsGpuSupported] = useState<boolean>(false)
 
   const isInstalling = installingExtensions.some(
     (e) => e.extensionId === item.name
@@ -40,6 +47,32 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     ? installingExtensions.find((e) => e.extensionId === item.name)
         ?.percentage ?? -1
     : -1
+
+  useEffect(() => {
+    const getSystemInfos = async () => {
+      const info = await systemInformations()
+      if (!info) {
+        setIsGpuSupported(false)
+        return
+      }
+
+      const gpuSettings: GpuSetting | undefined = info.gpuSetting
+      if (!gpuSettings || gpuSettings.gpus.length === 0) {
+        setIsGpuSupported(false)
+        return
+      }
+
+      const arch = gpuSettings.gpus[0].arch
+      if (!arch) {
+        setIsGpuSupported(false)
+        return
+      }
+
+      const supportedGpuArch = ['turing', 'ampere', 'ada']
+      setIsGpuSupported(supportedGpuArch.includes(arch))
+    }
+    getSystemInfos()
+  }, [])
 
   useEffect(() => {
     const getExtensionInstallationState = async () => {
@@ -92,7 +125,8 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           {item.description}
         </p>
       </div>
-      {!compatibility || compatibility['platform']?.includes('win32') ? (
+      {(!compatibility || compatibility['platform']?.includes(PLATFORM)) &&
+      isGpuSupported ? (
         <InstallStateIndicator
           installProgress={progress}
           installState={installState}
@@ -109,18 +143,25 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
               </TooltipTrigger>
               <TooltipPortal>
                 <TooltipContent side="top">
-                  <span>
-                    Only available on{' '}
-                    {compatibility.platform
-                      ?.map((e: string) =>
-                        e === 'win32'
-                          ? 'Windows'
-                          : e === 'linux'
-                            ? 'Linux'
-                            : 'MacOS'
-                      )
-                      .join(', ')}
-                  </span>
+                  {compatibility ? (
+                    <span>
+                      Only available on{' '}
+                      {compatibility?.platform
+                        ?.map((e: string) =>
+                          e === 'win32'
+                            ? 'Windows'
+                            : e === 'linux'
+                              ? 'Linux'
+                              : 'MacOS'
+                        )
+                        .join(', ')}
+                    </span>
+                  ) : (
+                    <span>
+                      {' '}
+                      Your GPUs do not support to run this extension.{' '}
+                    </span>
+                  )}
                   <TooltipArrow />
                 </TooltipContent>
               </TooltipPortal>
