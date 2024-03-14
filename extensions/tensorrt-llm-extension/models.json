@@ -33,10 +33,10 @@
     "description": "LlamaCorn is a refined version of TinyLlama-1.1B, optimized for conversational quality, running on consumer devices through TensorRT-LLM",
     "format": "TensorRT-LLM",
     "settings": {
-      "ctx_len": 2048
+      "ctx_len": 2048,
+      "text_model": false
     },
     "parameters": {
-      "stream": true,
       "max_tokens": 4096
     },
     "metadata": {
