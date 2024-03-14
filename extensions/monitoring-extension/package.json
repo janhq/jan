@@ -19,17 +19,18 @@
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@types/node": "^20.11.4",
+    "@types/node-os-utils": "^1.3.4",
+    "cpx": "^1.5.0",
+    "rimraf": "^3.0.2",
     "rollup": "^2.38.5",
     "rollup-plugin-define": "^1.0.1",
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.36.0",
-    "rimraf": "^3.0.2",
-    "@types/node-os-utils": "^1.3.4",
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@rollup/plugin-replace": "^5.0.5",
     "@janhq/core": "file:../../core",
+    "@rollup/plugin-replace": "^5.0.5",
     "node-os-utils": "^1.3.7"
   },
   "files": [

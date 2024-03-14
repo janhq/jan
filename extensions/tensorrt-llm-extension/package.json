@@ -1,7 +1,7 @@
 {
   "name": "@janhq/tensorrt-llm-extension",
-  "version": "0.0.1",
-  "description": "This extension embeds Nitro X TensorRT for inferences.",
+  "version": "0.0.2",
+  "description": "Enables accelerated inference leveraging Nvidia's TensorRT-LLM for optimal GPU hardware optimizations. Compatible with models in TensorRT-LLM format. Requires Nvidia GPU driver and CUDA Toolkit installation.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",

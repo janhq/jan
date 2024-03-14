@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Compatibility, InstallationState, abortDownload } from '@janhq/core'
+import {
+  Compatibility,
+  GpuSetting,
+  InstallationState,
+  abortDownload,
+  systemInformations,
+} from '@janhq/core'
 import {
   Button,
   Progress,
@@ -31,6 +37,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
   const [installState, setInstallState] =
     useState<InstallationState>('NotRequired')
   const installingExtensions = useAtomValue(installingExtensionAtom)
+  const [isGpuSupported, setIsGpuSupported] = useState<boolean>(false)
 
   const isInstalling = installingExtensions.some(
     (e) => e.extensionId === item.name
@@ -40,6 +47,32 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     ? installingExtensions.find((e) => e.extensionId === item.name)
         ?.percentage ?? -1
     : -1
+
+  useEffect(() => {
+    const getSystemInfos = async () => {
+      const info = await systemInformations()
+      if (!info) {
+        setIsGpuSupported(false)
+        return
+      }
+
+      const gpuSettings: GpuSetting | undefined = info.gpuSetting
+      if (!gpuSettings || gpuSettings.gpus.length === 0) {
+        setIsGpuSupported(false)
+        return
+      }
+
+      const arch = gpuSettings.gpus[0].arch
+      if (!arch) {
+        setIsGpuSupported(false)
+        return
+      }
+
+      const supportedGpuArch = ['turing', 'ampere', 'ada']
+      setIsGpuSupported(supportedGpuArch.includes(arch))
+    }
+    getSystemInfos()
+  }, [])
 
   useEffect(() => {
     const getExtensionInstallationState = async () => {
@@ -80,11 +113,11 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
   return (
     <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1.5">
-        <div className="flex gap-x-2">
+        <div className="flex items-center gap-x-2">
           <h6 className="text-sm font-semibold capitalize">
-            {formatExtensionsName(item.name ?? item.description ?? '')}
+            TensorRT-LLM Extension
           </h6>
-          <p className="whitespace-pre-wrap font-semibold leading-relaxed ">
+          <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed ">
             v{item.version}
           </p>
         </div>
@@ -92,7 +125,8 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           {item.description}
         </p>
       </div>
-      {!compatibility || compatibility['platform']?.includes('win32') ? (
+      {(!compatibility || compatibility['platform']?.includes(PLATFORM)) &&
+      isGpuSupported ? (
         <InstallStateIndicator
           installProgress={progress}
           installState={installState}
@@ -109,18 +143,24 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
               </TooltipTrigger>
               <TooltipPortal>
                 <TooltipContent side="top">
-                  <span>
-                    Only available on{' '}
-                    {compatibility.platform
-                      ?.map((e: string) =>
-                        e === 'win32'
-                          ? 'Windows'
-                          : e === 'linux'
-                            ? 'Linux'
-                            : 'MacOS'
-                      )
-                      .join(', ')}
-                  </span>
+                  {compatibility ? (
+                    <span>
+                      Only available on{' '}
+                      {compatibility?.platform
+                        ?.map((e: string) =>
+                          e === 'win32'
+                            ? 'Windows'
+                            : e === 'linux'
+                              ? 'Linux'
+                              : 'MacOS'
+                        )
+                        .join(', ')}
+                    </span>
+                  ) : (
+                    <span>
+                      Your GPUs are not compatible with this extension
+                    </span>
+                  )}
                   <TooltipArrow />
                 </TooltipContent>
               </TooltipPortal>
