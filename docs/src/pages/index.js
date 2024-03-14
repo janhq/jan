@@ -22,8 +22,6 @@ import useIsBrowser from '@docusaurus/useIsBrowser'
 
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 
-import Svg from '@site/static/img/homepage/features01dark.svg'
-
 import { twMerge } from 'tailwind-merge'
 
 import Testimonial from '@site/src/containers/Testimonial'
@@ -340,7 +338,42 @@ export default function Home() {
               </div>
 
               <div className="relative w-full -right-[10%] rounded-l-3xl overflow-hidden hidden lg:block">
-                <Svg />
+                {activeFeature === 0 && (
+                  <ThemedImage
+                    alt="App screenshots"
+                    sources={{
+                      light: useBaseUrl('/img/homepage/features01.svg'),
+                      dark: useBaseUrl('/img/homepage/features01dark.svg'),
+                    }}
+                  />
+                )}
+                {activeFeature === 1 && (
+                  <ThemedImage
+                    alt="App screenshots"
+                    sources={{
+                      light: useBaseUrl('/img/homepage/features02.svg'),
+                      dark: useBaseUrl('/img/homepage/features02dark.svg'),
+                    }}
+                  />
+                )}
+                {activeFeature === 2 && (
+                  <ThemedImage
+                    alt="App screenshots"
+                    sources={{
+                      light: useBaseUrl('/img/homepage/features01.svg'),
+                      dark: useBaseUrl('/img/homepage/features01dark.svg'),
+                    }}
+                  />
+                )}
+                {activeFeature === 3 && (
+                  <ThemedImage
+                    alt="App screenshots"
+                    sources={{
+                      light: useBaseUrl('/img/homepage/features01.svg'),
+                      dark: useBaseUrl('/img/homepage/features01dark.svg'),
+                    }}
+                  />
+                )}
               </div>
             </div>
           </div>
