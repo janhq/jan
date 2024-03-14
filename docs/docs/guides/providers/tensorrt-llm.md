@@ -3,14 +3,17 @@ title: TensorRT-LLM
 slug: /guides/providers/tensorrt-llm
 ---
 
-Users with Nvidia GPUs can get 20-40% faster* token speeds on their laptop or desktops by using [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM).
+Users with Nvidia GPUs can get **20-40% faster\* token speeds** on their laptop or desktops by using [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM). The greater implication is that you are running FP16, which is also more accurate than quantized models.
 
 This guide walks you through how to install Jan's official [TensorRT-LLM Extension](https://github.com/janhq/nitro-tensorrt-llm). This extension uses [Nitro-TensorRT-LLM](https://github.com/janhq/nitro-tensorrt-llm) as the AI engine, instead of the default [Nitro-Llama-CPP](https://github.com/janhq/nitro). It includes an efficient C++ server to natively execute the [TRT-LLM C++ runtime](https://nvidia.github.io/TensorRT-LLM/gpt_runtime.html). It also comes with additional feature and performance improvements like OpenAI compatibility, tokenizer improvements, and queues.
 
 *Compared to using LlamaCPP engine.
 
-:::info
+:::warning
 This feature is only available for Windows users. Linux is coming soon.
+
+Additionally, we only prebuilt a few demo models. You can always build your desired models directly on your machine. [Read here](#build-your-own-tensorrt-models).
+
 :::
 
 ## Requirements
@@ -48,8 +51,8 @@ We offer a handful of precompiled models for Ampere and Ada cards that you can i
 
 ![alt text](image.png)
 
-:::info
-Due to our limited resources, we only prebuilt a few demo models. You can always build your desired models directly on your machine. [Read here](#build-your-own-tensorrt-models).
+:::warning
+If you are our nightly builds, you may have to reinstall the TensorRT-LLM extension each time you update the app. We're working on better extension lifecyles - stay tuned.
 :::
 
 ## Configure Settings
