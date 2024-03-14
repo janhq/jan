@@ -42,7 +42,7 @@
     "metadata": {
       "author": "LLama",
       "tags": ["TensorRT-LLM", "1B", "Finetuned"],
-      "size": 4370000000
+      "size": 2151000000
     },
     "engine": "nitro-tensorrt-llm"
   }
