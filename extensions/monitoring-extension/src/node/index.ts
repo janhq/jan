@@ -57,72 +57,73 @@ export const getResourcesInfo = async (): Promise<ResourceInfo> => {
   return resourceInfo
 }
 
-export const getCurrentLoad = async (): Promise<CpuGpuInfo> => {
-  const cpuPercentage = await cpu.usage()
-  let data = {
-    run_mode: 'cpu',
-    gpus_in_use: [],
-  }
+export const getCurrentLoad = () =>
+  new Promise<CpuGpuInfo>(async (resolve, reject) => {
+    const cpuPercentage = await cpu.usage()
+    let data = {
+      run_mode: 'cpu',
+      gpus_in_use: [],
+    }
 
-  if (process.platform !== 'darwin') {
-    data = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
-  }
+    if (process.platform !== 'darwin') {
+      data = JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
+    }
 
-  if (data.run_mode === 'gpu' && data.gpus_in_use.length > 0) {
-    const gpuIds = data.gpus_in_use.join(',')
-    if (gpuIds !== '' && data['vulkan'] !== true) {
-      exec(
-        `nvidia-smi --query-gpu=index,name,temperature.gpu,utilization.gpu,memory.total,memory.free,utilization.memory --format=csv,noheader,nounits --id=${gpuIds}`,
-        (error, stdout, _) => {
-          if (error) {
-            console.error(`exec error: ${error}`)
-            throw new Error(error.message)
-          }
-          const gpuInfo: GpuInfo[] = stdout
-            .trim()
-            .split('\n')
-            .map((line) => {
-              const [
-                id,
-                name,
-                temperature,
-                utilization,
-                memoryTotal,
-                memoryFree,
-                memoryUtilization,
-              ] = line.split(', ').map((item) => item.replace(/\r/g, ''))
-              return {
-                id,
-                name,
-                temperature,
-                utilization,
-                memoryTotal,
-                memoryFree,
-                memoryUtilization,
-              }
+    if (data.run_mode === 'gpu' && data.gpus_in_use.length > 0) {
+      const gpuIds = data.gpus_in_use.join(',')
+      if (gpuIds !== '' && data['vulkan'] !== true) {
+        exec(
+          `nvidia-smi --query-gpu=index,name,temperature.gpu,utilization.gpu,memory.total,memory.free,utilization.memory --format=csv,noheader,nounits --id=${gpuIds}`,
+          (error, stdout, _) => {
+            if (error) {
+              console.error(`exec error: ${error}`)
+              throw new Error(error.message)
+            }
+            const gpuInfo: GpuInfo[] = stdout
+              .trim()
+              .split('\n')
+              .map((line) => {
+                const [
+                  id,
+                  name,
+                  temperature,
+                  utilization,
+                  memoryTotal,
+                  memoryFree,
+                  memoryUtilization,
+                ] = line.split(', ').map((item) => item.replace(/\r/g, ''))
+                return {
+                  id,
+                  name,
+                  temperature,
+                  utilization,
+                  memoryTotal,
+                  memoryFree,
+                  memoryUtilization,
+                }
+              })
+
+            resolve({
+              cpu: { usage: cpuPercentage },
+              gpu: gpuInfo,
             })
-
-          return {
-            cpu: { usage: cpuPercentage },
-            gpu: gpuInfo,
           }
-        }
-      )
+        )
+      } else {
+        // Handle the case where gpuIds is empty
+        resolve({
+          cpu: { usage: cpuPercentage },
+          gpu: [],
+        })
+      }
     } else {
-      // Handle the case where gpuIds is empty
-      return {
+      // Handle the case where run_mode is not 'gpu' or no GPUs are in use
+      resolve({
         cpu: { usage: cpuPercentage },
         gpu: [],
-      }
+      })
     }
-  } else {
-    // Handle the case where run_mode is not 'gpu' or no GPUs are in use
-    return {
-      cpu: { usage: cpuPercentage },
-      gpu: [],
-    }
-  }
-}
+  })
 
 /**
  * This will retrive GPU informations and persist settings.json
