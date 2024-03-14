@@ -1,19 +1,19 @@
 const fs = require('fs');
 const path = require('path');
+const fetch = require('node-fetch');
 
 async function fetchData(siteConfig) {
   const owner = siteConfig.organizationName;
   const repo = siteConfig.projectName;
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases`;
 
-  const outputDirectory = path.join(__dirname, '../../docs/guides/changelogs');
+  const outputDirectory = path.join(__dirname, '../../docs/releases/changelog');
 
   if (!fs.existsSync(outputDirectory)) {
     fs.mkdirSync(outputDirectory);
   }
 
   let counter = 1;
-  const categoryFilePath = path.join(outputDirectory, '_category_.json');
   const cacheFilePath = path.join(outputDirectory, 'cache.json');
 
   let cachedData = {};
@@ -71,6 +71,14 @@ async function fetchData(siteConfig) {
   // Process the GitHub releases data here
   for (const release of releases) {
     const version = release.tag_name;
+
+    // Check if the changelog file already exists for the current version
+    const existingChangelogPath = path.join(outputDirectory, `changelog-${version}.mdx`);
+    if (fs.existsSync(existingChangelogPath)) {
+      console.log(`Changelog for version ${version} already exists. Skipping...`);
+      continue;
+    }
+
     const releaseUrl = release.html_url;
     const issueNumberMatch = release.body.match(/#(\d+)/);
     const issueNumber = issueNumberMatch ? parseInt(issueNumberMatch[1], 10) : null;
@@ -83,7 +91,7 @@ async function fetchData(siteConfig) {
 
     const changes = release.body;
 
-    let markdownContent = `---\nsidebar_position: ${counter}\n---\n# ${version}\n\nFor more details, [GitHub Issues](${releaseUrl})\n\nHighlighted Issue: ${issueLink}\n\n${changes}\n`;
+    let markdownContent = `---\nsidebar_position: ${counter}\nslug: /changelog/changelog-${version}\n---\n# ${version}\n\nFor more details, [GitHub Issues](${releaseUrl})\n\nHighlighted Issue: ${issueLink}\n\n${changes}\n`;
 
     // Write to a separate markdown file for each version
     const outputFilePath = path.join(outputDirectory, `changelog-${version}.mdx`);
@@ -93,20 +101,6 @@ async function fetchData(siteConfig) {
 
     counter++;
   }
-
-  // Create _category_.json file
-  const categoryContent = {
-    label: 'Changelogs',
-    position: 5,
-    link: {
-      type: 'generated-index',
-      description: 'Changelog for Jan',
-    },
-  };
-
-  fs.writeFileSync(categoryFilePath, JSON.stringify(categoryContent, null, 2), 'utf-8');
-
-  console.log(`_category_.json has been created at: ${categoryFilePath}`);
 }
 
 module.exports = fetchData;

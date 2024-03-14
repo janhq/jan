@@ -30,6 +30,7 @@ export default function useFactoryReset() {
       // set the default jan data folder to user's home directory
       const configuration: AppConfiguration = {
         data_folder: defaultJanDataFolder,
+        quick_ask: appConfiguration?.quick_ask ?? false,
       }
       await window.core?.api?.updateAppConfiguration(configuration)
     }
