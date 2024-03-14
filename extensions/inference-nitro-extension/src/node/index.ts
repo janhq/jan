@@ -51,7 +51,7 @@ let currentSettings: ModelSettingParams | undefined = undefined
  * @param wrapper - The model wrapper.
  * @returns A Promise that resolves when the subprocess is terminated successfully, or rejects with an error message if the subprocess fails to terminate.
  */
-function stopModel(): Promise<void> {
+function unloadModel(): Promise<void> {
   return killSubprocess()
 }
 
@@ -61,7 +61,7 @@ function stopModel(): Promise<void> {
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  */
-async function runModel(
+async function loadModel(
   wrapper: ModelInitOptions
 ): Promise<ModelOperationResponse | void> {
   if (wrapper.model.engine !== InferenceEngine.nitro) {
@@ -402,9 +402,8 @@ const getCurrentNitroProcessInfo = (): NitroProcessInfo => {
 }
 
 export default {
-  runModel,
-  stopModel,
-  killSubprocess,
+  loadModel,
+  unloadModel,
   dispose,
   getCurrentNitroProcessInfo,
 }
