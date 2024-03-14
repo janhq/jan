@@ -1,6 +1,6 @@
 {
   "name": "@janhq/tensorrt-llm-extension",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Enables accelerated inference using Nvidia's TensorRT-LLM, that maximizes hardware optimizations on Nvidia GPU.\nNote: requires separate download or import of models that have been converted to TensorRT-LLM format.\nNote: requires installation of Nvidia GPU driver and CUDA Toolkit.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",
