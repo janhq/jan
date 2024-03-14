@@ -103,6 +103,7 @@ const Testimonial = () => {
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         allowfullscreen
                         className="rounded-xl"
+                        loading="lazy"
                       />
                     </div>
                   )
@@ -122,6 +123,7 @@ const Testimonial = () => {
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         allowfullscreen
                         className="rounded-xl"
+                        loading="lazy"
                       />
                     </div>
                   )
@@ -141,6 +143,7 @@ const Testimonial = () => {
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         allowfullscreen
                         className="rounded-xl"
+                        loading="lazy"
                       />
                     </div>
                   )
@@ -160,6 +163,7 @@ const Testimonial = () => {
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         allowfullscreen
                         className="rounded-xl"
+                        loading="lazy"
                       />
                     </div>
                   )
