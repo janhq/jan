@@ -18,7 +18,7 @@ keywords:
   ]
 ---
 
-Jan turns computers into a thinking machine to change how you use computers.
+Jan turns computers into thinking machines to change how we use them.
 Jan is created and maintained by Jan Labs, a robotics company.
 
 With Jan, you can:

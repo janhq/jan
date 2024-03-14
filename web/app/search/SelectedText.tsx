@@ -29,15 +29,15 @@ const SelectedText = ({ onCleared }: { onCleared?: () => void }) => {
   return shouldShowSelectedText ? (
     <div
       ref={containerRef}
-      className="relative rounded-lg border-[1px] border-[#0000000F] bg-[#0000000A] p-[10px]"
+      className="relative rounded-lg border border-border bg-secondary p-[10px]"
     >
       <div
-        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border-[1px] border-[#0000000F] bg-white drop-shadow"
+        className="absolute right-2 top-2 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-border bg-white shadow dark:bg-black/80"
         onClick={onClearClicked}
       >
-        <X size={16} />
+        <X size={14} className="text-muted-foreground" />
       </div>
-      <p className="font-semibold text-[#00000099]">{text}</p>
+      <p className="pr-8 font-medium text-muted-foreground">{text}</p>
     </div>
   ) : (
     <div />

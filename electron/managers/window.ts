@@ -2,6 +2,7 @@ import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { AppEvent } from '@janhq/core'
 import { mainWindowConfig } from './mainWindowConfig'
+import { getAppConfigurations } from '@janhq/core/node'
 
 /**
  * Manages the current window instance.
@@ -43,6 +44,9 @@ class WindowManager {
     })
 
     windowManager.mainWindow?.on('close', function (evt) {
+      // Feature Toggle for Quick Ask
+      if (!getAppConfigurations().quick_ask) return
+      
       if (!isAppQuitting) {
         evt.preventDefault()
         windowManager.hideMainWindow()
@@ -73,15 +77,11 @@ class WindowManager {
   hideMainWindow(): void {
     this.mainWindow?.hide()
     this._mainWindowVisible = false
-    // Only macos
-    if (process.platform === 'darwin') app.dock.hide()
   }
 
   showMainWindow(): void {
     this.mainWindow?.show()
     this._mainWindowVisible = true
-    // Only macos
-    if (process.platform === 'darwin') app.dock.show()
   }
 
   hideQuickAskWindow(): void {
@@ -101,6 +101,7 @@ class WindowManager {
   expandQuickAskWindow(heightOffset: number): void {
     const width = quickAskWindowConfig.width!
     const height = quickAskWindowConfig.height! + heightOffset
+    this._quickAskWindow?.setMinimumSize(width, height)
     this._quickAskWindow?.setSize(width, height, true)
   }
 

@@ -1,12 +1,19 @@
+import { getJanDataFolderPath } from '@janhq/core/node'
 import { readFileSync } from 'fs'
 import * as path from 'path'
-import { GPU_INFO_FILE } from './accelerator'
 
 export interface NitroExecutableOptions {
   executablePath: string
   cudaVisibleDevices: string
   vkVisibleDevices: string
 }
+
+export const GPU_INFO_FILE = path.join(
+  getJanDataFolderPath(),
+  'settings',
+  'settings.json'
+)
+
 /**
  * Find which executable file to run based on the current platform.
  * @returns The name of the executable file to run.

@@ -10,7 +10,10 @@ import useGetSystemResources from '@/hooks/useGetSystemResources'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import {
+  janDataFolderPathAtom,
+  quickAskEnabledAtom,
+} from '@/helpers/atoms/AppConfig.atom'
 
 type Props = {
   children: ReactNode
@@ -18,6 +21,7 @@ type Props = {
 
 const DataLoader: React.FC<Props> = ({ children }) => {
   const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
+  const setQuickAskEnabled = useSetAtom(quickAskEnabledAtom)
 
   useModels()
   useThreads()
@@ -29,8 +33,9 @@ const DataLoader: React.FC<Props> = ({ children }) => {
       ?.getAppConfigurations()
       ?.then((appConfig: AppConfiguration) => {
         setJanDataFolderPath(appConfig.data_folder)
+        setQuickAskEnabled(appConfig.quick_ask)
       })
-  }, [setJanDataFolderPath])
+  }, [setJanDataFolderPath, setQuickAskEnabled])
 
   console.debug('Load Data...')
 

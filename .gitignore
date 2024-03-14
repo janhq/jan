@@ -22,16 +22,16 @@ package-lock.json
 core/lib/**
 
 # Nitro binary files
-extensions/inference-nitro-extension/bin/*/nitro
-extensions/inference-nitro-extension/bin/*/*.metal
-extensions/inference-nitro-extension/bin/*/*.exe
-extensions/inference-nitro-extension/bin/*/*.dll
-extensions/inference-nitro-extension/bin/*/*.exp
-extensions/inference-nitro-extension/bin/*/*.lib
-extensions/inference-nitro-extension/bin/saved-*
-extensions/inference-nitro-extension/bin/*.tar.gz
-extensions/inference-nitro-extension/bin/vulkaninfoSDK.exe
-extensions/inference-nitro-extension/bin/vulkaninfo
+extensions/*-extension/bin/*/nitro
+extensions/*-extension/bin/*/*.metal
+extensions/*-extension/bin/*/*.exe
+extensions/*-extension/bin/*/*.dll
+extensions/*-extension/bin/*/*.exp
+extensions/*-extension/bin/*/*.lib
+extensions/*-extension/bin/saved-*
+extensions/*-extension/bin/*.tar.gz
+extensions/*-extension/bin/vulkaninfoSDK.exe
+extensions/*-extension/bin/vulkaninfo
 
 
 # Turborepo

@@ -1,11 +1,11 @@
-import { app, BrowserWindow, Menu, Tray } from 'electron'
+import { app, BrowserWindow, Tray } from 'electron'
 
 import { join } from 'path'
 /**
  * Managers
  **/
 import { windowManager } from './managers/window'
-import { log } from '@janhq/core/node'
+import { getAppConfigurations, log } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -27,7 +27,7 @@ import { setupReactDevTool } from './utils/dev'
 import { cleanLogs } from './utils/log'
 
 import { registerShortcut } from './utils/selectedText'
-import { createSystemTray } from './utils/tray'
+import { trayManager } from './managers/tray'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -39,8 +39,16 @@ const quickAskUrl = `${mainUrl}/search`
 
 const quickAskHotKey = 'CommandOrControl+J'
 
+const gotTheLock = app.requestSingleInstanceLock()
+
 app
   .whenReady()
+  .then(() => {
+    if (!gotTheLock) {
+      app.quit()
+      throw new Error('Another instance of the app is already running')
+    }
+  })
   .then(setupReactDevTool)
   .then(setupCore)
   .then(createUserSpace)
@@ -56,7 +64,7 @@ app
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
-  .then(() => process.env.CI !== 'e2e' && createSystemTray())
+  .then(() => process.env.CI !== 'e2e' && trayManager.createSystemTray())
   .then(() => {
     log(`Version: ${app.getVersion()}`)
   })
@@ -64,20 +72,38 @@ app
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
         createMainWindow()
+      } else {
+        windowManager.showMainWindow()
       }
     })
   })
   .then(() => cleanLogs())
 
+app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
+  windowManager.showMainWindow()
+})
+
 app.on('ready', () => {
   registerGlobalShortcuts()
+})
+
+app.on('before-quit', function (evt) {
+  trayManager.destroyCurrentTray()
 })
 
 app.once('quit', () => {
   cleanUpAndQuit()
 })
 
+app.once('window-all-closed', () => {
+  // Feature Toggle for Quick Ask
+  if (getAppConfigurations().quick_ask) return
+  cleanUpAndQuit()
+})
+
 function createQuickAskWindow() {
+  // Feature Toggle for Quick Ask
+  if (!getAppConfigurations().quick_ask) return
   const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
   windowManager.createQuickAskWindow(preloadPath, startUrl)
 }
@@ -89,6 +115,9 @@ function createMainWindow() {
 
 function registerGlobalShortcuts() {
   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
+    // Feature Toggle for Quick Ask
+    if (!getAppConfigurations().quick_ask) return
+
     if (!windowManager.isQuickAskWindowVisible()) {
       windowManager.showQuickAskWindow()
       windowManager.sendQuickAskSelectedText(selectedText)
