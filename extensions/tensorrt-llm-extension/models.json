@@ -26,12 +26,12 @@
         "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/tokenizer_config.json"
       }
     ],
-    "id": "LlamaCorn-1.1B-Chat-fp16",
+    "id": "llamacorn-1.1b-chat-fp16",
     "object": "model",
     "name": "LlamaCorn 1.1B Chat FP16",
     "version": "1.0",
-    "description": "TensorRT LLM Model",
-    "format": "gguf",
+    "description": "LlamaCorn is a refined version of TinyLlama-1.1B, optimized for conversational quality, running on consumer devices through TensorRT-LLM",
+    "format": "TensorRT-LLM",
     "settings": {
       "ctx_len": 2048
     },
@@ -41,7 +41,7 @@
     },
     "metadata": {
       "author": "LLama",
-      "tags": ["Recommended", "1B", "Finetuned"],
+      "tags": ["TensorRT-LLM", "1B", "Finetuned"],
       "size": 4370000000
     },
     "engine": "nitro-tensorrt-llm"

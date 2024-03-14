@@ -158,7 +158,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
                     </span>
                   ) : (
                     <span>
-                      Your GPUs are not compatible with running this extension
+                      Your GPUs are not compatible with this extension
                     </span>
                   )}
                   <TooltipArrow />
