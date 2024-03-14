@@ -19,6 +19,7 @@ import {
   systemInformations,
   LocalOAIEngine,
   fs,
+  MessageRequest,
 } from '@janhq/core'
 import models from '../models.json'
 
@@ -143,5 +144,11 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       'The model does not support stopping inference.'
     )
     return Promise.resolve()
+  }
+
+  inference(data: MessageRequest): void {
+    // TensorRT LLM Extension supports streaming only
+    if (data.model) data.model.parameters.stream = true
+    super.inference(data)
   }
 }
