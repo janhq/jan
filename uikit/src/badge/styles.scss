@@ -1,5 +1,5 @@
 .badge {
-  @apply focus:ring-ring border-border inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
+  @apply focus:ring-ring border-border inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
 
   &-primary {
     @apply border-transparent bg-blue-100 text-blue-600;
