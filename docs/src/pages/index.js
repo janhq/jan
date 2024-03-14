@@ -311,7 +311,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="flex items-center gap-8 mt-10">
+            <div className="flex lg:flex-row flex-col items-center gap-8 mt-10">
               <div className="w-full lg:w-2/5 px-4 lg:p-0">
                 {features.map((feature, i) => {
                   const isActive = activeFeature === i
@@ -347,14 +347,14 @@ export default function Home() {
                 })}
               </div>
 
-              <div className="relative w-full -right-[10%] rounded-l-3xl overflow-hidden">
+              <div className="relative w-full -right-[10%] rounded-l-3xl overflow-hidden hidden lg:block">
                 <Svg />
               </div>
             </div>
           </div>
 
           {/* Philosophy */}
-          <div className="px-4 lg:px-8 mt-20 border-y border-gray-300 dark:border-gray-800">
+          <div className="px-4 lg:px-8 mt-10 lg:mt-20 border-y border-gray-300 dark:border-gray-800">
             <div className="w-full xl:w-3/4 mx-auto relative pt-8 text-center">
               <h1 className="text-5xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
                 Our Philosophy
