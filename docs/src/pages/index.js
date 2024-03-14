@@ -338,8 +338,8 @@ export default function Home() {
                   <ThemedImage
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/features01.svg'),
-                      dark: useBaseUrl('/img/homepage/features01dark.svg'),
+                      light: useBaseUrl('/img/homepage/features01.png'),
+                      dark: useBaseUrl('/img/homepage/features01dark.png'),
                     }}
                   />
                 )}
@@ -347,8 +347,8 @@ export default function Home() {
                   <ThemedImage
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/features02.svg'),
-                      dark: useBaseUrl('/img/homepage/features02dark.svg'),
+                      light: useBaseUrl('/img/homepage/features02.png'),
+                      dark: useBaseUrl('/img/homepage/features02dark.png'),
                     }}
                   />
                 )}
@@ -356,8 +356,8 @@ export default function Home() {
                   <ThemedImage
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/features01.svg'),
-                      dark: useBaseUrl('/img/homepage/features01dark.svg'),
+                      light: useBaseUrl('/img/homepage/features03.png'),
+                      dark: useBaseUrl('/img/homepage/features03dark.png'),
                     }}
                   />
                 )}
@@ -365,8 +365,8 @@ export default function Home() {
                   <ThemedImage
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/features01.svg'),
-                      dark: useBaseUrl('/img/homepage/features01dark.svg'),
+                      light: useBaseUrl('/img/homepage/features04.png'),
+                      dark: useBaseUrl('/img/homepage/features04dark.png'),
                     }}
                   />
                 )}
