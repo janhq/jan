@@ -113,19 +113,7 @@ const config = {
     ],
 
     //To input custom Plugin
-    // path.resolve(__dirname, 'plugins', 'changelog-plugin'),
-    [
-      '@scalar/docusaurus',
-      {
-        label: '',
-        route: '/api-reference',
-        configuration: {
-          spec: {
-            url: 'https://aindrajaya.github.io/openapi-spec/openapi.json',
-          },
-        },
-      }
-    ],
+    path.resolve(__dirname, 'plugins', 'changelog-plugin'),
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
@@ -172,7 +160,7 @@ const config = {
         specs: [
           {
             spec: "openapi/jan.yaml", // can be local file, url, or parsed json object
-            route: "/api-reference-old/", // path where to render docs
+            route: "/api-reference/", // path where to render docs
           },
         ],
         theme: {
