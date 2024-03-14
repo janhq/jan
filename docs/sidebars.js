@@ -201,6 +201,19 @@ const sidebars = {
         },
         {
           type: "category",
+          label: "Inference Providers",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/inference/README",
+          },
+          items: [
+            "guides/inference/llama-cpp",
+            "guides/inference/tensorrt-llm",
+          ]
+        },
+        {
+          type: "category",
           label: "Extensions",
           className: "head_SubMenu",
           link: {
