@@ -11,6 +11,7 @@ declare global {
   declare const isMac: boolean
   declare const isWindows: boolean
   declare const isLinux: boolean
+  declare const PLATFORM: string
   interface Core {
     api: APIFunctions
     events: EventEmitter

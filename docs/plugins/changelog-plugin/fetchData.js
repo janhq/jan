@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const fetch = require('node-fetch');
 
 async function fetchData(siteConfig) {
   const owner = siteConfig.organizationName;
@@ -70,6 +71,14 @@ async function fetchData(siteConfig) {
   // Process the GitHub releases data here
   for (const release of releases) {
     const version = release.tag_name;
+
+    // Check if the changelog file already exists for the current version
+    const existingChangelogPath = path.join(outputDirectory, `changelog-${version}.mdx`);
+    if (fs.existsSync(existingChangelogPath)) {
+      console.log(`Changelog for version ${version} already exists. Skipping...`);
+      continue;
+    }
+
     const releaseUrl = release.html_url;
     const issueNumberMatch = release.body.match(/#(\d+)/);
     const issueNumber = issueNumberMatch ? parseInt(issueNumberMatch[1], 10) : null;
