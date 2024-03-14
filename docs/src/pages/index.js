@@ -136,18 +136,18 @@ export default function Home() {
 
   const [activeFeature, setActiveFeature] = useState(0)
 
-  useEffect(() => {
-    if (activeFeature < 3) {
-      setTimeout(() => {
-        setActiveFeature(activeFeature + 1)
-      }, 5000)
-    }
-    if (activeFeature === 3) {
-      setTimeout(() => {
-        setActiveFeature(0)
-      }, 5000)
-    }
-  }, [activeFeature])
+  // useEffect(() => {
+  //   if (activeFeature < 3) {
+  //     setTimeout(() => {
+  //       setActiveFeature(activeFeature + 1)
+  //     }, 5000)
+  //   }
+  //   if (activeFeature === 3) {
+  //     setTimeout(() => {
+  //       setActiveFeature(0)
+  //     }, 5000)
+  //   }
+  // }, [activeFeature])
 
   return (
     <>
