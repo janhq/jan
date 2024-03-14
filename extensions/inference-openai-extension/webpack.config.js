@@ -17,8 +17,7 @@ module.exports = {
   },
   plugins: [
     new webpack.DefinePlugin({
-      MODULE: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
-      OPENAI_DOMAIN: JSON.stringify('openai.azure.com'),
+      ENGINE: JSON.stringify(packageJson.engine),
     }),
   ],
   output: {

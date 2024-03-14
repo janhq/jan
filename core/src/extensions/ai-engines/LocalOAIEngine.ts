@@ -9,6 +9,7 @@ import { OAIEngine } from './OAIEngine'
  */
 export abstract class LocalOAIEngine extends OAIEngine {
   // The inference engine
+  abstract nodeModule: string
   loadModelFunctionName: string = 'loadModel'
   unloadModelFunctionName: string = 'unloadModel'
   isRunning: boolean = false

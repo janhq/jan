@@ -23,7 +23,6 @@ import { events } from '../../events'
 export abstract class OAIEngine extends AIEngine {
   // The inference engine
   abstract inferenceUrl: string
-  abstract nodeModule: string
 
   // Controller to handle stop requests
   controller = new AbortController()
@@ -78,7 +77,13 @@ export abstract class OAIEngine extends AIEngine {
       ...data.model,
     }
 
-    requestInference(this.inferenceUrl, data.messages ?? [], model, this.controller).subscribe({
+    requestInference(
+      this.inferenceUrl,
+      data.messages ?? [],
+      model,
+      this.controller,
+      this.headers()
+    ).subscribe({
       next: (content: any) => {
         const messageContent: ThreadContent = {
           type: ContentType.Text,
@@ -112,5 +117,12 @@ export abstract class OAIEngine extends AIEngine {
   onInferenceStopped() {
     this.isCancelled = true
     this.controller?.abort()
+  }
+
+  /**
+   * Headers for the inference request
+   */
+  headers(): HeadersInit {
+    return {}
   }
 }

@@ -9,11 +9,8 @@
 import {
   events,
   executeOnMain,
-  fs,
   Model,
-  joinPath,
   ModelEvent,
-  ModelSettingParams,
   LocalOAIEngine,
 } from '@janhq/core'
 
@@ -45,6 +42,9 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
    */
   private nitroProcessInfo: any = undefined
 
+  /**
+   * The URL for making inference requests.
+   */
   inferenceUrl = ''
 
   /**
@@ -83,6 +83,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
   }
 
   override onModelInit(model: Model): Promise<void> {
+    if (model.engine !== this.provider) return Promise.resolve()
     this.getNitroProcesHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
       JanInferenceNitroExtension._intervalHealthCheck
@@ -92,6 +93,9 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
 
   override onModelStop(model: Model): void {
     super.onModelStop(model)
+
+    if (model.engine !== this.provider) return
+
     // stop the periocally health check
     if (this.getNitroProcesHealthIntervalId) {
       clearInterval(this.getNitroProcesHealthIntervalId)
