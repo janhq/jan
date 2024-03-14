@@ -1,5 +1,6 @@
 ---
 title: Llama-CPP Extension
+slug: /guides/engines/llama-cpp
 ---
 
 ## Overview

@@ -1,5 +1,6 @@
 ---
 title: TensorRT-LLM Extension
+slug: /guides/engines/tensorrt-llm
 ---
 
 Users with Nvidia GPUs can get 20-40% faster* token speeds on their laptop or desktops by using [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM).
@@ -48,7 +49,7 @@ We offer a handful of precompiled models for Ampere and Ada cards that you can i
 ![alt text](image.png)
 
 :::info
-Due to our limited resources, we only prebuilt a few demo models. You can always build your desired models directly on your machine. [Read here](##Build-your-own-TensorRT-models).
+Due to our limited resources, we only prebuilt a few demo models. You can always build your desired models directly on your machine. [Read here](#build-your-own-tensorrt-models).
 :::
 
 ## Configure Settings
