@@ -1,5 +1,5 @@
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
-import { ImportingModel, Model, ModelInterface, OptionType } from '../index'
+import { GpuSetting, ImportingModel, Model, ModelInterface, OptionType } from '../index'
 
 /**
  * Model extension for managing models.
@@ -14,6 +14,7 @@ export abstract class ModelExtension extends BaseExtension implements ModelInter
 
   abstract downloadModel(
     model: Model,
+    gpuSettings?: GpuSetting,
     network?: { proxy: string; ignoreSSL?: boolean }
   ): Promise<void>
   abstract cancelModelDownload(modelId: string): Promise<void>

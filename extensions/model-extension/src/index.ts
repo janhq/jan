@@ -17,6 +17,8 @@ import {
   ImportingModel,
   LocalImportModelEvent,
   baseName,
+  GpuSetting,
+  DownloadRequest,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -29,10 +31,14 @@ export default class JanModelExtension extends ModelExtension {
   private static readonly _modelMetadataFileName = 'model.json'
   private static readonly _supportedModelFormat = '.gguf'
   private static readonly _incompletedModelFileName = '.download'
-  private static readonly _offlineInferenceEngine = InferenceEngine.nitro
-
+  private static readonly _offlineInferenceEngine = [
+    InferenceEngine.nitro,
+    InferenceEngine.nitro_tensorrt_llm,
+  ]
+  private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _configDirName = 'config'
   private static readonly _defaultModelFileName = 'default-model.json'
+  private static readonly _supportedGpuArch = ['turing', 'ampere', 'ada']
 
   /**
    * Called when the extension is loaded.
@@ -89,11 +95,51 @@ export default class JanModelExtension extends ModelExtension {
    */
   async downloadModel(
     model: Model,
+    gpuSettings?: GpuSetting,
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void> {
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
+
+    if (model.engine === InferenceEngine.nitro_tensorrt_llm) {
+      if (!gpuSettings || gpuSettings.gpus.length === 0) {
+        console.error('No GPU found. Please check your GPU setting.')
+        return
+      }
+      const firstGpu = gpuSettings.gpus[0]
+      if (!firstGpu.name.toLowerCase().includes('nvidia')) {
+        console.error('No Nvidia GPU found. Please check your GPU setting.')
+        return
+      }
+      const gpuArch = firstGpu.arch
+      if (gpuArch === undefined) {
+        console.error(
+          'No GPU architecture found. Please check your GPU setting.'
+        )
+        return
+      }
+
+      if (!JanModelExtension._supportedGpuArch.includes(gpuArch)) {
+        console.error(
+          `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
+        )
+        return
+      }
+
+      const os = 'windows' // TODO: remove this hard coded value
+
+      const newSources = model.sources.map((source) => {
+        const newSource = { ...source }
+        newSource.url = newSource.url
+          .replace(/<os>/g, os)
+          .replace(/<gpuarch>/g, gpuArch)
+        return newSource
+      })
+      model.sources = newSources
+    }
+
+    console.debug(`Download sources: ${JSON.stringify(model.sources)}`)
 
     if (model.sources.length > 1) {
       // path to model binaries
@@ -105,8 +151,11 @@ export default class JanModelExtension extends ModelExtension {
         if (source.filename) {
           path = await joinPath([modelDirPath, source.filename])
         }
-
-        downloadFile(source.url, path, network)
+        const downloadRequest: DownloadRequest = {
+          url: source.url,
+          localPath: path,
+        }
+        downloadFile(downloadRequest, network)
       }
       // TODO: handle multiple binaries for web later
     } else {
@@ -115,7 +164,11 @@ export default class JanModelExtension extends ModelExtension {
         JanModelExtension._supportedModelFormat
       )
       const path = await joinPath([modelDirPath, fileName])
-      downloadFile(model.sources[0]?.url, path, network)
+      const downloadRequest: DownloadRequest = {
+        url: model.sources[0]?.url,
+        localPath: path,
+      }
+      downloadFile(downloadRequest, network)
 
       if (window && window.core?.api && window.core.api.baseApiUrl) {
         this.startPollingDownloadProgress(model.id)
@@ -238,7 +291,7 @@ export default class JanModelExtension extends ModelExtension {
   async getDownloadedModels(): Promise<Model[]> {
     return await this.getModelsMetadata(
       async (modelDir: string, model: Model) => {
-        if (model.engine !== JanModelExtension._offlineInferenceEngine)
+        if (!JanModelExtension._offlineInferenceEngine.includes(model.engine))
           return true
 
         // model binaries (sources) are absolute path & exist
@@ -247,22 +300,32 @@ export default class JanModelExtension extends ModelExtension {
         )
         if (existFiles.every((exist) => exist)) return true
 
-        return await fs
+        const result = await fs
           .readdirSync(await joinPath([JanModelExtension._homeDir, modelDir]))
           .then((files: string[]) => {
             // Model binary exists in the directory
             // Model binary name can match model ID or be a .gguf file and not be an incompleted model file
             return (
               files.includes(modelDir) ||
-              files.filter(
-                (file) =>
+              files.filter((file) => {
+                if (
+                  file.endsWith(JanModelExtension._incompletedModelFileName)
+                ) {
+                  return false
+                }
+                return (
                   file
                     .toLowerCase()
-                    .includes(JanModelExtension._supportedModelFormat) &&
-                  !file.endsWith(JanModelExtension._incompletedModelFileName)
-              )?.length >= model.sources.length
+                    .includes(JanModelExtension._supportedModelFormat) ||
+                  file
+                    .toLowerCase()
+                    .includes(JanModelExtension._tensorRtEngineFormat)
+                )
+              })?.length > 0 // TODO: NamH find better way (can use basename to check the file name with source url)
             )
           })
+
+        return result
       }
     )
   }
