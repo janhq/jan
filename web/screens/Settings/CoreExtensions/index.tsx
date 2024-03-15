@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from 'react'
 
 import { Button, ScrollArea } from '@janhq/uikit'
 
+import { useAtomValue } from 'jotai'
+
 import Loader from '@/containers/Loader'
 
 import { formatExtensionsName } from '@/utils/converter'
@@ -13,9 +15,12 @@ import TensorRtExtensionItem from './TensorRtExtensionItem'
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
 
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+
 const ExtensionCatalog = () => {
   const [activeExtensions, setActiveExtensions] = useState<Extension[]>([])
   const [showLoading, setShowLoading] = useState(false)
+  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   /**
    * Fetches the active extensions and their preferences from the `extensions` and `preferences` modules.
@@ -80,7 +85,9 @@ const ExtensionCatalog = () => {
           {activeExtensions.map((item, i) => {
             // TODO: this is bad code, rewrite it
             if (item.name === '@janhq/tensorrt-llm-extension') {
-              return <TensorRtExtensionItem key={i} item={item} />
+              return experimentalFeature ? (
+                <TensorRtExtensionItem key={i} item={item} />
+              ) : null
             }
 
             return (
