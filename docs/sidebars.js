@@ -52,6 +52,13 @@ const sidebars = {
       ],
     },
     "acknowledgements",
+    {
+      type: "category",
+      label: "FAQ",
+      link: { type: "doc", id: "about/faq" },
+      items:
+        [],
+    },
   ],
   productSidebar: [
     {
@@ -213,6 +220,19 @@ const sidebars = {
         },
         {
           type: "category",
+          label: "Inference Providers",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/providers/README",
+          },
+          items: [
+            "guides/providers/llama-cpp",
+            "guides/providers/tensorrt-llm",
+          ]
+        },
+        {
+          type: "category",
           label: "Extensions",
           className: "head_SubMenu",
           link: {
@@ -221,10 +241,10 @@ const sidebars = {
           },
           items: [
             "guides/extensions/import-ext",
-            "guides/extensions/setup-ext",  
+            "guides/extensions/setup-ext",
           ]
         },
-         {
+        {
           type: "category",
           label: "Integrations",
           className: "head_SubMenu",
@@ -232,7 +252,7 @@ const sidebars = {
             type: 'doc',
             id: "guides/integration/README",
           },
-          items: [ 
+          items: [
             "guides/integration/azure",
             "guides/integration/discord",
             "guides/integration/groq",
@@ -242,7 +262,7 @@ const sidebars = {
             "guides/integration/openinterpreter",
             "guides/integration/openrouter",
             "guides/integration/raycast",
-            "guides/integration/vscode",   
+            "guides/integration/vscode",
           ]
         },
       ]

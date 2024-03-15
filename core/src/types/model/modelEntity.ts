@@ -19,6 +19,7 @@ export enum InferenceEngine {
   nitro = 'nitro',
   openai = 'openai',
   triton_trtllm = 'triton_trtllm',
+  nitro_tensorrt_llm = 'nitro-tensorrt-llm',
 
   tool_retrieval_enabled = 'tool_retrieval_enabled',
 }

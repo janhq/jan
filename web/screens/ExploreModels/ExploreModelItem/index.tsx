@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { Model } from '@janhq/core'
 import { Badge } from '@janhq/uikit'
 
+import { twMerge } from 'tailwind-merge'
+
 import ExploreModelItemHeader from '@/screens/ExploreModels/ExploreModelItemHeader'
 
 type Props = {
@@ -75,7 +77,16 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
               <span className="font-semibold text-muted-foreground">
                 Format
               </span>
-              <p className="mt-2 font-medium uppercase">{model.format}</p>
+              <p
+                className={twMerge(
+                  'mt-2 font-medium',
+                  !model.format?.includes(' ') &&
+                    !model.format?.includes('-') &&
+                    'uppercase'
+                )}
+              >
+                {model.format}
+              </p>
             </div>
           </div>
         </div>
