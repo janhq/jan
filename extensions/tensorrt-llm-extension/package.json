@@ -1,6 +1,6 @@
 {
   "name": "@janhq/tensorrt-llm-extension",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Enables accelerated inference leveraging Nvidia's TensorRT-LLM for optimal GPU hardware optimizations. Compatible with models in TensorRT-LLM format. Requires Nvidia GPU driver and CUDA Toolkit installation.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",
@@ -8,7 +8,7 @@
   "license": "AGPL-3.0",
   "config": {
     "host": "127.0.0.1",
-    "port": "3928"
+    "port": "3929"
   },
   "compatibility": {
     "platform": [

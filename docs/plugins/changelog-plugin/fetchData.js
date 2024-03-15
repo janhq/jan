@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 
-async function fetchData(siteConfig) {
+async function fetchData(siteConfig, forceRefresh = false) {
   const owner = siteConfig.organizationName;
   const repo = siteConfig.projectName;
   const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases`;
@@ -17,7 +17,7 @@ async function fetchData(siteConfig) {
   const cacheFilePath = path.join(outputDirectory, 'cache.json');
 
   let cachedData = {};
-  if (fs.existsSync(cacheFilePath)) {
+  if (fs.existsSync(cacheFilePath) && !forceRefresh) {
     cachedData = JSON.parse(fs.readFileSync(cacheFilePath, 'utf-8'));
   }
 
@@ -41,7 +41,7 @@ async function fetchData(siteConfig) {
   // Fetch releases from GitHub API or load from cache
   let releases = [];
   try {
-    if (cachedData.releases) {
+    if (cachedData.releases && !forceRefresh) {
       console.log('Loading releases from cache...');
       releases = cachedData.releases;
     } else {
@@ -66,6 +66,36 @@ async function fetchData(siteConfig) {
   } catch (error) {
     console.error('Error fetching GitHub releases:', error.message);
     return;
+  }
+
+  // Check if there are new releases
+  const newReleases = releases.filter(release => {
+    const version = release.tag_name;
+    const existingChangelogPath = path.join(outputDirectory, `changelog-${version}.mdx`);
+    return !fs.existsSync(existingChangelogPath);
+  });
+
+  // If there are new releases, update existing changelog files' sidebar positions
+  if (newReleases.length > 0) {
+    console.log(`Updating sidebar positions for ${newReleases.length} new releases...`);
+    const existingChangelogFiles = fs.readdirSync(outputDirectory)
+      .filter(file => file.startsWith('changelog-'));
+
+    existingChangelogFiles.forEach((filename, index) => {
+      const version = filename.substring(10, filename.length - 4);
+      const existingChangelogPath = path.join(outputDirectory, filename);
+      const content = fs.readFileSync(existingChangelogPath, 'utf-8');
+      const sidebarPositionMatch = content.match(/sidebar_position: (\d+)/);
+      let sidebarPosition = index + 1;
+
+      if (sidebarPositionMatch) {
+        sidebarPosition = parseInt(sidebarPositionMatch[1]);
+      }
+
+      const updatedContent = content.replace(/sidebar_position: (\d+)/, `sidebar_position: ${sidebarPosition}`);
+      fs.writeFileSync(existingChangelogPath, updatedContent, 'utf-8');
+      console.log(`Sidebar position updated for changelog-${version}`);
+    });
   }
 
   // Process the GitHub releases data here

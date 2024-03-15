@@ -74,11 +74,15 @@ export const useCreateNewThread = () => {
 
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
 
-    // check last thread message, if there empty last message use can not create thread
-    const lastMessage = threads[0]?.metadata?.lastMessage
+    if (!model) {
+      // if we have model, which means user wants to create new thread from Model hub. Allow them.
 
-    if (!lastMessage && threads.length) {
-      return null
+      // check last thread message, if there empty last message use can not create thread
+      const lastMessage = threads[0]?.metadata?.lastMessage
+
+      if (!lastMessage && threads.length) {
+        return null
+      }
     }
 
     // modify assistant tools when experimental on, retieval toggle enabled in default
