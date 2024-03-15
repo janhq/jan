@@ -104,7 +104,7 @@ const config = {
           {
             from: "/troubleshooting/undefined-issue/",
             to: "/guides/error-codes/undefined-issue/",
-          },  {
+          }, {
             from: "/install/",
             to: "/guides/install/",
           },
@@ -121,10 +121,10 @@ const config = {
         route: '/api-reference',
         configuration: {
           spec: {
-            url: 'https://aindrajaya.github.io/openapi-spec/openapi.json',
+            url: 'https://raw.githubusercontent.com/janhq/jan/dev/docs/openapi/jan.json',
           },
         },
-      }
+      },
     ],
   ],
 
