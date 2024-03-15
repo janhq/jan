@@ -16,7 +16,7 @@ function HomepageHeader() {
     <header className="bg-white dark:bg-gray-800 py-16 h-[60vh] text-center relative overflow-hidden">
       <div className="bg-custom-img w-full h-full absolute top-0 left-0 bg-cover bg-center"></div>
       <div className="container relative z-10">
-        <Heading as="h1" className="text-2xl md:text-3xl lg:text-5xl font-semibold text-white dark:text-gray-200 mb-8 mt-8">
+        <Heading as="h1" className="text-2xl md:text-3xl lg:text-5xl font-semibold text-white dark:text-gray-200 mb-8 mt-8 font-arapey">
           Hello, how can we help?
         </Heading>
         <div className={styles.searchBar}>
@@ -29,7 +29,7 @@ function HomepageHeader() {
           />
         </div>
 
-        <p className="text-lg md:text-xl lg:text-2xl text-white dark:text-gray-200 mt-8">
+        <p className="text-lg md:text-xl lg:text-2xl text-white dark:text-gray-200 mt-8 font-arapey">
           Open-source ChatGPT alternative that runs 100% offline on your computer.
         </p>
       </div>

@@ -268,6 +268,11 @@ const config = {
           url: "https://jan.ai/",
         }),
       },
+      {
+        tagName: 'link',
+        href: 'https://fonts.googleapis.com/css2?family=Arapey&display=swap',
+        rel: 'stylesheet',
+      },
     ],
     navbar: {
       title: "Jan",
@@ -379,6 +384,10 @@ const config = {
       defaultMode: "light",
       disableSwitch: false,
       respectPrefersColorScheme: false,
+    },
+    fonts: {
+      arapey: ['Arapey', 'serif'],
+      // Add other font families here if needed
     },
   },
 

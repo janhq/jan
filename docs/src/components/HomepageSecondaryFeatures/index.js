@@ -36,8 +36,8 @@ function FeatureCard({ imgSrc, title, description, href }) {
                 <div className="h-32 w-full">
                     <img alt={'Feature logo'} src={imgSrc} />
                 </div>
-                <div className="mt-12 p-8">
-                    <h3 className="text-lg font-semibold">{title}</h3>
+                <div className="mt-12 p-8 font-arapey">
+                    <h3 className="text-lg font-semibold ">{title}</h3>
                     <p>{description}</p>
                 </div>
             </div>

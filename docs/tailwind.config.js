@@ -45,6 +45,7 @@ module.exports = {
       padding: "16px",
     },
     fontFamily: {
+      arapey: ['Arapey', 'serif'],
       sans: [
         "Inter",
         "-apple-system",

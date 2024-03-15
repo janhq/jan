@@ -6,10 +6,10 @@ export default function HomepageTerinaryFeatures() {
                     <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
                         <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/roket.png"} />
-                            <h5 className="text-gray-700 dark:text-gray-200">Get Started</h5>
+                            <h5 className="text-gray-700 dark:text-gray-200 font-arapey">Get Started</h5>
                         </div>
-                        <div className="mt-5 justify-center">
-                            <p className="text-gray-700 dark:text-gray-200">Easily kick off your journey with Jan by installing your AI locally.</p>
+                        <div className="mt-5 justify-center font-arapey">
+                            <p className="text-gray-700 dark:text-gray-200 ">Easily kick off your journey with Jan by installing your AI locally.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
                                     <a href={"/guides/"} className="    dark:text-blue-400">
@@ -32,9 +32,9 @@ export default function HomepageTerinaryFeatures() {
                     <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
                         <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/buku.png"} />
-                            <h5 className="text-gray-700 dark:text-gray-200">Settings</h5>
+                            <h5 className="text-gray-700 dark:text-gray-200 font-arapey">Settings</h5>
                         </div>
-                        <div className="mt-5 justify-center">
+                        <div className="mt-5 justify-center font-arapey">
                             <p className="text-gray-700 dark:text-gray-200">Discover how to manage Jan and configure your installed AI.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
@@ -58,9 +58,9 @@ export default function HomepageTerinaryFeatures() {
                     <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
                         <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/setting.png"} />
-                            <h5 className="text-gray-700 dark:text-gray-200">Features</h5>
+                            <h5 className="text-gray-700 dark:text-gray-200 font-arapey">Features</h5>
                         </div>
-                        <div className="mt-5 justify-center">
+                        <div className="mt-5 justify-center font-arapey">
                             <p className="text-gray-700 dark:text-gray-200">Explore key features designed to enhance your experience with Jan.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
@@ -84,9 +84,9 @@ export default function HomepageTerinaryFeatures() {
                     <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
                         <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/doa.png"} />
-                            <h5 className="text-gray-700 dark:text-gray-200">Troubleshooting</h5>
+                            <h5 className="text-gray-700 dark:text-gray-200 font-arapey">Troubleshooting</h5>
                         </div>
-                        <div className="mt-5 justify-center">
+                        <div className="mt-5 justify-center font-arapey">
                             <p className="text-gray-700 dark:text-gray-200">Find solutions to common issues, including error codes, and FAQs.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
