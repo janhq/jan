@@ -7,22 +7,29 @@
     "dev": {
       "cache": false
     },
-    "web#build": {
-      "dependsOn": ["@janhq/core#build"]
-    },
-    "web:dev": {
+    "@janhq/web#dev": {
       "cache": false,
       "persistent": true,
       "dependsOn": ["@janhq/core#build", "@janhq/uikit#build"]
     },
-    "electron:dev": {
+    "@janhq/server#build": {
+      "outputs": ["dist/**"],
+      "dependsOn": ["@janhq/core#build"]
+    },
+    "jan#dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["@janhq/core#build", "@janhq/server#build", "jan#compile"]
+      "dependsOn": ["@janhq/core#build", "@janhq/server#build"]
     },
-    "electron#build": {
-      "dependsOn": ["web#build", "server#build", "core#build"],
-      "cache": false
+    "@janhq/web#build": {
+      "dependsOn": ["@janhq/core#build", "@janhq/uikit#build"]
+    },
+    "jan#build": {
+      "dependsOn": [
+        "@janhq/core#build",
+        "@janhq/server#build",
+        "@janhq/web#build"
+      ]
     },
     "type-check": {}
   }
