@@ -7,11 +7,14 @@ import ModalTroubleShooting, {
   modalTroubleShootingAtom,
 } from '@/containers/ModalTroubleShoot'
 
+import { MainViewState } from '@/constants/screens'
+
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { getErrorTitle } from '@/utils/errorMessage'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
@@ -19,6 +22,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const { resendChatMessage } = useSendChatMessage()
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const loadModelError = useAtomValue(loadModelErrorAtom)
+  const setMainState = useSetAtom(mainViewStateAtom)
   const PORT_NOT_AVAILABLE = 'PORT_NOT_AVAILABLE'
 
   const regenerateMessage = async () => {
@@ -69,6 +73,23 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
                 &nbsp;for further support.
               </p>
               <ModalTroubleShooting />
+            </div>
+          ) : loadModelError?.includes('EXTENSION_IS_NOT_INSTALLED') ? (
+            <div
+              key={message.id}
+              className="flex w-full flex-col items-center text-center text-sm font-medium text-gray-500"
+            >
+              <p className="w-[90%]">
+                Model is currently unavailable. Please switch to a different
+                model or install the{' '}
+                <button
+                  className="font-medium text-blue-500"
+                  onClick={() => setMainState(MainViewState.Settings)}
+                >
+                  {loadModelError.split('::')[1] ?? ''}
+                </button>{' '}
+                to continue using it.
+              </p>
             </div>
           ) : (
             <div

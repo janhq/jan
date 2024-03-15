@@ -38,6 +38,7 @@ const nextConfig = {
         isMac: process.platform === 'darwin',
         isWindows: process.platform === 'win32',
         isLinux: process.platform === 'linux',
+        PLATFORM: JSON.stringify(process.platform),
       }),
     ]
     return config

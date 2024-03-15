@@ -1,7 +1,13 @@
 import { app, dialog } from 'electron'
-import { WindowManager } from './../managers/window'
-import { autoUpdater } from 'electron-updater'
+import { windowManager } from './../managers/window'
+import {
+  ProgressInfo,
+  UpdateDownloadedEvent,
+  UpdateInfo,
+  autoUpdater,
+} from 'electron-updater'
 import { AppEvent } from '@janhq/core'
+import { trayManager } from '../managers/tray'
 
 export let waitingToInstallVersion: string | undefined = undefined
 
@@ -11,18 +17,19 @@ export function handleAppUpdates() {
     return
   }
   /* New Update Available */
-  autoUpdater.on('update-available', async (_info: any) => {
+  autoUpdater.on('update-available', async (_info: UpdateInfo) => {
     const action = await dialog.showMessageBox({
       title: 'Update Available',
       message: 'Would you like to download and install it now?',
       buttons: ['Download', 'Later'],
     })
+    trayManager.destroyCurrentTray()
     if (action.response === 0) await autoUpdater.downloadUpdate()
   })
 
   /* App Update Completion Message */
-  autoUpdater.on('update-downloaded', async (_info: any) => {
-    WindowManager.instance.currentWindow?.webContents.send(
+  autoUpdater.on('update-downloaded', async (_info: UpdateDownloadedEvent) => {
+    windowManager.mainWindow?.webContents.send(
       AppEvent.onAppUpdateDownloadSuccess,
       {}
     )
@@ -37,23 +44,24 @@ export function handleAppUpdates() {
   })
 
   /* App Update Error */
-  autoUpdater.on('error', (info: any) => {
-    WindowManager.instance.currentWindow?.webContents.send(
+  autoUpdater.on('error', (info: Error) => {
+    windowManager.mainWindow?.webContents.send(
       AppEvent.onAppUpdateDownloadError,
       { failedToInstallVersion: waitingToInstallVersion, info }
     )
   })
 
   /* App Update Progress */
-  autoUpdater.on('download-progress', (progress: any) => {
+  autoUpdater.on('download-progress', (progress: ProgressInfo) => {
     console.debug('app update progress: ', progress.percent)
-    WindowManager.instance.currentWindow?.webContents.send(
+    windowManager.mainWindow?.webContents.send(
       AppEvent.onAppUpdateDownloadUpdate,
       {
-        percent: progress.percent,
+        ...progress,
       }
     )
   })
+
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
   if (process.env.CI !== 'e2e') {

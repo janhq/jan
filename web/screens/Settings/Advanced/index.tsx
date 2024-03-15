@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, ChangeEvent } from 'react'
 
-import { openExternalUrl, fs } from '@janhq/core'
+import { openExternalUrl, fs, AppConfiguration } from '@janhq/core'
 
 import {
   Switch,
@@ -23,7 +23,7 @@ import {
   ScrollArea,
 } from '@janhq/uikit'
 
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
 import ShortcutModal from '@/containers/ShortcutModal'
@@ -42,6 +42,7 @@ import {
   proxyAtom,
   proxyEnabledAtom,
   vulkanEnabledAtom,
+  quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
 
 type GPU = {
@@ -56,6 +57,8 @@ const Advanced = () => {
   )
   const [vulkanEnabled, setVulkanEnabled] = useAtom(vulkanEnabledAtom)
   const [proxyEnabled, setProxyEnabled] = useAtom(proxyEnabledAtom)
+  const quickAskEnabled = useAtomValue(quickAskEnabledAtom)
+
   const [proxy, setProxy] = useAtom(proxyAtom)
   const [ignoreSSL, setIgnoreSSL] = useAtom(ignoreSslAtom)
 
@@ -86,6 +89,14 @@ const Advanced = () => {
     },
     [setPartialProxy, setProxy]
   )
+
+  const updateQuickAskEnabled = async (e: boolean) => {
+    const appConfiguration: AppConfiguration =
+      await window.core?.api?.getAppConfigurations()
+    appConfiguration.quick_ask = e
+    await window.core?.api?.updateAppConfiguration(appConfiguration)
+    window.core?.api?.relaunch()
+  }
 
   useEffect(() => {
     const setUseGpuIfPossible = async () => {
@@ -235,7 +246,8 @@ const Advanced = () => {
                         setGpuEnabled(true)
                         setShowNotification(false)
                         snackbar({
-                          description: 'Successfully turned on GPU Accelertion',
+                          description:
+                            'Successfully turned on GPU Acceleration',
                           type: 'success',
                         })
                         setTimeout(() => {
@@ -246,7 +258,7 @@ const Advanced = () => {
                         setGpuEnabled(false)
                         snackbar({
                           description:
-                            'Successfully turned off GPU Accelertion',
+                            'Successfully turned off GPU Acceleration',
                           type: 'success',
                         })
                       }
@@ -361,7 +373,7 @@ const Advanced = () => {
                   Vulkan Support
                 </h6>
               </div>
-              <p className="text-xs leading-relaxed">
+              <p className="leading-relaxed">
                 Enable Vulkan with AMD GPU/APU and Intel Arc GPU for better
                 model performance (reload needed).
               </p>
@@ -425,6 +437,36 @@ const Advanced = () => {
             onCheckedChange={(e) => setIgnoreSSL(e)}
           />
         </div>
+
+        {experimentalEnabled && (
+          <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+            <div className="flex-shrink-0 space-y-1.5">
+              <div className="flex gap-x-2">
+                <h6 className="text-sm font-semibold capitalize">
+                  Jan Quick Ask
+                </h6>
+              </div>
+              <p className="leading-relaxed">
+                Enable Quick Ask to be triggered via the default hotkey{' '}
+                <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
+                  <span className="font-bold">{isMac ? '⌘' : 'Ctrl'} + J</span>
+                </div>{' '}
+                (reload needed).
+              </p>
+            </div>
+            <Switch
+              checked={quickAskEnabled}
+              onCheckedChange={() => {
+                toaster({
+                  title: 'Reload',
+                  description:
+                    'Quick Ask settings updated. Reload now to apply the changes.',
+                })
+                updateQuickAskEnabled(!quickAskEnabled)
+              }}
+            />
+          </div>
+        )}
 
         {/* Clear log */}
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">

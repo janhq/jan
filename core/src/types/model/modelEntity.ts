@@ -20,6 +20,7 @@ export enum InferenceEngine {
   openai = 'openai',
   groq = 'groq',
   triton_trtllm = 'triton_trtllm',
+  nitro_tensorrt_llm = 'nitro-tensorrt-llm',
 
   tool_retrieval_enabled = 'tool_retrieval_enabled',
 }
@@ -138,4 +139,8 @@ export type ModelRuntimeParams = {
   frequency_penalty?: number
   presence_penalty?: number
   engine?: string
+}
+
+export type ModelInitFailed = Model & {
+  error: Error
 }

@@ -1,6 +1,5 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
-
 require("dotenv").config();
 
 const darkCodeTheme = require("prism-react-renderer/themes/dracula");
@@ -105,6 +104,17 @@ const config = {
           {
             from: "/troubleshooting/undefined-issue/",
             to: "/guides/error-codes/undefined-issue/",
+          }, {
+            from: "/install/",
+            to: "/guides/install/",
+          },
+          {
+            from: "/guides/using-models/",
+            to: "/guides/models-setup/",
+          },
+          {
+            from: "/guides/using-extensions/",
+            to: "/guides/extensions/",
           },
         ],
       },
@@ -112,6 +122,18 @@ const config = {
 
     //To input custom Plugin
     path.resolve(__dirname, 'plugins', 'changelog-plugin'),
+    [
+      '@scalar/docusaurus',
+      {
+        label: '',
+        route: '/api-reference',
+        configuration: {
+          spec: {
+            url: 'https://raw.githubusercontent.com/janhq/jan/dev/docs/openapi/jan.json',
+          },
+        },
+      },
+    ],
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
@@ -158,7 +180,7 @@ const config = {
         specs: [
           {
             spec: "openapi/jan.yaml", // can be local file, url, or parsed json object
-            route: "/api-reference/", // path where to render docs
+            route: "/api-reference-1.0/", // path where to render docs
           },
         ],
         theme: {
