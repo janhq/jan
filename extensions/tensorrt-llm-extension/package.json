@@ -12,8 +12,7 @@
   },
   "compatibility": {
     "platform": [
-      "win32",
-      "linux"
+      "win32"
     ],
     "app": [
       "0.1.0"
