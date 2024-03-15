@@ -1,5 +1,11 @@
 .theme-doc-markdown,
 .markdown {
+  a,
+  p,
+  span,
+  li {
+    @apply leading-relaxed;
+  }
   a {
     @apply text-blue-600 dark:text-blue-400;
   }
