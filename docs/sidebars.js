@@ -29,13 +29,6 @@ const sidebars = {
       link: { type: "doc", id: "team/team" },
       items: ["team/join-us", "team/contributor-program"],
     },
-    {
-      type: "category",
-      label: "FAQ",
-      link: { type: "doc", id: "about/faq" },
-      items:
-        [],
-    },
     "wall-of-love",
     {
       type: "category",
@@ -59,6 +52,13 @@ const sidebars = {
       ],
     },
     "acknowledgements",
+    {
+      type: "category",
+      label: "FAQ",
+      link: { type: "doc", id: "about/faq" },
+      items:
+        [],
+    },
   ],
   productSidebar: [
     {
