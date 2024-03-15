@@ -4,13 +4,18 @@ import React, { useState, useEffect, useRef } from 'react'
 
 import { Button, ScrollArea } from '@janhq/uikit'
 
+import Loader from '@/containers/Loader'
+
 import { formatExtensionsName } from '@/utils/converter'
+
+import TensorRtExtensionItem from './TensorRtExtensionItem'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
 
 const ExtensionCatalog = () => {
   const [activeExtensions, setActiveExtensions] = useState<Extension[]>([])
+  const [showLoading, setShowLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   /**
    * Fetches the active extensions and their preferences from the `extensions` and `preferences` modules.
@@ -63,65 +68,76 @@ const ExtensionCatalog = () => {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
+      setShowLoading(true)
       install(event)
     }
   }
 
   return (
-    <ScrollArea className="h-full w-full px-4">
-      <div className="block w-full">
-        {activeExtensions.map((item, i) => {
-          return (
-            <div
-              key={i}
-              className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none"
-            >
-              <div className="w-4/5 flex-shrink-0 space-y-1.5">
-                <div className="flex gap-x-2">
-                  <h6 className="text-sm font-semibold capitalize">
-                    {formatExtensionsName(item.name ?? item.description ?? '')}
-                  </h6>
-                  <p className="whitespace-pre-wrap font-semibold leading-relaxed ">
-                    v{item.version}
+    <>
+      <ScrollArea className="h-full w-full px-4">
+        <div className="block w-full">
+          {activeExtensions.map((item, i) => {
+            // TODO: this is bad code, rewrite it
+            if (item.name === '@janhq/tensorrt-llm-extension') {
+              return <TensorRtExtensionItem key={i} item={item} />
+            }
+
+            return (
+              <div
+                key={i}
+                className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none"
+              >
+                <div className="w-4/5 flex-shrink-0 space-y-1.5">
+                  <div className="flex items-center gap-x-2">
+                    <h6 className="text-sm font-semibold capitalize">
+                      {formatExtensionsName(
+                        item.name ?? item.description ?? ''
+                      )}
+                    </h6>
+                    <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed ">
+                      v{item.version}
+                    </p>
+                  </div>
+                  <p className="whitespace-pre-wrap leading-relaxed ">
+                    {item.description}
                   </p>
                 </div>
-                <p className="whitespace-pre-wrap leading-relaxed ">
-                  {item.description}
-                </p>
               </div>
+            )
+          })}
+          {/* Manual Installation */}
+          <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+            <div className="w-4/5 flex-shrink-0 space-y-1.5">
+              <div className="flex gap-x-2">
+                <h6 className="text-sm font-semibold capitalize">
+                  Manual Installation
+                </h6>
+              </div>
+              <p className="whitespace-pre-wrap leading-relaxed ">
+                Select a extension file to install (.tgz)
+              </p>
             </div>
-          )
-        })}
-        {/* Manual Installation */}
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="w-4/5 flex-shrink-0 space-y-1.5">
-            <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">
-                Manual Installation
-              </h6>
+            <div>
+              <input
+                type="file"
+                style={{ display: 'none' }}
+                ref={fileInputRef}
+                onChange={handleFileChange}
+              />
+              <Button
+                themes="secondaryBlue"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Select
+              </Button>
             </div>
-            <p className="whitespace-pre-wrap leading-relaxed ">
-              Select a extension file to install (.tgz)
-            </p>
-          </div>
-          <div>
-            <input
-              type="file"
-              style={{ display: 'none' }}
-              ref={fileInputRef}
-              onChange={handleFileChange}
-            />
-            <Button
-              themes="secondaryBlue"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Select
-            </Button>
           </div>
         </div>
-      </div>
-    </ScrollArea>
+      </ScrollArea>
+      {showLoading && <Loader description="Installing..." />}
+    </>
   )
 }
 

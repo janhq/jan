@@ -8,11 +8,14 @@ import {
   joinPath,
   ModelArtifact,
   DownloadState,
+  GpuSetting,
 } from '@janhq/core'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from './useDownloadState'
+
+import useGpuSetting from './useGpuSetting'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
@@ -28,6 +31,8 @@ export default function useDownloadModel() {
   const proxyEnabled = useAtomValue(proxyEnabledAtom)
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
+
+  const { getGpuSettings } = useGpuSetting()
 
   const downloadModel = useCallback(
     async (model: Model) => {
@@ -68,10 +73,22 @@ export default function useDownloadModel() {
       })
 
       addDownloadingModel(model)
-
-      await localDownloadModel(model, ignoreSSL, proxyEnabled ? proxy : '')
+      const gpuSettings = await getGpuSettings()
+      await localDownloadModel(
+        model,
+        ignoreSSL,
+        proxyEnabled ? proxy : '',
+        gpuSettings
+      )
     },
-    [ignoreSSL, proxy, proxyEnabled, addDownloadingModel, setDownloadState]
+    [
+      ignoreSSL,
+      proxy,
+      proxyEnabled,
+      getGpuSettings,
+      addDownloadingModel,
+      setDownloadState,
+    ]
   )
 
   const abortModelDownload = useCallback(async (model: Model) => {
@@ -90,8 +107,9 @@ export default function useDownloadModel() {
 const localDownloadModel = async (
   model: Model,
   ignoreSSL: boolean,
-  proxy: string
+  proxy: string,
+  gpuSettings?: GpuSetting
 ) =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.downloadModel(model, { ignoreSSL, proxy })
+    ?.downloadModel(model, gpuSettings, { ignoreSSL, proxy })

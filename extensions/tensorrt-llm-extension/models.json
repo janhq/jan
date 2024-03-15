@@ -1,0 +1,96 @@
+[
+  {
+    "sources": [
+      {
+        "filename": "config.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/config.json"
+      },
+      {
+        "filename": "rank0.engine",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/rank0.engine"
+      },
+      {
+        "filename": "tokenizer.model",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/tokenizer.model"
+      },
+      {
+        "filename": "special_tokens_map.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/special_tokens_map.json"
+      },
+      {
+        "filename": "tokenizer.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/tokenizer.json"
+      },
+      {
+        "filename": "tokenizer_config.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/tokenizer_config.json"
+      }
+    ],
+    "id": "llamacorn-1.1b-chat-fp16",
+    "object": "model",
+    "name": "LlamaCorn 1.1B Chat FP16",
+    "version": "1.0",
+    "description": "LlamaCorn is a refined version of TinyLlama-1.1B, optimized for conversational quality, running on consumer devices through TensorRT-LLM",
+    "format": "TensorRT-LLM",
+    "settings": {
+      "ctx_len": 2048,
+      "text_model": false
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "LLama",
+      "tags": ["TensorRT-LLM", "1B", "Finetuned"],
+      "size": 2151000000
+    },
+    "engine": "nitro-tensorrt-llm"
+  },
+  {
+    "sources": [
+      {
+        "filename": "config.json",
+        "url": "https://delta.jan.ai/dist/models/turing/windows/TinyJensen-1.1B-Chat-fp16/config.json"
+      },
+      {
+        "filename": "rank0.engine",
+        "url": "https://delta.jan.ai/dist/models/turing/windows/TinyJensen-1.1B-Chat-fp16/rank0.engine"
+      },
+      {
+        "filename": "tokenizer.model",
+        "url": "https://delta.jan.ai/dist/models/turing/windows/TinyJensen-1.1B-Chat-fp16/tokenizer.model"
+      },
+      {
+        "filename": "special_tokens_map.json",
+        "url": "https://delta.jan.ai/dist/models/turing/windows/TinyJensen-1.1B-Chat-fp16/special_tokens_map.json"
+      },
+      {
+        "filename": "tokenizer.json",
+        "url": "https://delta.jan.ai/dist/models/turing/windows/TinyJensen-1.1B-Chat-fp16/tokenizer.json"
+      },
+      {
+        "filename": "tokenizer_config.json",
+        "url": "https://delta.jan.ai/dist/models/turing/windows/TinyJensen-1.1B-Chat-fp16/tokenizer_config.json"
+      }
+    ],
+    "id": "tinyjensen-1.1b-chat-fp16",
+    "object": "model",
+    "name": "TinyJensen 1.1B Chat FP16",
+    "version": "1.0",
+    "description": "Do you want to chat with Jensen Huan? Here you are",
+    "format": "TensorRT-LLM",
+    "settings": {
+      "ctx_len": 2048,
+      "text_model": false
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "LLama",
+      "tags": ["TensorRT-LLM", "1B", "Finetuned"],
+      "size": 2151000000
+    },
+    "engine": "nitro-tensorrt-llm"
+  }
+]

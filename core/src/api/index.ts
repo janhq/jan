@@ -33,6 +33,8 @@ export enum AppRoute {
   stopServer = 'stopServer',
   log = 'log',
   logServer = 'logServer',
+  systemInformations = 'systemInformations',
+  showToast = 'showToast',
 }
 
 export enum AppEvent {
@@ -56,6 +58,7 @@ export enum DownloadEvent {
   onFileDownloadUpdate = 'onFileDownloadUpdate',
   onFileDownloadError = 'onFileDownloadError',
   onFileDownloadSuccess = 'onFileDownloadSuccess',
+  onFileUnzipSuccess = 'onFileUnzipSuccess',
 }
 
 export enum LocalImportModelEvent {
