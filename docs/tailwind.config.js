@@ -56,7 +56,7 @@ module.exports = {
         'Helvetica',
         'sans-serif',
       ],
-      serif: ['Arapey'],
+      serif: ['Josefin Sans'],
     },
     extend: {
       backgroundImage: {

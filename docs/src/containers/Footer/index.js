@@ -34,24 +34,33 @@ const socials = [
 
 const menus = [
   {
-    name: 'For Developers',
+    name: 'Product',
     child: [
       {
         menu: 'Documentation',
         path: '/developer',
       },
       {
-        menu: 'Hardware',
-        path: '/hardware',
+        menu: 'Changelog',
+        path: 'https://github.com/janhq/jan/releases',
+        external: true,
+      },
+    ],
+  },
+  {
+    name: 'For Developers',
+    child: [
+      {
+        menu: 'Guides',
+        path: '/guides',
+      },
+      {
+        menu: 'Developer',
+        path: '/developer',
       },
       {
         menu: 'API Reference',
         path: '/api-reference',
-      },
-      {
-        menu: 'Changelog',
-        path: 'https://github.com/janhq/jan/releases',
-        external: true,
       },
     ],
   },
@@ -149,12 +158,12 @@ export default function Footer() {
     <footer className="flex-shrink-0 relative overflow-hidden py-10">
       <div className="container">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-2 lg:grid-cols-6">
-          <div className="lg:col-span-3 col-span-2">
+          <div className="col-span-2">
             <div className="flex items-center space-x-2 mb-3">
               <img alt="Jan Logo" src="/img/logo.svg" />
-              <h2 className="h6">Jan</h2>
+              <h2 className="h5">Jan</h2>
             </div>
-            <div className="w-full lg:w-1/2 mt-2">
+            <div className="w-full lg:w-3/4 mt-2">
               <h6>The Soul of a New Machine</h6>
               <p className="dark:text-gray-400 text-gray-600 mt-2">
                 Subscribe to our newsletter on AI{' '}
@@ -166,7 +175,7 @@ export default function Footer() {
                 <form className="relative" onSubmit={handleSubmit(onSubmit)}>
                   <input
                     type="email"
-                    className="w-full h-12 p-4 pr-14 rounded-xl border dark:border-gray-600 border-gray-300 dark:bg-[#252525]"
+                    className="w-full h-12 p-4 pr-14 rounded-xl border dark:border-gray-600 dark:bg-[#252525] border-[#F0F0F0]"
                     placeholder="Enter your email"
                     {...register('email')}
                   />

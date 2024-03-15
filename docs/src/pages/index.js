@@ -210,7 +210,7 @@ export default function Home() {
               <a
                 href="https://github.com/janhq/jan"
                 target="_blank"
-                className="card-wrapper dark:card-wrapper-dark p-4 inline-flex px-4 py-3 rounded-lg cursor-pointer justify-center items-start space-x-4 "
+                className="card-wrapper dark:card-wrapper-dark p-4 inline-flex px-4 py-3 rounded-lg cursor-pointer justify-center items-start space-x-4 min-h-28"
               >
                 <span>
                   <FaGithub className="text-3xl" />
@@ -218,8 +218,8 @@ export default function Home() {
                 <div className="flex-col">
                   <div className="flex items-center gap-2">
                     <h6 className="text-base">Github</h6>
-                    <div className="text-sm text-black dark:text-white flex items-center space-x-1 py-1 px-2 rounded-md bg-[#E9E9E9] dark:bg-[#484748]">
-                      <RiStarSFill className="text-lg text-[#FEC928]" />
+                    <div className="text-sm text-black/60 dark:text-white/60 flex items-center space-x-1 py-1 px-2 rounded-md bg-[#E9E9E9] dark:bg-[#484748]">
+                      <RiStarSFill className="text-lg text-[#CA8A04]" />
                       <span className="font-semibold">
                         {stargazers.count} stars
                       </span>
@@ -233,7 +233,7 @@ export default function Home() {
               <a
                 href="https://discord.gg/FTk2MvZwJH"
                 target="_blank"
-                className="card-wrapper dark:card-wrapper-dark p-4 inline-flex px-4 py-3 rounded-lg cursor-pointer justify-center items-start space-x-4 "
+                className="card-wrapper dark:card-wrapper-dark p-4 inline-flex px-4 py-3 rounded-lg cursor-pointer justify-center items-start space-x-4 min-h-28"
               >
                 <span>
                   <FaDiscord className="text-3xl" />
@@ -241,7 +241,7 @@ export default function Home() {
                 <div className="flex-col">
                   <div className="flex items-center gap-2">
                     <h6 className="text-base">Discord</h6>
-                    <div className="text-sm text-black dark:text-white flex items-center space-x-1 py-1 px-2 rounded-md bg-[#E9E9E9] dark:bg-[#484748]">
+                    <div className="text-sm text-black/60 dark:text-white/60 flex items-center space-x-1 py-1 px-2 rounded-md bg-[#E9E9E9] dark:bg-[#484748]">
                       <div className="w-2 h-2 bg-green-500 rounded-full" />
                       <span className="font-semibold">
                         {data.presence_count} online
@@ -257,7 +257,7 @@ export default function Home() {
               <a
                 href="https://github.com/orgs/janhq/projects/5/views/16"
                 target="_blank"
-                className="card-wrapper dark:card-wrapper-dark p-4 inline-flex px-4 py-3 rounded-lg cursor-pointer justify-center items-start space-x-4 "
+                className="card-wrapper dark:card-wrapper-dark p-4 inline-flex px-4 py-3 rounded-lg cursor-pointer justify-center items-start space-x-4 min-h-28"
               >
                 <span>
                   <IoMapOutline className="text-3xl" />
@@ -278,7 +278,7 @@ export default function Home() {
           <Testimonial />
 
           {/* Feature */}
-          <div className="w-full xl:w-10/12 mx-auto relative py-8">
+          <div className="w-full xl:w-10/12 mx-auto relative py-8 lg:pt-24">
             <div className="flex p-4 lg:px-0 lg:justify-between flex-col lg:flex-row items-end">
               <div className="w-full">
                 <h1 className="text-5xl lg:text-7xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
@@ -313,7 +313,7 @@ export default function Home() {
                           isActive && 'items-start'
                         )}
                       >
-                        <h1 className="dark:text-[#4C4C4C] text-[#C4C4C4]">
+                        <h1 className="dark:text-[#4C4C4C] text-[#C4C4C4] text-[32px]">
                           0{i + 1}
                         </h1>
                         <div>
@@ -375,13 +375,89 @@ export default function Home() {
           </div>
 
           {/* Philosophy */}
-          <div className="px-4 lg:px-8 mt-10 lg:mt-20 border-y border-gray-300 dark:border-gray-800">
+          <div className="px-4 lg:px-8 mt-10 lg:mt-20 border-y border-[#F0F0F0] dark:border-gray-800">
             <div className="w-full xl:w-3/4 mx-auto relative pt-8 text-center">
               <h1 className="text-5xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
                 Our Philosophy
               </h1>
-              <p className="leading-relaxed mt-2 text-black/60 dark:text-white/60">
-                Jan is opinionated software on what AI should be
+              <p className="leading-relaxed mt-2 text-black/60 dark:text-white/60 flex gap-x-2 justify-center">
+                Jan is opinionated software on what AI should be{' '}
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M10.5 0H15V1.5H13.5V3H18V4.5H16.5V6H15V7.5H13.5V9H12V10.5H13.5V12H15V13.5H10.5V16.5H9V12H7.5V10.5H6V9H7.5V7.5H9V6H10.5V4.5H12V1.5H10.5V0Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M21 0H22.5V1.5H21V0Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M9 1.5H10.5V4.5H9V1.5Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M18 1.5H21V3H18V1.5Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M4.5 10.5H6V12H4.5V10.5Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M3 12H4.5V13.5H3V12Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M0 13.5H3V15H0V13.5Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M15 13.5H16.5V15H21V16.5H15V13.5Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M7.5 16.5H9V18H12V19.5H7.5V21H3V19.5H6V18H7.5V16.5Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M12 16.5H15V18H12V16.5Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M21 16.5H22.5V18H21V16.5Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M15 18H16.5V19.5H15V18Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M19.5 18H21V19.5H19.5V18Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M16.5 19.5H19.5V21H16.5V19.5Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M1.5 21H3V22.5H1.5V21Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M7.5 21H9V22.5H12V24H3V22.5H7.5V21Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                  <path
+                    d="M12 21H16.5V22.5H12V21Z"
+                    className="fill-black/60 dark:fill-white/60"
+                  />
+                </svg>
               </p>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left mt-16">
@@ -649,8 +725,8 @@ export default function Home() {
                     className="w-28 mx-auto h-auto"
                     alt="App screenshots"
                     sources={{
-                      light: useBaseUrl('/img/homepage/mac-system-black.webp'),
-                      dark: useBaseUrl('/img/homepage/mac-system-white.webp'),
+                      light: useBaseUrl('/img/homepage/mac-system-black.svg'),
+                      dark: useBaseUrl('/img/homepage/mac-system-white.svg'),
                     }}
                   />
                   <h1 className="text-5xl lg:text-7xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
@@ -667,7 +743,7 @@ export default function Home() {
                     >
                       <input
                         type="email"
-                        className="w-full h-16 p-4 pr-14 rounded-xl border border-gray-600 dark:bg-white/10"
+                        className="w-full h-16 p-4 pr-14 rounded-xl border border-[#F0F0F0] dark:bg-white/10 dark:border-gray-600"
                         placeholder="Enter your email"
                         {...register('email')}
                       />

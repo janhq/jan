@@ -5,6 +5,7 @@ import { useAppRelease } from '@site/src/hooks/useAppRelease'
 
 import { AiOutlineGithub, AiOutlineTwitter } from 'react-icons/ai'
 import { BiLogoDiscordAlt } from 'react-icons/bi'
+import { FaLinkedin } from 'react-icons/fa'
 
 const socials = [
   {
@@ -18,6 +19,10 @@ const socials = [
   {
     icon: <AiOutlineGithub className="text-lg text-white" />,
     href: 'https://github.com/janhq/jan',
+  },
+  {
+    icon: <FaLinkedin className="text-lg text-white" />,
+    href: 'https://www.linkedin.com/company/janframework/',
   },
 ]
 
