@@ -125,7 +125,10 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           </p>
           <Badge>Experimental</Badge>
         </div>
-        <div dangerouslySetInnerHTML={{ __html: description }} />
+        {
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          <div dangerouslySetInnerHTML={{ __html: description }} />
+        }
       </div>
 
       {(!compatibility || compatibility['platform']?.includes(PLATFORM)) &&
