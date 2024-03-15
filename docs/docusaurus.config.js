@@ -113,7 +113,7 @@ const config = {
     ],
 
     //To input custom Plugin
-    // path.resolve(__dirname, 'plugins', 'changelog-plugin'),
+    path.resolve(__dirname, 'plugins', 'changelog-plugin'),
     [
       '@scalar/docusaurus',
       {
