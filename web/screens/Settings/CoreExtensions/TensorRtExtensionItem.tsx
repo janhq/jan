@@ -8,6 +8,7 @@ import {
   systemInformations,
 } from '@janhq/core'
 import {
+  Badge,
   Button,
   Progress,
   Tooltip,
@@ -118,6 +119,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed">
             v{item.version}
           </p>
+          <Badge>Experimental</Badge>
         </div>
         <p className="whitespace-pre-wrap leading-relaxed">
           {item.description}
