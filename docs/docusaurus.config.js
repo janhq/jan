@@ -108,6 +108,14 @@ const config = {
             from: "/install/",
             to: "/guides/install/",
           },
+          {
+            from: "/guides/using-models/",
+            to: "/guides/models-setup/",
+          },
+          {
+            from: "/guides/using-extensions/",
+            to: "/guides/extensions/",
+          },
         ],
       },
     ],
