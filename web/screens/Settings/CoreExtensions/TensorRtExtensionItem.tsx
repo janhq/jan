@@ -123,6 +123,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           {item.description}
         </p>
       </div>
+
       {(!compatibility || compatibility['platform']?.includes(PLATFORM)) &&
       isGpuSupported ? (
         <div className="flex min-w-[150px] flex-row justify-end">
@@ -143,7 +144,8 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
               </TooltipTrigger>
               <TooltipPortal>
                 <TooltipContent side="top">
-                  {compatibility ? (
+                  {compatibility &&
+                  !compatibility['platform']?.includes(PLATFORM) ? (
                     <span>
                       Only available on{' '}
                       {compatibility?.platform
@@ -185,15 +187,14 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   onInstallClick,
   onCancelClick,
 }) => {
-  // TODO: NamH support dark mode for this
   if (installProgress !== -1) {
     const progress = installProgress * 100
     return (
-      <div className="flex h-10 flex-row items-center justify-center space-x-2 rounded-md bg-[#EFF8FF] px-4 text-primary">
+      <div className="flex h-10 flex-row items-center justify-center space-x-2 rounded-lg bg-[#EFF8FF] px-4 text-primary dark:bg-secondary">
         <button onClick={onCancelClick} className="font-semibold text-primary">
           Cancel
         </button>
-        <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md bg-[#D1E9FF] px-2 py-[2px]">
+        <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md bg-[#D1E9FF] px-2 py-[2px] dark:bg-black/50">
           <Progress className="h-1 w-[69px]" value={progress} />
           <span className="text-xs font-bold text-primary">
             {progress.toFixed(0)}%

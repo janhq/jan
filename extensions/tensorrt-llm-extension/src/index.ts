@@ -19,6 +19,8 @@ import {
   systemInformations,
   LocalOAIEngine,
   fs,
+  MessageRequest,
+  ModelEvent,
 } from '@janhq/core'
 import models from '../models.json'
 
@@ -126,6 +128,21 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
   }
 
+  async onModelInit(model: Model): Promise<void> {
+    if (model.engine !== this.provider) return
+
+    if ((await this.installationState()) === 'Installed')
+      return super.onModelInit(model)
+    else {
+      events.emit(ModelEvent.OnModelFail, {
+        ...model,
+        error: {
+          message: 'EXTENSION_IS_NOT_INSTALLED::TensorRT-LLM extension',
+        },
+      })
+    }
+  }
+
   override async installationState(): Promise<InstallationState> {
     // For now, we just check the executable of nitro x tensor rt
     const isNitroExecutableAvailable = await executeOnMain(
@@ -143,5 +160,12 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       'The model does not support stopping inference.'
     )
     return Promise.resolve()
+  }
+
+  inference(data: MessageRequest): void {
+    if (!this.isRunning) return
+    // TensorRT LLM Extension supports streaming only
+    if (data.model) data.model.parameters.stream = true
+    super.inference(data)
   }
 }
