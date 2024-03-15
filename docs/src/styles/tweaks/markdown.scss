@@ -1,10 +1,5 @@
 .theme-doc-markdown,
 .markdown {
-  a,
-  p,
-  span {
-    @apply leading-loose;
-  }
   a {
     @apply text-blue-600 dark:text-blue-400;
   }
