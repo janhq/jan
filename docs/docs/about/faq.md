@@ -10,7 +10,7 @@ Download Jan to your computer, choose a compatible LLM, or connect to a remote A
 
 ## Is Jan compatible with my operating system?
 
-Jan is available for Mac, Windows, Linux, ensuring wide compatibility.
+Jan is available for Mac, Windows, and Linux, ensuring wide compatibility.
 
 ## Do you use my data?
 
@@ -56,10 +56,10 @@ Joining [Jan's Discord server](https://discord.gg/qSwXFx6Krr) is a great way to 
 
 For troubleshooting, you should reach out on Discord and check GitHub for assistance and support from the community and the development team.
 
-## Can I self host?
+## Can I self-host?
 
-Yes! We love the self-hosted movement. Jan is available as a Helm chart / docker composes which can be run across home servers or even production level environments. 
+Yes! We love the self-hosted movement. Jan is available as a Helm chart/ Docker composes which can be run across home servers or even production-level environments.
 
 ## Are you hiring?
 
-We often hire directly from our community. If you are interested to apply, please see our careers page [here](https://janai.bamboohr.com/careers).
+We often hire directly from our community. If you are interested in applying, please see our careers page [here](https://janai.bamboohr.com/careers).

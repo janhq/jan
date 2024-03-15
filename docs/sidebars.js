@@ -29,6 +29,13 @@ const sidebars = {
       link: { type: "doc", id: "team/team" },
       items: ["team/join-us", "team/contributor-program"],
     },
+    {
+      type: "category",
+      label: "FAQ",
+      link: { type: "doc", id: "about/faq" },
+      items:
+        [],
+    },
     "wall-of-love",
     {
       type: "category",
@@ -222,10 +229,10 @@ const sidebars = {
           },
           items: [
             "guides/extensions/import-ext",
-            "guides/extensions/setup-ext",  
+            "guides/extensions/setup-ext",
           ]
         },
-         {
+        {
           type: "category",
           label: "Integrations",
           className: "head_SubMenu",
@@ -233,7 +240,7 @@ const sidebars = {
             type: 'doc',
             id: "guides/integration/README",
           },
-          items: [ 
+          items: [
             "guides/integration/azure",
             "guides/integration/discord",
             "guides/integration/groq",
@@ -243,7 +250,7 @@ const sidebars = {
             "guides/integration/openinterpreter",
             "guides/integration/openrouter",
             "guides/integration/raycast",
-            "guides/integration/vscode",   
+            "guides/integration/vscode",
           ]
         },
       ]
