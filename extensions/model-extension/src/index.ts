@@ -321,7 +321,7 @@ export default class JanModelExtension extends ModelExtension {
                     .toLowerCase()
                     .includes(JanModelExtension._tensorRtEngineFormat)
                 )
-              })?.length > 0 // TODO: NamH find better way (can use basename to check the file name with source url)
+              })?.length > 0 // TODO: find better way (can use basename to check the file name with source url)
             )
           })
 
