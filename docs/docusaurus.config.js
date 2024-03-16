@@ -1,10 +1,9 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
-
 require('dotenv').config()
 
-const darkCodeTheme = require("prism-react-renderer/themes/dracula");
-const path = require('path');
+const darkCodeTheme = require('prism-react-renderer/themes/dracula')
+const path = require('path')
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -67,12 +66,56 @@ const config = {
       {
         redirects: [
           {
-            from: "/troubleshooting/failed-to-fetch",
-            to: "/guides/error-codes/something-amiss/",
+            from: '/troubleshooting/failed-to-fetch',
+            to: '/guides/error-codes/something-amiss/',
           },
           {
-            from: "/guides/troubleshooting/gpu-not-used/",
-            to: "/guides/common-error/not-using-gpu/",
+            from: '/guides/troubleshooting/gpu-not-used/',
+            to: '/guides/common-error/not-using-gpu/',
+          },
+          {
+            from: '/guides/troubleshooting/',
+            to: '/guides/error-codes/',
+          },
+          {
+            from: '/troubleshooting/stuck-on-broken-build/',
+            to: '/guides/common-error/broken-build/',
+          },
+          {
+            from: '/guides/troubleshooting/',
+            to: '/guides/error-codes/',
+          },
+          {
+            from: '/troubleshooting/somethings-amiss/',
+            to: '/guides/error-codes/something-amiss/',
+          },
+          {
+            from: '/troubleshooting/how-to-get-error-logs/',
+            to: '/guides/error-codes/how-to-get-error-logs/',
+          },
+          {
+            from: '/troubleshooting/permission-denied/',
+            to: '/guides/error-codes/permission-denied/',
+          },
+          {
+            from: '/troubleshooting/unexpected-token/',
+            to: '/guides/error-codes/unexpected-token/',
+          },
+          {
+            from: '/troubleshooting/undefined-issue/',
+            to: '/guides/error-codes/undefined-issue/',
+          },
+          {
+            from: '/install/',
+            to: '/guides/install/',
+          },
+          {
+            from: '/guides/using-models/',
+            to: '/guides/models-setup/',
+          },
+          {
+            from: '/guides/using-extensions/',
+            to: '/guides/extensions/',
           },
         ],
       },
@@ -80,6 +123,18 @@ const config = {
 
     //To input custom Plugin
     path.resolve(__dirname, 'plugins', 'changelog-plugin'),
+    [
+      '@scalar/docusaurus',
+      {
+        label: '',
+        route: '/api-reference',
+        configuration: {
+          spec: {
+            url: 'https://raw.githubusercontent.com/janhq/jan/dev/docs/openapi/jan.json',
+          },
+        },
+      },
+    ],
   ],
 
   // The classic preset will relay each option entry to the respective sub plugin/theme.
@@ -91,7 +146,7 @@ const config = {
         docs: {
           routeBasePath: '/',
           sidebarPath: require.resolve('./sidebars.js'),
-          editUrl: 'https://github.com/janhq/jan/tree/main/docs',
+          editUrl: 'https://github.com/janhq/jan/tree/dev/docs',
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
         },
@@ -103,10 +158,10 @@ const config = {
           filename: 'sitemap.xml',
         },
         // Will be passed to @docusaurus/plugin-content-blog (false to disable)
-        // blog: {
-        //  blogSidebarTitle: "All Posts",
-        //  blogSidebarCount: "ALL",
-        // },
+        blog: {
+          blogSidebarTitle: 'All Posts',
+          blogSidebarCount: 'ALL',
+        },
         // Will be passed to @docusaurus/theme-classic.
         theme: {
           customCss: require.resolve('./src/styles/main.scss'),
@@ -126,7 +181,7 @@ const config = {
         specs: [
           {
             spec: 'openapi/jan.yaml', // can be local file, url, or parsed json object
-            route: '/api-reference/', // path where to render docs
+            route: '/api-reference-1.0/', // path where to render docs
           },
         ],
         theme: {
@@ -274,7 +329,7 @@ const config = {
         {
           type: 'docSidebar',
           sidebarId: 'productSidebar',
-          position: 'left',
+          positionL: 'left',
           label: 'Product',
         },
         {
@@ -291,15 +346,15 @@ const config = {
         // },
         // Navbar right
         {
-          type: "dropdown",
-          label: "Docs",
-          to: "docs",
-          position: "right",
+          type: 'dropdown',
+          label: 'Docs',
+          to: 'docs',
+          position: 'right',
           items: [
             {
               type: 'docSidebar',
               sidebarId: 'guidesSidebar',
-              label: 'User Guide',
+              label: 'Guides',
             },
             {
               type: 'docSidebar',
@@ -310,6 +365,11 @@ const config = {
               to: '/api-reference',
               label: 'API Reference',
             },
+            {
+              type: 'docSidebar',
+              sidebarId: 'releasesSidebar',
+              label: 'Changelog',
+            },
             // {
             //   type: "docSidebar",
             //   sidebarId: "docsSidebar",
@@ -318,10 +378,9 @@ const config = {
           ],
         },
         {
-          type: 'docSidebar',
-          sidebarId: 'blogSidebar',
-          position: 'right',
+          to: 'blog',
           label: 'Blog',
+          position: 'right',
         },
       ],
     },
@@ -343,11 +402,8 @@ const config = {
       respectPrefersColorScheme: false,
     },
   },
-  customFields: {
-    githubAccessToken: process.env.GITHUB_ACCESS_TOKEN || "XXXX",
-  },
 
-  themes: ["@docusaurus/theme-live-codeblock", "@docusaurus/theme-mermaid"],
-};
+  themes: ['@docusaurus/theme-live-codeblock', '@docusaurus/theme-mermaid'],
+}
 
 module.exports = config

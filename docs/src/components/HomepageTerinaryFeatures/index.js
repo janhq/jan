@@ -1,109 +1,106 @@
-import styles from "../HomepageTerinaryFeatures/styles.module.css";
-import clsx from "clsx";
-
 export default function HomepageTerinaryFeatures() {
     return (
-        <section className={styles.features}>
+        <section className="py-20 flex items-center">
             <div className="container">
-                <div className={clsx(styles.cards)}>
-                    <div className={clsx(styles.card)}>
-                        <div className={styles.cardHeader}>
+                <div className="flex justify-center flex-wrap gap-8">
+                    <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
+                        <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/roket.png"} />
-                            <h3>Get Started</h3>
+                            <h5 className="text-gray-700 dark:text-gray-200">Get Started</h5>
                         </div>
-                        <div className={styles.cardContent}>
-                            <p>Kick off your journey with Jan easily and install your AI locally.</p>
-                            <ul>
-                                <li>
-                                    <a href={"/guides/"}>
+                        <div className="mt-5 justify-center">
+                            <p className="text-gray-700 dark:text-gray-200">Easily kick off your journey with Jan by installing your AI locally.</p>
+                            <ul className="mt-5">
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/"} className="    dark:text-blue-400">
                                         Quickstart
                                     </a>
                                 </li>
-                                <li>
-                                    <a href={"/guides/install/"}>
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/install/"} className="dark:text-blue-400">
                                         Installation
                                     </a>
                                 </li>
-                                <li>
-                                    <a href={"/guides/models-list/"}>
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/models-list/"} className="dark:text-blue-400">
                                         Pre-configured Models
                                     </a>
                                 </li>
                             </ul>
                         </div>
                     </div>
-                    <div className={clsx(styles.card)}>
-                        <div className={styles.cardHeader}>
+                    <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
+                        <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/buku.png"} />
-                            <h3>Settings</h3>
+                            <h5 className="text-gray-700 dark:text-gray-200">Settings</h5>
                         </div>
-                        <div className={styles.cardContent}>
-                            <p>Learn how to manage the thread history and configure your installed AI.</p>
-                            <ul>
-                                <li>
-                                    <a href={"/guides/thread/"}>
+                        <div className="mt-5 justify-center">
+                            <p className="text-gray-700 dark:text-gray-200">Discover how to manage Jan and configure your installed AI.</p>
+                            <ul className="mt-5">
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/thread/"} className="dark:text-blue-400">
                                         Thread Management
                                     </a>
                                 </li>
-                                <li>
-                                    <a href={"/guides/start-server/"}>
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/start-server/"} className="dark:text-blue-400">
                                         Local Server
                                     </a>
                                 </li>
-                                <li>
-                                    <a href={"/guides/advanced-settings/"}>
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/advanced-settings/"} className="dark:text-blue-400">
                                         Advanced Settings
                                     </a>
                                 </li>
                             </ul>
                         </div>
                     </div>
-                    <div className={clsx(styles.card)}>
-                        <div className={styles.cardHeader}>
+                    <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
+                        <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/setting.png"} />
-                            <h3>Features</h3>
+                            <h5 className="text-gray-700 dark:text-gray-200">Features</h5>
                         </div>
-                        <div className={styles.cardContent}>
-                            <p>Explore our key features designed to enhance your experience.</p>
-                            <ul>
-                                <li>
-                                    <a href={"/guides/models-setup/"}>
+                        <div className="mt-5 justify-center">
+                            <p className="text-gray-700 dark:text-gray-200">Explore key features designed to enhance your experience with Jan.</p>
+                            <ul className="mt-5">
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/models-setup/"} className="dark:text-blue-400">
                                         Models Setup
                                     </a>
                                 </li>
-                                <li>
-                                    <a href={"/guides/extensions/"}>
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/extensions/"} className="dark:text-blue-400">
                                         Extensions
                                     </a>
                                 </li>
-                                <li>
-                                    <a href={"/guides/integrations/"}>
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/integrations/"} className="dark:text-blue-400">
                                         Integrations
                                     </a>
                                 </li>
                             </ul>
                         </div>
                     </div>
-                    <div className={clsx(styles.card)}>
-                        <div className={styles.cardHeader}>
+                    <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
+                        <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/doa.png"} />
-                            <h3>Troubleshooting</h3>
+                            <h5 className="text-gray-700 dark:text-gray-200">Troubleshooting</h5>
                         </div>
-                        <div className={styles.cardContent}>
-                            <p>Find solutions to common issues, including error codes, and FAQs.</p>
-                            <ul>
-                                <li>
-                                    <a href={"/guides/error-codes/"}>
+                        <div className="mt-5 justify-center">
+                            <p className="text-gray-700 dark:text-gray-200">Find solutions to common issues, including error codes, and FAQs.</p>
+                            <ul className="mt-5">
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/error-codes/"} className="dark:text-blue-400">
                                         Error Codes
                                     </a>
                                 </li>
-                                <li>
-                                    <a href={"/guides/common-error/"}>
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/common-error/"} className="dark:text-blue-400">
                                         Common Errors
                                     </a>
                                 </li>
-                                <li>
-                                    <a href={"/guides/faqs/"}>
+                                <li className="font-semibold list-disc mb-4">
+                                    <a href={"/guides/faqs/"} className="dark:text-blue-400">
                                         FAQ
                                     </a>
                                 </li>

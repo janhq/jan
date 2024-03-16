@@ -9,6 +9,14 @@ export enum NativeRoute {
   selectDirectory = 'selectDirectory',
   selectModelFiles = 'selectModelFiles',
   relaunch = 'relaunch',
+
+  hideQuickAskWindow = 'hideQuickAskWindow',
+  sendQuickAskInput = 'sendQuickAskInput',
+
+  hideMainWindow = 'hideMainWindow',
+  showMainWindow = 'showMainWindow',
+
+  quickAskSizeUpdated = 'quickAskSizeUpdated',
 }
 
 /**
@@ -25,12 +33,17 @@ export enum AppRoute {
   stopServer = 'stopServer',
   log = 'log',
   logServer = 'logServer',
+  systemInformations = 'systemInformations',
+  showToast = 'showToast',
 }
 
 export enum AppEvent {
   onAppUpdateDownloadUpdate = 'onAppUpdateDownloadUpdate',
   onAppUpdateDownloadError = 'onAppUpdateDownloadError',
   onAppUpdateDownloadSuccess = 'onAppUpdateDownloadSuccess',
+
+  onUserSubmitQuickAsk = 'onUserSubmitQuickAsk',
+  onSelectedText = 'onSelectedText',
 }
 
 export enum DownloadRoute {
@@ -45,6 +58,7 @@ export enum DownloadEvent {
   onFileDownloadUpdate = 'onFileDownloadUpdate',
   onFileDownloadError = 'onFileDownloadError',
   onFileDownloadSuccess = 'onFileDownloadSuccess',
+  onFileUnzipSuccess = 'onFileUnzipSuccess',
 }
 
 export enum LocalImportModelEvent {

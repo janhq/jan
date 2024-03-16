@@ -1,7 +1,7 @@
 ---
-title: Jan not using GPU
+title: Troubleshooting NVIDIA GPU
 sidebar_position: 2
-description: A step-by-step guide to enable Jan to properly leverage GPU resources, avoiding performance issues.
+description: A step-by-step guide to enable Jan to properly leverage NVIDIA GPU resources, avoiding performance issues.
 keywords: [
     Jan AI,
     Jan,
@@ -21,7 +21,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-This guide provides steps to troubleshoot and resolve issues when the Jan app does not utilize the GPU on Windows and Linux systems.
+This guide provides steps to troubleshoot and resolve issues when the Jan app does not utilize the NVIDIA GPU on Windows and Linux systems.
 
 ### 1. Ensure GPU Mode Requirements
 
@@ -30,7 +30,7 @@ This guide provides steps to troubleshoot and resolve issues when the Jan app do
     
     #### NVIDIA Driver
 
-    - Install an NVIDIA driver supporting CUDA 11.7 or higher.
+    - Install an [NVIDIA Driver](https://www.nvidia.com/Download/index.aspx) supporting CUDA 11.7 or higher.
       - Use the following command to verify the installation:
 
     ```sh
@@ -39,7 +39,7 @@ This guide provides steps to troubleshoot and resolve issues when the Jan app do
 
     #### CUDA Toolkit
 
-    - Install a CUDA toolkit compatible with your NVIDIA driver.
+    - Install a [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) compatible with your NVIDIA driver.
       - Use the following command to verify the installation:
 
     ```sh
@@ -51,7 +51,7 @@ This guide provides steps to troubleshoot and resolve issues when the Jan app do
     
     #### NVIDIA Driver
 
-    - Install an NVIDIA driver supporting CUDA 11.7 or higher.
+    - Install an [NVIDIA Driver](https://www.nvidia.com/Download/index.aspx) supporting CUDA 11.7 or higher.
       - Use the following command to verify the installation:
 
     ```sh
@@ -60,7 +60,7 @@ This guide provides steps to troubleshoot and resolve issues when the Jan app do
 
     #### CUDA Toolkit
 
-    - Install a CUDA toolkit compatible with your NVIDIA driver.
+    - Install a [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) compatible with your NVIDIA driver.
       - Use the following command to verify the installation:
 
     ```sh
@@ -123,6 +123,8 @@ If GPU mode isn't enabled by default:
   "gpu_highest_vram": "0"
 }
 ```
+### 4. Restart Jan
+Restart Jan application to make sure it works.
 
 #### Troubleshooting Tips
 

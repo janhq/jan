@@ -4,7 +4,6 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
 import { log, getSystemResourceInfo } from '@janhq/core/node'
-import { getNitroProcessInfo, updateNvidiaInfo } from './accelerator'
 import {
   Model,
   InferenceEngine,
@@ -385,11 +384,26 @@ function dispose() {
   killSubprocess()
 }
 
+/**
+ * Nitro process info
+ */
+export interface NitroProcessInfo {
+  isRunning: boolean
+}
+
+/**
+ * Retrieve current nitro process
+ */
+const getCurrentNitroProcessInfo = (): NitroProcessInfo => {
+  return {
+    isRunning: subprocess != null,
+  }
+}
+
 export default {
   runModel,
   stopModel,
   killSubprocess,
   dispose,
-  updateNvidiaInfo,
-  getCurrentNitroProcessInfo: () => getNitroProcessInfo(subprocess),
+  getCurrentNitroProcessInfo,
 }

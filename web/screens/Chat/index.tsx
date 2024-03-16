@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import React, { useEffect, useState } from 'react'
 
-import { useDropzone } from 'react-dropzone'
+import { Accept, useDropzone } from 'react-dropzone'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -68,20 +68,31 @@ const ChatScreen: React.FC = () => {
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
+  const acceptedFormat: Accept = activeThread?.assistants[0].model.settings
+    .vision_model
+    ? {
+        'application/pdf': ['.pdf'],
+        'image/jpeg': ['.jpeg'],
+        'image/png': ['.png'],
+        'image/jpg': ['.jpg'],
+      }
+    : {
+        'application/pdf': ['.pdf'],
+      }
+
   const { getRootProps, isDragReject } = useDropzone({
     noClick: true,
     multiple: false,
-    accept: {
-      'application/pdf': ['.pdf'],
-    },
+    accept: acceptedFormat,
 
     onDragOver: (e) => {
       // Retrieval file drag and drop is experimental feature
       if (!experimentalFeature) return
       if (
         e.dataTransfer.items.length === 1 &&
-        activeThread?.assistants[0].tools &&
-        activeThread?.assistants[0].tools[0]?.enabled
+        ((activeThread?.assistants[0].tools &&
+          activeThread?.assistants[0].tools[0]?.enabled) ||
+          activeThread?.assistants[0].model.settings.vision_model)
       ) {
         setDragOver(true)
       } else if (
@@ -102,7 +113,8 @@ const ChatScreen: React.FC = () => {
         files.length !== 1 ||
         rejectFiles.length !== 0 ||
         (activeThread?.assistants[0].tools &&
-          !activeThread?.assistants[0].tools[0]?.enabled)
+          !activeThread?.assistants[0].tools[0]?.enabled &&
+          !activeThread?.assistants[0].model.settings.vision_model)
       )
         return
       const imageType = files[0]?.type.includes('image')
@@ -164,10 +176,21 @@ const ChatScreen: React.FC = () => {
                 <div className="mt-4 text-blue-600">
                   <h6 className="font-bold">
                     {isDragReject
-                      ? 'Currently, we only support 1 attachment at the same time with PDF format'
+                      ? `Currently, we only support 1 attachment at the same time with ${
+                          activeThread?.assistants[0].model.settings
+                            .vision_model
+                            ? 'PDF, JPEG, JPG, PNG'
+                            : 'PDF'
+                        } format`
                       : 'Drop file here'}
                   </h6>
-                  {!isDragReject && <p className="mt-2">(PDF)</p>}
+                  {!isDragReject && (
+                    <p className="mt-2">
+                      {activeThread?.assistants[0].model.settings.vision_model
+                        ? 'PDF, JPEG, JPG, PNG'
+                        : 'PDF'}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

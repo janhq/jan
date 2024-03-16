@@ -38,6 +38,8 @@ import EditChatInput from '../EditChatInput'
 import Icon from '../FileUploadPreview/Icon'
 import MessageToolbar from '../MessageToolbar'
 
+import { RelativeImage } from './RelativeImage'
+
 import {
   editMessageAtom,
   getCurrentChatMessagesAtom,
@@ -204,14 +206,16 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       <div className={twMerge('w-full')}>
         <>
           {props.content[0]?.type === ContentType.Image && (
-            <div className="group/image relative mb-2 inline-flex overflow-hidden rounded-xl">
-              <img
-                className="aspect-auto h-[300px]"
-                alt={props.content[0]?.text.name}
-                src={props.content[0]?.text.annotations[0]}
-                onClick={() => onViewFile(`${props.id}.png`)}
-              />
-              <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 group-hover/image:inline-block" />
+            <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
+              <div className="left-0 top-0 z-20 h-full w-full bg-black/20 group-hover/image:inline-block">
+                <RelativeImage
+                  src={props.content[0]?.text.annotations[0]}
+                  id={props.id}
+                  onClick={() =>
+                    onViewFile(`${props.content[0]?.text.annotations[0]}`)
+                  }
+                />
+              </div>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div

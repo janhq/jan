@@ -52,6 +52,6 @@
     "tailwind-merge": "^2.0.0",
     "terser": "^5.24.0",
     "tsup": "^7.2.0",
-    "typescript": "^5.2.2"
+    "typescript": "^5.3.3"
   }
 }

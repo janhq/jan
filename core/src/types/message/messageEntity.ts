@@ -29,6 +29,9 @@ export type ThreadMessage = {
   metadata?: Record<string, unknown>
 
   type?: string
+
+  /** The error code which explain what error type. Used in conjunction with MessageStatus.Error */
+  error_code?: ErrorCode
 }
 
 /**
@@ -75,6 +78,12 @@ export enum MessageStatus {
   Error = 'error',
   /** Message is cancelled streaming */
   Stopped = 'stopped',
+}
+
+export enum ErrorCode {
+  InvalidApiKey = 'invalid_api_key',
+
+  Unknown = 'unknown',
 }
 
 /**

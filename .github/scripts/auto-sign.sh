@@ -7,6 +7,6 @@ if [[ -z "$APP_PATH" ]] || [[ -z "$DEVELOPER_ID" ]]; then
 fi
 
 # If both variables are set, execute the following commands
-find "$APP_PATH" \( -type f -perm +111 -o -name "*.node" \) -exec codesign -s "$DEVELOPER_ID" --options=runtime {} \;
+find "$APP_PATH" \( -type f -perm +111 -o -name "*.node" \) -exec codesign --force -s "$DEVELOPER_ID" --options=runtime {} \;
 
-find "$APP_PATH" -type f -name "*.o" -exec codesign -s "$DEVELOPER_ID" --options=runtime {} \;
+find "$APP_PATH" -type f -name "*.o" -exec codesign --force -s "$DEVELOPER_ID" --options=runtime {} \;

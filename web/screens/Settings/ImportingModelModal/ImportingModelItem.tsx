@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
-import { ImportingModel } from '@janhq/core/.'
+import { ImportingModel } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import { AlertCircle } from 'lucide-react'
