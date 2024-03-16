@@ -50,7 +50,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
@@ -58,6 +58,15 @@ jobs:
         continue-on-error: true
         run: |
           make clean
+
+      - name: Turbo Cache
+        id: turbo-cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules/.cache/turbo # workaround see: https://github.com/vercel/turborepo/issues/451
+          key: turbo-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ github.job }}-${{ github.ref_name }}-
 
       - name: Linter and test
         run: |
@@ -85,7 +94,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
@@ -115,7 +124,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
@@ -124,6 +133,15 @@ jobs:
         run: |
           make clean
 
+      - name: Turbo Cache
+        id: turbo-cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules/.cache/turbo # workaround see: https://github.com/vercel/turborepo/issues/451
+          key: turbo-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ github.job }}-${{ github.ref_name }}-
+            
       - name: Linter and test
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')

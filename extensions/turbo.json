@@ -2,10 +2,9 @@
   "$schema": "https://turbo.build/schema.json",
   "pipeline": {
     "build": {
-      "outputs": [".dist/**"]
+      "outputs": [".dist/**", "*.tgz"]
     },
     "build:publish": {
-      "outputs": [".dist/**"],
       "dependsOn": ["^build"]
     },
     "dev": {

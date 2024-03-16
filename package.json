@@ -25,7 +25,7 @@
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
     "dev:web": "yarn workspace @janhq/web dev",
     "dev:server": "yarn copy:assets && yarn workspace @janhq/server dev",
-    "dev": "concurrently --kill-others \"yarn dev:web\" \"wait-on http://localhost:3000 && yarn dev:electron\"",
+    "dev": "turbo run dev --parallel --filter=!@janhq/server",
     "test-local": "yarn lint && yarn build:test && yarn test",
     "dev:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit dev",
     "build:uikit": "yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build",
@@ -34,11 +34,10 @@
     "build:web": "yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "yarn copy:assets && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
-    "build:extensions": "rimraf ./pre-install/*.tgz && cd extensions && yarn install && turbo run build:publish",
-    "build:test": "yarn copy:assets && yarn build:web && yarn workspace jan build:test",
+    "build:extensions": "rimraf ./pre-install/*.tgz && turbo run @janhq/core#build && cd extensions && yarn install && turbo run build:publish",
+    "build:test": "yarn copy:assets && turbo run @janhq/web#build && cpx \"web/out/**\" \"electron/renderer/\" && turbo run build:test",
     "build": "yarn build:web && yarn build:electron",
-    "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish",
-    "turbo:electron": "turbo run dev --parallel --filter=!@janhq/server"
+    "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",

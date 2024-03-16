@@ -2,7 +2,7 @@
   "$schema": "https://turbo.build/schema.json",
   "pipeline": {
     "build": {
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "dev": {
       "cache": false
@@ -21,10 +21,24 @@
       "persistent": true,
       "dependsOn": ["@janhq/core#build", "@janhq/server#build"]
     },
+    "@janhq/core#build": {
+      "outputs": ["dist/**"]
+    },
     "@janhq/web#build": {
+      "outputs": ["out/**"],
       "dependsOn": ["@janhq/core#build", "@janhq/uikit#build"]
     },
     "jan#build": {
+      "outputs": ["dist/**"],
+      "dependsOn": [
+        "@janhq/core#build",
+        "@janhq/server#build",
+        "@janhq/web#build"
+      ]
+    },
+    "jan#build:test": {
+      "outputs": ["dist/**"],
+      "cache": false,
       "dependsOn": [
         "@janhq/core#build",
         "@janhq/server#build",
