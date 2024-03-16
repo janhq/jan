@@ -52,6 +52,13 @@ const sidebars = {
       ],
     },
     "acknowledgements",
+    {
+      type: "category",
+      label: "FAQ",
+      link: { type: "doc", id: "about/faq" },
+      items:
+        [],
+    },
   ],
   productSidebar: [
     {
@@ -187,6 +194,18 @@ const sidebars = {
       items: [
         {
           type: "category",
+          label: "Advanced Settings",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/advanced-settings/advanced-settings",
+          },
+          items: [
+            "guides/advanced-settings/http-proxy",
+          ]
+        },
+        {
+          type: "category",
           label: "Advanced Model Setup",
           className: "head_SubMenu",
           link: {
@@ -222,10 +241,10 @@ const sidebars = {
           },
           items: [
             "guides/extensions/import-ext",
-            "guides/extensions/setup-ext",  
+            "guides/extensions/setup-ext",
           ]
         },
-         {
+        {
           type: "category",
           label: "Integrations",
           className: "head_SubMenu",
@@ -233,7 +252,7 @@ const sidebars = {
             type: 'doc',
             id: "guides/integration/README",
           },
-          items: [ 
+          items: [
             "guides/integration/azure",
             "guides/integration/discord",
             "guides/integration/groq",
@@ -243,7 +262,7 @@ const sidebars = {
             "guides/integration/openinterpreter",
             "guides/integration/openrouter",
             "guides/integration/raycast",
-            "guides/integration/vscode",   
+            "guides/integration/vscode",
           ]
         },
       ]

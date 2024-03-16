@@ -24,7 +24,7 @@ module.exports = function (context, options) {
 
     async onPostBuild() {
       // If you need additional actions after the build, you can include them here.
-      await fetchData(siteConfig);
+      await fetchData(siteConfig, true);
     },
   };
 };

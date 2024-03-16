@@ -246,7 +246,8 @@ const Advanced = () => {
                         setGpuEnabled(true)
                         setShowNotification(false)
                         snackbar({
-                          description: 'Successfully turned on GPU Accelertion',
+                          description:
+                            'Successfully turned on GPU Acceleration',
                           type: 'success',
                         })
                         setTimeout(() => {
@@ -257,7 +258,7 @@ const Advanced = () => {
                         setGpuEnabled(false)
                         snackbar({
                           description:
-                            'Successfully turned off GPU Accelertion',
+                            'Successfully turned off GPU Acceleration',
                           type: 'success',
                         })
                       }
