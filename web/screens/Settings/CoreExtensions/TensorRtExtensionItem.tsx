@@ -8,6 +8,7 @@ import {
   systemInformations,
 } from '@janhq/core'
 import {
+  Badge,
   Button,
   Progress,
   Tooltip,
@@ -19,6 +20,8 @@ import {
 
 import { InfoCircledIcon } from '@radix-ui/react-icons'
 import { useAtomValue } from 'jotai'
+
+import { Marked, Renderer } from 'marked'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
@@ -108,6 +111,8 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     }
   }
 
+  const description = marked.parse(item.description ?? '', { async: false })
+  console.log(description)
   return (
     <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1.5">
@@ -118,10 +123,12 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed">
             v{item.version}
           </p>
+          <Badge>Experimental</Badge>
         </div>
-        <p className="whitespace-pre-wrap leading-relaxed">
-          {item.description}
-        </p>
+        {
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          <div dangerouslySetInnerHTML={{ __html: description }} />
+        }
       </div>
 
       {(!compatibility || compatibility['platform']?.includes(PLATFORM)) &&
@@ -204,7 +211,6 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
     )
   }
 
-  // TODO: NamH check for dark mode here
   switch (installState) {
     case 'Installed':
       return (
@@ -222,5 +228,15 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
       return <div></div>
   }
 }
+
+const marked: Marked = new Marked({
+  renderer: {
+    link: (href, title, text) => {
+      return Renderer.prototype.link
+        ?.apply(this, [href, title, text])
+        .replace('<a', "<a class='text-blue-500' target='_blank'")
+    },
+  },
+})
 
 export default TensorRtExtensionItem
