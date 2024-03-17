@@ -57,7 +57,7 @@ export default [
           `${packageJson.config?.protocol ?? 'http'}://${packageJson.config?.host}:${packageJson.config?.port}/inferences/tensorrtllm/loadmodel`
         ),
         TERMINATE_ENGINE_URL: JSON.stringify(
-          `${packageJson.config?.protocol ?? 'http'}://${packageJson.config?.host}:${packageJson.config?.port}/inferences/processmanager/destroy`
+          `${packageJson.config?.protocol ?? 'http'}://${packageJson.config?.host}:${packageJson.config?.port}/processmanager/destroy`
         ),
         ENGINE_HOST: JSON.stringify(packageJson.config?.host ?? '127.0.0.1'),
         ENGINE_PORT: JSON.stringify(packageJson.config?.port ?? '3928'),
