@@ -67,6 +67,7 @@ jobs:
 
   test-on-windows:
     strategy:
+      fail-fast: false
       matrix:
         antivirus-tools: ['mcafee', 'default-windows-security','bit-defender']
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
