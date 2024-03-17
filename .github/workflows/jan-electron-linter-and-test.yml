@@ -73,10 +73,10 @@ jobs:
     steps:
       - name: Clean workspace
         run: |
-          Remove-Item -Path .\* -Force -Recurse
+          Remove-Item -Path "\\?\$(Get-Location)\*" -Force -Recurse
           $path = "$Env:APPDATA\jan"
           if (Test-Path $path) {
-              Remove-Item $path -Recurse -Force
+              Remove-Item "\\?\$path" -Recurse -Force
           } else {
               Write-Output "Folder does not exist."
           }
