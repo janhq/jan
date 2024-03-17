@@ -96,7 +96,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     ])
 
     if (!(await fs.existsSync(executableFolderPath))) {
-      await fs.mkdirSync(executableFolderPath)
+      await fs.mkdir(executableFolderPath)
     }
 
     const placeholderUrl = DOWNLOAD_RUNNER_URL

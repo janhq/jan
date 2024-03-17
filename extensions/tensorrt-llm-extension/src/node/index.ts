@@ -2,15 +2,15 @@ import path from 'path'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
-import { log } from '@janhq/core/node'
+import { log, getJanDataFolderPath } from '@janhq/core/node'
 import decompress from 'decompress'
-import { getJanDataFolderPath, systemInformation } from '@janhq/core/.'
+import { SystemInformation } from '@janhq/core'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
 
-export const supportedPlatform = (): string[] => ['win32', 'linux']
-export const supportedGpuArch = (): string[] => ['turing', 'ampere', 'ada']
+const supportedPlatform = (): string[] => ['win32', 'linux']
+const supportedGpuArch = (): string[] => ['turing', 'ampere', 'ada']
 
 /**
  * The response object for model init operation.
@@ -27,7 +27,7 @@ let subprocess: ChildProcessWithoutNullStreams | undefined = undefined
  * Initializes a engine subprocess to load a machine learning model.
  * @param params - The model load settings.
  */
-async function loadModel(params: any): Promise<{ error: Error | undefined }> {
+async function loadModel(params: any, systemInfo?: SystemInformation): Promise<{ error: Error | undefined }> {
   // modelFolder is the absolute path to the running model folder
   // e.g. ~/jan/models/llama-2
   let modelFolder = params.modelFolder
@@ -36,7 +36,10 @@ async function loadModel(params: any): Promise<{ error: Error | undefined }> {
     engine_path: modelFolder,
     ctx_len: params.model.settings.ctx_len ?? 2048,
   }
-  return runEngineAndLoadModel(settings)
+  if (!systemInfo) {
+    throw new Error('Cannot get system info. Unable to start nitro x tensorrt.')
+  }
+  return runEngineAndLoadModel(settings, systemInfo)
 }
 
 /**
@@ -70,9 +73,9 @@ function unloadModel(): Promise<any> {
  * 2. Load model into engine subprocess
  * @returns
  */
-async function runEngineAndLoadModel(settings: ModelLoadParams) {
+async function runEngineAndLoadModel(settings: ModelLoadParams, systemInfo: SystemInformation) {
   return unloadModel()
-    .then(runEngine)
+    .then(() => runEngine(systemInfo))
     .then(() => loadModelRequest(settings))
     .catch((err) => {
       // TODO: Broadcast error so app could display proper error message
@@ -110,9 +113,8 @@ async function loadModelRequest(
 /**
  * Spawns engine subprocess.
  */
-async function runEngine(): Promise<void> {
+async function runEngine(systemInfo: SystemInformation): Promise<void> {
   debugLog(`Spawning engine subprocess...`)
-  const systemInfo = await systemInformation()
   if (systemInfo.gpuSetting == null) {
     return Promise.reject(
       'No GPU information found. Please check your GPU setting.'
@@ -211,6 +213,8 @@ const decompressRunner = async (zipPath: string, output: string) => {
 }
 
 export default {
+  supportedPlatform,
+  supportedGpuArch,
   decompressRunner,
   loadModel,
   unloadModel,
