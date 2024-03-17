@@ -27,7 +27,10 @@ let subprocess: ChildProcessWithoutNullStreams | undefined = undefined
  * Initializes a engine subprocess to load a machine learning model.
  * @param params - The model load settings.
  */
-async function loadModel(params: any, systemInfo?: SystemInformation): Promise<{ error: Error | undefined }> {
+async function loadModel(
+  params: any,
+  systemInfo?: SystemInformation
+): Promise<{ error: Error | undefined }> {
   // modelFolder is the absolute path to the running model folder
   // e.g. ~/jan/models/llama-2
   let modelFolder = params.modelFolder
@@ -73,7 +76,10 @@ function unloadModel(): Promise<any> {
  * 2. Load model into engine subprocess
  * @returns
  */
-async function runEngineAndLoadModel(settings: ModelLoadParams, systemInfo: SystemInformation) {
+async function runEngineAndLoadModel(
+  settings: ModelLoadParams,
+  systemInfo: SystemInformation
+) {
   return unloadModel()
     .then(() => runEngine(systemInfo))
     .then(() => loadModelRequest(settings))
@@ -150,7 +156,8 @@ async function runEngine(systemInfo: SystemInformation): Promise<void> {
     )
   }
   const janDataFolderPath = await getJanDataFolderPath()
-  const extensionName = EXTENSION_NAME
+  const tensorRtVersion = TENSORRT_VERSION
+  const provider = PROVIDER
 
   return new Promise<void>((resolve, reject) => {
     // Current directory by default
@@ -158,7 +165,8 @@ async function runEngine(systemInfo: SystemInformation): Promise<void> {
     const executableFolderPath = path.join(
       janDataFolderPath,
       'engines',
-      extensionName,
+      provider,
+      tensorRtVersion,
       gpuArch
     )
     const nitroExecutablePath = path.join(
