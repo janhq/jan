@@ -38,9 +38,7 @@ export const useEngineSettings = () => {
   }
 
   const readGroqSettings = useCallback(async () => {
-    if (
-      !(await fs.existsSync(await joinPath(['file://engines', 'groq.json'])))
-    )
+    if (!(await fs.existsSync(await joinPath(['file://engines', 'groq.json']))))
       return {}
     const settings = await fs.readFileSync(
       await joinPath(['file://engines', 'groq.json']),
@@ -71,5 +69,10 @@ export const useEngineSettings = () => {
     )
   }
 
-  return { readOpenAISettings, saveOpenAISettings, readGroqSettings, saveGroqSettings }
+  return {
+    readOpenAISettings,
+    saveOpenAISettings,
+    readGroqSettings,
+    saveGroqSettings,
+  }
 }

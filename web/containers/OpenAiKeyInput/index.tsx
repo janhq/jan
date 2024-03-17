@@ -20,7 +20,7 @@ const OpenAiKeyInput: React.FC = () => {
   const { readOpenAISettings, saveOpenAISettings } = useEngineSettings()
 
   const [groqSettings, setGroqSettings] = useState<
-  { api_key: string } | undefined
+    { api_key: string } | undefined
   >(undefined)
   const { readGroqSettings, saveGroqSettings } = useEngineSettings()
 
@@ -36,27 +36,31 @@ const OpenAiKeyInput: React.FC = () => {
     })
   }, [readGroqSettings])
 
-  if (!selectedModel || (selectedModel.engine !== InferenceEngine.openai && selectedModel.engine !== InferenceEngine.groq)) {
-    return null;
+  if (
+    !selectedModel ||
+    (selectedModel.engine !== InferenceEngine.openai &&
+      selectedModel.engine !== InferenceEngine.groq)
+  ) {
+    return null
   }
 
   const getCurrentApiKey = () => {
     if (selectedModel.engine === InferenceEngine.openai) {
-      return openAISettings?.api_key;
+      return openAISettings?.api_key
     } else if (selectedModel.engine === InferenceEngine.groq) {
-      return groqSettings?.api_key;
+      return groqSettings?.api_key
     }
-    return ''; // Default return value
-  };
+    return '' // Default return value
+  }
 
   const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newApiKey = e.target.value;
+    const newApiKey = e.target.value
     if (selectedModel.engine === InferenceEngine.openai) {
-      saveOpenAISettings({ apiKey: newApiKey });
+      saveOpenAISettings({ apiKey: newApiKey })
     } else if (selectedModel.engine === InferenceEngine.groq) {
-      saveGroqSettings({ apiKey: newApiKey });
+      saveGroqSettings({ apiKey: newApiKey })
     }
-  };  
+  }
 
   return (
     <div className="my-4">
