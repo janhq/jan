@@ -1,135 +1,169 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
-import { FaWindows, FaApple, FaLinux } from "react-icons/fa";
-import { twMerge } from "tailwind-merge";
+import React, { useState, useEffect } from 'react'
+import axios from 'axios'
+import { FaWindows, FaApple, FaLinux } from 'react-icons/fa'
+import { twMerge } from 'tailwind-merge'
+import { DownloadIcon } from 'lucide-react'
 
 const systemsTemplate = [
   {
-    name: "Mac M1, M2, M3",
+    name: 'Mac M1, M2, M3',
+    label: 'Apple Silicon',
     logo: FaApple,
-    fileFormat: "{appname}-mac-arm64-{tag}.dmg",
-    comingSoon: false,
+    fileFormat: '{appname}-mac-arm64-{tag}.dmg',
   },
   {
-    name: "Mac (Intel)",
+    name: 'Mac (Intel)',
+    label: 'Apple Intel',
     logo: FaApple,
-    fileFormat: "{appname}-mac-x64-{tag}.dmg",
-    comingSoon: false,
+    fileFormat: '{appname}-mac-x64-{tag}.dmg',
   },
   {
-    name: "Windows",
+    name: 'Windows',
+    label: 'Standard (64-bit)',
     logo: FaWindows,
-    fileFormat: "{appname}-win-x64-{tag}.exe",
+    fileFormat: '{appname}-win-x64-{tag}.exe',
   },
   {
-    name: "Linux (AppImage)",
+    name: 'Linux (AppImage)',
+    label: 'AppImage',
     logo: FaLinux,
-    fileFormat: "{appname}-linux-x86_64-{tag}.AppImage",
+    fileFormat: '{appname}-linux-x86_64-{tag}.AppImage',
   },
   {
-    name: "Linux (deb)",
+    name: 'Linux (deb)',
+    label: 'Deb',
     logo: FaLinux,
-    fileFormat: "{appname}-linux-amd64-{tag}.deb",
+    fileFormat: '{appname}-linux-amd64-{tag}.deb',
   },
-];
+]
+
+const groupTemnplate = [
+  { label: 'MacOS', name: 'mac', logo: FaApple },
+  { label: 'Windows', name: 'windows', logo: FaWindows },
+  { label: 'Linux', name: 'linux', logo: FaLinux },
+]
 
 export default function DownloadApp() {
-  const [systems, setSystems] = useState(systemsTemplate);
+  const [systems, setSystems] = useState(systemsTemplate)
 
   const getLatestReleaseInfo = async (repoOwner, repoName) => {
-    const url = `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`;
+    const url = `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`
     try {
-      const response = await axios.get(url);
-      return response.data;
+      const response = await axios.get(url)
+      return response.data
     } catch (error) {
-      console.error(error);
-      return null;
+      console.error(error)
+      return null
     }
-  };
+  }
 
   const extractAppName = (fileName) => {
     // Extract appname using a regex that matches the provided file formats
-    const regex = /^(.*?)-(?:mac|win|linux)-(?:arm64|x64|amd64|x86_64)-.*$/;
-    const match = fileName.match(regex);
-    return match ? match[1] : null;
-  };
+    const regex = /^(.*?)-(?:mac|win|linux)-(?:arm64|x64|amd64|x86_64)-.*$/
+    const match = fileName.match(regex)
+    return match ? match[1] : null
+  }
 
   useEffect(() => {
     const updateDownloadLinks = async () => {
       try {
-        const releaseInfo = await getLatestReleaseInfo("janhq", "jan");
+        const releaseInfo = await getLatestReleaseInfo('janhq', 'jan')
 
         // Extract appname from the first asset name
-        const firstAssetName = releaseInfo.assets[0].name;
-        const appname = extractAppName(firstAssetName);
+        const firstAssetName = releaseInfo.assets[0].name
+        const appname = extractAppName(firstAssetName)
 
         if (!appname) {
           console.error(
-            "Failed to extract appname from file name:",
+            'Failed to extract appname from file name:',
             firstAssetName
-          );
+          )
 
-          return;
+          return
         }
 
         // Remove 'v' at the start of the tag_name
-        const tag = releaseInfo.tag_name.startsWith("v")
+        const tag = releaseInfo.tag_name.startsWith('v')
           ? releaseInfo.tag_name.substring(1)
-          : releaseInfo.tag_name;
+          : releaseInfo.tag_name
 
         const updatedSystems = systems.map((system) => {
           const downloadUrl = system.fileFormat
-            .replace("{appname}", appname)
-            .replace("{tag}", tag);
+            .replace('{appname}', appname)
+            .replace('{tag}', tag)
           return {
             ...system,
             href: `https://github.com/janhq/jan/releases/download/${releaseInfo.tag_name}/${downloadUrl}`,
-          };
-        });
+          }
+        })
 
-        setSystems(updatedSystems);
+        setSystems(updatedSystems)
       } catch (error) {
-        console.error("Failed to update download links:", error);
+        console.error('Failed to update download links:', error)
       }
-    };
+    }
 
-    updateDownloadLinks();
-  }, []);
+    updateDownloadLinks()
+  }, [])
+
+  const renderDownloadLink = (group) => {
+    return (
+      <>
+        {systems
+          .filter((x) => x.name.toLowerCase().includes(group))
+          .map((system, i) => (
+            <div
+              key={i}
+              className="border-b border-[#F0F0F0] dark:border-gray-800 last:border-none pb-2 pt-2"
+            >
+              <a
+                href={system.href || ''}
+                className={twMerge(
+                  'btn-shadow inline-flex text-lg my-2 font-semibold cursor-pointer justify-center items-center space-x-2] text-blue-500 hover:text-blue-500 gap-2',
+                  system.comingSoon && 'pointer-events-none'
+                )}
+              >
+                <span className="text-sm">{system.label}</span>
+                <DownloadIcon size={16} />
+              </a>
+            </div>
+          ))}
+      </>
+    )
+  }
 
   return (
     <div>
-      <div className="flex flex-col lg:flex-row items-center justify-center gap-4 mb-4">
-        <span className="text-zinc-500 text-lg font-medium  inline-block">
-          Download for PC
-        </span>
-        <div className="bg-yellow-50 text-yellow-700 space-x-2 px-4 py-2 border border-yellow-400 rounded-lg text-base">
-          <span>🚧</span>
-          <span className="font-semibold">Warning:</span>
-          <span className="font-medium">
-            Jan is in the process of being built. Expect bugs!
-          </span>
+      <div className="flex flex-col items-center justify-center gap-4 mb-4">
+        <h6 className="text-2xl font-medium">Detailed platforms</h6>
+        <p className="leading-relaxed text-black/60 dark:text-white/60">
+          Jan is in the process of being built. Expect bugs!
+        </p>
+      </div>
+      <div className="w-full lg:w-3/5 mx-auto px-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 py-10 gap-8">
+          {groupTemnplate.map((item, i) => {
+            return (
+              <div
+                className="border border-[#F0F0F0] dark:border-gray-800 rounded-xl text-center"
+                key={i}
+              >
+                <div className="text-center">
+                  <div className="flex gap-2 p-4 border-b border-[#F0F0F0] dark:border-gray-800 items-center justify-center">
+                    <div className="text-2xl">
+                      <item.logo />
+                    </div>
+                    <h6>{item.label}</h6>
+                  </div>
+                  <div className="mx-auto text-center py-2">
+                    {renderDownloadLink(item.name)}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
-      <div className="mx-auto text-center">
-        {systems.map((system, i) => (
-          <a
-            key={i}
-            href={system.href || ""}
-            className={twMerge(
-              "btn-shadow inline-flex m-2 px-4 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 border border-zinc-200 dark:border-gray-700 text-black dark:text-white bg-zinc-50 min-w-[150px] dark:bg-[#18181B] h-[36px]",
-              system.comingSoon && "pointer-events-none"
-            )}
-          >
-            <system.logo />
-            <span className="text-sm">{system.name}</span>
-            {system.comingSoon && (
-              <span className="bg-zinc-200 py-0.5 px-2 inline-block ml-2 rounded-md text-xs h-[20px] dark:text-black">
-                Coming Soon
-              </span>
-            )}
-          </a>
-        ))}
-      </div>
     </div>
-  );
+  )
 }

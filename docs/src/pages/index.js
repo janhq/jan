@@ -87,12 +87,6 @@ export default function Home() {
   const { stargazers } = useAppStars()
   const { data } = useDiscordWidget()
 
-  const handleAnchorLink = () => {
-    document
-      .getElementById('download-section')
-      .scrollIntoView({ behavior: 'smooth' })
-  }
-
   const userAgent = isBrowser && navigator.userAgent
   const isBrowserChrome = isBrowser && userAgent.includes('Chrome')
 
@@ -167,12 +161,12 @@ export default function Home() {
             </p>
             <div className="mt-10">
               {!isBrowserChrome ? (
-                <div
-                  onClick={() => handleAnchorLink()}
+                <a
+                  href="/download"
                   className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
                 >
                   <span>Download Jan for PC</span>
-                </div>
+                </a>
               ) : (
                 <Dropdown />
               )}
@@ -811,12 +805,12 @@ export default function Home() {
               </div>
               <div className="mt-10 w-full lg:w-1/2 mx-auto lg:mr-auto lg:text-right">
                 {!isBrowserChrome ? (
-                  <div
-                    onClick={() => handleAnchorLink()}
+                  <a
+                    href="/download"
                     className="inline-flex px-4 py-3 rounded-lg text-lg font-semibold cursor-pointer justify-center items-center space-x-2 dark:bg-white dark:text-black bg-black text-white dark:hover:text-black hover:text-white scroll-smooth"
                   >
                     <span>Download Jan for PC</span>
-                  </div>
+                  </a>
                 ) : (
                   <Dropdown />
                 )}
@@ -826,12 +820,6 @@ export default function Home() {
               </div>
             </div>
           </div>
-
-          {!isBrowserChrome && (
-            <div className="my-10" id="download-section">
-              <DownloadApp />
-            </div>
-          )}
         </main>
       </Layout>
     </>

@@ -37,6 +37,10 @@ const menus = [
     name: 'Product',
     child: [
       {
+        menu: 'Download',
+        path: '/download',
+      },
+      {
         menu: 'Documentation',
         path: '/developer',
       },
