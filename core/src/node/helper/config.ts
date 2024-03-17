@@ -118,7 +118,7 @@ const exec = async (command: string): Promise<string> => {
 }
 
 export const getEngineConfiguration = async (engineId: string) => {
-  if (engineId !== 'openai') {
+  if (engineId !== 'openai' && engineId !== 'groq') {
     return undefined
   }
   const directoryPath = join(getJanDataFolderPath(), 'engines')

@@ -78,7 +78,9 @@ const DropdownListSidebar = ({
     (model) => model.engine !== InferenceEngine.openai
   )
   const remoteModel = downloadedModels.filter(
-    (model) => model.engine === InferenceEngine.openai
+    (model) =>
+      model.engine === InferenceEngine.openai ||
+      model.engine === InferenceEngine.groq
   )
 
   const modelOptions = isTabActive === 0 ? localModel : remoteModel
