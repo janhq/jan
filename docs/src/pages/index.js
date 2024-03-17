@@ -153,8 +153,8 @@ export default function Home() {
     <>
       <Banner />
       <Layout
-        title="Open-source ChatGPT Alternative"
-        description="Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable."
+        title="Rethink the Computer"
+        description="Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution."
       >
         <main>
           {/* Hero */}

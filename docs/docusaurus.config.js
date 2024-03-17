@@ -222,8 +222,7 @@ const config = {
     metadata: [
       {
         name: 'description',
-        content:
-          'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+        content: `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
       },
       {
         name: 'keywords',
@@ -233,12 +232,11 @@ const config = {
       { name: 'robots', content: 'index, follow' },
       {
         property: 'og:title',
-        content: 'Jan | Open-source ChatGPT Alternative',
+        content: 'Jan AI | Rethink the Computer',
       },
       {
         property: 'og:description',
-        content:
-          'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+        content: `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
       },
       {
         property: 'og:image',
@@ -249,12 +247,11 @@ const config = {
       { property: 'twitter:site', content: '@janframework' },
       {
         property: 'twitter:title',
-        content: 'Jan | Open-source ChatGPT Alternative',
+        content: 'Jan AI | Rethink the Computer',
       },
       {
         property: 'twitter:description',
-        content:
-          'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+        content: `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
       },
       {
         property: 'twitter:image',
@@ -280,8 +277,7 @@ const config = {
           '@context': 'https://schema.org/',
           '@type': 'localAI',
           'name': 'Jan',
-          'description':
-            'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+          'description': `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
           'keywords':
             'Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ',
           'applicationCategory': 'BusinessApplication',
