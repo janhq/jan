@@ -658,7 +658,7 @@ export default function Home() {
 
               <div className="mt-20 flex dark:bg-[#181818] bg-[#FAFAFA] border border-gray-300 dark:border-gray-600 rounded-t-2xl border-b-0">
                 <div className="w-56 lg:w-80 border-r border-gray-300 dark:border-gray-600">
-                  <div className="p-7"></div>
+                  <div className="h-[52px]"></div>
                   {table.labels.map((label, i) => {
                     return (
                       <div
@@ -666,7 +666,7 @@ export default function Home() {
                         title={label}
                         key={i}
                       >
-                        <h6 className="line-clamp-1">{label}</h6>
+                        <h6 className="line-clamp-1 my-[2px]">{label}</h6>
                       </div>
                     )
                   })}
