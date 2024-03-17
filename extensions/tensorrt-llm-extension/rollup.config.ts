@@ -16,7 +16,7 @@ export default [
     plugins: [
       replace({
         EXTENSION_NAME: JSON.stringify(packageJson.name),
-        TENSORRT_VERSION: JSON.stringify('0.1.5'),
+        TENSORRT_VERSION: JSON.stringify('0.1.6'),
         DOWNLOAD_RUNNER_URL:
           process.platform === 'darwin' || process.platform === 'win32'
             ? JSON.stringify(
