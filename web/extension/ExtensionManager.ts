@@ -23,7 +23,9 @@ export class ExtensionManager {
    * @param type - The type of the extension to retrieve.
    * @returns The extension, if found.
    */
-  get<T extends BaseExtension>(type: ExtensionTypeEnum): T | undefined {
+  get<T extends BaseExtension>(
+    type: ExtensionTypeEnum | string
+  ): T | undefined {
     return this.extensions.get(type) as T | undefined
   }
 

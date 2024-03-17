@@ -15,6 +15,8 @@ export const appDownloadProgress = atom<number>(-1)
 export const updateVersionError = atom<string | undefined>(undefined)
 export const searchAtom = atom<string>('')
 
+export const selectedTextAtom = atom('')
+
 export default function JotaiWrapper({ children }: Props) {
   return <Provider>{children}</Provider>
 }
