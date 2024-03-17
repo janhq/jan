@@ -3,11 +3,14 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
 import { log } from '@janhq/core/node'
-import { existsSync } from 'fs'
 import decompress from 'decompress'
+import { getJanDataFolderPath, systemInformation } from '@janhq/core/.'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
+
+export const supportedPlatform = (): string[] => ['win32', 'linux']
+export const supportedGpuArch = (): string[] => ['turing', 'ampere', 'ada']
 
 /**
  * The response object for model init operation.
@@ -81,7 +84,7 @@ async function runEngineAndLoadModel(settings: ModelLoadParams) {
 /**
  * Loads a LLM model into the Engine subprocess by sending a HTTP POST request.
  */
-function loadModelRequest(
+async function loadModelRequest(
   settings: ModelLoadParams
 ): Promise<{ error: Error | undefined }> {
   debugLog(`Loading model with params ${JSON.stringify(settings)}`)
@@ -107,23 +110,65 @@ function loadModelRequest(
 /**
  * Spawns engine subprocess.
  */
-function runEngine(): Promise<any> {
+async function runEngine(): Promise<void> {
   debugLog(`Spawning engine subprocess...`)
+  const systemInfo = await systemInformation()
+  if (systemInfo.gpuSetting == null) {
+    return Promise.reject(
+      'No GPU information found. Please check your GPU setting.'
+    )
+  }
+
+  if (systemInfo.gpuSetting.gpus.length === 0) {
+    return Promise.reject('No GPU found. Please check your GPU setting.')
+  }
+
+  if (systemInfo.osInfo == null) {
+    return Promise.reject(
+      'No OS information found. Please check your OS setting.'
+    )
+  }
+  const platform = systemInfo.osInfo.platform
+  if (platform == null || supportedPlatform().includes(platform) === false) {
+    return Promise.reject(
+      'No OS architecture found. Please check your OS setting.'
+    )
+  }
+
+  const gpu = systemInfo.gpuSetting.gpus[0]
+  if (gpu.name.toLowerCase().includes('nvidia') === false) {
+    return Promise.reject('No Nvidia GPU found. Please check your GPU setting.')
+  }
+  const gpuArch = gpu.arch
+  if (gpuArch == null || supportedGpuArch().includes(gpuArch) === false) {
+    return Promise.reject(
+      `Your GPU: ${gpu.name} is not supported. Only ${supportedGpuArch().join(
+        ', '
+      )} series are supported.`
+    )
+  }
+  const janDataFolderPath = await getJanDataFolderPath()
+  const extensionName = EXTENSION_NAME
 
   return new Promise<void>((resolve, reject) => {
     // Current directory by default
-    let binaryFolder = path.join(__dirname, '..', 'bin')
-    // Binary path
-    const binary = path.join(
-      binaryFolder,
-      process.platform === 'win32' ? 'nitro.exe' : 'nitro'
+
+    const executableFolderPath = path.join(
+      janDataFolderPath,
+      'engines',
+      extensionName,
+      gpuArch
+    )
+    const nitroExecutablePath = path.join(
+      executableFolderPath,
+      platform === 'win32' ? 'nitro.exe' : 'nitro'
     )
 
     const args: string[] = ['1', ENGINE_HOST, ENGINE_PORT]
     // Execute the binary
-    debugLog(`Spawn nitro at path: ${binary}, and args: ${args}`)
-    subprocess = spawn(binary, args, {
-      cwd: binaryFolder,
+    debugLog(`Spawn nitro at path: ${nitroExecutablePath}, and args: ${args}`)
+    subprocess = spawn(nitroExecutablePath, args, {
+      cwd: executableFolderPath,
       env: {
         ...process.env,
       },
@@ -155,12 +200,7 @@ function debugLog(message: string, level: string = 'Debug') {
   log(`[TENSORRT_LLM_NITRO]::${level}:${message}`)
 }
 
-const binaryFolder = async (): Promise<string> => {
-  return path.join(__dirname, '..', 'bin')
-}
-
-const decompressRunner = async (zipPath: string) => {
-  const output = path.join(__dirname, '..', 'bin')
+const decompressRunner = async (zipPath: string, output: string) => {
   console.debug(`Decompressing ${zipPath} to ${output}...`)
   try {
     const files = await decompress(zipPath, output)
@@ -170,22 +210,9 @@ const decompressRunner = async (zipPath: string) => {
   }
 }
 
-const isNitroExecutableAvailable = async (): Promise<boolean> => {
-  const binary = path.join(
-    __dirname,
-    '..',
-    'bin',
-    process.platform === 'win32' ? 'nitro.exe' : 'nitro'
-  )
-
-  return existsSync(binary)
-}
-
 export default {
-  binaryFolder,
   decompressRunner,
   loadModel,
   unloadModel,
   dispose: unloadModel,
-  isNitroExecutableAvailable,
 }

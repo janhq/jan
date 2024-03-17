@@ -52,6 +52,7 @@ export default [
     },
     plugins: [
       replace({
+        EXTENSION_NAME: JSON.stringify(packageJson.name),
         LOAD_MODEL_URL: JSON.stringify(
           `${packageJson.config?.protocol ?? 'http'}://${packageJson.config?.host}:${packageJson.config?.port}/inferences/tensorrtllm/loadmodel`
         ),
