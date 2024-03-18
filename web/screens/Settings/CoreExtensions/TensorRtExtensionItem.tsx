@@ -23,6 +23,8 @@ import { useAtomValue } from 'jotai'
 
 import { Marked, Renderer } from 'marked'
 
+import UpdateExtensionModal from './UpdateExtensionModal'
+
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
 import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
@@ -39,7 +41,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     useState<InstallationState>('NotRequired')
   const installingExtensions = useAtomValue(installingExtensionAtom)
   const [isGpuSupported, setIsGpuSupported] = useState<boolean>(false)
-
+  const [promptUpdateModal, setPromptUpdateModal] = useState<boolean>(false)
   const isInstalling = installingExtensions.some(
     (e) => e.extensionId === item.name
   )
@@ -138,6 +140,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
             installProgress={progress}
             installState={installState}
             onInstallClick={onInstallClick}
+            onUpdateClick={() => setPromptUpdateModal(true)}
             onCancelClick={onCancelInstallingClick}
           />
         </div>
@@ -177,6 +180,9 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           </div>
         </div>
       )}
+      {promptUpdateModal && (
+        <UpdateExtensionModal onUpdateClick={onInstallClick} />
+      )}
     </div>
   )
 }
@@ -185,6 +191,7 @@ type InstallStateProps = {
   installProgress: number
   installState: InstallationState
   onInstallClick: () => void
+  onUpdateClick: () => void
   onCancelClick: () => void
 }
 
@@ -192,6 +199,7 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   installProgress,
   installState,
   onInstallClick,
+  onUpdateClick,
   onCancelClick,
 }) => {
   if (installProgress !== -1) {
@@ -217,6 +225,12 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
         <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
           Installed
         </div>
+      )
+    case 'Updatable':
+      return (
+        <Button themes="secondaryBlue" size="sm" onClick={onUpdateClick}>
+          Update
+        </Button>
       )
     case 'NotInstalled':
       return (
