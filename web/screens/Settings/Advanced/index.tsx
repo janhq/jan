@@ -98,6 +98,11 @@ const Advanced = () => {
     window.core?.api?.relaunch()
   }
 
+  const updateExperimentalEnabled = async (e: boolean) => {
+    setExperimentalEnabled(e)
+    if (!e && quickAskEnabled) updateQuickAskEnabled(false)
+  }
+
   useEffect(() => {
     const setUseGpuIfPossible = async () => {
       const settings = await readSettings()
@@ -179,7 +184,7 @@ const Advanced = () => {
           </div>
           <Switch
             checked={experimentalEnabled}
-            onCheckedChange={setExperimentalEnabled}
+            onCheckedChange={updateExperimentalEnabled}
           />
         </div>
 
