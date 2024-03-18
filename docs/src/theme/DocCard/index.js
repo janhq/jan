@@ -12,6 +12,9 @@ import styles from './styles.module.css';
 import engine from './assets/engine.png';
 import remote from './assets/remote.png';
 import manual from './assets/manual.png';
+import v0410 from './assets/v0.4.10.png';
+import v049 from './assets/v0.4.9.png';
+import v048 from './assets/v0.4.8.png';
 import v047 from './assets/v0.4.7.png';
 import v046 from './assets/v0.4.6.png';
 import v045 from './assets/v0.4.5.png';
@@ -45,7 +48,6 @@ import gpu from './assets/gpu.png';
 import mistral from './assets/mistral.png';
 import lm from './assets/lm.png';
 import ollama from './assets/ollama.png';
-import logsError from './assets/logs-error.png';
 
 function CardContainer({href, children}) {
   return (
@@ -167,7 +169,7 @@ function CardLink({item}) {
     <img src={amiss} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Broken Build") ? (
     <img src={broken} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
-  ) : (item.label === "Troubleshooting NVIDIA GPU") ? (
+  ) : (item.label === "Jan not using GPU") ? (
     <img src={gpu} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Mistral AI") ? (
     <img src={mistral} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
@@ -175,15 +177,16 @@ function CardLink({item}) {
     <img src={lm} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Ollama") ? (
     <img src={ollama} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
-  ) : (item.label === "How to Get Error Logs") ? (
-    <img src={logsError} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "v0.4.8") ? (
+    <img src={v048} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "v0.4.9") ? (
+    <img src={v049} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "v0.4.10") ? (
+    <img src={v0410} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (
     // If not "Customize Engine Settings", use default icon
     '📄️'
-  );  
-
-
-  
+  );
   const doc = useDocById(item.docId ?? undefined);
   return (
     <CardLayout
