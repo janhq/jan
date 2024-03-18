@@ -7,7 +7,7 @@
     ],
     "id": "vistral-7b",
     "object": "model",
-    "name": "Vistral 13B Q4",
+    "name": "Vistral 7B Q4",
     "version": "1.0",
     "description": "Vistral 7B has a deep understanding of Vietnamese.",
     "format": "gguf",
