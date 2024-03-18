@@ -21,7 +21,7 @@ export default [
         DOWNLOAD_RUNNER_URL:
           process.platform === 'win32'
             ? JSON.stringify(
-                'https://github.com/janhq/nitro-tensorrt-llm/releases/download/windows-v<version>/nitro-windows-v<version>-amd64-tensorrt-llm-<gpuarch>.tar.gz'
+                'https://github.com/janhq/nitro-tensorrt-llm/releases/download/windows-v<version>-tensorrt-llm-v0.7.1/nitro-windows-v<version>-tensorrt-llm-v0.7.1-amd64-all-arch.tar.gz'
               )
             : JSON.stringify(
                 'https://github.com/janhq/nitro-tensorrt-llm/releases/download/linux-v<version>/nitro-linux-v<version>-amd64-tensorrt-llm-<gpuarch>.tar.gz'
