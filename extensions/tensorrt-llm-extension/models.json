@@ -3,27 +3,31 @@
     "sources": [
       {
         "filename": "config.json",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/config.json"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/LlamaCorn-1.1B-Chat-fp16/config.json"
       },
       {
         "filename": "rank0.engine",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/rank0.engine"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/LlamaCorn-1.1B-Chat-fp16/mistral_float16_tp1_rank0.engine"
       },
       {
         "filename": "tokenizer.model",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/tokenizer.model"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/LlamaCorn-1.1B-Chat-fp16/tokenizer.model"
       },
       {
         "filename": "special_tokens_map.json",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/special_tokens_map.json"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/LlamaCorn-1.1B-Chat-fp16/special_tokens_map.json"
       },
       {
         "filename": "tokenizer.json",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/tokenizer.json"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/LlamaCorn-1.1B-Chat-fp16/tokenizer.json"
       },
       {
         "filename": "tokenizer_config.json",
-        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/LlamaCorn-1.1B-Chat-fp16/tokenizer_config.json"
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/LlamaCorn-1.1B-Chat-fp16/tokenizer_config.json"
+      },
+      {
+        "filename": "model.cache",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/LlamaCorn-1.1B-Chat-fp16/model.cache"
       }
     ],
     "id": "llamacorn-1.1b-chat-fp16",
