@@ -38,15 +38,16 @@
     "format": "TensorRT-LLM",
     "settings": {
       "ctx_len": 2048,
-      "text_model": false
+      "text_model": false,
+      "prompt_template": "[INST] {prompt} [/INST]"
     },
     "parameters": {
       "max_tokens": 4096
     },
     "metadata": {
-      "author": "LLama",
+      "author": "MistralAI",
       "tags": ["TensorRT-LLM", "1B", "Finetuned"],
-      "size": 2151000000
+      "size": 3840000000
     },
     "engine": "nitro-tensorrt-llm"
   },
@@ -134,12 +135,12 @@
     ],
     "id": "mistral-7b-instruct-int4",
     "object": "model",
-    "name": "Mistral 7B Instruct v0.1 int4",
+    "name": "Mistral 7B Instruct v0.1 INT4",
     "version": "1.0",
-    "description": "Mistral 7B Instruct v0.1 int4",
+    "description": "Mistral 7B Instruct v0.1 INT4",
     "format": "TensorRT-LLM",
     "settings": {
-      "ctx_len": 512,
+      "ctx_len": 2048,
       "text_model": false
     },
     "parameters": {

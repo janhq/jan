@@ -5,6 +5,7 @@ import fetchRT from 'fetch-retry'
 import { log, getJanDataFolderPath } from '@janhq/core/node'
 import decompress from 'decompress'
 import { SystemInformation } from '@janhq/core'
+import { PromptTemplate } from '@janhq/core'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
@@ -35,9 +36,21 @@ async function loadModel(
   // e.g. ~/jan/models/llama-2
   let modelFolder = params.modelFolder
 
+  if (params.model.settings.prompt_template) {
+    const promptTemplate = params.model.settings.prompt_template
+    const prompt = promptTemplateConverter(promptTemplate)
+    if (prompt?.error) {
+      return Promise.reject(prompt.error)
+    }
+    params.model.settings.system_prompt = prompt.system_prompt
+    params.model.settings.user_prompt = prompt.user_prompt
+    params.model.settings.ai_prompt = prompt.ai_prompt
+  }
+
   const settings: ModelLoadParams = {
     engine_path: modelFolder,
     ctx_len: params.model.settings.ctx_len ?? 2048,
+    ...params.model.settings,
   }
   if (!systemInfo) {
     throw new Error('Cannot get system info. Unable to start nitro x tensorrt.')
@@ -218,6 +231,52 @@ const decompressRunner = async (zipPath: string, output: string) => {
   } catch (err) {
     console.error(`Decompress ${zipPath} failed: ${err}`)
   }
+}
+
+/**
+ * Parse prompt template into agrs settings
+ * @param promptTemplate Template as string
+ * @returns
+ */
+function promptTemplateConverter(promptTemplate: string): PromptTemplate {
+  // Split the string using the markers
+  const systemMarker = '{system_message}'
+  const promptMarker = '{prompt}'
+
+  if (
+    promptTemplate.includes(systemMarker) &&
+    promptTemplate.includes(promptMarker)
+  ) {
+    // Find the indices of the markers
+    const systemIndex = promptTemplate.indexOf(systemMarker)
+    const promptIndex = promptTemplate.indexOf(promptMarker)
+
+    // Extract the parts of the string
+    const system_prompt = promptTemplate.substring(0, systemIndex)
+    const user_prompt = promptTemplate.substring(
+      systemIndex + systemMarker.length,
+      promptIndex
+    )
+    const ai_prompt = promptTemplate.substring(
+      promptIndex + promptMarker.length
+    )
+
+    // Return the split parts
+    return { system_prompt, user_prompt, ai_prompt }
+  } else if (promptTemplate.includes(promptMarker)) {
+    // Extract the parts of the string for the case where only promptMarker is present
+    const promptIndex = promptTemplate.indexOf(promptMarker)
+    const user_prompt = promptTemplate.substring(0, promptIndex)
+    const ai_prompt = promptTemplate.substring(
+      promptIndex + promptMarker.length
+    )
+
+    // Return the split parts
+    return { user_prompt, ai_prompt }
+  }
+
+  // Return an error if none of the conditions are met
+  return { error: 'Cannot split prompt template' }
 }
 
 export default {
