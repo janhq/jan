@@ -13,7 +13,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "prompt_template": "<|system|>\n{system_prompt}\n<|user|>\n{prompt}\n<|assistant|>\n",
+      "prompt_template": "<|system|>\n{system_message}\n<|user|>\n{prompt}\n<|assistant|>\n",
       "llama_model_path": "merlinite-7b-Q4_K_M.gguf"
     },
     "parameters": {
