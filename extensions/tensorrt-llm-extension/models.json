@@ -139,7 +139,7 @@
     "description": "Mistral 7B Instruct v0.1 int4",
     "format": "TensorRT-LLM",
     "settings": {
-      "ctx_len": 2048,
+      "ctx_len": 512,
       "text_model": false
     },
     "parameters": {
