@@ -88,4 +88,16 @@ export class FSExt implements Processor {
       })
     })
   }
+
+  mkdir(path: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      fs.mkdir(path, { recursive: true }, (err) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve()
+        }
+      })
+    })
+  }
 }

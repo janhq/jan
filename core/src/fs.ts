@@ -37,6 +37,8 @@ const readdirSync = (...args: any[]) => global.core.api?.readdirSync(...args)
  */
 const mkdirSync = (...args: any[]) => global.core.api?.mkdirSync(...args)
 
+const mkdir = (...args: any[]) => global.core.api?.mkdir(...args)
+
 /**
  * Removes a directory at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the directory is removed successfully.
@@ -92,6 +94,7 @@ export const fs = {
   existsSync,
   readdirSync,
   mkdirSync,
+  mkdir,
   rmdirSync,
   unlinkSync,
   appendFileSync,

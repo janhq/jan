@@ -16,9 +16,10 @@ export default [
     plugins: [
       replace({
         EXTENSION_NAME: JSON.stringify(packageJson.name),
-        TENSORRT_VERSION: JSON.stringify('0.1.5'),
+        TENSORRT_VERSION: JSON.stringify(packageJson.tensorrtVersion),
+        PROVIDER: JSON.stringify(packageJson.provider),
         DOWNLOAD_RUNNER_URL:
-          process.platform === 'darwin' || process.platform === 'win32'
+          process.platform === 'win32'
             ? JSON.stringify(
                 'https://github.com/janhq/nitro-tensorrt-llm/releases/download/windows-v<version>/nitro-windows-v<version>-amd64-tensorrt-llm-<gpuarch>.tar.gz'
               )
@@ -52,11 +53,14 @@ export default [
     },
     plugins: [
       replace({
+        EXTENSION_NAME: JSON.stringify(packageJson.name),
+        TENSORRT_VERSION: JSON.stringify(packageJson.tensorrtVersion),
+        PROVIDER: JSON.stringify(packageJson.provider),
         LOAD_MODEL_URL: JSON.stringify(
           `${packageJson.config?.protocol ?? 'http'}://${packageJson.config?.host}:${packageJson.config?.port}/inferences/tensorrtllm/loadmodel`
         ),
         TERMINATE_ENGINE_URL: JSON.stringify(
-          `${packageJson.config?.protocol ?? 'http'}://${packageJson.config?.host}:${packageJson.config?.port}/inferences/processmanager/destroy`
+          `${packageJson.config?.protocol ?? 'http'}://${packageJson.config?.host}:${packageJson.config?.port}/processmanager/destroy`
         ),
         ENGINE_HOST: JSON.stringify(packageJson.config?.host ?? '127.0.0.1'),
         ENGINE_PORT: JSON.stringify(packageJson.config?.port ?? '3928'),

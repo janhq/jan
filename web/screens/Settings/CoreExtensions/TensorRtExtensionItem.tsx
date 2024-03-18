@@ -5,7 +5,7 @@ import {
   GpuSetting,
   InstallationState,
   abortDownload,
-  systemInformations,
+  systemInformation,
 } from '@janhq/core'
 import {
   Badge,
@@ -51,7 +51,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
 
   useEffect(() => {
     const getSystemInfos = async () => {
-      const info = await systemInformations()
+      const info = await systemInformation()
       if (!info) {
         setIsGpuSupported(false)
         return
@@ -112,7 +112,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
   }
 
   const description = marked.parse(item.description ?? '', { async: false })
-  console.log(description)
+
   return (
     <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1.5">

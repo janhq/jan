@@ -2,12 +2,15 @@ import path from 'path'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
-import { log } from '@janhq/core/node'
-import { existsSync } from 'fs'
+import { log, getJanDataFolderPath } from '@janhq/core/node'
 import decompress from 'decompress'
+import { SystemInformation } from '@janhq/core'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
+
+const supportedPlatform = (): string[] => ['win32', 'linux']
+const supportedGpuArch = (): string[] => ['turing', 'ampere', 'ada']
 
 /**
  * The response object for model init operation.
@@ -24,7 +27,10 @@ let subprocess: ChildProcessWithoutNullStreams | undefined = undefined
  * Initializes a engine subprocess to load a machine learning model.
  * @param params - The model load settings.
  */
-async function loadModel(params: any): Promise<{ error: Error | undefined }> {
+async function loadModel(
+  params: any,
+  systemInfo?: SystemInformation
+): Promise<{ error: Error | undefined }> {
   // modelFolder is the absolute path to the running model folder
   // e.g. ~/jan/models/llama-2
   let modelFolder = params.modelFolder
@@ -33,7 +39,10 @@ async function loadModel(params: any): Promise<{ error: Error | undefined }> {
     engine_path: modelFolder,
     ctx_len: params.model.settings.ctx_len ?? 2048,
   }
-  return runEngineAndLoadModel(settings)
+  if (!systemInfo) {
+    throw new Error('Cannot get system info. Unable to start nitro x tensorrt.')
+  }
+  return runEngineAndLoadModel(settings, systemInfo)
 }
 
 /**
@@ -67,9 +76,12 @@ function unloadModel(): Promise<any> {
  * 2. Load model into engine subprocess
  * @returns
  */
-async function runEngineAndLoadModel(settings: ModelLoadParams) {
+async function runEngineAndLoadModel(
+  settings: ModelLoadParams,
+  systemInfo: SystemInformation
+) {
   return unloadModel()
-    .then(runEngine)
+    .then(() => runEngine(systemInfo))
     .then(() => loadModelRequest(settings))
     .catch((err) => {
       // TODO: Broadcast error so app could display proper error message
@@ -81,7 +93,7 @@ async function runEngineAndLoadModel(settings: ModelLoadParams) {
 /**
  * Loads a LLM model into the Engine subprocess by sending a HTTP POST request.
  */
-function loadModelRequest(
+async function loadModelRequest(
   settings: ModelLoadParams
 ): Promise<{ error: Error | undefined }> {
   debugLog(`Loading model with params ${JSON.stringify(settings)}`)
@@ -107,23 +119,66 @@ function loadModelRequest(
 /**
  * Spawns engine subprocess.
  */
-function runEngine(): Promise<any> {
+async function runEngine(systemInfo: SystemInformation): Promise<void> {
   debugLog(`Spawning engine subprocess...`)
+  if (systemInfo.gpuSetting == null) {
+    return Promise.reject(
+      'No GPU information found. Please check your GPU setting.'
+    )
+  }
+
+  if (systemInfo.gpuSetting.gpus.length === 0) {
+    return Promise.reject('No GPU found. Please check your GPU setting.')
+  }
+
+  if (systemInfo.osInfo == null) {
+    return Promise.reject(
+      'No OS information found. Please check your OS setting.'
+    )
+  }
+  const platform = systemInfo.osInfo.platform
+  if (platform == null || supportedPlatform().includes(platform) === false) {
+    return Promise.reject(
+      'No OS architecture found. Please check your OS setting.'
+    )
+  }
+
+  const gpu = systemInfo.gpuSetting.gpus[0]
+  if (gpu.name.toLowerCase().includes('nvidia') === false) {
+    return Promise.reject('No Nvidia GPU found. Please check your GPU setting.')
+  }
+  const gpuArch = gpu.arch
+  if (gpuArch == null || supportedGpuArch().includes(gpuArch) === false) {
+    return Promise.reject(
+      `Your GPU: ${gpu.name} is not supported. Only ${supportedGpuArch().join(
+        ', '
+      )} series are supported.`
+    )
+  }
+  const janDataFolderPath = await getJanDataFolderPath()
+  const tensorRtVersion = TENSORRT_VERSION
+  const provider = PROVIDER
 
   return new Promise<void>((resolve, reject) => {
     // Current directory by default
-    let binaryFolder = path.join(__dirname, '..', 'bin')
-    // Binary path
-    const binary = path.join(
-      binaryFolder,
-      process.platform === 'win32' ? 'nitro.exe' : 'nitro'
+
+    const executableFolderPath = path.join(
+      janDataFolderPath,
+      'engines',
+      provider,
+      tensorRtVersion,
+      gpuArch
+    )
+    const nitroExecutablePath = path.join(
+      executableFolderPath,
+      platform === 'win32' ? 'nitro.exe' : 'nitro'
     )
 
     const args: string[] = ['1', ENGINE_HOST, ENGINE_PORT]
     // Execute the binary
-    debugLog(`Spawn nitro at path: ${binary}, and args: ${args}`)
-    subprocess = spawn(binary, args, {
-      cwd: binaryFolder,
+    debugLog(`Spawn nitro at path: ${nitroExecutablePath}, and args: ${args}`)
+    subprocess = spawn(nitroExecutablePath, args, {
+      cwd: executableFolderPath,
       env: {
         ...process.env,
       },
@@ -155,12 +210,7 @@ function debugLog(message: string, level: string = 'Debug') {
   log(`[TENSORRT_LLM_NITRO]::${level}:${message}`)
 }
 
-const binaryFolder = async (): Promise<string> => {
-  return path.join(__dirname, '..', 'bin')
-}
-
-const decompressRunner = async (zipPath: string) => {
-  const output = path.join(__dirname, '..', 'bin')
+const decompressRunner = async (zipPath: string, output: string) => {
   console.debug(`Decompressing ${zipPath} to ${output}...`)
   try {
     const files = await decompress(zipPath, output)
@@ -170,22 +220,11 @@ const decompressRunner = async (zipPath: string) => {
   }
 }
 
-const isNitroExecutableAvailable = async (): Promise<boolean> => {
-  const binary = path.join(
-    __dirname,
-    '..',
-    'bin',
-    process.platform === 'win32' ? 'nitro.exe' : 'nitro'
-  )
-
-  return existsSync(binary)
-}
-
 export default {
-  binaryFolder,
+  supportedPlatform,
+  supportedGpuArch,
   decompressRunner,
   loadModel,
   unloadModel,
   dispose: unloadModel,
-  isNitroExecutableAvailable,
 }
