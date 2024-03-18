@@ -12,7 +12,7 @@ export default function HomepageTerinaryFeatures() {
                             <p className="text-gray-700 dark:text-gray-200">Easily kick off your journey with Jan by installing your AI locally.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/"} className="    dark:text-blue-400">
+                                    <a href={"/guides/quickstart"} className="    dark:text-blue-400">
                                         Quickstart
                                     </a>
                                 </li>
@@ -22,8 +22,8 @@ export default function HomepageTerinaryFeatures() {
                                     </a>
                                 </li>
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/models-list/"} className="dark:text-blue-400">
-                                        Pre-configured Models
+                                    <a href={"/guides/hardware/"} className="dark:text-blue-400">
+                                        Hardware Setup
                                     </a>
                                 </li>
                             </ul>
@@ -32,24 +32,24 @@ export default function HomepageTerinaryFeatures() {
                     <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
                         <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/buku.png"} />
-                            <h5 className="text-gray-700 dark:text-gray-200">Settings</h5>
+                            <h5 className="text-gray-700 dark:text-gray-200">User Guides</h5>
                         </div>
                         <div className="mt-5 justify-center">
-                            <p className="text-gray-700 dark:text-gray-200">Discover how to manage Jan and configure your installed AI.</p>
+                            <p className="text-gray-700 dark:text-gray-200">Explore our comprehensive guide on configuring and using the Jan application.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/thread/"} className="dark:text-blue-400">
-                                        Thread Management
+                                    <a href={"/guides/advanced/"} className="dark:text-blue-400">
+                                        Advanced Settings
                                     </a>
                                 </li>
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/start-server/"} className="dark:text-blue-400">
+                                    <a href={"/guides/local-api/"} className="dark:text-blue-400">
                                         Local Server
                                     </a>
                                 </li>
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/advanced-settings/"} className="dark:text-blue-400">
-                                        Advanced Settings
+                                    <a href={"/guides/threads/"} className="dark:text-blue-400">
+                                        Manage Threads
                                     </a>
                                 </li>
                             </ul>
@@ -58,24 +58,24 @@ export default function HomepageTerinaryFeatures() {
                     <div className="bg-gray-200 dark:bg-gray-800 w-72 rounded-lg relative flex flex-col p-8">
                         <div className="flex items-center gap-4">
                             <img alt={"Icon"} src={"/img/homepage-new/setting.png"} />
-                            <h5 className="text-gray-700 dark:text-gray-200">Features</h5>
+                            <h5 className="text-gray-700 dark:text-gray-200">Inference</h5>
                         </div>
                         <div className="mt-5 justify-center">
-                            <p className="text-gray-700 dark:text-gray-200">Explore key features designed to enhance your experience with Jan.</p>
+                            <p className="text-gray-700 dark:text-gray-200">Learn how to build and integrate Jan with local and remote inference providers.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/models-setup/"} className="dark:text-blue-400">
-                                        Models Setup
+                                    <a href={"/guides/providers/"} className="dark:text-blue-400">
+                                        Overview
                                     </a>
                                 </li>
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/extensions/"} className="dark:text-blue-400">
-                                        Extensions
+                                    <a href={"/guides/providers/local/"} className="dark:text-blue-400">
+                                        Local Providers
                                     </a>
                                 </li>
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/integrations/"} className="dark:text-blue-400">
-                                        Integrations
+                                    <a href={"/guides/providers/remote/"} className="dark:text-blue-400">
+                                        Remote Providers
                                     </a>
                                 </li>
                             </ul>
@@ -87,21 +87,21 @@ export default function HomepageTerinaryFeatures() {
                             <h5 className="text-gray-700 dark:text-gray-200">Troubleshooting</h5>
                         </div>
                         <div className="mt-5 justify-center">
-                            <p className="text-gray-700 dark:text-gray-200">Find solutions to common issues, including error codes, and FAQs.</p>
+                            <p className="text-gray-700 dark:text-gray-200">Find solutions to common issues and including error codes.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/error-codes/"} className="dark:text-blue-400">
-                                        Error Codes
+                                    <a href={"/troubleshooting/#broken-build"} className="dark:text-blue-400">
+                                        Broken Build
                                     </a>
                                 </li>
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/common-error/"} className="dark:text-blue-400">
-                                        Common Errors
+                                    <a href={"/troubleshooting/#somethings-amiss"} className="dark:text-blue-400">
+                                        Something's Amiss
                                     </a>
                                 </li>
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/faqs/"} className="dark:text-blue-400">
-                                        FAQ
+                                    <a href={"/troubleshooting/#unexpected-token"} className="dark:text-blue-400">
+                                        Unexpected Token
                                     </a>
                                 </li>
                             </ul>
