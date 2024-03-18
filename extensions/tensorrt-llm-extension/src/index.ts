@@ -56,7 +56,6 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     return []
   }
 
-
   override async install(): Promise<void> {
     await this.removePopulatedModels()
 
@@ -149,7 +148,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     console.debug(`removePopulatedModels`, JSON.stringify(models))
     const janDataFolderPath = await getJanDataFolderPath()
     const modelFolderPath = await joinPath([janDataFolderPath, 'models'])
-  
+
     for (const model of models) {
       const modelPath = await joinPath([modelFolderPath, model.id])
       console.debug(`modelPath: ${modelPath}`)
