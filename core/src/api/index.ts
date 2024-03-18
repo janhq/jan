@@ -96,6 +96,7 @@ export enum FileManagerRoute {
   fileStat = 'fileStat',
   writeBlob = 'writeBlob',
   mkdir = 'mkdir',
+  rm = 'rm',
 }
 
 export type ApiFunction = (...args: any[]) => any

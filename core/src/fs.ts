@@ -45,6 +45,9 @@ const mkdir = (...args: any[]) => global.core.api?.mkdir(...args)
  */
 const rmdirSync = (...args: any[]) =>
   global.core.api?.rmdirSync(...args, { recursive: true, force: true })
+
+const rm = (path: string) => global.core.api?.rm(path)
+
 /**
  * Deletes a file from the local file system.
  * @param {string} path - The path of the file to delete.
@@ -96,6 +99,7 @@ export const fs = {
   mkdirSync,
   mkdir,
   rmdirSync,
+  rm,
   unlinkSync,
   appendFileSync,
   copyFileSync,

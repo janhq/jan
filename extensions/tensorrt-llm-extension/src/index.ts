@@ -92,8 +92,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   }
 
   override async install(): Promise<void> {
-    // TODO: James - Delete relevant models
-    // TODO: James - Delete older engines versions (or just wipe them out?)
+    await this.removePopulatedModels()
 
     const info = await systemInformation()
     console.debug(
@@ -178,6 +177,20 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       })
     }
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+  }
+
+  async removePopulatedModels(): Promise<void> {
+    const models = await this.models()
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelFolderPath = await joinPath([janDataFolderPath, 'models'])
+
+    for (const model of models) {
+      const modelPath = await joinPath([modelFolderPath, model.id])
+      if (await fs.existsSync(modelPath)) {
+        console.debug(`Removing model ${modelPath}`)
+        await fs.rm(modelPath)
+      }
+    }
   }
 
   async onModelInit(model: Model): Promise<void> {
