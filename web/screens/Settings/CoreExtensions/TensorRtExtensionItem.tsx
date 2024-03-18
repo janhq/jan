@@ -71,7 +71,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
         return
       }
 
-      const supportedGpuArch = ['turing', 'ampere', 'ada']
+      const supportedGpuArch = ['ampere', 'ada']
       setIsGpuSupported(supportedGpuArch.includes(arch))
     }
     getSystemInfos()

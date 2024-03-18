@@ -10,7 +10,7 @@ import { SystemInformation } from '@janhq/core'
 const fetchRetry = fetchRT(fetch)
 
 const supportedPlatform = (): string[] => ['win32', 'linux']
-const supportedGpuArch = (): string[] => ['turing', 'ampere', 'ada']
+const supportedGpuArch = (): string[] => ['ampere', 'ada']
 
 /**
  * The response object for model init operation.
