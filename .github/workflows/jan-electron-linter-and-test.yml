@@ -22,6 +22,7 @@ on:
     branches:
       - main
       - dev
+      - release/**
     paths:
       - "electron/**"
       - .github/workflows/jan-electron-linter-and-test.yml
