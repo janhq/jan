@@ -1,4 +1,24 @@
+---
+title: Jan version release template
+---
+
+<head>
+  <title>Release Version QA Script template</title>
+  <meta charset="utf-8" />
+  <meta name="description" content="Quality Assurance script for testing the release version template of Jan. This script covers installation, update, uninstallation, overview, thread functionalities, Hub features, system monitor, settings, and local API server usage." />
+  <meta name="keywords" content="QA script, release version,template, Jan, installation, update, uninstallation, overview, thread, Hub, system monitor, settings, local API server" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/qa-scripts/release-template" />
+  <meta property="og:title" content="Release Version QA Script - template" />
+  <meta property="og:description" content="Quality Assurance script for testing the release version template of Jan. This script covers installation, update, uninstallation, overview, thread functionalities, Hub features, system monitor, settings, and local API server usage." />
+  <meta property="og:url" content="https://jan.ai/qa-scripts/release-template" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image-qa-script.png" />
+</head>
+
 # Regression test
+
+# [Release Version] QA Script
 
 **Release Version:** v0.4.7
 
@@ -25,7 +45,6 @@
 - [ ] :key: Ensure that after closing the app, all models are unloaded.
 - [ ] :key::warning: Check that the uninstallation process removes the app successfully from the system.
 - [ ] Clean the Jan root directory and open the app to check if it creates all the necessary folders, especially models and extensions.
-
 
 ## B. Overview
 
@@ -71,10 +90,18 @@
 - [ ] :key: Ensure that users switch between threads with different models, the app can handle it.
 
 ### 3. Model dropdown
+
 - [ ] :key: Model list should highlight recommended based on user RAM
 - [ ] Model size should display (for both installed and imported models)
 
 ### 4. Users can click on a history thread
+
+# <<<<<<< HEAD
+
+- [ ] Test the ability to click on any thread in the history panel.
+- [ ] :key: Verify that clicking a thread brings up the past conversation in the main chat window.
+- [ ] :key: Ensure that the selected thread is highlighted or otherwise indicated in the history panel.
+  > > > > > > > f2847d56c (feat: Add SEO header tag with OpenAI GPT-4)
 - [ ] Confirm that the chat window displays the entire conversation from the selected history thread without any missing messages.
 - [ ] :key: Check the performance and accuracy of the history feature when dealing with a large number of threads.
 - [ ] Validate that historical threads reflect the exact state of the chat at that time, including settings.
@@ -82,11 +109,15 @@
 - [ ] Confirm that changing the title of the thread updates correctly.
 
 ### 5. Users can config instructions for the assistant.
+
+# <<<<<<< HEAD
+
+- [ ] Ensure there is a clear interface to input or change instructions for the assistant.
+  > > > > > > > f2847d56c (feat: Add SEO header tag with OpenAI GPT-4)
 - [ ] Test if the instructions set by the user are being followed by the assistant in subsequent conversations.
 - [ ] :key: Validate that changes to instructions are updated in real time and do not require a restart of the application or session.
 - [ ] :key: Check for the ability to reset instructions to default or clear them completely.
 - [ ] :key: RAG - Users can import documents and the system should process queries about the uploaded file, providing accurate and appropriate responses in the conversation thread.
-
 
 ## D. Hub
 
@@ -117,13 +148,14 @@
 
 ### 5. Users can use the model as they want
 
-- [ ] :key: Check `start` / `stop` / `delete`  button response exactly what it does.
+- [ ] :key: Check `start` / `stop` / `delete` button response exactly what it does.
 - [ ] Check if starting another model stops the other model entirely.
 - [x] :rocket: Check the `Explore models` navigate correctly to the model panel.
 - [ ] :key: Check when deleting a model it will delete all the files on the user's computer.
 - [ ] :warning:The recommended tags should present right for the user's hardware.
 
 ### 6. Users can Integrate With a Remote Server
+
 - [ ] :key: Import openAI GPT model https://jan.ai/guides/using-models/integrate-with-remote-server/ and the model displayed in Hub / Thread dropdown
 - [ ] Users can use the remote model properly
 
@@ -175,6 +207,27 @@
 
 - [ ] :key: Test the `Experimental Mode` toggle to confirm it enables or disables experimental features as intended.
 - [ ] :key: Check the functionality of `Open App Directory` to ensure it opens the correct folder in the system file explorer.
+      <<<<<<< HEAD
+      =======
+- [ ] Validate that changes in advanced settings are applied immediately or provide appropriate instructions if a restart is needed.
+- [ ] Test the application's stability when experimental features are enabled.
+
+### 4. Users can add custom plugins via manual installation [TBU]
+
+- [ ] Verify that the `Manual Installation` option is clearly visible and accessible in the `Extensions` section.
+- [ ] Test the functionality of the `Select` button within the `Manual Installation` area.
+- [ ] :warning: Check that the file picker dialog allows for the correct plugin file types (e.g., .tgz).
+- [ ] :key: Validate that the selected plugin file installs correctly and the plugin becomes functional.
+- [ ] Ensure that there is a progress indicator or confirmation message once the installation is complete.
+- [ ] Confirm that if the installation is interrupted or fails, the user is given a clear error message.
+- [ ] :key: Test that the application prevents the installation of incompatible or corrupt plugin files.
+- [ ] :key: Check that the user can uninstall or disable custom plugins as easily as pre-installed ones.
+- [ ] Verify that the application's performance remains stable after the installation of custom plugins.
+
+### 5. Advanced Settings
+
+- [ ] Attemp to test downloading model from hub using **HTTP Proxy** [guideline](https://github.com/janhq/jan/pull/1562)
+  > > > > > > > f2847d56c (feat: Add SEO header tag with OpenAI GPT-4)
 - [ ] Users can move **Jan data folder**
 - [ ] Validate that changes in advanced settings are applied immediately or provide appropriate instructions if a restart is needed.
 - [ ] Attemp to test downloading model from hub using **HTTP Proxy** [guideline](https://github.com/janhq/jan/pull/1562)
@@ -184,9 +237,10 @@
 ## G. Local API server
 
 ### 1. Local Server Usage with Server Options
+
 - [ ] :key: Explore API Reference: Swagger API for sending/receiving requests
-    - [ ] Use default server option
-    - [ ] Configure and use custom server options
+  - [ ] Use default server option
+  - [ ] Configure and use custom server options
 - [ ] Test starting/stopping the local API server with different Model/Model settings
 - [ ] Server logs captured with correct Server Options provided
 - [ ] Verify functionality of Open logs/Clear feature

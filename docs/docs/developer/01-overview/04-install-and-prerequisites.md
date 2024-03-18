@@ -18,6 +18,20 @@ keywords:
   ]
 ---
 
+<head>
+  <title>Jan AI Installation and Setup Guide - Developer Prerequisites</title>
+  <meta charSet="utf-8" />
+  <meta name="description" content="Comprehensive guide to installing and setting up Jan for development. Covers hardware, system requirements, and step-by-step instructions for developers." />
+  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, installation, prerequisites, developer setup" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/developer/prereq/" />
+  <meta property="og:title" content="Jan AI Installation and Setup Guide - Developer Prerequisites" />
+  <meta property="og:description" content="Comprehensive guide to installing and setting up Jan for development. Covers hardware, system requirements, and step-by-step instructions for developers." />
+  <meta property="og:url" content="https://jan.ai/developer/prereq/" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
+</head>
+
 ## Requirements
 
 ### Hardware Requirements
