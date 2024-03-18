@@ -181,8 +181,7 @@ const updateNvidiaDriverInfo = async () =>
 const getGpuArch = (gpuName: string): string => {
   if (!gpuName.toLowerCase().includes('nvidia')) return 'unknown'
 
-  if (gpuName.includes('20')) return 'turing'
-  else if (gpuName.includes('30')) return 'ampere'
+  if (gpuName.includes('30')) return 'ampere'
   else if (gpuName.includes('40')) return 'ada'
   else return 'unknown'
 }

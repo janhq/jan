@@ -39,7 +39,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   override inferenceUrl = INFERENCE_URL
   override nodeModule = NODE
 
-  private supportedGpuArch = ['turing', 'ampere', 'ada']
+  private supportedGpuArch = ['ampere', 'ada']
   private supportedPlatform = ['win32', 'linux']
   private isUpdateAvailable = false
 
