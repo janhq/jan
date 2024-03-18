@@ -36,6 +36,23 @@ export default function Download() {
                 }}
               />
             </div>
+
+            <div className="mb-14">
+              <a
+                href="https://jan.ai/guides/install/"
+                target="_blank"
+                className="text-blue-500 hover:text-blue-500 pr-4 border-r border-black/40 dark:border-white/40 mr-4 inline-block"
+              >
+                Installation Guide
+              </a>
+              <a
+                href="https://jan.ai/changelog/"
+                target="_blank"
+                className="text-blue-500 hover:text-blue-500"
+              >
+                Changelog
+              </a>
+            </div>
             <DownloadApp />
           </div>
         </main>
