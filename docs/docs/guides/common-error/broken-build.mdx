@@ -67,7 +67,11 @@ This guide provides you steps to troubleshoot and to resolve the issue where you
         ### 2. Delete Application Data, Cache, and User Data
 
         ```sh
-        # You can delete the `/Jan` directory in Windows's AppData Directory by visiting the following path `%APPDATA%\Jan`
+        # Delete your own user data
+        cd ~ # Or where you moved the Jan Data Folder to
+        rm -r ./jan
+
+        # Delete Application Cache
         cd C:\Users\YOUR_USERNAME\AppData\Roaming
         rm -r ./Jan
         ```
