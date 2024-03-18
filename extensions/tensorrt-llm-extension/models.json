@@ -100,5 +100,56 @@
       "size": 2151000000
     },
     "engine": "nitro-tensorrt-llm"
+  },
+  {
+    "sources": [
+      {
+        "filename": "config.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/Mistral-7B-Instruct-v0.1-int4/config.json"
+      },
+      {
+        "filename": "rank0.engine",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/Mistral-7B-Instruct-v0.1-int4/mistral_float16_tp1_rank0.engine"
+      },
+      {
+        "filename": "tokenizer.model",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/Mistral-7B-Instruct-v0.1-int4/tokenizer.model"
+      },
+      {
+        "filename": "special_tokens_map.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/Mistral-7B-Instruct-v0.1-int4/special_tokens_map.json"
+      },
+      {
+        "filename": "tokenizer.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/Mistral-7B-Instruct-v0.1-int4/tokenizer.json"
+      },
+      {
+        "filename": "tokenizer_config.json",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/Mistral-7B-Instruct-v0.1-int4/tokenizer_config.json"
+      },
+      {
+        "filename": "model.cache",
+        "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/Mistral-7B-Instruct-v0.1-int4/model.cache"
+      }
+    ],
+    "id": "mistral-7b-instruct-int4",
+    "object": "model",
+    "name": "Mistral 7B Instruct v0.1 int4",
+    "version": "1.0",
+    "description": "Mistral 7B Instruct v0.1 int4",
+    "format": "TensorRT-LLM",
+    "settings": {
+      "ctx_len": 2048,
+      "text_model": false
+    },
+    "parameters": {
+      "max_tokens": 4096
+    },
+    "metadata": {
+      "author": "LLama",
+      "tags": ["TensorRT-LLM", "1B", "Finetuned"],
+      "size": 2151000000
+    },
+    "engine": "nitro-tensorrt-llm"
   }
 ]
