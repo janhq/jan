@@ -41,6 +41,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
 
   private supportedGpuArch = ['turing', 'ampere', 'ada']
   private supportedPlatform = ['win32', 'linux']
+  private isUpdateAvailable = false
 
   compatibility() {
     return COMPATIBILITY as unknown as Compatibility
@@ -55,7 +56,45 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     return []
   }
 
+  async onLoad() {
+    super.onLoad()
+
+    const janDataFolderPath = await getJanDataFolderPath()
+    const engineVersion = TENSORRT_VERSION
+
+    const engineFolderPath = await joinPath([
+      janDataFolderPath,
+      'engines',
+      this.provider,
+    ])
+
+    const enginePath = await joinPath([engineFolderPath, engineVersion])
+
+    // Check only when the same engine version is not installed
+    // And there are engines exist
+    if (
+      !(await fs.existsSync(enginePath)) &&
+      (await fs.existsSync(engineFolderPath))
+    ) {
+      const availableVersions = await fs.readdirSync(enginePath)
+
+      if (!availableVersions?.length) return
+
+      for (const file in availableVersions) {
+        if (
+          (await fs.fileStat(await joinPath([engineFolderPath, file])))
+            ?.isDirectory
+        ) {
+          this.isUpdateAvailable = true
+        }
+      }
+    }
+  }
+
   override async install(): Promise<void> {
+    // TODO: James - Delete relevant models
+    // TODO: James - Delete older engines versions (or just wipe them out?)
+
     const info = await systemInformation()
     console.debug(
       `TensorRTLLMExtension installing pre-requisites... ${JSON.stringify(info)}`
@@ -154,6 +193,10 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
         },
       })
     }
+  }
+
+  updatable() {
+    return this.isUpdateAvailable
   }
 
   override async installationState(): Promise<InstallationState> {
