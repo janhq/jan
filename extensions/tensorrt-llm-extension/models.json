@@ -6,7 +6,7 @@
         "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/LlamaCorn-1.1B-Chat-fp16/config.json"
       },
       {
-        "filename": "rank0.engine",
+        "filename": "mistral_float16_tp1_rank0.engine",
         "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/LlamaCorn-1.1B-Chat-fp16/mistral_float16_tp1_rank0.engine"
       },
       {
@@ -57,7 +57,7 @@
         "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/TinyJensen-1.1B-Chat-fp16/config.json"
       },
       {
-        "filename": "rank0.engine",
+        "filename": "mistral_float16_tp1_rank0.engine",
         "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/TinyJensen-1.1B-Chat-fp16/mistral_float16_tp1_rank0.engine"
       },
       {
@@ -108,7 +108,7 @@
         "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/Mistral-7B-Instruct-v0.1-int4/config.json"
       },
       {
-        "filename": "rank0.engine",
+        "filename": "mistral_float16_tp1_rank0.engine",
         "url": "https://delta.jan.ai/dist/models/<gpuarch>/<os>/tensorrt-llm-v0.7.1/Mistral-7B-Instruct-v0.1-int4/mistral_float16_tp1_rank0.engine"
       },
       {
