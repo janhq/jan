@@ -56,6 +56,41 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     return []
   }
 
+  async onLoad() {
+    super.onLoad()
+
+    const janDataFolderPath = await getJanDataFolderPath()
+    const engineVersion = TENSORRT_VERSION
+
+    const engineFolderPath = await joinPath([
+      janDataFolderPath,
+      'engines',
+      this.provider,
+    ])
+
+    const enginePath = await joinPath([engineFolderPath, engineVersion])
+
+    // Check only when the same engine version is not installed
+    // And there are engines exist
+    if (
+      !(await fs.existsSync(enginePath)) &&
+      (await fs.existsSync(engineFolderPath))
+    ) {
+      const availableVersions = await fs.readdirSync(enginePath)
+
+      if (!availableVersions?.length) return
+
+      for (const file in availableVersions) {
+        if (
+          (await fs.fileStat(await joinPath([engineFolderPath, file])))
+            ?.isDirectory
+        ) {
+          this.isUpdateAvailable = true
+        }
+      }
+    }
+  }
+
   override async install(): Promise<void> {
     await this.removePopulatedModels()
 
