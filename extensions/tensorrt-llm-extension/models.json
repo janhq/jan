@@ -38,16 +38,15 @@
     "format": "TensorRT-LLM",
     "settings": {
       "ctx_len": 2048,
-      "text_model": false,
-      "prompt_template": "[INST] {prompt} [/INST]"
+      "text_model": false
     },
     "parameters": {
       "max_tokens": 4096
     },
     "metadata": {
-      "author": "MistralAI",
+      "author": "LLama",
       "tags": ["TensorRT-LLM", "1B", "Finetuned"],
-      "size": 3840000000
+      "size": 2151000000
     },
     "engine": "nitro-tensorrt-llm"
   },
@@ -141,15 +140,16 @@
     "format": "TensorRT-LLM",
     "settings": {
       "ctx_len": 2048,
-      "text_model": false
+      "text_model": false,
+      "prompt_template": "[INST] {prompt} [/INST]"
     },
     "parameters": {
       "max_tokens": 4096
     },
     "metadata": {
-      "author": "LLama",
-      "tags": ["TensorRT-LLM", "1B", "Finetuned"],
-      "size": 2151000000
+      "author": "MistralAI",
+      "tags": ["TensorRT-LLM", "7B", "Finetuned"],
+      "size": 3840000000
     },
     "engine": "nitro-tensorrt-llm"
   }
