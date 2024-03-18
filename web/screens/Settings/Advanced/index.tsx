@@ -124,6 +124,11 @@ const Advanced = () => {
     if (isRelaunch) window.core?.api?.relaunch()
   }
 
+  const updateExperimentalEnabled = async (e: boolean) => {
+    setExperimentalEnabled(e)
+    if (!e && quickAskEnabled) updateQuickAskEnabled(false)
+  }
+
   useEffect(() => {
     const setUseGpuIfPossible = async () => {
       const settings = await readSettings()
