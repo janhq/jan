@@ -119,7 +119,7 @@ const config = {
           },
           {
             from: '/integrations/tensorrt',
-            to: '/guides/providers/tensorrt-llm'
+            to: '/guides/providers/tensorrt-llm',
           },
         ],
       },
@@ -406,11 +406,6 @@ const config = {
       disableSwitch: false,
       respectPrefersColorScheme: false,
     },
-  },
-
-  // Put your custom environment here
-  customFields: {
-    apiKeyBrevo: process.env.API_KEY_BREVO,
   },
 
   themes: ['@docusaurus/theme-live-codeblock', '@docusaurus/theme-mermaid'],
