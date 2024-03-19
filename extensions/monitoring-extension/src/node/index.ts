@@ -1,9 +1,16 @@
-import { GpuSetting, GpuSettingInfo, ResourceInfo } from '@janhq/core'
+import {
+  GpuSetting,
+  GpuSettingInfo,
+  OperatingSystemInfo,
+  ResourceInfo,
+  SupportedPlatforms,
+} from '@janhq/core'
 import { getJanDataFolderPath, log } from '@janhq/core/node'
 import { mem, cpu } from 'node-os-utils'
 import { exec } from 'child_process'
 import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs'
 import path from 'path'
+import os from 'os'
 
 /**
  * Path to the settings directory
@@ -174,8 +181,7 @@ const updateNvidiaDriverInfo = async () =>
 const getGpuArch = (gpuName: string): string => {
   if (!gpuName.toLowerCase().includes('nvidia')) return 'unknown'
 
-  if (gpuName.includes('20')) return 'turing'
-  else if (gpuName.includes('30')) return 'ampere'
+  if (gpuName.includes('30')) return 'ampere'
   else if (gpuName.includes('40')) return 'ada'
   else return 'unknown'
 }
@@ -319,4 +325,21 @@ const updateCudaExistence = (
 
   data.is_initial = false
   return data
+}
+
+export const getOsInfo = (): OperatingSystemInfo => {
+  const platform =
+    SupportedPlatforms.find((p) => p === process.platform) || 'unknown'
+
+  const osInfo: OperatingSystemInfo = {
+    platform: platform,
+    arch: process.arch,
+    release: os.release(),
+    machine: os.machine(),
+    version: os.version(),
+    totalMem: os.totalmem(),
+    freeMem: os.freemem(),
+  }
+
+  return osInfo
 }

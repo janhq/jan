@@ -1,4 +1,4 @@
-import { DownloadRequest, FileStat, NetworkConfig } from './types'
+import { DownloadRequest, FileStat, NetworkConfig, SystemInformation } from './types'
 
 /**
  * Execute a extension module function in main process
@@ -110,7 +110,8 @@ const isSubdirectory: (from: string, to: string) => Promise<boolean> = (from: st
  * Get system information
  * @returns {Promise<any>} - A promise that resolves with the system information.
  */
-const systemInformations: () => Promise<any> = () => global.core.api?.systemInformations()
+const systemInformation: () => Promise<SystemInformation> = () =>
+  global.core.api?.systemInformation()
 
 /**
  * Show toast message from browser processes.
@@ -146,7 +147,7 @@ export {
   log,
   isSubdirectory,
   getUserHomePath,
-  systemInformations,
+  systemInformation,
   showToast,
   FileStat,
 }

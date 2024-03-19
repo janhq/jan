@@ -102,7 +102,6 @@ export default function useSendChatMessage() {
       console.error('No active thread')
       return
     }
-    setIsGeneratingResponse(true)
     updateThreadWaiting(activeThreadRef.current.id, true)
     const messages: ChatCompletionMessage[] = [
       activeThreadRef.current.assistants[0]?.instructions,
@@ -148,7 +147,7 @@ export default function useSendChatMessage() {
       await waitForModelStarting(modelId)
       setQueuedMessage(false)
     }
-
+    setIsGeneratingResponse(true)
     if (currentMessage.role !== ChatCompletionRole.User) {
       // Delete last response before regenerating
       deleteMessage(currentMessage.id ?? '')
@@ -171,7 +170,6 @@ export default function useSendChatMessage() {
       console.error('No active thread')
       return
     }
-    setIsGeneratingResponse(true)
 
     if (engineParamsUpdate) setReloadModel(true)
 
@@ -361,7 +359,7 @@ export default function useSendChatMessage() {
       await waitForModelStarting(modelId)
       setQueuedMessage(false)
     }
-
+    setIsGeneratingResponse(true)
     events.emit(MessageEvent.OnMessageSent, messageRequest)
 
     setReloadModel(false)

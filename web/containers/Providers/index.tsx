@@ -1,6 +1,6 @@
 'use client'
 
-import { PropsWithChildren, useEffect, useState } from 'react'
+import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 
 import { Toaster } from 'react-hot-toast'
 
@@ -37,7 +37,7 @@ const Providers = (props: PropsWithChildren) => {
   const [activated, setActivated] = useState(false)
   const [settingUp, setSettingUp] = useState(false)
 
-  async function setupExtensions() {
+  const setupExtensions = useCallback(async () => {
     // Register all active extensions
     await extensionManager.registerActive()
 
@@ -57,7 +57,7 @@ const Providers = (props: PropsWithChildren) => {
       setSettingUp(false)
       setActivated(true)
     }, 500)
-  }
+  }, [pathname])
 
   // Services Setup
   useEffect(() => {
@@ -78,7 +78,7 @@ const Providers = (props: PropsWithChildren) => {
         setActivated(true)
       }
     }
-  }, [setupCore])
+  }, [setupCore, setupExtensions])
 
   return (
     <JotaiWrapper>

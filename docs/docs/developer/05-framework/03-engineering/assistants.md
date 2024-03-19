@@ -1,5 +1,5 @@
 ---
-title: "Assistants"
+title: 'Assistants'
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
 keywords:
   [
@@ -13,6 +13,19 @@ keywords:
     large language model,
   ]
 ---
+
+<head>
+  <title>Assistants</title>
+  <meta charset="utf-8" />
+  <meta name="description" content="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server." />
+  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/assistants" />
+  <meta property="og:title" content="Assistants" />
+  <meta property="og:description" content="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server." />
+  <meta property="og:url" content="https://jan.ai/assistants" />
+  <meta property="og:type" content="article" />
+</head>
 
 :::caution
 

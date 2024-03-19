@@ -2,6 +2,20 @@
 title: Recommended AI Hardware by Use Case
 ---
 
+<head>
+  <title>Recommended AI Hardware by Model</title>
+  <meta charset="utf-8" />
+  <meta name="description" content="Explore hardware requirements for running Codellama 34b models effectively. Find system, RAM, and VRAM requirements along with GPU recommendations tailored for optimal performance or budget-friendly setups." />
+  <meta name="keywords" content="AI hardware, Codellama 34b, system requirements, RAM requirements, VRAM requirements, GPU recommendations, optimal performance, budget-friendly setup" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/guides/recommended-ai-hardware-by-model" />
+  <meta property="og:title" content="Recommended AI Hardware by Model" />
+  <meta property="og:description" content="Explore hardware requirements for running Codellama 34b models effectively. Find system, RAM, and VRAM requirements along with GPU recommendations tailored for optimal performance or budget-friendly setups." />
+  <meta property="og:url" content="https://jan.ai/guides/recommended-ai-hardware-by-model" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image-ai-hardware-model.png" />
+</head>
+
 ## Which AI Hardware to Choose Based on Your Use Case
 
 Artificial intelligence (AI) is rapidly changing the world, and AI hardware is becoming increasingly important for businesses and individuals alike. Choosing the right hardware for your AI needs is crucial to get the best performance and results. Here are some tips for selecting AI hardware based on your specific use case and requirements.

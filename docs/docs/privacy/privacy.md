@@ -1,3 +1,21 @@
+---
+title: Privacy - Jan
+---
+
+<head>
+  <title>Privacy Policy - Jan</title>
+  <meta charset="utf-8" />
+  <meta name="description" content="Learn about Jan's commitment to privacy and how your personal information is handled when using our mobile application. Understand our data collection, sharing, and security measures." />
+  <meta name="keywords" content="Jan AI, Jan, privacy policy, data collection, data usage, data sharing, data security, user choices, contact us" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/privacy-policy" />
+  <meta property="og:title" content="Privacy Policy - Jan" />
+  <meta property="og:description" content="Learn about Jan's commitment to privacy and how your personal information is handled when using our mobile application. Understand our data collection, sharing, and security measures." />
+  <meta property="og:url" content="https://jan.ai/privacy-policy" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image-privacy-policy.png" />
+</head>
+
 # Privacy Policy
 
 Jan is committed to protecting your privacy and ensuring that your personal information is handled in a safe and responsible way. This policy outlines how we collect, store, and use your personal information when you use our mobile application.
