@@ -101,7 +101,7 @@ export class FSExt implements Processor {
     })
   }
 
-  rmdir(path: string): Promise<void> {
+  rm(path: string): Promise<void> {
     return new Promise((resolve, reject) => {
       fs.rm(path, { recursive: true }, (err) => {
         if (err) {
