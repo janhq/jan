@@ -64,7 +64,7 @@
           "content_type": "application/octet-stream",
           "state": "uploaded",
           "size": 118201794,
-          "download_count": 89,
+          "download_count": 94,
           "created_at": "2024-03-19T04:08:03Z",
           "updated_at": "2024-03-19T04:08:06Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/jan-linux-amd64-0.4.9.deb"
@@ -98,7 +98,7 @@
           "content_type": "application/octet-stream",
           "state": "uploaded",
           "size": 156697166,
-          "download_count": 91,
+          "download_count": 98,
           "created_at": "2024-03-19T04:06:51Z",
           "updated_at": "2024-03-19T04:06:55Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/jan-linux-x86_64-0.4.9.AppImage"
@@ -132,7 +132,7 @@
           "content_type": "application/octet-stream",
           "state": "uploaded",
           "size": 132665337,
-          "download_count": 133,
+          "download_count": 135,
           "created_at": "2024-03-19T04:10:15Z",
           "updated_at": "2024-03-19T04:10:26Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/jan-mac-arm64-0.4.9.dmg"
@@ -200,7 +200,7 @@
           "content_type": "application/zip",
           "state": "uploaded",
           "size": 128089843,
-          "download_count": 212,
+          "download_count": 222,
           "created_at": "2024-03-19T04:10:32Z",
           "updated_at": "2024-03-19T04:10:46Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/jan-mac-arm64-0.4.9.zip"
@@ -268,7 +268,7 @@
           "content_type": "application/octet-stream",
           "state": "uploaded",
           "size": 139245048,
-          "download_count": 36,
+          "download_count": 39,
           "created_at": "2024-03-19T04:17:33Z",
           "updated_at": "2024-03-19T04:17:37Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/jan-mac-x64-0.4.9.dmg"
@@ -336,7 +336,7 @@
           "content_type": "application/zip",
           "state": "uploaded",
           "size": 134752189,
-          "download_count": 38,
+          "download_count": 40,
           "created_at": "2024-03-19T04:17:52Z",
           "updated_at": "2024-03-19T04:17:56Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/jan-mac-x64-0.4.9.zip"
@@ -404,7 +404,7 @@
           "content_type": "application/octet-stream",
           "state": "uploaded",
           "size": 129440528,
-          "download_count": 1044,
+          "download_count": 1078,
           "created_at": "2024-03-19T04:18:43Z",
           "updated_at": "2024-03-19T04:18:46Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/jan-win-x64-0.4.9.exe"
@@ -438,7 +438,7 @@
           "content_type": "application/octet-stream",
           "state": "uploaded",
           "size": 136498,
-          "download_count": 556,
+          "download_count": 570,
           "created_at": "2024-03-19T04:18:43Z",
           "updated_at": "2024-03-19T04:18:43Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/jan-win-x64-0.4.9.exe.blockmap"
@@ -472,7 +472,7 @@
           "content_type": "text/yaml",
           "state": "uploaded",
           "size": 540,
-          "download_count": 304,
+          "download_count": 321,
           "created_at": "2024-03-19T04:08:06Z",
           "updated_at": "2024-03-19T04:08:06Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/latest-linux.yml"
@@ -506,7 +506,7 @@
           "content_type": "text/yaml",
           "state": "uploaded",
           "size": 842,
-          "download_count": 712,
+          "download_count": 743,
           "created_at": "2024-03-19T04:18:53Z",
           "updated_at": "2024-03-19T04:18:53Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/latest-mac.yml"
@@ -540,7 +540,7 @@
           "content_type": "text/yaml",
           "state": "uploaded",
           "size": 339,
-          "download_count": 1835,
+          "download_count": 1890,
           "created_at": "2024-03-19T04:18:46Z",
           "updated_at": "2024-03-19T04:18:46Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.9/latest.yml"
@@ -627,7 +627,7 @@
           "content_type": "application/octet-stream",
           "state": "uploaded",
           "size": 110060688,
-          "download_count": 850,
+          "download_count": 852,
           "created_at": "2024-03-11T06:08:19Z",
           "updated_at": "2024-03-11T06:08:21Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.8/jan-linux-amd64-0.4.8.deb"
@@ -1001,7 +1001,7 @@
           "content_type": "application/octet-stream",
           "state": "uploaded",
           "size": 127370,
-          "download_count": 3188,
+          "download_count": 3195,
           "created_at": "2024-03-11T06:15:48Z",
           "updated_at": "2024-03-11T06:15:48Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.8/jan-win-x64-0.4.8.exe.blockmap"
@@ -1564,7 +1564,7 @@
           "content_type": "application/octet-stream",
           "state": "uploaded",
           "size": 116340,
-          "download_count": 6503,
+          "download_count": 6509,
           "created_at": "2024-02-26T02:48:10Z",
           "updated_at": "2024-02-26T02:48:10Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.7/jan-win-x64-0.4.7.exe.blockmap"
@@ -4311,7 +4311,7 @@
           "content_type": "text/xml",
           "state": "uploaded",
           "size": 110511,
-          "download_count": 220,
+          "download_count": 221,
           "created_at": "2023-12-15T14:19:41Z",
           "updated_at": "2023-12-15T14:19:42Z",
           "browser_download_url": "https://github.com/janhq/jan/releases/download/v0.4.2/jan-win-x64-0.4.2.exe.blockmap"
