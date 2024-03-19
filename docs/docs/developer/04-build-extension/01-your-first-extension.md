@@ -28,7 +28,7 @@ keywords:
   <meta property="og:description" content="Step-by-step guide on how to build your first extension for Jan AI. Learn how to use the extension template and integrate your custom functionality into Jan." />
   <meta property="og:url" content="https://jan.ai/developer/build-extension/your-first-extension/" />
   <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
 </head>
 
 :::caution

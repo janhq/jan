@@ -26,7 +26,7 @@ keywords:
   <meta property="og:description" content="Learn how Jan, a ChatGPT alternative, leverages a local filesystem for data persistence, promoting composability and tinkerability similar to VSCode." />
   <meta property="og:url" content="https://jan.ai/developer/file-based/" />
   <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
 </head>
 
 :::warning

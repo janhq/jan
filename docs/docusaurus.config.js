@@ -240,7 +240,7 @@ const config = {
       },
       {
         property: 'og:image',
-        content: 'https://jan.ai/img/og-image.png',
+        content: 'https://jan.ai/img/og-image.svg',
       },
       { property: 'og:type', content: 'website' },
       { property: 'twitter:card', content: 'summary_large_image' },
@@ -255,7 +255,7 @@ const config = {
       },
       {
         property: 'twitter:image',
-        content: 'https://jan.ai/img/og-image.png',
+        content: 'https://jan.ai/img/og-image.svg',
       },
     ],
     headTags: [
