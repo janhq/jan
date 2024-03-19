@@ -29,7 +29,7 @@ keywords:
   <meta property="og:description" content="Comprehensive guide to installing and setting up Jan for development. Covers hardware, system requirements, and step-by-step instructions for developers." />
   <meta property="og:url" content="https://jan.ai/developer/prereq/" />
   <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
 </head>
 
 ## Requirements

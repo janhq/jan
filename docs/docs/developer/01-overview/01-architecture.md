@@ -26,7 +26,7 @@ keywords:
   <meta property="og:description" content="Discover the modular architecture of Jan, a ChatGPT alternative that runs on your own computer. Learn about Jan's local API server, Desktop UI, and the Nitro inference engine." />
   <meta property="og:url" content="https://jan.ai/developer/architecture/" />
   <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
 </head>
 
 :::warning
