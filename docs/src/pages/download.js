@@ -25,16 +25,8 @@ export default function Download() {
             <p className="text-2xl -mt-1 leading-relaxed text-black/60 dark:text-white/60">
               Turn your computer into an AI machine
             </p>
-
-            <div className="my-16">
-              <ThemedImage
-                className="w-28 mx-auto h-auto"
-                alt="App screenshots"
-                sources={{
-                  light: useBaseUrl('/img/homepage/mac-system-black.svg'),
-                  dark: useBaseUrl('/img/homepage/mac-system-white.svg'),
-                }}
-              />
+            <div className="my-8">
+              <DownloadApp />
             </div>
 
             <div className="mb-14">
@@ -53,7 +45,6 @@ export default function Download() {
                 Changelog
               </a>
             </div>
-            <DownloadApp />
           </div>
         </main>
       </Layout>

@@ -133,36 +133,28 @@ export default function DownloadApp() {
   }
 
   return (
-    <div>
-      <div className="flex flex-col items-center justify-center gap-4 mb-4">
-        <h6 className="text-2xl font-medium">Detailed platforms</h6>
-        <p className="leading-relaxed text-black/60 dark:text-white/60">
-          Jan is in the process of being built. Expect bugs!
-        </p>
-      </div>
-      <div className="w-full lg:w-3/5 mx-auto px-4">
-        <div className="grid grid-cols-1 lg:grid-cols-3 py-10 gap-8">
-          {groupTemnplate.map((item, i) => {
-            return (
-              <div
-                className="border border-[#F0F0F0] dark:border-gray-800 rounded-xl text-center"
-                key={i}
-              >
-                <div className="text-center">
-                  <div className="flex gap-2 p-4 border-b border-[#F0F0F0] dark:border-gray-800 items-center justify-center">
-                    <div className="text-2xl">
-                      <item.logo />
-                    </div>
-                    <h6>{item.label}</h6>
+    <div className="w-full lg:w-3/5 mx-auto px-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 py-10 gap-8">
+        {groupTemnplate.map((item, i) => {
+          return (
+            <div
+              className="border border-[#F0F0F0] dark:border-gray-800 rounded-xl text-center"
+              key={i}
+            >
+              <div className="text-center">
+                <div className="flex gap-2 p-4 border-b border-[#F0F0F0] dark:border-gray-800 items-center justify-center">
+                  <div className="text-2xl">
+                    <item.logo />
                   </div>
-                  <div className="mx-auto text-center py-2">
-                    {renderDownloadLink(item.name)}
-                  </div>
+                  <h6>{item.label}</h6>
+                </div>
+                <div className="mx-auto text-center py-2">
+                  {renderDownloadLink(item.name)}
                 </div>
               </div>
-            )
-          })}
-        </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
