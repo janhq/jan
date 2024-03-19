@@ -119,7 +119,7 @@ const config = {
           },
           {
             from: '/integrations/tensorrt',
-            to: '/guides/providers/tensorrt-llm'
+            to: '/guides/providers/tensorrt-llm',
           },
         ],
       },

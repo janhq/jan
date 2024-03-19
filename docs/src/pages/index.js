@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import DownloadApp from '@site/src/containers/DownloadApp'
+import React, { useState } from 'react'
+
 import { useForm } from 'react-hook-form'
 
 import useBaseUrl from '@docusaurus/useBaseUrl'
@@ -86,6 +86,7 @@ export default function Home() {
   const isBrowser = useIsBrowser()
   const { stargazers } = useAppStars()
   const { data } = useDiscordWidget()
+  const [formMessage, setFormMessage] = useState('')
 
   const userAgent = isBrowser && navigator.userAgent
   const isBrowserChrome = isBrowser && userAgent.includes('Chrome')
@@ -121,8 +122,14 @@ export default function Home() {
         .then((response) => response.json())
         .then((response) => {
           if (response.id) {
-            reset()
+            setFormMessage('You have successfully joined our newsletter')
+          } else {
+            setFormMessage(response.message)
           }
+          reset()
+          setTimeout(() => {
+            setFormMessage('')
+          }, 5000)
         })
         .catch((err) => console.error(err))
     }
@@ -748,6 +755,9 @@ export default function Home() {
                         Subscribe
                       </button>
                     </form>
+                    {formMessage && (
+                      <p className="text-left mt-4">{formMessage}</p>
+                    )}
                   </div>
                 </div>
               </div>
