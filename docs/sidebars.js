@@ -226,7 +226,7 @@ const sidebars = {
         "guides/inference/overview-inference",
         {
           type: "category",
-          label: "Local Providers",
+          label: "Local Engines",
           className: "head_SubMenu",
           link: {
             type: 'doc',
@@ -241,7 +241,7 @@ const sidebars = {
         },
         {
           type: "category",
-          label: "Remote Providers",
+          label: "Remote Engines",
           className: "head_SubMenu",
           link: {
             type: 'doc',
