@@ -18,6 +18,8 @@
       "0.1.0"
     ]
   },
+  "tensorrtVersion": "0.1.8",
+  "provider": "nitro-tensorrt-llm",
   "scripts": {
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
     "build:publish:win32": "rimraf *.tgz --glob && npm run build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",

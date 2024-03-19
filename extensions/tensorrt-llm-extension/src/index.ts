@@ -16,11 +16,12 @@ import {
   executeOnMain,
   joinPath,
   showToast,
-  systemInformations,
+  systemInformation,
   LocalOAIEngine,
   fs,
   MessageRequest,
   ModelEvent,
+  getJanDataFolderPath,
 } from '@janhq/core'
 import models from '../models.json'
 
@@ -34,11 +35,13 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
    * Override custom function name for loading and unloading model
    * Which are implemented from node module
    */
-  override provider = 'nitro-tensorrt-llm'
+  override provider = PROVIDER
   override inferenceUrl = INFERENCE_URL
   override nodeModule = NODE
 
-  private supportedGpuArch = ['turing', 'ampere', 'ada']
+  private supportedGpuArch = ['ampere', 'ada']
+  private supportedPlatform = ['win32', 'linux']
+  private isUpdateAvailable = false
 
   compatibility() {
     return COMPATIBILITY as unknown as Compatibility
@@ -54,7 +57,9 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   }
 
   override async install(): Promise<void> {
-    const info = await systemInformations()
+    await this.removePopulatedModels()
+
+    const info = await systemInformation()
     console.debug(
       `TensorRTLLMExtension installing pre-requisites... ${JSON.stringify(info)}`
     )
@@ -83,12 +88,19 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       return
     }
 
-    const binaryFolderPath = await executeOnMain(
-      this.nodeModule,
-      'binaryFolder'
-    )
-    if (!(await fs.existsSync(binaryFolderPath))) {
-      await fs.mkdirSync(binaryFolderPath)
+    const janDataFolderPath = await getJanDataFolderPath()
+    const engineVersion = TENSORRT_VERSION
+
+    const executableFolderPath = await joinPath([
+      janDataFolderPath,
+      'engines',
+      this.provider,
+      engineVersion,
+      firstGpu.arch,
+    ])
+
+    if (!(await fs.existsSync(executableFolderPath))) {
+      await fs.mkdir(executableFolderPath)
     }
 
     const placeholderUrl = DOWNLOAD_RUNNER_URL
@@ -100,7 +112,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
 
     const tarball = await baseName(url)
 
-    const tarballFullPath = await joinPath([binaryFolderPath, tarball])
+    const tarballFullPath = await joinPath([executableFolderPath, tarball])
     const downloadRequest: DownloadRequest = {
       url,
       localPath: tarballFullPath,
@@ -109,12 +121,16 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     }
     downloadFile(downloadRequest)
 
-    // TODO: wrap this into a Promise
     const onFileDownloadSuccess = async (state: DownloadState) => {
       // if other download, ignore
       if (state.fileName !== tarball) return
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
-      await executeOnMain(this.nodeModule, 'decompressRunner', tarballFullPath)
+      await executeOnMain(
+        this.nodeModule,
+        'decompressRunner',
+        tarballFullPath,
+        executableFolderPath
+      )
       events.emit(DownloadEvent.onFileUnzipSuccess, state)
 
       // Prepopulate models as soon as it's ready
@@ -126,6 +142,22 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       })
     }
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+  }
+
+  async removePopulatedModels(): Promise<void> {
+    console.debug(`removePopulatedModels`, JSON.stringify(models))
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelFolderPath = await joinPath([janDataFolderPath, 'models'])
+
+    for (const model of models) {
+      const modelPath = await joinPath([modelFolderPath, model.id])
+      console.debug(`modelPath: ${modelPath}`)
+      if (await fs.existsSync(modelPath)) {
+        console.debug(`Removing model ${modelPath}`)
+        await fs.rmdirSync(modelPath)
+      }
+    }
+    events.emit(ModelEvent.OnModelsUpdate, {})
   }
 
   async onModelInit(model: Model): Promise<void> {
@@ -143,14 +175,70 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     }
   }
 
-  override async installationState(): Promise<InstallationState> {
-    // For now, we just check the executable of nitro x tensor rt
-    const isNitroExecutableAvailable = await executeOnMain(
-      this.nodeModule,
-      'isNitroExecutableAvailable'
-    )
+  updatable() {
+    return this.isUpdateAvailable
+  }
 
-    return isNitroExecutableAvailable ? 'Installed' : 'NotInstalled'
+  override async installationState(): Promise<InstallationState> {
+    const info = await systemInformation()
+
+    const gpuSetting: GpuSetting | undefined = info.gpuSetting
+    if (gpuSetting === undefined) {
+      console.warn(
+        'No GPU setting found. TensorRT-LLM extension is not installed'
+      )
+      return 'NotInstalled' // TODO: maybe disabled / incompatible is more appropriate
+    }
+
+    if (gpuSetting.gpus.length === 0) {
+      console.warn('No GPU found. TensorRT-LLM extension is not installed')
+      return 'NotInstalled'
+    }
+
+    const firstGpu = gpuSetting.gpus[0]
+    if (!firstGpu.name.toLowerCase().includes('nvidia')) {
+      console.error('No Nvidia GPU found. Please check your GPU setting.')
+      return 'NotInstalled'
+    }
+
+    if (firstGpu.arch === undefined) {
+      console.error('No GPU architecture found. Please check your GPU setting.')
+      return 'NotInstalled'
+    }
+
+    if (!this.supportedGpuArch.includes(firstGpu.arch)) {
+      console.error(
+        `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
+      )
+      return 'NotInstalled'
+    }
+
+    const osInfo = info.osInfo
+    if (!osInfo) {
+      console.error('No OS information found. Please check your OS setting.')
+      return 'NotInstalled'
+    }
+
+    if (!this.supportedPlatform.includes(osInfo.platform)) {
+      console.error(
+        `Your OS: ${osInfo.platform} is not supported. Only Windows and Linux are supported.`
+      )
+      return 'NotInstalled'
+    }
+    const janDataFolderPath = await getJanDataFolderPath()
+    const engineVersion = TENSORRT_VERSION
+
+    const enginePath = await joinPath([
+      janDataFolderPath,
+      'engines',
+      this.provider,
+      engineVersion,
+      firstGpu.arch,
+      osInfo.platform === 'win32' ? 'nitro.exe' : 'nitro',
+    ])
+
+    // For now, we just check the executable of nitro x tensor rt
+    return (await fs.existsSync(enginePath)) ? 'Installed' : 'NotInstalled'
   }
 
   override onInferenceStopped() {

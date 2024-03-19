@@ -70,11 +70,6 @@ export const useSettings = () => {
       }
     }
     await fs.writeFileSync(settingsFile, JSON.stringify(settings))
-
-    // Relaunch to apply settings
-    if (vulkan != null) {
-      window.location.reload()
-    }
   }
 
   return {

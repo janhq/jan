@@ -1,4 +1,4 @@
-import { executeOnMain, getJanDataFolderPath, joinPath } from '../../core'
+import { executeOnMain, getJanDataFolderPath, joinPath, systemInformation } from '../../core'
 import { events } from '../../events'
 import { Model, ModelEvent } from '../../types'
 import { OAIEngine } from './OAIEngine'
@@ -30,11 +30,11 @@ export abstract class LocalOAIEngine extends OAIEngine {
     if (model.engine.toString() !== this.provider) return
 
     const modelFolder = await joinPath([await getJanDataFolderPath(), this.modelFolder, model.id])
-
+    const systemInfo = await systemInformation()
     const res = await executeOnMain(this.nodeModule, this.loadModelFunctionName, {
       modelFolder,
       model,
-    })
+    }, systemInfo)
 
     if (res?.error) {
       events.emit(ModelEvent.OnModelFail, {
