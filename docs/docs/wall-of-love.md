@@ -4,14 +4,14 @@ title: Wall of Love ❤️
 
 <head>
     <title>Wall of Love ❤️ - Jan</title>
-    <meta name="description" content="See what users are saying about Jan on Twitter and watch amazing videos demonstrating the use of Jan by the community. Share your love for Jan on Twitter and tag us @janframework!">
-    <meta name="keywords" content="Jan AI, Jan, testimonials, Twitter, YouTube, community, feedback, videos">
-    <meta property="og:title" content="Wall of Love ❤️ - Jan">
-    <meta property="og:description" content="See what users are saying about Jan on Twitter and watch amazing videos demonstrating the use of Jan by the community. Share your love for Jan on Twitter and tag us @janframework!">
-    <meta property="og:url" content="https://yourwebsite.com/wall-of-love">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Wall of Love ❤️ - Jan">
-    <meta name="twitter:description" content="See what users are saying about Jan on Twitter and watch amazing videos demonstrating the use of Jan by the community. Share your love for Jan on Twitter and tag us @janframework!">
+    <meta name="description" content="See what users are saying about Jan on Twitter and watch amazing videos demonstrating the use of Jan by the community. Share your love for Jan on Twitter and tag us @janframework!"/>
+    <meta name="keywords" content="Jan AI, Jan, testimonials, Twitter, YouTube, community, feedback, videos"/>
+    <meta property="og:title" content="Wall of Love ❤️ - Jan"/>
+    <meta property="og:description" content="See what users are saying about Jan on Twitter and watch amazing videos demonstrating the use of Jan by the community. Share your love for Jan on Twitter and tag us @janframework!"/>
+    <meta property="og:url" content="https://yourwebsite.com/wall-of-love"/>
+    <meta name="twitter:card" content="summary"/>
+    <meta name="twitter:title" content="Wall of Love ❤️ - Jan"/>
+    <meta name="twitter:description" content="See what users are saying about Jan on Twitter and watch amazing videos demonstrating the use of Jan by the community. Share your love for Jan on Twitter and tag us @janframework!"/>
 </head>
 
 ## Twitter

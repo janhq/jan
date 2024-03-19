@@ -4,14 +4,14 @@ title: Project Management
 
 <head>
     <title>Project Management</title>
-    <meta name="description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage.">
-    <meta name="keywords" content="Jan AI, project management, roadmap, epics, tasks, Kanban board">
-    <meta property="og:title" content="Project Management">
-    <meta property="og:description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage.">
-    <meta property="og:url" content="https://yourwebsite.com/project-management">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Project Management">
-    <meta name="twitter:description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage.">
+    <meta name="description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage."/>
+    <meta name="keywords" content="Jan AI, project management, roadmap, epics, tasks, Kanban board"/>
+    <meta property="og:title" content="Project Management"/>
+    <meta property="og:description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage."/>
+    <meta property="og:url" content="https://yourwebsite.com/project-management"/>
+    <meta name="twitter:card" content="summary"/>
+    <meta name="twitter:title" content="Project Management"/>
+    <meta name="twitter:description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage."/>
 </head>
 
 We use the [Jan Monorepo Project](https://github.com/orgs/janhq/projects/5) in Github to manage our roadmap and sprint Kanbans.

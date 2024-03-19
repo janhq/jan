@@ -4,14 +4,14 @@ title: Website & Docs
 
 <head>
     <title>Website & Docs</title>
-    <meta name="description" content="Learn about the website architecture and documentation structure for Jan, including information on how to contribute, prerequisites, installation, deployment, and additional plugins.">
-    <meta name="keywords" content="Jan AI, website, documentation, Docusaurus, contribution guide, installation, deployment, plugins">
-    <meta property="og:title" content="Website & Docs">
-    <meta property="og:description" content="Learn about the website architecture and documentation structure for Jan, including information on how to contribute, prerequisites, installation, deployment, and additional plugins.">
-    <meta property="og:url" content="https://yourwebsite.com/website-docs">
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Website & Docs">
-    <meta name="twitter:description" content="Learn about the website architecture and documentation structure for Jan, including information on how to contribute, prerequisites, installation, deployment, and additional plugins.">
+    <meta name="description" content="Learn about the website architecture and documentation structure for Jan, including information on how to contribute, prerequisites, installation, deployment, and additional plugins."/>
+    <meta name="keywords" content="Jan AI, website, documentation, Docusaurus, contribution guide, installation, deployment, plugins"/>
+    <meta property="og:title" content="Website & Docs"/>
+    <meta property="og:description" content="Learn about the website architecture and documentation structure for Jan, including information on how to contribute, prerequisites, installation, deployment, and additional plugins."/>
+    <meta property="og:url" content="https://yourwebsite.com/website-docs"/>
+    <meta name="twitter:card" content="summary"/>
+    <meta name="twitter:title" content="Website & Docs"/>
+    <meta name="twitter:description" content="Learn about the website architecture and documentation structure for Jan, including information on how to contribute, prerequisites, installation, deployment, and additional plugins."/>
 </head>
 
 This website is built using [Docusaurus 3.0](https://docusaurus.io/), a modern static website generator.
