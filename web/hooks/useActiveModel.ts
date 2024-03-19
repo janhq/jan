@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { events, Model, ModelEvent } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -86,13 +86,12 @@ export function useActiveModel() {
     events.emit(ModelEvent.OnModelInit, model)
   }
 
-  const stopModel = async () => {
+  const stopModel = useCallback(async () => {
     if (activeModel) {
-      setActiveModel(undefined)
       setStateModel({ state: 'stop', loading: true, model: activeModel.id })
       events.emit(ModelEvent.OnModelStop, activeModel)
     }
-  }
+  }, [activeModel, setStateModel])
 
   return { activeModel, startModel, stopModel, stateModel }
 }
