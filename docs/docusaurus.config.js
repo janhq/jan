@@ -117,6 +117,10 @@ const config = {
             from: '/guides/using-extensions/',
             to: '/guides/extensions/',
           },
+          {
+            from: '/integrations/tensorrt',
+            to: '/guides/providers/tensorrt-llm'
+          },
         ],
       },
     ],
