@@ -334,6 +334,11 @@ const config = {
           position: 'left',
           label: 'Ecosystem',
         },
+        {
+          to: 'download',
+          position: 'left',
+          label: 'Download',
+        },
         // {
         //   type: "docSidebar",
         //   sidebarId: "pricingSidebar",
