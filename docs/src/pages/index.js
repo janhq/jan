@@ -291,7 +291,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="flex lg:flex-row flex-col items-center gap-8 mt-10">
+            <div className="flex lg:flex-row flex-col items-start gap-8 mt-10">
               <div className="w-full lg:w-2/5 px-4 lg:p-0">
                 {features.map((feature, i) => {
                   const isActive = activeFeature === i
