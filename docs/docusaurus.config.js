@@ -199,7 +199,7 @@ const config = {
 
   // Docs: https://docusaurus.io/docs/api/themes/configuration
   themeConfig: {
-    image: 'img/og-image.png',
+    image: 'img/og-image.svg',
     // Only for react live
     liveCodeBlock: {
       playgroundPosition: 'bottom',
