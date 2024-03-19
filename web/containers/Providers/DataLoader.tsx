@@ -10,6 +10,7 @@ import useGetSystemResources from '@/hooks/useGetSystemResources'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
 
+import { defaultJanDataFolderAtom } from '@/helpers/atoms/App.atom'
 import {
   janDataFolderPathAtom,
   quickAskEnabledAtom,
@@ -22,7 +23,7 @@ type Props = {
 const DataLoader: React.FC<Props> = ({ children }) => {
   const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
   const setQuickAskEnabled = useSetAtom(quickAskEnabledAtom)
-  const setJanDefaultDataFolder = useSetAtom(janDataFolderPathAtom)
+  const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
 
   useModels()
   useThreads()
