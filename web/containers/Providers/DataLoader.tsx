@@ -2,7 +2,7 @@
 
 import { Fragment, ReactNode, useEffect } from 'react'
 
-import { AppConfiguration } from '@janhq/core'
+import { AppConfiguration, getUserHomePath, joinPath } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import useAssistants from '@/hooks/useAssistants'
@@ -22,6 +22,7 @@ type Props = {
 const DataLoader: React.FC<Props> = ({ children }) => {
   const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
   const setQuickAskEnabled = useSetAtom(quickAskEnabledAtom)
+  const setJanDefaultDataFolder = useSetAtom(janDataFolderPathAtom)
 
   useModels()
   useThreads()
@@ -36,6 +37,16 @@ const DataLoader: React.FC<Props> = ({ children }) => {
         setQuickAskEnabled(appConfig.quick_ask)
       })
   }, [setJanDataFolderPath, setQuickAskEnabled])
+
+  useEffect(() => {
+    async function getDefaultJanDataFolder() {
+      const homePath = await getUserHomePath()
+      const defaultJanDataFolder = await joinPath([homePath, 'jan'])
+
+      setJanDefaultDataFolder(defaultJanDataFolder)
+    }
+    getDefaultJanDataFolder()
+  }, [setJanDefaultDataFolder])
 
   console.debug('Load Data...')
 

@@ -20,9 +20,9 @@ export default class JSONConversationalExtension extends ConversationalExtension
    * Called when the extension is loaded.
    */
   async onLoad() {
-    if (!(await fs.existsSync(JSONConversationalExtension._threadFolder)))
+    if (!(await fs.existsSync(JSONConversationalExtension._threadFolder))) {
       await fs.mkdirSync(JSONConversationalExtension._threadFolder)
-    console.debug('JSONConversationalExtension loaded')
+    }
   }
 
   /**
