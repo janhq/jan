@@ -26,7 +26,6 @@
 - [ ] :key::warning: Check that the uninstallation process removes the app successfully from the system.
 - [ ] Clean the Jan root directory and open the app to check if it creates all the necessary folders, especially models and extensions.
 
-
 ## B. Overview
 
 ### 1. Shortcut key, memory usage / CPU usage
@@ -71,10 +70,12 @@
 - [ ] :key: Ensure that users switch between threads with different models, the app can handle it.
 
 ### 3. Model dropdown
+
 - [ ] :key: Model list should highlight recommended based on user RAM
 - [ ] Model size should display (for both installed and imported models)
 
 ### 4. Users can click on a history thread
+
 - [ ] Confirm that the chat window displays the entire conversation from the selected history thread without any missing messages.
 - [ ] :key: Check the performance and accuracy of the history feature when dealing with a large number of threads.
 - [ ] Validate that historical threads reflect the exact state of the chat at that time, including settings.
@@ -82,11 +83,11 @@
 - [ ] Confirm that changing the title of the thread updates correctly.
 
 ### 5. Users can config instructions for the assistant.
+
 - [ ] Test if the instructions set by the user are being followed by the assistant in subsequent conversations.
 - [ ] :key: Validate that changes to instructions are updated in real time and do not require a restart of the application or session.
 - [ ] :key: Check for the ability to reset instructions to default or clear them completely.
 - [ ] :key: RAG - Users can import documents and the system should process queries about the uploaded file, providing accurate and appropriate responses in the conversation thread.
-
 
 ## D. Hub
 
@@ -117,13 +118,14 @@
 
 ### 5. Users can use the model as they want
 
-- [ ] :key: Check `start` / `stop` / `delete`  button response exactly what it does.
+- [ ] :key: Check `start` / `stop` / `delete` button response exactly what it does.
 - [ ] Check if starting another model stops the other model entirely.
 - [x] :rocket: Check the `Explore models` navigate correctly to the model panel.
 - [ ] :key: Check when deleting a model it will delete all the files on the user's computer.
 - [ ] :warning:The recommended tags should present right for the user's hardware.
 
 ### 6. Users can Integrate With a Remote Server
+
 - [ ] :key: Import openAI GPT model https://jan.ai/guides/using-models/integrate-with-remote-server/ and the model displayed in Hub / Thread dropdown
 - [ ] Users can use the remote model properly
 
@@ -184,9 +186,10 @@
 ## G. Local API server
 
 ### 1. Local Server Usage with Server Options
+
 - [ ] :key: Explore API Reference: Swagger API for sending/receiving requests
-    - [ ] Use default server option
-    - [ ] Configure and use custom server options
+  - [ ] Use default server option
+  - [ ] Configure and use custom server options
 - [ ] Test starting/stopping the local API server with different Model/Model settings
 - [ ] Server logs captured with correct Server Options provided
 - [ ] Verify functionality of Open logs/Clear feature

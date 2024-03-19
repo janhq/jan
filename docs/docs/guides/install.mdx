@@ -16,6 +16,18 @@ keywords:
   ]
 ---
 
+<head>
+    <title>Installation - Jan Guides</title>
+    <meta name="description" content="Instructions for installing Jan AI on Mac, Windows, Linux, and Docker, along with prerequisites and considerations for each platform."/>
+    <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, installation, macOS, Windows, Linux, Docker"/>
+    <meta property="og:title" content="Installation - Jan Guides"/>
+    <meta property="og:description" content="Instructions for installing Jan AI on Mac, Windows, Linux, and Docker, along with prerequisites and considerations for each platform."/>
+    <meta property="og:url" content="https://jan.ai/guides/installation"/>
+    <meta name="twitter:card" content="summary"/>
+    <meta name="twitter:title" content="Installation - Jan Guides"/>
+    <meta name="twitter:description" content="Instructions for installing Jan AI on Mac, Windows, Linux, and Docker, along with prerequisites and considerations for each platform."/>
+</head>
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import installImageURL from './assets/jan-ai-download.png';
@@ -24,7 +36,10 @@ import installImageURL from './assets/jan-ai-download.png';
     <TabItem value="mac" label = "Mac" default>
 
         ### Pre-requisites
-        Ensure that your MacOS version is 13 or higher to run Jan.
+        Before installing Jan, ensure :
+        - You have a Mac with an Apple Silicon Processor.
+        - Homebrew and its dependencies are installed. (for Installing Jan with Homebrew Package)
+        - Your macOS version is 10.15 or higher.
 
         ### Stable Releases
 
@@ -42,9 +57,16 @@ import installImageURL from './assets/jan-ai-download.png';
         
         To enable the experimental mode, go to **Settings** > **Advanced Settings** and toggle the **Experimental Mode**
 
+        ### Install with Homebrew
+        Install Jan with the following Homebrew command:
+
+        ```brew
+        brew install --cask jan
+        ```
+
 :::warning
 
-If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build) section of Common Errors.
+Homebrew package installation is currently limited to **Apple Silicon Macs**, with upcoming support for Windows and Linux.
 
 :::
 

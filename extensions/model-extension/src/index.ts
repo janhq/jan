@@ -38,7 +38,7 @@ export default class JanModelExtension extends ModelExtension {
   private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _configDirName = 'config'
   private static readonly _defaultModelFileName = 'default-model.json'
-  private static readonly _supportedGpuArch = ['turing', 'ampere', 'ada']
+  private static readonly _supportedGpuArch = ['ampere', 'ada']
 
   /**
    * Called when the extension is loaded.
@@ -321,7 +321,7 @@ export default class JanModelExtension extends ModelExtension {
                     .toLowerCase()
                     .includes(JanModelExtension._tensorRtEngineFormat)
                 )
-              })?.length > 0 // TODO: NamH find better way (can use basename to check the file name with source url)
+              })?.length > 0 // TODO: find better way (can use basename to check the file name with source url)
             )
           })
 

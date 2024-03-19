@@ -17,6 +17,20 @@ keywords:
   ]
 ---
 
+<head>
+  <title>Building Your First Jan AI Extension - Quick Start Guide</title>
+  <meta charSet="utf-8" />
+  <meta name="description" content="Step-by-step guide on how to build your first extension for Jan AI. Learn how to use the extension template and integrate your custom functionality into Jan." />
+  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, quick start, build extension" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/developer/build-extension/your-first-extension/" />
+  <meta property="og:title" content="Building Your First Jan AI Extension - Quick Start Guide" />
+  <meta property="og:description" content="Step-by-step guide on how to build your first extension for Jan AI. Learn how to use the extension template and integrate your custom functionality into Jan." />
+  <meta property="og:url" content="https://jan.ai/developer/build-extension/your-first-extension/" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
+</head>
+
 :::caution
 This is currently under development.
 :::
@@ -76,10 +90,10 @@ There are a few things to keep in mind when writing your extension code:
   In `index.ts`, you will see that the extension function will return a `Promise<any>`.
 
   ```typescript
-  import { core } from "@janhq/core";
+  import { core } from '@janhq/core'
 
   function onStart(): Promise<any> {
-    return core.invokePluginFunc(MODULE_PATH, "run", 0);
+    return core.invokePluginFunc(MODULE_PATH, 'run', 0)
   }
   ```
 

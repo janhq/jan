@@ -90,12 +90,38 @@ const Advanced = () => {
     [setPartialProxy, setProxy]
   )
 
-  const updateQuickAskEnabled = async (e: boolean) => {
+  const updateQuickAskEnabled = async (
+    e: boolean,
+    relaunch: boolean = true
+  ) => {
     const appConfiguration: AppConfiguration =
       await window.core?.api?.getAppConfigurations()
     appConfiguration.quick_ask = e
     await window.core?.api?.updateAppConfiguration(appConfiguration)
-    window.core?.api?.relaunch()
+    if (relaunch) window.core?.api?.relaunch()
+  }
+
+  const updateVulkanEnabled = async (e: boolean, relaunch: boolean = true) => {
+    toaster({
+      title: 'Reload',
+      description: 'Vulkan settings updated. Reload now to apply the changes.',
+    })
+    stopModel()
+    setVulkanEnabled(e)
+    await saveSettings({ vulkan: e, gpusInUse: [] })
+    // Relaunch to apply settings
+    if (relaunch) window.location.reload()
+  }
+
+  const updateExperimentalEnabled = async (e: boolean) => {
+    setExperimentalEnabled(e)
+    if (e) return
+
+    // It affects other settings, so we need to reset them
+    const isRelaunch = quickAskEnabled || vulkanEnabled
+    if (quickAskEnabled) await updateQuickAskEnabled(false, false)
+    if (vulkanEnabled) await updateVulkanEnabled(false, false)
+    if (isRelaunch) window.core?.api?.relaunch()
   }
 
   useEffect(() => {
@@ -179,7 +205,7 @@ const Advanced = () => {
           </div>
           <Switch
             checked={experimentalEnabled}
-            onCheckedChange={setExperimentalEnabled}
+            onCheckedChange={updateExperimentalEnabled}
           />
         </div>
 
@@ -246,7 +272,8 @@ const Advanced = () => {
                         setGpuEnabled(true)
                         setShowNotification(false)
                         snackbar({
-                          description: 'Successfully turned on GPU Accelertion',
+                          description:
+                            'Successfully turned on GPU Acceleration',
                           type: 'success',
                         })
                         setTimeout(() => {
@@ -257,7 +284,7 @@ const Advanced = () => {
                         setGpuEnabled(false)
                         snackbar({
                           description:
-                            'Successfully turned off GPU Accelertion',
+                            'Successfully turned off GPU Acceleration',
                           type: 'success',
                         })
                       }
@@ -380,16 +407,7 @@ const Advanced = () => {
 
             <Switch
               checked={vulkanEnabled}
-              onCheckedChange={(e) => {
-                toaster({
-                  title: 'Reload',
-                  description:
-                    'Vulkan settings updated. Reload now to apply the changes.',
-                })
-                stopModel()
-                saveSettings({ vulkan: e, gpusInUse: [] })
-                setVulkanEnabled(e)
-              }}
+              onCheckedChange={(e) => updateVulkanEnabled(e)}
             />
           </div>
         )}

@@ -5,9 +5,10 @@ import {
   GpuSetting,
   InstallationState,
   abortDownload,
-  systemInformations,
+  systemInformation,
 } from '@janhq/core'
 import {
+  Badge,
   Button,
   Progress,
   Tooltip,
@@ -19,6 +20,10 @@ import {
 
 import { InfoCircledIcon } from '@radix-ui/react-icons'
 import { useAtomValue } from 'jotai'
+
+import { Marked, Renderer } from 'marked'
+
+import UpdateExtensionModal from './UpdateExtensionModal'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
@@ -36,7 +41,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     useState<InstallationState>('NotRequired')
   const installingExtensions = useAtomValue(installingExtensionAtom)
   const [isGpuSupported, setIsGpuSupported] = useState<boolean>(false)
-
+  const [promptUpdateModal, setPromptUpdateModal] = useState<boolean>(false)
   const isInstalling = installingExtensions.some(
     (e) => e.extensionId === item.name
   )
@@ -48,7 +53,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
 
   useEffect(() => {
     const getSystemInfos = async () => {
-      const info = await systemInformations()
+      const info = await systemInformation()
       if (!info) {
         setIsGpuSupported(false)
         return
@@ -66,7 +71,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
         return
       }
 
-      const supportedGpuArch = ['turing', 'ampere', 'ada']
+      const supportedGpuArch = ['ampere', 'ada']
       setIsGpuSupported(supportedGpuArch.includes(arch))
     }
     getSystemInfos()
@@ -108,6 +113,8 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     }
   }
 
+  const description = marked.parse(item.description ?? '', { async: false })
+
   return (
     <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1.5">
@@ -118,10 +125,12 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed">
             v{item.version}
           </p>
+          <Badge>Experimental</Badge>
         </div>
-        <p className="whitespace-pre-wrap leading-relaxed">
-          {item.description}
-        </p>
+        {
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          <div dangerouslySetInnerHTML={{ __html: description }} />
+        }
       </div>
 
       {(!compatibility || compatibility['platform']?.includes(PLATFORM)) &&
@@ -131,6 +140,7 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
             installProgress={progress}
             installState={installState}
             onInstallClick={onInstallClick}
+            onUpdateClick={() => setPromptUpdateModal(true)}
             onCancelClick={onCancelInstallingClick}
           />
         </div>
@@ -170,6 +180,9 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
           </div>
         </div>
       )}
+      {promptUpdateModal && (
+        <UpdateExtensionModal onUpdateClick={onInstallClick} />
+      )}
     </div>
   )
 }
@@ -178,6 +191,7 @@ type InstallStateProps = {
   installProgress: number
   installState: InstallationState
   onInstallClick: () => void
+  onUpdateClick: () => void
   onCancelClick: () => void
 }
 
@@ -185,6 +199,7 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   installProgress,
   installState,
   onInstallClick,
+  onUpdateClick,
   onCancelClick,
 }) => {
   if (installProgress !== -1) {
@@ -204,13 +219,18 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
     )
   }
 
-  // TODO: NamH check for dark mode here
   switch (installState) {
     case 'Installed':
       return (
         <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
           Installed
         </div>
+      )
+    case 'Updatable':
+      return (
+        <Button themes="secondaryBlue" size="sm" onClick={onUpdateClick}>
+          Update
+        </Button>
       )
     case 'NotInstalled':
       return (
@@ -222,5 +242,15 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
       return <div></div>
   }
 }
+
+const marked: Marked = new Marked({
+  renderer: {
+    link: (href, title, text) => {
+      return Renderer.prototype.link
+        ?.apply(this, [href, title, text])
+        .replace('<a', "<a class='text-blue-500' target='_blank'")
+    },
+  },
+})
 
 export default TensorRtExtensionItem

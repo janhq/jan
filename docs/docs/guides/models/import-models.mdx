@@ -1,6 +1,5 @@
 ---
 title: Manual Import
-slug: /guides/using-models/import-manually/
 sidebar_position: 3
 description: A step-by-step guide on how to perform manual import feature.
 keywords:
@@ -18,12 +17,41 @@ keywords:
   ]
 ---
 
+<head>
+    <title>Manual Import</title>
+    <meta name="description" content="A step-by-step guide on how to perform manual import feature. Learn how to import models into Jan using both drag-and-drop method and absolute file path, along with creating model folders and configuring the model JSON file."/>
+    <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, import-models-manually, absolute-filepath"/>
+    <meta property="og:title" content="Manual Import"/>
+    <meta property="og:description" content="A step-by-step guide on how to perform manual import feature. Learn how to import models into Jan using both drag-and-drop method and absolute file path, along with creating model folders and configuring the model JSON file."/>
+    <meta property="og:url" content="https://jan.ai/guides/manual-import"/>
+    <meta name="twitter:card" content="summary"/>
+    <meta name="twitter:title" content="Manual Import"/>
+    <meta name="twitter:description" content="A step-by-step guide on how to perform manual import feature. Learn how to import models into Jan using both drag-and-drop method and absolute file path, along with creating model folders and configuring the model JSON file."/>
+</head>
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import janModel from './assets/jan-model-hub.png';
 
 
 This guide will show you how to perform manual import. In this guide, we are using a GGUF model from [HuggingFace](https://huggingface.co/) and our latest model, [Trinity](https://huggingface.co/janhq/trinity-v1-GGUF), as an example.
+
+## Newer versions - nightly versions and v0.4.8+
+
+Starting with version 0.4.8, Jan has introduced the capability to import models using a UI drag-and-drop method. This allows you to import models directly into the Jan application UI by dragging the `.GGUF` file from your directory into the Jan application.
+
+### 1. Get the Model
+Download the model from HuggingFace in the `.GGUF` format.
+
+### 2. Import the Model
+1. Open your Jan application.
+2. Click the **Import Model** button.
+3. Open your downloaded model.
+4. Drag the `.GGUF` file from your directory into the Jan **Import Model** window.
+
+### 3. Done!
+
+If your model doesn't show up in the **Model Selector** in conversations, **restart the app** or contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ).
 
 ## Newer versions - nightly versions and v0.4.7+
 

@@ -22,6 +22,7 @@ on:
     branches:
       - main
       - dev
+      - release/**
     paths:
       - "electron/**"
       - .github/workflows/jan-electron-linter-and-test.yml
@@ -67,16 +68,17 @@ jobs:
 
   test-on-windows:
     strategy:
+      fail-fast: false
       matrix:
         antivirus-tools: ['mcafee', 'default-windows-security','bit-defender']
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Clean workspace
         run: |
-          Remove-Item -Path .\* -Force -Recurse
+          Remove-Item -Path "\\?\$(Get-Location)\*" -Force -Recurse
           $path = "$Env:APPDATA\jan"
           if (Test-Path $path) {
-              Remove-Item $path -Recurse -Force
+              Remove-Item "\\?\$path" -Recurse -Force
           } else {
               Write-Output "Folder does not exist."
           }

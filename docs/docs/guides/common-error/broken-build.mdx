@@ -17,6 +17,20 @@ keywords:
   ]
 ---
 
+<head>
+    <title>Broken Build</title>
+    <meta name="description" content="A step-by-step guide to fix errors that prevent the project from compiling or running successfully. Learn how to troubleshoot and resolve issues where Jan gets stuck in a broken build after installation."/>
+    <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, troubleshooting"/>
+    <meta property="og:title" content="Broken Build"/>
+    <meta property="og:description" content="A step-by-step guide to fix errors that prevent the project from compiling or running successfully. Learn how to troubleshoot and resolve issues where Jan gets stuck in a broken build after installation."/>
+    <meta property="og:image" content="https://jan.ai/img/broken-build.png"/>
+    <meta property="og:url" content="https://jan.ai/broken-build"/>
+    <meta name="twitter:card" content="summary_large_image"/>
+    <meta name="twitter:title" content="Broken Build"/>
+    <meta name="twitter:description" content="A step-by-step guide to fix errors that prevent the project from compiling or running successfully. Learn how to troubleshoot and resolve issues where Jan gets stuck in a broken build after installation."/>
+    <meta name="twitter:image" content="https://jan.ai/img/broken-build.png"/>
+</head>
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -67,9 +81,13 @@ This guide provides you steps to troubleshoot and to resolve the issue where you
         ### 2. Delete Application Data, Cache, and User Data
 
         ```sh
-        # You can delete the `/Jan` directory in Windows's AppData Directory by visiting the following path `%APPDATA%\Jan`
-        cd C:\Users\%USERNAME%\AppData\Roaming
-        rmdir /S jan
+        # Delete your own user data
+        cd ~ # Or where you moved the Jan Data Folder to
+        rm -r ./jan
+
+        # Delete Application Cache
+        cd C:\Users\YOUR_USERNAME\AppData\Roaming
+        rm -r ./Jan
         ```
 
         ### 3. Additional Step for Versions Before 0.4.2

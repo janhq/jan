@@ -15,6 +15,20 @@ keywords:
   ]
 ---
 
+<head>
+  <title>Jan AI User Interface - Customizable UI Kit</title>
+  <meta charSet="utf-8" />
+  <meta name="description" content="Explore Jan's UI Kit for customizing the user interface to fit your brand and style. Learn how to personalize your application with Jan's flexible UI components." />
+  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, UI Kit, customizable UI" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/developer/ui/" />
+  <meta property="og:title" content="Jan AI User Interface - Customizable UI Kit" />
+  <meta property="og:description" content="Explore Jan's UI Kit for customizing the user interface to fit your brand and style. Learn how to personalize your application with Jan's flexible UI components." />
+  <meta property="og:url" content="https://jan.ai/developer/ui/" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
+</head>
+
 :::warning
 
 This page is still under construction, and should be read as a scratchpad

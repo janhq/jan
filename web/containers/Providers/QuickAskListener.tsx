@@ -24,7 +24,7 @@ const QuickAskListener: React.FC<Props> = ({ children }) => {
 
   const previousMessage = useRef('')
 
-  window.electronAPI.onUserSubmitQuickAsk((_event: string, input: string) => {
+  window.electronAPI?.onUserSubmitQuickAsk((_event: string, input: string) => {
     if (previousMessage.current === input) return
     setMainState(MainViewState.Thread)
     setShowRightSideBar(false)

@@ -15,6 +15,20 @@ keywords:
   ]
 ---
 
+<head>
+  <title>Jan AI Architecture - Modular and Extensible Framework</title>
+  <meta charSet="utf-8" />
+  <meta name="description" content="Discover the modular architecture of Jan, a ChatGPT alternative that runs on your own computer. Learn about Jan's local API server, Desktop UI, and the Nitro inference engine." />
+  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, modular architecture, Extensions API" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/developer/architecture/" />
+  <meta property="og:title" content="Jan AI Architecture - Modular and Extensible Framework" />
+  <meta property="og:description" content="Discover the modular architecture of Jan, a ChatGPT alternative that runs on your own computer. Learn about Jan's local API server, Desktop UI, and the Nitro inference engine." />
+  <meta property="og:url" content="https://jan.ai/developer/architecture/" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
+</head>
+
 :::warning
 
 This page is still under construction, and should be read as a scratchpad
