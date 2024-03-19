@@ -82,26 +82,34 @@ export const getJanExtensionsPath = (): string => {
  */
 export const physicalCpuCount = async (): Promise<number> => {
   const platform = os.platform()
-  if (platform === 'linux') {
-    const output = await exec('lscpu -p | egrep -v "^#" | sort -u -t, -k 2,4 | wc -l')
-    return parseInt(output.trim(), 10)
-  } else if (platform === 'darwin') {
-    const output = await exec('sysctl -n hw.physicalcpu_max')
-    return parseInt(output.trim(), 10)
-  } else if (platform === 'win32') {
-    const output = await exec('WMIC CPU Get NumberOfCores')
-    return output
-      .split(os.EOL)
-      .map((line: string) => parseInt(line))
-      .filter((value: number) => !isNaN(value))
-      .reduce((sum: number, number: number) => sum + number, 1)
-  } else {
-    const cores = os.cpus().filter((cpu: any, index: number) => {
-      const hasHyperthreading = cpu.model.includes('Intel')
-      const isOdd = index % 2 === 1
-      return !hasHyperthreading || isOdd
-    })
-    return cores.length
+  try {
+    if (platform === 'linux') {
+      const output = await exec('lscpu -p | egrep -v "^#" | sort -u -t, -k 2,4 | wc -l')
+      return parseInt(output.trim(), 10)
+    } else if (platform === 'darwin') {
+      const output = await exec('sysctl -n hw.physicalcpu_max')
+      return parseInt(output.trim(), 10)
+    } else if (platform === 'win32') {
+      const output = await exec('WMIC CPU Get NumberOfCores')
+      return output
+        .split(os.EOL)
+        .map((line: string) => parseInt(line))
+        .filter((value: number) => !isNaN(value))
+        .reduce((sum: number, number: number) => sum + number, 1)
+    } else {
+      const cores = os.cpus().filter((cpu: any, index: number) => {
+        const hasHyperthreading = cpu.model.includes('Intel')
+        const isOdd = index % 2 === 1
+        return !hasHyperthreading || isOdd
+      })
+      return cores.length
+    }
+  } catch (err) {
+    console.warn('Failed to get physical CPU count', err)
+    // Divide by 2 to get rid of hyper threading
+    const coreCount = Math.ceil(os.cpus().length / 2)
+    console.debug('Using node API to get physical CPU count:', coreCount)
+    return coreCount
   }
 }
 

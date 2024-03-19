@@ -15,6 +15,18 @@ keywords:
   ]
 ---
 
+<head>
+    <title>Jan Home Server</title>
+    <meta name="description" content="Jan Home Server is built for home server deployments, allowing individuals to customize and run AI across all their devices. Self-host Jan, access it from anywhere, and collaborate with others using Jan Server Suite."/>
+    <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, home server, self-hosted AI, personal AI"/>
+    <meta property="og:title" content="Jan Home Server"/>
+    <meta property="og:description" content="Jan Home Server is built for home server deployments, allowing individuals to customize and run AI across all their devices. Self-host Jan, access it from anywhere, and collaborate with others using Jan Server Suite."/>
+    <meta property="og:url" content="https://jan.ai/home-server"/>
+    <meta name="twitter:card" content="summary"/>
+    <meta name="twitter:title" content="Jan Home Server"/>
+    <meta name="twitter:description" content="Jan Home Server is built for home server deployments, allowing individuals to customize and run AI across all their devices. Self-host Jan, access it from anywhere, and collaborate with others using Jan Server Suite."/>
+</head>
+
 # Customize and run AI across all of your devices
 
 Self-host and access your AI from anywhere with Jan server suite.

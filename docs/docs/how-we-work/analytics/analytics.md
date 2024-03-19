@@ -2,6 +2,18 @@
 title: Analytics
 ---
 
+<head>
+    <title>Analytics</title>
+    <meta name="description" content="Learn about the analytics philosophy for Jan, focusing on privacy preservation and collecting minimal data for essential functionality."/>
+    <meta name="keywords" content="analytics, privacy-preserving, Umami, data collection, GDPR compliance"/>
+    <meta property="og:title" content="Analytics"/>
+    <meta property="og:description" content="Learn about the analytics philosophy for Jan, focusing on privacy preservation and collecting minimal data for essential functionality."/>
+    <meta property="og:url" content="https://jan.ai/analytics"/>
+    <meta name="twitter:card" content="summary"/>
+    <meta name="twitter:title" content="Analytics"/>
+    <meta name="twitter:description" content="Learn about the analytics philosophy for Jan, focusing on privacy preservation and collecting minimal data for essential functionality."/>
+</head>
+
 Adhering to Jan's privacy preserving philosophy, our analytics philosophy is to get "barely-enough-to-function'.
 
 #### What is tracked
