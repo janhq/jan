@@ -172,7 +172,19 @@ const sidebars = {
       items: [
         "guides/get-started/overview",
         "guides/get-started/quickstart",
-        "guides/get-started/hardware-setup",
+        
+        {
+          type: "category",
+          label: "Hardware Setup",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/get-started/hardware-setup",
+          },
+          items: [
+            "guides/get-started/settingup-gpu",
+          ]
+        },  
         {
           type: "category",
           label: "Installation",
@@ -207,7 +219,7 @@ const sidebars = {
     },
     {
       type: "category",
-      label: "Inference Providers",
+      label: "Inference Engines",
       collapsible: false,
       className: "head_Menu",
       items: [
@@ -260,14 +272,25 @@ const sidebars = {
       collapsible: false,
       className: "head_Menu",
       items: [
-        "guides/integrations/overview-integration",
-        "guides/integrations/crewai",
-        "guides/integrations/discord",
-        "guides/integrations/interpreter",
-        "guides/integrations/raycast",
-        "guides/integrations/router",
-        "guides/integrations/unsloth",
-        "guides/integrations/vscode"
+        // "guides/integrations/overview-integration",
+        {
+          type: "category",
+          label: "Integrations",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/integrations/README",
+          },
+          items: [
+            "guides/integrations/crewai",
+            "guides/integrations/discord",
+            "guides/integrations/interpreter",
+            "guides/integrations/raycast",
+            "guides/integrations/router",
+            "guides/integrations/unsloth",
+            "guides/integrations/vscode"
+          ]
+        },  
       ]
     },
     {

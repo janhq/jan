@@ -137,7 +137,7 @@ function CardLink({item}) {
     <img src={setup} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Import Extensions") ? (
     <img src={importex} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
-  ) : (item.label === "Continue") ? (
+  ) : (item.label === "Continue Integration") ? (
     <img src={continueint} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "OpenRouter") ? (
     <img src={openrouter} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />

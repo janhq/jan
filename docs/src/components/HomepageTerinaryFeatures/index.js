@@ -64,17 +64,17 @@ export default function HomepageTerinaryFeatures() {
                             <p className="text-gray-700 dark:text-gray-200">Learn how to build and integrate Jan with local and remote inference providers.</p>
                             <ul className="mt-5">
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/providers/"} className="dark:text-blue-400">
+                                    <a href={"/guides/engines/"} className="dark:text-blue-400">
                                         Overview
                                     </a>
                                 </li>
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/providers/local/"} className="dark:text-blue-400">
+                                    <a href={"/guides/engines/local/"} className="dark:text-blue-400">
                                         Local Providers
                                     </a>
                                 </li>
                                 <li className="font-semibold list-disc mb-4">
-                                    <a href={"/guides/providers/remote/"} className="dark:text-blue-400">
+                                    <a href={"/guides/engines/remote/"} className="dark:text-blue-400">
                                         Remote Providers
                                     </a>
                                 </li>
