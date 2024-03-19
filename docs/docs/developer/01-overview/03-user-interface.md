@@ -26,7 +26,7 @@ keywords:
   <meta property="og:description" content="Explore Jan's UI Kit for customizing the user interface to fit your brand and style. Learn how to personalize your application with Jan's flexible UI components." />
   <meta property="og:url" content="https://jan.ai/developer/ui/" />
   <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
 </head>
 
 :::warning

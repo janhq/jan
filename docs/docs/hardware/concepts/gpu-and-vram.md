@@ -13,7 +13,7 @@ title: GPUs and VRAM
   <meta property="og:description" content="Explore the world of GPUs and VRAM, learn their importance in gaming, AI, machine learning, and more. Understand how to connect a GPU to a motherboard and choose the right graphics card for your needs." />
   <meta property="og:url" content="https://jan.ai/guides/gpus-and-vram" />
   <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
 </head>
 
 ## What Is a GPU?
