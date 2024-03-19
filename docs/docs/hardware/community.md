@@ -1,12 +1,36 @@
 ---
 title: Hardware Examples
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
-keywords: [Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ]
+keywords:
+  [
+    Jan AI,
+    Jan,
+    ChatGPT alternative,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+  ]
 ---
+
+<head>
+  <title>Hardware Examples</title>
+  <meta charset="utf-8" />
+  <meta name="description" content="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server. Add your own hardware examples to this page by creating a new file in the `docs/docs/hardware/examples` directory." />
+  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/guides/hardware-examples" />
+  <meta property="og:title" content="Hardware Examples" />
+  <meta property="og:description" content="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server. Add your own hardware examples to this page by creating a new file in the `docs/docs/hardware/examples` directory." />
+  <meta property="og:url" content="https://jan.ai/guides/hardware-examples" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image-hardware-examples.png" />
+</head>
 
 ## Add your own example
 
-Add your own examples to this page by creating a new file in the `docs/docs/hardware/examples` directory. 
+Add your own examples to this page by creating a new file in the `docs/docs/hardware/examples` directory.
 
 ```shell
 docs
@@ -18,9 +42,10 @@ docs
             // highlight-next-line
             └── <YOUR_BUILD_HERE>.md
 ```
+
 ### File and Title Convention
 
-We use a specific naming convention for the file name. 
+We use a specific naming convention for the file name.
 
 ```shell
 # Filename
@@ -52,4 +77,4 @@ You are allowed to include affiliate links in your example.
 
 ## Longer-Term
 
-We will likely build a simple web app to make it easier to add your own examples, sort and retrieve. 
+We will likely build a simple web app to make it easier to add your own examples, sort and retrieve.

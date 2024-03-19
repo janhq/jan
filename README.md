@@ -327,6 +327,7 @@ Jan builds on top of other open-source projects:
 - [llama.cpp](https://github.com/ggerganov/llama.cpp)
 - [LangChain](https://github.com/langchain-ai)
 - [TensorRT](https://github.com/NVIDIA/TensorRT)
+- [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)
 
 ## Contact
 
