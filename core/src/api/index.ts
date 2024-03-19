@@ -33,7 +33,7 @@ export enum AppRoute {
   stopServer = 'stopServer',
   log = 'log',
   logServer = 'logServer',
-  systemInformations = 'systemInformations',
+  systemInformation = 'systemInformation',
   showToast = 'showToast',
 }
 
@@ -95,6 +95,8 @@ export enum FileManagerRoute {
   getUserHomePath = 'getUserHomePath',
   fileStat = 'fileStat',
   writeBlob = 'writeBlob',
+  mkdir = 'mkdir',
+  rm = 'rm',
 }
 
 export type ApiFunction = (...args: any[]) => any

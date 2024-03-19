@@ -2,6 +2,20 @@
 title: Recommended AI Hardware by Budget
 ---
 
+<head>
+  <title>Recommended AI Hardware Builds by Budget</title>
+  <meta charSet="utf-8" />
+  <meta name="description" content="Explore recommended AI hardware builds for entry-level, mid-range, and high-end budgets. Find the perfect balance of performance and cost for your AI and machine learning projects." />
+  <meta name="keywords" content="AI hardware, budget PC build, entry-level AI PC, mid-range AI PC, high-end AI PC, GPU for AI, AI PC build, machine learning hardware" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/guides/recommended-ai-hardware-by-budget" />
+  <meta property="og:title" content="Recommended AI Hardware Builds by Budget" />
+  <meta property="og:description" content="Explore recommended AI hardware builds for entry-level, mid-range, and high-end budgets. Find the perfect balance of performance and cost for your AI and machine learning projects." />
+  <meta property="og:url" content="https://jan.ai/guides/recommended-ai-hardware-by-budget" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
+</head>
+
 > :warning: **Warning:** Do your own research before any purchase. Jan is not liable for compatibility, performance or other issues. Products can become outdated quickly.
 
 ## Entry-level PC Build at $1000

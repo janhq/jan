@@ -18,6 +18,7 @@ export type ModelInfo = {
 export enum InferenceEngine {
   nitro = 'nitro',
   openai = 'openai',
+  groq = 'groq',
   triton_trtllm = 'triton_trtllm',
   nitro_tensorrt_llm = 'nitro-tensorrt-llm',
 

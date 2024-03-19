@@ -37,12 +37,17 @@ const readdirSync = (...args: any[]) => global.core.api?.readdirSync(...args)
  */
 const mkdirSync = (...args: any[]) => global.core.api?.mkdirSync(...args)
 
+const mkdir = (...args: any[]) => global.core.api?.mkdir(...args)
+
 /**
  * Removes a directory at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the directory is removed successfully.
  */
 const rmdirSync = (...args: any[]) =>
   global.core.api?.rmdirSync(...args, { recursive: true, force: true })
+
+const rm = (path: string) => global.core.api?.rm(path)
+
 /**
  * Deletes a file from the local file system.
  * @param {string} path - The path of the file to delete.
@@ -92,7 +97,9 @@ export const fs = {
   existsSync,
   readdirSync,
   mkdirSync,
+  mkdir,
   rmdirSync,
+  rm,
   unlinkSync,
   appendFileSync,
   copyFileSync,
