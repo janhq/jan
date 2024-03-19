@@ -15,76 +15,77 @@
 const sidebars = {
   aboutSidebar: [
     {
-      type: 'category',
-      label: 'What is Jan?',
-      link: { type: 'doc', id: 'about/about' },
+      type: "category",
+      label: "What is Jan?",
+      link: { type: "doc", id: "about/about" },
       items: [
         //"about/roadmap",
-        'community/community',
+        "community/community",
       ],
     },
     {
-      type: 'category',
-      label: 'Who we are',
-      link: { type: 'doc', id: 'team/team' },
-      items: ['team/join-us', 'team/contributor-program'],
+      type: "category",
+      label: "Who we are",
+      link: { type: "doc", id: "team/team" },
+      items: ["team/join-us", "team/contributor-program"],
     },
-    'wall-of-love',
+    "wall-of-love",
     {
-      type: 'category',
-      label: 'How We Work',
-      link: { type: 'doc', id: 'how-we-work' },
+      type: "category",
+      label: "How We Work",
+      link: { type: "doc", id: "how-we-work" },
       items: [
-        'how-we-work/strategy/strategy',
-        'how-we-work/project-management/project-management',
+        "how-we-work/strategy/strategy",
+        "how-we-work/project-management/project-management",
         {
-          type: 'category',
-          label: 'Engineering',
-          link: { type: 'doc', id: 'how-we-work/engineering/engineering' },
+          type: "category",
+          label: "Engineering",
+          link: { type: "doc", id: "how-we-work/engineering/engineering" },
           items: [
-            'how-we-work/engineering/ci-cd',
-            'how-we-work/engineering/qa',
+            "how-we-work/engineering/ci-cd",
+            "how-we-work/engineering/qa",
           ],
         },
-        'how-we-work/product-design/product-design',
-        'how-we-work/analytics/analytics',
-        'how-we-work/website-docs/website-docs',
+        "how-we-work/product-design/product-design",
+        "how-we-work/analytics/analytics",
+        "how-we-work/website-docs/website-docs",
       ],
     },
-    'acknowledgements',
+    "acknowledgements",
     {
-      type: 'category',
-      label: 'FAQ',
-      link: { type: 'doc', id: 'about/faq' },
-      items: [],
+      type: "category",
+      label: "FAQ",
+      link: { type: "doc", id: "about/faq" },
+      items:
+        [],
     },
   ],
   productSidebar: [
     {
-      type: 'category',
-      label: 'Platforms',
+      type: "category",
+      label: "Platforms",
       collapsible: false,
       items: [
-        'platforms/desktop',
-        'server-suite/home-server',
+        "platforms/desktop",
+        "server-suite/home-server",
         // "server-suite/enterprise",
         // "platforms/mobile",
         // "platforms/hub",
       ],
     },
     {
-      type: 'category',
+      type: "category",
       collapsible: true,
       collapsed: false,
-      label: 'Features',
-      link: { type: 'doc', id: 'features/features' },
+      label: "Features",
+      link: { type: "doc", id: "features/features" },
       items: [
-        'features/local',
-        'features/remote',
-        'features/api-server',
-        'features/extensions-framework',
-        'features/agents-framework',
-        'features/data-security',
+        "features/local",
+        "features/remote",
+        "features/api-server",
+        "features/extensions-framework",
+        "features/agents-framework",
+        "features/data-security",
       ],
     },
     // NOTE: Jan Server Suite will be torn out into it's own section in the future
@@ -102,216 +103,331 @@ const sidebars = {
   ],
   solutionSidebar: [
     {
-      type: 'category',
-      label: 'Use Cases',
+      type: "category",
+      label: "Use Cases",
       collapsed: true,
       collapsible: true,
-      items: ['solutions/ai-pc', 'solutions/chatgpt-alternative'],
+      items: ["solutions/ai-pc", "solutions/chatgpt-alternative"],
     },
     {
-      type: 'category',
-      label: 'Sectors',
+      type: "category",
+      label: "Sectors",
       collapsed: true,
       collapsible: true,
       items: [
-        'solutions/finance',
-        'solutions/healthcare',
-        'solutions/legal',
-        'solutions/government',
+        "solutions/finance",
+        "solutions/healthcare",
+        "solutions/legal",
+        "solutions/government",
       ],
     },
     {
-      type: 'category',
-      label: 'Organization Type',
+      type: "category",
+      label: "Organization Type",
       collapsed: true,
       collapsible: true,
       items: [
-        'solutions/developers',
-        'solutions/consultants',
-        'solutions/startups',
-        'solutions/enterprises',
+        "solutions/developers",
+        "solutions/consultants",
+        "solutions/startups",
+        "solutions/enterprises",
       ],
     },
   ],
 
-  pricingSidebar: ['pricing/pricing'],
+  pricingSidebar: ["pricing/pricing"],
   ecosystemSidebar: [
-    'ecosystem/ecosystem',
+    "ecosystem/ecosystem",
     {
-      type: 'category',
-      label: 'Partners',
-      link: { type: 'doc', id: 'partners/partners' },
+      type: "category",
+      label: "Partners",
+      link: { type: "doc", id: "partners/partners" },
       collapsible: true,
-      items: ['partners/become-a-partner'],
+      items: ["partners/become-a-partner"],
     },
     {
-      type: 'category',
-      label: 'Integrations',
-      link: { type: 'doc', id: 'integrations' },
+      type: "category",
+      label: "Integrations",
+      link: { type: "doc", id: "integrations" },
       items: [
         {
-          type: 'autogenerated',
-          dirName: 'integrations',
+          type: "autogenerated",
+          dirName: "integrations",
         },
       ],
     },
   ],
-  // guidesSidebar: [
-  //   {
-  //     type: "autogenerated",
-  //     dirName: "guides",
-  //   },
-  // ],
   guidesSidebar: [
     {
-      type: 'category',
-      label: 'Get Started',
+      type: "category",
+      label: "Get Started",
       collapsible: false,
-      className: 'head_Menu',
+      className: "head_Menu",
       items: [
-        'guides/quickstart',
-        'guides/install',
-        'guides/start-server',
-        'guides/models-list',
-      ],
+        "guides/get-started/overview",
+        "guides/get-started/quickstart",
+
+        {
+          type: "category",
+          label: "Hardware Setup",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/get-started/hardware-setup",
+          },
+          items: [
+            "guides/get-started/settingup-gpu",
+          ]
+        },
+        {
+          type: "category",
+          label: "Installation",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/installation/README",
+          },
+          items: [
+            "guides/installation/docker",
+            "guides/installation/linux",
+            "guides/installation/mac",
+            "guides/installation/windows"
+          ]
+        },
+      ]
     },
     {
-      type: 'category',
-      label: 'Guides',
+      type: "category",
+      label: "User Guides",
       collapsible: false,
-      className: 'head_Menu',
-      items: ['guides/best-practices', 'guides/thread'],
+      className: "head_Menu",
+      items: [
+        "guides/user-guides/overview-guides",
+        "guides/user-guides/jan-data-folder",
+        "guides/user-guides/manage-models",
+        "guides/user-guides/manage-assistants",
+        "guides/user-guides/manage-threads",
+        "guides/user-guides/local-server",
+        "guides/user-guides/advanced-settings"
+      ]
     },
     {
-      type: 'category',
-      label: 'Advanced Features',
+      type: "category",
+      label: "Inference Engines",
       collapsible: false,
-      className: 'head_Menu',
+      className: "head_Menu",
       items: [
+        "guides/inference/overview-inference",
         {
-          type: 'category',
-          label: 'Advanced Settings',
-          className: 'head_SubMenu',
+          type: "category",
+          label: "Local Engines",
+          className: "head_SubMenu",
           link: {
             type: 'doc',
-            id: 'guides/advanced-settings/advanced-settings',
-          },
-          items: ['guides/advanced-settings/http-proxy'],
-        },
-        {
-          type: 'category',
-          label: 'Advanced Model Setup',
-          className: 'head_SubMenu',
-          link: {
-            type: 'doc',
-            id: 'guides/models/README',
+            id: "guides/local-providers/README",
           },
           items: [
-            'guides/models/customize-engine',
-            'guides/models/import-models',
-            'guides/models/integrate-remote',
-          ],
+            "guides/local-providers/llamacpp",
+            "guides/local-providers/lmstudio",
+            "guides/local-providers/ollama",
+            "guides/local-providers/tensorrt",
+          ]
         },
         {
-          type: 'category',
-          label: 'Inference Providers',
-          className: 'head_SubMenu',
+          type: "category",
+          label: "Remote Engines",
+          className: "head_SubMenu",
           link: {
             type: 'doc',
-            id: 'guides/providers/README',
+            id: "guides/remote-providers/README",
           },
           items: [
-            'guides/providers/llama-cpp',
-            'guides/providers/tensorrt-llm',
-          ],
+            "guides/remote-providers/claude",
+            "guides/remote-providers/groq",
+            "guides/remote-providers/mistral",
+            "guides/remote-providers/openai",
+            "guides/remote-providers/remote-server-integration"
+          ]
         },
-        {
-          type: 'category',
-          label: 'Extensions',
-          className: 'head_SubMenu',
-          link: {
-            type: 'doc',
-            id: 'guides/extensions/README',
-          },
-          items: [
-            'guides/extensions/import-ext',
-            'guides/extensions/setup-ext',
-          ],
-        },
-        {
-          type: 'category',
-          label: 'Integrations',
-          className: 'head_SubMenu',
-          link: {
-            type: 'doc',
-            id: 'guides/integration/README',
-          },
-          items: [
-            'guides/integration/azure',
-            'guides/integration/discord',
-            'guides/integration/groq',
-            'guides/integration/lmstudio',
-            'guides/integration/mistral',
-            'guides/integration/ollama',
-            'guides/integration/openinterpreter',
-            'guides/integration/openrouter',
-            'guides/integration/raycast',
-            'guides/integration/vscode',
-          ],
-        },
-      ],
+      ]
     },
     {
-      type: 'category',
-      label: 'Troubleshooting',
+      type: "category",
+      label: "Extensions",
       collapsible: false,
-      className: 'head_Menu',
+      className: "head_Menu",
       items: [
-        {
-          type: 'category',
-          label: 'Error Codes',
-          className: 'head_SubMenu',
-          link: {
-            type: 'doc',
-            id: 'guides/error-codes/README',
-          },
-          items: [
-            'guides/error-codes/how-to-get-error-logs',
-            'guides/error-codes/permission-denied',
-            'guides/error-codes/something-amiss',
-            'guides/error-codes/undefined-issue',
-            'guides/error-codes/unexpected-token',
-          ],
-        },
-        {
-          type: 'category',
-          label: 'Common Error',
-          className: 'head_SubMenu',
-          link: {
-            type: 'doc',
-            id: 'guides/common-error/README',
-          },
-          items: [
-            'guides/common-error/broken-build',
-            'guides/common-error/not-using-gpu',
-          ],
-        },
-        'guides/faq',
-      ],
+        "guides/extensions/extensions",
+      ]
     },
+    {
+      type: "category",
+      label: "Integrations",
+      collapsible: false,
+      className: "head_Menu",
+      items: [
+        // "guides/integrations/overview-integration",
+        {
+          type: "category",
+          label: "Integrations",
+          className: "head_SubMenu",
+          link: {
+            type: 'doc',
+            id: "guides/integrations/README",
+          },
+          items: [
+            "guides/integrations/crewai",
+            "guides/integrations/discord",
+            "guides/integrations/interpreter",
+            "guides/integrations/raycast",
+            "guides/integrations/router",
+            "guides/integrations/unsloth",
+            "guides/integrations/vscode"
+          ]
+        },
+      ]
+    },
+    {
+      type: "category",
+      label: "Troubleshooting",
+      collapsible: false,
+      className: "head_Menu",
+      items: [
+        "guides/troubleshooting",
+      ]
+    },
+    // {
+    //   type: "category",
+    //   label: "Advanced Features",
+    //   collapsible: false,
+    //   className: "head_Menu",
+    //   items: [
+    //     {
+    //       type: "category",
+    //       label: "Advanced Settings",
+    //       className: "head_SubMenu",
+    //       link: {
+    //         type: 'doc',
+    //         id: "guides/advanced-settings/advanced-settings",
+    //       },
+    //       items: [
+    //         "guides/advanced-settings/http-proxy",
+    //       ]
+    //     },
+    //     {
+    //       type: "category",
+    //       label: "Advanced Model Setup",
+    //       className: "head_SubMenu",
+    //       link: {
+    //         type: 'doc',
+    //         id: "guides/models/README",
+    //       },
+    //       items: [
+    //         "guides/models/customize-engine",
+    //         "guides/models/import-models",
+    //         "guides/models/integrate-remote",
+    //       ]
+    //     },
+    //     {
+    //       type: "category",
+    //       label: "Inference Providers",
+    //       className: "head_SubMenu",
+    //       link: {
+    //         type: 'doc',
+    //         id: "guides/providers/README",
+    //       },
+    //       items: [
+    //         "guides/providers/llama-cpp",
+    //         "guides/providers/tensorrt-llm",
+    //       ]
+    //     },
+    //     {
+    //       type: "category",
+    //       label: "Extensions",
+    //       className: "head_SubMenu",
+    //       link: {
+    //         type: 'doc',
+    //         id: "guides/extensions/README",
+    //       },
+    //       items: [
+    //         "guides/extensions/import-ext",
+    //         "guides/extensions/setup-ext",
+    //       ]
+    //     },
+    //     {
+    //       type: "category",
+    //       label: "Integrations",
+    //       className: "head_SubMenu",
+    //       link: {
+    //         type: 'doc',
+    //         id: "guides/integration/README",
+    //       },
+    //       items: [
+    //         "guides/integration/azure",
+    //         "guides/integration/discord",
+    //         "guides/integration/groq",
+    //         "guides/integration/lmstudio",
+    //         "guides/integration/mistral",
+    //         "guides/integration/ollama",
+    //         "guides/integration/openinterpreter",
+    //         "guides/integration/openrouter",
+    //         "guides/integration/raycast",
+    //         "guides/integration/vscode",
+    //       ]
+    //     },
+    //   ]
+    // },
+    // {
+    //   type: "category",
+    //   label: "Troubleshooting",
+    //   collapsible: false,
+    //   className: "head_Menu",
+    //   items: [
+    //     {
+    //       type: "category",
+    //       label: "Error Codes",
+    //       className: "head_SubMenu",
+    //       link: {
+    //         type: 'doc',
+    //         id: "guides/error-codes/README",
+    //       },
+    //       items: [
+    //         "guides/error-codes/how-to-get-error-logs",
+    //         "guides/error-codes/permission-denied",
+    //         "guides/error-codes/something-amiss",
+    //         "guides/error-codes/undefined-issue",
+    //         "guides/error-codes/unexpected-token",
+    //       ]
+    //     },
+    //     {
+    //       type: "category",
+    //       label: "Common Error",
+    //       className: "head_SubMenu",
+    //       link: {
+    //         type: 'doc',
+    //         id: "guides/common-error/README",
+    //       },
+    //       items: [
+    //         "guides/common-error/broken-build",
+    //         "guides/common-error/not-using-gpu",
+    //       ]
+    //     },
+    //     "guides/faq"
+    //   ]
+    // },
   ],
   developerSidebar: [
     {
-      type: 'autogenerated',
-      dirName: 'developer',
+      type: "autogenerated",
+      dirName: "developer",
     },
   ],
   releasesSidebar: [
     {
-      type: 'autogenerated',
-      dirName: 'releases',
+      type: "autogenerated",
+      dirName: "releases",
     },
-  ],
-}
+  ]
+};
 
-module.exports = sidebars
+module.exports = sidebars;

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import { AiOutlineGithub, AiOutlineTwitter } from 'react-icons/ai'
@@ -130,15 +130,13 @@ export default function Footer() {
     siteConfig: { customFields },
   } = useDocusaurusContext()
 
+  const [formMessage, setFormMessage] = useState('')
+
   const onSubmit = (data) => {
     const { email } = data
     const options = {
       method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'api-key': customFields.apiKeyBrevo,
-      },
+
       body: JSON.stringify({
         updateEnabled: false,
         email,
@@ -147,12 +145,18 @@ export default function Footer() {
     }
 
     if (email) {
-      fetch('https://api.brevo.com/v3/contacts', options)
+      fetch('https://brevo.jan.ai/', options)
         .then((response) => response.json())
         .then((response) => {
           if (response.id) {
-            reset()
+            setFormMessage('You have successfully joined our newsletter')
+          } else {
+            setFormMessage(response.message)
           }
+          reset()
+          setTimeout(() => {
+            setFormMessage('')
+          }, 5000)
         })
         .catch((err) => console.error(err))
     }
@@ -203,6 +207,7 @@ export default function Footer() {
                     </svg>
                   </button>
                 </form>
+                {formMessage && <p className="text-left mt-4">{formMessage}</p>}
               </div>
             </div>
           </div>
