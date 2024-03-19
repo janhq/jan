@@ -1,4 +1,9 @@
-import { GpuSetting, MonitoringExtension, executeOnMain } from '@janhq/core'
+import {
+  GpuSetting,
+  MonitoringExtension,
+  OperatingSystemInfo,
+  executeOnMain,
+} from '@janhq/core'
 
 /**
  * JanMonitoringExtension is a extension that provides system monitoring functionality.
@@ -40,5 +45,9 @@ export default class JanMonitoringExtension extends MonitoringExtension {
    */
   getCurrentLoad(): Promise<any> {
     return executeOnMain(NODE, 'getCurrentLoad')
+  }
+
+  getOsInfo(): Promise<OperatingSystemInfo> {
+    return executeOnMain(NODE, 'getOsInfo')
   }
 }

@@ -93,8 +93,7 @@ export function persistExtensions() {
  */
 export async function installExtensions(extensions: any) {
   const installed: Extension[] = []
-  for (const ext of extensions) {
-    // Set install options and activation based on input type
+  const installations = extensions.map((ext: any): Promise<void> => {
     const isObject = typeof ext === 'object'
     const spec = isObject ? [ext.specifier, ext] : [ext]
     const activate = isObject ? ext.activate !== false : true
@@ -102,15 +101,17 @@ export async function installExtensions(extensions: any) {
     // Install and possibly activate extension
     const extension = new Extension(...spec)
     if (!extension.origin) {
-      continue
+      return Promise.resolve()
     }
-    await extension._install()
-    if (activate) extension.setActive(true)
+    return extension._install().then(() => {
+      if (activate) extension.setActive(true)
+      // Add extension to store if needed
+      addExtension(extension)
+      installed.push(extension)
+    })
+  })
 
-    // Add extension to store if needed
-    addExtension(extension)
-    installed.push(extension)
-  }
+  await Promise.all(installations)
 
   // Return list of all installed extensions
   return installed
