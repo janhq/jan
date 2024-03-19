@@ -39,8 +39,9 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   override inferenceUrl = INFERENCE_URL
   override nodeModule = NODE
 
-  private supportedGpuArch = ['turing', 'ampere', 'ada']
+  private supportedGpuArch = ['ampere', 'ada']
   private supportedPlatform = ['win32', 'linux']
+  private isUpdateAvailable = false
 
   compatibility() {
     return COMPATIBILITY as unknown as Compatibility
@@ -56,6 +57,8 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   }
 
   override async install(): Promise<void> {
+    await this.removePopulatedModels()
+
     const info = await systemInformation()
     console.debug(
       `TensorRTLLMExtension installing pre-requisites... ${JSON.stringify(info)}`
@@ -141,6 +144,22 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
   }
 
+  async removePopulatedModels(): Promise<void> {
+    console.debug(`removePopulatedModels`, JSON.stringify(models))
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelFolderPath = await joinPath([janDataFolderPath, 'models'])
+
+    for (const model of models) {
+      const modelPath = await joinPath([modelFolderPath, model.id])
+      console.debug(`modelPath: ${modelPath}`)
+      if (await fs.existsSync(modelPath)) {
+        console.debug(`Removing model ${modelPath}`)
+        await fs.rmdirSync(modelPath)
+      }
+    }
+    events.emit(ModelEvent.OnModelsUpdate, {})
+  }
+
   async onModelInit(model: Model): Promise<void> {
     if (model.engine !== this.provider) return
 
@@ -154,6 +173,10 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
         },
       })
     }
+  }
+
+  updatable() {
+    return this.isUpdateAvailable
   }
 
   override async installationState(): Promise<InstallationState> {
