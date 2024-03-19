@@ -178,7 +178,7 @@ export default function Home() {
               )}
             </div>
             <p className="mt-6 text-black/60 dark:text-white/60">
-              400K+ Downloads | Free & Open Source
+              500K+ Downloads | Free & Open Source
             </p>
 
             <div className="w-4/5  mx-auto mt-10">
@@ -783,7 +783,7 @@ export default function Home() {
                   </p>
                 </div>
                 <div className="text-center">
-                  <h1>400K+</h1>
+                  <h1>500K+</h1>
                   <p className="font-medium text-black/60 dark:text-white/60">
                     Downloads
                   </p>
@@ -821,7 +821,7 @@ export default function Home() {
                   <Dropdown />
                 )}
                 <p className="mt-6 text-zinc-text-black/60 dark:text-white/60">
-                  400K+ Downloads | Free & Open Source
+                  500K+ Downloads | Free & Open Source
                 </p>
               </div>
             </div>
