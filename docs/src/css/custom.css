@@ -34,7 +34,7 @@
 /* Dark mode styles based on Docusaurus dark theme */
 [data-theme='dark'] .head_Menu div {
   font-weight: bold;
-  background-color: var(--ifm-background-color);
+  /* background-color: var(--ifm-background-color); */
   color: var(--ifm-font-color-base);
   margin-left: 0.7rem;
   font-size: larger;
@@ -42,14 +42,14 @@
 
 [data-theme='dark'] .head_Menu li {
   font-weight: normal;
-  background-color: var(--ifm-background-color);
+  /* background-color: var(--ifm-background-color); */
   margin-bottom: 5px;
   color: var(--ifm-font-color-base);
 }
 
 [data-theme='dark'] .head_SubMenu div {
   font-weight: normal;
-  background-color: var(--ifm-background-color);
+  /* background-color: var(--ifm-background-color); */
   color: var(--ifm-font-color-base);
   margin-left: 0rem;
   font-size: medium;

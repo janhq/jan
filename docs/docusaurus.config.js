@@ -67,43 +67,43 @@ const config = {
         redirects: [
           {
             from: '/troubleshooting/failed-to-fetch',
-            to: '/guides/error-codes/something-amiss/',
+            to: '/troubleshooting/',
           },
           {
             from: '/guides/troubleshooting/gpu-not-used/',
-            to: '/guides/common-error/not-using-gpu/',
+            to: '/troubleshooting/',
           },
           {
             from: '/guides/troubleshooting/',
-            to: '/guides/error-codes/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/stuck-on-broken-build/',
-            to: '/guides/common-error/broken-build/',
+            to: '/troubleshooting/',
           },
           {
             from: '/guides/troubleshooting/',
-            to: '/guides/error-codes/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/somethings-amiss/',
-            to: '/guides/error-codes/something-amiss/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/how-to-get-error-logs/',
-            to: '/guides/error-codes/how-to-get-error-logs/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/permission-denied/',
-            to: '/guides/error-codes/permission-denied/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/unexpected-token/',
-            to: '/guides/error-codes/unexpected-token/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/undefined-issue/',
-            to: '/guides/error-codes/undefined-issue/',
+            to: '/troubleshooting/',
           },
           {
             from: '/install/',
@@ -111,11 +111,15 @@ const config = {
           },
           {
             from: '/guides/using-models/',
-            to: '/guides/models-setup/',
+            to: '/guides/models/',
           },
           {
             from: '/guides/using-extensions/',
-            to: '/guides/extensions/',
+            to: '/extensions/',
+          },
+          {
+            from: '/integrations/tensorrt',
+            to: '/guides/providers/tensorrt-llm',
           },
         ],
       },
@@ -222,8 +226,7 @@ const config = {
     metadata: [
       {
         name: 'description',
-        content:
-          'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+        content: `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
       },
       {
         name: 'keywords',
@@ -233,12 +236,11 @@ const config = {
       { name: 'robots', content: 'index, follow' },
       {
         property: 'og:title',
-        content: 'Jan | Open-source ChatGPT Alternative',
+        content: 'Jan AI | Rethink the Computer',
       },
       {
         property: 'og:description',
-        content:
-          'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+        content: `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
       },
       {
         property: 'og:image',
@@ -249,12 +251,11 @@ const config = {
       { property: 'twitter:site', content: '@janframework' },
       {
         property: 'twitter:title',
-        content: 'Jan | Open-source ChatGPT Alternative',
+        content: 'Jan AI | Rethink the Computer',
       },
       {
         property: 'twitter:description',
-        content:
-          'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+        content: `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
       },
       {
         property: 'twitter:image',
@@ -280,8 +281,7 @@ const config = {
           '@context': 'https://schema.org/',
           '@type': 'localAI',
           'name': 'Jan',
-          'description':
-            'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+          'description': `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
           'keywords':
             'Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ',
           'applicationCategory': 'BusinessApplication',
@@ -338,10 +338,15 @@ const config = {
           position: 'left',
           label: 'Ecosystem',
         },
+        {
+          to: 'download',
+          position: 'left',
+          label: 'Download',
+        },
         // {
         //   type: "docSidebar",
         //   sidebarId: "pricingSidebar",
-        //   positionL: "left",
+        //   positionl: "left",
         //   label: "Pricing",
         // },
         // Navbar right

@@ -15,6 +15,18 @@ keywords:
   ]
 ---
 
+<head>
+    <title>Jan Enterprise</title>
+    <meta name="description" content="Jan Enterprise is built for enterprise deployments, allowing organizations to customize and run AI at scale across their infrastructure. Own your AI, data, and IP with Jan Enterprise."/>
+    <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, enterprise AI, on-prem AI, datacenter AI"/>
+    <meta property="og:title" content="Jan Enterprise"/>
+    <meta property="og:description" content="Jan Enterprise is built for enterprise deployments, allowing organizations to customize and run AI at scale across their infrastructure. Own your AI, data, and IP with Jan Enterprise."/>
+    <meta property="og:url" content="https://jan.ai/enterprise"/>
+    <meta name="twitter:card" content="summary"/>
+    <meta name="twitter:title" content="Jan Enterprise"/>
+    <meta name="twitter:description" content="Jan Enterprise is built for enterprise deployments, allowing organizations to customize and run AI at scale across their infrastructure. Own your AI, data, and IP with Jan Enterprise."/>
+</head>
+
 # Customize and run AI across your organization
 
 Jan can professional backend to create, customize and run AIs at scale, for production-grade data centers.

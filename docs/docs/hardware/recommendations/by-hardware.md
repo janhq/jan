@@ -2,6 +2,20 @@
 title: Selecting AI Hardware
 ---
 
+<head>
+  <title>Selecting AI Hardware</title>
+  <meta charset="utf-8" />
+  <meta name="description" content="Guidance on selecting optimal AI hardware, including GPUs, CPUs, RAM, and motherboards for running Large Language Models (LLMs) efficiently. Explore factors like VRAM, CUDA compatibility, and unified memory architecture to build a powerful AI setup." />
+  <meta name="keywords" content="AI hardware, GPU for LLM, CPU for AI, RAM for machine learning, motherboard for AI, CUDA, VRAM, Unified Memory Architecture, M1, M2 Pro/Max, VRAM calculation" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="https://jan.ai/guides/selecting-ai-hardware" />
+  <meta property="og:title" content="Selecting AI Hardware" />
+  <meta property="og:description" content="Guidance on selecting optimal AI hardware, including GPUs, CPUs, RAM, and motherboards for running Large Language Models (LLMs) efficiently. Explore factors like VRAM, CUDA compatibility, and unified memory architecture to build a powerful AI setup." />
+  <meta property="og:url" content="https://jan.ai/guides/selecting-ai-hardware" />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="https://jan.ai/img/og-image-ai-hardware.png" />
+</head>
+
 When selecting a GPU for LLMs, remember that it's not just about the GPU itself. Consider the synergy with other components in your PC:
 
 - **CPU**: To ensure efficient processing, pair your GPU with a powerful CPU. LLMs benefit from fast processors, so having a capable CPU is essential.
