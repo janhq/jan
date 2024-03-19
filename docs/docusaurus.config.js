@@ -408,11 +408,6 @@ const config = {
     },
   },
 
-  // Put your custom environment here
-  customFields: {
-    apiKeyBrevo: process.env.API_KEY_BREVO,
-  },
-
   themes: ['@docusaurus/theme-live-codeblock', '@docusaurus/theme-mermaid'],
 }
 

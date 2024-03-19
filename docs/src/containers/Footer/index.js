@@ -136,11 +136,7 @@ export default function Footer() {
     const { email } = data
     const options = {
       method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'api-key': customFields.apiKeyBrevo,
-      },
+
       body: JSON.stringify({
         updateEnabled: false,
         email,
@@ -149,7 +145,7 @@ export default function Footer() {
     }
 
     if (email) {
-      fetch('https://api.brevo.com/v3/contacts', options)
+      fetch('https://brevo.jan.ai/', options)
         .then((response) => response.json())
         .then((response) => {
           if (response.id) {
