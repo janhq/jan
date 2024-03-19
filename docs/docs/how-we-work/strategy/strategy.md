@@ -2,7 +2,20 @@
 title: Strategy
 ---
 
+<head>
+    <title>Strategy</title>
+    <meta name="description" content="Learn about Jan's strategy, ideal customer, problems it solves, and solutions provided.">
+    <meta name="keywords" content="Jan AI, Jan, AI enthusiast, business, open source alternatives, control, stability, privacy, customisability">
+    <meta property="og:title" content="Strategy">
+    <meta property="og:description" content="Learn about Jan's strategy, ideal customer, problems it solves, and solutions provided.">
+    <meta property="og:url" content="https://yourwebsite.com/strategy">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Strategy">
+    <meta name="twitter:description" content="Learn about Jan's strategy, ideal customer, problems it solves, and solutions provided.">
+</head>
+
 We only have 2 planning parameters:
+
 - 10 year vision
 - 2 week sprint
 - Quarterly OKRs
@@ -45,7 +58,6 @@ Jan is a seamless user experience that runs on your personal computer, that glue
 - We build a comprehensive, seamless platform that takes care of the technical chores across the stack required to run open source AI
 - We run on top of a local folder of non-proprietary files, that anyone can tinker with (yes, even other apps!)
 - We provide open formats for packaging and distributing AI to run reproducibly across devices
-
 
 ## Prerequisites
 

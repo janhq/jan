@@ -3,11 +3,23 @@ title: TensorRT-LLM
 slug: /guides/providers/tensorrt-llm
 ---
 
+<head>
+    <title>TensorRT-LLM - Jan Guides</title>
+    <meta name="description" content="Learn how to install Jan's official TensorRT-LLM Extension, which offers 20-40% faster token speeds on Nvidia GPUs. Understand the requirements, installation steps, and troubleshooting tips.">
+    <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, TensorRT-LLM, Nvidia GPU, TensorRT, extension, installation, troubleshooting">
+    <meta property="og:title" content="TensorRT-LLM - Jan Guides">
+    <meta property="og:description" content="Learn how to install Jan's official TensorRT-LLM Extension, which offers 20-40% faster token speeds on Nvidia GPUs. Understand the requirements, installation steps, and troubleshooting tips.">
+    <meta property="og:url" content="https://yourwebsite.com/guides/providers/tensorrt-llm">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="TensorRT-LLM - Jan Guides">
+    <meta name="twitter:description" content="Learn how to install Jan's official TensorRT-LLM Extension, which offers 20-40% faster token speeds on Nvidia GPUs. Understand the requirements, installation steps, and troubleshooting tips.">
+</head>
+
 Users with Nvidia GPUs can get **20-40% faster\* token speeds** on their laptop or desktops by using [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM). The greater implication is that you are running FP16, which is also more accurate than quantized models.
 
 This guide walks you through how to install Jan's official [TensorRT-LLM Extension](https://github.com/janhq/nitro-tensorrt-llm). This extension uses [Nitro-TensorRT-LLM](https://github.com/janhq/nitro-tensorrt-llm) as the AI engine, instead of the default [Nitro-Llama-CPP](https://github.com/janhq/nitro). It includes an efficient C++ server to natively execute the [TRT-LLM C++ runtime](https://nvidia.github.io/TensorRT-LLM/gpt_runtime.html). It also comes with additional feature and performance improvements like OpenAI compatibility, tokenizer improvements, and queues.
 
-*Compared to using LlamaCPP engine.
+\*Compared to using LlamaCPP engine.
 
 :::warning
 This feature is only available for Windows users. Linux is coming soon.
@@ -37,6 +49,7 @@ ls ~\jan\extensions\@janhq\tensorrt-llm-extension\dist\bin
 ```
 
 ## Download a Compatible Model
+
 TensorRT-LLM can only run models in `TensorRT` format. These models, aka "TensorRT Engines", are prebuilt specifically for each target OS+GPU architecture.
 
 We offer a handful of precompiled models for Ampere and Ada cards that you can immediately download and play with:
@@ -47,7 +60,7 @@ We offer a handful of precompiled models for Ampere and Ada cards that you can i
 ![image](https://hackmd.io/_uploads/rJewrEgRp.png)
 
 3. Click use and start chatting!
-4. You may need to allow Nitro in your network 
+4. You may need to allow Nitro in your network
 
 ![alt text](image.png)
 
@@ -57,7 +70,7 @@ If you are our nightly builds, you may have to reinstall the TensorRT-LLM extens
 
 ## Configure Settings
 
-You can customize the default parameters for how Jan runs TensorRT-LLM. 
+You can customize the default parameters for how Jan runs TensorRT-LLM.
 
 :::info
 coming soon
