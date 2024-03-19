@@ -199,7 +199,7 @@ const config = {
 
   // Docs: https://docusaurus.io/docs/api/themes/configuration
   themeConfig: {
-    image: 'img/og-image.png',
+    image: 'img/og-image.svg',
     // Only for react live
     liveCodeBlock: {
       playgroundPosition: 'bottom',
@@ -222,8 +222,7 @@ const config = {
     metadata: [
       {
         name: 'description',
-        content:
-          'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+        content: `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
       },
       {
         name: 'keywords',
@@ -233,32 +232,30 @@ const config = {
       { name: 'robots', content: 'index, follow' },
       {
         property: 'og:title',
-        content: 'Jan | Open-source ChatGPT Alternative',
+        content: 'Jan AI | Rethink the Computer',
       },
       {
         property: 'og:description',
-        content:
-          'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+        content: `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
       },
       {
         property: 'og:image',
-        content: 'https://jan.ai/img/og-image.png',
+        content: 'https://jan.ai/img/og-image.svg',
       },
       { property: 'og:type', content: 'website' },
       { property: 'twitter:card', content: 'summary_large_image' },
       { property: 'twitter:site', content: '@janframework' },
       {
         property: 'twitter:title',
-        content: 'Jan | Open-source ChatGPT Alternative',
+        content: 'Jan AI | Rethink the Computer',
       },
       {
         property: 'twitter:description',
-        content:
-          'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+        content: `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
       },
       {
         property: 'twitter:image',
-        content: 'https://jan.ai/img/og-image.png',
+        content: 'https://jan.ai/img/og-image.svg',
       },
     ],
     headTags: [
@@ -280,8 +277,7 @@ const config = {
           '@context': 'https://schema.org/',
           '@type': 'localAI',
           'name': 'Jan',
-          'description':
-            'Jan runs 100% offline on your computer, utilizes open-source AI models, prioritizes privacy, and is highly customizable.',
+          'description': `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
           'keywords':
             'Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ',
           'applicationCategory': 'BusinessApplication',
@@ -338,10 +334,15 @@ const config = {
           position: 'left',
           label: 'Ecosystem',
         },
+        {
+          to: 'download',
+          position: 'left',
+          label: 'Download',
+        },
         // {
         //   type: "docSidebar",
         //   sidebarId: "pricingSidebar",
-        //   positionL: "left",
+        //   positionl: "left",
         //   label: "Pricing",
         // },
         // Navbar right
@@ -401,6 +402,11 @@ const config = {
       disableSwitch: false,
       respectPrefersColorScheme: false,
     },
+  },
+
+  // Put your custom environment here
+  customFields: {
+    apiKeyBrevo: process.env.API_KEY_BREVO,
   },
 
   themes: ['@docusaurus/theme-live-codeblock', '@docusaurus/theme-mermaid'],

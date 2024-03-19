@@ -29,6 +29,32 @@
       0px -1px 1px 0px rgba(0, 0, 0, 0.1) inset,
       0px 1px 1px 0px #4c4c4c inset;
   }
+
+  .card-wrapper {
+    border-radius: 16px;
+    background: linear-gradient(180deg, #fafafa 0%, #ededed 100%);
+    box-shadow:
+      0px 4px 12px 0px rgba(0, 0, 0, 0.12),
+      0px -1px 1px 0px rgba(0, 0, 0, 0.1) inset,
+      0px 1px 1px 0px #fff inset;
+  }
+
+  .card-wrapper-dark {
+    border-radius: 12px;
+    background: var(
+      --Linear-dark,
+      linear-gradient(
+        268deg,
+        rgba(117, 117, 117, 0.38) 0%,
+        rgba(121, 119, 128, 0.33) 100%
+      )
+    );
+    box-shadow:
+      0px 4px 12px 0px rgba(0, 0, 0, 0.12),
+      0px -1px 1px 0px rgba(0, 0, 0, 0.1) inset,
+      0px 0.2px 1px 0px #fff inset;
+  }
+
   .card {
     @apply rounded-xl border bg-gray-50 border-gray-50 dark:border-[#202231] dark:bg-[#111217]/50;
 

@@ -13,7 +13,7 @@ title: Recommended AI Hardware by Budget
   <meta property="og:description" content="Explore recommended AI hardware builds for entry-level, mid-range, and high-end budgets. Find the perfect balance of performance and cost for your AI and machine learning projects." />
   <meta property="og:url" content="https://jan.ai/guides/recommended-ai-hardware-by-budget" />
   <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
+  <meta property="og:image" content="https://jan.ai/img/og-image.svg" />
 </head>
 
 > :warning: **Warning:** Do your own research before any purchase. Jan is not liable for compatibility, performance or other issues. Products can become outdated quickly.
