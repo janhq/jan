@@ -9,7 +9,7 @@ slug: /guides/providers/llama-cpp
     <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, llama.cpp, Nitro, inference server, OpenAI-compatible API, queue, scaling"/>
     <meta property="og:title" content="llama.cpp - Jan Guides"/>
     <meta property="og:description" content="Learn about llama.cpp, the inference server used by Nitro, the default AI engine downloaded with Jan. Understand how Nitro provides an OpenAI-compatible API, queue, & scaling."/>
-    <meta property="og:url" content="https://yourwebsite.com/guides/providers/llama-cpp"/>
+    <meta property="og:url" content="https://jan.ai/guides/providers/llama-cpp"/>
     <meta name="twitter:card" content="summary"/>
     <meta name="twitter:title" content="llama.cpp - Jan Guides"/>
     <meta name="twitter:description" content="Learn about llama.cpp, the inference server used by Nitro, the default AI engine downloaded with Jan. Understand how Nitro provides an OpenAI-compatible API, queue, & scaling."/>

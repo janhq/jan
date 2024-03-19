@@ -9,7 +9,7 @@ slug: /guides/providers/tensorrt-llm
     <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, TensorRT-LLM, Nvidia GPU, TensorRT, extension, installation, troubleshooting"/>
     <meta property="og:title" content="TensorRT-LLM - Jan Guides"/>
     <meta property="og:description" content="Learn how to install Jan's official TensorRT-LLM Extension, which offers 20-40% faster token speeds on Nvidia GPUs. Understand the requirements, installation steps, and troubleshooting tips."/>
-    <meta property="og:url" content="https://yourwebsite.com/guides/providers/tensorrt-llm"/>
+    <meta property="og:url" content="https://jan.ai/guides/providers/tensorrt-llm"/>
     <meta name="twitter:card" content="summary"/>
     <meta name="twitter:title" content="TensorRT-LLM - Jan Guides"/>
     <meta name="twitter:description" content="Learn how to install Jan's official TensorRT-LLM Extension, which offers 20-40% faster token speeds on Nvidia GPUs. Understand the requirements, installation steps, and troubleshooting tips."/>

@@ -8,7 +8,7 @@ title: Analytics
     <meta name="keywords" content="analytics, privacy-preserving, Umami, data collection, GDPR compliance"/>
     <meta property="og:title" content="Analytics"/>
     <meta property="og:description" content="Learn about the analytics philosophy for Jan, focusing on privacy preservation and collecting minimal data for essential functionality."/>
-    <meta property="og:url" content="https://yourwebsite.com/analytics"/>
+    <meta property="og:url" content="https://jan.ai/analytics"/>
     <meta name="twitter:card" content="summary"/>
     <meta name="twitter:title" content="Analytics"/>
     <meta name="twitter:description" content="Learn about the analytics philosophy for Jan, focusing on privacy preservation and collecting minimal data for essential functionality."/>

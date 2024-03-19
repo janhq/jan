@@ -8,7 +8,7 @@ title: Project Management
     <meta name="keywords" content="Jan AI, project management, roadmap, epics, tasks, Kanban board"/>
     <meta property="og:title" content="Project Management"/>
     <meta property="og:description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage."/>
-    <meta property="og:url" content="https://yourwebsite.com/project-management"/>
+    <meta property="og:url" content="https://jan.ai/project-management"/>
     <meta name="twitter:card" content="summary"/>
     <meta name="twitter:title" content="Project Management"/>
     <meta name="twitter:description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage."/>

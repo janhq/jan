@@ -8,7 +8,7 @@ title: Cloud vs. Self-hosting Your AI
     <meta name="keywords" content="Cloud AI, Self-hosted AI, AI cost comparison, AI business considerations, AI deployment, cloud vs self-hosting AI"/>
     <meta property="og:title" content="Cloud vs. Self-hosting Your AI"/>
     <meta property="og:description" content="Explore the pros and cons of renting AI services from the cloud versus self-hosting, including cost comparisons, business considerations, and conclusions about the best approach for different scenarios."/>
-    <meta property="og:url" content="https://yourwebsite.com/articles/cloud-vs-self-hosting-your-ai"/>
+    <meta property="og:url" content="https://jan.ai/articles/cloud-vs-self-hosting-your-ai"/>
     <meta name="twitter:card" content="summary"/>
     <meta name="twitter:title" content="Cloud vs. Self-hosting Your AI"/>
     <meta name="twitter:description" content="Explore the pros and cons of renting AI services from the cloud versus self-hosting, including cost comparisons, business considerations, and conclusions about the best approach for different scenarios."/>

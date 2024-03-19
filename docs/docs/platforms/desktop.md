@@ -21,7 +21,7 @@ keywords:
     <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, desktop app, AI models, offline AI"/>
     <meta property="og:title" content="Jan Desktop"/>
     <meta property="og:description" content="Turn any computer into an AI computer with Jan Desktop. Run AI models directly on your laptop without an internet connection. Enjoy private conversations and customize your AI experience."/>
-    <meta property="og:url" content="https://yourwebsite.com/desktop"/>
+    <meta property="og:url" content="https://jan.ai/desktop"/>
     <meta name="twitter:card" content="summary"/>
     <meta name="twitter:title" content="Jan Desktop"/>
     <meta name="twitter:description" content="Turn any computer into an AI computer with Jan Desktop. Run AI models directly on your laptop without an internet connection. Enjoy private conversations and customize your AI experience."/>
