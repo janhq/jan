@@ -275,7 +275,7 @@ const config = {
           },
           {
             from: '/developer/build-extension/package-your-assistant/',
-            to: '/developer/build-extension/package-your-extension/',
+            to: '/developer/extension/package-your-extension/',
           },
           {
             from: '/getting-started/install/linux/',
@@ -323,7 +323,7 @@ const config = {
           },
           {
             from: '/docs/get-started/build-extension/',
-            to: '/developer/build-extension/',
+            to: '/developer/extension/',
           },
           {
             from: '/specs/files/',
@@ -339,7 +339,7 @@ const config = {
           },
           {
             from: '/docs/get-started/extension-anatomy/',
-            to: '/developer/build-extension/extension-anatomy/',
+            to: '/developer/extension/extension-anatomy/',
           },
           {
             from: '/docs/get-started/',
