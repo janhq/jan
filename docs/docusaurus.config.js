@@ -7,7 +7,7 @@ const path = require('path')
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Jan',
+  title: 'Jan | Rethink the Computer',
   tagline: 'Run your own AI',
   favicon: 'img/favicon.ico',
 
