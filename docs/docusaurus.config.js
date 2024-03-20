@@ -555,12 +555,12 @@ const config = {
       {
         name: 'keywords',
         content:
-          'Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ',
+          'Jan, Rethink the Computer, local AI, privacy focus, free and open source, private and offline, conversational AI, no-subscription fee, large language models',
       },
       { name: 'robots', content: 'index, follow' },
       {
         property: 'og:title',
-        content: 'Jan  | Rethink the Computer',
+        content: 'Jan | Rethink the Computer',
       },
       {
         property: 'og:description',
@@ -603,14 +603,10 @@ const config = {
         },
         innerHTML: JSON.stringify({
           '@context': 'https://schema.org/',
-          '@type': 'localAI',
-          'name': 'Jan',
-          'description': `Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution.`,
-          'keywords':
-            'Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ',
-          'applicationCategory': 'BusinessApplication',
-          'operatingSystem': 'Multiple',
-          'url': 'https://jan.ai/',
+          '@type': 'Organization',
+          name: 'Jan',
+          url: 'https://jan.ai/',
+          logo: 'https://jan.ai/img/og-image.png',
         }),
       },
     ],
