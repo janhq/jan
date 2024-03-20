@@ -4,13 +4,14 @@ slug: /mobile
 description: Jan Mobile allows you to bring your AI on the go
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
   ]
 ---

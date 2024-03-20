@@ -2,18 +2,6 @@
 title: Strategy
 ---
 
-<head>
-    <title>Strategy</title>
-    <meta name="description" content="Learn about Jan's strategy, ideal customer, problems it solves, and solutions provided."/>
-    <meta name="keywords" content="Jan AI, Jan, AI enthusiast, business, open source alternatives, control, stability, privacy, customisability"/>
-    <meta property="og:title" content="Strategy"/>
-    <meta property="og:description" content="Learn about Jan's strategy, ideal customer, problems it solves, and solutions provided."/>
-    <meta property="og:url" content="https://jan.ai/strategy"/>
-    <meta name="twitter:card" content="summary"/>
-    <meta name="twitter:title" content="Strategy"/>
-    <meta name="twitter:description" content="Learn about Jan's strategy, ideal customer, problems it solves, and solutions provided."/>
-</head>
-
 We only have 2 planning parameters:
 
 - 10 year vision

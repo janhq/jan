@@ -4,14 +4,15 @@ slug: /developer/extension/package-your-extension/
 description: Package your extension for sharing and publishing.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     build extension,
     extension anatomy,
   ]

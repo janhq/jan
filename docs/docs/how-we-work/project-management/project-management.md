@@ -1,18 +1,21 @@
 ---
 title: Project Management
+slug: /how-we-work/project-management
+description: Project management at Jan
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    project management,
+  ]
 ---
-
-<head>
-    <title>Project Management</title>
-    <meta name="description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage."/>
-    <meta name="keywords" content="Jan AI, project management, roadmap, epics, tasks, Kanban board"/>
-    <meta property="og:title" content="Project Management"/>
-    <meta property="og:description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage."/>
-    <meta property="og:url" content="https://jan.ai/project-management"/>
-    <meta name="twitter:card" content="summary"/>
-    <meta name="twitter:title" content="Project Management"/>
-    <meta name="twitter:description" content="Learn about Jan's project management approach, including roadmap management, organization of epics and tasks, and Kanban board usage."/>
-</head>
 
 We use the [Jan Monorepo Project](https://github.com/orgs/janhq/projects/5) in Github to manage our roadmap and sprint Kanbans.
 

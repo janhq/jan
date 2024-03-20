@@ -2,20 +2,6 @@
 title: Frequently Asked Questions (FAQ) - Jan
 ---
 
-<head>
-  <title>Frequently Asked Questions (FAQ)</title>
-  <meta charset="utf-8" />
-  <meta name="description" content="Explore frequently asked questions about Jan, including its features, compatibility, privacy policy, usage, and community involvement." />
-  <meta name="keywords" content="Jan, frequently asked questions, FAQ, about Jan, usage, compatibility, privacy, community, contribution, troubleshooting, self-hosting, hiring" />
-  <meta name="twitter:card" content="summary" />
-  <link rel="canonical" href="https://jan.ai/faq" />
-  <meta property="og:title" content="Frequently Asked Questions (FAQ)" />
-  <meta property="og:description" content="Explore frequently asked questions about Jan, including its features, compatibility, privacy policy, usage, and community involvement." />
-  <meta property="og:url" content="https://jan.ai/faq" />
-  <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image-faq.png" />
-</head>
-
 # Frequently Asked Questions (FAQ)
 
 ## What is Jan?

@@ -5,14 +5,15 @@ description: Jan Docs | Jan is a ChatGPT-alternative that runs on your own compu
 sidebar_position: 21
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     troubleshooting,
     error codes,
     broken build,
@@ -27,6 +28,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 ## Broken Build
+
 To resolve the issue where your Jan is stuck in a broken build after installation.
 
 <Tabs>
@@ -96,21 +98,21 @@ To resolve the issue where your Jan is stuck in a broken build after installatio
     </TabItem>
 
     <TabItem value="linux" label="Linux">
-    
+
         #### 1. Uninstall Jan
 
         <Tabs groupId = "linux_type">
             <TabItem value="linux_main" label = "Linux">
 
-                To uninstall Jan, you should use your package manager's uninstall or remove option. 
+                To uninstall Jan, you should use your package manager's uninstall or remove option.
 
                 This will return your system to its state before the installation of Jan.
 
                 This method can also reset all settings if you are experiencing any issues with Jan.
-        
+
             </TabItem>
             <TabItem value = "deb_ub" label = "Debian / Ubuntu">
-            
+
                 To uninstall Jan, run the following command.MDXContent
 
                 ```sh
@@ -124,13 +126,13 @@ To resolve the issue where your Jan is stuck in a broken build after installatio
 
             </TabItem>
             <TabItem value = "other" label = "Others">
-            
+
                 To uninstall Jan, you can uninstall Jan by deleting the `.AppImage` file.
 
                 If you wish to completely remove all user data associated with Jan after uninstallation, you can delete the user data at `~/jan`.
 
                 This method can also reset all settings if you are experiencing any issues with Jan.
-                
+
             </TabItem>
         </Tabs>
 
@@ -155,6 +157,7 @@ To resolve the issue where your Jan is stuck in a broken build after installatio
 
         Download the latest version of Jan from our [homepage](https://jan.ai/).
     </TabItem>
+
 </Tabs>
 
 By following these steps, you can cleanly uninstall and reinstall Jan, ensuring a smooth and error-free experience with the latest version.
@@ -166,6 +169,7 @@ Before reinstalling Jan, ensure it's completely removed from all shared spaces i
 :::
 
 ## Troubleshooting NVIDIA GPU
+
 To resolve issues when the Jan app does not utilize the NVIDIA GPU on Windows and Linux systems.
 
 #### 1. Ensure GPU Mode Requirements
@@ -268,28 +272,33 @@ If GPU mode isn't enabled by default:
   "gpu_highest_vram": "0"
 }
 ```
+
 #### 4. Restart Jan
+
 Restart Jan application to make sure it works.
 
 ##### Troubleshooting Tips
 
- - Ensure `nvidia_driver` and `cuda` fields indicate installed software.
- - If `gpus` field is empty or lacks your GPU, check NVIDIA driver and CUDA toolkit installations.
- - For further assistance, share the `settings.json` file.
+- Ensure `nvidia_driver` and `cuda` fields indicate installed software.
+- If `gpus` field is empty or lacks your GPU, check NVIDIA driver and CUDA toolkit installations.
+- For further assistance, share the `settings.json` file.
 
 #### Tested Configurations
 
 - **Windows 11 Pro 64-bit:**
+
   - GPU: NVIDIA GeForce RTX 4070ti
   - CUDA: 12.2
   - NVIDIA driver: 531.18 (Bare metal)
 
 - **Ubuntu 22.04 LTS:**
+
   - GPU: NVIDIA GeForce RTX 4070ti
   - CUDA: 12.2
   - NVIDIA driver: 545 (Bare metal)
 
 - **Ubuntu 20.04 LTS:**
+
   - GPU: NVIDIA GeForce GTX 1660ti
   - CUDA: 12.1
   - NVIDIA driver: 535 (Proxmox VM passthrough GPU)
@@ -306,8 +315,11 @@ Restart Jan application to make sure it works.
 3. Seek assistance in [Jan Discord](https://discord.gg/mY69SZaMaC).
 
 ## How to Get Error Logs
+
 To get the error logs of your Jan application, follow the steps below:
+
 #### Jan Application
+
 1. Navigate to the main dashboard.
 2. Click the **gear icon (⚙️)** on the bottom left of your screen.
 3. Under the **Settings screen**, click the **Advanced Settings**.
@@ -315,20 +327,25 @@ To get the error logs of your Jan application, follow the steps below:
 5. Click the **logs** folder.
 
 #### Jan UI
+
 1. Open your Unix or Linux terminal.
 2. Use the following commands to get the recent 50 lines of log files:
+
 ```bash
 tail -n 50 ~/jan/logs/app.log
 
 ```
 
 #### Jan API Server
+
 1. Open your Unix or Linux terminal.
 2. Use the following commands to get the recent 50 lines of log files:
+
 ```bash
 tail -n 50 ~/jan/logs/server.log
 
 ```
+
 :::warning
 Ensure to redact any private or sensitive information when sharing logs or error details.
 :::
@@ -338,6 +355,7 @@ If you have any questions or are looking for support, please don't hesitate to c
 :::
 
 ## Permission Denied
+
 When running Jan, you might encounter the following error message:
 
 ```
@@ -355,13 +373,17 @@ This error mainly caused by permission problem during installation. To resolve t
 ```sh
 sudo chown -R $(whoami) ~/.npm
 ```
+
 :::note
+
 - This command ensures that the necessary permissions are granted for Jan installation, resolving the encountered error.
 - If you have any questions or are looking for support, please don't hesitate to contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ) or create a new issue in our [GitHub repository](https://github.com/janhq/jan/issues/new/choose).
-:::
+  :::
 
 ## Something's Amiss
+
 When you start a chat with a model and encounter with a Something's Amiss error, here's how to resolve it:
+
 1. Ensure your OS is up to date.
 2. Choose a model smaller than 80% of your hardware's V/RAM. For example, on an 8GB machine, opt for models smaller than 6GB.
 3. Install the latest [Nightly release](/guides/quickstart/#nightly-releases) or [clear the application cache](/troubleshooting/#broken-build) when reinstalling Jan.
@@ -410,6 +432,7 @@ If you have any questions or are looking for support, please don't hesitate to c
 :::
 
 ## Undefined Issue
+
 Encountering an `undefined issue` in Jan is caused by errors related to the Nitro tool or other internal processes. It can be resolved through the following steps:
 
 1. Clearing the Jan folder and then reopen the application to determine if the problem persists
@@ -423,6 +446,7 @@ If you have any questions or are looking for support, please don't hesitate to c
 :::
 
 ## Unexpected Token
+
 Encountering the `Unexpected token` error when initiating a chat with OpenAI models mainly caused by either your OpenAI key or where you access your OpenAI from. This issue can be solved through the following steps:
 
 1. Obtain an OpenAI API key from [OpenAI's developer platform](https://platform.openai.com/) and integrate it into your application.

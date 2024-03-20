@@ -5,31 +5,20 @@ slug: /guides/engines/remote-server
 description: A step-by-step guide on how to set up Jan to connect with any remote or local API server.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     import-models-manually,
     remote server,
     OAI compatible,
   ]
 ---
-
-<head>
-    <title>Remote Server Integration</title>
-    <meta name="description" content="A step-by-step guide on how to set up Jan to connect with any remote or local API server. Learn how to configure Jan as a client to connect with OpenAI Platform or any OpenAI-compatible endpoint, and how to start models using Jan's Hub."/>
-    <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, import-models-manually, remote server, OAI compatible"/>
-    <meta property="og:title" content="Remote Server Integration"/>
-    <meta property="og:description" content="A step-by-step guide on how to set up Jan to connect with any remote or local API server. Learn how to configure Jan as a client to connect with OpenAI Platform or any OpenAI-compatible endpoint, and how to start models using Jan's Hub."/>
-    <meta property="og:url" content="https://jan.ai/guides/remote-server-integration"/>
-    <meta name="twitter:card" content="summary"/>
-    <meta name="twitter:title" content="Remote Server Integration"/>
-    <meta name="twitter:description" content="A step-by-step guide on how to set up Jan to connect with any remote or local API server. Learn how to configure Jan as a client to connect with OpenAI Platform or any OpenAI-compatible endpoint, and how to start models using Jan's Hub."/>
-</head>
 
 This guide will show you how to configure Jan as a client and point it to any remote & local (self-hosted) API server.
 
@@ -40,7 +29,6 @@ This guide will show you how to configure Jan as a client and point it to any re
 1. In `~/jan/models`, create a folder named `gpt-3.5-turbo-16k`.
 
 2. In this folder, add a `model.json` file with Filename as `model.json`, `id` matching folder name, `Format` as `api`, `Engine` as `openai`, and `State` as `ready`.
-
 
 ```json title="~/jan/models/gpt-3.5-turbo-16k/model.json"
 {
@@ -68,28 +56,28 @@ This guide will show you how to configure Jan as a client and point it to any re
 
 ### `model.json`
 
-The `model.json` file is used to set up your local models. 
+The `model.json` file is used to set up your local models.
 :::note
-- If you've set up your model's configuration in `nitro.json`, please note that `model.json` can overwrite the settings. 
+
+- If you've set up your model's configuration in `nitro.json`, please note that `model.json` can overwrite the settings.
 - When using OpenAI models like GPT-3.5 and GPT-4, you can use the default settings in `model.json` file.
-:::
+  :::
 
 There are two important fields in model.json that you need to setup:
 
 #### Settings
+
 This is the field where to set your engine configurations, there are two imporant field that you need to define for your local models:
 
-| Term              | Description                                             |
-|-------------------|---------------------------------------------------------|
-| `ctx_len`         | Defined based on the model's context size.              |
+| Term              | Description                                                           |
+| ----------------- | --------------------------------------------------------------------- |
+| `ctx_len`         | Defined based on the model's context size.                            |
 | `prompt_template` | Defined based on the model's trained template (e.g., ChatML, Alpaca). |
 
-To set up the `prompt_template` based on your model, follow the steps below:
-    1. Visit [Hugging Face](https://huggingface.co/), an open-source machine learning platform.
-    2. Find the current model that you're using (e.g., [Gemma 7b it](https://huggingface.co/google/gemma-7b-it)).
-    3. Review the text and identify the template.
+To set up the `prompt_template` based on your model, follow the steps below: 1. Visit [Hugging Face](https://huggingface.co/), an open-source machine learning platform. 2. Find the current model that you're using (e.g., [Gemma 7b it](https://huggingface.co/google/gemma-7b-it)). 3. Review the text and identify the template.
 
 #### Parameters
+
 `parameters` is the adjustable settings that affect how your model operates or processes the data.
 The fields in `parameters` are typically general and can be the same across models. An example is provided below:
 
@@ -104,12 +92,11 @@ The fields in `parameters` are typically general and can be the same across mode
 }
 ```
 
-
 :::tip
 
- - You can find the list of available models in the [OpenAI Platform](https://platform.openai.com/docs/models/overview).
- - The `id` property needs to match the model name in the list.
-   - For example, if you want to use the [GPT-4 Turbo](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), you must set the `id` property to `gpt-4-1106-preview`.
+- You can find the list of available models in the [OpenAI Platform](https://platform.openai.com/docs/models/overview).
+- The `id` property needs to match the model name in the list.
+  - For example, if you want to use the [GPT-4 Turbo](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), you must set the `id` property to `gpt-4-1106-preview`.
 
 :::
 
@@ -142,7 +129,7 @@ Currently, you can only connect to one OpenAI-compatible endpoint at a time.
 ### 1. Configure a Client Connection
 
 1. Navigate to the `~/jan/engines` folder.
-2. Modify the `openai.json file`. 
+2. Modify the `openai.json file`.
 
 :::note
 
@@ -166,11 +153,11 @@ Please note that currently, the code that supports any OpenAI-compatible endpoin
 1. In `~/jan/models`, create a folder named `mistral-ins-7b-q4`.
 
 2. In this folder, add a `model.json` file with Filename as `model.json`, ensure the following configurations:
-  - `id` matching folder name.
-  - `Format` set to `api`.
-  - `Engine` set to `openai`
-  - `State` set to `ready`.
 
+- `id` matching folder name.
+- `Format` set to `api`.
+- `Engine` set to `openai`
+- `State` set to `ready`.
 
 ```json title="~/jan/models/mistral-ins-7b-q4/model.json"
 {
@@ -194,8 +181,8 @@ Please note that currently, the code that supports any OpenAI-compatible endpoin
   },
   "engine": "openai"
 }
-
 ```
+
 ### 3. Start the Model
 
 1. Restart Jan and navigate to the **Hub**.
