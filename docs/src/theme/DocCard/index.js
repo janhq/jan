@@ -12,22 +12,7 @@ import styles from './styles.module.css';
 import engine from './assets/engine.png';
 import remote from './assets/remote.png';
 import manual from './assets/manual.png';
-import v047 from './assets/v0.4.7.png';
-import v046 from './assets/v0.4.6.png';
-import v045 from './assets/v0.4.5.png';
-import v044 from './assets/v0.4.4.png';
-import v043 from './assets/v0.4.3.png';
-import v042 from './assets/v0.4.2.png';
-import v041 from './assets/v0.4.1.png';
-import v040 from './assets/v0.4.0.png';
-import v033 from './assets/v0.3.3.png';
-import v032 from './assets/v0.3.2.png';
-import v031 from './assets/v0.3.1.png';
-import v030 from './assets/v0.3.0.png';
-import v023 from './assets/v0.2.3.png';
-import v022 from './assets/v0.2.2.png';
-import v021 from './assets/v0.2.1.png';
-import v020 from './assets/v0.2.0.png';
+import changelog from './assets/changelog.png';
 import setup from './assets/setup.png';
 import importex from './assets/import.png';
 import continueint from './assets/continueint.png';
@@ -45,7 +30,14 @@ import gpu from './assets/gpu.png';
 import mistral from './assets/mistral.png';
 import lm from './assets/lm.png';
 import ollama from './assets/ollama.png';
-import logsError from './assets/logs-error.png';
+import claude from './assets/claude.png';
+import windows from './assets/windows.png';
+import mac from './assets/mac.png';
+import linux from './assets/linux.png';
+import llama from './assets/llama.png';
+import docker from './assets/docker.png';
+import tensorrt from './assets/tensorrt.png';
+import groq from './assets/groq.png';
 
 function CardContainer({href, children}) {
   return (
@@ -110,42 +102,42 @@ function CardLink({item}) {
   ) : (item.label === "Manual Import") ? (
     <img src={manual} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.4.7") ? (
-    <img src={v047} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.4.6") ? (
-    <img src={v046} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.4.5") ? (
-    <img src={v045} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.4.4") ? (
-    <img src={v044} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.4.3") ? (
-    <img src={v043} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.4.2") ? (
-    <img src={v042} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.4.1") ? (
-    <img src={v041} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.4.0") ? (
-    <img src={v040} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.3.3") ? (
-    <img src={v033} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.3.2") ? (
-    <img src={v032} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.3.1") ? (
-    <img src={v031} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.3.0") ? (
-    <img src={v030} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.2.3") ? (
-    <img src={v023} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.2.2") ? (
-    <img src={v022} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.2.1") ? (
-    <img src={v021} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "v0.2.0") ? (
-    <img src={v020} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Extension Setup") ? (
     <img src={setup} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Import Extensions") ? (
     <img src={importex} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
-  ) : (item.label === "Continue") ? (
+  ) : (item.label === "Continue Integration") ? (
     <img src={continueint} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "OpenRouter") ? (
     <img src={openrouter} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
@@ -167,7 +159,7 @@ function CardLink({item}) {
     <img src={amiss} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Broken Build") ? (
     <img src={broken} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
-  ) : (item.label === "Troubleshooting NVIDIA GPU") ? (
+  ) : (item.label === "Jan not using GPU") ? (
     <img src={gpu} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Mistral AI") ? (
     <img src={mistral} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
@@ -175,15 +167,32 @@ function CardLink({item}) {
     <img src={lm} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (item.label === "Ollama") ? (
     <img src={ollama} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
-  ) : (item.label === "How to Get Error Logs") ? (
-    <img src={logsError} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "v0.4.8") ? (
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "v0.4.9") ? (
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "v0.4.10") ? (
+    <img src={changelog} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "Install with Docker") ? (
+    <img src={docker} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "Install on Linux") ? (
+    <img src={linux} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "Install on Mac") ? (
+    <img src={mac} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "Install on Windows") ? (
+    <img src={windows} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "Claude") ? (
+    <img src={claude} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "LlamaCPP Extension") ? (
+    <img src={llama} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "TensorRT-LLM Extension") ? (
+    <img src={tensorrt} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
+  ) : (item.label === "Groq") ? (
+    <img src={groq} alt="Logo" width={'20px'} height={'20px'} style={{marginRight: '5px'}} />
   ) : (
     // If not "Customize Engine Settings", use default icon
     '📄️'
-  );  
-
-
-  
+  );
   const doc = useDocById(item.docId ?? undefined);
   return (
     <CardLayout

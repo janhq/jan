@@ -67,43 +67,43 @@ const config = {
         redirects: [
           {
             from: '/troubleshooting/failed-to-fetch',
-            to: '/guides/error-codes/something-amiss/',
+            to: '/troubleshooting/',
           },
           {
             from: '/guides/troubleshooting/gpu-not-used/',
-            to: '/guides/common-error/not-using-gpu/',
+            to: '/troubleshooting/',
           },
           {
             from: '/guides/troubleshooting/',
-            to: '/guides/error-codes/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/stuck-on-broken-build/',
-            to: '/guides/common-error/broken-build/',
+            to: '/troubleshooting/',
           },
           {
             from: '/guides/troubleshooting/',
-            to: '/guides/error-codes/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/somethings-amiss/',
-            to: '/guides/error-codes/something-amiss/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/how-to-get-error-logs/',
-            to: '/guides/error-codes/how-to-get-error-logs/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/permission-denied/',
-            to: '/guides/error-codes/permission-denied/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/unexpected-token/',
-            to: '/guides/error-codes/unexpected-token/',
+            to: '/troubleshooting/',
           },
           {
             from: '/troubleshooting/undefined-issue/',
-            to: '/guides/error-codes/undefined-issue/',
+            to: '/troubleshooting/',
           },
           {
             from: '/install/',
@@ -111,15 +111,15 @@ const config = {
           },
           {
             from: '/guides/using-models/',
-            to: '/guides/models-setup/',
+            to: '/guides/models/',
           },
           {
             from: '/guides/using-extensions/',
-            to: '/guides/extensions/',
+            to: '/extensions/',
           },
           {
             from: '/integrations/tensorrt',
-            to: '/guides/providers/tensorrt-llm'
+            to: '/guides/providers/tensorrt-llm',
           },
         ],
       },
@@ -406,11 +406,6 @@ const config = {
       disableSwitch: false,
       respectPrefersColorScheme: false,
     },
-  },
-
-  // Put your custom environment here
-  customFields: {
-    apiKeyBrevo: process.env.API_KEY_BREVO,
   },
 
   themes: ['@docusaurus/theme-live-codeblock', '@docusaurus/theme-mermaid'],

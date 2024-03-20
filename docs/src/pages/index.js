@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import DownloadApp from '@site/src/containers/DownloadApp'
+import React, { useState } from 'react'
+
 import { useForm } from 'react-hook-form'
 
 import useBaseUrl from '@docusaurus/useBaseUrl'
@@ -86,6 +86,7 @@ export default function Home() {
   const isBrowser = useIsBrowser()
   const { stargazers } = useAppStars()
   const { data } = useDiscordWidget()
+  const [formMessage, setFormMessage] = useState('')
 
   const userAgent = isBrowser && navigator.userAgent
   const isBrowserChrome = isBrowser && userAgent.includes('Chrome')
@@ -104,11 +105,6 @@ export default function Home() {
     const { email } = data
     const options = {
       method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'api-key': customFields.apiKeyBrevo,
-      },
       body: JSON.stringify({
         updateEnabled: false,
         email,
@@ -117,12 +113,18 @@ export default function Home() {
     }
 
     if (email) {
-      fetch('https://api.brevo.com/v3/contacts', options)
+      fetch('https://brevo.jan.ai/', options)
         .then((response) => response.json())
         .then((response) => {
           if (response.id) {
-            reset()
+            setFormMessage('You have successfully joined our newsletter')
+          } else {
+            setFormMessage(response.message)
           }
+          reset()
+          setTimeout(() => {
+            setFormMessage('')
+          }, 5000)
         })
         .catch((err) => console.error(err))
     }
@@ -748,6 +750,9 @@ export default function Home() {
                         Subscribe
                       </button>
                     </form>
+                    {formMessage && (
+                      <p className="text-left mt-4">{formMessage}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -765,13 +770,13 @@ export default function Home() {
                   </p>
                 </div>
                 <div className="text-center">
-                  <h1>32+</h1>
+                  <h1>39+</h1>
                   <p className="font-medium text-black/60 dark:text-white/60">
                     Contributors
                   </p>
                 </div>
                 <div className="text-center">
-                  <h1>1722+</h1>
+                  <h1>2416+</h1>
                   <p className="font-medium text-black/60 dark:text-white/60">
                     Pull Requests
                   </p>
