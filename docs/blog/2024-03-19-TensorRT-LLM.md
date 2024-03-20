@@ -2,6 +2,7 @@
 title: Jan now supports TensorRT-LLM
 description: Jan has added for Nvidia's TensorRT-LLM, a hardware-optimized LLM inference engine that runs very fast on Nvidia GPUs
 tags: [Nvidia, TensorRT-LLM]
+keywords: [Nvidia, TensorRT-LLM]
 ---
 
 Jan now supports [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM) as an alternative inference engine. TensorRT-LLM is a hardware-optimized LLM inference engine that compiles models to [run extremely fast on Nvidia GPUs](https://blogs.nvidia.com/blog/tensorrt-llm-windows-stable-diffusion-rtx/).

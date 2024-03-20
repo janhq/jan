@@ -2,19 +2,6 @@
 title: Engine
 ---
 
-<head>
-  <title>Engine</title>
-  <meta charset="utf-8" />
-  <meta name="description" content="Currently Under Development" />
-  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model" />
-  <meta name="twitter:card" content="summary" />
-  <link rel="canonical" href="https://jan.ai/engine" />
-  <meta property="og:title" content="Engine" />
-  <meta property="og:description" content="Currently Under Development" />
-  <meta property="og:url" content="https://jan.ai/engine" />
-  <meta property="og:type" content="article" />
-</head>
-
 :::caution
 
 Currently Under Development

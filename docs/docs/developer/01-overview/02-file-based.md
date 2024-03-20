@@ -4,30 +4,18 @@ slug: /developer/file-based
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
+    file based approach,
   ]
 ---
-
-<head>
-  <title>Jan AI File-based Data Persistence Approach</title>
-  <meta charSet="utf-8" />
-  <meta name="description" content="Learn how Jan, a ChatGPT alternative, leverages a local filesystem for data persistence, promoting composability and tinkerability similar to VSCode." />
-  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, file-based data storage, data persistence" />
-  <meta name="twitter:card" content="summary" />
-  <link rel="canonical" href="https://jan.ai/developer/file-based/" />
-  <meta property="og:title" content="Jan AI File-based Data Persistence Approach" />
-  <meta property="og:description" content="Learn how Jan, a ChatGPT alternative, leverages a local filesystem for data persistence, promoting composability and tinkerability similar to VSCode." />
-  <meta property="og:url" content="https://jan.ai/developer/file-based/" />
-  <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
-</head>
 
 :::warning
 

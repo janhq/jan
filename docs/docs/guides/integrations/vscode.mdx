@@ -5,19 +5,19 @@ slug: /integrations/continue
 description: A step-by-step guide on how to integrate Jan with Continue and VS Code.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     Continue integration,
     VSCode integration,
   ]
 ---
-
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -43,6 +43,7 @@ To set up Continue for use with Jan's Local Server, you must activate the Jan AP
 3. Press the **Start Server** button
 
 ### Step 3: Configure Continue to Use Jan's Local Server
+
 1. Go to the `~/.continue` directory.
 
 <Tabs>
@@ -76,11 +77,12 @@ To set up Continue for use with Jan's Local Server, you must activate the Jan AP
   ]
 }
 ```
+
 2. Ensure the file has the following configurations:
-    - Ensure `openai` is selected as the `provider`.
-    - Match the `model` with the one enabled in the Jan API Server.
-    - Set `apiBase` to `http://localhost:1337`.
-    - Leave the `apiKey` field to `EMPTY`.
+   - Ensure `openai` is selected as the `provider`.
+   - Match the `model` with the one enabled in the Jan API Server.
+   - Set `apiBase` to `http://localhost:1337`.
+   - Leave the `apiKey` field to `EMPTY`.
 
 ### Step 4: Ensure the Using Model Is Activated in Jan
 
@@ -94,8 +96,7 @@ To set up Continue for use with Jan's Local Server, you must activate the Jan AP
 1. Highlight a code snippet and press `Command + Shift + M` to open the Left Panel.
 2. Select Jan at the bottom and ask a question about the code, for example, `Explain this code`.
 
- ### 2. Editing the code with the help of a large language model
+### 2. Editing the code with the help of a large language model
 
 1. Select a code snippet and use `Command + Shift + L`.
 2. Enter your editing request, such as `Add comments to this code`.
- 

@@ -1,35 +1,22 @@
 ---
 title: Your First Extension
-slug: /developer/build-extension/your-first-extension/
+slug: /developer/extension/your-first-extension/
 description: A quick start on how to build your first extension
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     quick start,
     build extension,
   ]
 ---
-
-<head>
-  <title>Building Your First Jan AI Extension - Quick Start Guide</title>
-  <meta charSet="utf-8" />
-  <meta name="description" content="Step-by-step guide on how to build your first extension for Jan AI. Learn how to use the extension template and integrate your custom functionality into Jan." />
-  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, quick start, build extension" />
-  <meta name="twitter:card" content="summary" />
-  <link rel="canonical" href="https://jan.ai/developer/build-extension/your-first-extension/" />
-  <meta property="og:title" content="Building Your First Jan AI Extension - Quick Start Guide" />
-  <meta property="og:description" content="Step-by-step guide on how to build your first extension for Jan AI. Learn how to use the extension template and integrate your custom functionality into Jan." />
-  <meta property="og:url" content="https://jan.ai/developer/build-extension/your-first-extension/" />
-  <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
-</head>
 
 :::caution
 This is currently under development.

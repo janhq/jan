@@ -5,14 +5,15 @@ description: Jan Docs | Jan is a ChatGPT-alternative that runs on your own compu
 sidebar_position: 1
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     Jan Extensions,
     Extensions,
   ]
@@ -26,34 +27,35 @@ You can find the default extensions in the `Settings` > `Extensions`.
 
 ## List of Default Extensions
 
-| Extension Name | Version | Description | Source Code Link |
-| -------------- | ------- | ----------- | ---------------- |
-| Assistant Extension | `v1.0.0` | This extension enables assistants, including Jan, a default assistant that can call all downloaded models. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/assistant-extension ) |
-| Conversational Extension | `v1.0.0` | This extension enables conversations and state persistence via your filesystem. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/conversational-extension) |
-| Inference Nitro Extension | `v1.0.0` | This extension embeds Nitro, a lightweight (3 MB) inference engine in C++. See nitro.jan.ai. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-nitro-extension) |
-| Inference Openai Extension | `v1.0.0` | This extension enables OpenAI chat completion API calls. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-openai-extension) |
-| Inference Triton Trt Llm Extension | `v1.0.0` | This extension enables Nvidia's TensorRT-LLM as an inference engine option. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-triton-trtllm-extension) |
-| Model Extension | `v1.0.22` | Model Management Extension provides model exploration and seamless downloads. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/model-extension) |
-| Monitoring Extension | `v1.0.9` | This extension offers system health and OS-level data. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/monitoring-extension) |
+| Extension Name                     | Version   | Description                                                                                                | Source Code Link                                                                                     |
+| ---------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Assistant Extension                | `v1.0.0`  | This extension enables assistants, including Jan, a default assistant that can call all downloaded models. | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/assistant-extension)               |
+| Conversational Extension           | `v1.0.0`  | This extension enables conversations and state persistence via your filesystem.                            | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/conversational-extension)          |
+| Inference Nitro Extension          | `v1.0.0`  | This extension embeds Nitro, a lightweight (3 MB) inference engine in C++. See nitro.jan.ai.               | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-nitro-extension)         |
+| Inference Openai Extension         | `v1.0.0`  | This extension enables OpenAI chat completion API calls.                                                   | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-openai-extension)        |
+| Inference Triton Trt Llm Extension | `v1.0.0`  | This extension enables Nvidia's TensorRT-LLM as an inference engine option.                                | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/inference-triton-trtllm-extension) |
+| Model Extension                    | `v1.0.22` | Model Management Extension provides model exploration and seamless downloads.                              | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/model-extension)                   |
+| Monitoring Extension               | `v1.0.9`  | This extension offers system health and OS-level data.                                                     | [Link to Source](https://github.com/janhq/jan/tree/dev/extensions/monitoring-extension)              |
 
 ## Configure Extension Settings
+
 To configure extension settings:
+
 1. Navigate to the `~/jan/extensions`.
 2. Open the `extensions.json` file
 3. Edit the file with options including:
 
-| Option          | Description                                     |
-|-----------------|-------------------------------------------------|
-| `_active`       | Enable/disable the extension.                   |
-| `listeners`     | Default listener setting.                       |
-| `origin`        | Extension file path.                            |
-| `installOptions`| Version and metadata configuration.             |
-| `name`          | Extension name.                                 |
-| `version`       | Extension version.                              |
-| `main`          | Main file path.                                 |
-| `description`   | Extension description.                          |
-| `url`           | Extension URL.                                  |
-
+| Option           | Description                         |
+| ---------------- | ----------------------------------- |
+| `_active`        | Enable/disable the extension.       |
+| `listeners`      | Default listener setting.           |
+| `origin`         | Extension file path.                |
+| `installOptions` | Version and metadata configuration. |
+| `name`           | Extension name.                     |
+| `version`        | Extension version.                  |
+| `main`           | Main file path.                     |
+| `description`    | Extension description.              |
+| `url`            | Extension URL.                      |
 
 ```json title="~/jan/extensions/extensions.json"
 {
@@ -145,15 +147,14 @@ Currently, Jan only supports official extensions, which can be directly download
 
 For now you can always import a third party extension at your own risk by following the steps below:
 
-1. Navigate to **Settings** > **Extensions** >  Click Select under **Manual Installation**.
+1. Navigate to **Settings** > **Extensions** > Click Select under **Manual Installation**.
 2. Then, the ~/jan/extensions/extensions.json file will be updated automatically.
 
 :::caution
 
-You need to prepare the extension file in .tgz format to install the **non-default** extension. 
+You need to prepare the extension file in .tgz format to install the **non-default** extension.
 
 :::
-
 
 :::info[Assistance and Support]
 

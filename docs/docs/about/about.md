@@ -4,33 +4,20 @@ slug: /about
 description: Jan is a desktop application that turns computers into thinking machines.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     about Jan,
     desktop application,
     thinking machine,
   ]
 ---
-
-<head>
-  <title>About Jan</title>
-  <meta charset="utf-8" />
-  <meta name="description" content="Discover Jan, a desktop application that turns computers into thinking machines. Learn about its features, principles, vision, and how to get involved with the Jan Labs team." />
-  <meta name="keywords" content="Jan, Jan AI, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, desktop application, thinking machine, about Jan" />
-  <meta name="twitter:card" content="summary" />
-  <link rel="canonical" href="https://jan.ai/about" />
-  <meta property="og:title" content="About Jan" />
-  <meta property="og:description" content="Discover Jan, a desktop application that turns computers into thinking machines. Learn about its features, principles, vision, and how to get involved with the Jan Labs team." />
-  <meta property="og:url" content="https://jan.ai/about" />
-  <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image-about-jan.png" />
-</head>
 
 Jan turns computers into thinking machines to change how we use them.
 Jan is created and maintained by Jan Labs, a robotics company.

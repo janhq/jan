@@ -2,20 +2,6 @@
 title: GPUs and VRAM
 ---
 
-<head>
-  <title>Understanding GPUs and VRAM for AI and Gaming</title>
-  <meta charSet="utf-8" />
-  <meta name="description" content="Explore the world of GPUs and VRAM, learn their importance in gaming, AI, machine learning, and more. Understand how to connect a GPU to a motherboard and choose the right graphics card for your needs." />
-  <meta name="keywords" content="GPU, VRAM, graphics card, gaming, AI, machine learning, CUDA, NVIDIA, AMD, PCIe, VRAM vs RAM, choosing GPU" />
-  <meta name="twitter:card" content="summary" />
-  <link rel="canonical" href="https://jan.ai/guides/gpus-and-vram" />
-  <meta property="og:title" content="Understanding GPUs and VRAM for AI and Gaming" />
-  <meta property="og:description" content="Explore the world of GPUs and VRAM, learn their importance in gaming, AI, machine learning, and more. Understand how to connect a GPU to a motherboard and choose the right graphics card for your needs." />
-  <meta property="og:url" content="https://jan.ai/guides/gpus-and-vram" />
-  <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image.png" />
-</head>
-
 ## What Is a GPU?
 
 A Graphics Card, or GPU (Graphics Processing Unit), is a fundamental component in modern computing. Think of it as the powerhouse behind rendering the stunning visuals you see on your screen. Similar to the motherboard in your computer, the graphics card is a printed circuit board. However, it's not just a passive piece of hardware; it's a sophisticated device equipped with essential components like fans, onboard RAM, a dedicated memory controller, BIOS, and various other features. If you want to learn more about GPUs then read here to [Understand the architecture of a GPU.](https://medium.com/codex/understanding-the-architecture-of-a-gpu-d5d2d2e8978b)

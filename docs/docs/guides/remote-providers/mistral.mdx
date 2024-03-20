@@ -5,35 +5,25 @@ slug: /guides/engines/mistral
 description: A step-by-step guide on how to integrate Jan with Mistral AI.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     Mistral integration,
   ]
 ---
 
-<head>
-    <title>Mistral AI</title>
-    <meta name="description" content="A step-by-step guide on how to integrate Jan with Mistral AI. Learn how to configure Mistral API keys, set up model configuration, and start the model in Jan for enhanced functionality."/>
-    <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model, Mistral integration"/>
-    <meta property="og:title" content="Mistral AI"/>
-    <meta property="og:description" content="A step-by-step guide on how to integrate Jan with Mistral AI. Learn how to configure Mistral API keys, set up model configuration, and start the model in Jan for enhanced functionality."/>
-    <meta property="og:url" content="https://jan.ai/guides/integration/mistral-ai"/>
-    <meta name="twitter:card" content="summary"/>
-    <meta name="twitter:title" content="Mistral AI"/>
-    <meta name="twitter:description" content="A step-by-step guide on how to integrate Jan with Mistral AI. Learn how to configure Mistral API keys, set up model configuration, and start the model in Jan for enhanced functionality."/>
-</head>
-
 ## How to Integrate Mistral AI with Jan
 
-[Mistral AI](https://docs.mistral.ai/) provides two ways to use their Large Language Models (LLM): 
+[Mistral AI](https://docs.mistral.ai/) provides two ways to use their Large Language Models (LLM):
+
 1. API
-2. Open-source models on Hugging Face. 
+2. Open-source models on Hugging Face.
 
 To integrate Jan with Mistral AI, follow the steps below:
 
@@ -58,10 +48,10 @@ This tutorial demonstrates integrating Mistral AI with Jan using the API.
 1. Navigate to `~/jan/models`.
 2. Create a folder named `mistral-(modelname)` (e.g., `mistral-tiny`).
 3. Inside, create a `model.json` file with these settings:
-    - Set `id` to the Mistral AI model ID.
-    - Set `format` to `api`.
-    - Set `engine` to `openai`.
-    - Set `state` to `ready`.
+   - Set `id` to the Mistral AI model ID.
+   - Set `format` to `api`.
+   - Set `engine` to `openai`.
+   - Set `state` to `ready`.
 
 ```json title="~/jan/models/mistral-tiny/model.json"
 {
@@ -85,15 +75,15 @@ This tutorial demonstrates integrating Mistral AI with Jan using the API.
   },
   "engine": "openai"
 }
-
 ```
 
 :::note
-- For more details regarding the `model.json` settings and parameters fields,  please see [here](/guides/engines/remote-server/#modeljson).
+
+- For more details regarding the `model.json` settings and parameters fields, please see [here](/guides/engines/remote-server/#modeljson).
 - Mistral AI offers various endpoints. Refer to their [endpoint documentation](https://docs.mistral.ai/platform/endpoints/) to select the one that fits your requirements. Here, we use the `mistral-tiny` model as an example.
-:::
+  :::
 
 ### Step 3: Start the Model
 
-1. Restart Jan and navigate to the **Hub**. 
+1. Restart Jan and navigate to the **Hub**.
 2. Locate your model and click the **Use** button.
