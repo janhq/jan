@@ -13,20 +13,15 @@ We've made a few TensorRT-LLM models TensorRT-LLM models available in the Jan Hu
 
 - TinyLlama-1.1b 
 - Mistral 7b
-- TinyJensen-1.1b, which is trained on Jensen Huang's 👀
+- TinyJensen-1.1b 😂 
 
-## What is TensorRT-LLM?
-
-Please read our [TensorRT-LLM Guide](/guides/providers/tensorrt-llm). 
-
-TensorRT-LLM is mainly used in datacenter-grade GPUs to achieve [10,000 tokens/s](https://nvidia.github.io/TensorRT-LLM/blogs/H100vsA100.html) type speeds.
+You can get started by following our [TensorRT-LLM Guide](/guides/providers/tensorrt-llm). 
 
 ## Performance Benchmarks
 
+TensorRT-LLM is mainly used in datacenter-grade GPUs to achieve [10,000 tokens/s](https://nvidia.github.io/TensorRT-LLM/blogs/H100vsA100.html) type speeds. Naturally, we were curious to see how this would perform on consumer-grade GPUs. 
 
-We were curious to see how this would perform on consumer-grade GPUs, as most of Jan's users use consumer-grade GPUs.
-
-- We’ve done a comparison of how TensorRT-LLM does vs. llama.cpp, our default inference engine.
+We’ve done a comparison of how TensorRT-LLM does vs. [llama.cpp](https://github.com/ggerganov/llama.cpp), our default inference engine.
 
 | NVIDIA GPU | Architecture | VRAM Used (GB) | CUDA Cores | Tensor Cores | Memory Bus Width (bit) | Memory Bandwidth (GB/s) |
 | ---------- | ------------ | -------------- | ---------- | ------------ | ---------------------- | ----------------------- |
@@ -34,13 +29,16 @@ We were curious to see how this would perform on consumer-grade GPUs, as most of
 | RTX 3090   | Ampere       | 24             | 10,496     | 328          | 384                    | 935.8                   |
 | RTX 4060   | Ada          | 8              | 3,072      | 96           | 128                    | 272                     |
 
-> We test using batch_size 1 and input length 2048, output length 512 as it’s the common use case people all use. We run 5 times and get the Average.
-
-> We use Windows task manager and Linux NVIDIA-SMI/ Htop to get CPU/ Memory/ NVIDIA GPU metrics per process.
-
-> We turn off all user application and only open Jan app with Nitro tensorrt-llm or NVIDIA benchmark script in python
+- We tested using batch_size 1 and input length 2048, output length 512 as it’s the common use case people all use. 
+- We ran the tests 5 times to get get the Average.
+- CPU, Memory were obtained from... Windows Task Manager
+- GPU Metrics were obtained from `nvidia-smi` or `htop`/`nvtop`
+- All tests were run on bare metal PCs with no other apps open
+- There is a slight difference between the models: AWQ models for TensorRT-LLM, while llama.cpp has its own quantization technique
 
 ### RTX 4090 on Windows PC
+
+TensorRT-LLM handily outperformed llama.cpp in for the 4090s. Interestingly, 
 
 - CPU: Intel 13th series
 - GPU: NVIDIA GPU 4090 (Ampere - sm 86)
