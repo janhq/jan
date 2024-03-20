@@ -1,6 +1,6 @@
 ---
 title: Package your Engine
-slug: /developer/build-engine/package-your-engine/
+slug: /developer/engine/package-your-engine/
 description: Package your engine for sharing and publishing.
 keywords:
   [

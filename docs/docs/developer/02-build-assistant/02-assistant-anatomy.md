@@ -1,6 +1,6 @@
 ---
 title: Anatomy of an Assistant
-slug: /developer/build-assistant/assistant-anatomy/
+slug: /developer/assistant/assistant-anatomy/
 description: An overview of assistant.json
 keywords:
   [

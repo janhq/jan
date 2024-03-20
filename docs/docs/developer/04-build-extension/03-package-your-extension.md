@@ -1,6 +1,6 @@
 ---
 title: Package your Engine
-slug: /developer/build-extension/package-your-extension/
+slug: /developer/extension/package-your-extension/
 description: Package your extension for sharing and publishing.
 keywords:
   [

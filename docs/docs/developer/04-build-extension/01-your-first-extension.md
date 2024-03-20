@@ -1,6 +1,6 @@
 ---
 title: Your First Extension
-slug: /developer/build-extension/your-first-extension/
+slug: /developer/extension/your-first-extension/
 description: A quick start on how to build your first extension
 keywords:
   [

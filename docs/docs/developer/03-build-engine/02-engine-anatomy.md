@@ -1,6 +1,6 @@
 ---
 title: Anatomy of an Engine
-slug: /developer/build-engine/engine-anatomy
+slug: /developer/engine/engine-anatomy
 description: An overview of engine.json
 keywords:
   [

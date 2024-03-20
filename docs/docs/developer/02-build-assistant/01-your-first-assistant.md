@@ -1,6 +1,6 @@
 ---
 title: Your First Assistant
-slug: /developer/build-assistant/your-first-assistant/
+slug: /developer/assistant/your-first-assistant/
 description: A quick start on how to build an assistant.
 keywords:
   [

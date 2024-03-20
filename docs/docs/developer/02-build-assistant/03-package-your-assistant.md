@@ -1,6 +1,6 @@
 ---
 title: Package your Assistant
-slug: /developer/build-assistant/package-your-assistant/
+slug: /developer/assistant/package-your-assistant/
 description: Package your assistant for sharing and publishing.
 keywords:
   [

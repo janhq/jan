@@ -1,6 +1,6 @@
 ---
 title: Anatomy of an Extension
-slug: /developer/build-extension/extension-anatomy
+slug: /developer/extension/extension-anatomy
 description: An overview of extensions.json
 keywords:
   [

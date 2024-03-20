@@ -1,6 +1,6 @@
 ---
 title: Your First Engine
-slug: /developer/build-engine/your-first-engine/
+slug: /developer/engine/your-first-engine/
 description: A quick start on how to build your first engine
 keywords:
   [
