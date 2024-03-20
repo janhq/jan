@@ -82,10 +82,6 @@ const config = {
             to: '/troubleshooting/',
           },
           {
-            from: '/guides/troubleshooting/',
-            to: '/troubleshooting/',
-          },
-          {
             from: '/troubleshooting/somethings-amiss/',
             to: '/troubleshooting/',
           },
@@ -194,10 +190,6 @@ const config = {
             to: '/integrations/continue/',
           },
           {
-            from: '/guides/integrations/continue/',
-            to: '/integrations/continue/',
-          },
-          {
             from: '/docs/engineering/assistants/',
             to: '/developer/framework/engineering/assistants/',
           },
@@ -286,20 +278,12 @@ const config = {
             to: '/extensions/',
           },
           {
-            from: '/features/extensions',
-            to: '/extensions/',
-          },
-          {
             from: '/specs/chats/',
             to: '/developer/framework/engineering/chats/',
           },
           {
             from: '/specs/engine/',
             to: '/developer/framework/engineering/engine/',
-          },
-          {
-            from: '/docs/extension-capabilities/',
-            to: '/extensions/',
           },
           {
             from: '/docs/extension-capabilities/',
@@ -478,9 +462,9 @@ const config = {
             to: '/guides/threads/',
           },
           {
-            from: '/docs/UI',
-            to: '/developer/ui'
-          }
+            from: '/docs/modules/assistants',
+            to: '/developer/assistant/',
+          },
         ],
       },
     ],
