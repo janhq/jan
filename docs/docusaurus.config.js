@@ -238,14 +238,6 @@ const config = {
             to: '/guides/hardware/',
           },
           {
-            from: '/docs/modules/models',
-            to: '/guides/models/',
-          },
-          {
-            from: '/getting-started/install/linux',
-            to: '/guides/install/linux/',
-          },
-          {
             from: '/guides/chatting/start-thread/',
             to: '/guides/threads/',
           },
@@ -358,10 +350,6 @@ const config = {
             to: '/desktop/',
           },
           {
-            from: '/api',
-            to: '/api-reference/',
-          },
-          {
             from: '/developers/plugins/azure-openai',
             to: '/guides/engines/openai/',
           },
@@ -448,14 +436,6 @@ const config = {
           {
             from: '/hardware/examples/3090x1-@dan-jan',
             to: '/guides/hardware/',
-          },
-          {
-            from: '/guides/linux',
-            to: '/guides/install/linux/',
-          },
-          {
-            from: '/guides/mac',
-            to: '/guides/install/mac/',
           },
           {
             from: '/chat',
