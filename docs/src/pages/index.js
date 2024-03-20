@@ -770,13 +770,13 @@ export default function Home() {
                   </p>
                 </div>
                 <div className="text-center">
-                  <h1>32+</h1>
+                  <h1>39+</h1>
                   <p className="font-medium text-black/60 dark:text-white/60">
                     Contributors
                   </p>
                 </div>
                 <div className="text-center">
-                  <h1>1722+</h1>
+                  <h1>2416+</h1>
                   <p className="font-medium text-black/60 dark:text-white/60">
                     Pull Requests
                   </p>
