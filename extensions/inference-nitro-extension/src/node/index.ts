@@ -3,13 +3,14 @@ import path from 'path'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
-import { log, getSystemResourceInfo } from '@janhq/core/node'
 import {
+  log,
+  getSystemResourceInfo,
   Model,
   InferenceEngine,
   ModelSettingParams,
   PromptTemplate,
-} from '@janhq/core'
+} from '@janhq/core/node'
 import { executableNitroFile } from './execute'
 
 // Polyfill fetch with retry

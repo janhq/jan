@@ -22,7 +22,7 @@ import {
   ModelEvent,
 } from '@janhq/core'
 import { requestInference } from './helpers/sse'
-import { ulid } from 'ulid'
+import { ulid } from 'ulidx'
 import { join } from 'path'
 import { EngineSettings } from './@types/global'
 

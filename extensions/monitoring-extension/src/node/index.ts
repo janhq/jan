@@ -4,8 +4,9 @@ import {
   OperatingSystemInfo,
   ResourceInfo,
   SupportedPlatforms,
-} from '@janhq/core'
-import { getJanDataFolderPath, log } from '@janhq/core/node'
+  getJanDataFolderPath,
+  log,
+} from '@janhq/core/node'
 import { mem, cpu } from 'node-os-utils'
 import { exec } from 'child_process'
 import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs'
