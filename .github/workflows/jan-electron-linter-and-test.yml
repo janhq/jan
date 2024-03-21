@@ -61,12 +61,20 @@ jobs:
 
       - name: Turbo Cache
         id: turbo-cache
-        uses: actions/cache@v3
+        uses: tespkg/actions-cache@v1
         with:
+          endpoint: minio.jan.ai # optional, default s3.amazonaws.com
+          port: 9000
+          insecure: true # optional, use http instead of https. default false
+          accessKey: ${{ secrets.MINIO_ACCESS_KEY }} # required
+          secretKey: ${{ secrets.MINIO_ACCESS_SECRET_KEY }} # required
+          bucket: cache-ci # required
+          use-fallback: false # optional, use github actions cache fallback, default true
+
           path: node_modules/.cache/turbo # workaround see: https://github.com/vercel/turborepo/issues/451
-          key: turbo-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            turbo-${{ github.job }}-${{ github.ref_name }}-
+            turbo-${{ runner.os }}-${{ github.job }}-${{ github.ref_name }}-
 
       - name: Linter and test
         run: |
@@ -105,6 +113,23 @@ jobs:
         run: |
           make clean
 
+      - name: Turbo Cache
+        id: turbo-cache
+        uses: tespkg/actions-cache@v1
+        with:
+          endpoint: minio.jan.ai # optional, default s3.amazonaws.com
+          port: 9000
+          insecure: true # optional, use http instead of https. default false
+          accessKey: ${{ secrets.MINIO_ACCESS_KEY }} # required
+          secretKey: ${{ secrets.MINIO_ACCESS_SECRET_KEY }} # required
+          bucket: cache-ci # required
+          use-fallback: false # optional, use github actions cache fallback, default true
+
+          path: node_modules/.cache/turbo # workaround see: https://github.com/vercel/turborepo/issues/451
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ github.job }}-${{ github.ref_name }}-
+
       - name: Linter and test
         shell: powershell
         run: |
@@ -135,12 +160,20 @@ jobs:
 
       - name: Turbo Cache
         id: turbo-cache
-        uses: actions/cache@v3
+        uses: tespkg/actions-cache@v1
         with:
+          endpoint: minio.jan.ai # optional, default s3.amazonaws.com
+          port: 9000
+          insecure: true # optional, use http instead of https. default false
+          accessKey: ${{ secrets.MINIO_ACCESS_KEY }} # required
+          secretKey: ${{ secrets.MINIO_ACCESS_SECRET_KEY }} # required
+          bucket: cache-ci # required
+          use-fallback: false # optional, use github actions cache fallback, default true
+
           path: node_modules/.cache/turbo # workaround see: https://github.com/vercel/turborepo/issues/451
-          key: turbo-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            turbo-${{ github.job }}-${{ github.ref_name }}-
+            turbo-${{ runner.os }}-${{ github.job }}-${{ github.ref_name }}-
             
       - name: Linter and test
         run: |
