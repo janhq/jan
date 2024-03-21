@@ -56,7 +56,8 @@ const openFileExplorer: (path: string) => Promise<any> = (path) =>
  * @param paths - The paths to join.
  * @returns {Promise<string>} A promise that resolves with the joined path.
  */
-const joinPath: (paths: string[]) => Promise<string> = (paths) => globalThis.core.api?.joinPath(paths)
+const joinPath: (paths: string[]) => Promise<string> = (paths) =>
+  globalThis.core.api?.joinPath(paths)
 
 /**
  * Retrive the basename from an url.
