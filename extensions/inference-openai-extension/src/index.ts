@@ -13,15 +13,10 @@ import {
   AppConfigurationEventName,
   joinPath,
   RemoteOAIEngine,
-  Model,
 } from '@janhq/core'
 import { join } from 'path'
 
-// TODO: Remove soon with settings
-declare interface EngineSettings {
-  full_url?: string
-  api_key?: string
-}
+declare const COMPLETION_URL: string
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -29,18 +24,15 @@ declare interface EngineSettings {
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
-  models(): Promise<Model[]> {
-    return Promise.resolve([])
-  }
   private static readonly _engineDir = 'file://engines'
   private static readonly _engineMetadataFileName = `${ENGINE}.json`
 
-  private _engineSettings: EngineSettings = {
-    full_url: 'https://api.openai.com/v1/chat/completions',
+  private _engineSettings = {
+    full_url: COMPLETION_URL,
     api_key: 'sk-<your key here>',
   }
 
-  inferenceUrl: string = 'https://api.openai.com/v1/chat/completions'
+  inferenceUrl: string = COMPLETION_URL
   provider: string = 'openai'
 
   headers(): HeadersInit {
@@ -57,6 +49,7 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
    */
   async onLoad() {
     super.onLoad()
+
     if (!(await fs.existsSync(JanInferenceOpenAIExtension._engineDir))) {
       await fs
         .mkdirSync(JanInferenceOpenAIExtension._engineDir)

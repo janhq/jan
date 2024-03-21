@@ -15,6 +15,7 @@ import {
 } from '@janhq/core'
 import { join } from 'path'
 
+declare const COMPLETION_URL: string
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -24,17 +25,27 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
   private readonly _engineDir = 'file://engines'
   private readonly _engineMetadataFileName = 'groq.json'
 
-  inferenceUrl: string = 'https://api.groq.com/openai/v1/chat/completions'
+  inferenceUrl: string = COMPLETION_URL
   provider = 'groq'
 
-  private _engineSettings: EngineSettings = {
-    full_url: 'https://api.groq.com/openai/v1/chat/completions',
+  private _engineSettings = {
+    full_url: COMPLETION_URL,
     api_key: 'gsk-<your key here>',
   }
+
+  headers(): HeadersInit {
+    return {
+      'Authorization': ` Bearer ${this._engineSettings.api_key}`,
+      'api-key': `${this._engineSettings.api_key}`,
+    }
+  }
+
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
+    super.onLoad()
+
     if (!(await fs.existsSync(this._engineDir))) {
       await fs.mkdirSync(this._engineDir).catch((err) => console.debug(err))
     }
@@ -45,7 +56,7 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
       this._engineDir,
       this._engineMetadataFileName,
     ])
-    
+
     // Events subscription
     events.on(
       AppConfigurationEventName.OnConfigurationUpdate,
