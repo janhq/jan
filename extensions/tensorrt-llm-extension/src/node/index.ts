@@ -2,10 +2,13 @@ import path from 'path'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
-import { log, getJanDataFolderPath } from '@janhq/core/node'
+import {
+  log,
+  getJanDataFolderPath,
+  SystemInformation,
+  PromptTemplate,
+} from '@janhq/core/node'
 import decompress from 'decompress'
-import { SystemInformation } from '@janhq/core'
-import { PromptTemplate } from '@janhq/core'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)

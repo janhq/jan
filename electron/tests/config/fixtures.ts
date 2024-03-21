@@ -22,6 +22,8 @@ export let appInfo: ElectronAppInfo
 export const TIMEOUT = parseInt(process.env.TEST_TIMEOUT || Constants.TIMEOUT)
 
 export async function setupElectron() {
+  console.log(`TEST TIMEOUT: ${TIMEOUT}`)
+
   process.env.CI = 'e2e'
 
   const latestBuild = findLatestBuild('dist')
@@ -101,11 +103,11 @@ export const test = base.extend<
     },
     { auto: true },
   ],
+  
 })
 
-test.setTimeout(TIMEOUT)
-
 test.beforeAll(async () => {
+  test.setTimeout(TIMEOUT)
   await setupElectron()
   await page.waitForSelector('img[alt="Jan - Logo"]', {
     state: 'visible',

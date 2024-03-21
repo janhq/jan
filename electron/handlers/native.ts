@@ -6,8 +6,8 @@ import {
   getJanDataFolderPath,
   getJanExtensionsPath,
   init,
+  AppEvent, NativeRoute,
 } from '@janhq/core/node'
-import { AppEvent, NativeRoute } from '@janhq/core'
 
 export function handleAppIPCs() {
   /**

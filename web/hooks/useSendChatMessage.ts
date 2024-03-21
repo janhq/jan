@@ -21,7 +21,7 @@ import {
 } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
-import { ulid } from 'ulid'
+import { ulid } from 'ulidx'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import {

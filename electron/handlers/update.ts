@@ -6,7 +6,7 @@ import {
   UpdateInfo,
   autoUpdater,
 } from 'electron-updater'
-import { AppEvent } from '@janhq/core'
+import { AppEvent } from '@janhq/core/node'
 import { trayManager } from '../managers/tray'
 
 export let waitingToInstallVersion: string | undefined = undefined

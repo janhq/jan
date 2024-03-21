@@ -1,5 +1,5 @@
 import { requestInference } from './helpers/sse'
-import { ulid } from 'ulid'
+import { ulid } from 'ulidx'
 import { AIEngine } from './AIEngine'
 import {
   ChatCompletionRole,

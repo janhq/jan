@@ -12,7 +12,7 @@
     "download-artifacts:darwin": "echo 'No artifacts to download for darwin'",
     "download-artifacts:win32": "download.bat",
     "download-artifacts:linux": "download https://delta.jan.ai/vulkaninfo -o ./bin && chmod +x ./bin/vulkaninfo",
-    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "exports": {
     ".": "./dist/index.js",
