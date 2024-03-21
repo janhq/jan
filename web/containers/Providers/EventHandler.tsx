@@ -17,7 +17,7 @@ import {
   ModelInitFailed,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { ulid } from 'ulid'
+import { ulid } from 'ulidx'
 
 import {
   activeModelAtom,

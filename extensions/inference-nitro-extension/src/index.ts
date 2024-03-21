@@ -29,7 +29,7 @@ import {
   getJanDataFolderPath,
 } from '@janhq/core'
 import { requestInference } from './helpers/sse'
-import { ulid } from 'ulid'
+import { ulid } from 'ulidx'
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
