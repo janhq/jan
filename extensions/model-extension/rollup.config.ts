@@ -20,8 +20,10 @@ export default [
     },
     plugins: [
       replace({
-        NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         EXTENSION_NAME: JSON.stringify(packageJson.name),
+        MODULE_PATH: JSON.stringify(
+          `${packageJson.name}/${packageJson.module}`
+        ),
         VERSION: JSON.stringify(packageJson.version),
       }),
       // Allow json resolution
@@ -30,46 +32,17 @@ export default [
       typescript({ useTsconfigDeclarationDir: true }),
       // Compile TypeScript files
       // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
-      commonjs(),
+      // commonjs(),
       // Allow node_modules resolution, so you can use 'external' to control
       // which external modules to include in the bundle
       // https://github.com/rollup/rollup-plugin-node-resolve#usage
       resolve({
         extensions: ['.js', '.ts', '.svelte'],
-        browser: true
+        browser: true,
       }),
 
       // Resolve source maps to the original source
       sourceMaps(),
-    ],
-  },
-  {
-    input: `src/node/index.ts`,
-    output: [{ dir: 'dist/node', format: 'cjs', sourcemap: false }],
-    // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-    external: ['@janhq/core/node', 'path', 'hnswlib-node'],
-    watch: {
-      include: 'src/node/**',
-    },
-    // inlineDynamicImports: true,
-    plugins: [
-      // Allow json resolution
-      json(),
-      // Compile TypeScript files
-      typescript({ useTsconfigDeclarationDir: true }),
-      // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
-      commonjs({
-        ignoreDynamicRequires: true,
-      }),
-      // Allow node_modules resolution, so you can use 'external' to control
-      // which external modules to include in the bundle
-      // https://github.com/rollup/rollup-plugin-node-resolve#usage
-      resolve({
-        extensions: ['.ts', '.js', '.json'],
-      }),
-
-      // Resolve source maps to the original source
-      // sourceMaps(),
     ],
   },
 ]

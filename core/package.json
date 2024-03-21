@@ -8,8 +8,8 @@
   ],
   "homepage": "https://jan.ai",
   "license": "AGPL-3.0",
-  "main": "dist/core.umd.js",
-  "module": "dist/core.es5.js",
+  "main": "dist/core.es5.js",
+  "module": "dist/core.cjs.js",
   "typings": "dist/types/index.d.ts",
   "files": [
     "dist",
@@ -17,17 +17,12 @@
   ],
   "author": "Jan <service@jan.ai>",
   "exports": {
-    ".": "./dist/core.umd.js",
-    "./sdk": "./dist/core.umd.js",
+    ".": "./dist/core.es5.js",
     "./node": "./dist/node/index.cjs.js"
   },
   "typesVersions": {
     "*": {
       ".": [
-        "./dist/core.es5.js.map",
-        "./dist/types/index.d.ts"
-      ],
-      "sdk": [
         "./dist/core.es5.js.map",
         "./dist/types/index.d.ts"
       ],
@@ -38,13 +33,14 @@
     }
   },
   "scripts": {
-    "lint": "tslint  --project tsconfig.json -t codeFrame 'src/**/*.ts' 'test/**/*.ts'",
+    "lint": "tslint --project tsconfig.json -t codeFrame 'src/**/*.ts' 'test/**/*.ts'",
     "test": "jest",
     "prebuild": "rimraf dist",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
     "start": "rollup -c rollup.config.ts -w"
   },
   "devDependencies": {
+    "@rollup/plugin-replace": "^5.0.5",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.4",
     "eslint": "8.57.0",
@@ -63,6 +59,6 @@
   },
   "dependencies": {
     "rxjs": "^7.8.1",
-    "ulid": "^2.3.0"
+    "ulidx": "^2.3.0"
   }
 }

@@ -5,14 +5,15 @@ sidebar_position: 4
 description: A step-by-step guide on how to integrate Jan with Ollama.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     Ollama integration,
   ]
 ---
@@ -20,6 +21,7 @@ keywords:
 ## Integrate Ollama with Jan
 
 Ollama provides you with largen language that you can run locally. There are two methods to integrate Ollama with Jan:
+
 1. Integrate Ollama server with Jan.
 2. Migrate the downloaded model from Ollama to Jan.
 
@@ -40,7 +42,6 @@ ollama run <model-name>
 
 3. According to the [Ollama documentation on OpenAI compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md), you can connect to the Ollama server using the web address `http://localhost:11434/v1/chat/completions`. To do this, change the `openai.json` file in the `~/jan/engines` folder to add the Ollama server's full web address:
 
-
 ```json title="~/jan/engines/openai.json"
 {
   "full_url": "http://localhost:11434/v1/chat/completions"
@@ -52,10 +53,11 @@ ollama run <model-name>
 1. Navigate to the `~/jan/models` folder.
 2. Create a folder named `(ollam-modelname)`, for example, `lmstudio-phi-2`.
 3. Create a `model.json` file inside the folder including the following configurations:
-  - Set the `id` property to the model name as Ollama model name.
-  - Set the `format` property to `api`.
-  - Set the `engine` property to `openai`.
-  - Set the `state` property to `ready`.
+
+- Set the `id` property to the model name as Ollama model name.
+- Set the `format` property to `api`.
+- Set the `engine` property to `openai`.
+- Set the `state` property to `ready`.
 
 ```json title="~/jan/models/llama2/model.json"
 {
@@ -80,10 +82,12 @@ ollama run <model-name>
   "engine": "openai"
 }
 ```
+
 :::note
-For more details regarding the `model.json` settings and parameters fields,  please see [here](/guides/engines/remote-server/#modeljson).
+For more details regarding the `model.json` settings and parameters fields, please see [here](/guides/engines/remote-server/#modeljson).
 :::
 
 ### Step 3: Start the Model
-1. Restart Jan and navigate to the **Hub**. 
+
+1. Restart Jan and navigate to the **Hub**.
 2. Locate your model and click the **Use** button.

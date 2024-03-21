@@ -3,29 +3,17 @@ title: Chat
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
   ]
 ---
-
-<head>
-  <title>Chat</title>
-  <meta charset="utf-8" />
-  <meta name="description" content="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server." />
-  <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model" />
-  <meta name="twitter:card" content="summary" />
-  <link rel="canonical" href="https://jan.ai/chat" />
-  <meta property="og:title" content="Chat" />
-  <meta property="og:description" content="Jan is a ChatGPT-alternative that runs on your own computer, with a local API server." />
-  <meta property="og:url" content="https://jan.ai/chat" />
-  <meta property="og:type" content="article" />
-</head>
 
 ## Overview
 

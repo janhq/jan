@@ -4,28 +4,17 @@ slug: /desktop
 description: Turn your computer into an AI PC
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
   ]
 ---
-
-<head>
-    <title>Jan Desktop</title>
-    <meta name="description" content="Turn any computer into an AI computer with Jan Desktop. Run AI models directly on your laptop without an internet connection. Enjoy private conversations and customize your AI experience."/>
-    <meta name="keywords" content="Jan AI, Jan, ChatGPT alternative, local AI, private AI, conversational AI, desktop app, AI models, offline AI"/>
-    <meta property="og:title" content="Jan Desktop"/>
-    <meta property="og:description" content="Turn any computer into an AI computer with Jan Desktop. Run AI models directly on your laptop without an internet connection. Enjoy private conversations and customize your AI experience."/>
-    <meta property="og:url" content="https://jan.ai/desktop"/>
-    <meta name="twitter:card" content="summary"/>
-    <meta name="twitter:title" content="Jan Desktop"/>
-    <meta name="twitter:description" content="Turn any computer into an AI computer with Jan Desktop. Run AI models directly on your laptop without an internet connection. Enjoy private conversations and customize your AI experience."/>
-</head>
 
 # Turn any computer into an AI computer
 

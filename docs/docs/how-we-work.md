@@ -1,18 +1,23 @@
 ---
 title: How We Work
+slug: /how-we-work
+description: How we work at Jan
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    build in public,
+    remote team,
+    how we work,
+  ]
 ---
-
-<head>
-    <title>How We Work - Jan</title>
-    <meta name="description" content="Learn about how Jan operates as an open-source startup, building in public, with a remote team. Explore Jan's GitHub repositories, Kanban board, and roadmap."/>
-    <meta name="keywords" content="Jan AI, Jan, open source, build in public, GitHub, remote team, Discord, roadmap, Kanban"/>
-    <meta property="og:title" content="How We Work - Jan"/>
-    <meta property="og:description" content="Learn about how Jan operates as an open-source startup, building in public, with a remote team. Explore Jan's GitHub repositories, Kanban board, and roadmap."/>
-    <meta property="og:url" content="https://jan.ai/how-we-work"/>
-    <meta name="twitter:card" content="summary"/>
-    <meta name="twitter:title" content="How We Work - Jan"/>
-    <meta name="twitter:description" content="Learn about how Jan operates as an open-source startup, building in public, with a remote team. Explore Jan's GitHub repositories, Kanban board, and roadmap."/>
-</head>
 
 ### Open Source
 

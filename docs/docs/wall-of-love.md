@@ -1,18 +1,21 @@
 ---
 title: Wall of Love ❤️
+slug: /wall-of-love
+description: Check out what our amazing users are saying about Jan!
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    wall of love,
+  ]
 ---
-
-<head>
-    <title>Wall of Love ❤️ - Jan</title>
-    <meta name="description" content="See what users are saying about Jan on Twitter and watch amazing videos demonstrating the use of Jan by the community. Share your love for Jan on Twitter and tag us @janframework!"/>
-    <meta name="keywords" content="Jan AI, Jan, testimonials, Twitter, YouTube, community, feedback, videos"/>
-    <meta property="og:title" content="Wall of Love ❤️ - Jan"/>
-    <meta property="og:description" content="See what users are saying about Jan on Twitter and watch amazing videos demonstrating the use of Jan by the community. Share your love for Jan on Twitter and tag us @janframework!"/>
-    <meta property="og:url" content="https://jan.ai/wall-of-love"/>
-    <meta name="twitter:card" content="summary"/>
-    <meta name="twitter:title" content="Wall of Love ❤️ - Jan"/>
-    <meta name="twitter:description" content="See what users are saying about Jan on Twitter and watch amazing videos demonstrating the use of Jan by the community. Share your love for Jan on Twitter and tag us @janframework!"/>
-</head>
 
 ## Twitter
 

@@ -1,8 +1,7 @@
 import { PythonShell } from 'python-shell'
 import { spawn, ChildProcess } from 'child_process'
 import { resolve as presolve, join as pjoin } from 'path'
-import type { Quantization } from '@janhq/core'
-import { log } from '@janhq/core/node'
+import { log, Quantization } from '@janhq/core/node'
 import { statSync } from 'fs'
 export { renameSync } from 'fs'
 

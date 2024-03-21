@@ -2,20 +2,6 @@
 title: Recommended AI Hardware by Model
 ---
 
-<head>
-  <title>Recommended AI Hardware by Model</title>
-  <meta charset="utf-8" />
-  <meta name="description" content="Explore the recommended AI hardware specifications for running Codellama models efficiently. Find RAM and VRAM requirements for different parameter sizes and quantization formats, along with minimum recommended GPUs." />
-  <meta name="keywords" content="Codellama, AI hardware, recommended hardware, system requirements, RAM requirements, VRAM requirements, GPU recommendations, GPTQ, GGML, GGUF, parameter models, quantization formats" />
-  <meta name="twitter:card" content="summary" />
-  <link rel="canonical" href="https://jan.ai/recommended-ai-hardware-by-model" />
-  <meta property="og:title" content="Recommended AI Hardware by Model" />
-  <meta property="og:description" content="Explore the recommended AI hardware specifications for running Codellama models efficiently. Find RAM and VRAM requirements for different parameter sizes and quantization formats, along with minimum recommended GPUs." />
-  <meta property="og:url" content="https://jan.ai/recommended-ai-hardware-by-model" />
-  <meta property="og:type" content="article" />
-  <meta property="og:image" content="https://jan.ai/img/og-image-recommended-hardware.png" />
-</head>
-
 ## Codellama 34b
 
 ### System Requirements:

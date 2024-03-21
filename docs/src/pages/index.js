@@ -149,7 +149,6 @@ export default function Home() {
     <>
       <Banner />
       <Layout
-        title="Rethink the Computer"
         description="Jan turns your computer into an AI machine by running LLMs locally on your computer. It's a privacy-focus, local-first, open-source solution."
       >
         <main>

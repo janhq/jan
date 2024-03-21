@@ -5,14 +5,15 @@ sidebar_position: 8
 description: A step-by-step guide on how to integrate Jan with LM Studio.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     LM Studio integration,
   ]
 ---
@@ -20,6 +21,7 @@ keywords:
 ## Integrate LM Studio with Jan
 
 [LM Studio](https://lmstudio.ai/) enables you to explore, download, and run local Large Language Models (LLMs). You can integrate Jan with LM Studio using two methods:
+
 1. Integrate the LM Studio server with Jan UI
 2. Migrate your downloaded model from LM Studio to Jan.
 
@@ -29,6 +31,7 @@ To integrate LM Studio with Jan follow the steps below:
 
 In this guide, we're going to show you how to connect Jan to [LM Studio](https://lmstudio.ai/) using the second method. We'll use the [Phi 2 - GGUF](https://huggingface.co/TheBloke/phi-2-GGUF) model from Hugging Face as our example.
 :::
+
 ### Step 1: Server Setup
 
 1. Access the `Local Inference Server` within LM Studio.
@@ -57,7 +60,7 @@ Replace `(port)` with your chosen port number. The default is 1234.
    - Set `format` to `api`.
    - Specify `engine` as `openai`.
    - Set `state` to `ready`.
-  
+
 ```json title="~/jan/models/lmstudio-phi-2/model.json"
 {
   "sources": [
@@ -81,10 +84,10 @@ Replace `(port)` with your chosen port number. The default is 1234.
   "engine": "openai"
 }
 ```
-:::note
-For more details regarding the `model.json` settings and parameters fields,  please see [here](/guides/engines/remote-server/#modeljson).
-:::
 
+:::note
+For more details regarding the `model.json` settings and parameters fields, please see [here](/guides/engines/remote-server/#modeljson).
+:::
 
 ### Step 3: Starting the Model
 
@@ -107,7 +110,6 @@ For more details regarding the `model.json` settings and parameters fields,  ple
 ## Direct Access to LM Studio Models from Jan (version 0.4.7+)
 
 Starting from version 0.4.7, Jan enables direct import of LM Studio models using absolute file paths.
-
 
 ### Step 1: Locating the Model Path
 

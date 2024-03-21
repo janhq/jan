@@ -1,17 +1,18 @@
 ---
 title: Your First Engine
-slug: /developer/build-engine/your-first-engine/
+slug: /developer/engine/your-first-engine/
 description: A quick start on how to build your first engine
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     quick start,
     build engine,
   ]
