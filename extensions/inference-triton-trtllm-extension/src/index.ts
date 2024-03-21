@@ -27,9 +27,11 @@ export default class JanInferenceTritonTrtLLMExtension extends RemoteOAIEngine {
 
   inferenceUrl: string = ''
   provider: string = 'triton_trtllm'
+  apiKey: string = ''
 
   _engineSettings: {
     base_url: ''
+    api_key: ''
   }
 
   /**
@@ -66,6 +68,7 @@ export default class JanInferenceTritonTrtLLMExtension extends RemoteOAIEngine {
         this._engineSettings =
           typeof engine === 'object' ? engine : JSON.parse(engine)
         this.inferenceUrl = this._engineSettings.base_url
+        this.apiKey = this._engineSettings.api_key
       } else {
         await fs.writeFileSync(
           engine_json,

@@ -8,29 +8,29 @@ import { OAIEngine } from './OAIEngine'
  */
 export abstract class RemoteOAIEngine extends OAIEngine {
   // The inference engine
-
+  abstract apiKey: string
   /**
    * On extension load, subscribe to events.
    */
   onLoad() {
     super.onLoad()
     // These events are applicable to local inference providers
-    events.on(ModelEvent.OnModelInit, (model: Model) => this.onModelInit(model))
-    events.on(ModelEvent.OnModelStop, (model: Model) => this.onModelStop(model))
+    events.on(ModelEvent.OnModelInit, (model: Model) => this.loadModel(model))
+    events.on(ModelEvent.OnModelStop, (model: Model) => this.unloadModel(model))
   }
 
   /**
    * Load the model.
    */
-  async onModelInit(model: Model) {
+  async loadModel(model: Model) {
     if (model.engine.toString() !== this.provider) return
     events.emit(ModelEvent.OnModelReady, model)
   }
   /**
    * Stops the model.
    */
-  onModelStop(model: Model) {
-    if (model.engine.toString() !== this.provider) return
+  unloadModel(model: Model) {
+    if (model.engine && model.engine.toString() !== this.provider) return
     events.emit(ModelEvent.OnModelStopped, {})
   }
 
@@ -38,6 +38,9 @@ export abstract class RemoteOAIEngine extends OAIEngine {
    * Headers for the inference request
    */
   override headers(): HeadersInit {
-    return {}
+    return {
+      'Authorization': `Bearer ${this.apiKey}`,
+      'api-key': `${this.apiKey}`,
+    }
   }
 }

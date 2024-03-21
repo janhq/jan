@@ -27,17 +27,11 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
 
   inferenceUrl: string = COMPLETION_URL
   provider = 'groq'
+  apiKey = ''
 
   private _engineSettings = {
     full_url: COMPLETION_URL,
     api_key: 'gsk-<your key here>',
-  }
-
-  headers(): HeadersInit {
-    return {
-      'Authorization': ` Bearer ${this._engineSettings.api_key}`,
-      'api-key': `${this._engineSettings.api_key}`,
-    }
   }
 
   /**
@@ -75,6 +69,7 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
         this._engineSettings =
           typeof engine === 'object' ? engine : JSON.parse(engine)
         this.inferenceUrl = this._engineSettings.full_url
+        this.apiKey = this._engineSettings.api_key
       } else {
         await fs.writeFileSync(
           engineFile,

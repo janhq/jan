@@ -34,13 +34,7 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
 
   inferenceUrl: string = COMPLETION_URL
   provider: string = 'openai'
-
-  headers(): HeadersInit {
-    return {
-      'Authorization': ` Bearer ${this._engineSettings.api_key}`,
-      'api-key': `${this._engineSettings.api_key}`,
-    }
-  }
+  apiKey: string = ''
 
   // TODO: Just use registerSettings from BaseExtension
   // Remove these methods
@@ -83,6 +77,7 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
         this._engineSettings =
           typeof engine === 'object' ? engine : JSON.parse(engine)
         this.inferenceUrl = this._engineSettings.full_url
+        this.apiKey = this._engineSettings.api_key
       } else {
         await fs.writeFileSync(
           engineFile,

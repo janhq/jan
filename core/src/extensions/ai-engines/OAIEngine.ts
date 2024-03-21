@@ -37,7 +37,7 @@ export abstract class OAIEngine extends AIEngine {
   onLoad() {
     super.onLoad()
     events.on(MessageEvent.OnMessageSent, (data: MessageRequest) => this.inference(data))
-    events.on(InferenceEvent.OnInferenceStopped, () => this.onInferenceStopped())
+    events.on(InferenceEvent.OnInferenceStopped, () => this.stopInference())
   }
 
   /**
@@ -114,7 +114,7 @@ export abstract class OAIEngine extends AIEngine {
   /**
    * Stops the inference.
    */
-  onInferenceStopped() {
+  stopInference() {
     this.isCancelled = true
     this.controller?.abort()
   }

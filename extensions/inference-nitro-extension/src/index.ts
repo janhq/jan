@@ -82,19 +82,19 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     this.nitroProcessInfo = health
   }
 
-  override onModelInit(model: Model): Promise<void> {
+  override loadModel(model: Model): Promise<void> {
     if (model.engine !== this.provider) return Promise.resolve()
     this.getNitroProcesHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
       JanInferenceNitroExtension._intervalHealthCheck
     )
-    return super.onModelInit(model)
+    return super.loadModel(model)
   }
 
-  override onModelStop(model: Model): void {
-    super.onModelStop(model)
+  override unloadModel(model: Model): void {
+    super.unloadModel(model)
 
-    if (model.engine !== this.provider) return
+    if (model.engine && model.engine !== this.provider) return
 
     // stop the periocally health check
     if (this.getNitroProcesHealthIntervalId) {
