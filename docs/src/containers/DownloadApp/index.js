@@ -133,7 +133,7 @@ export default function DownloadApp() {
   }
 
   return (
-    <div className="w-full lg:w-3/5 mx-auto px-4">
+    <div className="w-full lg:w-3/4 mx-auto px-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 py-10 gap-8">
         {groupTemnplate.map((item, i) => {
           return (

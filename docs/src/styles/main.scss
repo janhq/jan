@@ -1,9 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=Josefin+Sans:ital,wght@0,100..700;1,100..700&display=swap&family=Inter:wght@100..900&display=swap');
-
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
+@import './components/font.scss';
 @import './components/base.scss';
 @import './components/typography.scss';
 @import './components/card.scss';

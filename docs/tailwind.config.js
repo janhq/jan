@@ -56,7 +56,7 @@ module.exports = {
         'Helvetica',
         'sans-serif',
       ],
-      serif: ['Josefin Sans'],
+      serif: ['PPEditorialNew'],
     },
     extend: {
       backgroundImage: {
