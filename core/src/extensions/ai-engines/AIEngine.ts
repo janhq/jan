@@ -36,7 +36,7 @@ export abstract class AIEngine extends BaseExtension {
             // Attempt to create the model folder
             joinPath([janDataFolder, this.modelFolder, model.id]).then((path) =>
               fs
-                .mkdirSync(path)
+                .mkdir(path)
                 .catch()
                 .then(() => path)
             )

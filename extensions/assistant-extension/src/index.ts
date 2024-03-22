@@ -29,7 +29,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       localStorage.getItem(`${EXTENSION_NAME}-version`) !== VERSION ||
       !assistantDirExist
     ) {
-      if (!assistantDirExist) await fs.mkdirSync(JanAssistantExtension._homeDir)
+      if (!assistantDirExist) await fs.mkdir(JanAssistantExtension._homeDir)
 
       // Write assistant metadata
       await this.createJanAssistant()
@@ -184,7 +184,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       JanAssistantExtension._homeDir,
       assistant.id,
     ])
-    if (!(await fs.existsSync(assistantDir))) await fs.mkdirSync(assistantDir)
+    if (!(await fs.existsSync(assistantDir))) await fs.mkdir(assistantDir)
 
     // store the assistant metadata json
     const assistantMetadataPath = await joinPath([
@@ -247,8 +247,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       JanAssistantExtension._homeDir,
       assistant.id,
     ])
-    await fs.rmdirSync(assistantDir)
-    return Promise.resolve()
+    return fs.rm(assistantDir)
   }
 
   private async createJanAssistant(): Promise<void> {

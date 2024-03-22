@@ -138,9 +138,12 @@ const Advanced = () => {
   }, [readSettings, setGpuList, setGpuEnabled, setGpusInUse, setVulkanEnabled])
 
   const clearLogs = async () => {
-    if (await fs.existsSync(`file://logs`)) {
-      await fs.rmdirSync(`file://logs`, { recursive: true })
+    try {
+      await fs.rm(`file://logs`)
+    } catch (err) {
+      console.error('Error clearing logs: ', err)
     }
+
     toaster({
       title: 'Logs cleared',
       description: 'All logs have been cleared.',

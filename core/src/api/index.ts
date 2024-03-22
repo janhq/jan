@@ -82,9 +82,9 @@ export enum FileSystemRoute {
   unlinkSync = 'unlinkSync',
   existsSync = 'existsSync',
   readdirSync = 'readdirSync',
-  mkdirSync = 'mkdirSync',
+  rm = 'rm',
+  mkdir = 'mkdir',
   readFileSync = 'readFileSync',
-  rmdirSync = 'rmdirSync',
   writeFileSync = 'writeFileSync',
 }
 export enum FileManagerRoute {
@@ -95,8 +95,6 @@ export enum FileManagerRoute {
   getUserHomePath = 'getUserHomePath',
   fileStat = 'fileStat',
   writeBlob = 'writeBlob',
-  mkdir = 'mkdir',
-  rm = 'rm',
 }
 
 export type ApiFunction = (...args: any[]) => any

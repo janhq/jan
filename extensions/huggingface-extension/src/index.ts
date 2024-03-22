@@ -15,7 +15,6 @@ import {
   log,
   DownloadRequest,
 } from '@janhq/core'
-import { ggufMetadata } from 'hyllama'
 
 declare global {
   interface Window {
@@ -138,7 +137,7 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
   ): Promise<void> {
     if (this.interrupted) return
     const modelDirPath = await this.getModelDirPath(repoID)
-    if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
+    if (!(await fs.existsSync(modelDirPath))) await fs.mkdir(modelDirPath)
     const files = this.getFileList(repoData)
     const filePaths: string[] = []
 
@@ -394,7 +393,6 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       const localPath = await joinPath([modelDirPath, filePath])
       await abortDownload(localPath)
     }
-    // ;(await fs.existsSync(modelDirPath)) && (await fs.rmdirSync(modelDirPath))
 
     executeOnMain(NODE_MODULE_PATH, 'killProcesses')
   }
