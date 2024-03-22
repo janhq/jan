@@ -40,7 +40,7 @@ export const commonRouter = async (app: HttpServer) => {
   })
 
   // Threads
-  app.post(`/threads/`, async (req, res) => createThread(req.body))
+  app.post(`/threads`, async (req, res) => createThread(req.body))
 
   app.get(`/threads/:threadId/messages`, async (req, res) =>
     getMessages(req.params.threadId).then(normalizeData)
