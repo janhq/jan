@@ -18,7 +18,7 @@ module.exports = {
   plugins: [
     new webpack.DefinePlugin({
       MODULE: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
-      GROQ_DOMAIN: JSON.stringify('api.groq.com'),
+      COMPLETION_URL: JSON.stringify('https://api.groq.com/openai/v1/chat/completions'),
     }),
   ],
   output: {

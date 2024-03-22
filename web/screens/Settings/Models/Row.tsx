@@ -48,9 +48,8 @@ export default function RowModel(props: RowModelProps) {
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
   const isRemoteModel =
-    props.data.engine === InferenceEngine.openai ||
-    props.data.engine === InferenceEngine.groq ||
-    props.data.engine === InferenceEngine.triton_trtllm
+    props.data.engine !== InferenceEngine.nitro &&
+    props.data.engine !== InferenceEngine.nitro_tensorrt_llm
 
   const onModelActionClick = (modelId: string) => {
     if (activeModel && activeModel.id === modelId) {

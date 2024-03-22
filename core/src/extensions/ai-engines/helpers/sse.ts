@@ -12,7 +12,8 @@ export function requestInference(
     id: string
     parameters: ModelRuntimeParams
   },
-  controller?: AbortController
+  controller?: AbortController,
+  headers?: HeadersInit
 ): Observable<string> {
   return new Observable((subscriber) => {
     const requestBody = JSON.stringify({
@@ -27,6 +28,7 @@ export function requestInference(
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'Accept': model.parameters.stream ? 'text/event-stream' : 'application/json',
+        ...headers,
       },
       body: requestBody,
       signal: controller?.signal,
