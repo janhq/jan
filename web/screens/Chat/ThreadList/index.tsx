@@ -9,6 +9,7 @@ import { GalleryHorizontalEndIcon, MoreVerticalIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+import useRecommendedModel from '@/hooks/useRecommendedModel'
 import useSetActiveThread from '@/hooks/useSetActiveThread'
 
 import { displayDate } from '@/utils/datetime'
@@ -35,6 +36,7 @@ export default function ThreadList() {
   const threadDataReady = useAtomValue(threadDataReadyAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const setEditMessage = useSetAtom(editMessageAtom)
+  const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   const onThreadClick = useCallback(
     (thread: Thread) => {
@@ -50,8 +52,14 @@ export default function ThreadList() {
    * and there are no threads available
    */
   useEffect(() => {
-    if (threadDataReady && assistants.length > 0 && threads.length === 0) {
-      requestCreateNewThread(assistants[0])
+    if (
+      threadDataReady &&
+      assistants.length > 0 &&
+      threads.length === 0 &&
+      (recommendedModel || downloadedModels[0])
+    ) {
+      const model = recommendedModel || downloadedModels[0]
+      requestCreateNewThread(assistants[0], model)
     } else if (threadDataReady && !activeThreadId) {
       setActiveThread(threads[0])
     }
@@ -62,6 +70,8 @@ export default function ThreadList() {
     requestCreateNewThread,
     activeThreadId,
     setActiveThread,
+    recommendedModel,
+    downloadedModels,
   ])
 
   return (
