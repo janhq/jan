@@ -23,7 +23,7 @@ export function handleAppUpdates() {
       message: 'Would you like to download and install it now?',
       buttons: ['Download', 'Later'],
     })
-    trayManager.destroyCurrentTray()
+
     if (action.response === 0) await autoUpdater.downloadUpdate()
   })
 
@@ -38,6 +38,7 @@ export function handleAppUpdates() {
       buttons: ['Restart', 'Later'],
     })
     if (action.response === 0) {
+      trayManager.destroyCurrentTray()
       waitingToInstallVersion = _info?.version
       autoUpdater.quitAndInstall()
     }

@@ -11,7 +11,7 @@ import { getAppConfigurations, log } from '@janhq/core/node'
  * IPC Handlers
  **/
 import { injectHandler } from './handlers/common'
-import { handleAppUpdates } from './handlers/update'
+import { handleAppUpdates, waitingToInstallVersion } from './handlers/update'
 import { handleAppIPCs } from './handlers/native'
 
 /**
@@ -96,7 +96,7 @@ app.once('quit', () => {
 
 app.once('window-all-closed', () => {
   // Feature Toggle for Quick Ask
-  if (getAppConfigurations().quick_ask) return
+  if (getAppConfigurations().quick_ask && !waitingToInstallVersion) return
   cleanUpAndQuit()
 })
 
