@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
@@ -87,7 +87,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
@@ -149,7 +149,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
@@ -157,7 +157,7 @@ jobs:
         continue-on-error: true
         run: |
           make clean
-
+            
       - name: Linter and test
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')

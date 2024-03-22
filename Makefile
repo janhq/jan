@@ -17,6 +17,7 @@ install-and-build: build-uikit
 ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif
+	yarn global add turbo
 	yarn build:core
 	yarn build:server
 	yarn install
@@ -24,9 +25,9 @@ endif
 
 check-file-counts: install-and-build
 ifeq ($(OS),Windows_NT)
-	powershell -Command "if ((Get-ChildItem -Path pre-install -Filter *.tgz | Measure-Object | Select-Object -ExpandProperty Count) -ne (Get-ChildItem -Path extensions -Directory | Measure-Object | Select-Object -ExpandProperty Count)) { Write-Host 'Number of .tgz files in pre-install does not match the number of subdirectories in extension'; exit 1 } else { Write-Host 'Extension build successful' }"
+	powershell -Command "if ((Get-ChildItem -Path pre-install -Filter *.tgz | Measure-Object | Select-Object -ExpandProperty Count) -ne (Get-ChildItem -Path extensions -Directory | Where-Object Name -like *-extension* | Measure-Object | Select-Object -ExpandProperty Count)) { Write-Host 'Number of .tgz files in pre-install does not match the number of subdirectories in extensions with package.json'; exit 1 } else { Write-Host 'Extension build successful' }"
 else
-	@tgz_count=$$(find pre-install -type f -name "*.tgz" | wc -l); dir_count=$$(find extensions -mindepth 1 -maxdepth 1 -type d | wc -l); if [ $$tgz_count -ne $$dir_count ]; then echo "Number of .tgz files in pre-install ($$tgz_count) does not match the number of subdirectories in extension ($$dir_count)"; exit 1; else echo "Extension build successful"; fi
+	@tgz_count=$$(find pre-install -type f -name "*.tgz" | wc -l); dir_count=$$(find extensions -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/package.json' \; -print | wc -l); if [ $$tgz_count -ne $$dir_count ]; then echo "Number of .tgz files in pre-install ($$tgz_count) does not match the number of subdirectories in extension ($$dir_count)"; exit 1; else echo "Extension build successful"; fi
 endif
 
 dev: check-file-counts
