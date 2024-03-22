@@ -28,6 +28,7 @@ import { cleanLogs } from './utils/log'
 
 import { registerShortcut } from './utils/selectedText'
 import { trayManager } from './managers/tray'
+import { logSystemInfo } from './utils/system'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -65,9 +66,7 @@ app
     }
   })
   .then(() => process.env.CI !== 'e2e' && trayManager.createSystemTray())
-  .then(() => {
-    log(`Version: ${app.getVersion()}`)
-  })
+  .then(logSystemInfo)
   .then(() => {
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
