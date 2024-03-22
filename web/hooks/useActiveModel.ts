@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-import { events, Model, ModelEvent } from '@janhq/core'
+import { EngineManager, Model } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 
+import { extensionManager } from '@/extension'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -38,19 +39,13 @@ export function useActiveModel() {
       (stateModel.model === modelId && stateModel.loading)
     ) {
       console.debug(`Model ${modelId} is already initialized. Ignore..`)
-      return
+      return Promise.resolve()
     }
 
     let model = downloadedModelsRef?.current.find((e) => e.id === modelId)
 
-    // Switch between engines
-    if (model && activeModel && activeModel.engine !== model.engine) {
-      stopModel()
-      // TODO: Refactor inference provider would address this
-      await new Promise((res) => setTimeout(res, 1000))
-    }
+    await stopModel().catch()
 
-    // TODO: incase we have multiple assistants, the configuration will be from assistant
     setLoadModelError(undefined)
 
     setActiveModel(undefined)
@@ -68,7 +63,8 @@ export function useActiveModel() {
         loading: false,
         model: '',
       }))
-      return
+
+      return Promise.reject(`Model ${modelId} not found!`)
     }
 
     /// Apply thread model settings
@@ -83,15 +79,52 @@ export function useActiveModel() {
     }
 
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
-    events.emit(ModelEvent.OnModelInit, model)
+    const engine = EngineManager.instance()?.get(model.engine)
+    return engine
+      ?.loadModel(model)
+      .then(() => {
+        setActiveModel(model)
+        setStateModel(() => ({
+          state: 'stop',
+          loading: false,
+          model: model.id,
+        }))
+        toaster({
+          title: 'Success!',
+          description: `Model ${model.id} has been started.`,
+          type: 'success',
+        })
+      })
+      .catch((error) => {
+        console.error('Failed to load model: ', error)
+        setStateModel(() => ({
+          state: 'start',
+          loading: false,
+          model: model.id,
+        }))
+
+        toaster({
+          title: 'Failed!',
+          description: `Model ${model.id} failed to start.`,
+          type: 'success',
+        })
+        setLoadModelError(error)
+      })
   }
 
   const stopModel = useCallback(async () => {
     if (activeModel) {
       setStateModel({ state: 'stop', loading: true, model: activeModel.id })
-      events.emit(ModelEvent.OnModelStop, activeModel)
+      const engine = EngineManager.instance()?.get(activeModel.engine)
+      await engine
+        ?.unloadModel(activeModel)
+        .catch()
+        .then(() => {
+          setActiveModel(undefined)
+          setStateModel({ state: 'start', loading: false, model: '' })
+        })
     }
-  }, [activeModel, setStateModel])
+  }, [activeModel, setActiveModel, setStateModel])
 
   return { activeModel, startModel, stopModel, stateModel }
 }

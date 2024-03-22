@@ -32,4 +32,4 @@ export { HuggingFaceExtension } from './huggingface'
 /**
  * Base AI Engines.
  */
-export * from './ai-engines'
+export * from './engines'

@@ -1,3 +1,5 @@
+import { EngineManager } from '@janhq/core'
+
 import { appService } from './appService'
 import { EventEmitter } from './eventsService'
 import { restAPI } from './restService'
@@ -12,6 +14,7 @@ export const setupCoreServices = () => {
   if (!window.core) {
     window.core = {
       events: new EventEmitter(),
+      engineManager: new EngineManager(),
       api: {
         ...(window.electronAPI ? window.electronAPI : restAPI),
         ...appService,

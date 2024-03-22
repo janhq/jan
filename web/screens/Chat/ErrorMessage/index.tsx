@@ -74,7 +74,8 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               </p>
               <ModalTroubleShooting />
             </div>
-          ) : loadModelError?.includes('EXTENSION_IS_NOT_INSTALLED') ? (
+          ) : loadModelError &&
+            loadModelError?.includes('EXTENSION_IS_NOT_INSTALLED') ? (
             <div
               key={message.id}
               className="flex w-full flex-col items-center text-center text-sm font-medium text-gray-500"
