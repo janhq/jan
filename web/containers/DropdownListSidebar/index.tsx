@@ -75,10 +75,14 @@ const DropdownListSidebar = ({
 
   // TODO: Update filter condition for the local model
   const localModel = downloadedModels.filter(
-    (model) => model.engine !== InferenceEngine.openai
+    (model) =>
+      model.engine === InferenceEngine.nitro ||
+      model.engine === InferenceEngine.nitro_tensorrt_llm
   )
   const remoteModel = downloadedModels.filter(
-    (model) => model.engine === InferenceEngine.openai
+    (model) =>
+      model.engine !== InferenceEngine.nitro &&
+      model.engine !== InferenceEngine.nitro_tensorrt_llm
   )
 
   const modelOptions = isTabActive === 0 ? localModel : remoteModel

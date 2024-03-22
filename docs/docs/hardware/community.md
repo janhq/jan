@@ -1,12 +1,23 @@
 ---
 title: Hardware Examples
 description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
-keywords: [Jan AI,  Jan, ChatGPT alternative, local AI, private AI, conversational AI, no-subscription fee, large language model ]
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+  ]
 ---
 
 ## Add your own example
 
-Add your own examples to this page by creating a new file in the `docs/docs/hardware/examples` directory. 
+Add your own examples to this page by creating a new file in the `docs/docs/hardware/examples` directory.
 
 ```shell
 docs
@@ -18,9 +29,10 @@ docs
             // highlight-next-line
             └── <YOUR_BUILD_HERE>.md
 ```
+
 ### File and Title Convention
 
-We use a specific naming convention for the file name. 
+We use a specific naming convention for the file name.
 
 ```shell
 # Filename
@@ -52,4 +64,4 @@ You are allowed to include affiliate links in your example.
 
 ## Longer-Term
 
-We will likely build a simple web app to make it easier to add your own examples, sort and retrieve. 
+We will likely build a simple web app to make it easier to add your own examples, sort and retrieve.

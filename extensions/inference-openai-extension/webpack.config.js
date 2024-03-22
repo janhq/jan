@@ -17,8 +17,8 @@ module.exports = {
   },
   plugins: [
     new webpack.DefinePlugin({
-      MODULE: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
-      OPENAI_DOMAIN: JSON.stringify('openai.azure.com'),
+      ENGINE: JSON.stringify(packageJson.engine),
+      COMPLETION_URL: JSON.stringify('https://api.openai.com/v1/chat/completions'),
     }),
   ],
   output: {

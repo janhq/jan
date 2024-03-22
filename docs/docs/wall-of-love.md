@@ -1,5 +1,20 @@
 ---
 title: Wall of Love ❤️
+slug: /wall-of-love
+description: Check out what our amazing users are saying about Jan!
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    wall of love,
+  ]
 ---
 
 ## Twitter

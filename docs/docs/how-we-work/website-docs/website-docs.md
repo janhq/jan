@@ -1,5 +1,21 @@
 ---
 title: Website & Docs
+slug: /how-we-work/website-docs/
+description: Information about the Jan website and documentation.
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    website,
+    documentation,
+  ]
 ---
 
 This website is built using [Docusaurus 3.0](https://docusaurus.io/), a modern static website generator.

@@ -1,4 +1,4 @@
-import { DownloadRequest, FileStat, NetworkConfig } from './types'
+import { DownloadRequest, FileStat, NetworkConfig, SystemInformation } from './types'
 
 /**
  * Execute a extension module function in main process
@@ -13,7 +13,7 @@ const executeOnMain: (extension: string, method: string, ...args: any[]) => Prom
   extension,
   method,
   ...args
-) => global.core?.api?.invokeExtensionFunc(extension, method, ...args)
+) => globalThis.core?.api?.invokeExtensionFunc(extension, method, ...args)
 
 /**
  * Downloads a file from a URL and saves it to the local file system.
@@ -26,7 +26,7 @@ const executeOnMain: (extension: string, method: string, ...args: any[]) => Prom
 const downloadFile: (downloadRequest: DownloadRequest, network?: NetworkConfig) => Promise<any> = (
   downloadRequest,
   network
-) => global.core?.api?.downloadFile(downloadRequest, network)
+) => globalThis.core?.api?.downloadFile(downloadRequest, network)
 
 /**
  * Aborts the download of a specific file.
@@ -34,14 +34,14 @@ const downloadFile: (downloadRequest: DownloadRequest, network?: NetworkConfig) 
  * @returns {Promise<any>} A promise that resolves when the download has been aborted.
  */
 const abortDownload: (fileName: string) => Promise<any> = (fileName) =>
-  global.core.api?.abortDownload(fileName)
+  globalThis.core.api?.abortDownload(fileName)
 
 /**
  * Gets Jan's data folder path.
  *
  * @returns {Promise<string>} A Promise that resolves with Jan's data folder path.
  */
-const getJanDataFolderPath = (): Promise<string> => global.core.api?.getJanDataFolderPath()
+const getJanDataFolderPath = (): Promise<string> => globalThis.core.api?.getJanDataFolderPath()
 
 /**
  * Opens the file explorer at a specific path.
@@ -49,21 +49,22 @@ const getJanDataFolderPath = (): Promise<string> => global.core.api?.getJanDataF
  * @returns {Promise<any>} A promise that resolves when the file explorer is opened.
  */
 const openFileExplorer: (path: string) => Promise<any> = (path) =>
-  global.core.api?.openFileExplorer(path)
+  globalThis.core.api?.openFileExplorer(path)
 
 /**
  * Joins multiple paths together.
  * @param paths - The paths to join.
  * @returns {Promise<string>} A promise that resolves with the joined path.
  */
-const joinPath: (paths: string[]) => Promise<string> = (paths) => global.core.api?.joinPath(paths)
+const joinPath: (paths: string[]) => Promise<string> = (paths) =>
+  globalThis.core.api?.joinPath(paths)
 
 /**
  * Retrive the basename from an url.
  * @param path - The path to retrieve.
  * @returns {Promise<string>} A promise that resolves with the basename.
  */
-const baseName: (paths: string) => Promise<string> = (path) => global.core.api?.baseName(path)
+const baseName: (paths: string) => Promise<string> = (path) => globalThis.core.api?.baseName(path)
 
 /**
  * Opens an external URL in the default web browser.
@@ -72,20 +73,20 @@ const baseName: (paths: string) => Promise<string> = (path) => global.core.api?.
  * @returns {Promise<any>} - A promise that resolves when the URL has been successfully opened.
  */
 const openExternalUrl: (url: string) => Promise<any> = (url) =>
-  global.core.api?.openExternalUrl(url)
+  globalThis.core.api?.openExternalUrl(url)
 
 /**
  * Gets the resource path of the application.
  *
  * @returns {Promise<string>} - A promise that resolves with the resource path.
  */
-const getResourcePath: () => Promise<string> = () => global.core.api?.getResourcePath()
+const getResourcePath: () => Promise<string> = () => globalThis.core.api?.getResourcePath()
 
 /**
  * Gets the user's home path.
  * @returns return user's home path
  */
-const getUserHomePath = (): Promise<string> => global.core.api?.getUserHomePath()
+const getUserHomePath = (): Promise<string> => globalThis.core.api?.getUserHomePath()
 
 /**
  * Log to file from browser processes.
@@ -93,7 +94,7 @@ const getUserHomePath = (): Promise<string> => global.core.api?.getUserHomePath(
  * @param message - Message to log.
  */
 const log: (message: string, fileName?: string) => void = (message, fileName) =>
-  global.core.api?.log(message, fileName)
+  globalThis.core.api?.log(message, fileName)
 
 /**
  * Check whether the path is a subdirectory of another path.
@@ -104,13 +105,14 @@ const log: (message: string, fileName?: string) => void = (message, fileName) =>
  * @returns {Promise<boolean>} - A promise that resolves with a boolean indicating whether the path is a subdirectory.
  */
 const isSubdirectory: (from: string, to: string) => Promise<boolean> = (from: string, to: string) =>
-  global.core.api?.isSubdirectory(from, to)
+  globalThis.core.api?.isSubdirectory(from, to)
 
 /**
  * Get system information
  * @returns {Promise<any>} - A promise that resolves with the system information.
  */
-const systemInformations: () => Promise<any> = () => global.core.api?.systemInformations()
+const systemInformation: () => Promise<SystemInformation> = () =>
+  globalThis.core.api?.systemInformation()
 
 /**
  * Show toast message from browser processes.
@@ -119,7 +121,7 @@ const systemInformations: () => Promise<any> = () => global.core.api?.systemInfo
  * @returns
  */
 const showToast: (title: string, message: string) => void = (title, message) =>
-  global.core.api?.showToast(title, message)
+  globalThis.core.api?.showToast(title, message)
 /**
  * Register extension point function type definition
  */
@@ -146,7 +148,7 @@ export {
   log,
   isSubdirectory,
   getUserHomePath,
-  systemInformations,
+  systemInformation,
   showToast,
   FileStat,
 }

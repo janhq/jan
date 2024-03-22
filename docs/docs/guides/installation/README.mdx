@@ -1,0 +1,107 @@
+---
+title: Installation
+sidebar_position: 4
+slug: /guides/install/
+hide_table_of_contents: true
+description: Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+  ]
+---
+
+## Jan Device Compatible
+
+Jan is compatible with macOS, Windows, and Linux, making it accessible for a wide range of users. This compatibility allows users to leverage Jan's AI tools effectively, regardless of their device or operating system.
+
+:::note
+For detailed system requirements and setup instructions, refer to our [Hardware Setup](/guides/hardware/) guide.
+:::
+
+import DocCardList from "@theme/DocCardList";
+
+<DocCardList />
+
+## Install Server-Side
+
+To install Jan from source, follow the steps below:
+
+### Pre-requisites
+
+Before proceeding with the installation of Jan from source, ensure that the following software versions are installed on your system:
+
+- Node.js version 20.0.0 or higher
+- Yarn version 1.22.0 or higher
+
+### Install Jan Development Build
+
+1. Clone the Jan repository from GitHub by using the following command:
+
+```bash
+git clone https://github.com/janhq/jan
+git checkout DESIRED_BRANCH
+cd jan
+```
+
+2. Install the required dependencies by using the following Yarn command:
+
+```bash
+yarn install
+
+# Build core module
+yarn build:core
+
+# Packing base plugins
+yarn build:plugins
+
+# Packing uikit
+yarn build:uikit
+```
+
+3. Run the development server.
+
+```bash
+yarn dev
+```
+
+This will start the development server and open the desktop app. During this step, you may encounter notifications about installing base plugins. Simply click **OK** and **Next** to continue.
+
+### Install Jan Production Build
+
+1. Clone the Jan repository from GitHub by using the following command:
+
+```bash
+git clone https://github.com/janhq/jan
+cd jan
+```
+
+2. Install the required dependencies by using the following Yarn command:
+
+```bash
+yarn install
+
+# Build core module
+yarn build:core
+
+# Packing base plugins
+yarn build:plugins
+
+# Packing uikit
+yarn build:uikit
+```
+
+3. Run the production server.
+
+```bash
+yarn
+```
+
+This completes the installation process for Jan from source. The production-ready app for macOS can be found in the dist folder.

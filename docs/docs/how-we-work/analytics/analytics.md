@@ -1,5 +1,20 @@
 ---
 title: Analytics
+slug: /how-we-work/analytics
+description: Jan's Analytics philosophy and implementation
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    analytics,
+  ]
 ---
 
 Adhering to Jan's privacy preserving philosophy, our analytics philosophy is to get "barely-enough-to-function'.

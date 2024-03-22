@@ -1,17 +1,18 @@
 ---
 title: Anatomy of an Extension
-slug: /developer/build-extension/extension-anatomy
+slug: /developer/extension/extension-anatomy
 description: An overview of extensions.json
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     build extension,
     extension anatomy,
   ]

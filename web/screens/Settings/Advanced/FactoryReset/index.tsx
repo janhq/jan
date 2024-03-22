@@ -3,6 +3,7 @@ import { Button } from '@janhq/uikit'
 import { useSetAtom } from 'jotai'
 
 import ModalValidation, { modalValidationAtom } from './ModalConfirmReset'
+import ResettingModal from './ResettingModal'
 
 const FactoryReset = () => {
   const setModalValidation = useSetAtom(modalValidationAtom)
@@ -30,6 +31,7 @@ const FactoryReset = () => {
         Reset
       </Button>
       <ModalValidation />
+      <ResettingModal />
     </div>
   )
 }

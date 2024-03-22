@@ -1,3 +1,7 @@
+---
+title: Frequently Asked Questions (FAQ) - Jan
+---
+
 # Frequently Asked Questions (FAQ)
 
 ## What is Jan?

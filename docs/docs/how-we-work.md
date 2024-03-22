@@ -1,5 +1,22 @@
 ---
 title: How We Work
+slug: /how-we-work
+description: How we work at Jan
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    build in public,
+    remote team,
+    how we work,
+  ]
 ---
 
 ### Open Source
