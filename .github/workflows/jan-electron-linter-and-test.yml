@@ -84,6 +84,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
   test-on-windows:
+    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -130,6 +131,38 @@ jobs:
           key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             turbo-${{ runner.os }}-${{ github.job }}-${{ github.ref_name }}-
+
+      - name: Linter and test
+        shell: powershell
+        run: |
+          make test
+  test-on-windows-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: windows-desktop-default-windows-security
+    steps:
+      - name: Clean workspace
+        run: |
+          Remove-Item -Path "\\?\$(Get-Location)\*" -Force -Recurse
+          $path = "$Env:APPDATA\jan"
+          if (Test-Path $path) {
+              Remove-Item "\\?\$path" -Recurse -Force
+          } else {
+              Write-Output "Folder does not exist."
+          }
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      # Clean cache, continue on error
+      - name: "Cleanup cache"
+        shell: powershell
+        continue-on-error: true
+        run: |
+          make clean
 
       - name: Linter and test
         shell: powershell

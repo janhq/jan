@@ -249,6 +249,15 @@ export default function useSendChatMessage() {
 
     let modelRequest =
       selectedModelRef?.current ?? activeThreadRef.current.assistants[0].model
+
+    // Fallback support for previous broken threads
+    if (activeThreadRef.current?.assistants[0]?.model?.id === '*') {
+      activeThreadRef.current.assistants[0].model = {
+        id: modelRequest.id,
+        settings: modelRequest.settings,
+        parameters: modelRequest.parameters,
+      }
+    }
     if (runtimeParams.stream == null) {
       runtimeParams.stream = true
     }
