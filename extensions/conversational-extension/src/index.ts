@@ -20,7 +20,7 @@ export default class JSONConversationalExtension extends ConversationalExtension
    */
   async onLoad() {
     if (!(await fs.existsSync(JSONConversationalExtension._threadFolder))) {
-      await fs.mkdirSync(JSONConversationalExtension._threadFolder)
+      await fs.mkdir(JSONConversationalExtension._threadFolder)
     }
   }
 
@@ -75,7 +75,7 @@ export default class JSONConversationalExtension extends ConversationalExtension
         JSONConversationalExtension._threadInfoFileName,
       ])
       if (!(await fs.existsSync(threadDirPath))) {
-        await fs.mkdirSync(threadDirPath)
+        await fs.mkdir(threadDirPath)
       }
 
       await fs.writeFileSync(threadJsonPath, JSON.stringify(thread, null, 2))
@@ -112,11 +112,11 @@ export default class JSONConversationalExtension extends ConversationalExtension
         JSONConversationalExtension._threadMessagesFileName,
       ])
       if (!(await fs.existsSync(threadDirPath)))
-        await fs.mkdirSync(threadDirPath)
+        await fs.mkdir(threadDirPath)
 
       if (message.content[0]?.type === 'image') {
         const filesPath = await joinPath([threadDirPath, 'files'])
-        if (!(await fs.existsSync(filesPath))) await fs.mkdirSync(filesPath)
+        if (!(await fs.existsSync(filesPath))) await fs.mkdir(filesPath)
 
         const imagePath = await joinPath([filesPath, `${message.id}.png`])
         const base64 = message.content[0].text.annotations[0]
@@ -129,7 +129,7 @@ export default class JSONConversationalExtension extends ConversationalExtension
 
       if (message.content[0]?.type === 'pdf') {
         const filesPath = await joinPath([threadDirPath, 'files'])
-        if (!(await fs.existsSync(filesPath))) await fs.mkdirSync(filesPath)
+        if (!(await fs.existsSync(filesPath))) await fs.mkdir(filesPath)
 
         const filePath = await joinPath([filesPath, `${message.id}.pdf`])
         const blob = message.content[0].text.annotations[0]
@@ -179,8 +179,7 @@ export default class JSONConversationalExtension extends ConversationalExtension
         threadDirPath,
         JSONConversationalExtension._threadMessagesFileName,
       ])
-      if (!(await fs.existsSync(threadDirPath)))
-        await fs.mkdirSync(threadDirPath)
+      if (!(await fs.existsSync(threadDirPath))) await fs.mkdir(threadDirPath)
       await fs.writeFileSync(
         threadMessagePath,
         messages.map((msg) => JSON.stringify(msg)).join('\n') +

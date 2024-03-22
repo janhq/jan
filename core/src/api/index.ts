@@ -82,7 +82,6 @@ export enum FileSystemRoute {
   unlinkSync = 'unlinkSync',
   existsSync = 'existsSync',
   readdirSync = 'readdirSync',
-  mkdirSync = 'mkdirSync',
   rm = 'rm',
   mkdir = 'mkdir',
   readFileSync = 'readFileSync',

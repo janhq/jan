@@ -35,8 +35,6 @@ const readdirSync = (...args: any[]) => globalThis.core.api?.readdirSync(...args
  * Creates a directory at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the directory is created successfully.
  */
-const mkdirSync = (...args: any[]) => globalThis.core.api?.mkdirSync(...args)
-
 const mkdir = (...args: any[]) => globalThis.core.api?.mkdir(...args)
 
 /**
@@ -93,7 +91,6 @@ export const fs = {
   readFileSync,
   existsSync,
   readdirSync,
-  mkdirSync,
   mkdir,
   rm,
   unlinkSync,

@@ -45,9 +45,7 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
     super.onLoad()
 
     if (!(await fs.existsSync(JanInferenceOpenAIExtension._engineDir))) {
-      await fs
-        .mkdirSync(JanInferenceOpenAIExtension._engineDir)
-        .catch((err) => console.debug(err))
+      await fs.mkdir(JanInferenceOpenAIExtension._engineDir)
     }
 
     this.writeDefaultEngineSettings()

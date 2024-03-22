@@ -137,7 +137,7 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
   ): Promise<void> {
     if (this.interrupted) return
     const modelDirPath = await this.getModelDirPath(repoID)
-    if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
+    if (!(await fs.existsSync(modelDirPath))) await fs.mkdir(modelDirPath)
     const files = this.getFileList(repoData)
     const filePaths: string[] = []
 

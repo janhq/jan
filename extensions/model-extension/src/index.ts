@@ -100,7 +100,7 @@ export default class JanModelExtension extends ModelExtension {
   ): Promise<void> {
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
-    if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
+    if (!(await fs.existsSync(modelDirPath))) await fs.mkdir(modelDirPath)
 
     if (model.engine === InferenceEngine.nitro_tensorrt_llm) {
       if (!gpuSettings || gpuSettings.gpus.length === 0) {
@@ -630,7 +630,7 @@ export default class JanModelExtension extends ModelExtension {
     }
 
     const modelFolderPath = await this.getModelFolderName(modelFolderName)
-    await fs.mkdirSync(modelFolderPath)
+    await fs.mkdir(modelFolderPath)
 
     const uniqueFolderName = await baseName(modelFolderPath)
     const modelBinaryFile = binaryName.endsWith(

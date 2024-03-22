@@ -40,7 +40,7 @@ export default class JanInferenceTritonTrtLLMExtension extends RemoteOAIEngine {
   async onLoad() {
     super.onLoad()
     if (!(await fs.existsSync(this._engineDir))) {
-      await fs.mkdirSync(this._engineDir).catch((err) => console.debug(err))
+      await fs.mkdir(this._engineDir)
     }
 
     this.writeDefaultEngineSettings()
