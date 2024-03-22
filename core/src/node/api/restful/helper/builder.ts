@@ -335,7 +335,12 @@ export const chatCompletions = async (request: any, reply: any) => {
     headers['api-key'] = apiKey
   }
   console.debug(apiUrl)
-  console.debug(JSON.stringify(headers))
+
+  if (requestedModel.engine === 'openai' && request.body.stop) {
+    // openai only allows max 4 stop words
+    request.body.stop = request.body.stop.slice(0, 4)
+  }
+
   const fetch = require('node-fetch')
   const response = await fetch(apiUrl, {
     method: 'POST',
