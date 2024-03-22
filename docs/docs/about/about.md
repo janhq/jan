@@ -4,14 +4,15 @@ slug: /about
 description: Jan is a desktop application that turns computers into thinking machines.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     about Jan,
     desktop application,
     thinking machine,

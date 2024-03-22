@@ -1,0 +1,271 @@
+---
+title: Advanced Settings
+slug: /guides/advanced
+description: Jan Docs | Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+sidebar_position: 11
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Advanced Settings,
+    HTTPS Proxy,
+    SSL,
+    settings,
+    Jan settings,
+  ]
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+This guide will show you how to use the advanced settings in Jan.
+
+## Access the Advanced Settings
+
+To access the Jan's advanced settings, follow the steps below:
+
+1. Navigate to the main dashboard.
+2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+3. Under the **Settings screen**, click the **Advanced Settings**.
+4. You can configure the following settings:
+
+| Feature                                  | Description                                                                                                                                                                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Keyboard Shortcuts**                   | Keyboard shortcuts speed up your workflow. For a quick overview of useful keyboard shortcuts, refer to the list [below](advanced-settings.mdx#keyboard-shortcuts).                                                       |
+| **Experimental Mode**                    | Enables experimental features that may be unstable.                                                                                                                                                                      |
+| **GPU Acceleration**                     | Enables the boosting of your model performance by using your GPU devices for acceleration.                                                                                                                               |
+| **Jan Data Folder**                      | Location for messages, model configurations, and user data. Changeable to a different location.                                                                                                                          |
+| **HTTPS Proxy & Ignore SSL Certificate** | Use a proxy server for internet connections and ignore SSL certificates for self-signed certificates. Please check out the guide on how to set up your own HTTPS proxy server [here](advanced-settings.mdx#https-proxy). |
+| **Clear Logs**                           | Removes all logs from the Jan application.                                                                                                                                                                               |
+| **Reset To Factory Default**             | Resets the application to its original state, deleting all data including model customizations and conversation history.                                                                                                 |
+
+## Keyboard Shortcuts
+
+Here are some of the keyboard shortcuts that you can use in Jan.
+
+<Tabs>
+    <TabItem value="mac" label = "Mac" default>
+| Combination     | Description                                        |
+| --------------- | -------------------------------------------------- |
+| `⌘ E`           | Show list your models                              |
+| `⌘ K`           | Show list navigation pages                         |
+| `⌘ B`           | Toggle collapsible left panel                      |
+| `⌘ ,`           | Navigate to setting page                           |
+| `Enter`         | Send a message                                     |
+| `Shift + Enter` | Insert new line in input box                       |
+| `Arrow Up`      | Navigate to the previous option (within the search dialog) |
+| `Arrow Down`    | Navigate to the next option (within the search dialog)     |
+
+    </TabItem>
+    <TabItem value="windows" label = "Windows" default>
+
+| Combination     | Description                                                |
+| --------------- | ---------------------------------------------------------- |
+| `Ctrl E`        | Show list your models                                      |
+| `Ctrl K`        | Show list navigation pages                                 |
+| `Ctrl B`        | Toggle collapsible left panel                              |
+| `Ctrl ,`        | Navigate to setting page                                   |
+| `Enter`         | Send a message                                             |
+| `Shift + Enter` | Insert new line in input box                               |
+| `Arrow Up`      | Navigate to the previous option (within the search dialog) |
+| `Arrow Down`    | Navigate to the next option (within the search dialog)     |
+
+    </TabItem>
+    <TabItem value="linux" label = "Linux" default>
+
+| Combination     | Description                                                |
+| --------------- | ---------------------------------------------------------- |
+| `Ctrl E`        | Show list your models                                      |
+| `Ctrl K`        | Show list navigation pages                                 |
+| `Ctrl B`        | Toggle collapsible left panel                              |
+| `Ctrl ,`        | Navigate to setting page                                   |
+| `Enter`         | Send a message                                             |
+| `Shift + Enter` | Insert new line in input box                               |
+| `Arrow Up`      | Navigate to the previous option (within the search dialog) |
+| `Arrow Down`    | Navigate to the next option (within the search dialog)     |
+
+    </TabItem>
+
+</Tabs>
+:::note
+The keyboard shortcuts are customizable.
+:::
+
+## Enable the Experimental Mode
+
+To try out new fetures that are still in testing phase, follow the steps below:
+
+1. Navigate to the main dashboard.
+2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+3. Under the **Settings screen**, click the **Advanced Settings**.
+4. On the **Experimental Mode** click the slider to enable.
+
+## Enable the GPU Acceleration
+
+To enhance your model performance, follow the steps below:
+
+:::warning
+Ensure that you have read the [troubleshooting guide](/troubleshooting/#troubleshooting-nvidia-gpu) here for further assistance.
+:::
+
+1. Navigate to the main dashboard.
+2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+3. Under the **Settings screen**, click the **Advanced Settings**.
+4. On the **GPU Acceleration** click the slider to enable.
+
+## Access the Jan Data Folder
+
+To access the folder where messages, model configurations and user data are stored, follow the steps below:
+
+1. Navigate to the main dashboard.
+2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+3. Under the **Settings screen**, click the **Advanced Settings**.
+4. On the **Jan Data Folder** click the **folder icon (📂)** to access the data or the **pencil icon (✏️)** to change the folder where you keep your data.
+
+## HTTPS Proxy
+
+HTTPS Proxy encrypts data between your browser and the internet, making it hard for outsiders to intercept or read. It also helps you to maintain your privacy and security while being able to bypass regional restrictions on internet.
+
+:::note
+
+- When configuring Jan using an HTTPS proxy, the speed of the downloading model may be affected due to the encryption and decryption process. It also depends on the networking of the cloud service provider.
+- HTTPS Proxy does not affect the remote model usage.
+
+:::
+
+### Setting Up Your Own HTTPS Proxy Server
+
+This guide provides a simple overview of setting up an HTTPS proxy server using **Squid**, a widely used open-source proxy software.
+
+:::note
+Other software options are also available depending on your requirements.
+:::
+
+#### Step 1: Choosing a Server
+
+1. Firstly, you need to choose a server to host your proxy server.
+   :::note
+   We recommend using a well-known cloud provider service like:
+
+- Amazon AWS
+- Google Cloud
+- Microsoft Azure
+- Digital Ocean
+  :::
+
+2. Ensure that your server has a public IP address and is accessible from the internet.
+
+#### Step 2: Installing Squid
+
+Instal **Squid** using the following command:
+
+```bash
+sudo apt-get update
+sudo apt-get install squid
+```
+
+#### Step 3: Configure Squid for HTTPS
+
+To enable HTTPS, you will need to configure Squid with SSL support.
+
+1. Squid requires an SSL certificate to be able to handle HTTPS traffic. You can generate a self-signed certificate or obtain one from a Certificate Authority (CA). For a self-signed certificate, you can use OpenSSL:
+
+```bash
+openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout squid-proxy.pem -out squid-proxy.pem
+```
+
+2. Edit the Squid configuration file `/etc/squid/squid.conf` to include the path to your SSL certificate and enable the HTTPS port:
+
+```bash
+http_port 3128 ssl-bump cert=/path/to/your/squid-proxy.pem
+ssl_bump server-first all
+ssl_bump bump all
+```
+
+3. To intercept HTTPS traffic, Squid uses a process called SSL Bumping. This process allows Squid to decrypt and re-encrypt HTTPS traffic. To enable SSL Bumping, ensure the `ssl_bump` directives are configured correctly in your `squid.conf` file.
+
+#### Step 4 (Optional): Configure ACLs and Authentication
+
+1. You can define rules to control who can access your proxy. This is done by editing the squid.conf file and defining ACLs:
+
+```bash
+acl allowed_ips src "/etc/squid/allowed_ips.txt"
+http_access allow allowed_ips
+```
+
+2. If you want to add an authentication layer, Squid supports several authentication schemes. Basic authentication setup might look like this:
+
+```bash
+auth_param basic program /usr/lib/squid/basic_ncsa_auth /etc/squid/passwords
+acl authenticated proxy_auth REQUIRED
+http_access allow authenticated
+```
+
+#### Step 5: Restart and Test Your Proxy
+
+1. After configuring, restart Squid to apply the changes:
+
+```bash
+sudo systemctl restart squid
+```
+
+2. To test, configure your browser or another client to use the proxy server with its IP address and port (default is 3128).
+3. Check if you can access the internet through your proxy.
+
+:::tip
+
+Tips for Secure Your Proxy:
+
+- **Firewall rules**: Ensure that only intended users or IP addresses can connect to your proxy server. This can be achieved by setting up appropriate firewall rules.
+- **Regular updates**: Keep your server and proxy software updated to ensure that you are protected against known vulnerabilities.
+- **Monitoring and logging**: Monitor your proxy server for unusual activity and enable logging to keep track of the traffic passing through your proxy.
+
+:::
+
+### Setting Up Jan to Use Your HTTPS Proxy
+
+Once you have your HTTPS proxy server set up, you can configure Jan to use it.
+
+1. Navigate to **Settings** > **Advanced Settings**.
+2. On the **HTTPS Proxy** click the slider to enable.
+3. Input your domain in the blank field.
+
+## Ignore SSL Certificate
+
+To Allow self-signed or unverified certificates, follow the steps below:
+
+1. Navigate to the main dashboard.
+2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+3. Under the **Settings screen**, click the **Advanced Settings**.
+4. On the **Ignore SSL Certificates** click the slider to enable.
+
+## Clear Logs
+
+To clear all logs on your Jan app, follow the steps below:
+:::warning
+This feature clears all the data in your **Jan Data Folder**.
+:::
+
+1. Navigate to the main dashboard.
+2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+3. Under the **Settings screen**, click the **Advanced Settings**.
+4. On the **Clear Logs** click the the **Clear** button.
+
+## Reset To Factory Default
+
+To reset the Jan app to its original state, follow the steps below:
+:::danger[Remember!]
+This irreversible action is only recommended if the application is corrupted.
+:::
+
+1. Navigate to the main dashboard.
+2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+3. Under the **Settings screen**, click the **Advanced Settings**.
+4. On the **Reset To Factory Default** click the the **Reset** button.

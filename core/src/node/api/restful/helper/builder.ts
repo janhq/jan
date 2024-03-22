@@ -216,7 +216,7 @@ export const createMessage = async (threadId: string, message: any) => {
   const threadMessagesFileName = 'messages.jsonl'
 
   try {
-    const { ulid } = require('ulid')
+    const { ulid } = require('ulidx')
     const msgId = ulid()
     const createdAt = Date.now()
     const threadMessage: ThreadMessage = {

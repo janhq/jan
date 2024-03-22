@@ -1,17 +1,18 @@
 ---
 title: Package your Assistant
-slug: /developer/build-assistant/package-your-assistant/
+slug: /developer/assistant/package-your-assistant/
 description: Package your assistant for sharing and publishing.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     quick start,
     build assistant,
   ]

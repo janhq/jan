@@ -7,15 +7,23 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
-    "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install"
+    "build": "rollup -c rollup.config.ts",
+    "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
-    "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4",
-    "ts-loader": "^9.5.0"
+    "ts-loader": "^9.5.0",
+    "typescript": "5.3.3",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-replace": "^5.0.5",
+    "@types/pdf-parse": "^1.1.4",
+    "rollup": "^2.38.5",
+    "rollup-plugin-define": "^1.0.1",
+    "rollup-plugin-sourcemaps": "^0.6.3",
+    "rollup-plugin-typescript2": "^0.36.0"
   },
   "files": [
     "dist/*",

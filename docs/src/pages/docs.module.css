@@ -6,7 +6,6 @@
   margin-right: auto;
   border-radius: 25px;
   display: flex;
-  margin-bottom: 4rem;
 }
 
 .searchBar svg {
@@ -43,4 +42,12 @@
   align-self: center;
   padding: 0px 5px;
   margin: 0px 10px;
+}
+
+@media screen and (min-width: 1400px) {
+  .searchBar {
+    max-width: 70%;
+    margin-left: auto;
+    margin-right: auto;
+  }
 }

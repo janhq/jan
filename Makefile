@@ -53,16 +53,18 @@ build: check-file-counts
 
 clean:
 ifeq ($(OS),Windows_NT)
-	powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out -Recurse -Directory | ForEach-Object { if (Test-Path $_) { Remove-Item $_ -Recurse -Force } else { Write-Host 'Directory not found:' $_ } }"
+	powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out -Recurse -Directory | Remove-Item -Recurse -Force"
+	powershell -Command "Get-ChildItem -Path . -Include package-lock.json -Recurse -File | Remove-Item -Recurse -Force"
 	powershell -Command "Remove-Item -Recurse -Force ./pre-install/*.tgz"
 	powershell -Command "Remove-Item -Recurse -Force ./electron/pre-install/*.tgz"
-	powershell -Command "if (Test-Path '$env:USERPROFILE\jan\extensions') { Remove-Item -Recurse -Force '$env:USERPROFILE\jan\extensions' }"
+	powershell -Command "if (Test-Path \"$($env:USERPROFILE)\jan\extensions\") { Remove-Item -Path \"$($env:USERPROFILE)\jan\extensions\" -Recurse -Force }"
 else ifeq ($(shell uname -s),Linux)
 	find . -name "node_modules" -type d -prune -exec rm -rf '{}' +
 	find . -name ".next" -type d -exec rm -rf '{}' +
 	find . -name "dist" -type d -exec rm -rf '{}' +
 	find . -name "build" -type d -exec rm -rf '{}' +
 	find . -name "out" -type d -exec rm -rf '{}' +
+	find . -name "packake-lock.json" -type f -exec rm -rf '{}' +
 	rm -rf ./pre-install/*.tgz
 	rm -rf ./electron/pre-install/*.tgz
 	rm -rf "~/jan/extensions"
@@ -73,6 +75,7 @@ else
 	find . -name "dist" -type d -exec rm -rf '{}' +
 	find . -name "build" -type d -exec rm -rf '{}' +
 	find . -name "out" -type d -exec rm -rf '{}' +
+	find . -name "packake-lock.json" -type f -exec rm -rf '{}' +
 	rm -rf ./pre-install/*.tgz
 	rm -rf ./electron/pre-install/*.tgz
 	rm -rf ~/jan/extensions

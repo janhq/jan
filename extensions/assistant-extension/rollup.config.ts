@@ -36,6 +36,7 @@ export default [
       // https://github.com/rollup/rollup-plugin-node-resolve#usage
       resolve({
         extensions: ['.js', '.ts', '.svelte'],
+        browser: true
       }),
 
       // Resolve source maps to the original source

@@ -9,19 +9,19 @@ export default function HomepageSecondaryFeatures() {
                         imgSrc="/img/homepage-new/bg-rocket.png"
                         title="Quickstart"
                         description="Get started quickly with our Quickstart guide, offering simple steps for a smooth setup."
-                        href="/guides/"
+                        href="/guides/quickstart"
                     />
                     <FeatureCard
                         imgSrc="/img/homepage-new/bg-wrench.png"
                         title="Integrations"
                         description="Learn how Jan can integrates seamlessly."
-                        href="/guides/integrations/"
+                        href="/integrations/"
                     />
                     <FeatureCard
                         imgSrc="/img/homepage-new/bg-book.png"
-                        title="Error Codes"
-                        description="Find solutions for common error codes to resolve them quickly."
-                        href="/guides/error-codes/"
+                        title="Extensions"
+                        description="Discover the available Jan extensions."
+                        href="/extensions"
                     />
                 </div>
             </div>

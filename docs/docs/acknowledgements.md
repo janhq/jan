@@ -4,14 +4,15 @@ description: Jan is a ChatGPT-alternative that runs on your own computer, with a
 slug: /acknowledgements
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     acknowledgements,
     third-party libraries,
   ]
@@ -24,3 +25,4 @@ We would like to express our gratitude to the following third-party libraries th
 - [llama.cpp](https://github.com/ggerganov/llama.cpp/blob/master/LICENSE)
 - [LangChain.js](https://github.com/langchain-ai/langchainjs/blob/main/LICENSE)
 - [TensorRT](https://github.com/NVIDIA/TensorRT/blob/main/LICENSE)
+- [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM/blob/main/LICENSE)

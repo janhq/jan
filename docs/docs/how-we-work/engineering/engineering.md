@@ -4,14 +4,15 @@ description: Jan is a ChatGPT-alternative that runs on your own computer, with a
 slug: /engineering
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
   ]
 ---
 

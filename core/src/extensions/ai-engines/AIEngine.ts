@@ -14,7 +14,9 @@ export abstract class AIEngine extends BaseExtension {
   // The model folder
   modelFolder: string = 'models'
 
-  abstract models(): Promise<Model[]>
+  models(): Promise<Model[]> {
+    return Promise.resolve([])
+  }
 
   /**
    * On extension load, subscribe to events.

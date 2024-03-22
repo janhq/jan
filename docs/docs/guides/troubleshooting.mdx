@@ -1,0 +1,458 @@
+---
+title: Troubleshooting
+slug: /troubleshooting
+description: Jan Docs | Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
+sidebar_position: 21
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    troubleshooting,
+    error codes,
+    broken build,
+    something amiss,
+    unexpected token,
+    undefined issue,
+    permission denied,
+  ]
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+## Broken Build
+
+To resolve the issue where your Jan is stuck in a broken build after installation.
+
+<Tabs>
+    <TabItem value="mac" label="Mac" default>
+        #### 1. Uninstall Jan
+
+        Delete Jan from your `/Applications` folder.
+
+        #### 2. Delete Application Data, Cache, and User Data
+
+        ```zsh
+        # Step 1: Delete the application data
+        ## Newer versions
+        rm -rf ~/Library/Application\ Support/jan
+        ## Versions 0.2.0 and older
+        rm -rf ~/Library/Application\ Support/jan-electron
+
+        # Step 2: Clear application cache
+        rm -rf ~/Library/Caches/jan*
+
+        # Step 3: Remove all user data
+        rm -rf ~/jan
+        ```
+
+        #### 3. Additional Step for Versions Before 0.4.2
+
+        If you are using a version before `0.4.2`, you need to run the following commands:
+
+        ```zsh
+        ps aux | grep nitro
+        # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
+        kill -9 <PID>
+        ```
+
+        #### 4. Download the Latest Version
+
+        Download the latest version of Jan from our [homepage](https://jan.ai/).
+    </TabItem>
+
+    <TabItem value="windows" label="Windows">
+        #### 1. Uninstall Jan
+
+        To uninstall Jan on Windows, use the [Windows Control Panel](https://support.microsoft.com/en-us/windows/uninstall-or-remove-apps-and-programs-in-windows-4b55f974-2cc6-2d2b-d092-5905080eaf98).
+
+        #### 2. Delete Application Data, Cache, and User Data
+
+        ```sh
+        # You can delete the `/Jan` directory in Windows's AppData Directory by visiting the following path `%APPDATA%\Jan`
+        cd C:\Users\%USERNAME%\AppData\Roaming
+        rmdir /S jan
+        ```
+
+        #### 3. Additional Step for Versions Before 0.4.2
+
+        If you are using a version before `0.4.2`, you need to run the following commands:
+
+        ```sh
+        # Find the process ID (PID) of the nitro process by filtering the list by process name
+        tasklist | findstr "nitro"
+        # Once you have the PID of the process you want to terminate, run the `taskkill`
+        taskkill /F /PID <PID>
+        ```
+
+        #### 4. Download the Latest Version
+
+        Download the latest version of Jan from our [homepage](https://jan.ai/).
+    </TabItem>
+
+    <TabItem value="linux" label="Linux">
+
+        #### 1. Uninstall Jan
+
+        <Tabs groupId = "linux_type">
+            <TabItem value="linux_main" label = "Linux">
+
+                To uninstall Jan, you should use your package manager's uninstall or remove option.
+
+                This will return your system to its state before the installation of Jan.
+
+                This method can also reset all settings if you are experiencing any issues with Jan.
+
+            </TabItem>
+            <TabItem value = "deb_ub" label = "Debian / Ubuntu">
+
+                To uninstall Jan, run the following command.MDXContent
+
+                ```sh
+                sudo apt-get remove jan
+                # where jan is the name of Jan package
+                ```
+
+                This will return your system to its state before the installation of Jan.
+
+                This method can also be used to reset all settings if you are experiencing any issues with Jan.
+
+            </TabItem>
+            <TabItem value = "other" label = "Others">
+
+                To uninstall Jan, you can uninstall Jan by deleting the `.AppImage` file.
+
+                If you wish to completely remove all user data associated with Jan after uninstallation, you can delete the user data at `~/jan`.
+
+                This method can also reset all settings if you are experiencing any issues with Jan.
+
+            </TabItem>
+        </Tabs>
+
+        #### 2. Delete Application Data, Cache, and User Data
+
+        ```sh
+        # You can delete the user data folders located at the following `~/jan`
+        rm -rf ~/jan
+        ```
+
+        #### 3. Additional Step for Versions Before 0.4.2
+
+        If you are using a version before `0.4.2`, you need to run the following commands:
+
+        ```zsh
+        ps aux | grep nitro
+        # Looks for processes like `nitro` and `nitro_arm_64`, and kill them one by one by process ID
+        kill -9 <PID>
+        ```
+
+        #### 4. Download the Latest Version
+
+        Download the latest version of Jan from our [homepage](https://jan.ai/).
+    </TabItem>
+
+</Tabs>
+
+By following these steps, you can cleanly uninstall and reinstall Jan, ensuring a smooth and error-free experience with the latest version.
+
+:::note
+
+Before reinstalling Jan, ensure it's completely removed from all shared spaces if it's installed on multiple user accounts on your device.
+
+:::
+
+## Troubleshooting NVIDIA GPU
+
+To resolve issues when the Jan app does not utilize the NVIDIA GPU on Windows and Linux systems.
+
+#### 1. Ensure GPU Mode Requirements
+
+<Tabs>
+  <TabItem value="windows" label="Windows">
+    
+    ##### NVIDIA Driver
+
+    - Install an [NVIDIA Driver](https://www.nvidia.com/Download/index.aspx) supporting CUDA 11.7 or higher.
+      - Use the following command to verify the installation:
+
+    ```sh
+    nvidia-smi
+    ```
+
+    ##### CUDA Toolkit
+
+    - Install a [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) compatible with your NVIDIA driver.
+      - Use the following command to verify the installation:
+
+    ```sh
+    nvcc --version
+    ```
+
+  </TabItem>
+  <TabItem value="linux" label="Linux">
+    
+    ##### NVIDIA Driver
+
+    - Install an [NVIDIA Driver](https://www.nvidia.com/Download/index.aspx) supporting CUDA 11.7 or higher.
+      - Use the following command to verify the installation:
+
+    ```sh
+    nvidia-smi
+    ```
+
+    ##### CUDA Toolkit
+
+    - Install a [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) compatible with your NVIDIA driver.
+      - Use the following command to verify the installation:
+
+    ```sh
+    nvcc --version
+    ```
+    ##### Linux Specifics
+
+    - Ensure that `gcc-11`, `g++-11`, `cpp-11`, or higher is installed.
+      - See [instructions](https://gcc.gnu.org/projects/cxx-status.html#cxx17) for Ubuntu installation.
+
+    - **Post-Installation Actions**: Add CUDA libraries to `LD_LIBRARY_PATH`.
+    - Follow the [Post-installation Actions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions) instructions.
+
+  </TabItem>
+</Tabs>
+
+#### 2. Switch to GPU Mode
+
+Jan defaults to CPU mode but automatically switches to GPU mode if your system supports it, selecting the GPU with the highest VRAM. Check this setting in `Settings` > `Advanced Settings`.
+
+##### Troubleshooting Tips
+
+If GPU mode isn't enabled by default:
+
+1. Confirm that you have installed an NVIDIA driver supporting CUDA 11.7 or higher. Refer to [CUDA compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+2. Ensure compatibility of the CUDA toolkit with your NVIDIA driver. Refer to [CUDA compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver).
+3. For Linux, add CUDA's `.so` libraries to the `LD_LIBRARY_PATH`. For Windows, ensure that CUDA's `.dll` libraries are in the PATH. Refer to [Windows setup](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#environment-setup).
+
+#### 3. Check GPU Settings
+
+1. Navigate to `Settings` > `Advanced Settings` > `Jan Data Folder` to access GPU settings.
+2. Open the `settings.json` file in the `settings` folder. Here's an example:
+
+```json title="~/jan/settings/settings.json"
+{
+  "notify": true,
+  "run_mode": "gpu",
+  "nvidia_driver": {
+    "exist": true,
+    "version": "531.18"
+  },
+  "cuda": {
+    "exist": true,
+    "version": "12"
+  },
+  "gpus": [
+    {
+      "id": "0",
+      "vram": "12282"
+    },
+    {
+      "id": "1",
+      "vram": "6144"
+    },
+    {
+      "id": "2",
+      "vram": "6144"
+    }
+  ],
+  "gpu_highest_vram": "0"
+}
+```
+
+#### 4. Restart Jan
+
+Restart Jan application to make sure it works.
+
+##### Troubleshooting Tips
+
+- Ensure `nvidia_driver` and `cuda` fields indicate installed software.
+- If `gpus` field is empty or lacks your GPU, check NVIDIA driver and CUDA toolkit installations.
+- For further assistance, share the `settings.json` file.
+
+#### Tested Configurations
+
+- **Windows 11 Pro 64-bit:**
+
+  - GPU: NVIDIA GeForce RTX 4070ti
+  - CUDA: 12.2
+  - NVIDIA driver: 531.18 (Bare metal)
+
+- **Ubuntu 22.04 LTS:**
+
+  - GPU: NVIDIA GeForce RTX 4070ti
+  - CUDA: 12.2
+  - NVIDIA driver: 545 (Bare metal)
+
+- **Ubuntu 20.04 LTS:**
+
+  - GPU: NVIDIA GeForce GTX 1660ti
+  - CUDA: 12.1
+  - NVIDIA driver: 535 (Proxmox VM passthrough GPU)
+
+- **Ubuntu 18.04 LTS:**
+  - GPU: NVIDIA GeForce GTX 1660ti
+  - CUDA: 12.1
+  - NVIDIA driver: 535 (Proxmox VM passthrough GPU)
+
+#### Common Issues and Solutions
+
+1. If the issue persists, try installing the [Nightly version](/guides/quickstart/#nightly-releases).
+2. Ensure your (V)RAM is accessible; some users with virtual RAM may require additional configuration.
+3. Seek assistance in [Jan Discord](https://discord.gg/mY69SZaMaC).
+
+## How to Get Error Logs
+
+To get the error logs of your Jan application, follow the steps below:
+
+#### Jan Application
+
+1. Navigate to the main dashboard.
+2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+3. Under the **Settings screen**, click the **Advanced Settings**.
+4. On the **Jan Data Folder** click the **folder icon (📂)** to access the data.
+5. Click the **logs** folder.
+
+#### Jan UI
+
+1. Open your Unix or Linux terminal.
+2. Use the following commands to get the recent 50 lines of log files:
+
+```bash
+tail -n 50 ~/jan/logs/app.log
+
+```
+
+#### Jan API Server
+
+1. Open your Unix or Linux terminal.
+2. Use the following commands to get the recent 50 lines of log files:
+
+```bash
+tail -n 50 ~/jan/logs/server.log
+
+```
+
+:::warning
+Ensure to redact any private or sensitive information when sharing logs or error details.
+:::
+
+:::note
+If you have any questions or are looking for support, please don't hesitate to contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ) or create a new issue in our [GitHub repository](https://github.com/janhq/jan/issues/new/choose).
+:::
+
+## Permission Denied
+
+When running Jan, you might encounter the following error message:
+
+```
+Uncaught (in promise) Error: Error invoking layout-480796bff433a3a3.js:538 remote method 'installExtension':
+Error Package /Applications/Jan.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-assistant-extension-1.0.0.tgz does not contain a valid manifest:
+Error EACCES: permission denied, mkdtemp '/Users/username/.npm/_cacache/tmp/ueCMn4'
+```
+
+This error mainly caused by permission problem during installation. To resolve this issue, follow these steps:
+
+1. Open your terminal.
+
+2. Execute the following command to change ownership of the `~/.npm` directory to the current user:
+
+```sh
+sudo chown -R $(whoami) ~/.npm
+```
+
+:::note
+
+- This command ensures that the necessary permissions are granted for Jan installation, resolving the encountered error.
+- If you have any questions or are looking for support, please don't hesitate to contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ) or create a new issue in our [GitHub repository](https://github.com/janhq/jan/issues/new/choose).
+  :::
+
+## Something's Amiss
+
+When you start a chat with a model and encounter with a Something's Amiss error, here's how to resolve it:
+
+1. Ensure your OS is up to date.
+2. Choose a model smaller than 80% of your hardware's V/RAM. For example, on an 8GB machine, opt for models smaller than 6GB.
+3. Install the latest [Nightly release](/guides/quickstart/#nightly-releases) or [clear the application cache](/troubleshooting/#broken-build) when reinstalling Jan.
+4. Confirm your V/RAM accessibility, particularly if using virtual RAM.
+5. Nvidia GPU users should download [CUDA](https://developer.nvidia.com/cuda-downloads).
+6. Linux users, ensure your system meets the requirements of gcc 11, g++ 11, cpp 11, or higher. Refer to this [link](/troubleshooting/#troubleshooting-nvidia-gpu) for details.
+7. You might use the wrong port when you [check the app logs](/troubleshooting/#how-to-get-error-logs) and encounter the Bind address failed at 127.0.0.1:3928 error. To check the port status, try use the `netstat` command, like the following:
+
+<Tabs>
+    <TabItem value="mac" label="MacOS" default>
+        ```sh
+        netstat -an | grep 3928
+        ```
+    </TabItem>
+    <TabItem value="windows" label="Windows" default>
+        ```sh
+        netstat -ano | find "3928" 
+        tasklist /fi "PID eq 3928"
+        ```
+    </TabItem>
+    <TabItem value="linux" label="Linux" default>
+        ```sh
+        netstat -anpe | grep "3928" 
+        ```
+    </TabItem>
+</Tabs>
+
+:::note
+
+`Netstat` displays the contents of various network-related data structures for active connections
+
+:::
+
+:::tip
+
+Jan uses the following ports:
+
+- Nitro: `3928`
+- Jan API Server: `1337`
+- Jan Documentation: `3001`
+
+:::
+
+:::note
+If you have any questions or are looking for support, please don't hesitate to contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ) or create a new issue in our [GitHub repository](https://github.com/janhq/jan/issues/new/choose).
+:::
+
+## Undefined Issue
+
+Encountering an `undefined issue` in Jan is caused by errors related to the Nitro tool or other internal processes. It can be resolved through the following steps:
+
+1. Clearing the Jan folder and then reopen the application to determine if the problem persists
+2. Manually run the nitro tool located at `~/jan/extensions/@janhq/inference-nitro-extensions/dist/bin/(your-os)/nitro` to check for error messages.
+3. Address any nitro error messages that are identified and reassess the persistence of the issue.
+4. Reopen Jan to determine if the problem has been resolved after addressing any identified errors.
+5. If the issue persists, please share the [app logs](/troubleshooting/#how-to-get-error-logs) via [Jan Discord](https://discord.gg/mY69SZaMaC) for further assistance and troubleshooting.
+
+:::note
+If you have any questions or are looking for support, please don't hesitate to contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ) or create a new issue in our [GitHub repository](https://github.com/janhq/jan/issues/new/choose).
+:::
+
+## Unexpected Token
+
+Encountering the `Unexpected token` error when initiating a chat with OpenAI models mainly caused by either your OpenAI key or where you access your OpenAI from. This issue can be solved through the following steps:
+
+1. Obtain an OpenAI API key from [OpenAI's developer platform](https://platform.openai.com/) and integrate it into your application.
+
+2. Trying a VPN could potentially solve the issue, especially if it's related to region locking for accessing OpenAI services. By connecting through a VPN, you may bypass such restrictions and successfully initiate chats with OpenAI models.
+
+:::note
+If you have any questions or are looking for support, please don't hesitate to contact us via our [Discord community](https://discord.gg/Dt7MxDyNNZ) or create a new issue in our [GitHub repository](https://github.com/janhq/jan/issues/new/choose).
+:::
