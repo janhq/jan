@@ -249,7 +249,7 @@ export default class JanModelExtension extends ModelExtension {
         modelInfo.metadata?.author?.toLowerCase() === 'user'
       if (isUserImportModel) {
         // just delete the folder
-        return fs.rmdirSync(dirPath)
+        return fs.rm(dirPath)
       }
 
       // remove all files under dirPath except model.json

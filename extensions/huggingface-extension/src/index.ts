@@ -15,7 +15,6 @@ import {
   log,
   DownloadRequest,
 } from '@janhq/core'
-import { ggufMetadata } from 'hyllama'
 
 declare global {
   interface Window {
@@ -394,7 +393,6 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
       const localPath = await joinPath([modelDirPath, filePath])
       await abortDownload(localPath)
     }
-    // ;(await fs.existsSync(modelDirPath)) && (await fs.rmdirSync(modelDirPath))
 
     executeOnMain(NODE_MODULE_PATH, 'killProcesses')
   }

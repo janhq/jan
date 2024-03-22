@@ -43,10 +43,7 @@ const mkdir = (...args: any[]) => globalThis.core.api?.mkdir(...args)
  * Removes a directory at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the directory is removed successfully.
  */
-const rmdirSync = (...args: any[]) =>
-  globalThis.core.api?.rmdirSync(...args, { recursive: true, force: true })
-
-const rm = (path: string) => globalThis.core.api?.rm(path)
+const rm = (...args: any[]) => globalThis.core.api?.rm(...args, { recursive: true, force: true })
 
 /**
  * Deletes a file from the local file system.
@@ -98,7 +95,6 @@ export const fs = {
   readdirSync,
   mkdirSync,
   mkdir,
-  rmdirSync,
   rm,
   unlinkSync,
   appendFileSync,

@@ -4,7 +4,6 @@ import {
   ConversationalExtension,
   Thread,
   ThreadMessage,
-  events,
 } from '@janhq/core'
 
 /**
@@ -96,11 +95,7 @@ export default class JSONConversationalExtension extends ConversationalExtension
       `${threadId}`,
     ])
     try {
-      if (await fs.existsSync(path)) {
-        await fs.rmdirSync(path, { recursive: true })
-      } else {
-        console.debug(`${path} does not exist`)
-      }
+      await fs.rm(path)
     } catch (err) {
       console.error(err)
     }

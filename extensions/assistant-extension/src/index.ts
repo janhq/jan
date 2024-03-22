@@ -247,8 +247,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       JanAssistantExtension._homeDir,
       assistant.id,
     ])
-    await fs.rmdirSync(assistantDir)
-    return Promise.resolve()
+    return fs.rm(assistantDir)
   }
 
   private async createJanAssistant(): Promise<void> {

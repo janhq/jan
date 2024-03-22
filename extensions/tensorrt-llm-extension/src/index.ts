@@ -151,10 +151,11 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
 
     for (const model of models) {
       const modelPath = await joinPath([modelFolderPath, model.id])
-      console.debug(`modelPath: ${modelPath}`)
-      if (await fs.existsSync(modelPath)) {
-        console.debug(`Removing model ${modelPath}`)
-        await fs.rmdirSync(modelPath)
+
+      try {
+        await fs.rm(modelPath)
+      } catch (err) {
+        console.error(`Error removing model ${modelPath}`, err)
       }
     }
     events.emit(ModelEvent.OnModelsUpdate, {})
