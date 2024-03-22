@@ -84,7 +84,7 @@ function unloadModel(): Promise<any> {
       debugLog(
         `Could not kill running process on port ${ENGINE_PORT}. Might be another process running on the same port? ${err}`
       )
-      throw 'PORT_NOT_AVAILABLE'
+      return { err: 'PORT_NOT_AVAILABLE' }
     })
 }
 /**
@@ -97,6 +97,11 @@ async function runEngineAndLoadModel(
   systemInfo: SystemInformation
 ) {
   return unloadModel()
+    .then((res) => {
+      if (res?.error) {
+        throw new Error(res.error)
+      }
+    })
     .then(() => runEngine(systemInfo))
     .then(() => loadModelRequest(settings))
     .catch((err) => {
