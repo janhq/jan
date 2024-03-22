@@ -7,7 +7,7 @@ export type ModelInfo = {
   settings: ModelSettingParams
   parameters: ModelRuntimeParams
   engine?: InferenceEngine
-  proxyEngine?: InferenceEngine
+  proxy_model?: InferenceEngine
 }
 
 /**
@@ -18,7 +18,9 @@ export type ModelInfo = {
 export enum InferenceEngine {
   nitro = 'nitro',
   openai = 'openai',
+  groq = 'groq',
   triton_trtllm = 'triton_trtllm',
+  nitro_tensorrt_llm = 'nitro-tensorrt-llm',
 
   tool_retrieval_enabled = 'tool_retrieval_enabled',
 }
@@ -93,12 +95,7 @@ export type Model = {
    */
   engine: InferenceEngine
 
-  proxyEngine?: InferenceEngine
-
-  /**
-   * Is multimodal or not.
-   */
-  visionModel?: boolean
+  proxy_model?: InferenceEngine
 }
 
 export type ModelMetadata = {
@@ -124,6 +121,8 @@ export type ModelSettingParams = {
   llama_model_path?: string
   mmproj?: string
   cont_batching?: boolean
+  vision_model?: boolean
+  text_model?: boolean
 }
 
 /**
@@ -140,4 +139,8 @@ export type ModelRuntimeParams = {
   frequency_penalty?: number
   presence_penalty?: number
   engine?: string
+}
+
+export type ModelInitFailed = Model & {
+  error: Error
 }

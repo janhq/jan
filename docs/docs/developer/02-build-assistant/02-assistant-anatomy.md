@@ -1,17 +1,18 @@
 ---
 title: Anatomy of an Assistant
-slug: /developer/build-assistant/assistant-anatomy/
+slug: /developer/assistant/assistant-anatomy/
 description: An overview of assistant.json
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     build assistant,
     assistant anatomy,
   ]

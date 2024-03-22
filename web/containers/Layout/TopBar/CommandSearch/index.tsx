@@ -10,20 +10,15 @@ import {
   CommandList,
 } from '@janhq/uikit'
 
-import { useAtom } from 'jotai'
-import {
-  MessageCircleIcon,
-  SettingsIcon,
-  LayoutGridIcon,
-  MonitorIcon,
-} from 'lucide-react'
+import { useAtom, useSetAtom } from 'jotai'
+import { MessageCircleIcon, SettingsIcon, LayoutGridIcon } from 'lucide-react'
 
 import { showCommandSearchModalAtom } from '@/containers/Providers/KeyListener'
 import ShortCut from '@/containers/Shortcut'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useMainViewState } from '@/hooks/useMainViewState'
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 const menus = [
   {
@@ -48,7 +43,7 @@ const menus = [
 ]
 
 export default function CommandSearch() {
-  const { setMainViewState } = useMainViewState()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
   const [showCommandSearchModal, setShowCommandSearchModal] = useAtom(
     showCommandSearchModalAtom
   )

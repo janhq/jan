@@ -9,7 +9,7 @@ import { useLogs } from '@/hooks/useLogs'
 
 const AppLogs = () => {
   const { getLogs } = useLogs()
-  const [logs, setLogs] = useState([])
+  const [logs, setLogs] = useState<string[]>([])
 
   useEffect(() => {
     getLogs('app').then((log) => {

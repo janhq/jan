@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { PropsWithChildren, useCallback, useEffect } from 'react'
 
 import React from 'react'
@@ -8,77 +7,112 @@ import { useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from '@/hooks/useDownloadState'
 
+import { formatExtensionsName } from '@/utils/converter'
+
+import { toaster } from '../Toast'
+
+import AppUpdateListener from './AppUpdateListener'
+import ClipboardListener from './ClipboardListener'
 import EventHandler from './EventHandler'
 
-import { appDownloadProgress } from './Jotai'
+import ModelImportListener from './ModelImportListener'
+import QuickAskListener from './QuickAskListener'
+
+import {
+  InstallingExtensionState,
+  removeInstallingExtensionAtom,
+  setInstallingExtensionAtom,
+} from '@/helpers/atoms/Extension.atom'
 
 const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   const setDownloadState = useSetAtom(setDownloadStateAtom)
-  const setProgress = useSetAtom(appDownloadProgress)
+  const setInstallingExtension = useSetAtom(setInstallingExtensionAtom)
+  const removeInstallingExtension = useSetAtom(removeInstallingExtensionAtom)
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadUpdate', state)
-      setDownloadState(state)
+      if (state.downloadType === 'extension') {
+        const installingExtensionState: InstallingExtensionState = {
+          extensionId: state.extensionId!,
+          percentage: state.percent,
+          localPath: state.localPath,
+        }
+        setInstallingExtension(state.extensionId!, installingExtensionState)
+      } else {
+        setDownloadState(state)
+      }
     },
-    [setDownloadState]
+    [setDownloadState, setInstallingExtension]
   )
 
   const onFileDownloadError = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadError', state)
-      setDownloadState(state)
+      if (state.downloadType === 'extension') {
+        removeInstallingExtension(state.extensionId!)
+      } else {
+        setDownloadState(state)
+      }
     },
-    [setDownloadState]
+    [setDownloadState, removeInstallingExtension]
   )
 
   const onFileDownloadSuccess = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
-      setDownloadState(state)
+      if (state.downloadType !== 'extension') {
+        setDownloadState(state)
+      }
     },
     [setDownloadState]
   )
 
+  const onFileUnzipSuccess = useCallback(
+    (state: DownloadState) => {
+      console.debug('onFileUnzipSuccess', state)
+      toaster({
+        title: 'Success',
+        description: `Install ${formatExtensionsName(state.extensionId!)} successfully.`,
+        type: 'success',
+      })
+      removeInstallingExtension(state.extensionId!)
+    },
+    [removeInstallingExtension]
+  )
+
   useEffect(() => {
     console.debug('EventListenerWrapper: registering event listeners...')
-
     events.on(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
     events.on(DownloadEvent.onFileDownloadError, onFileDownloadError)
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+    events.on(DownloadEvent.onFileUnzipSuccess, onFileUnzipSuccess)
 
     return () => {
       console.debug('EventListenerWrapper: unregistering event listeners...')
       events.off(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
       events.off(DownloadEvent.onFileDownloadError, onFileDownloadError)
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+      events.off(DownloadEvent.onFileUnzipSuccess, onFileUnzipSuccess)
     }
-  }, [onFileDownloadUpdate, onFileDownloadError, onFileDownloadSuccess])
+  }, [
+    onFileDownloadUpdate,
+    onFileDownloadError,
+    onFileDownloadSuccess,
+    onFileUnzipSuccess,
+  ])
 
-  useEffect(() => {
-    if (window && window.electronAPI) {
-      window.electronAPI.onAppUpdateDownloadUpdate(
-        (_event: string, progress: any) => {
-          setProgress(progress.percent)
-          console.debug('app update progress:', progress.percent)
-        }
-      )
-
-      window.electronAPI.onAppUpdateDownloadError(
-        (_event: string, callback: any) => {
-          console.error('Download error', callback)
-          setProgress(-1)
-        }
-      )
-
-      window.electronAPI.onAppUpdateDownloadSuccess(() => {
-        setProgress(-1)
-      })
-    }
-    return () => {}
-  }, [setDownloadState, setProgress])
-
-  return <EventHandler>{children}</EventHandler>
+  return (
+    <AppUpdateListener>
+      <ClipboardListener>
+        <ModelImportListener>
+          <QuickAskListener>
+            <EventHandler>{children}</EventHandler>
+          </QuickAskListener>
+        </ModelImportListener>
+      </ClipboardListener>
+    </AppUpdateListener>
+  )
 }
 
 export default EventListenerWrapper

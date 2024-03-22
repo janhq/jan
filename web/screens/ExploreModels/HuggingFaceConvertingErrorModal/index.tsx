@@ -1,7 +1,6 @@
 import { useAtomValue } from 'jotai'
 
 import {
-  conversionErrorAtom,
   conversionStatusAtom,
   repoDataAtom,
 } from '@/helpers/atoms/HFConverter.atom'
@@ -11,8 +10,6 @@ export const HuggingFaceConvertingErrorModal = () => {
   const repoData = useAtomValue(repoDataAtom)!
   // This component only loads when conversionStatus is not null
   const conversionStatus = useAtomValue(conversionStatusAtom)!
-  // This component only loads when conversionError is not null
-  const conversionError = useAtomValue(conversionErrorAtom)!
 
   return (
     <>

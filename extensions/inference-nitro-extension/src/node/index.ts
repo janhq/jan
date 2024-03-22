@@ -3,14 +3,15 @@ import path from 'path'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
-import { log, getSystemResourceInfo } from '@janhq/core/node'
-import { getNitroProcessInfo, updateNvidiaInfo } from './accelerator'
 import {
+  log,
+  getSystemResourceInfo,
   Model,
   InferenceEngine,
   ModelSettingParams,
   PromptTemplate,
-} from '@janhq/core'
+  SystemInformation,
+} from '@janhq/core/node'
 import { executableNitroFile } from './execute'
 
 // Polyfill fetch with retry
@@ -51,7 +52,7 @@ let currentSettings: ModelSettingParams | undefined = undefined
  * @param wrapper - The model wrapper.
  * @returns A Promise that resolves when the subprocess is terminated successfully, or rejects with an error message if the subprocess fails to terminate.
  */
-function stopModel(): Promise<void> {
+function unloadModel(): Promise<void> {
   return killSubprocess()
 }
 
@@ -61,46 +62,47 @@ function stopModel(): Promise<void> {
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  */
-async function runModel(
-  wrapper: ModelInitOptions
+async function loadModel(
+  params: ModelInitOptions,
+  systemInfo?: SystemInformation
 ): Promise<ModelOperationResponse | void> {
-  if (wrapper.model.engine !== InferenceEngine.nitro) {
+  if (params.model.engine !== InferenceEngine.nitro) {
     // Not a nitro model
     return Promise.resolve()
   }
 
-  if (wrapper.model.engine !== InferenceEngine.nitro) {
+  if (params.model.engine !== InferenceEngine.nitro) {
     return Promise.reject('Not a nitro model')
   } else {
     const nitroResourceProbe = await getSystemResourceInfo()
     // Convert settings.prompt_template to system_prompt, user_prompt, ai_prompt
-    if (wrapper.model.settings.prompt_template) {
-      const promptTemplate = wrapper.model.settings.prompt_template
+    if (params.model.settings.prompt_template) {
+      const promptTemplate = params.model.settings.prompt_template
       const prompt = promptTemplateConverter(promptTemplate)
       if (prompt?.error) {
         return Promise.reject(prompt.error)
       }
-      wrapper.model.settings.system_prompt = prompt.system_prompt
-      wrapper.model.settings.user_prompt = prompt.user_prompt
-      wrapper.model.settings.ai_prompt = prompt.ai_prompt
+      params.model.settings.system_prompt = prompt.system_prompt
+      params.model.settings.user_prompt = prompt.user_prompt
+      params.model.settings.ai_prompt = prompt.ai_prompt
     }
 
     // modelFolder is the absolute path to the running model folder
     // e.g. ~/jan/models/llama-2
-    let modelFolder = wrapper.modelFolder
+    let modelFolder = params.modelFolder
 
-    let llama_model_path = wrapper.model.settings.llama_model_path
+    let llama_model_path = params.model.settings.llama_model_path
 
     // Absolute model path support
     if (
-      wrapper.model?.sources.length &&
-      wrapper.model.sources.every((e) => fs.existsSync(e.url))
+      params.model?.sources.length &&
+      params.model.sources.every((e) => fs.existsSync(e.url))
     ) {
       llama_model_path =
-        wrapper.model.sources.length === 1
-          ? wrapper.model.sources[0].url
-          : wrapper.model.sources.find((e) =>
-              e.url.includes(llama_model_path ?? wrapper.model.id)
+        params.model.sources.length === 1
+          ? params.model.sources[0].url
+          : params.model.sources.find((e) =>
+              e.url.includes(llama_model_path ?? params.model.id)
             )?.url
     }
 
@@ -114,7 +116,7 @@ async function runModel(
           // 2. Prioritize GGUF File (manual import)
           file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT) ||
           // 3. Fallback Model ID (for backward compatibility)
-          file === wrapper.model.id
+          file === params.model.id
       )
       if (ggufBinFile) llama_model_path = path.join(modelFolder, ggufBinFile)
     }
@@ -124,17 +126,17 @@ async function runModel(
     if (!llama_model_path) return Promise.reject('No GGUF model file found')
 
     currentSettings = {
-      ...wrapper.model.settings,
+      ...params.model.settings,
       llama_model_path,
       // This is critical and requires real CPU physical core count (or performance core)
       cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
-      ...(wrapper.model.settings.mmproj && {
-        mmproj: path.isAbsolute(wrapper.model.settings.mmproj)
-          ? wrapper.model.settings.mmproj
-          : path.join(modelFolder, wrapper.model.settings.mmproj),
+      ...(params.model.settings.mmproj && {
+        mmproj: path.isAbsolute(params.model.settings.mmproj)
+          ? params.model.settings.mmproj
+          : path.join(modelFolder, params.model.settings.mmproj),
       }),
     }
-    return runNitroAndLoadModel()
+    return runNitroAndLoadModel(systemInfo)
   }
 }
 
@@ -144,7 +146,7 @@ async function runModel(
  * 3. Validate model status
  * @returns
  */
-async function runNitroAndLoadModel() {
+async function runNitroAndLoadModel(systemInfo?: SystemInformation) {
   // Gather system information for CPU physical cores and memory
   return killSubprocess()
     .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
@@ -160,7 +162,7 @@ async function runNitroAndLoadModel() {
         return Promise.resolve()
       }
     })
-    .then(spawnNitroProcess)
+    .then(() => spawnNitroProcess(systemInfo))
     .then(() => loadLLMModel(currentSettings))
     .then(validateModelStatus)
     .catch((err) => {
@@ -325,12 +327,12 @@ async function killSubprocess(): Promise<void> {
  * Spawns a Nitro subprocess.
  * @returns A promise that resolves when the Nitro subprocess is started.
  */
-function spawnNitroProcess(): Promise<any> {
+function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
   log(`[NITRO]::Debug: Spawning Nitro subprocess...`)
 
   return new Promise<void>(async (resolve, reject) => {
     let binaryFolder = path.join(__dirname, '..', 'bin') // Current directory by default
-    let executableOptions = executableNitroFile()
+    let executableOptions = executableNitroFile(systemInfo?.gpuSetting)
 
     const args: string[] = ['1', LOCAL_HOST, PORT.toString()]
     // Execute the binary
@@ -385,11 +387,25 @@ function dispose() {
   killSubprocess()
 }
 
+/**
+ * Nitro process info
+ */
+export interface NitroProcessInfo {
+  isRunning: boolean
+}
+
+/**
+ * Retrieve current nitro process
+ */
+const getCurrentNitroProcessInfo = (): NitroProcessInfo => {
+  return {
+    isRunning: subprocess != null,
+  }
+}
+
 export default {
-  runModel,
-  stopModel,
-  killSubprocess,
+  loadModel,
+  unloadModel,
   dispose,
-  updateNvidiaInfo,
-  getCurrentNitroProcessInfo: () => getNitroProcessInfo(subprocess),
+  getCurrentNitroProcessInfo,
 }

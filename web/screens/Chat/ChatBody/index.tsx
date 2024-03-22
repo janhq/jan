@@ -4,27 +4,24 @@ import ScrollToBottom from 'react-scroll-to-bottom'
 
 import { InferenceEngine, MessageStatus } from '@janhq/core'
 import { Button } from '@janhq/uikit'
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useMainViewState } from '@/hooks/useMainViewState'
-
 import ChatItem from '../ChatItem'
 
 import ErrorMessage from '../ErrorMessage'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-
-  const { setMainViewState } = useMainViewState()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
 
   if (downloadedModels.length === 0)
     return (
@@ -81,11 +78,11 @@ const ChatBody: React.FC = () => {
         <ScrollToBottom className="flex h-full w-full flex-col">
           {messages.map((message, index) => (
             <div key={message.id}>
-              {((message.status !== MessageStatus.Error &&
-                message.status !== MessageStatus.Pending) ||
-                message.content.length > 0) && (
-                <ChatItem {...message} key={message.id} />
-              )}
+              {message.status !== MessageStatus.Error &&
+                message.content.length > 0 && (
+                  <ChatItem {...message} key={message.id} />
+                )}
+
               {(message.status === MessageStatus.Error ||
                 message.status === MessageStatus.Stopped) &&
                 index === messages.length - 1 && (

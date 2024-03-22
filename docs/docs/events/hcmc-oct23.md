@@ -1,8 +1,9 @@
 ---
 title: "Jan's AI Hacker House (Ho Chi Minh City)"
-description: "24-27 Oct 2023, District 3, HCMC. AI-focused talks, workshops and social events. Hosted by Jan.ai"
+description: '24-27 Oct 2023, District 3, HCMC. AI-focused talks, workshops and social events. Hosted by Jan.ai'
 slug: /events/hcmc-oct23
 image: /img/hcmc-launch-party.png
+keywords: [AI, Hacker House, Ho Chi Minh City, HCMC, Jan.ai]
 ---
 
 ![](/img/hcmc-launch-party.png)

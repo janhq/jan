@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { ReactNode, useCallback, useEffect, useRef } from 'react'
+import { Fragment, ReactNode, useCallback, useEffect, useRef } from 'react'
 
 import {
   ChatCompletionMessage,
@@ -15,9 +14,10 @@ import {
   MessageRequestType,
   ModelEvent,
   Thread,
+  ModelInitFailed,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { ulid } from 'ulid'
+import { ulid } from 'ulidx'
 
 import {
   activeModelAtom,
@@ -113,15 +113,14 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   }, [setActiveModel, setStateModel])
 
   const onModelInitFailed = useCallback(
-    (res: any) => {
-      const errorMessage = res?.error ?? res
-      console.error('Failed to load model: ', errorMessage)
+    (res: ModelInitFailed) => {
+      console.error('Failed to load model: ', res.error.message)
       setStateModel(() => ({
         state: 'start',
         loading: false,
-        model: res.modelId,
+        model: res.id,
       }))
-      setLoadModelError(errorMessage)
+      setLoadModelError(res.error.message)
       setQueuedMessage(false)
     },
     [setStateModel, setQueuedMessage, setLoadModelError]
@@ -245,7 +244,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
       if (!threadMessages || threadMessages.length === 0) return
 
-      const summarizeFirstPrompt = `Summarize this text "${threadMessages[0].content[0].text.value}" for a conversation title in less than 10 words`
+      const summarizeFirstPrompt = `Summarize in a 5-word Title. Give the title only. "${threadMessages[0].content[0].text.value}"`
       // Prompt: Given this query from user {query}, return to me the summary in 5 words as the title
       const msgId = ulid()
       const messages: ChatCompletionMessage[] = [
@@ -302,5 +301,5 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       events.off(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
     }
   }, [onNewMessageResponse, onMessageResponseUpdate])
-  return <>{children}</>
+  return <Fragment>{children}</Fragment>
 }

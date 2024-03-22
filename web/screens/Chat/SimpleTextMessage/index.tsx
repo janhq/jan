@@ -18,7 +18,7 @@ import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
-import { Marked, Renderer, marked as markedDefault } from 'marked'
+import { Marked, Renderer } from 'marked'
 
 import { markedHighlight } from 'marked-highlight'
 
@@ -32,27 +32,18 @@ import { usePath } from '@/hooks/usePath'
 import { toGibibytes } from '@/utils/converter'
 import { displayDate } from '@/utils/datetime'
 
+import { openFileTitle } from '@/utils/titleUtils'
+
 import EditChatInput from '../EditChatInput'
 import Icon from '../FileUploadPreview/Icon'
 import MessageToolbar from '../MessageToolbar'
+
+import { RelativeImage } from './RelativeImage'
 
 import {
   editMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-
-function isMarkdownValue(value: string): boolean {
-  const tokenTypes: string[] = []
-  markedDefault(value, {
-    walkTokens: (token) => {
-      tokenTypes.push(token.type)
-    },
-  })
-  const isMarkdown = ['code', 'codespan'].some((tokenType) => {
-    return tokenTypes.includes(tokenType)
-  })
-  return isMarkdown
-}
 
 const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   let text = ''
@@ -87,7 +78,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             ?.apply(this, [href, title, text])
             .replace('<a', "<a target='_blank'")
         },
-        code(code, lang, escaped) {
+        code(code, lang) {
           return `
           <div class="relative code-block group/item">
             <button class='text-xs copy-action hidden group-hover/item:block bg-gray-950 hover:bg-gray-950/90 text-gray-200 p-2 rounded-lg absolute top-6 right-2' >
@@ -98,9 +89,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               }
             </button>
             <pre class="hljs">
-              <code class="language-${lang ?? ''}">${
-                escaped ? code : decodeURIComponent(code)
-              }</code>
+              <code class="language-${lang ?? ''}">${code}</code>
             </pre>
           </div>
           `
@@ -215,14 +204,16 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       <div className={twMerge('w-full')}>
         <>
           {props.content[0]?.type === ContentType.Image && (
-            <div className="group/image relative mb-2 inline-flex overflow-hidden rounded-xl">
-              <img
-                className="aspect-auto h-[300px]"
-                alt={props.content[0]?.text.name}
-                src={props.content[0]?.text.annotations[0]}
-                onClick={() => onViewFile(`${props.id}.png`)}
-              />
-              <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 group-hover/image:inline-block" />
+            <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
+              <div className="left-0 top-0 z-20 h-full w-full bg-black/20 group-hover/image:inline-block">
+                <RelativeImage
+                  src={props.content[0]?.text.annotations[0]}
+                  id={props.id}
+                  onClick={() =>
+                    onViewFile(`${props.content[0]?.text.annotations[0]}`)
+                  }
+                />
+              </div>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
@@ -234,7 +225,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 </TooltipTrigger>
                 <TooltipPortal>
                   <TooltipContent side="top" className="max-w-[154px] px-3">
-                    <span>Show in finder</span>
+                    <span>{openFileTitle()}</span>
                     <TooltipArrow />
                   </TooltipContent>
                 </TooltipPortal>
@@ -261,7 +252,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 </TooltipTrigger>
                 <TooltipPortal>
                   <TooltipContent side="top" className="max-w-[154px] px-3">
-                    <span>Show in finder</span>
+                    <span>{openFileTitle()}</span>
                     <TooltipArrow />
                   </TooltipContent>
                 </TooltipPortal>
@@ -280,7 +271,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             </div>
           )}
 
-          {isUser && !isMarkdownValue(text) ? (
+          {isUser ? (
             <>
               {editMessage === props.id ? (
                 <div>

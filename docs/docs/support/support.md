@@ -1,3 +1,7 @@
+---
+title: Support - Jan
+---
+
 # Support
 
 - Bugs & requests: file a GitHub ticket [here](https://github.com/janhq/jan/issues)

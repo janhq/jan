@@ -1,4 +1,11 @@
-.theme-doc-markdown {
+.theme-doc-markdown,
+.markdown {
+  a,
+  p,
+  span,
+  li {
+    @apply leading-relaxed;
+  }
   a {
     @apply text-blue-600 dark:text-blue-400;
   }
@@ -10,9 +17,8 @@
   }
   ul,
   ol {
-    padding-left: 16px;
+    padding-left: 28px;
     li {
-      @apply leading-normal;
       p {
         margin-bottom: 0;
       }
@@ -28,13 +34,18 @@
   }
 
   h1,
-  h2 {
-    @apply mb-3;
+  h2,
+  h3 {
+    @apply mb-2;
   }
 
   table {
     width: 100%;
     display: table;
+  }
+
+  p {
+    margin-bottom: 16px;
   }
 }
 

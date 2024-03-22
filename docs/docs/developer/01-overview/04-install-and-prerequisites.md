@@ -4,14 +4,15 @@ slug: /developer/prereq
 description: Guide to install and setup Jan for development.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     installation,
     prerequisites,
     developer setup,
@@ -24,7 +25,7 @@ keywords:
 
 Ensure your system meets the following specifications to guarantee a smooth development experience:
 
-- [Hardware Requirements](../../guides/02-installation/06-hardware.md)
+- Hardware Requirements
 
 ### System Requirements
 

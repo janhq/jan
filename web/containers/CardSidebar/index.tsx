@@ -38,7 +38,7 @@ export default function CardSidebar({
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   const activeThread = useAtomValue(activeThreadAtom)
-  const { onReviewInFinder, onViewJson } = usePath()
+  const { onRevealInFinder, onViewJson } = usePath()
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
@@ -100,7 +100,7 @@ export default function CardSidebar({
                 title === 'Model' ? 'items-start' : 'items-center'
               )}
               onClick={() => {
-                onReviewInFinder && onReviewInFinder(title)
+                onRevealInFinder && onRevealInFinder(title)
                 setMore(false)
               }}
             >

@@ -1,7 +1,16 @@
-import fs from 'fs'
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  appendFileSync,
+  createWriteStream,
+  rmdirSync,
+} from 'fs'
 import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
-import { ContentType, MessageStatus, Model, ThreadMessage } from '../../../../index'
+import { ContentType, MessageStatus, Model, ThreadMessage } from '../../../../types'
 import { getEngineConfiguration, getJanDataFolderPath } from '../../../helper'
 import { DEFAULT_CHAT_COMPLETION_URL } from './consts'
 
@@ -9,12 +18,12 @@ import { DEFAULT_CHAT_COMPLETION_URL } from './consts'
 export const getBuilder = async (configuration: RouteConfiguration) => {
   const directoryPath = join(getJanDataFolderPath(), configuration.dirName)
   try {
-    if (!fs.existsSync(directoryPath)) {
+    if (!existsSync(directoryPath)) {
       console.debug('model folder not found')
       return []
     }
 
-    const files: string[] = fs.readdirSync(directoryPath)
+    const files: string[] = readdirSync(directoryPath)
 
     const allDirectories: string[] = []
     for (const file of files) {
@@ -46,8 +55,8 @@ export const getBuilder = async (configuration: RouteConfiguration) => {
 }
 
 const readModelMetadata = (path: string): string | undefined => {
-  if (fs.existsSync(path)) {
-    return fs.readFileSync(path, 'utf-8')
+  if (existsSync(path)) {
+    return readFileSync(path, 'utf-8')
   } else {
     return undefined
   }
@@ -81,7 +90,7 @@ export const deleteBuilder = async (configuration: RouteConfiguration, id: strin
     }
 
     const objectPath = join(directoryPath, id)
-    fs.rmdirSync(objectPath, { recursive: true })
+    rmdirSync(objectPath, { recursive: true })
     return {
       id: id,
       object: configuration.delete.object,
@@ -96,20 +105,19 @@ export const getMessages = async (threadId: string): Promise<ThreadMessage[]> =>
   const threadDirPath = join(getJanDataFolderPath(), 'threads', threadId)
   const messageFile = 'messages.jsonl'
   try {
-    const files: string[] = fs.readdirSync(threadDirPath)
+    const files: string[] = readdirSync(threadDirPath)
     if (!files.includes(messageFile)) {
       console.error(`${threadDirPath} not contains message file`)
       return []
     }
 
     const messageFilePath = join(threadDirPath, messageFile)
-    if (!fs.existsSync(messageFilePath)) {
+    if (!existsSync(messageFilePath)) {
       console.debug('message file not found')
       return []
     }
 
-    const lines = fs
-      .readFileSync(messageFilePath, 'utf-8')
+    const lines = readFileSync(messageFilePath, 'utf-8')
       .toString()
       .split('\n')
       .filter((line: any) => line !== '')
@@ -157,11 +165,11 @@ export const createThread = async (thread: any) => {
     const threadDirPath = join(getJanDataFolderPath(), 'threads', updatedThread.id)
     const threadJsonPath = join(threadDirPath, threadMetadataFileName)
 
-    if (!fs.existsSync(threadDirPath)) {
-      fs.mkdirSync(threadDirPath)
+    if (!existsSync(threadDirPath)) {
+      mkdirSync(threadDirPath)
     }
 
-    await fs.writeFileSync(threadJsonPath, JSON.stringify(updatedThread, null, 2))
+    await writeFileSync(threadJsonPath, JSON.stringify(updatedThread, null, 2))
     return updatedThread
   } catch (err) {
     return {
@@ -191,7 +199,7 @@ export const updateThread = async (threadId: string, thread: any) => {
     const threadDirPath = join(getJanDataFolderPath(), 'threads', updatedThread.id)
     const threadJsonPath = join(threadDirPath, threadMetadataFileName)
 
-    await fs.writeFileSync(threadJsonPath, JSON.stringify(updatedThread, null, 2))
+    await writeFileSync(threadJsonPath, JSON.stringify(updatedThread, null, 2))
     return updatedThread
   } catch (err) {
     return {
@@ -208,7 +216,7 @@ export const createMessage = async (threadId: string, message: any) => {
   const threadMessagesFileName = 'messages.jsonl'
 
   try {
-    const { ulid } = require('ulid')
+    const { ulid } = require('ulidx')
     const msgId = ulid()
     const createdAt = Date.now()
     const threadMessage: ThreadMessage = {
@@ -233,10 +241,10 @@ export const createMessage = async (threadId: string, message: any) => {
     const threadDirPath = join(getJanDataFolderPath(), 'threads', threadId)
     const threadMessagePath = join(threadDirPath, threadMessagesFileName)
 
-    if (!fs.existsSync(threadDirPath)) {
-      fs.mkdirSync(threadDirPath)
+    if (!existsSync(threadDirPath)) {
+      mkdirSync(threadDirPath)
     }
-    fs.appendFileSync(threadMessagePath, JSON.stringify(threadMessage) + '\n')
+    appendFileSync(threadMessagePath, JSON.stringify(threadMessage) + '\n')
     return threadMessage
   } catch (err) {
     return {
@@ -259,8 +267,8 @@ export const downloadModel = async (
   }
 
   const directoryPath = join(getJanDataFolderPath(), 'models', modelId)
-  if (!fs.existsSync(directoryPath)) {
-    fs.mkdirSync(directoryPath)
+  if (!existsSync(directoryPath)) {
+    mkdirSync(directoryPath)
   }
 
   // path to model binary
@@ -281,7 +289,7 @@ export const downloadModel = async (
       .on('end', function () {
         console.debug('end')
       })
-      .pipe(fs.createWriteStream(modelBinaryPath))
+      .pipe(createWriteStream(modelBinaryPath))
   }
 
   return {

@@ -86,7 +86,7 @@ export default class JanAssistantExtension extends AssistantExtension {
           NODE,
           'toolRetrievalIngestNewDocument',
           docFile,
-          data.model?.proxyEngine
+          data.model?.proxy_model
         )
       }
     } else if (
@@ -105,7 +105,7 @@ export default class JanAssistantExtension extends AssistantExtension {
         ...data,
         model: {
           ...data.model,
-          engine: data.model.proxyEngine,
+          engine: data.model.proxy_model,
         },
       }
       events.emit(MessageEvent.OnMessageSent, output)
@@ -168,7 +168,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       ...data,
       model: {
         ...data.model,
-        engine: data.model.proxyEngine,
+        engine: data.model.proxy_model,
       },
     }
     events.emit(MessageEvent.OnMessageSent, output)

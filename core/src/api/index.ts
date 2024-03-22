@@ -7,7 +7,16 @@ export enum NativeRoute {
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
   selectDirectory = 'selectDirectory',
+  selectModelFiles = 'selectModelFiles',
   relaunch = 'relaunch',
+
+  hideQuickAskWindow = 'hideQuickAskWindow',
+  sendQuickAskInput = 'sendQuickAskInput',
+
+  hideMainWindow = 'hideMainWindow',
+  showMainWindow = 'showMainWindow',
+
+  quickAskSizeUpdated = 'quickAskSizeUpdated',
 }
 
 /**
@@ -24,12 +33,17 @@ export enum AppRoute {
   stopServer = 'stopServer',
   log = 'log',
   logServer = 'logServer',
+  systemInformation = 'systemInformation',
+  showToast = 'showToast',
 }
 
 export enum AppEvent {
   onAppUpdateDownloadUpdate = 'onAppUpdateDownloadUpdate',
   onAppUpdateDownloadError = 'onAppUpdateDownloadError',
   onAppUpdateDownloadSuccess = 'onAppUpdateDownloadSuccess',
+
+  onUserSubmitQuickAsk = 'onUserSubmitQuickAsk',
+  onSelectedText = 'onSelectedText',
 }
 
 export enum DownloadRoute {
@@ -44,6 +58,14 @@ export enum DownloadEvent {
   onFileDownloadUpdate = 'onFileDownloadUpdate',
   onFileDownloadError = 'onFileDownloadError',
   onFileDownloadSuccess = 'onFileDownloadSuccess',
+  onFileUnzipSuccess = 'onFileUnzipSuccess',
+}
+
+export enum LocalImportModelEvent {
+  onLocalImportModelUpdate = 'onLocalImportModelUpdate',
+  onLocalImportModelFailed = 'onLocalImportModelFailed',
+  onLocalImportModelSuccess = 'onLocalImportModelSuccess',
+  onLocalImportModelFinished = 'onLocalImportModelFinished',
 }
 
 export enum ExtensionRoute {
@@ -67,11 +89,14 @@ export enum FileSystemRoute {
 }
 export enum FileManagerRoute {
   syncFile = 'syncFile',
+  copyFile = 'copyFile',
   getJanDataFolderPath = 'getJanDataFolderPath',
   getResourcePath = 'getResourcePath',
   getUserHomePath = 'getUserHomePath',
   fileStat = 'fileStat',
   writeBlob = 'writeBlob',
+  mkdir = 'mkdir',
+  rm = 'rm',
 }
 
 export type ApiFunction = (...args: any[]) => any
@@ -126,4 +151,8 @@ export const CoreRoutes = [
 ]
 
 export const APIRoutes = [...CoreRoutes, ...Object.values(NativeRoute)]
-export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]
+export const APIEvents = [
+  ...Object.values(AppEvent),
+  ...Object.values(DownloadEvent),
+  ...Object.values(LocalImportModelEvent),
+]

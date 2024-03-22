@@ -1,4 +1,4 @@
-import { useCallback, useContext } from 'react'
+import { useCallback } from 'react'
 
 import {
   Model,
@@ -8,21 +8,31 @@ import {
   joinPath,
   ModelArtifact,
   DownloadState,
+  GpuSetting,
 } from '@janhq/core'
 
-import { useSetAtom } from 'jotai'
-
-import { FeatureToggleContext } from '@/context/FeatureToggle'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from './useDownloadState'
 
+import useGpuSetting from './useGpuSetting'
+
 import { extensionManager } from '@/extension/ExtensionManager'
+import {
+  ignoreSslAtom,
+  proxyAtom,
+  proxyEnabledAtom,
+} from '@/helpers/atoms/AppConfig.atom'
 import { addDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useDownloadModel() {
-  const { ignoreSSL, proxy, proxyEnabled } = useContext(FeatureToggleContext)
+  const ignoreSSL = useAtomValue(ignoreSslAtom)
+  const proxy = useAtomValue(proxyAtom)
+  const proxyEnabled = useAtomValue(proxyEnabledAtom)
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
+
+  const { getGpuSettings } = useGpuSetting()
 
   const downloadModel = useCallback(
     async (model: Model) => {
@@ -63,10 +73,22 @@ export default function useDownloadModel() {
       })
 
       addDownloadingModel(model)
-
-      await localDownloadModel(model, ignoreSSL, proxyEnabled ? proxy : '')
+      const gpuSettings = await getGpuSettings()
+      await localDownloadModel(
+        model,
+        ignoreSSL,
+        proxyEnabled ? proxy : '',
+        gpuSettings
+      )
     },
-    [ignoreSSL, proxy, proxyEnabled, addDownloadingModel, setDownloadState]
+    [
+      ignoreSSL,
+      proxy,
+      proxyEnabled,
+      getGpuSettings,
+      addDownloadingModel,
+      setDownloadState,
+    ]
   )
 
   const abortModelDownload = useCallback(async (model: Model) => {
@@ -85,8 +107,9 @@ export default function useDownloadModel() {
 const localDownloadModel = async (
   model: Model,
   ignoreSSL: boolean,
-  proxy: string
+  proxy: string,
+  gpuSettings?: GpuSetting
 ) =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.downloadModel(model, { ignoreSSL, proxy })
+    ?.downloadModel(model, gpuSettings, { ignoreSSL, proxy })

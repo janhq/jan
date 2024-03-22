@@ -30,7 +30,6 @@ import { MainViewState } from '@/constants/screens'
 import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { useClipboard } from '@/hooks/useClipboard'
-import { useMainViewState } from '@/hooks/useMainViewState'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
@@ -41,6 +40,7 @@ import { toGibibytes } from '@/utils/converter'
 import ModelLabel from '../ModelLabel'
 import OpenAiKeyInput from '../OpenAiKeyInput'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 import {
@@ -64,18 +64,25 @@ const DropdownListSidebar = ({
   const [isTabActive, setIsTabActive] = useState(0)
   const { stateModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
-  const { setMainViewState } = useMainViewState()
+
+  const setMainViewState = useSetAtom(mainViewStateAtom)
   const [loader, setLoader] = useState(0)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
   const { updateModelParameter } = useUpdateModelParameters()
   const clipboard = useClipboard({ timeout: 1000 })
+
   const [copyId, setCopyId] = useState('')
 
+  // TODO: Update filter condition for the local model
   const localModel = downloadedModels.filter(
-    (model) => model.engine === InferenceEngine.nitro
+    (model) =>
+      model.engine === InferenceEngine.nitro ||
+      model.engine === InferenceEngine.nitro_tensorrt_llm
   )
   const remoteModel = downloadedModels.filter(
-    (model) => model.engine === InferenceEngine.openai
+    (model) =>
+      model.engine !== InferenceEngine.nitro &&
+      model.engine !== InferenceEngine.nitro_tensorrt_llm
   )
 
   const modelOptions = isTabActive === 0 ? localModel : remoteModel
@@ -291,7 +298,7 @@ const DropdownListSidebar = ({
                                 <span className="font-bold text-muted-foreground">
                                   {toGibibytes(x.metadata.size)}
                                 </span>
-                                {x.engine == InferenceEngine.nitro && (
+                                {x.metadata.size && (
                                   <ModelLabel size={x.metadata.size} />
                                 )}
                               </div>

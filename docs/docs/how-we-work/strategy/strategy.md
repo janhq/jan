@@ -3,6 +3,7 @@ title: Strategy
 ---
 
 We only have 2 planning parameters:
+
 - 10 year vision
 - 2 week sprint
 - Quarterly OKRs
@@ -45,7 +46,6 @@ Jan is a seamless user experience that runs on your personal computer, that glue
 - We build a comprehensive, seamless platform that takes care of the technical chores across the stack required to run open source AI
 - We run on top of a local folder of non-proprietary files, that anyone can tinker with (yes, even other apps!)
 - We provide open formats for packaging and distributing AI to run reproducibly across devices
-
 
 ## Prerequisites
 

@@ -1,3 +1,7 @@
+---
+title: Privacy - Jan
+---
+
 # Privacy Policy
 
 Jan is committed to protecting your privacy and ensuring that your personal information is handled in a safe and responsible way. This policy outlines how we collect, store, and use your personal information when you use our mobile application.

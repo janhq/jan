@@ -1,17 +1,18 @@
 ---
 title: Your First Extension
-slug: /developer/build-extension/your-first-extension/
+slug: /developer/extension/your-first-extension/
 description: A quick start on how to build your first extension
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
     quick start,
     build extension,
   ]
@@ -76,10 +77,10 @@ There are a few things to keep in mind when writing your extension code:
   In `index.ts`, you will see that the extension function will return a `Promise<any>`.
 
   ```typescript
-  import { core } from "@janhq/core";
+  import { core } from '@janhq/core'
 
   function onStart(): Promise<any> {
-    return core.invokePluginFunc(MODULE_PATH, "run", 0);
+    return core.invokePluginFunc(MODULE_PATH, 'run', 0)
   }
   ```
 

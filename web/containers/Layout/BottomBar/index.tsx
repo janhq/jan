@@ -15,7 +15,10 @@ import ProgressBar from '@/containers/ProgressBar'
 
 import { appDownloadProgress } from '@/containers/Providers/Jotai'
 
+import ImportingModelState from './ImportingModelState'
+import InstallingExtension from './InstallingExtension'
 import SystemMonitor from './SystemMonitor'
+import UpdatedFailedModal from './UpdateFailedModal'
 
 const menuLinks = [
   {
@@ -41,7 +44,10 @@ const BottomBar = () => {
             <ProgressBar total={100} used={progress} />
           ) : null}
         </div>
+        <ImportingModelState />
         <DownloadingState />
+        <UpdatedFailedModal />
+        <InstallingExtension />
       </div>
       <div className="flex items-center gap-x-3">
         <SystemMonitor />

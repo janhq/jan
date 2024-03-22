@@ -19,7 +19,7 @@ const ModalOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ModalPrimitive.Overlay
     ref={ref}
-    className={twMerge(' modal-backdrop', className)}
+    className={twMerge('modal-backdrop', className)}
     {...props}
   />
 ))

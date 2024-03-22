@@ -13,7 +13,6 @@ Jan is a startup with an open source business model. We believe in the need for 
 - [Jan Desktop Client & Local server](https://jan.ai) (AGPLv3, built on Jan Framework)
 - [Nitro: run Local AI](https://github.com/janhq/nitro) (AGPLv3)
 
-
 ### Bootstrapped
 
 Jan is currently a bootstrapped startup.

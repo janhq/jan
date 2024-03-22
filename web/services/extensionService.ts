@@ -8,7 +8,6 @@ export const isCoreExtensionInstalled = () => {
   if (!extensionManager.get(ExtensionTypeEnum.Conversational)) {
     return false
   }
-  if (!extensionManager.get(ExtensionTypeEnum.Inference)) return false
   if (!extensionManager.get(ExtensionTypeEnum.Model)) {
     return false
   }
@@ -22,7 +21,6 @@ export const setupBaseExtensions = async () => {
 
   if (
     !extensionManager.get(ExtensionTypeEnum.Conversational) ||
-    !extensionManager.get(ExtensionTypeEnum.Inference) ||
     !extensionManager.get(ExtensionTypeEnum.Model)
   ) {
     const installed = await extensionManager.install(baseExtensions)

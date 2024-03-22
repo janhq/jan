@@ -4,21 +4,22 @@ slug: /developer
 description: Jan Docs | Jan is a ChatGPT-alternative that runs on your own computer, with a local API server.
 keywords:
   [
-    Jan AI,
     Jan,
-    ChatGPT alternative,
+    Rethink the Computer,
     local AI,
-    private AI,
+    privacy focus,
+    free and open source,
+    private and offline,
     conversational AI,
     no-subscription fee,
-    large language model,
+    large language models,
   ]
 ---
 
 The following docs are aimed at developers who want to build extensions on top of the Jan Framework.
 
 :::tip
-If you are interested to **contribute to the framework's Core SDK itself**, like adding new drivers, runtimes, and infrastructure level support, please refer to [framework docs](/docs) instead.
+If you are interested to **contribute to the framework's Core SDK itself**, like adding new drivers, runtimes, and infrastructure level support, please refer to [framework docs](/developer/framework) instead.
 :::
 
 ## Extensions

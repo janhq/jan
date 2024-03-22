@@ -1,4 +1,9 @@
-import { MonitoringExtension, executeOnMain } from '@janhq/core'
+import {
+  GpuSetting,
+  MonitoringExtension,
+  OperatingSystemInfo,
+  executeOnMain,
+} from '@janhq/core'
 
 /**
  * JanMonitoringExtension is a extension that provides system monitoring functionality.
@@ -8,7 +13,10 @@ export default class JanMonitoringExtension extends MonitoringExtension {
   /**
    * Called when the extension is loaded.
    */
-  async onLoad() {}
+  async onLoad() {
+    // Attempt to fetch nvidia info
+    await executeOnMain(NODE, 'updateNvidiaInfo')
+  }
 
   /**
    * Called when the extension is unloaded.
@@ -16,11 +24,19 @@ export default class JanMonitoringExtension extends MonitoringExtension {
   onUnload(): void {}
 
   /**
+   * Returns the GPU configuration.
+   * @returns A Promise that resolves to an object containing the GPU configuration.
+   */
+  async getGpuSetting(): Promise<GpuSetting | undefined> {
+    return executeOnMain(NODE, 'getGpuConfig')
+  }
+
+  /**
    * Returns information about the system resources.
    * @returns A Promise that resolves to an object containing information about the system resources.
    */
   getResourcesInfo(): Promise<any> {
-    return executeOnMain(MODULE, 'getResourcesInfo')
+    return executeOnMain(NODE, 'getResourcesInfo')
   }
 
   /**
@@ -28,6 +44,10 @@ export default class JanMonitoringExtension extends MonitoringExtension {
    * @returns A Promise that resolves to an object containing information about the current system load.
    */
   getCurrentLoad(): Promise<any> {
-    return executeOnMain(MODULE, 'getCurrentLoad')
+    return executeOnMain(NODE, 'getCurrentLoad')
+  }
+
+  getOsInfo(): Promise<OperatingSystemInfo> {
+    return executeOnMain(NODE, 'getOsInfo')
   }
 }

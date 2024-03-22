@@ -1,5 +1,20 @@
 ---
 title: Project Management
+slug: /how-we-work/project-management
+description: Project management at Jan
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    project management,
+  ]
 ---
 
 We use the [Jan Monorepo Project](https://github.com/orgs/janhq/projects/5) in Github to manage our roadmap and sprint Kanbans.
@@ -57,7 +72,6 @@ We aim to always sprint on `tasks` that are a part of the [current roadmap](http
 
 - `Urgent bugs`: assign to an owner (or @engineers if you are not sure) && tag the current `sprint` & `milestone`
 - `All else`: assign the correct roadmap `label(s)` and owner (if any)
-
 
 #### Request for help
 

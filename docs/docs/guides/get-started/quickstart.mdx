@@ -1,0 +1,277 @@
+---
+title: Quickstart
+slug: /guides/quickstart
+description: Get started quickly with Jan, a ChatGPT-alternative that runs on your own computer, with a local API server. Learn how to install Jan and select an AI model to start chatting.
+sidebar_position: 2
+keywords:
+  [
+    Jan,
+    Rethink the Computer,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+  ]
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import download from './asset/download.gif';
+import gpt from './asset/gpt.gif';
+import model from './asset/model.gif';
+
+To get started quickly with Jan, follow the steps below:
+
+## Step 1: Get Jan Desktop
+
+<Tabs>
+    <TabItem value="mac" label = "Mac" default>
+
+        #### Pre-requisites
+        Before installing Jan, ensure :
+        - You have a Mac with an Apple Silicon Processor.
+        - Homebrew and its dependencies are installed for installing Jan with Homebrew package.
+        - Your macOS version is 10.15 or higher.
+
+        #### Stable Releases
+
+        To download stable releases, go to [Jan](https://jan.ai/) > select **Download for Mac**.
+
+        The download should be available as a `.dmg`.
+
+        #### Nightly Releases
+
+        We provide the Nightly Release so that you can test new features and see what might be coming in a future stable release. Please be aware that there might be bugs!
+
+        You can download it from [Jan's Discord](https://discord.gg/FTk2MvZwJH) in the [`#nightly-builds`](https://discord.gg/q8szebnxZ7) channel.
+
+        #### Experimental Model
+
+        To enable the experimental mode, go to **Settings** > **Advanced Settings** and toggle the **Experimental Mode**
+
+        #### Install with Homebrew
+        Install Jan with the following Homebrew command:
+
+        ```brew
+        brew install --cask jan
+        ```
+
+:::warning
+
+Homebrew package installation is currently limited to **Apple Silicon Macs**, with upcoming support for Windows and Linux.
+
+:::
+
+    </TabItem>
+    <TabItem value = "windows" label = "Windows">
+
+        #### Pre-requisites
+        Ensure that your system meets the following requirements:
+         - Windows 10 or higher is required to run Jan.
+
+        To enable GPU support, you will need:
+         - NVIDIA GPU with CUDA Toolkit 11.7 or higher
+         - NVIDIA driver 470.63.01 or higher
+
+        #### Stable Releases
+
+        To download stable releases, go to [Jan](https://jan.ai/) > select **Download for Windows**.
+
+        The download should be available as a `.exe` file.
+
+        #### Nightly Releases
+
+        We provide the Nightly Release so that you can test new features and see what might be coming in a future stable release. Please be aware that there might be bugs!
+
+        You can download it from [Jan's Discord](https://discord.gg/FTk2MvZwJH) in the [`#nightly-builds`](https://discord.gg/q8szebnxZ7) channel.
+
+        #### Experimental Model
+
+        To enable the experimental mode, go to **Settings** > **Advanced Settings** and toggle the **Experimental Mode**
+
+        #### Default Installation Directory
+
+        By default, Jan is installed in the following directory:
+
+        ```sh
+        # Default installation directory
+        C:\Users\{username}\AppData\Local\Programs\Jan
+        ```
+
+:::warning
+
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build) section of Common Errors.
+
+:::
+
+    </TabItem>
+    <TabItem value = "linux" label = "Linux">
+
+        #### Pre-requisites
+        Ensure that your system meets the following requirements:
+         - glibc 2.27 or higher (check with `ldd --version`)
+         - gcc 11, g++ 11, cpp 11, or higher, refer to this link for more information.
+
+        To enable GPU support, you will need:
+         - NVIDIA GPU with CUDA Toolkit 11.7 or higher
+         - NVIDIA driver 470.63.01 or higher
+
+        #### Stable Releases
+
+        To download stable releases, go to [Jan](https://jan.ai/) > select **Download for Linux**.
+
+        The download should be available as a `.AppImage` file or a `.deb` file.
+
+        #### Nightly Releases
+
+        We provide the Nightly Release so that you can test new features and see what might be coming in a future stable release. Please be aware that there might be bugs!
+
+        You can download it from [Jan's Discord](https://discord.gg/FTk2MvZwJH) in the [`#nightly-builds`](https://discord.gg/q8szebnxZ7) channel.
+
+        #### Experimental Model
+
+        To enable the experimental mode, go to **Settings** > **Advanced Settings** and toggle the **Experimental Mode**
+
+        <Tabs groupId = "linux_type">
+            <TabItem value="linux_main" label = "Linux">
+
+                To install Jan, you should use your package manager's install or `dpkg`.
+
+            </TabItem>
+            <TabItem value = "deb_ub" label = "Debian / Ubuntu">
+
+                To install Jan, run the following command:
+
+                ```sh
+                # Install Jan using dpkg
+                sudo dpkg -i jan-linux-amd64-{version}.deb
+
+                # Install Jan using apt-get
+                sudo apt-get install ./jan-linux-amd64-{version}.deb
+                # where jan-linux-amd64-{version}.deb is path to the Jan package
+                ```
+
+            </TabItem>
+            <TabItem value = "other" label = "Others">
+
+                To install Jan, run the following commands:
+
+                ```sh
+                # Install Jan using AppImage
+                chmod +x jan-linux-x86_64-{version}.AppImage
+                ./jan-linux-x86_64-{version}.AppImage
+                # where jan-linux-x86_64-{version}.AppImage is path to the Jan package
+                ```
+
+            </TabItem>
+        </Tabs>
+
+:::warning
+
+If you are stuck in a broken build, go to the [Broken Build](/guides/common-error/broken-build) section of Common Errors.
+
+:::
+
+    </TabItem>
+
+</Tabs>
+
+## Step 2: Download a Model
+
+Jan provides a variety of local AI models tailored to different needs, ready for download. These models are installed and run directly on the user's device.
+
+1. Go to the **Hub**.
+2. Select the models that you would like to install, to see a model details click the dropdown button.
+3. Click the **Download** button.
+
+<br/>
+
+<div style={{ display: 'flex', justifyContent: 'center' }}>
+  <img src={download} alt="Download a Model" />
+</div>
+
+<br/>
+
+:::note
+
+Ensure you select the appropriate model size by balancing performance, cost, and resource considerations in line with your task's specific requirements and hardware specifications.
+:::
+
+## Step 3: Connect to ChatGPT (Optional)
+
+Jan also provides access to remote models hosted on external servers, requiring an API key for connectivity. For example, to use the ChatGPT model with Jan, you must input your API key by following these steps:
+
+1. Go to the **Thread** tab.
+2. Under the Model dropdown menu, select the ChatGPT model.
+3. Fill in your ChatGPT API Key that you can get in your [OpenAI platform](https://platform.openai.com/account/api-keys).
+
+<br/>
+
+<div style={{ display: 'flex', justifyContent: 'center' }}>
+  <img src={gpt} alt="Connect to ChatGPT" />
+</div>
+
+<br/>
+
+## Step 4: Chat with Models
+
+After downloading and configuring your model, you can immediately use it in the **Thread** tab.
+
+<br/>
+
+<div style={{ display: 'flex', justifyContent: 'center' }}>
+  <img src={model} alt="Chat with a model" />
+</div>
+
+<br/>
+
+## Best Practices
+
+This section outlines best practices for developers, analysts, and AI enthusiasts to enhance their experience with Jan when adding AI locally to their computers. Implementing these practices will optimize the performance of AI models.
+
+### Follow the Quickstart Guide
+
+The quickstart guide above is designed to facilitate a quick setup process. It provides a clear instruction and simple steps to get you up and running with Jan quickly. Even, if you are inexperienced in AI.
+
+### Select the Right Models
+
+Jan offers a range of pre-configured AI models that are suited for different purposes. You should identify which on that aligns with your objectives. There are factors to be considered:
+
+- Capabilities
+- Accuracy
+- Processing Speed
+
+:::note
+
+- Some of these factors also depend on your hardware, please see Hardware Requirement.
+- Choosing the right model is important to achieve the best performance.
+  :::
+
+### Setting up Jan
+
+Ensure that you familiarize yourself with the Jan application. Jan offers advanced settings that you can adjust. These settings may influence how your AI behaves locally. Please see the [Advanced Settings](/guides/advanced) article for a complete list of Jan's configurations and instructions on how to configure them.
+
+### Integrations
+
+Jan can work with many different systems and tools. Whether you are incorporating Jan with any open-source LLM provider or other tools, it is important to understand the integration capabilities and limitations.
+
+### Mastering the Prompt Engineering
+
+Prompt engineering is an important aspect when dealing with AI models to generate the desired outputs. Mastering this skill can significantly enhance the performance and the responses of the AI. Below are some tips that you can do for prompt engineering:
+
+- Ask the model to adopt a persona
+- Be specific and details get a more specific answers
+- Provide examples or preference text or context at the beginning
+- Use a clear and concise language
+- Use certain keywords and phrases
+
+## Pre-configured Models
+
+To see the full list of Jan's pre-configured models, please see our official GitHub [here](https://github.com/janhq/jan).

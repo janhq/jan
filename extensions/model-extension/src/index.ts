@@ -13,6 +13,12 @@ import {
   DownloadRoute,
   ModelEvent,
   DownloadState,
+  OptionType,
+  ImportingModel,
+  LocalImportModelEvent,
+  baseName,
+  GpuSetting,
+  DownloadRequest,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -25,10 +31,14 @@ export default class JanModelExtension extends ModelExtension {
   private static readonly _modelMetadataFileName = 'model.json'
   private static readonly _supportedModelFormat = '.gguf'
   private static readonly _incompletedModelFileName = '.download'
-  private static readonly _offlineInferenceEngine = InferenceEngine.nitro
-
+  private static readonly _offlineInferenceEngine = [
+    InferenceEngine.nitro,
+    InferenceEngine.nitro_tensorrt_llm,
+  ]
+  private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _configDirName = 'config'
   private static readonly _defaultModelFileName = 'default-model.json'
+  private static readonly _supportedGpuArch = ['ampere', 'ada']
 
   /**
    * Called when the extension is loaded.
@@ -85,11 +95,51 @@ export default class JanModelExtension extends ModelExtension {
    */
   async downloadModel(
     model: Model,
+    gpuSettings?: GpuSetting,
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void> {
     // create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdirSync(modelDirPath)
+
+    if (model.engine === InferenceEngine.nitro_tensorrt_llm) {
+      if (!gpuSettings || gpuSettings.gpus.length === 0) {
+        console.error('No GPU found. Please check your GPU setting.')
+        return
+      }
+      const firstGpu = gpuSettings.gpus[0]
+      if (!firstGpu.name.toLowerCase().includes('nvidia')) {
+        console.error('No Nvidia GPU found. Please check your GPU setting.')
+        return
+      }
+      const gpuArch = firstGpu.arch
+      if (gpuArch === undefined) {
+        console.error(
+          'No GPU architecture found. Please check your GPU setting.'
+        )
+        return
+      }
+
+      if (!JanModelExtension._supportedGpuArch.includes(gpuArch)) {
+        console.error(
+          `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
+        )
+        return
+      }
+
+      const os = 'windows' // TODO: remove this hard coded value
+
+      const newSources = model.sources.map((source) => {
+        const newSource = { ...source }
+        newSource.url = newSource.url
+          .replace(/<os>/g, os)
+          .replace(/<gpuarch>/g, gpuArch)
+        return newSource
+      })
+      model.sources = newSources
+    }
+
+    console.debug(`Download sources: ${JSON.stringify(model.sources)}`)
 
     if (model.sources.length > 1) {
       // path to model binaries
@@ -101,8 +151,11 @@ export default class JanModelExtension extends ModelExtension {
         if (source.filename) {
           path = await joinPath([modelDirPath, source.filename])
         }
-
-        downloadFile(source.url, path, network)
+        const downloadRequest: DownloadRequest = {
+          url: source.url,
+          localPath: path,
+        }
+        downloadFile(downloadRequest, network)
       }
       // TODO: handle multiple binaries for web later
     } else {
@@ -111,7 +164,11 @@ export default class JanModelExtension extends ModelExtension {
         JanModelExtension._supportedModelFormat
       )
       const path = await joinPath([modelDirPath, fileName])
-      downloadFile(model.sources[0]?.url, path, network)
+      const downloadRequest: DownloadRequest = {
+        url: model.sources[0]?.url,
+        localPath: path,
+      }
+      downloadFile(downloadRequest, network)
 
       if (window && window.core?.api && window.core.api.baseApiUrl) {
         this.startPollingDownloadProgress(model.id)
@@ -158,18 +215,18 @@ export default class JanModelExtension extends ModelExtension {
 
   /**
    * Cancels the download of a specific machine learning model.
+   *
    * @param {string} modelId - The ID of the model whose download is to be cancelled.
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   async cancelModelDownload(modelId: string): Promise<void> {
-    const model = await this.getConfiguredModels()
-    return abortDownload(
-      await joinPath([JanModelExtension._homeDir, modelId, modelId])
-    ).then(async () => {
-      fs.unlinkSync(
-        await joinPath([JanModelExtension._homeDir, modelId, modelId])
-      )
-    })
+    const path = await joinPath([JanModelExtension._homeDir, modelId, modelId])
+    try {
+      await abortDownload(path)
+      await fs.unlinkSync(path)
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   /**
@@ -180,6 +237,20 @@ export default class JanModelExtension extends ModelExtension {
   async deleteModel(modelId: string): Promise<void> {
     try {
       const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
+      const jsonFilePath = await joinPath([
+        dirPath,
+        JanModelExtension._modelMetadataFileName,
+      ])
+      const modelInfo = JSON.parse(
+        await this.readModelMetadata(jsonFilePath)
+      ) as Model
+
+      const isUserImportModel =
+        modelInfo.metadata?.author?.toLowerCase() === 'user'
+      if (isUserImportModel) {
+        // just delete the folder
+        return fs.rmdirSync(dirPath)
+      }
 
       // remove all files under dirPath except model.json
       const files = await fs.readdirSync(dirPath)
@@ -220,7 +291,7 @@ export default class JanModelExtension extends ModelExtension {
   async getDownloadedModels(): Promise<Model[]> {
     return await this.getModelsMetadata(
       async (modelDir: string, model: Model) => {
-        if (model.engine !== JanModelExtension._offlineInferenceEngine)
+        if (!JanModelExtension._offlineInferenceEngine.includes(model.engine))
           return true
 
         // model binaries (sources) are absolute path & exist
@@ -229,22 +300,32 @@ export default class JanModelExtension extends ModelExtension {
         )
         if (existFiles.every((exist) => exist)) return true
 
-        return await fs
+        const result = await fs
           .readdirSync(await joinPath([JanModelExtension._homeDir, modelDir]))
           .then((files: string[]) => {
             // Model binary exists in the directory
             // Model binary name can match model ID or be a .gguf file and not be an incompleted model file
             return (
               files.includes(modelDir) ||
-              files.filter(
-                (file) =>
+              files.filter((file) => {
+                if (
+                  file.endsWith(JanModelExtension._incompletedModelFileName)
+                ) {
+                  return false
+                }
+                return (
                   file
                     .toLowerCase()
-                    .includes(JanModelExtension._supportedModelFormat) &&
-                  !file.endsWith(JanModelExtension._incompletedModelFileName)
-              )?.length >= model.sources.length
+                    .includes(JanModelExtension._supportedModelFormat) ||
+                  file
+                    .toLowerCase()
+                    .includes(JanModelExtension._tensorRtEngineFormat)
+                )
+              })?.length > 0 // TODO: find better way (can use basename to check the file name with source url)
             )
           })
+
+        return result
       }
     )
   }
@@ -389,7 +470,7 @@ export default class JanModelExtension extends ModelExtension {
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
-      description: `${dirName} - user self import model`,
+      description: '',
       metadata: {
         size: binaryFileSize,
         author: 'User',
@@ -454,5 +535,190 @@ export default class JanModelExtension extends ModelExtension {
         }
       )
     }
+  }
+
+  private async importModelSymlink(
+    modelBinaryPath: string,
+    modelFolderName: string,
+    modelFolderPath: string
+  ): Promise<Model> {
+    const fileStats = await fs.fileStat(modelBinaryPath, true)
+    const binaryFileSize = fileStats.size
+
+    // Just need to generate model.json there
+    const defaultModel = (await this.getDefaultModel()) as Model
+    if (!defaultModel) {
+      console.error('Unable to find default model')
+      return
+    }
+
+    const binaryFileName = await baseName(modelBinaryPath)
+
+    const model: Model = {
+      ...defaultModel,
+      id: modelFolderName,
+      name: modelFolderName,
+      sources: [
+        {
+          url: modelBinaryPath,
+          filename: binaryFileName,
+        },
+      ],
+      settings: {
+        ...defaultModel.settings,
+        llama_model_path: binaryFileName,
+      },
+      created: Date.now(),
+      description: '',
+      metadata: {
+        size: binaryFileSize,
+        author: 'User',
+        tags: [],
+      },
+    }
+
+    const modelFilePath = await joinPath([
+      modelFolderPath,
+      JanModelExtension._modelMetadataFileName,
+    ])
+
+    await fs.writeFileSync(modelFilePath, JSON.stringify(model, null, 2))
+
+    return model
+  }
+
+  async updateModelInfo(modelInfo: Partial<Model>): Promise<Model> {
+    const modelId = modelInfo.id
+    if (modelInfo.id == null) throw new Error('Model ID is required')
+
+    const janDataFolderPath = await getJanDataFolderPath()
+    const jsonFilePath = await joinPath([
+      janDataFolderPath,
+      'models',
+      modelId,
+      JanModelExtension._modelMetadataFileName,
+    ])
+    const model = JSON.parse(
+      await this.readModelMetadata(jsonFilePath)
+    ) as Model
+
+    const updatedModel: Model = {
+      ...model,
+      ...modelInfo,
+      metadata: {
+        ...model.metadata,
+        tags: modelInfo.metadata?.tags ?? [],
+      },
+    }
+
+    await fs.writeFileSync(jsonFilePath, JSON.stringify(updatedModel, null, 2))
+    return updatedModel
+  }
+
+  private async importModel(
+    model: ImportingModel,
+    optionType: OptionType
+  ): Promise<Model> {
+    const binaryName = (await baseName(model.path)).replace(/\s/g, '')
+
+    let modelFolderName = binaryName
+    if (binaryName.endsWith(JanModelExtension._supportedModelFormat)) {
+      modelFolderName = binaryName.replace(
+        JanModelExtension._supportedModelFormat,
+        ''
+      )
+    }
+
+    const modelFolderPath = await this.getModelFolderName(modelFolderName)
+    await fs.mkdirSync(modelFolderPath)
+
+    const uniqueFolderName = await baseName(modelFolderPath)
+    const modelBinaryFile = binaryName.endsWith(
+      JanModelExtension._supportedModelFormat
+    )
+      ? binaryName
+      : `${binaryName}${JanModelExtension._supportedModelFormat}`
+
+    const binaryPath = await joinPath([modelFolderPath, modelBinaryFile])
+
+    if (optionType === 'SYMLINK') {
+      return this.importModelSymlink(
+        model.path,
+        uniqueFolderName,
+        modelFolderPath
+      )
+    }
+
+    const srcStat = await fs.fileStat(model.path, true)
+
+    // interval getting the file size to calculate the percentage
+    const interval = setInterval(async () => {
+      const destStats = await fs.fileStat(binaryPath, true)
+      const percentage = destStats.size / srcStat.size
+      events.emit(LocalImportModelEvent.onLocalImportModelUpdate, {
+        ...model,
+        percentage,
+      })
+    }, 1000)
+
+    await fs.copyFile(model.path, binaryPath)
+
+    clearInterval(interval)
+
+    // generate model json
+    return this.generateModelMetadata(uniqueFolderName)
+  }
+
+  private async getModelFolderName(
+    modelFolderName: string,
+    count?: number
+  ): Promise<string> {
+    const newModelFolderName = count
+      ? `${modelFolderName}-${count}`
+      : modelFolderName
+
+    const janDataFolderPath = await getJanDataFolderPath()
+    const modelFolderPath = await joinPath([
+      janDataFolderPath,
+      'models',
+      newModelFolderName,
+    ])
+
+    const isFolderExist = await fs.existsSync(modelFolderPath)
+    if (!isFolderExist) {
+      return modelFolderPath
+    } else {
+      const newCount = (count ?? 0) + 1
+      return this.getModelFolderName(modelFolderName, newCount)
+    }
+  }
+
+  async importModels(
+    models: ImportingModel[],
+    optionType: OptionType
+  ): Promise<void> {
+    const importedModels: Model[] = []
+
+    for (const model of models) {
+      events.emit(LocalImportModelEvent.onLocalImportModelUpdate, model)
+      try {
+        const importedModel = await this.importModel(model, optionType)
+        events.emit(LocalImportModelEvent.onLocalImportModelSuccess, {
+          ...model,
+          modelId: importedModel.id,
+        })
+        importedModels.push(importedModel)
+      } catch (err) {
+        events.emit(LocalImportModelEvent.onLocalImportModelFailed, {
+          ...model,
+          error: err,
+        })
+      }
+    }
+
+    events.emit(
+      LocalImportModelEvent.onLocalImportModelFinished,
+      importedModels
+    )
   }
 }

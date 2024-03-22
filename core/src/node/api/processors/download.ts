@@ -5,7 +5,7 @@ import { getJanDataFolderPath } from '../../helper'
 import { DownloadManager } from '../../helper/download'
 import { createWriteStream, renameSync } from 'fs'
 import { Processor } from './Processor'
-import { DownloadState } from '../../../types'
+import { DownloadRequest, DownloadState, NetworkConfig } from '../../../types'
 
 export class Downloader implements Processor {
   observer?: Function
@@ -20,37 +20,67 @@ export class Downloader implements Processor {
     return func(this.observer, ...args)
   }
 
-  downloadFile(observer: any, url: string, localPath: string, network: any) {
+  downloadFile(observer: any, downloadRequest: DownloadRequest, network?: NetworkConfig) {
     const request = require('request')
     const progress = require('request-progress')
 
     const strictSSL = !network?.ignoreSSL
     const proxy = network?.proxy?.startsWith('http') ? network.proxy : undefined
+
+    const { localPath, url } = downloadRequest
+    let normalizedPath = localPath
     if (typeof localPath === 'string') {
-      localPath = normalizeFilePath(localPath)
+      normalizedPath = normalizeFilePath(localPath)
     }
-    const array = localPath.split(sep)
+    const array = normalizedPath.split(sep)
     const fileName = array.pop() ?? ''
     const modelId = array.pop() ?? ''
 
-    const destination = resolve(getJanDataFolderPath(), localPath)
+    const destination = resolve(getJanDataFolderPath(), normalizedPath)
     const rq = request({ url, strictSSL, proxy })
 
     // Put request to download manager instance
-    DownloadManager.instance.setRequest(localPath, rq)
+    DownloadManager.instance.setRequest(normalizedPath, rq)
 
     // Downloading file to a temp file first
     const downloadingTempFile = `${destination}.download`
 
+    // adding initial download state
+    const initialDownloadState: DownloadState = {
+      modelId,
+      fileName,
+      time: {
+        elapsed: 0,
+        remaining: 0,
+      },
+      speed: 0,
+      percent: 0,
+      size: {
+        total: 0,
+        transferred: 0,
+      },
+      children: [],
+      downloadState: 'downloading',
+      extensionId: downloadRequest.extensionId,
+      downloadType: downloadRequest.downloadType,
+      localPath: normalizedPath,
+    }
+    DownloadManager.instance.downloadProgressMap[modelId] = initialDownloadState
+
+    if (downloadRequest.downloadType === 'extension') {
+      observer?.(DownloadEvent.onFileDownloadUpdate, initialDownloadState)
+    }
+
     progress(rq, {})
       .on('progress', (state: any) => {
+        const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
         const downloadState: DownloadState = {
+          ...currentDownloadState,
           ...state,
-          modelId,
-          fileName,
+          fileName: fileName,
           downloadState: 'downloading',
         }
-        console.log('progress: ', downloadState)
+        console.debug('progress: ', downloadState)
         observer?.(DownloadEvent.onFileDownloadUpdate, downloadState)
         DownloadManager.instance.downloadProgressMap[modelId] = downloadState
       })
@@ -58,22 +88,22 @@ export class Downloader implements Processor {
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
         const downloadState: DownloadState = {
           ...currentDownloadState,
+          fileName: fileName,
           error: error.message,
           downloadState: 'error',
         }
-        if (currentDownloadState) {
-          DownloadManager.instance.downloadProgressMap[modelId] = downloadState
-        }
 
         observer?.(DownloadEvent.onFileDownloadError, downloadState)
+        DownloadManager.instance.downloadProgressMap[modelId] = downloadState
       })
       .on('end', () => {
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
-        if (currentDownloadState && DownloadManager.instance.networkRequests[localPath]) {
+        if (currentDownloadState && DownloadManager.instance.networkRequests[normalizedPath]) {
           // Finished downloading, rename temp file to actual file
           renameSync(downloadingTempFile, destination)
           const downloadState: DownloadState = {
             ...currentDownloadState,
+            fileName: fileName,
             downloadState: 'end',
           }
           observer?.(DownloadEvent.onFileDownloadSuccess, downloadState)
