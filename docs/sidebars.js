@@ -20,6 +20,7 @@ const sidebars = {
       link: { type: "doc", id: "about/about" },
       items: [
         //"about/roadmap",
+        // temporary unpublish "about/vision",
         "community/community",
       ],
     },
