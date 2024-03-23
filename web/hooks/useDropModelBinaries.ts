@@ -11,7 +11,7 @@ import { getFileInfoFromFile } from '@/utils/file'
 
 import { setImportModelStageAtom } from './useImportModel'
 
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { importingModelsAtom } from '@/helpers/atoms/ImportingModel.atom'
 
 export default function useDropModelBinaries() {
   const setImportingModels = useSetAtom(importingModelsAtom)

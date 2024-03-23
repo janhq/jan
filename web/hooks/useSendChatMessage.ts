@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef } from 'react'
 
 import {
@@ -18,6 +17,7 @@ import {
   InferenceEngine,
   ChatCompletionMessageContentType,
   AssistantTool,
+  ThreadContent,
 } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -33,7 +33,11 @@ import {
 import { compressImage, getBase64 } from '@/utils/base64'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
-import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
+import {
+  activeModelSettingAtom,
+  loadModelErrorAtom,
+  useActiveModel,
+} from './useActiveModel'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
@@ -64,16 +68,18 @@ export default function useSendChatMessage() {
 
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
-  const { activeModel, startModel } = useActiveModel()
+  const activeModelSetting = useAtomValue(activeModelSettingAtom)
+  const { activeModel, startModel, stopModel } = useActiveModel()
   const setQueuedMessage = useSetAtom(queuedMessageAtom)
   const loadModelFailed = useAtomValue(loadModelErrorAtom)
 
   const modelRef = useRef<Model | undefined>()
   const loadModelFailedRef = useRef<string | undefined>()
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-  const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
+  const [engineParamsUpdate, setEngineParamsUpdate] = useAtom(
+    engineParamsUpdateAtom
+  )
 
-  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const setReloadModel = useSetAtom(reloadModelAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
@@ -292,7 +298,7 @@ export default function useSendChatMessage() {
     }
 
     const timestamp = Date.now()
-    const content: any = []
+    const content: ThreadContent[] = []
 
     if (base64Blob && fileUpload[0]?.type === 'image') {
       content.push({
@@ -362,11 +368,32 @@ export default function useSendChatMessage() {
       selectedModelRef.current?.id ??
       activeThreadRef.current.assistants[0].model.id
 
+    console.log(
+      `current config: ${JSON.stringify(activeThread?.assistants[0].model.settings)}`
+    )
+    console.log(`active model config: ${JSON.stringify(activeModelSetting)}`)
+
     if (modelRef.current?.id !== modelId) {
       setQueuedMessage(true)
       startModel(modelId)
       await waitForModelStarting(modelId)
       setQueuedMessage(false)
+    } else {
+      let isModelSettingDifferent = false
+      if (
+        activeModelSetting &&
+        activeModelSetting !== activeThread?.assistants[0].model.settings
+      ) {
+        isModelSettingDifferent = true
+      }
+
+      if (!isModelSettingDifferent) {
+        stopModel()
+        setQueuedMessage(true)
+        startModel(modelId)
+        await waitForModelStarting(modelId)
+        setQueuedMessage(false)
+      }
     }
     setIsGeneratingResponse(true)
     events.emit(MessageEvent.OnMessageSent, messageRequest)

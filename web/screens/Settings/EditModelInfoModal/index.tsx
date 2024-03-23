@@ -35,7 +35,7 @@ import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   importingModelsAtom,
   updateImportingModelAtom,
-} from '@/helpers/atoms/Model.atom'
+} from '@/helpers/atoms/ImportingModel.atom'
 
 export const editingModelIdAtom = atom<string | undefined>(undefined)
 

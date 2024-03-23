@@ -23,7 +23,7 @@ import { openFileTitle } from '@/utils/titleUtils'
 import ImportingModelItem from './ImportingModelItem'
 
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { importingModelsAtom } from '@/helpers/atoms/ImportingModel.atom'
 
 const ImportingModelModal: React.FC = () => {
   const importingModels = useAtomValue(importingModelsAtom)

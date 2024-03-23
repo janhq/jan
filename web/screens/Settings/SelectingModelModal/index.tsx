@@ -19,7 +19,7 @@ import {
 
 import { FilePathWithSize } from '@/utils/file'
 
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { importingModelsAtom } from '@/helpers/atoms/ImportingModel.atom'
 
 const SelectingModelModal: React.FC = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)

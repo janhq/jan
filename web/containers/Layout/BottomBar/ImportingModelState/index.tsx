@@ -5,7 +5,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+import { importingModelsAtom } from '@/helpers/atoms/ImportingModel.atom'
 
 const ImportingModelState: React.FC = () => {
   const importingModels = useAtomValue(importingModelsAtom)
