@@ -52,9 +52,7 @@ const ImportingModelModal: React.FC = () => {
   return (
     <Modal
       open={importModelStage === 'IMPORTING_MODEL'}
-      onOpenChange={() => {
-        setImportModelStage('NONE')
-      }}
+      onOpenChange={() => setImportModelStage('NONE')}
     >
       <ModalContent>
         <ModalHeader>
