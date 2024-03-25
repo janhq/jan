@@ -150,7 +150,7 @@ common:
       command: ['/bin/sh', '-c']
       args:
         [
-          'export NODE_ENV=production && yarn workspace jan-web build && cd web && npx serve out',
+          'export NODE_ENV=production && yarn workspace @janhq/web build && cd web && npx serve out',
         ]
 
       replicaCount: 1
