@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import Advanced from '@/screens/Settings/Advanced'
 import AppearanceOptions from '@/screens/Settings/Appearance'
@@ -7,10 +7,11 @@ import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 import Models from '@/screens/Settings/Models'
 
 import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
+import ExtensionSetting from './ExtensionSetting'
 import SettingMenu from './SettingMenu'
 
-const handleShowOptions = (menu: string) => {
-  switch (menu) {
+const handleShowOptions = (settingScreen: SettingScreen) => {
+  switch (settingScreen) {
     case 'Extensions':
       return <ExtensionCatalog />
 
@@ -22,17 +23,48 @@ const handleShowOptions = (menu: string) => {
 
     case 'My Models':
       return <Models />
+
+    case 'Exttension Settings':
+      return <ExtensionSetting />
+
+    default:
+      return null
   }
 }
 
+export const SettingScreenList = [
+  'My Models',
+  'My Settings',
+  'Advanced Settings',
+  'Extensions',
+  'Exttension Settings',
+] as const
+
+export type SettingScreenTuple = typeof SettingScreenList
+export type SettingScreen = SettingScreenTuple[number]
+
 const SettingsScreen: React.FC = () => {
-  const [activeStaticMenu, setActiveStaticMenu] = useState('My Models')
+  const [activeSettingScreen, setActiveSettingScreen] =
+    useState<SettingScreen>('My Models')
 
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
-      setActiveStaticMenu('Advanced Settings')
+      setActiveSettingScreen('Advanced Settings')
       localStorage.removeItem(SUCCESS_SET_NEW_DESTINATION)
     }
+  }, [])
+
+  const availableSettingScreens = useMemo(() => {
+    return SettingScreenList.filter((screen) => {
+      if (
+        !window.electronAPI &&
+        (screen === 'Extensions' || screen === 'Exttension Settings')
+      ) {
+        return false
+      }
+
+      return true
+    })
   }, [])
 
   return (
@@ -41,11 +73,12 @@ const SettingsScreen: React.FC = () => {
       data-testid="testid-setting-description"
     >
       <SettingMenu
-        activeMenu={activeStaticMenu}
-        onMenuClick={setActiveStaticMenu}
+        activeSettingScreen={activeSettingScreen}
+        onMenuClick={setActiveSettingScreen}
+        settingsScreens={availableSettingScreens}
       />
 
-      {handleShowOptions(activeStaticMenu)}
+      {handleShowOptions(activeSettingScreen)}
     </div>
   )
 }
