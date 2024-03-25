@@ -27,7 +27,7 @@
     },
     "metadata": {
       "author": "StabilityAI",
-      "tags": ["3B", "Finetuned"],
+      "tags": ["3B", "Finetuned", "Tiny"],
       "size": 2970000000
     },
     "engine": "nitro"
