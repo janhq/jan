@@ -9,7 +9,7 @@
   "object": "model",
   "name": "Gemma 7B Q4",
   "version": "1.0",
-  "description": "Gemma is built from the same technology with Google's Gemini.",
+  "description": "Google's Gemma is built for multilingual purpose",
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
