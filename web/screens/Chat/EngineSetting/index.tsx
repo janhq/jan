@@ -1,25 +1,28 @@
+import { Fragment } from 'react'
+
+import { SettingComponentProps } from '@janhq/core/.'
+
 import SettingComponentBuilder from '../../Chat/ModelSetting/SettingComponent'
-import { SettingComponentData } from '../ModelSetting/SettingComponent'
 
 const EngineSetting = ({
   componentData,
   enabled = true,
 }: {
-  componentData: SettingComponentData[]
+  componentData: SettingComponentProps[]
   enabled?: boolean
 }) => {
   return (
-    <>
-      {componentData.filter((e) => e.name !== 'prompt_template').length && (
+    <Fragment>
+      {componentData.filter((e) => e.key !== 'prompt_template').length && (
         <div className="flex flex-col">
           <SettingComponentBuilder
-            componentData={componentData}
+            componentProps={componentData}
             enabled={enabled}
-            selector={(e) => e.name !== 'prompt_template'}
+            selector={(e) => e.key !== 'prompt_template'}
           />
         </div>
       )}
-    </>
+    </Fragment>
   )
 }
 

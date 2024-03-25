@@ -12,6 +12,7 @@ import {
   Model,
   ModelEvent,
   LocalOAIEngine,
+  SettingComponentProps,
 } from '@janhq/core'
 
 /**
@@ -101,4 +102,22 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     }
     return super.unloadModel(model)
   }
+
+  async getSettings(): Promise<SettingComponentProps[]> {
+    const test: SettingComponentProps = {
+      key: 'test',
+      title: 'Test',
+      description: 'Test',
+      controllerType: 'input',
+      controllerProps: {
+        placeholder: 'Test',
+        value: '',
+      },
+    }
+    return [test]
+  }
+
+  async updateSettings(
+    componentProps: Partial<SettingComponentProps>[]
+  ): Promise<void> {}
 }

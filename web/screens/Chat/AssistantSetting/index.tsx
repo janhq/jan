@@ -1,17 +1,16 @@
+import { SettingComponentProps } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
-import SettingComponentBuilder, {
-  SettingComponentData,
-} from '../ModelSetting/SettingComponent'
+import SettingComponentBuilder from '../ModelSetting/SettingComponent'
 
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const AssistantSetting = ({
   componentData,
 }: {
-  componentData: SettingComponentData[]
+  componentData: SettingComponentProps[]
 }) => {
   const activeThread = useAtomValue(activeThreadAtom)
   const { updateThreadMetadata } = useCreateNewThread()
@@ -20,7 +19,7 @@ const AssistantSetting = ({
     <div className="flex flex-col">
       {activeThread && componentData && (
         <SettingComponentBuilder
-          componentData={componentData}
+          componentProps={componentData}
           updater={(_, name, value) => {
             if (
               activeThread.assistants[0].tools &&

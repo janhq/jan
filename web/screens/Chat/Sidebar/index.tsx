@@ -158,21 +158,23 @@ const Sidebar: React.FC = () => {
               <div className="mt-6">
                 <CardSidebar title="Inference Parameters" asChild>
                   <div className="px-2 py-4">
-                    <ModelSetting componentData={componentDataRuntimeSetting} />
+                    <ModelSetting
+                      componentProps={componentDataRuntimeSetting}
+                    />
                   </div>
                 </CardSidebar>
               </div>
             )}
 
             {componentDataEngineSetting.filter(
-              (x) => x.name === 'prompt_template'
+              (x) => x.key === 'prompt_template'
             ).length !== 0 && (
               <div className="mt-4">
                 <CardSidebar title="Model Parameters" asChild>
                   <div className="px-2 py-4">
                     <SettingComponentBuilder
-                      componentData={componentDataEngineSetting}
-                      selector={(x) => x.name === 'prompt_template'}
+                      componentProps={componentDataEngineSetting}
+                      selector={(x) => x.key === 'prompt_template'}
                     />
                   </div>
                 </CardSidebar>

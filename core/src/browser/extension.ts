@@ -1,3 +1,5 @@
+import { SettingComponentProps } from './types'
+
 export enum ExtensionTypeEnum {
   Assistant = 'assistant',
   Conversational = 'conversational',
@@ -81,8 +83,13 @@ export abstract class BaseExtension implements ExtensionType {
    *
    * @returns {Promise<void>}
    */
-  // @ts-ignore
-  async install(...args): Promise<void> {
+  async install(): Promise<void> {
     return
   }
+
+  async getSettings(): Promise<SettingComponentProps[]> {
+    return []
+  }
+
+  async updateSettings(componentProps: Partial<SettingComponentProps>[]): Promise<void> {}
 }

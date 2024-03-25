@@ -1,4 +1,10 @@
-/* eslint-disable no-case-declarations */
+import {
+  SettingComponentProps,
+  InputComponentProps,
+  CheckboxComponentProps,
+  SliderComponentProps,
+} from '@janhq/core'
+
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import Checkbox from '@/containers/Checkbox'
@@ -17,133 +23,110 @@ import {
   getActiveThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
-export type ControllerType = 'slider' | 'checkbox' | 'input'
-
-export type SettingComponentData = {
-  name: string
-  title: string
-  description: string
-  controllerType: ControllerType
-  controllerData: SliderData | CheckboxData | InputData
-}
-
-export type InputData = {
-  placeholder: string
-  value: string
-}
-
-export type SliderData = {
-  min: number
-  max: number
-
-  step: number
-  value: number
-}
-
-type CheckboxData = {
-  checked: boolean
-}
-
-const SettingComponent = ({
-  componentData,
-  enabled = true,
-  selector,
-  updater,
-}: {
-  componentData: SettingComponentData[]
+type Props = {
+  componentProps: SettingComponentProps[]
   enabled?: boolean
-  selector?: (e: SettingComponentData) => boolean
+  selector?: (e: SettingComponentProps) => boolean
   updater?: (
     threadId: string,
     name: string,
     value: string | number | boolean | string[]
   ) => void
+}
+
+const SettingComponent: React.FC<Props> = ({
+  componentProps,
+  enabled = true,
+  selector,
+  updater,
 }) => {
-  const { updateModelParameter } = useUpdateModelParameters()
-
   const threadId = useAtomValue(getActiveThreadIdAtom)
-
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-
   const modelSettingParams = toSettingParams(activeModelParams)
-
   const engineParams = getConfigurationsData(modelSettingParams)
 
+  const { stopModel } = useActiveModel()
+  const { updateModelParameter } = useUpdateModelParameters()
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
 
-  const { stopModel } = useActiveModel()
-
   const onValueChanged = (
-    name: string,
+    key: string,
     value: string | number | boolean | string[]
   ) => {
     if (!threadId) return
-    if (engineParams.some((x) => x.name.includes(name))) {
+    if (engineParams.some((x) => x.key.includes(key))) {
       setEngineParamsUpdate(true)
       stopModel()
     } else {
       setEngineParamsUpdate(false)
     }
-    if (updater) updater(threadId, name, value)
+    if (updater) updater(threadId, key, value)
     else {
       // Convert stop string to array
-      if (name === 'stop' && typeof value === 'string') {
+      if (key === 'stop' && typeof value === 'string') {
         value = [value]
       }
       updateModelParameter(threadId, {
-        params: { [name]: value },
+        params: { [key]: value },
       })
     }
   }
 
-  const components = componentData
+  const components = componentProps
     .filter((x) => (selector ? selector(x) : true))
     .map((data) => {
       switch (data.controllerType) {
-        case 'slider':
-          const { min, max, step, value } = data.controllerData as SliderData
+        case 'slider': {
+          const { min, max, step, value } =
+            data.controllerProps as SliderComponentProps
           return (
             <SliderRightPanel
-              key={data.name}
+              key={data.key}
               title={data.title}
               description={data.description}
               min={min}
               max={max}
               step={step}
               value={value}
-              name={data.name}
+              name={data.key}
               enabled={enabled}
-              onValueChanged={(value) => onValueChanged(data.name, value)}
+              onValueChanged={(value) => onValueChanged(data.key, value)}
             />
           )
-        case 'input':
+        }
+
+        case 'input': {
           const { placeholder, value: textValue } =
-            data.controllerData as InputData
+            data.controllerProps as InputComponentProps
           return (
             <ModelConfigInput
               title={data.title}
               enabled={enabled}
-              key={data.name}
-              name={data.name}
+              key={data.key}
+              name={data.key}
               description={data.description}
               placeholder={placeholder}
               value={textValue}
-              onValueChanged={(value) => onValueChanged(data.name, value)}
+              onValueChanged={(value) => onValueChanged(data.key, value)}
             />
           )
-        case 'checkbox':
-          const { checked } = data.controllerData as CheckboxData
+        }
+
+        case 'checkbox': {
+          const { value } = data.controllerProps as CheckboxComponentProps
           return (
             <Checkbox
-              key={data.name}
+              key={data.key}
               enabled={enabled}
-              name={data.name}
+              name={data.key}
               description={data.description}
               title={data.title}
-              checked={checked}
-              onValueChanged={(value) => onValueChanged(data.name, value)}
+              checked={value}
+              onValueChanged={(value) => onValueChanged(data.key, value)}
             />
           )
+        }
+
         default:
           return null
       }

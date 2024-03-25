@@ -1,26 +1,25 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import React from 'react'
+import React, { Fragment } from 'react'
 
-import SettingComponentBuilder, {
-  SettingComponentData,
-} from './SettingComponent'
+import { SettingComponentProps } from '@janhq/core/.'
 
-const ModelSetting = ({
-  componentData,
-}: {
-  componentData: SettingComponentData[]
-}) => {
+import SettingComponentBuilder from './SettingComponent'
+
+type Props = {
+  componentProps: SettingComponentProps[]
+}
+
+const ModelSetting: React.FC<Props> = ({ componentProps }) => {
   return (
-    <>
-      {componentData.filter((e) => e.name !== 'prompt_template').length && (
+    <Fragment>
+      {componentProps.filter((e) => e.key !== 'prompt_template').length && (
         <div className="flex flex-col">
           <SettingComponentBuilder
-            componentData={componentData}
-            selector={(e) => e.name !== 'prompt_template'}
+            componentProps={componentProps}
+            selector={(e) => e.key !== 'prompt_template'}
           />
         </div>
       )}
-    </>
+    </Fragment>
   )
 }
 

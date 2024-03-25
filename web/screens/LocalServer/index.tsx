@@ -429,16 +429,15 @@ const LocalServerScreen = () => {
             </div>
           )}
 
-          {componentDataEngineSetting.filter(
-            (x) => x.name === 'prompt_template'
-          ).length !== 0 && (
+          {componentDataEngineSetting.filter((x) => x.key === 'prompt_template')
+            .length !== 0 && (
             <div className="mt-4">
               <CardSidebar title="Model Parameters" asChild>
                 <div className="px-2 py-4">
                   <SettingComponentBuilder
                     enabled={!serverEnabled}
-                    componentData={componentDataEngineSetting}
-                    selector={(x) => x.name === 'prompt_template'}
+                    componentProps={componentDataEngineSetting}
+                    selector={(x) => x.key === 'prompt_template'}
                   />
                 </div>
               </CardSidebar>
