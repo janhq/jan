@@ -13,6 +13,9 @@ import {
   ModelEvent,
   LocalOAIEngine,
   SettingComponentProps,
+  joinPath,
+  getJanDataFolderPath,
+  fs,
 } from '@janhq/core'
 
 /**
@@ -66,7 +69,52 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
       JanInferenceNitroExtension._intervalHealthCheck
     )
 
+    await this.createDefaultSettingIfNotExist()
+
     super.onLoad()
+  }
+
+  private async createDefaultSettingIfNotExist(): Promise<void> {
+    const janDataFolderPath = await getJanDataFolderPath()
+    const extensionName = EXTENSION_NAME
+    const extensionSettingFolderPath = await joinPath([
+      janDataFolderPath,
+      'settings',
+      extensionName,
+    ])
+
+    const isConfigExist = await fs.existsSync(extensionSettingFolderPath)
+    if (isConfigExist) return
+
+    try {
+      await fs.mkdir(extensionSettingFolderPath)
+      const defaultSettings = await this.getDefaultSettings()
+      const settingFilePath = await joinPath([
+        extensionSettingFolderPath,
+        'settings.json',
+      ])
+      await fs.writeFileSync(
+        settingFilePath,
+        JSON.stringify(defaultSettings, null, 2)
+      )
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  // TODO: load from setting.json file in here
+  private async getDefaultSettings(): Promise<SettingComponentProps[]> {
+    const test: SettingComponentProps = {
+      key: 'test',
+      title: 'Test',
+      description: 'Test',
+      controllerType: 'input',
+      controllerProps: {
+        placeholder: 'Test',
+        value: '',
+      },
+    }
+    return [test]
   }
 
   /**
@@ -104,17 +152,22 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
   }
 
   async getSettings(): Promise<SettingComponentProps[]> {
-    const test: SettingComponentProps = {
-      key: 'test',
-      title: 'Test',
-      description: 'Test',
-      controllerType: 'input',
-      controllerProps: {
-        placeholder: 'Test',
-        value: '',
-      },
+    const extensionName = EXTENSION_NAME
+    const settingPath = await joinPath([
+      await getJanDataFolderPath(),
+      'settings',
+      extensionName,
+      'settings.json',
+    ])
+
+    try {
+      const content = await fs.readFileSync(settingPath, 'utf-8')
+      const settings: SettingComponentProps[] = JSON.parse(content)
+      return settings
+    } catch (err) {
+      console.warn(err)
+      return []
     }
-    return [test]
   }
 
   async updateSettings(
