@@ -78,7 +78,7 @@ export function useActiveModel() {
     }
 
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
-    const engine = EngineManager.instance()?.get(model.engine)
+    const engine = EngineManager.instance().get(model.engine)
     return engine
       ?.loadModel(model)
       .then(() => {
@@ -95,7 +95,6 @@ export function useActiveModel() {
         })
       })
       .catch((error) => {
-        console.error('Failed to load model: ', error)
         setStateModel(() => ({
           state: 'start',
           loading: false,
@@ -108,13 +107,14 @@ export function useActiveModel() {
           type: 'success',
         })
         setLoadModelError(error)
+        return Promise.reject(error)
       })
   }
 
   const stopModel = useCallback(async () => {
     if (activeModel) {
       setStateModel({ state: 'stop', loading: true, model: activeModel.id })
-      const engine = EngineManager.instance()?.get(activeModel.engine)
+      const engine = EngineManager.instance().get(activeModel.engine)
       await engine
         ?.unloadModel(activeModel)
         .catch()

@@ -1,5 +1,5 @@
 import { Observable } from 'rxjs'
-import { ModelRuntimeParams } from '../../../../types'
+import { ErrorCode, ModelRuntimeParams } from '../../../../types'
 /**
  * Sends a request to the inference server to generate a response based on the recent messages.
  * @param recentMessages - An array of recent messages to use as context for the inference.
@@ -34,6 +34,16 @@ export function requestInference(
       signal: controller?.signal,
     })
       .then(async (response) => {
+        if (!response.ok) {
+          const data = await response.json()
+          const error = {
+            message: data.error?.message ?? 'Error occurred.',
+            code: data.error?.code ?? ErrorCode.Unknown,
+          }
+          subscriber.error(error)
+          subscriber.complete()
+          return
+        }
         if (model.parameters.stream === false) {
           const data = await response.json()
           subscriber.next(data.choices[0]?.message?.content ?? '')

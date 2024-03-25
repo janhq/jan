@@ -9,9 +9,8 @@ import {
   ThreadMessage,
   Model,
   ConversationalExtension,
-  InferenceEngine,
-  AssistantTool,
   EngineManager,
+  ToolManager,
 } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -111,7 +110,10 @@ export default function useSendChatMessage() {
       activeThreadRef.current.assistants[0].model.id
 
     if (modelRef.current?.id !== modelId) {
-      await startModel(modelId)
+      const error = await startModel(modelId).catch((error: Error) => error)
+      if (error) {
+        return
+      }
     }
 
     setIsGeneratingResponse(true)
@@ -128,10 +130,18 @@ export default function useSendChatMessage() {
           )
       }
     }
-    const engine = EngineManager.instance()?.get(
-      requestBuilder.model?.engine ?? selectedModelRef.current?.engine ?? ''
+    // Process message request with Assistants tools
+    const request = await ToolManager.instance().process(
+      requestBuilder.build(),
+      activeThreadRef.current.assistants?.flatMap(
+        (assistant) => assistant.tools ?? []
+      ) ?? []
     )
-    engine?.inference(requestBuilder.build())
+
+    const engine =
+      requestBuilder.model?.engine ?? selectedModelRef.current?.engine ?? ''
+
+    EngineManager.instance().get(engine)?.inference(request)
   }
 
   // Define interface extending Array prototype
@@ -149,8 +159,9 @@ export default function useSendChatMessage() {
     const runtimeParams = toRuntimeParams(activeModelParams)
     const settingParams = toSettingParams(activeModelParams)
 
-    updateThreadWaiting(activeThreadRef.current.id, true)
     const prompt = message.trim()
+
+    updateThreadWaiting(activeThreadRef.current.id, true)
     setCurrentPrompt('')
     setEditPrompt('')
 
@@ -158,17 +169,12 @@ export default function useSendChatMessage() {
       ? await getBase64(fileUpload[0].file)
       : undefined
 
-    const fileContentType = fileUpload[0]?.type
-
-    const isDocumentInput = base64Blob && fileContentType === 'pdf'
-    const isImageInput = base64Blob && fileContentType === 'image'
-
-    if (isImageInput && base64Blob) {
+    if (base64Blob && fileUpload[0]?.type === 'image') {
       // Compress image
       base64Blob = await compressImage(base64Blob, 512)
     }
 
-    let modelRequest =
+    const modelRequest =
       selectedModelRef?.current ?? activeThreadRef.current.assistants[0].model
 
     // Fallback support for previous broken threads
@@ -181,23 +187,6 @@ export default function useSendChatMessage() {
     }
     if (runtimeParams.stream == null) {
       runtimeParams.stream = true
-    }
-    // Add middleware to the model request with tool retrieval enabled
-    if (
-      activeThreadRef.current.assistants[0].tools?.some(
-        (tool: AssistantTool) => tool.type === 'retrieval' && tool.enabled
-      )
-    ) {
-      modelRequest = {
-        ...modelRequest,
-        // Tool retrieval support document input only for now
-        ...(isDocumentInput
-          ? {
-              engine: InferenceEngine.tool_retrieval_enabled,
-              proxy_model: modelRequest.engine,
-            }
-          : {}),
-      }
     }
 
     // Build Message Request
@@ -247,15 +236,27 @@ export default function useSendChatMessage() {
 
     if (modelRef.current?.id !== modelId) {
       setQueuedMessage(true)
-      await startModel(modelId)
+      const error = await startModel(modelId).catch((error: Error) => error)
       setQueuedMessage(false)
+      if (error) {
+        updateThreadWaiting(activeThreadRef.current.id, false)
+        return
+      }
     }
     setIsGeneratingResponse(true)
 
-    const engine = EngineManager.instance()?.get(
-      requestBuilder.model?.engine ?? modelRequest.engine ?? ''
+    // Process message request with Assistants tools
+    const request = await ToolManager.instance().process(
+      requestBuilder.build(),
+      activeThreadRef.current.assistants?.flatMap(
+        (assistant) => assistant.tools ?? []
+      ) ?? []
     )
-    engine?.inference(requestBuilder.build())
+
+    // Request for inference
+    EngineManager.instance()
+      .get(requestBuilder.model?.engine ?? modelRequest.engine ?? '')
+      ?.inference(request)
 
     // Reset states
     setReloadModel(false)

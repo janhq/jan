@@ -230,7 +230,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
       // 2. Update the title with the result of the inference
       setTimeout(() => {
-        const engine = EngineManager.instance()?.get(
+        const engine = EngineManager.instance().get(
           messageRequest.model?.engine ?? activeModelRef.current?.engine ?? ''
         )
         engine?.inference(messageRequest)
