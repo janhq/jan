@@ -1,35 +1,35 @@
 {
   "sources": [
     {
-      "filename": "ggml-model-q5_k.gguf",
-      "url": "https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/ggml-model-q5_k.gguf"
+      "filename": "llava-v1.6-mistral-7b.Q4_K_M.gguf",
+      "url": "https://huggingface.co/cjpais/llava-1.6-mistral-7b-gguf/resolve/main/llava-v1.6-mistral-7b.Q4_K_M.gguf"
     },
     {
       "filename": "mmproj-model-f16.gguf",
-      "url": "https://huggingface.co/mys/ggml_llava-v1.5-7b/resolve/main/mmproj-model-f16.gguf"
+      "url": "https://huggingface.co/cjpais/llava-1.6-mistral-7b-gguf/resolve/main/mmproj-model-f16.gguf"
     }
   ],
-  "id": "llava-1.5-7b-q5",
+  "id": "llava-1.6-7b",
   "object": "model",
-  "name": "LlaVa 1.5 7B Q5 K",
+  "name": "LlaVa 1.6 7B",
   "version": "1.1",
-  "description": "LlaVa 1.5 can bring vision understanding to Jan",
+  "description": "LlaVa 1.6 can bring vision understanding to Jan",
   "format": "gguf",
   "settings": {
     "vision_model": true,
     "text_model": false,
     "ctx_len": 4096,
     "prompt_template": "\n### Instruction:\n{prompt}\n### Response:\n",
-    "llama_model_path": "ggml-model-q5_k.gguf",
+    "llama_model_path": "llava-v1.6-mistral-7b.Q4_K_M.gguf",
     "mmproj": "mmproj-model-f16.gguf"
   },
   "parameters": {
     "max_tokens": 4096
   },
   "metadata": {
-    "author": "Mys",
+    "author": "liuhaotian",
     "tags": ["Vision"],
-    "size": 5400000000
+    "size": 4370000000
   },
   "engine": "nitro"
 }
