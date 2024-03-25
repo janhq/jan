@@ -1,20 +1,20 @@
 {
   "sources": [
     {
-      "filename": "Noromaid-7b-v0.1.1.q5_k_m.gguf",
-      "url": "https://huggingface.co/NeverSleep/Noromaid-7b-v0.1.1-GGUF/resolve/main/Noromaid-7b-v0.1.1.q5_k_m.gguf"
+      "filename": "Noromaid-7B-0.4-DPO.q4_k_m.gguf",
+      "url": "https://huggingface.co/NeverSleep/Noromaid-7B-0.4-DPO-GGUF/resolve/main/Noromaid-7B-0.4-DPO.q4_k_m.gguf"
     }
   ],
   "id": "noromaid-7b",
   "object": "model",
-  "name": "Noromaid 7B Q5",
+  "name": "Noromaid 7B Q4",
   "version": "1.0",
   "description": "The Noromaid 7b model is designed for role-playing with human-like behavior.",
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
-    "prompt_template": "### Instruction:{prompt}\n### Response:",
-    "llama_model_path": "Noromaid-7b-v0.1.1.q5_k_m.gguf"
+    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+    "llama_model_path": "Noromaid-7B-0.4-DPO.q4_k_m.gguf"
   },
   "parameters": {
     "temperature": 0.7,
@@ -27,8 +27,8 @@
   },
   "metadata": {
     "author": "NeverSleep",
-    "tags": ["7B", "Merged"],
-    "size": 5130000000
+    "tags": ["7B", "Finetuned"],
+    "size": 4370000000
   },
   "engine": "nitro"
 }
