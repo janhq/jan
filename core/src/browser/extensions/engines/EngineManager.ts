@@ -23,7 +23,10 @@ export class EngineManager {
     return this.engines.get(provider) as T | undefined
   }
 
-  static instance(): EngineManager | undefined {
-    return window.core?.engineManager as EngineManager
+  /**
+   * The instance of the engine manager.
+   */
+  static instance(): EngineManager {
+    return window.core?.engineManager as EngineManager ?? new EngineManager()
   }
 }

@@ -106,6 +106,7 @@ export abstract class OAIEngine extends AIEngine {
           return
         }
         message.status = MessageStatus.Error
+        message.error_code = err.code
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
     })

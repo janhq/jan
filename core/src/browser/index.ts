@@ -27,3 +27,9 @@ export * from './extension'
  * @module
  */
 export * from './extensions'
+
+/**
+ * Export all base tools.
+ * @module
+ */
+export * from './tools'
