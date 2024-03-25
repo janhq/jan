@@ -5,6 +5,7 @@ import typescript from 'rollup-plugin-typescript2'
 import json from '@rollup/plugin-json'
 import replace from '@rollup/plugin-replace'
 const packageJson = require('./package.json')
+const defaultSettingJson = require('./resources/default_settings.json')
 
 export default [
   {
@@ -19,6 +20,7 @@ export default [
       replace({
         EXTENSION_NAME: JSON.stringify(packageJson.name),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
+        DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),
         INFERENCE_URL: JSON.stringify(
           process.env.INFERENCE_URL ||
             'http://127.0.0.1:3928/inferences/llamacpp/chat_completion'

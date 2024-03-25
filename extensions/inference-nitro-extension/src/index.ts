@@ -102,19 +102,9 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     }
   }
 
-  // TODO: load from setting.json file in here
   private async getDefaultSettings(): Promise<SettingComponentProps[]> {
-    const test: SettingComponentProps = {
-      key: 'test',
-      title: 'Test',
-      description: 'Test',
-      controllerType: 'input',
-      controllerProps: {
-        placeholder: 'Test',
-        value: '',
-      },
-    }
-    return [test]
+    const defaultSettings = DEFAULT_SETTINGS as SettingComponentProps[]
+    return defaultSettings
   }
 
   /**
