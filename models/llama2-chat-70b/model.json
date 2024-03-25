@@ -5,11 +5,11 @@
       "url": "https://huggingface.co/TheBloke/Llama-2-70B-Chat-GGUF/resolve/main/llama-2-70b-chat.Q4_K_M.gguf"
     }
   ],
-  "id": "llama2-chat-70b-q4",
+  "id": "llama2-chat-70b",
   "object": "model",
   "name": "Llama 2 Chat 70B Q4",
   "version": "1.0",
-  "description": "Llama 2 Chat 7b model, specifically designed for a comprehensive understanding through training on extensive internet data.",
+  "description": "Llama 2 specifically designed for a comprehensive understanding the world.",
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
@@ -26,7 +26,7 @@
     "presence_penalty": 0
   },
   "metadata": {
-    "author": "MetaAI, The Bloke",
+    "author": "MetaAI",
     "tags": ["70B", "Foundational Model"],
     "size": 43920000000
   },
