@@ -1,4 +1,4 @@
-import { Thread, ThreadInterface, ThreadMessage, MessageInterface } from '../index'
+import { Thread, ThreadInterface, ThreadMessage, MessageInterface } from '../../types'
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
 
 /**

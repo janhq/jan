@@ -2,7 +2,7 @@ import { getJanDataFolderPath, joinPath } from '../../core'
 import { events } from '../../events'
 import { BaseExtension } from '../../extension'
 import { fs } from '../../fs'
-import { MessageRequest, Model, ModelEvent } from '../../types'
+import { MessageRequest, Model, ModelEvent } from '../../../types'
 import { EngineManager } from './EngineManager'
 
 /**

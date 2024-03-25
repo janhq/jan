@@ -7,7 +7,6 @@ import { toaster } from '@/containers/Toast'
 
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 
-import { extensionManager } from '@/extension'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 

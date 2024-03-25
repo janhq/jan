@@ -1,4 +1,3 @@
-import { log } from '../../core'
 import { AIEngine } from './AIEngine'
 
 /**
@@ -28,7 +27,3 @@ export class EngineManager {
     return window.core?.engineManager as EngineManager
   }
 }
-
-/**
- * The singleton instance of the ExtensionManager.
- */

@@ -1,5 +1,5 @@
 import { Observable } from 'rxjs'
-import { ModelRuntimeParams } from '../../../types'
+import { ModelRuntimeParams } from '../../../../types'
 /**
  * Sends a request to the inference server to generate a response based on the recent messages.
  * @param recentMessages - An array of recent messages to use as context for the inference.

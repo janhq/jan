@@ -4,7 +4,7 @@ import {
   ExtensionRoute,
   FileManagerRoute,
   FileSystemRoute,
-} from '../../../api'
+} from '../../../types/api'
 import { Downloader } from '../processors/download'
 import { FileSystem } from '../processors/fs'
 import { Extension } from '../processors/extension'

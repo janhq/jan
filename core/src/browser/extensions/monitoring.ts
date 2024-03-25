@@ -1,5 +1,5 @@
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
-import { GpuSetting, MonitoringInterface, OperatingSystemInfo } from '../index'
+import { GpuSetting, MonitoringInterface, OperatingSystemInfo } from '../../types'
 
 /**
  * Monitoring extension for system monitoring.

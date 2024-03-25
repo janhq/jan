@@ -1,6 +1,6 @@
 import { executeOnMain, getJanDataFolderPath, joinPath, systemInformation } from '../../core'
 import { events } from '../../events'
-import { Model, ModelEvent } from '../../types'
+import { Model, ModelEvent } from '../../../types'
 import { OAIEngine } from './OAIEngine'
 
 /**

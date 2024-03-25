@@ -1,4 +1,4 @@
-import { DownloadRequest, FileStat, NetworkConfig, SystemInformation } from './types'
+import { DownloadRequest, FileStat, NetworkConfig, SystemInformation } from '../types'
 
 /**
  * Execute a extension module function in main process

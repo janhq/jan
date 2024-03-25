@@ -13,7 +13,7 @@ import {
   ModelInfo,
   ThreadContent,
   ThreadMessage,
-} from '../../types'
+} from '../../../types'
 import { events } from '../../events'
 
 /**

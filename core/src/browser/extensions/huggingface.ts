@@ -1,6 +1,6 @@
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
-import { HuggingFaceInterface, HuggingFaceRepoData, Quantization } from '../types/huggingface'
-import { Model } from '../types/model'
+import { HuggingFaceInterface, HuggingFaceRepoData, Quantization } from '../../types/huggingface'
+import { Model } from '../../types/model'
 
 /**
  * Hugging Face extension for converting HF models to GGUF.
