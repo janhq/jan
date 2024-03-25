@@ -5,11 +5,11 @@
       "url": "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf"
     }
   ],
-  "id": "mistral-ins-7b-q4",
+  "id": "mistral-ins-7b",
   "object": "model",
   "name": "Mistral Instruct 7B Q4",
   "version": "1.0",
-  "description": "Mistral Instruct 7b model, specifically designed for a comprehensive understanding through training on extensive internet data.",
+  "description": "Mistral Instruct 7b model, specifically designed for a comprehensive understanding of the world.",
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
@@ -26,7 +26,7 @@
     "presence_penalty": 0
   },
   "metadata": {
-    "author": "MistralAI, The Bloke",
+    "author": "MistralAI",
     "tags": ["Featured", "7B", "Foundational Model"],
     "size": 4370000000,
     "cover": "https://raw.githubusercontent.com/janhq/jan/dev/models/mistral-ins-7b-q4/cover.png"
