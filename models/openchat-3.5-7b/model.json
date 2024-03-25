@@ -9,7 +9,7 @@
   "object": "model",
   "name": "Openchat-3.5 7B Q4",
   "version": "1.0",
-  "description": "The performance of this open-source model surpasses that of ChatGPT-3.5 and Grok-1 across various benchmarks.",
+  "description": "The performance of Openchat surpasses ChatGPT-3.5 and Grok-1 across various benchmarks.",
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
