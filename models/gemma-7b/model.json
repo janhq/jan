@@ -27,7 +27,7 @@
   },
   "metadata": {
     "author": "Google",
-    "tags": ["7B", "Finetuned"],
+    "tags": ["7B", "Finetuned", "Featured"],
     "size": 5330000000
   },
   "engine": "nitro"
