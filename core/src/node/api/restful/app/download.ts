@@ -1,4 +1,4 @@
-import { DownloadRoute } from '../../../../api'
+import { DownloadRoute } from '../../../../types/api'
 import { DownloadManager } from '../../../helper/download'
 import { HttpServer } from '../../HttpServer'
 

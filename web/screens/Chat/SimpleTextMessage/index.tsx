@@ -260,8 +260,8 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
               <Icon type={props.content[0].type} />
 
-              <div>
-                <h6 className="line-clamp-1 font-medium">
+              <div className="w-full">
+                <h6 className="line-clamp-1 w-4/5 font-medium">
                   {props.content[0].text.name?.replaceAll(/[-._]/g, ' ')}
                 </h6>
                 <p className="text-muted-foreground">

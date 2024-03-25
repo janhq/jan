@@ -1,5 +1,5 @@
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
-import { GpuSetting, ImportingModel, Model, ModelInterface, OptionType } from '../index'
+import { GpuSetting, ImportingModel, Model, ModelInterface, OptionType } from '../../types'
 
 /**
  * Model extension for managing models.

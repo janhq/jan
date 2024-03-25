@@ -1,4 +1,4 @@
-import { Assistant, AssistantInterface } from '../index'
+import { Assistant, AssistantInterface } from '../../types'
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
 
 /**

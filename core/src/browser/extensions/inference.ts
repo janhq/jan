@@ -1,4 +1,4 @@
-import { InferenceInterface, MessageRequest, ThreadMessage } from '../index'
+import { InferenceInterface, MessageRequest, ThreadMessage } from '../../types'
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
 
 /**

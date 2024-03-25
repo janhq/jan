@@ -1,4 +1,4 @@
-import { FileStat } from './types'
+import { FileStat } from '../types'
 
 /**
  * Writes data to a file at the specified path.

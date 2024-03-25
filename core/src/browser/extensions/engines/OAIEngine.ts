@@ -13,7 +13,7 @@ import {
   ModelInfo,
   ThreadContent,
   ThreadMessage,
-} from '../../types'
+} from '../../../types'
 import { events } from '../../events'
 
 /**
@@ -34,7 +34,7 @@ export abstract class OAIEngine extends AIEngine {
   /**
    * On extension load, subscribe to events.
    */
-  onLoad() {
+  override onLoad() {
     super.onLoad()
     events.on(MessageEvent.OnMessageSent, (data: MessageRequest) => this.inference(data))
     events.on(InferenceEvent.OnInferenceStopped, () => this.stopInference())
@@ -43,12 +43,12 @@ export abstract class OAIEngine extends AIEngine {
   /**
    * On extension unload
    */
-  onUnload(): void {}
+  override onUnload(): void {}
 
   /*
    * Inference request
    */
-  inference(data: MessageRequest) {
+  override inference(data: MessageRequest) {
     if (data.model?.engine?.toString() !== this.provider) return
 
     const timestamp = Date.now()
@@ -106,6 +106,7 @@ export abstract class OAIEngine extends AIEngine {
           return
         }
         message.status = MessageStatus.Error
+        message.error_code = err.code
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
     })
@@ -114,7 +115,7 @@ export abstract class OAIEngine extends AIEngine {
   /**
    * Stops the inference.
    */
-  stopInference() {
+  override stopInference() {
     this.isCancelled = true
     this.controller?.abort()
   }
