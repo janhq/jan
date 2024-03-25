@@ -24,8 +24,8 @@ const FileUploadPreview: React.FC = () => {
       <div className="relative inline-flex w-60 space-x-3 rounded-lg bg-secondary p-4">
         <Icon type={fileUpload[0].type} />
 
-        <div>
-          <h6 className="line-clamp-1 font-medium">
+        <div className="w-full">
+          <h6 className="line-clamp-1 w-3/4 truncate font-medium">
             {fileUpload[0].file.name.replaceAll(/[-._]/g, ' ')}
           </h6>
           <p className="text-muted-foreground">
