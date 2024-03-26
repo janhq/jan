@@ -8,6 +8,7 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import SettingComponentBuilder from './SettingComponent'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
@@ -15,6 +16,7 @@ type Props = {
 }
 
 const ModelSetting: React.FC<Props> = ({ componentProps }) => {
+  const isLocalServerRunning = useAtomValue(serverEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const { updateModelParameter } = useUpdateModelParameters()
 
@@ -37,6 +39,7 @@ const ModelSetting: React.FC<Props> = ({ componentProps }) => {
 
   return (
     <SettingComponentBuilder
+      enabled={!isLocalServerRunning}
       componentProps={componentProps}
       onValueUpdated={onValueChanged}
     />

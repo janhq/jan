@@ -81,9 +81,8 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
 
   override async defaultSettings(): Promise<SettingComponentProps[]> {
     const defaultSettings = DEFAULT_SETTINGS as SettingComponentProps[]
-    const extensionName = EXTENSION_NAME
     for (const setting of defaultSettings) {
-      setting.extensionName = extensionName
+      setting.extensionName = this.extensionName()
     }
     return defaultSettings
   }

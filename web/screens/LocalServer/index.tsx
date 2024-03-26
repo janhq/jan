@@ -49,8 +49,7 @@ import { toSettingParams } from '@/utils/modelParam'
 
 import EngineSetting from '../Chat/EngineSetting'
 
-import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
-
+import ModelSetting from '../Chat/ModelSetting'
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
 import {
@@ -434,10 +433,17 @@ const LocalServerScreen = () => {
             <div className="mt-4">
               <CardSidebar title="Model Parameters" asChild>
                 <div className="px-2 py-4">
-                  <SettingComponentBuilder
+                  <ModelSetting componentProps={componentDataEngineSetting} />
+                  {/* <SettingComponentBuilder
                     enabled={!serverEnabled}
                     componentProps={componentDataEngineSetting}
-                  />
+                    onValueUpdated={function (
+                      key: string,
+                      value: string | number | boolean
+                    ): void {
+                      throw new Error('Function not implemented.')
+                    }}
+                  /> */}
                 </div>
               </CardSidebar>
             </div>
@@ -447,10 +453,7 @@ const LocalServerScreen = () => {
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting
-                    enabled={!serverEnabled}
-                    componentData={componentDataEngineSetting}
-                  />
+                  <EngineSetting componentData={componentDataEngineSetting} />
                 </div>
               </CardSidebar>
             </div>

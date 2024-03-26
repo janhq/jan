@@ -1,6 +1,6 @@
+import { SettingComponentProps } from '../types'
 import { getJanDataFolderPath, joinPath } from './core'
 import { fs } from './fs'
-import { SettingComponentProps } from './types'
 
 export enum ExtensionTypeEnum {
   Assistant = 'assistant',
@@ -166,7 +166,9 @@ export abstract class BaseExtension implements ExtensionType {
     const settings = await this.getSettings()
 
     const updatedSettings = settings.map((setting) => {
-      const updatedSetting = componentProps.find((componentProp) => componentProp.key === setting.key)
+      const updatedSetting = componentProps.find(
+        (componentProp) => componentProp.key === setting.key
+      )
       if (updatedSetting && updatedSetting.controllerProps) {
         setting.controllerProps.value = updatedSetting.controllerProps.value
       }
