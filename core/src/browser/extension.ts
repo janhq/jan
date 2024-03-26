@@ -1,3 +1,5 @@
+import { getJanDataFolderPath, joinPath } from './core'
+import { fs } from './fs'
 import { SettingComponentProps } from './types'
 
 export enum ExtensionTypeEnum {
@@ -34,6 +36,9 @@ export type InstallationState = InstallationStateTuple[number]
  * This class should be extended by any class that represents an extension.
  */
 export abstract class BaseExtension implements ExtensionType {
+  protected settingFolderName = 'settings'
+  protected settingFileName = 'settings.json'
+
   /**
    * Returns the type of the extension.
    * @returns {ExtensionType} The type of the extension
@@ -42,11 +47,13 @@ export abstract class BaseExtension implements ExtensionType {
   type(): ExtensionTypeEnum | undefined {
     return undefined
   }
+
   /**
    * Called when the extension is loaded.
    * Any initialization logic for the extension should be put here.
    */
   abstract onLoad(): void
+
   /**
    * Called when the extension is unloaded.
    * Any cleanup logic for the extension should be put here.
@@ -69,6 +76,46 @@ export abstract class BaseExtension implements ExtensionType {
     return false
   }
 
+  extensionName(): string | undefined {
+    return undefined
+  }
+
+  async defaultSettings(): Promise<SettingComponentProps[]> {
+    return []
+  }
+
+  protected async createDefaultSettingIfNotExist(): Promise<void> {
+    const extensionName = this.extensionName()
+    if (!extensionName) {
+      console.error('Extension name is not defined')
+      return
+    }
+    const defaultSettings = await this.defaultSettings()
+    if (defaultSettings.length === 0) {
+      console.error('Default settings is not defined')
+      return
+    }
+
+    const janDataFolderPath = await getJanDataFolderPath()
+
+    const extensionSettingFolderPath = await joinPath([
+      janDataFolderPath,
+      'settings',
+      extensionName,
+    ])
+    console.debug('extensionSettingFolderPath', extensionSettingFolderPath)
+    const isConfigExist = await fs.existsSync(extensionSettingFolderPath)
+    if (isConfigExist) return
+
+    try {
+      await fs.mkdir(extensionSettingFolderPath)
+      const settingFilePath = await joinPath([extensionSettingFolderPath, this.settingFileName])
+      await fs.writeFileSync(settingFilePath, JSON.stringify(defaultSettings, null, 2))
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   /**
    * Determine if the prerequisites for the extension are installed.
    *
@@ -88,8 +135,51 @@ export abstract class BaseExtension implements ExtensionType {
   }
 
   async getSettings(): Promise<SettingComponentProps[]> {
-    return []
+    const extensionName = this.extensionName()
+    if (!extensionName) return []
+    const defaultSettings = await this.defaultSettings()
+    if (!defaultSettings) return []
+
+    const settingPath = await joinPath([
+      await getJanDataFolderPath(),
+      this.settingFolderName,
+      this.extensionName()!,
+      this.settingFileName,
+    ])
+
+    try {
+      const content = await fs.readFileSync(settingPath, 'utf-8')
+      const settings: SettingComponentProps[] = JSON.parse(content)
+      return settings
+    } catch (err) {
+      console.warn(err)
+      return []
+    }
   }
 
-  async updateSettings(componentProps: Partial<SettingComponentProps>[]): Promise<void> {}
+  async updateSettings(componentProps: Partial<SettingComponentProps>[]): Promise<void> {
+    const extensionName = this.extensionName()
+    if (!extensionName) return
+    const defaultSettings = await this.defaultSettings()
+    if (!defaultSettings) return
+
+    const settings = await this.getSettings()
+
+    const updatedSettings = settings.map((setting) => {
+      const updatedSetting = componentProps.find((componentProp) => componentProp.key === setting.key)
+      if (updatedSetting && updatedSetting.controllerProps) {
+        setting.controllerProps.value = updatedSetting.controllerProps.value
+      }
+      return setting
+    })
+
+    const settingPath = await joinPath([
+      await getJanDataFolderPath(),
+      this.settingFolderName,
+      extensionName,
+      this.settingFileName,
+    ])
+
+    await fs.writeFileSync(settingPath, JSON.stringify(updatedSettings, null, 2))
+  }
 }

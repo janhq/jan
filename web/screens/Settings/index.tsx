@@ -24,7 +24,7 @@ const handleShowOptions = (settingScreen: SettingScreen) => {
     case 'My Models':
       return <Models />
 
-    case 'Exttension Settings':
+    case 'Extension Settings':
       return <ExtensionSetting />
 
     default:
@@ -37,7 +37,7 @@ export const SettingScreenList = [
   'My Settings',
   'Advanced Settings',
   'Extensions',
-  'Exttension Settings',
+  'Extension Settings',
 ] as const
 
 export type SettingScreenTuple = typeof SettingScreenList
@@ -58,7 +58,7 @@ const SettingsScreen: React.FC = () => {
     return SettingScreenList.filter((screen) => {
       if (
         !window.electronAPI &&
-        (screen === 'Extensions' || screen === 'Exttension Settings')
+        (screen === 'Extensions' || screen === 'Extension Settings')
       ) {
         return false
       }

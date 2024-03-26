@@ -74,35 +74,12 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     super.onLoad()
   }
 
-  private async createDefaultSettingIfNotExist(): Promise<void> {
-    const janDataFolderPath = await getJanDataFolderPath()
+  override extensionName(): string | undefined {
     const extensionName = EXTENSION_NAME
-    const extensionSettingFolderPath = await joinPath([
-      janDataFolderPath,
-      'settings',
-      extensionName,
-    ])
-
-    const isConfigExist = await fs.existsSync(extensionSettingFolderPath)
-    if (isConfigExist) return
-
-    try {
-      await fs.mkdir(extensionSettingFolderPath)
-      const defaultSettings = await this.getDefaultSettings()
-      const settingFilePath = await joinPath([
-        extensionSettingFolderPath,
-        'settings.json',
-      ])
-      await fs.writeFileSync(
-        settingFilePath,
-        JSON.stringify(defaultSettings, null, 2)
-      )
-    } catch (err) {
-      console.error(err)
-    }
+    return extensionName
   }
 
-  private async getDefaultSettings(): Promise<SettingComponentProps[]> {
+  override async defaultSettings(): Promise<SettingComponentProps[]> {
     const defaultSettings = DEFAULT_SETTINGS as SettingComponentProps[]
     const extensionName = EXTENSION_NAME
     for (const setting of defaultSettings) {
@@ -143,50 +120,5 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
       this.getNitroProcesHealthIntervalId = undefined
     }
     return super.unloadModel(model)
-  }
-
-  async getSettings(): Promise<SettingComponentProps[]> {
-    const extensionName = EXTENSION_NAME
-    const settingPath = await joinPath([
-      await getJanDataFolderPath(),
-      'settings',
-      extensionName,
-      'settings.json',
-    ])
-
-    try {
-      const content = await fs.readFileSync(settingPath, 'utf-8')
-      const settings: SettingComponentProps[] = JSON.parse(content)
-      return settings
-    } catch (err) {
-      console.warn(err)
-      return []
-    }
-  }
-
-  async updateSettings(
-    componentProps: Partial<SettingComponentProps>[]
-  ): Promise<void> {
-    const extensionName = EXTENSION_NAME
-    const settings = await this.getSettings()
-
-    const newSettings = settings.map((setting) => {
-      const newSetting = componentProps.find(
-        (componentProp) => componentProp.key === setting.key
-      )
-      if (newSetting && newSetting.controllerProps) {
-        setting.controllerProps.value = newSetting.controllerProps.value
-      }
-      return setting
-    })
-
-    const settingPath = await joinPath([
-      await getJanDataFolderPath(),
-      'settings',
-      extensionName,
-      'settings.json',
-    ])
-
-    await fs.writeFileSync(settingPath, JSON.stringify(newSettings, null, 2))
   }
 }
