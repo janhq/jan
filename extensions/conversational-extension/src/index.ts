@@ -111,8 +111,7 @@ export default class JSONConversationalExtension extends ConversationalExtension
         threadDirPath,
         JSONConversationalExtension._threadMessagesFileName,
       ])
-      if (!(await fs.existsSync(threadDirPath)))
-        await fs.mkdir(threadDirPath)
+      if (!(await fs.existsSync(threadDirPath))) await fs.mkdir(threadDirPath)
 
       if (message.content[0]?.type === 'image') {
         const filesPath = await joinPath([threadDirPath, 'files'])
@@ -218,11 +217,11 @@ export default class JSONConversationalExtension extends ConversationalExtension
 
     const threadDirs: string[] = []
     for (let i = 0; i < fileInsideThread.length; i++) {
-      if (fileInsideThread[i].includes('.DS_Store')) continue
       const path = await joinPath([
         JSONConversationalExtension._threadFolder,
         fileInsideThread[i],
       ])
+      if (!(await fs.fileStat(path))?.isDirectory) continue
 
       const isHavingThreadInfo = (await fs.readdirSync(path)).includes(
         JSONConversationalExtension._threadInfoFileName
