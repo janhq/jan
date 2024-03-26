@@ -1,5 +1,5 @@
 import { getJanDataFolderPath, normalizeFilePath } from '@janhq/core/node'
-import { retrieval } from './tools/retrieval'
+import { retrieval } from './retrieval'
 import path from 'path'
 
 export function toolRetrievalUpdateTextSplitter(

@@ -5,7 +5,7 @@ import { PDFLoader } from 'langchain/document_loaders/fs/pdf'
 import { HNSWLib } from 'langchain/vectorstores/hnswlib'
 
 import { OpenAIEmbeddings } from 'langchain/embeddings/openai'
-import { readEmbeddingEngine } from '../../engine'
+import { readEmbeddingEngine } from './engine'
 
 export class Retrieval {
   public chunkSize: number = 100
