@@ -4,6 +4,8 @@ export type SettingComponentProps = {
   description: string
   controllerType: ControllerType
   controllerProps: SliderComponentProps | CheckboxComponentProps | InputComponentProps
+
+  extensionName?: string
 }
 
 export type ControllerType = 'slider' | 'checkbox' | 'input'

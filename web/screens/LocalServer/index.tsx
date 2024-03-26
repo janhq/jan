@@ -437,7 +437,6 @@ const LocalServerScreen = () => {
                   <SettingComponentBuilder
                     enabled={!serverEnabled}
                     componentProps={componentDataEngineSetting}
-                    selector={(x) => x.key === 'prompt_template'}
                   />
                 </div>
               </CardSidebar>

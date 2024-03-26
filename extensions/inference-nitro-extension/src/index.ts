@@ -104,6 +104,10 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
 
   private async getDefaultSettings(): Promise<SettingComponentProps[]> {
     const defaultSettings = DEFAULT_SETTINGS as SettingComponentProps[]
+    const extensionName = EXTENSION_NAME
+    for (const setting of defaultSettings) {
+      setting.extensionName = extensionName
+    }
     return defaultSettings
   }
 
@@ -162,5 +166,27 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
 
   async updateSettings(
     componentProps: Partial<SettingComponentProps>[]
-  ): Promise<void> {}
+  ): Promise<void> {
+    const extensionName = EXTENSION_NAME
+    const settings = await this.getSettings()
+
+    const newSettings = settings.map((setting) => {
+      const newSetting = componentProps.find(
+        (componentProp) => componentProp.key === setting.key
+      )
+      if (newSetting && newSetting.controllerProps) {
+        setting.controllerProps.value = newSetting.controllerProps.value
+      }
+      return setting
+    })
+
+    const settingPath = await joinPath([
+      await getJanDataFolderPath(),
+      'settings',
+      extensionName,
+      'settings.json',
+    ])
+
+    await fs.writeFileSync(settingPath, JSON.stringify(newSettings, null, 2))
+  }
 }

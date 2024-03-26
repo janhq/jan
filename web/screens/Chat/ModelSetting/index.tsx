@@ -8,19 +8,12 @@ type Props = {
   componentProps: SettingComponentProps[]
 }
 
-const ModelSetting: React.FC<Props> = ({ componentProps }) => {
-  return (
-    <Fragment>
-      {componentProps.filter((e) => e.key !== 'prompt_template').length && (
-        <div className="flex flex-col">
-          <SettingComponentBuilder
-            componentProps={componentProps}
-            selector={(e) => e.key !== 'prompt_template'}
-          />
-        </div>
-      )}
-    </Fragment>
-  )
-}
+const ModelSetting: React.FC<Props> = ({ componentProps }) => (
+  <Fragment>
+    {componentProps.filter((e) => e.key !== 'prompt_template').length && (
+      <SettingComponentBuilder componentProps={componentProps} />
+    )}
+  </Fragment>
+)
 
 export default React.memo(ModelSetting)

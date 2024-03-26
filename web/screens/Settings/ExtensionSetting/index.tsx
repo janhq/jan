@@ -31,12 +31,36 @@ const ExtensionSetting: React.FC = () => {
     getAllSettings()
   }, [])
 
+  const onValueChanged = async (
+    key: string,
+    value: string | number | boolean
+  ) => {
+    // find the key in settings state, update it and set the state back
+    const newSettings = settings.map((setting) => {
+      if (setting.key !== key) return setting
+      setting.controllerProps.value = value
+
+      const extensionName = setting.extensionName
+      if (extensionName) {
+        const extension = extensionManager.get(extensionName)
+        if (extension) {
+          extension.updateSettings([setting]) // TODO: async
+        }
+      }
+
+      return setting
+    })
+
+    setSettings(newSettings)
+  }
+
   if (settings.length === 0) return null
 
   return (
-    <div>
-      <SettingComponent componentProps={settings} />
-    </div>
+    <SettingComponent
+      componentProps={settings}
+      onValueUpdated={onValueChanged}
+    />
   )
 }
 

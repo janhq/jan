@@ -174,7 +174,6 @@ const Sidebar: React.FC = () => {
                   <div className="px-2 py-4">
                     <SettingComponentBuilder
                       componentProps={componentDataEngineSetting}
-                      selector={(x) => x.key === 'prompt_template'}
                     />
                   </div>
                 </CardSidebar>

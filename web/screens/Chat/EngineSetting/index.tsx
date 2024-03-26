@@ -10,20 +10,15 @@ const EngineSetting = ({
 }: {
   componentData: SettingComponentProps[]
   enabled?: boolean
-}) => {
-  return (
-    <Fragment>
-      {componentData.filter((e) => e.key !== 'prompt_template').length && (
-        <div className="flex flex-col">
-          <SettingComponentBuilder
-            componentProps={componentData}
-            enabled={enabled}
-            selector={(e) => e.key !== 'prompt_template'}
-          />
-        </div>
-      )}
-    </Fragment>
-  )
-}
+}) => (
+  <Fragment>
+    {componentData.filter((e) => e.key !== 'prompt_template').length && (
+      <SettingComponentBuilder
+        componentProps={componentData}
+        enabled={enabled}
+      />
+    )}
+  </Fragment>
+)
 
 export default EngineSetting
