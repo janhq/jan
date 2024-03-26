@@ -43,7 +43,10 @@ export function useActiveModel() {
 
     let model = downloadedModelsRef?.current.find((e) => e.id === modelId)
 
-    await stopModel().catch()
+    const error = await stopModel().catch((error: Error) => error)
+    if (error) {
+      return Promise.reject(error)
+    }
 
     setLoadModelError(undefined)
 
