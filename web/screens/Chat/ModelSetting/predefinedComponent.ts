@@ -10,6 +10,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       placeholder: 'Prompt template',
       value: '',
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   stop: {
     key: 'stop',
@@ -21,6 +23,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       placeholder: 'Stop',
       value: '',
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   ctx_len: {
     key: 'ctx_len',
@@ -34,6 +38,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 128,
       value: 4096,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   max_tokens: {
     key: 'max_tokens',
@@ -47,6 +53,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 10,
       value: 4096,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   ngl: {
     key: 'ngl',
@@ -59,6 +67,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 1,
       value: 100,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   embedding: {
     key: 'embedding',
@@ -68,6 +78,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
     controllerProps: {
       value: true,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   stream: {
     key: 'stream',
@@ -77,6 +89,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
     controllerProps: {
       value: false,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   temperature: {
     key: 'temperature',
@@ -89,6 +103,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 0.1,
       value: 0.7,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   frequency_penalty: {
     key: 'frequency_penalty',
@@ -102,6 +118,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 0.1,
       value: 0.7,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   presence_penalty: {
     key: 'presence_penalty',
@@ -115,6 +133,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 0.1,
       value: 0.7,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   top_p: {
     key: 'top_p',
@@ -127,6 +147,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 0.1,
       value: 0.95,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   n_parallel: {
     key: 'n_parallel',
@@ -140,6 +162,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 1,
       value: 1,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   // assistant
   chunk_size: {
@@ -153,6 +177,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 128,
       value: 1024,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   chunk_overlap: {
     key: 'chunk_overlap',
@@ -165,6 +191,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 32,
       value: 64,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   top_k: {
     key: 'top_k',
@@ -177,6 +205,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       step: 1,
       value: 2,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   retrieval_template: {
     key: 'retrieval_template',
@@ -188,5 +218,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       placeholder: 'Retrieval Template',
       value: '',
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
 }

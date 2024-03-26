@@ -1,19 +1,9 @@
-import React from 'react'
+import React, { useCallback, useMemo } from 'react'
 
-import {
-  Input,
-  Textarea,
-  Switch,
-  Tooltip,
-  TooltipArrow,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
-} from '@janhq/uikit'
+import { Input, Textarea } from '@janhq/uikit'
 
 import { atom, useAtomValue } from 'jotai'
 
-import { InfoIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
@@ -28,13 +18,13 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
-import AssistantSetting from '../AssistantSetting'
 import EngineSetting from '../EngineSetting'
 import ModelSetting from '../ModelSetting'
 
-import SettingComponentBuilder from '../ModelSetting/SettingComponent'
+import AssistantTool from './AssistantTool'
 
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import PromptTemplateSetting from './PromptTemplateSetting'
+
 import {
   activeThreadAtom,
   getActiveThreadModelParamsAtom,
@@ -48,22 +38,62 @@ const Sidebar: React.FC = () => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
-  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
-  const modelEngineParams = toSettingParams(activeModelParams)
-  const modelRuntimeParams = toRuntimeParams(activeModelParams)
-  const componentDataAssistantSetting = getConfigurationsData(
-    (activeThread?.assistants[0]?.tools &&
-      activeThread?.assistants[0]?.tools[0]?.settings) ??
-      {}
+  const modelSettings = useMemo(() => {
+    const modelRuntimeParams = toRuntimeParams(activeModelParams)
+
+    const componentDataRuntimeSetting = getConfigurationsData(
+      modelRuntimeParams,
+      selectedModel
+    )
+    return componentDataRuntimeSetting.filter(
+      (x) => x.key !== 'prompt_template'
+    )
+  }, [activeModelParams, selectedModel])
+
+  const engineSettings = useMemo(() => {
+    const modelEngineParams = toSettingParams(activeModelParams)
+    const componentDataEngineSetting = getConfigurationsData(
+      modelEngineParams,
+      selectedModel
+    )
+    return componentDataEngineSetting.filter((x) => x.key !== 'prompt_template')
+  }, [activeModelParams, selectedModel])
+
+  const promptTemplateSettings = useMemo(() => {
+    const modelEngineParams = toSettingParams(activeModelParams)
+    const componentDataEngineSetting = getConfigurationsData(
+      modelEngineParams,
+      selectedModel
+    )
+    return componentDataEngineSetting.filter((x) => x.key === 'prompt_template')
+  }, [activeModelParams, selectedModel])
+
+  const onThreadTitleChanged = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (activeThread)
+        updateThreadMetadata({
+          ...activeThread,
+          title: e.target.value || '',
+        })
+    },
+    [activeThread, updateThreadMetadata]
   )
-  const componentDataEngineSetting = getConfigurationsData(
-    modelEngineParams,
-    selectedModel
-  )
-  const componentDataRuntimeSetting = getConfigurationsData(
-    modelRuntimeParams,
-    selectedModel
+
+  const onAssistantInstructionChanged = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      if (activeThread)
+        updateThreadMetadata({
+          ...activeThread,
+          assistants: [
+            {
+              ...activeThread.assistants[0],
+              instructions: e.target.value || '',
+            },
+          ],
+        })
+    },
+    [activeThread, updateThreadMetadata]
   )
 
   return (
@@ -92,13 +122,7 @@ const Sidebar: React.FC = () => {
             <Input
               id="thread-title"
               value={activeThread?.title}
-              onChange={(e) => {
-                if (activeThread)
-                  updateThreadMetadata({
-                    ...activeThread,
-                    title: e.target.value || '',
-                  })
-              }}
+              onChange={onThreadTitleChanged}
             />
           </div>
           <div className="flex flex-col">
@@ -133,18 +157,7 @@ const Sidebar: React.FC = () => {
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
                 value={activeThread?.assistants[0].instructions ?? ''}
-                onChange={(e) => {
-                  if (activeThread)
-                    updateThreadMetadata({
-                      ...activeThread,
-                      assistants: [
-                        {
-                          ...activeThread.assistants[0],
-                          instructions: e.target.value || '',
-                        },
-                      ],
-                    })
-                }}
+                onChange={onAssistantInstructionChanged}
               />
             </div>
           </div>
@@ -154,37 +167,33 @@ const Sidebar: React.FC = () => {
           <div className="px-2 pt-4">
             <DropdownListSidebar />
 
-            {componentDataRuntimeSetting.length > 0 && (
+            {modelSettings.length > 0 && (
               <div className="mt-6">
                 <CardSidebar title="Inference Parameters" asChild>
                   <div className="px-2 py-4">
-                    <ModelSetting
-                      componentProps={componentDataRuntimeSetting}
-                    />
+                    <ModelSetting componentProps={modelSettings} />
                   </div>
                 </CardSidebar>
               </div>
             )}
 
-            {componentDataEngineSetting.filter(
-              (x) => x.key === 'prompt_template'
-            ).length !== 0 && (
+            {promptTemplateSettings.length > 0 && (
               <div className="mt-4">
                 <CardSidebar title="Model Parameters" asChild>
                   <div className="px-2 py-4">
-                    <SettingComponentBuilder
-                      componentProps={componentDataEngineSetting}
+                    <PromptTemplateSetting
+                      componentData={promptTemplateSettings}
                     />
                   </div>
                 </CardSidebar>
               </div>
             )}
 
-            {componentDataEngineSetting.length > 0 && (
+            {engineSettings.length > 0 && (
               <div className="my-4">
                 <CardSidebar title="Engine Parameters" asChild>
                   <div className="px-2 py-4">
-                    <EngineSetting componentData={componentDataEngineSetting} />
+                    <EngineSetting componentData={engineSettings} />
                   </div>
                 </CardSidebar>
               </div>
@@ -192,166 +201,7 @@ const Sidebar: React.FC = () => {
           </div>
         </CardSidebar>
 
-        {experimentalFeature && (
-          <div>
-            {activeThread?.assistants[0]?.tools &&
-              componentDataAssistantSetting.length > 0 && (
-                <CardSidebar title="Tools" isShow={true}>
-                  <div className="px-2 pt-4">
-                    <div className="mb-2">
-                      <div className="flex items-center justify-between">
-                        <label
-                          id="retrieval"
-                          className="inline-flex items-center font-bold text-zinc-500 dark:text-gray-300"
-                        >
-                          Retrieval
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <InfoIcon
-                                size={16}
-                                className="ml-2 flex-shrink-0 text-black dark:text-gray-500"
-                              />
-                            </TooltipTrigger>
-                            <TooltipPortal>
-                              <TooltipContent
-                                side="top"
-                                className="max-w-[240px]"
-                              >
-                                <span>
-                                  Retrieval helps the assistant use information
-                                  from files you send to it. Once you share a
-                                  file, the assistant automatically fetches the
-                                  relevant content based on your request.
-                                </span>
-                                <TooltipArrow />
-                              </TooltipContent>
-                            </TooltipPortal>
-                          </Tooltip>
-                        </label>
-
-                        <div className="flex items-center justify-between">
-                          <Switch
-                            name="retrieval"
-                            className="mr-2"
-                            checked={
-                              activeThread?.assistants[0].tools[0].enabled
-                            }
-                            onCheckedChange={(e) => {
-                              if (activeThread)
-                                updateThreadMetadata({
-                                  ...activeThread,
-                                  assistants: [
-                                    {
-                                      ...activeThread.assistants[0],
-                                      tools: [
-                                        {
-                                          type: 'retrieval',
-                                          enabled: e,
-                                          settings:
-                                            (activeThread.assistants[0].tools &&
-                                              activeThread.assistants[0]
-                                                .tools[0]?.settings) ??
-                                            {},
-                                        },
-                                      ],
-                                    },
-                                  ],
-                                })
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    {activeThread?.assistants[0]?.tools[0].enabled && (
-                      <div className="pb-4 pt-2">
-                        <div className="mb-4">
-                          <div className="item-center mb-2 flex">
-                            <label
-                              id="embedding-model"
-                              className="inline-flex font-bold text-zinc-500 dark:text-gray-300"
-                            >
-                              Embedding Model
-                            </label>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <InfoIcon
-                                  size={16}
-                                  className="ml-2 flex-shrink-0 dark:text-gray-500"
-                                />
-                              </TooltipTrigger>
-                              <TooltipPortal>
-                                <TooltipContent
-                                  side="top"
-                                  className="max-w-[240px]"
-                                >
-                                  <span>
-                                    Embedding model is crucial for understanding
-                                    and processing the input text effectively by
-                                    converting text to numerical
-                                    representations. Align the model choice with
-                                    your task, evaluate its performance, and
-                                    consider factors like resource availability.
-                                    Experiment to find the best fit for your
-                                    specific use case.
-                                  </span>
-                                  <TooltipArrow />
-                                </TooltipContent>
-                              </TooltipPortal>
-                            </Tooltip>
-                          </div>
-
-                          <div className="flex items-center justify-between">
-                            <Input value={selectedModel?.name} disabled />
-                          </div>
-                        </div>
-                        <div className="mb-4">
-                          <div className="mb-2 flex items-center">
-                            <label
-                              id="vector-database"
-                              className="inline-block font-bold text-zinc-500 dark:text-gray-300"
-                            >
-                              Vector Database
-                            </label>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <InfoIcon
-                                  size={16}
-                                  className="ml-2 flex-shrink-0 dark:text-gray-500"
-                                />
-                              </TooltipTrigger>
-                              <TooltipPortal>
-                                <TooltipContent
-                                  side="top"
-                                  className="max-w-[240px]"
-                                >
-                                  <span>
-                                    Vector Database is crucial for efficient
-                                    storage and retrieval of embeddings.
-                                    Consider your specific task, available
-                                    resources, and language requirements.
-                                    Experiment to find the best fit for your
-                                    specific use case.
-                                  </span>
-                                  <TooltipArrow />
-                                </TooltipContent>
-                              </TooltipPortal>
-                            </Tooltip>
-                          </div>
-
-                          <div className="flex items-center justify-between">
-                            <Input value="HNSWLib" disabled />
-                          </div>
-                        </div>
-                        <AssistantSetting
-                          componentData={componentDataAssistantSetting}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </CardSidebar>
-              )}
-          </div>
-        )}
+        <AssistantTool />
       </div>
     </div>
   )

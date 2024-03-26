@@ -5,77 +5,21 @@ import {
   SliderComponentProps,
 } from '@janhq/core'
 
-import { useAtomValue, useSetAtom } from 'jotai'
-
 import Checkbox from '@/containers/Checkbox'
 import ModelConfigInput from '@/containers/ModelConfigInput'
 import SliderRightPanel from '@/containers/SliderRightPanel'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
-import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
-
-import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/modelParam'
-
-import {
-  engineParamsUpdateAtom,
-  getActiveThreadIdAtom,
-  getActiveThreadModelParamsAtom,
-} from '@/helpers/atoms/Thread.atom'
-
 type Props = {
   componentProps: SettingComponentProps[]
   enabled?: boolean
-  updater?: (
-    threadId: string,
-    name: string,
-    value: string | number | boolean | string[]
-  ) => void
-  onValueUpdated?: (key: string, value: string | number | boolean) => void
+  onValueUpdated: (key: string, value: string | number | boolean) => void
 }
 
 const SettingComponent: React.FC<Props> = ({
   componentProps,
   enabled = true,
-  updater,
   onValueUpdated,
 }) => {
-  const threadId = useAtomValue(getActiveThreadIdAtom)
-  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-  const modelSettingParams = toSettingParams(activeModelParams)
-  const engineParams = getConfigurationsData(modelSettingParams)
-
-  const { stopModel } = useActiveModel()
-  const { updateModelParameter } = useUpdateModelParameters()
-  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
-
-  // TODO: move this out of this component
-  const onValueChanged = (key: string, value: string | number | boolean) => {
-    if (onValueUpdated) {
-      onValueUpdated(key, value)
-      return
-    }
-    if (!threadId) return
-    if (engineParams.some((x) => x.key.includes(key))) {
-      setEngineParamsUpdate(true)
-      stopModel()
-    } else {
-      setEngineParamsUpdate(false)
-    }
-    if (updater) updater(threadId, key, value)
-    else {
-      // Convert stop string to array
-      // TODO: handle later
-      // if (key === 'stop' && typeof value === 'string') {
-      //   value = [value]
-      // }
-      // end handle later
-      updateModelParameter(threadId, {
-        params: { [key]: value },
-      })
-    }
-  }
-
   const components = componentProps.map((data) => {
     switch (data.controllerType) {
       case 'slider': {
@@ -92,7 +36,7 @@ const SettingComponent: React.FC<Props> = ({
             value={value}
             name={data.key}
             enabled={enabled}
-            onValueChanged={(value) => onValueChanged(data.key, value)}
+            onValueChanged={(value) => onValueUpdated(data.key, value)}
           />
         )
       }
@@ -109,7 +53,7 @@ const SettingComponent: React.FC<Props> = ({
             description={data.description}
             placeholder={placeholder}
             value={textValue}
-            onValueChanged={(value) => onValueChanged(data.key, value)}
+            onValueChanged={(value) => onValueUpdated(data.key, value)}
           />
         )
       }
@@ -124,7 +68,7 @@ const SettingComponent: React.FC<Props> = ({
             description={data.description}
             title={data.title}
             checked={value}
-            onValueChanged={(value) => onValueChanged(data.key, value)}
+            onValueChanged={(value) => onValueUpdated(data.key, value)}
           />
         )
       }
