@@ -10,7 +10,9 @@
   "version": "1.0",
   "description": "Groq Mixtral 8x7b Instruct is Mixtral with supercharged speed!",
   "format": "api",
-  "settings": {},
+  "settings": {
+    "text_model": false
+  },
   "parameters": {
     "max_tokens": 4096,
     "temperature": 0.7,

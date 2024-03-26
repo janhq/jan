@@ -18,7 +18,7 @@ export class RetrievalTool extends InferenceTool {
     tool?: AssistantTool
   ): Promise<MessageRequest> {
     if (!data.model || !data.messages) {
-      return Promise.resolve(data)
+      return Promise.resolve(this.normalize(data))
     }
 
     const latestMessage = data.messages[data.messages.length - 1]
@@ -48,7 +48,7 @@ export class RetrievalTool extends InferenceTool {
     ) {
       // No document ingested, reroute the result to inference engine
 
-      return Promise.resolve(data)
+      return Promise.resolve(this.normalize(data))
     }
     // 2. Load agent on thread changed
     if (this.retrievalThreadId !== data.threadId) {
@@ -87,8 +87,14 @@ export class RetrievalTool extends InferenceTool {
             .replace('{QUESTION}', prompt)
     }
 
-    // Filter out all the messages that are not text
-    data.messages = data.messages.map((message) => {
+    // 4. Reroute the result to inference engine
+    return Promise.resolve(this.normalize(data))
+  }
+
+  // Filter out all the messages that are not text
+  // TODO: Remove it until engines can handle multiple content types
+  normalize(request: MessageRequest): MessageRequest {
+    request.messages = request.messages?.map((message) => {
       if (
         message.content &&
         typeof message.content !== 'string' &&
@@ -101,8 +107,6 @@ export class RetrievalTool extends InferenceTool {
       }
       return message
     })
-
-    // 4. Reroute the result to inference engine
-    return Promise.resolve(data)
+    return request
   }
 }

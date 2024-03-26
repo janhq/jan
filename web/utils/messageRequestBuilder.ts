@@ -91,7 +91,7 @@ export class MessageRequestBuilder {
         },
       ] as ChatCompletionMessageContent,
     }
-    this.messages = [message, ...this.messages]
+    this.messages = [...this.messages, message]
     return this
   }
 
@@ -113,7 +113,7 @@ export class MessageRequestBuilder {
       ] as ChatCompletionMessageContent,
     }
 
-    this.messages = [message, ...this.messages]
+    this.messages = [...this.messages, message]
     return this
   }
 
