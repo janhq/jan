@@ -75,7 +75,7 @@ export default class JanAssistantExtension extends AssistantExtension {
         fileName,
       ])
 
-      if (filePath.includes('.DS_Store')) continue
+      if (!(await fs.fileStat(filePath))?.isDirectory) continue
       const jsonFiles: string[] = (await fs.readdirSync(filePath)).filter(
         (file: string) => file === 'assistant.json'
       )
