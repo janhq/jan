@@ -39,6 +39,7 @@ export class Retrieval {
       )
     } else {
       // Fallback to OpenAI Settings
+      // TODO: namh
       const settings = readEmbeddingEngine(engine)
       this.embeddingModel = new OpenAIEmbeddings({
         openAIApiKey: settings.api_key,

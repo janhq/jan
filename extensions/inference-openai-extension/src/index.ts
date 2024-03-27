@@ -6,7 +6,7 @@
  * @module inference-openai-extension/src/index
  */
 
-import { RemoteOAIEngine, SettingComponentProps } from '@janhq/core'
+import { RemoteOAIEngine } from '@janhq/core'
 
 declare const COMPLETION_URL: string
 
@@ -18,7 +18,6 @@ declare const COMPLETION_URL: string
 export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
   inferenceUrl: string = COMPLETION_URL
   provider: string = 'openai'
-  apiKey: string = ''
 
   override async onLoad(): Promise<void> {
     super.onLoad()
@@ -36,6 +35,17 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
         extensionName: this.extensionName(),
       },
     ])
+  }
+
+  override async getApiKey(): Promise<string> {
+    const settings = await this.getSettings()
+    const keySetting = settings.find(
+      (setting) => setting.key === 'openai-api-key'
+    )
+
+    const apiKey = keySetting?.controllerProps.value
+    if (typeof apiKey === 'string') return apiKey
+    return ''
   }
 
   override extensionName(): string | undefined {

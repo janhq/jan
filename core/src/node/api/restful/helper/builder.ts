@@ -11,7 +11,7 @@ import {
 import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
 import { ContentType, MessageStatus, Model, ThreadMessage } from '../../../../types'
-import { getEngineConfiguration, getJanDataFolderPath } from '../../../helper'
+import { getJanDataFolderPath } from '../../../helper'
 import { DEFAULT_CHAT_COMPLETION_URL } from './consts'
 
 // TODO: Refactor these
@@ -316,15 +316,16 @@ export const chatCompletions = async (request: any, reply: any) => {
   }
 
   const requestedModel = matchedModels[0]
-  const engineConfiguration = await getEngineConfiguration(requestedModel.engine)
+  // TODO: namh
+  // const engineConfiguration = await getEngineConfiguration(requestedModel.engine)
 
   let apiKey: string | undefined = undefined
   let apiUrl: string = DEFAULT_CHAT_COMPLETION_URL
 
-  if (engineConfiguration) {
-    apiKey = engineConfiguration.api_key
-    apiUrl = engineConfiguration.full_url
-  }
+  // if (engineConfiguration) {
+  //   apiKey = engineConfiguration.api_key
+  //   apiUrl = engineConfiguration.full_url
+  // }
 
   const headers: Record<string, any> = {
     'Content-Type': 'application/json',

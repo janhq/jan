@@ -17,7 +17,6 @@ declare const COMPLETION_URL: string
 export default class JanInferenceGroqExtension extends RemoteOAIEngine {
   inferenceUrl: string = COMPLETION_URL
   provider = 'groq'
-  apiKey = ''
 
   override async onLoad(): Promise<void> {
     super.onLoad()
@@ -35,6 +34,17 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
         extensionName: this.extensionName(),
       },
     ])
+  }
+
+  override async getApiKey(): Promise<string> {
+    const settings = await this.getSettings()
+    const keySetting = settings.find(
+      (setting) => setting.key === 'groq-api-key'
+    )
+
+    const apiKey = keySetting?.controllerProps.value
+    if (typeof apiKey === 'string') return apiKey
+    return ''
   }
 
   override extensionName(): string | undefined {

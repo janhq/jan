@@ -125,16 +125,6 @@ const exec = async (command: string): Promise<string> => {
   })
 }
 
-export const getEngineConfiguration = async (engineId: string) => {
-  if (engineId !== 'openai' && engineId !== 'groq') {
-    return undefined
-  }
-  const directoryPath = join(getJanDataFolderPath(), 'engines')
-  const filePath = join(directoryPath, `${engineId}.json`)
-  const data = fs.readFileSync(filePath, 'utf-8')
-  return JSON.parse(data)
-}
-
 /**
  * Utility function to get server log path
  *
