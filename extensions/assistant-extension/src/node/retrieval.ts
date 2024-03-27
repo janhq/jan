@@ -31,7 +31,6 @@ export class Retrieval {
   public updateEmbeddingEngine(engine: string): void {
     // Engine settings are not compatible with the current embedding model params
     // Switch case manually for now
-    const settings = readEmbeddingEngine(engine)
     if (engine === 'nitro') {
       this.embeddingModel = new OpenAIEmbeddings(
         { openAIApiKey: 'nitro-embedding' },
@@ -40,6 +39,7 @@ export class Retrieval {
       )
     } else {
       // Fallback to OpenAI Settings
+      const settings = readEmbeddingEngine(engine)
       this.embeddingModel = new OpenAIEmbeddings({
         openAIApiKey: settings.api_key,
       })
