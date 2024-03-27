@@ -12,6 +12,7 @@ import {
   nvidiaTotalVramAtom,
   gpusAtom,
   ramUtilitizedAtom,
+  availableVramAtom,
 } from '@/helpers/atoms/SystemBar.atom'
 
 export default function useGetSystemResources() {
@@ -24,6 +25,7 @@ export default function useGetSystemResources() {
   const setUsedRam = useSetAtom(usedRamAtom)
   const setCpuUsage = useSetAtom(cpuUsageAtom)
   const setTotalNvidiaVram = useSetAtom(nvidiaTotalVramAtom)
+  const setAvailableVram = useSetAtom(availableVramAtom)
   const setRamUtilitized = useSetAtom(ramUtilitizedAtom)
 
   const getSystemResources = useCallback(async () => {
@@ -64,6 +66,13 @@ export default function useGetSystemResources() {
       )
     }
     setTotalNvidiaVram(totalNvidiaVram)
+    setAvailableVram(
+      gpus.reduce(
+        (total: number, gpu: { memoryFree: string }) =>
+          total + Number(gpu.memoryFree),
+        0
+      )
+    )
   }, [
     setUsedRam,
     setTotalRam,
@@ -71,6 +80,7 @@ export default function useGetSystemResources() {
     setCpuUsage,
     setGpus,
     setTotalNvidiaVram,
+    setAvailableVram,
   ])
 
   const watch = () => {

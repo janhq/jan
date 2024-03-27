@@ -4,13 +4,19 @@ import { useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
-import NotEnoughRamLabel from './NotEnoughRamLabel'
+import { useSettings } from '@/hooks/useSettings'
+
+import NotEnoughMemoryLabel from './NotEnoughMemoryLabel'
 
 import RecommendedLabel from './RecommendedLabel'
 
 import SlowOnYourDeviceLabel from './SlowOnYourDeviceLabel'
 
-import { totalRamAtom, usedRamAtom } from '@/helpers/atoms/SystemBar.atom'
+import {
+  availableVramAtom,
+  totalRamAtom,
+  usedRamAtom,
+} from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
   size: number
@@ -20,12 +26,21 @@ const ModelLabel: React.FC<Props> = ({ size }) => {
   const { activeModel } = useActiveModel()
   const totalRam = useAtomValue(totalRamAtom)
   const usedRam = useAtomValue(usedRamAtom)
+  const availableVram = useAtomValue(availableVramAtom)
+  const { settings } = useSettings()
 
   const getLabel = (size: number) => {
     const minimumRamModel = size * 1.25
-    const availableRam = totalRam - usedRam + (activeModel?.metadata.size ?? 0)
+    const availableRam =
+      settings?.run_mode === 'gpu'
+        ? availableVram * 1000000 // MB to bytes
+        : totalRam - usedRam + (activeModel?.metadata.size ?? 0)
     if (minimumRamModel > totalRam) {
-      return <NotEnoughRamLabel />
+      return (
+        <NotEnoughMemoryLabel
+          unit={settings?.run_mode === 'gpu' ? 'VRAM' : 'RAM'}
+        />
+      )
     }
     if (minimumRamModel < availableRam) {
       return <RecommendedLabel />
