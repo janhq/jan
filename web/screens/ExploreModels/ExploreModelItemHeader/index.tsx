@@ -24,6 +24,8 @@ import { MainViewState } from '@/constants/screens'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 
+import { useSettings } from '@/hooks/useSettings'
+
 import { toGibibytes } from '@/utils/converter'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
@@ -45,11 +47,11 @@ type Props = {
   open: string
 }
 
-const getLabel = (size: number, ram: number) => {
+const getLabel = (size: number, ram: number, unit: string = 'RAM') => {
   if (size * 1.25 >= ram) {
     return (
       <Badge className="rounded-md" themes="danger">
-        Not enough RAM
+        Not enough {unit}
       </Badge>
     )
   } else {
@@ -67,13 +69,14 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const totalRam = useAtomValue(totalRamAtom)
+  const { settings } = useSettings()
 
   const nvidiaTotalVram = useAtomValue(nvidiaTotalVramAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
   // Default nvidia returns vram in MB, need to convert to bytes to match the unit of totalRamW
   let ram = nvidiaTotalVram * 1024 * 1024
-  if (ram === 0) {
+  if (ram === 0 || settings?.run_mode === 'cpu') {
     ram = totalRam
   }
   const serverEnabled = useAtomValue(serverEnabledAtom)
@@ -158,7 +161,11 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
           <span className="mr-4 font-semibold text-muted-foreground">
             {toGibibytes(model.metadata.size)}
           </span>
-          {getLabel(model.metadata.size, ram)}
+          {getLabel(
+            model.metadata.size,
+            ram,
+            settings?.run_mode === 'gpu' ? 'VRAM' : 'RAM'
+          )}
 
           {downloadButton}
           <ChevronDownIcon

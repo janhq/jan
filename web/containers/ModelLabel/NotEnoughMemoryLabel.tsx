@@ -10,9 +10,9 @@ import {
 } from '@janhq/uikit'
 import { InfoIcon } from 'lucide-react'
 
-const NotEnoughRamLabel: React.FC = () => (
+const NotEnoughMemoryLabel = ({ unit }: { unit: string }) => (
   <Badge className="space-x-1 rounded-md" themes="danger">
-    <span>Not enough RAM</span>
+    <span>Not enough {unit}</span>
     <Tooltip>
       <TooltipTrigger>
         <InfoIcon size={16} />
@@ -31,4 +31,4 @@ const NotEnoughRamLabel: React.FC = () => (
   </Badge>
 )
 
-export default React.memo(NotEnoughRamLabel)
+export default React.memo(NotEnoughMemoryLabel)
