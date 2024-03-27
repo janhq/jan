@@ -116,7 +116,9 @@ export abstract class BaseExtension implements ExtensionType {
       'settings',
       this.name,
     ])
-
+    settings.forEach((setting) => {
+      setting.extensionName = this.name
+    })
     try {
       await fs.mkdir(extensionSettingFolderPath)
       const settingFilePath = await joinPath([extensionSettingFolderPath, this.settingFileName])
