@@ -17,11 +17,7 @@ declare const SETTINGS: Array<any>
 export default class JanInferenceTritonTrtLLMExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
   provider: string = 'triton_trtllm'
-
-  _engineSettings: {
-    base_url: ''
-    api_key: ''
-  }
+  settingName = 'tritonllm-api-key'
 
   /**
    * Subscribes to events emitted by the @janhq/core package.
@@ -29,17 +25,16 @@ export default class JanInferenceTritonTrtLLMExtension extends RemoteOAIEngine {
   async onLoad() {
     super.onLoad()
 
+    // Register Settings
     this.registerSettings(SETTINGS)
+
+    // Retrieve API Key Setting
+    this.apiKey = await this.getSetting<string>(this.settingName, '')
   }
 
-  override async getApiKey(): Promise<string> {
-    const settings = await this.getSettings()
-    const keySetting = settings.find(
-      (setting) => setting.key === 'tritonllm-api-key'
-    )
-
-    const apiKey = keySetting?.controllerProps.value
-    if (typeof apiKey === 'string') return apiKey
-    return ''
+  onSettingUpdate<T>(key: string, value: T): void {
+    if (key === this.settingName) {
+      this.apiKey = value as string
+    }
   }
 }

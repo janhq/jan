@@ -5,6 +5,7 @@ import { OAIEngine } from './OAIEngine'
  * Added the implementation of loading and unloading model (applicable to local inference providers)
  */
 export abstract class RemoteOAIEngine extends OAIEngine {
+  apiKey?: string
   /**
    * On extension load, subscribe to events.
    */
@@ -12,16 +13,15 @@ export abstract class RemoteOAIEngine extends OAIEngine {
     super.onLoad()
   }
 
-  abstract getApiKey(): Promise<string>
-
   /**
    * Headers for the inference request
    */
   override async headers(): Promise<HeadersInit> {
-    const apiKey = await this.getApiKey()
     return {
-      'Authorization': `Bearer ${apiKey}`,
-      'api-key': `${apiKey}`,
+      ...(this.apiKey && {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'api-key': `${this.apiKey}`,
+      }),
     }
   }
 }

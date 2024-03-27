@@ -18,20 +18,21 @@ declare const SETTINGS: Array<any>
 export default class JanInferenceGroqExtension extends RemoteOAIEngine {
   inferenceUrl: string = COMPLETION_URL
   provider = 'groq'
+  settingName = 'groq-api-key'
 
   override async onLoad(): Promise<void> {
     super.onLoad()
+
+    // Register Settings
     this.registerSettings(SETTINGS)
+
+    // Retrieve API Key Setting
+    this.apiKey = await this.getSetting<string>(this.settingName, '')
   }
 
-  override async getApiKey(): Promise<string> {
-    const settings = await this.getSettings()
-    const keySetting = settings.find(
-      (setting) => setting.key === 'groq-api-key'
-    )
-
-    const apiKey = keySetting?.controllerProps.value
-    if (typeof apiKey === 'string') return apiKey
-    return ''
+  onSettingUpdate<T>(key: string, value: T): void {
+    if (key === this.settingName) {
+      this.apiKey = value as string
+    }
   }
 }

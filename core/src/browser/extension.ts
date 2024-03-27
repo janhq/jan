@@ -130,6 +130,17 @@ export abstract class BaseExtension implements ExtensionType {
     }
   }
 
+  async getSetting<T>(key: string, defaultValue: T) {
+    const keySetting = (await this.getSettings()).find((setting) => setting.key === key)
+
+    const value = keySetting?.controllerProps.value
+    return (value as T) ?? defaultValue
+  }
+
+  onSettingUpdate<T>(key: string, value: T) {
+    return
+  }
+
   /**
    * Determine if the prerequisites for the extension are installed.
    *
@@ -191,5 +202,12 @@ export abstract class BaseExtension implements ExtensionType {
     ])
 
     await fs.writeFileSync(settingPath, JSON.stringify(updatedSettings, null, 2))
+
+    updatedSettings.forEach((setting) => {
+      this.onSettingUpdate<typeof setting.controllerProps.value>(
+        setting.key,
+        setting.controllerProps.value
+      )
+    })
   }
 }
