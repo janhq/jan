@@ -33,7 +33,7 @@ jobs:
               const closedDate = new Date(closedPR.data.closed_at);
               const currentMilestone = milestones.find((milestone) => {
                 const dueDate = new Date(milestone.due_on);
-                return closedDate >= dueDate;
+                return closedDate <= dueDate;
               });
 
               if (currentMilestone) {
