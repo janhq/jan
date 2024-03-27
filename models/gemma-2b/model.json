@@ -27,7 +27,7 @@
   },
   "metadata": {
     "author": "Google",
-    "tags": ["2B", "Finetuned"],
+    "tags": ["2B", "Finetuned", "Tiny"],
     "size": 1500000000
   },
   "engine": "nitro"

@@ -1,0 +1,35 @@
+{
+    "sources": [
+      {
+        "filename": "Hermes-2-Pro-Mistral-7B.Q4_K_M.gguf",
+        "url": "https://huggingface.co/NousResearch/Hermes-2-Pro-Mistral-7B-GGUF/resolve/main/Hermes-2-Pro-Mistral-7B.Q4_K_M.gguf"
+      }
+    ],
+    "id": "hermes-pro-7b",
+    "object": "model",
+    "name": "Hermes Pro 7B Q4",
+    "version": "1.0",
+    "description": "Hermes Pro is superior in Roleplaying, Reasoning and Explaining problem.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+      "llama_model_path": "Hermes-2-Pro-Mistral-7B.Q4_K_M.gguf"
+    },
+    "parameters": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "NousResearch",
+      "tags": ["7B", "Finetuned", "Featured"],
+      "size": 4370000000
+    },
+    "engine": "nitro"
+  }
+  
