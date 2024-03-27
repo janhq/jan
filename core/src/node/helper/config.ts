@@ -1,4 +1,4 @@
-import { AppConfiguration } from '../../types'
+import { AppConfiguration, SettingComponentProps } from '../../types'
 import { join } from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -123,6 +123,32 @@ const exec = async (command: string): Promise<string> => {
       }
     })
   })
+}
+
+// a hacky way to get the api key. we should comes up with a better
+// way to handle this
+export const getEngineConfiguration = async (engineId: string) => {
+  if (engineId !== 'openai' && engineId !== 'groq') return undefined
+
+  const settingDirectoryPath = join(
+    getJanDataFolderPath(),
+    'settings',
+    engineId === 'openai' ? 'inference-openai-extension' : 'inference-groq-extension',
+    'settings.json'
+  )
+
+  const content = fs.readFileSync(settingDirectoryPath, 'utf-8')
+  const settings: SettingComponentProps[] = JSON.parse(content)
+  const apiKeyId = engineId === 'openai' ? 'openai-api-key' : 'groq-api-key'
+  const keySetting = settings.find((setting) => setting.key === apiKeyId)
+
+  let apiKey = keySetting?.controllerProps.value
+  if (typeof apiKey !== 'string') apiKey = ''
+
+  return {
+    api_key: apiKey,
+    full_url: undefined,
+  }
 }
 
 /**
