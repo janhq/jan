@@ -6,7 +6,7 @@
  * @module inference-groq-extension/src/index
  */
 
-import { RemoteOAIEngine, SettingComponentProps } from '@janhq/core'
+import { RemoteOAIEngine } from '@janhq/core'
 
 declare const COMPLETION_URL: string
 /**
@@ -19,16 +19,10 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
   provider = 'groq'
   apiKey = ''
 
-  override async onLoad() {
-    await this.createDefaultSettingIfNotExist()
-  }
+  override async onLoad(): Promise<void> {
+    super.onLoad()
 
-  override extensionName(): string | undefined {
-    return '@janhq/inference-groq-extension'
-  }
-
-  override async defaultSettings(): Promise<SettingComponentProps[]> {
-    const defaultSettings: SettingComponentProps[] = [
+    this.registerSettings([
       {
         key: 'groq-api-key',
         title: 'API Key',
@@ -40,8 +34,10 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
         },
         extensionName: this.extensionName(),
       },
-    ]
+    ])
+  }
 
-    return defaultSettings
+  override extensionName(): string | undefined {
+    return '@janhq/inference-groq-extension'
   }
 }

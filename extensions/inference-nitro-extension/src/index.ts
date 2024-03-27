@@ -12,10 +12,6 @@ import {
   Model,
   ModelEvent,
   LocalOAIEngine,
-  SettingComponentProps,
-  joinPath,
-  getJanDataFolderPath,
-  fs,
 } from '@janhq/core'
 
 /**
@@ -69,22 +65,12 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
       JanInferenceNitroExtension._intervalHealthCheck
     )
 
-    await this.createDefaultSettingIfNotExist()
-
     super.onLoad()
   }
 
   override extensionName(): string | undefined {
     const extensionName = EXTENSION_NAME
     return extensionName
-  }
-
-  override async defaultSettings(): Promise<SettingComponentProps[]> {
-    const defaultSettings = DEFAULT_SETTINGS as SettingComponentProps[]
-    for (const setting of defaultSettings) {
-      setting.extensionName = this.extensionName()
-    }
-    return defaultSettings
   }
 
   /**

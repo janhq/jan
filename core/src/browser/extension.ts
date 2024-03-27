@@ -80,37 +80,25 @@ export abstract class BaseExtension implements ExtensionType {
     return undefined
   }
 
-  async defaultSettings(): Promise<SettingComponentProps[]> {
-    return []
-  }
-
-  protected async createDefaultSettingIfNotExist(): Promise<void> {
+  async registerSettings(settings: SettingComponentProps[]): Promise<void> {
     const extensionName = this.extensionName()
     if (!extensionName) {
       console.error('Extension name is not defined')
       return
     }
-    const defaultSettings = await this.defaultSettings()
-    if (defaultSettings.length === 0) {
-      console.error('Default settings is not defined')
-      return
-    }
-
-    const janDataFolderPath = await getJanDataFolderPath()
 
     const extensionSettingFolderPath = await joinPath([
-      janDataFolderPath,
+      await getJanDataFolderPath(),
       'settings',
       extensionName,
     ])
-    console.debug('extensionSettingFolderPath', extensionSettingFolderPath)
-    const isConfigExist = await fs.existsSync(extensionSettingFolderPath)
-    if (isConfigExist) return
 
     try {
       await fs.mkdir(extensionSettingFolderPath)
       const settingFilePath = await joinPath([extensionSettingFolderPath, this.settingFileName])
-      await fs.writeFileSync(settingFilePath, JSON.stringify(defaultSettings, null, 2))
+
+      if (await fs.existsSync(settingFilePath)) return
+      await fs.writeFileSync(settingFilePath, JSON.stringify(settings, null, 2))
     } catch (err) {
       console.error(err)
     }
@@ -137,8 +125,6 @@ export abstract class BaseExtension implements ExtensionType {
   async getSettings(): Promise<SettingComponentProps[]> {
     const extensionName = this.extensionName()
     if (!extensionName) return []
-    const defaultSettings = await this.defaultSettings()
-    if (!defaultSettings) return []
 
     const settingPath = await joinPath([
       await getJanDataFolderPath(),
@@ -160,8 +146,6 @@ export abstract class BaseExtension implements ExtensionType {
   async updateSettings(componentProps: Partial<SettingComponentProps>[]): Promise<void> {
     const extensionName = this.extensionName()
     if (!extensionName) return
-    const defaultSettings = await this.defaultSettings()
-    if (!defaultSettings) return
 
     const settings = await this.getSettings()
 

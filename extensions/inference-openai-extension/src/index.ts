@@ -20,16 +20,10 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
   provider: string = 'openai'
   apiKey: string = ''
 
-  override async onLoad() {
-    await this.createDefaultSettingIfNotExist()
-  }
+  override async onLoad(): Promise<void> {
+    super.onLoad()
 
-  override extensionName(): string | undefined {
-    return '@janhq/inference-openai-extension'
-  }
-
-  override async defaultSettings(): Promise<SettingComponentProps[]> {
-    const defaultSettings: SettingComponentProps[] = [
+    this.registerSettings([
       {
         key: 'openai-api-key',
         title: 'API Key',
@@ -41,8 +35,10 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
         },
         extensionName: this.extensionName(),
       },
-    ]
+    ])
+  }
 
-    return defaultSettings
+  override extensionName(): string | undefined {
+    return '@janhq/inference-openai-extension'
   }
 }
