@@ -68,11 +68,6 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     super.onLoad()
   }
 
-  override extensionName(): string | undefined {
-    const extensionName = EXTENSION_NAME
-    return extensionName
-  }
-
   /**
    * Periodically check for nitro process's health.
    */

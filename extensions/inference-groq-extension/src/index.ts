@@ -30,8 +30,7 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
         controllerProps: {
           placeholder: 'API Key',
           value: '',
-        },
-        extensionName: this.extensionName(),
+        }
       },
     ])
   }
@@ -45,9 +44,5 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
     const apiKey = keySetting?.controllerProps.value
     if (typeof apiKey === 'string') return apiKey
     return ''
-  }
-
-  override extensionName(): string | undefined {
-    return '@janhq/inference-groq-extension'
   }
 }

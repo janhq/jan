@@ -39,6 +39,35 @@ export abstract class BaseExtension implements ExtensionType {
   protected settingFolderName = 'settings'
   protected settingFileName = 'settings.json'
 
+  /** @type {string} Name of the extension. */
+  name?: string
+
+  /** @type {string} The URL of the extension to load. */
+  url: string
+
+  /** @type {boolean} Whether the extension is activated or not. */
+  active
+
+  /** @type {string} Extension's description. */
+  description
+
+  /** @type {string} Extension's version. */
+  version
+
+  constructor(
+    url: string,
+    name?: string,
+    active?: boolean,
+    description?: string,
+    version?: string
+  ) {
+    this.name = name
+    this.url = url
+    this.active = active
+    this.description = description
+    this.version = version
+  }
+
   /**
    * Returns the type of the extension.
    * @returns {ExtensionType} The type of the extension
@@ -76,13 +105,8 @@ export abstract class BaseExtension implements ExtensionType {
     return false
   }
 
-  extensionName(): string | undefined {
-    return undefined
-  }
-
   async registerSettings(settings: SettingComponentProps[]): Promise<void> {
-    const extensionName = this.extensionName()
-    if (!extensionName) {
+    if (!this.name) {
       console.error('Extension name is not defined')
       return
     }
@@ -90,7 +114,7 @@ export abstract class BaseExtension implements ExtensionType {
     const extensionSettingFolderPath = await joinPath([
       await getJanDataFolderPath(),
       'settings',
-      extensionName,
+      this.name,
     ])
 
     try {
@@ -123,13 +147,12 @@ export abstract class BaseExtension implements ExtensionType {
   }
 
   async getSettings(): Promise<SettingComponentProps[]> {
-    const extensionName = this.extensionName()
-    if (!extensionName) return []
+    if (!this.name) return []
 
     const settingPath = await joinPath([
       await getJanDataFolderPath(),
       this.settingFolderName,
-      this.extensionName()!,
+      this.name,
       this.settingFileName,
     ])
 
@@ -144,8 +167,7 @@ export abstract class BaseExtension implements ExtensionType {
   }
 
   async updateSettings(componentProps: Partial<SettingComponentProps>[]): Promise<void> {
-    const extensionName = this.extensionName()
-    if (!extensionName) return
+    if (!this.name) return
 
     const settings = await this.getSettings()
 
@@ -162,7 +184,7 @@ export abstract class BaseExtension implements ExtensionType {
     const settingPath = await joinPath([
       await getJanDataFolderPath(),
       this.settingFolderName,
-      extensionName,
+      this.name,
       this.settingFileName,
     ])
 

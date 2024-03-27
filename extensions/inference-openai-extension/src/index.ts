@@ -32,7 +32,6 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
           placeholder: 'API Key',
           value: 'sk-',
         },
-        extensionName: this.extensionName(),
       },
     ])
   }
@@ -46,9 +45,5 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
     const apiKey = keySetting?.controllerProps.value
     if (typeof apiKey === 'string') return apiKey
     return ''
-  }
-
-  override extensionName(): string | undefined {
-    return '@janhq/inference-openai-extension'
   }
 }
