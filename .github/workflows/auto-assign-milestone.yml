@@ -23,7 +23,19 @@ jobs:
                 repo,
                 state: 'open',
               });
-              const currentMilestone = milestones.find((milestone) => milestone.title === 'Current');
+
+              const closedPR = await github.pulls.get({
+                owner,
+                repo,
+                pull_number: number,
+              });
+
+              const closedDate = new Date(closedPR.data.closed_at);
+              const currentMilestone = milestones.find((milestone) => {
+                const dueDate = new Date(milestone.due_on);
+                return closedDate >= dueDate;
+              });
+
               if (currentMilestone) {
                 await github.issues.addLabels({
                   owner,
