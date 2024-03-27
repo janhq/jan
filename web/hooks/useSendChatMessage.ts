@@ -112,6 +112,7 @@ export default function useSendChatMessage() {
     if (modelRef.current?.id !== modelId) {
       const error = await startModel(modelId).catch((error: Error) => error)
       if (error) {
+        updateThreadWaiting(activeThreadRef.current.id, false)
         return
       }
     }
