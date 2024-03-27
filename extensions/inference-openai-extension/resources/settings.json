@@ -1,0 +1,12 @@
+[
+  {
+    "key": "openai-api-key",
+    "title": "API Key",
+    "description": "Open AI API Key",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "API Key",
+      "value": "sk-"
+    }
+  }
+]

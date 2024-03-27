@@ -9,6 +9,7 @@
 import { RemoteOAIEngine } from '@janhq/core'
 
 declare const COMPLETION_URL: string
+declare const SETTINGS: Array<any>
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -20,19 +21,7 @@ export default class JanInferenceGroqExtension extends RemoteOAIEngine {
 
   override async onLoad(): Promise<void> {
     super.onLoad()
-
-    this.registerSettings([
-      {
-        key: 'groq-api-key',
-        title: 'API Key',
-        description: 'Groq API Key',
-        controllerType: 'input',
-        controllerProps: {
-          placeholder: 'API Key',
-          value: '',
-        }
-      },
-    ])
+    this.registerSettings(SETTINGS)
   }
 
   override async getApiKey(): Promise<string> {

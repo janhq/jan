@@ -9,6 +9,7 @@
 import { RemoteOAIEngine } from '@janhq/core'
 
 declare const COMPLETION_URL: string
+declare const SETTINGS: Array<any>
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -22,18 +23,7 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
   override async onLoad(): Promise<void> {
     super.onLoad()
 
-    this.registerSettings([
-      {
-        key: 'openai-api-key',
-        title: 'API Key',
-        description: 'Open AI API Key',
-        controllerType: 'input',
-        controllerProps: {
-          placeholder: 'API Key',
-          value: 'sk-',
-        },
-      },
-    ])
+    this.registerSettings(SETTINGS)
   }
 
   override async getApiKey(): Promise<string> {

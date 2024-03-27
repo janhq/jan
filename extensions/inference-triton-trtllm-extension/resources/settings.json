@@ -1,0 +1,12 @@
+[
+  {
+    "key": "tritonllm-api-key",
+    "title": "Triton LLM API Key",
+    "description": "Triton LLM API Key",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "API Key",
+      "value": ""
+    }
+  }
+]

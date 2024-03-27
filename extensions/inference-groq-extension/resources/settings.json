@@ -1,0 +1,12 @@
+[
+  {
+    "key": "groq-api-key",
+    "title": "API Key",
+    "description": "Groq API Key",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "API Key",
+      "value": ""
+    }
+  }
+]

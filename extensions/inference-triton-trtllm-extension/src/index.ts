@@ -8,6 +8,7 @@
 
 import { RemoteOAIEngine } from '@janhq/core'
 
+declare const SETTINGS: Array<any>
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -28,18 +29,7 @@ export default class JanInferenceTritonTrtLLMExtension extends RemoteOAIEngine {
   async onLoad() {
     super.onLoad()
 
-    this.registerSettings([
-      {
-        key: 'tritonllm-api-key',
-        title: 'Triton LLM API Key',
-        description: 'Triton LLM API Key',
-        controllerType: 'input',
-        controllerProps: {
-          placeholder: 'API Key',
-          value: '',
-        },
-      },
-    ])
+    this.registerSettings(SETTINGS)
   }
 
   override async getApiKey(): Promise<string> {
