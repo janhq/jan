@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
+      issues: write # Cần thêm quyền ghi issues để cập nhật milestone
     steps:
       - name: Assign Milestone
         uses: actions/github-script@v3
@@ -17,32 +18,27 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const { number, merged } = context.payload.pull_request;
-            if (merged) {
+            if (true) {
               const { data: milestones } = await github.issues.listMilestones({
                 owner,
                 repo,
                 state: 'open',
               });
 
-              const closedPR = await github.pulls.get({
-                owner,
-                repo,
-                pull_number: number,
-              });
-
-              const closedDate = new Date(closedPR.data.closed_at);
+              const mergedDate = new Date(context.payload.pull_request.merged_at);
               const currentMilestone = milestones.find((milestone) => {
                 const dueDate = new Date(milestone.due_on);
-                return closedDate <= dueDate;
+                return mergedDate <= dueDate;
               });
 
               if (currentMilestone) {
-                await github.issues.addLabels({
+                await github.issues.update({
                   owner,
                   repo,
                   issue_number: number,
-                  labels: [currentMilestone.title],
+                  milestone: currentMilestone.number
                 });
               }
             }
           debug: true
+
