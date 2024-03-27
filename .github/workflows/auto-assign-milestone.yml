@@ -45,3 +45,4 @@ jobs:
                 });
               }
             }
+          debug: true
