@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 import { Model } from '@janhq/core'
 import {
@@ -70,6 +70,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
   const { requestCreateNewThread } = useCreateNewThread()
   const totalRam = useAtomValue(totalRamAtom)
   const { settings } = useSettings()
+  const [imageLoaded, setImageLoaded] = useState(true)
 
   const nvidiaTotalVram = useAtomValue(nvidiaTotalVramAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -143,9 +144,10 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
       className="cursor-pointer rounded-t-md bg-background"
       onClick={onClick}
     >
-      {model.metadata.cover && (
-        <div className="relative h-full w-full ">
+      {model.metadata.cover && imageLoaded && (
+        <div className="relative h-full w-full">
           <img
+            onError={() => setImageLoaded(false)}
             src={model.metadata.cover}
             className="h-[250px] w-full object-cover"
             alt={`Cover - ${model.id}`}
