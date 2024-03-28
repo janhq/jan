@@ -316,6 +316,7 @@ export const chatCompletions = async (request: any, reply: any) => {
   }
 
   const requestedModel = matchedModels[0]
+
   const engineConfiguration = await getEngineConfiguration(requestedModel.engine)
 
   let apiKey: string | undefined = undefined
@@ -323,7 +324,7 @@ export const chatCompletions = async (request: any, reply: any) => {
 
   if (engineConfiguration) {
     apiKey = engineConfiguration.api_key
-    apiUrl = engineConfiguration.full_url
+    apiUrl = engineConfiguration.full_url ?? DEFAULT_CHAT_COMPLETION_URL
   }
 
   const headers: Record<string, any> = {

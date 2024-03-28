@@ -58,8 +58,6 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
       this.inferenceUrl = `${window.core?.api?.baseApiUrl}/v1/chat/completions`
     }
 
-    console.debug('Inference url: ', this.inferenceUrl)
-
     this.getNitroProcesHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
       JanInferenceNitroExtension._intervalHealthCheck

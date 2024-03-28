@@ -251,7 +251,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     return Promise.resolve()
   }
 
-  override inference(data: MessageRequest): void {
+  override async inference(data: MessageRequest) {
     if (!this.loadedModel) return
     // TensorRT LLM Extension supports streaming only
     if (data.model) data.model.parameters.stream = true

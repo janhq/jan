@@ -119,7 +119,13 @@ export class ExtensionManager {
         ) {
           this.register(
             extension.name ?? extension.url,
-            new extensionClass.default()
+            new extensionClass.default(
+              extension.url,
+              extension.name,
+              extension.active,
+              extension.description,
+              extension.version
+            )
           )
         }
       }

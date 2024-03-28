@@ -1,3 +1,5 @@
+import { useCallback } from 'react'
+
 import {
   Assistant,
   ConversationalExtension,
@@ -134,13 +136,16 @@ export const useCreateNewThread = () => {
     setActiveThread(thread)
   }
 
-  async function updateThreadMetadata(thread: Thread) {
-    updateThread(thread)
+  const updateThreadMetadata = useCallback(
+    async (thread: Thread) => {
+      updateThread(thread)
 
-    await extensionManager
-      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-      ?.saveThread(thread)
-  }
+      await extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.saveThread(thread)
+    },
+    [updateThread]
+  )
 
   return {
     requestCreateNewThread,

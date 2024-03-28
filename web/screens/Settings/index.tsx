@@ -1,51 +1,40 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
-import Advanced from '@/screens/Settings/Advanced'
-import AppearanceOptions from '@/screens/Settings/Appearance'
-import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
-
-import Models from '@/screens/Settings/Models'
+import { useSetAtom } from 'jotai'
 
 import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
+
+import SettingDetail from './SettingDetail'
 import SettingMenu from './SettingMenu'
 
-const handleShowOptions = (menu: string) => {
-  switch (menu) {
-    case 'Extensions':
-      return <ExtensionCatalog />
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
-    case 'My Settings':
-      return <AppearanceOptions />
+export const SettingScreenList = [
+  'My Models',
+  'My Settings',
+  'Advanced Settings',
+  'Extensions',
+] as const
 
-    case 'Advanced Settings':
-      return <Advanced />
-
-    case 'My Models':
-      return <Models />
-  }
-}
+export type SettingScreenTuple = typeof SettingScreenList
+export type SettingScreen = SettingScreenTuple[number]
 
 const SettingsScreen: React.FC = () => {
-  const [activeStaticMenu, setActiveStaticMenu] = useState('My Models')
-
+  const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
-      setActiveStaticMenu('Advanced Settings')
+      setSelectedSettingScreen('Advanced Settings')
       localStorage.removeItem(SUCCESS_SET_NEW_DESTINATION)
     }
-  }, [])
+  }, [setSelectedSettingScreen])
 
   return (
     <div
-      className="flex h-full bg-background"
       data-testid="testid-setting-description"
+      className="flex h-full bg-background"
     >
-      <SettingMenu
-        activeMenu={activeStaticMenu}
-        onMenuClick={setActiveStaticMenu}
-      />
-
-      {handleShowOptions(activeStaticMenu)}
+      <SettingMenu />
+      <SettingDetail />
     </div>
   )
 }
