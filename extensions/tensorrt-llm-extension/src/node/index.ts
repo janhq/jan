@@ -9,8 +9,6 @@ import {
   PromptTemplate,
 } from '@janhq/core/node'
 import decompress from 'decompress'
-import { SystemInformation } from '@janhq/core'
-import { PromptTemplate } from '@janhq/core'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
