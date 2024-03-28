@@ -83,6 +83,7 @@ export class App implements Processor {
       isVerboseEnabled: args?.isVerboseEnabled,
       schemaPath: join(await appResourcePath(), 'docs', 'openapi', 'jan.yaml'),
       baseDir: join(await appResourcePath(), 'docs', 'openapi'),
+      prefix: args?.prefix,
     })
   }
 

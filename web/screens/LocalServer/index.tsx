@@ -56,6 +56,7 @@ import {
   apiServerCorsEnabledAtom,
   apiServerHostAtom,
   apiServerPortAtom,
+  apiServerPrefix,
   apiServerVerboseLogEnabledAtom,
   hostOptions,
 } from '@/helpers/atoms/ApiServer.atom'
@@ -63,6 +64,7 @@ import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
+  const [errorPrefix, setErrorPrefix] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const showRightSideBar = useAtomValue(showRightSideBarAtom)
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
@@ -80,6 +82,7 @@ const LocalServerScreen = () => {
   )
   const [host, setHost] = useAtom(apiServerHostAtom)
   const [port, setPort] = useAtom(apiServerPortAtom)
+  const [prefix, setPrefix] = useAtom(apiServerPrefix)
   const [loadModelError, setLoadModelError] = useAtom(loadModelErrorAtom)
 
   const FIRST_TIME_VISIT_API_SERVER = 'firstTimeVisitAPIServer'
@@ -95,6 +98,14 @@ const LocalServerScreen = () => {
     [setPort]
   )
 
+  const handleChangePrefix = useCallback(
+    (value: string) => {
+      setErrorPrefix(!value.length || !value.startsWith('/'))
+      setPrefix(value)
+    },
+    [setPrefix]
+  )
+
   useEffect(() => {
     if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) == null) {
       setFirstTimeVisitAPIServer(true)
@@ -105,12 +116,17 @@ const LocalServerScreen = () => {
     handleChangePort(port)
   }, [handleChangePort, port])
 
+  useEffect(() => {
+    handleChangePrefix(prefix)
+  }, [handleChangePrefix, prefix])
+
   const onStartServerClick = async () => {
     if (selectedModel == null) return
     try {
       const isStarted = await window.core?.api?.startServer({
         host,
         port,
+        prefix,
         isCorsEnabled,
         isVerboseEnabled,
       })
@@ -159,7 +175,12 @@ const LocalServerScreen = () => {
             <Button
               block
               themes={serverEnabled ? 'danger' : 'primary'}
-              disabled={stateModel.loading || errorRangePort || !selectedModel}
+              disabled={
+                stateModel.loading ||
+                errorRangePort ||
+                errorPrefix ||
+                !selectedModel
+              }
               onClick={onToggleServer}
             >
               {serverEnabled ? 'Stop' : 'Start'} Server
@@ -223,6 +244,31 @@ const LocalServerScreen = () => {
                 </div>
                 {errorRangePort && (
                   <p className="mt-2 text-xs text-danger">{`The port range should be from 0 to 65536`}</p>
+                )}
+              </div>
+              <div>
+                <label
+                  id="prefix"
+                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
+                >
+                  API Prefix
+                </label>
+                <div className="flex items-center justify-between">
+                  <Input
+                    className={twMerge(
+                      'w-full flex-shrink-0',
+                      errorPrefix && 'border-danger'
+                    )}
+                    type="text"
+                    value={prefix}
+                    onChange={(e) => {
+                      handleChangePrefix(e.target.value)
+                    }}
+                    disabled={serverEnabled}
+                  />
+                </div>
+                {errorPrefix && (
+                  <p className="mt-2 text-xs text-danger">{`Prefix should start with /`}</p>
                 )}
               </div>
               <div>
