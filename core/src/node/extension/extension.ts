@@ -182,7 +182,7 @@ export default class Extension {
   async uninstall(): Promise<void> {
     const path = ExtensionManager.instance.getExtensionsPath()
     const extPath = resolve(path ?? '', this.name ?? '')
-    await rmdirSync(extPath, { recursive: true })
+    rmdirSync(extPath, { recursive: true })
 
     this.emitUpdate()
   }

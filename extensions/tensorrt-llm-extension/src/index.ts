@@ -43,14 +43,14 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   private supportedPlatform = ['win32', 'linux']
   private isUpdateAvailable = false
 
-  compatibility() {
+  override compatibility() {
     return COMPATIBILITY as unknown as Compatibility
   }
   /**
    * models implemented by the extension
    * define pre-populated models
    */
-  async models(): Promise<Model[]> {
+  override async models(): Promise<Model[]> {
     if ((await this.installationState()) === 'Installed')
       return models as unknown as Model[]
     return []
@@ -151,20 +151,21 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
 
     for (const model of models) {
       const modelPath = await joinPath([modelFolderPath, model.id])
-      console.debug(`modelPath: ${modelPath}`)
-      if (await fs.existsSync(modelPath)) {
-        console.debug(`Removing model ${modelPath}`)
-        await fs.rmdirSync(modelPath)
+
+      try {
+        await fs.rm(modelPath)
+      } catch (err) {
+        console.error(`Error removing model ${modelPath}`, err)
       }
     }
     events.emit(ModelEvent.OnModelsUpdate, {})
   }
 
-  async onModelInit(model: Model): Promise<void> {
+  override async loadModel(model: Model): Promise<void> {
     if (model.engine !== this.provider) return
 
     if ((await this.installationState()) === 'Installed')
-      return super.onModelInit(model)
+      return super.loadModel(model)
     else {
       events.emit(ModelEvent.OnModelFail, {
         ...model,
@@ -175,7 +176,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     }
   }
 
-  updatable() {
+  override updatable() {
     return this.isUpdateAvailable
   }
 
@@ -241,8 +242,8 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     return (await fs.existsSync(enginePath)) ? 'Installed' : 'NotInstalled'
   }
 
-  override onInferenceStopped() {
-    if (!this.isRunning) return
+  override stopInference() {
+    if (!this.loadedModel) return
     showToast(
       'Unable to Stop Inference',
       'The model does not support stopping inference.'
@@ -250,8 +251,8 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     return Promise.resolve()
   }
 
-  inference(data: MessageRequest): void {
-    if (!this.isRunning) return
+  override inference(data: MessageRequest): void {
+    if (!this.loadedModel) return
     // TensorRT LLM Extension supports streaming only
     if (data.model) data.model.parameters.stream = true
     super.inference(data)

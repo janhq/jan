@@ -44,7 +44,7 @@ COPY --from=builder /app/web ./web/
 COPY --from=builder /app/models ./models/
 
 RUN yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build
-RUN yarn workspace jan-web install
+RUN yarn workspace @janhq/web install
 
 RUN npm install -g serve@latest
 
@@ -55,7 +55,7 @@ ENV JAN_API_PORT 1337
 
 ENV API_BASE_URL http://localhost:1337
 
-CMD ["sh", "-c", "export NODE_ENV=production && yarn workspace jan-web build && cd web && npx serve out & cd server && node build/main.js"]
+CMD ["sh", "-c", "export NODE_ENV=production && yarn workspace @janhq/web build && cd web && npx serve out & cd server && node build/main.js"]
 
 # docker build -t jan .
 # docker run -p 1337:1337 -p 3000:3000 -p 3928:3928 jan

@@ -1,5 +1,5 @@
 import { resolve, sep } from 'path'
-import { DownloadEvent } from '../../../api'
+import { DownloadEvent } from '../../../types/api'
 import { normalizeFilePath } from '../../helper/path'
 import { getJanDataFolderPath } from '../../helper'
 import { DownloadManager } from '../../helper/download'

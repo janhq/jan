@@ -1,4 +1,4 @@
-import { CoreRoutes } from '../../../api'
+import { CoreRoutes } from '../../../types/api'
 import { RequestAdapter } from './adapter'
 
 export type Handler = (route: string, args: any) => any

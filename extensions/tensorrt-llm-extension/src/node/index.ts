@@ -2,7 +2,12 @@ import path from 'path'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
-import { log, getJanDataFolderPath } from '@janhq/core/node'
+import {
+  log,
+  getJanDataFolderPath,
+  SystemInformation,
+  PromptTemplate,
+} from '@janhq/core/node'
 import decompress from 'decompress'
 import { SystemInformation } from '@janhq/core'
 import { PromptTemplate } from '@janhq/core'
@@ -81,7 +86,7 @@ function unloadModel(): Promise<any> {
       debugLog(
         `Could not kill running process on port ${ENGINE_PORT}. Might be another process running on the same port? ${err}`
       )
-      throw 'PORT_NOT_AVAILABLE'
+      return { err: 'PORT_NOT_AVAILABLE' }
     })
 }
 /**
@@ -94,6 +99,11 @@ async function runEngineAndLoadModel(
   systemInfo: SystemInformation
 ) {
   return unloadModel()
+    .then((res) => {
+      if (res?.error) {
+        throw new Error(res.error)
+      }
+    })
     .then(() => runEngine(systemInfo))
     .then(() => loadModelRequest(settings))
     .catch((err) => {

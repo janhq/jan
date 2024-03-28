@@ -22,9 +22,9 @@
   "provider": "nitro-tensorrt-llm",
   "scripts": {
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
-    "build:publish:win32": "rimraf *.tgz --glob && npm run build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:linux": "rimraf *.tgz --glob && npm run build && cpx \"bin/**\" \"dist/bin\" &&  npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && cpx \"bin/**\" \"dist/bin\" &&  npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:linux": "rimraf *.tgz --glob && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
     "build:publish": "run-script-os"
   },
   "exports": {
@@ -57,7 +57,7 @@
     "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",
     "tcp-port-used": "^1.0.2",
-    "ulid": "^2.3.0"
+    "ulidx": "^2.3.0"
   },
   "engines": {
     "node": ">=18.0.0"

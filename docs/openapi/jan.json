@@ -42,27 +42,18 @@
   "x-tagGroups": [
     {
       "name": "Endpoints",
-      "tags": [
-        "Models",
-        "Chat"
-      ]
+      "tags": ["Models", "Chat"]
     },
     {
       "name": "Chat",
-      "tags": [
-        "Assistants",
-        "Messages",
-        "Threads"
-      ]
+      "tags": ["Assistants", "Messages", "Threads"]
     }
   ],
   "paths": {
     "/chat/completions": {
       "post": {
         "operationId": "createChatCompletion",
-        "tags": [
-          "Chat"
-        ],
+        "tags": ["Chat"],
         "summary": "Create chat completion\n",
         "description": "Creates a model response for the given chat conversation.  <a  href = \"https://platform.openai.com/docs/api-reference/chat/create\"> Equivalent to OpenAI's create chat completion. </a>\n",
         "requestBody": {
@@ -91,9 +82,7 @@
     "/models": {
       "get": {
         "operationId": "listModels",
-        "tags": [
-          "Models"
-        ],
+        "tags": ["Models"],
         "summary": "List models",
         "description": "Lists the currently available models, and provides basic information about each one such as the owner and availability.  <a  href = \"https://platform.openai.com/docs/api-reference/models/list\"> Equivalent to OpenAI's list model. </a>\n",
         "responses": {
@@ -113,9 +102,7 @@
     "/models/download/{model_id}": {
       "get": {
         "operationId": "downloadModel",
-        "tags": [
-          "Models"
-        ],
+        "tags": ["Models"],
         "summary": "Download a specific model.",
         "description": "Download a model.\n",
         "parameters": [
@@ -147,9 +134,7 @@
     "/models/{model_id}": {
       "get": {
         "operationId": "retrieveModel",
-        "tags": [
-          "Models"
-        ],
+        "tags": ["Models"],
         "summary": "Retrieve model",
         "description": "Get a model instance, providing basic information about the model such as the owner and permissioning.  <a  href = \"https://platform.openai.com/docs/api-reference/models/retrieve\"> Equivalent to OpenAI's retrieve model. </a>\n",
         "parameters": [
@@ -179,9 +164,7 @@
       },
       "delete": {
         "operationId": "deleteModel",
-        "tags": [
-          "Models"
-        ],
+        "tags": ["Models"],
         "summary": "Delete model",
         "description": "Delete a model. <a  href = \"https://platform.openai.com/docs/api-reference/models/delete\"> Equivalent to OpenAI's delete model. </a>\n",
         "parameters": [
@@ -213,9 +196,7 @@
     "/threads": {
       "post": {
         "operationId": "createThread",
-        "tags": [
-          "Threads"
-        ],
+        "tags": ["Threads"],
         "summary": "Create thread",
         "description": "Create a thread.  <a  href = \"https://platform.openai.com/docs/api-reference/threads/createThread\"> Equivalent to OpenAI's create thread. </a>\n",
         "requestBody": {
@@ -243,9 +224,7 @@
       },
       "get": {
         "operationId": "listThreads",
-        "tags": [
-          "Threads"
-        ],
+        "tags": ["Threads"],
         "summary": "List threads",
         "description": "Retrieves a list of all threads available in the system.\n",
         "responses": {
@@ -263,9 +242,7 @@
                       "id": "thread_abc123",
                       "object": "thread",
                       "created_at": 1699014083,
-                      "assistants": [
-                        "assistant-001"
-                      ],
+                      "assistants": ["assistant-001"],
                       "metadata": {},
                       "messages": []
                     },
@@ -273,10 +250,7 @@
                       "id": "thread_abc456",
                       "object": "thread",
                       "created_at": 1699014083,
-                      "assistants": [
-                        "assistant-002",
-                        "assistant-003"
-                      ],
+                      "assistants": ["assistant-002", "assistant-003"],
                       "metadata": {}
                     }
                   ]
@@ -290,9 +264,7 @@
     "/threads/{thread_id}": {
       "get": {
         "operationId": "getThread",
-        "tags": [
-          "Threads"
-        ],
+        "tags": ["Threads"],
         "summary": "Retrieve thread",
         "description": "Retrieves detailed information about a specific thread using its thread_id.  <a  href = \"https://platform.openai.com/docs/api-reference/threads/getThread\"> Equivalent to OpenAI's retrieve thread. </a>\n",
         "parameters": [
@@ -321,9 +293,7 @@
       },
       "patch": {
         "operationId": "modifyThread",
-        "tags": [
-          "Threads"
-        ],
+        "tags": ["Threads"],
         "summary": "Modify thread",
         "description": "Modifies a thread.  <a  href = \"https://platform.openai.com/docs/api-reference/threads/modifyThread\"> Equivalent to OpenAI's modify thread. </a>\n",
         "parameters": [
@@ -371,9 +341,7 @@
       },
       "delete": {
         "operationId": "deleteThread",
-        "tags": [
-          "Threads"
-        ],
+        "tags": ["Threads"],
         "summary": "Delete thread",
         "description": "Delete a thread.  <a  href = \"https://platform.openai.com/docs/api-reference/threads/deleteThread\"> Equivalent to OpenAI's delete thread. </a>\n",
         "parameters": [
@@ -404,9 +372,7 @@
     "/assistants": {
       "get": {
         "operationId": "listAssistants",
-        "tags": [
-          "Assistants"
-        ],
+        "tags": ["Assistants"],
         "summary": "List assistants",
         "description": "Return a list of assistants. <a href = \"https://platform.openai.com/docs/api-reference/assistants/listAssistants\"> Equivalent to OpenAI's list assistants. </a>\n",
         "responses": {
@@ -540,9 +506,7 @@
     "/assistants/{assistant_id}": {
       "get": {
         "operationId": "getAssistant",
-        "tags": [
-          "Assistants"
-        ],
+        "tags": ["Assistants"],
         "summary": "Retrieve assistant",
         "description": "Retrieves an assistant. <a href = \"https://platform.openai.com/docs/api-reference/assistants/getAssistant\"> Equivalent to OpenAI's retrieve assistants. </a>\n",
         "parameters": [
@@ -574,9 +538,7 @@
     "/threads/{thread_id}/messages": {
       "get": {
         "operationId": "listMessages",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "summary": "List messages",
         "description": "Retrieves all messages from the given thread. <a  href = \"https://platform.openai.com/docs/api-reference/messages/listMessages\"> Equivalent to OpenAI's list messages. </a>\n",
         "parameters": [
@@ -605,9 +567,7 @@
       },
       "post": {
         "operationId": "createMessage",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "summary": "Create message",
         "description": "Create a message. <a  href = \"https://platform.openai.com/docs/api-reference/messages/createMessage\"> Equivalent to OpenAI's list messages. </a>\n",
         "parameters": [
@@ -632,10 +592,7 @@
                     "type": "string",
                     "description": "Role of the sender, either 'user' or 'assistant'.\n",
                     "example": "user",
-                    "enum": [
-                      "user",
-                      "assistant"
-                    ]
+                    "enum": ["user", "assistant"]
                   },
                   "content": {
                     "type": "string",
@@ -643,10 +600,7 @@
                     "example": "How does AI work? Explain it in simple terms."
                   }
                 },
-                "required": [
-                  "role",
-                  "content"
-                ]
+                "required": ["role", "content"]
               }
             }
           }
@@ -668,9 +622,7 @@
     "/threads/{thread_id}/messages/{message_id}": {
       "get": {
         "operationId": "retrieveMessage",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "summary": "Retrieve message",
         "description": "Retrieve a specific message from a thread using its thread_id and message_id. <a  href = \"https://platform.openai.com/docs/api-reference/messages/getMessage\"> Equivalent to OpenAI's retrieve messages. </a>\n",
         "parameters": [
@@ -714,9 +666,7 @@
         "summary": "The model object",
         "description": "Describe a model offering that can be used with the API. <a  href = \"https://platform.openai.com/docs/api-reference/models/object\"> Equivalent to OpenAI's model object. </a>\n",
         "operationId": "ModelObject",
-        "tags": [
-          "Models"
-        ],
+        "tags": ["Models"],
         "requestBody": {
           "content": {
             "application/json": {
@@ -733,9 +683,7 @@
         "summary": "The assistant object",
         "description": "Build assistants that can call models and use tools to perform tasks. <a  href = \"https://platform.openai.com/docs/api-reference/assistants\"> Equivalent to OpenAI's assistants object. </a>\n",
         "operationId": "AssistantObjects",
-        "tags": [
-          "Assistants"
-        ],
+        "tags": ["Assistants"],
         "requestBody": {
           "content": {
             "application/json": {
@@ -752,9 +700,7 @@
         "summary": "The message object",
         "description": "Information about a message in the thread.  <a  href = \"https://platform.openai.com/docs/api-reference/messages/object\"> Equivalent to OpenAI's message object. </a>\n",
         "operationId": "MessageObject",
-        "tags": [
-          "Messages"
-        ],
+        "tags": ["Messages"],
         "requestBody": {
           "content": {
             "application/json": {
@@ -771,9 +717,7 @@
         "summary": "The thread object",
         "description": "Represents a thread that contains messages. <a  href = \"https://platform.openai.com/docs/api-reference/threads/object\"> Equivalent to OpenAI's thread object. </a>",
         "operationId": "ThreadObject",
-        "tags": [
-          "Threads"
-        ],
+        "tags": ["Threads"],
         "requestBody": {
           "content": {
             "application/json": {
@@ -875,9 +819,7 @@
               "type": "string"
             },
             "description": "List of assistants involved in the thread.",
-            "example": [
-              "assistant-001"
-            ]
+            "example": ["assistant-001"]
           },
           "metadata": {
             "type": "object",
@@ -990,10 +932,7 @@
           "role": {
             "type": "string",
             "description": "\"Role of the sender, either 'user' or 'assistant'.\"\n",
-            "enum": [
-              "user",
-              "assistant"
-            ]
+            "enum": ["user", "assistant"]
           },
           "content": {
             "type": "string",
@@ -1059,9 +998,7 @@
         "properties": {
           "object": {
             "type": "string",
-            "enum": [
-              "list"
-            ]
+            "enum": ["list"]
           },
           "data": {
             "type": "array",
@@ -1070,10 +1007,7 @@
             }
           }
         },
-        "required": [
-          "object",
-          "data"
-        ]
+        "required": ["object", "data"]
       },
       "Model": {
         "type": "object",
@@ -1167,11 +1101,7 @@
                 "items": {
                   "type": "string"
                 },
-                "example": [
-                  "7B",
-                  "Merged",
-                  "Featured"
-                ]
+                "example": ["7B", "Merged", "Featured"]
               },
               "size": {
                 "type": "integer",
@@ -1308,11 +1238,7 @@
                 "items": {
                   "type": "string"
                 },
-                "example": [
-                  "7B",
-                  "Featured",
-                  "Foundation Model"
-                ]
+                "example": ["7B", "Featured", "Foundation Model"]
               },
               "size": {
                 "example": 4370000000,
@@ -1369,11 +1295,7 @@
             "example": "running"
           }
         },
-        "required": [
-          "id",
-          "object",
-          "state"
-        ]
+        "required": ["id", "object", "state"]
       },
       "StopModelResponse": {
         "type": "object",
@@ -1394,11 +1316,7 @@
             "example": "stopped"
           }
         },
-        "required": [
-          "id",
-          "object",
-          "state"
-        ]
+        "required": ["id", "object", "state"]
       },
       "DownloadModelResponse": {
         "type": "object",
@@ -1440,10 +1358,7 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "user",
-              "assistant"
-            ],
+            "enum": ["user", "assistant"],
             "description": "Role of the sender, either 'user' or 'assistant'.\n"
           },
           "content": {
@@ -1858,9 +1773,7 @@
               "type": "string"
             },
             "description": "Defines specific tokens or phrases at which the model will stop generating further output.",
-            "example": [
-              "hello"
-            ]
+            "example": ["hello"]
           },
           "frequency_penalty": {
             "type": "number",
@@ -1938,9 +1851,7 @@
               "type": "string"
             },
             "description": "Defines specific tokens or phrases at which the model will stop generating further output.\n",
-            "example": [
-              "hello"
-            ]
+            "example": ["hello"]
           },
           "frequency_penalty": {
             "type": "number",

@@ -9,7 +9,7 @@
     "object": "model",
     "name": "Dolphin Phi-2 2.7B Q8",
     "version": "1.0",
-    "description": "Dolphin Phi-2 is a 2.7B model, fine-tuned for chat, excelling in common sense and logical reasoning benchmarks.",
+    "description": "Dolphin Phi-2 is a good alternative for Phi-2 in chatting",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,

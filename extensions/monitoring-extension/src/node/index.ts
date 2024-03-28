@@ -4,8 +4,9 @@ import {
   OperatingSystemInfo,
   ResourceInfo,
   SupportedPlatforms,
-} from '@janhq/core'
-import { getJanDataFolderPath, log } from '@janhq/core/node'
+  getJanDataFolderPath,
+  log,
+} from '@janhq/core/node'
 import { mem, cpu } from 'node-os-utils'
 import { exec } from 'child_process'
 import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs'
@@ -231,7 +232,7 @@ const updateGpuInfo = async () =>
         'nvidia-smi --query-gpu=index,memory.total,name --format=csv,noheader,nounits',
         (error, stdout) => {
           if (!error) {
-            log(stdout)
+            log(`[SPECS]::${stdout}`)
             // Get GPU info and gpu has higher memory first
             let highestVram = 0
             let highestVramId = '0'

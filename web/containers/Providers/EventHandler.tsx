@@ -8,26 +8,17 @@ import {
   ExtensionTypeEnum,
   MessageStatus,
   MessageRequest,
-  Model,
   ConversationalExtension,
   MessageEvent,
   MessageRequestType,
   ModelEvent,
   Thread,
-  ModelInitFailed,
+  EngineManager,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { ulid } from 'ulid'
+import { ulid } from 'ulidx'
 
-import {
-  activeModelAtom,
-  loadModelErrorAtom,
-  stateModelAtom,
-} from '@/hooks/useActiveModel'
-
-import { queuedMessageAtom } from '@/hooks/useSendChatMessage'
-
-import { toaster } from '../Toast'
+import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
 
 import { extensionManager } from '@/extension'
 import {
@@ -51,8 +42,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const activeModel = useAtomValue(activeModelAtom)
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
-  const setQueuedMessage = useSetAtom(queuedMessageAtom)
-  const setLoadModelError = useSetAtom(loadModelErrorAtom)
 
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const threads = useAtomValue(threadsAtom)
@@ -88,43 +77,10 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     [addNewMessage]
   )
 
-  const onModelReady = useCallback(
-    (model: Model) => {
-      setActiveModel(model)
-      toaster({
-        title: 'Success!',
-        description: `Model ${model.id} has been started.`,
-        type: 'success',
-      })
-      setStateModel(() => ({
-        state: 'stop',
-        loading: false,
-        model: model.id,
-      }))
-    },
-    [setActiveModel, setStateModel]
-  )
-
   const onModelStopped = useCallback(() => {
-    setTimeout(() => {
-      setActiveModel(undefined)
-      setStateModel({ state: 'start', loading: false, model: '' })
-    }, 500)
+    setActiveModel(undefined)
+    setStateModel({ state: 'start', loading: false, model: '' })
   }, [setActiveModel, setStateModel])
-
-  const onModelInitFailed = useCallback(
-    (res: ModelInitFailed) => {
-      console.error('Failed to load model: ', res.error.message)
-      setStateModel(() => ({
-        state: 'start',
-        loading: false,
-        model: res.id,
-      }))
-      setLoadModelError(res.error.message)
-      setQueuedMessage(false)
-    },
-    [setStateModel, setQueuedMessage, setLoadModelError]
-  )
 
   const updateThreadTitle = useCallback(
     (message: ThreadMessage) => {
@@ -274,7 +230,10 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
       // 2. Update the title with the result of the inference
       setTimeout(() => {
-        events.emit(MessageEvent.OnMessageSent, messageRequest)
+        const engine = EngineManager.instance().get(
+          messageRequest.model?.engine ?? activeModelRef.current?.engine ?? ''
+        )
+        engine?.inference(messageRequest)
       }, 1000)
     }
   }
@@ -283,23 +242,16 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     if (window.core?.events) {
       events.on(MessageEvent.OnMessageResponse, onNewMessageResponse)
       events.on(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
-      events.on(ModelEvent.OnModelReady, onModelReady)
-      events.on(ModelEvent.OnModelFail, onModelInitFailed)
       events.on(ModelEvent.OnModelStopped, onModelStopped)
     }
-  }, [
-    onNewMessageResponse,
-    onMessageResponseUpdate,
-    onModelReady,
-    onModelInitFailed,
-    onModelStopped,
-  ])
+  }, [onNewMessageResponse, onMessageResponseUpdate, onModelStopped])
 
   useEffect(() => {
     return () => {
       events.off(MessageEvent.OnMessageResponse, onNewMessageResponse)
       events.off(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
+      events.off(ModelEvent.OnModelStopped, onModelStopped)
     }
-  }, [onNewMessageResponse, onMessageResponseUpdate])
+  }, [onNewMessageResponse, onMessageResponseUpdate, onModelStopped])
   return <Fragment>{children}</Fragment>
 }

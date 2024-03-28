@@ -1,20 +1,20 @@
 {
   "sources": [
     {
-      "filename": "phind-codellama-34b-v2.Q5_K_M.gguf",
+      "filename": "phind-codellama-34b-v2.Q4_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/Phind-CodeLlama-34B-v2-GGUF/resolve/main/phind-codellama-34b-v2.Q5_K_M.gguf"
     }
   ],
   "id": "phind-34b",
   "object": "model",
-  "name": "Phind 34B Q5",
+  "name": "Phind 34B Q4",
   "version": "1.0",
-  "description": "Phind 34B is fine-tuned on 1.5B tokens of high-quality programming data. This multi-lingual model excels in various programming languages and is designed to be steerable and user-friendly.",
+  "description": "Phind 34B is the best Open-source coding model.",
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
     "prompt_template": "### System Prompt\n{system_message}\n### User Message\n{prompt}\n### Assistant",
-    "llama_model_path": "phind-codellama-34b-v2.Q5_K_M.gguf"
+    "llama_model_path": "phind-codellama-34b-v2.Q4_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
@@ -26,7 +26,7 @@
     "presence_penalty": 0
   },
   "metadata": {
-    "author": "Phind, The Bloke",
+    "author": "Phind",
     "tags": ["34B", "Finetuned"],
     "size": 20220000000
   },

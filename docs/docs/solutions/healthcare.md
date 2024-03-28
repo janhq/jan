@@ -1,4 +1,0 @@
----
-title: Healthcare
-tags: [industries]
----

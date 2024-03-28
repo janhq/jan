@@ -205,7 +205,7 @@ components:
         data:
           type: array
           items:
-            $ref: "#/components/schemas/ListMessageObject"
+            $ref: '#/components/schemas/ListMessageObject'
         first_id:
           type: string
           description: Identifier of the first message in the list.
@@ -310,4 +310,4 @@ components:
         data:
           type: array
           items:
-            $ref: "#/components/schemas/MessageFileObject"
+            $ref: '#/components/schemas/MessageFileObject'

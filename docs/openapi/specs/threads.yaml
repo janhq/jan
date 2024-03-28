@@ -22,7 +22,7 @@ components:
           example: funny physics joke
         assistants:
           type: array
-          description: ""
+          description: ''
           items:
             properties:
               assistant_id:
@@ -35,7 +35,7 @@ components:
                 properties:
                   id:
                     type: string
-                    description: ""
+                    description: ''
                     example: ...
                   settings:
                     type: object

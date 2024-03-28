@@ -78,7 +78,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             ?.apply(this, [href, title, text])
             .replace('<a', "<a target='_blank'")
         },
-        code(code, lang, escaped) {
+        code(code, lang) {
           return `
           <div class="relative code-block group/item">
             <button class='text-xs copy-action hidden group-hover/item:block bg-gray-950 hover:bg-gray-950/90 text-gray-200 p-2 rounded-lg absolute top-6 right-2' >
@@ -89,9 +89,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               }
             </button>
             <pre class="hljs">
-              <code class="language-${lang ?? ''}">${
-                escaped ? code : decodeURIComponent(code)
-              }</code>
+              <code class="language-${lang ?? ''}">${code}</code>
             </pre>
           </div>
           `
@@ -262,8 +260,8 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
               <Icon type={props.content[0].type} />
 
-              <div>
-                <h6 className="line-clamp-1 font-medium">
+              <div className="w-full">
+                <h6 className="line-clamp-1 w-4/5 font-medium">
                   {props.content[0].text.name?.replaceAll(/[-._]/g, ' ')}
                 </h6>
                 <p className="text-muted-foreground">

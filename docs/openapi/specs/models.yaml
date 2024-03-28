@@ -11,7 +11,7 @@ components:
         data:
           type: array
           items:
-            $ref: "#/components/schemas/Model"
+            $ref: '#/components/schemas/Model'
       required:
         - object
         - data
@@ -38,7 +38,7 @@ components:
           example: Trinity-v1.2 7B Q4
         version:
           type: string
-          default: "1.0"
+          default: '1.0'
           description: The version number of the model.
         description:
           type: string
@@ -141,7 +141,7 @@ components:
           example: Mistral Instruct 7B Q4
         version:
           type: string
-          default: "1.0"
+          default: '1.0'
           description: The version number of the model.
         description:
           type: string
@@ -162,7 +162,7 @@ components:
               example: 4096
             prompt_template:
               type: string
-              example: "[INST] {prompt} [/INST]"
+              example: '[INST] {prompt} [/INST]'
           additionalProperties: false
         parameters:
           type: object

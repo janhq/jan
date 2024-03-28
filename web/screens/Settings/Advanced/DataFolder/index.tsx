@@ -56,6 +56,7 @@ const DataFolder = () => {
       newDestChildren.filter((x) => x !== '.DS_Store').length > 0
 
     if (isNotEmpty) {
+      setDestinationPath(destFolder)
       showDestNotEmptyConfirm(true)
       return
     }

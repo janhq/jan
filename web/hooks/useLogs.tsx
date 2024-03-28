@@ -9,7 +9,7 @@ export const useLogs = () => {
   const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
 
   const getLogs = useCallback(
-    async (file: string) => {
+    async (file: string): Promise<string> => {
       const path = await joinPath(['file://logs', `${file}.log`])
       if (!(await fs.existsSync(path))) return ''
       const logs = await fs.readFileSync(path, 'utf-8')

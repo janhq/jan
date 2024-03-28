@@ -7,7 +7,6 @@ export type ModelInfo = {
   settings: ModelSettingParams
   parameters: ModelRuntimeParams
   engine?: InferenceEngine
-  proxy_model?: InferenceEngine
 }
 
 /**
@@ -18,10 +17,9 @@ export type ModelInfo = {
 export enum InferenceEngine {
   nitro = 'nitro',
   openai = 'openai',
+  groq = 'groq',
   triton_trtllm = 'triton_trtllm',
   nitro_tensorrt_llm = 'nitro-tensorrt-llm',
-
-  tool_retrieval_enabled = 'tool_retrieval_enabled',
 }
 
 export type ModelArtifact = {
@@ -93,8 +91,6 @@ export type Model = {
    * The model engine.
    */
   engine: InferenceEngine
-
-  proxy_model?: InferenceEngine
 }
 
 export type ModelMetadata = {

@@ -5,13 +5,24 @@ import { atom, useAtom } from 'jotai'
 
 export const isShowNotificationAtom = atom<boolean>(false)
 
+export type AppSettings = {
+  run_mode: 'cpu' | 'gpu' | undefined
+  notify: boolean
+  gpus_in_use: string[]
+  vulkan: boolean
+  gpus: string[]
+}
+
 export const useSettings = () => {
   const [isGPUModeEnabled, setIsGPUModeEnabled] = useState(false) // New state for GPU mode
   const [showNotification, setShowNotification] = useAtom(
     isShowNotificationAtom
   )
+  const [settings, setSettings] = useState<AppSettings>()
 
   useEffect(() => {
+    readSettings().then((settings) => setSettings(settings as AppSettings))
+
     setTimeout(() => validateSettings, 3000)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -79,5 +90,6 @@ export const useSettings = () => {
     saveSettings,
     setShowNotification,
     validateSettings,
+    settings,
   }
 }

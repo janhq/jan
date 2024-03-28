@@ -1,0 +1,15 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "pipeline": {
+    "build": {
+      "outputs": [".dist/**", "*.tgz"]
+    },
+    "build:publish": {
+      "dependsOn": ["^build"]
+    },
+    "dev": {
+      "cache": false
+    },
+    "type-check": {}
+  }
+}

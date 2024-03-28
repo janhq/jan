@@ -9,9 +9,9 @@
   "scripts": {
     "clean:modules": "rimraf node_modules/pdf-parse/test && cd node_modules/pdf-parse/lib/pdf.js && rimraf v1.9.426 v1.10.88 v2.0.550",
     "build": "yarn clean:modules && tsc --module commonjs && rollup -c rollup.config.ts",
-    "build:publish:linux": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && npm run build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:win32": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:linux": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "build:publish": "run-script-os"
   },
   "devDependencies": {

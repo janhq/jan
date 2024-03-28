@@ -9,7 +9,7 @@
     "object": "model",
     "name": "Stable Zephyr 3B Q8",
     "version": "1.0",
-    "description": "StableLM Zephyr 3B is trained for safe and reliable chatting.",
+    "description": "StableLM Zephyr 3B is a best model for low-end machine.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
@@ -27,7 +27,7 @@
     },
     "metadata": {
       "author": "StabilityAI",
-      "tags": ["3B", "Finetuned"],
+      "tags": ["3B", "Finetuned", "Tiny"],
       "size": 2970000000
     },
     "engine": "nitro"

@@ -2,27 +2,48 @@
   "$schema": "https://turbo.build/schema.json",
   "pipeline": {
     "build": {
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "dev": {
       "cache": false
     },
-    "web#build": {
-      "dependsOn": ["@janhq/core#build"]
-    },
-    "web:dev": {
+    "@janhq/web#dev": {
       "cache": false,
       "persistent": true,
       "dependsOn": ["@janhq/core#build", "@janhq/uikit#build"]
     },
-    "electron:dev": {
+    "@janhq/server#build": {
+      "outputs": ["dist/**"],
+      "dependsOn": ["@janhq/core#build"]
+    },
+    "jan#dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["@janhq/core#build", "@janhq/server#build", "jan#compile"]
+      "dependsOn": ["@janhq/core#build", "@janhq/server#build"]
     },
-    "electron#build": {
-      "dependsOn": ["web#build", "server#build", "core#build"],
-      "cache": false
+    "@janhq/core#build": {
+      "outputs": ["dist/**"]
+    },
+    "@janhq/web#build": {
+      "outputs": ["out/**"],
+      "dependsOn": ["@janhq/core#build", "@janhq/uikit#build"]
+    },
+    "jan#build": {
+      "outputs": ["dist/**"],
+      "dependsOn": [
+        "@janhq/core#build",
+        "@janhq/server#build",
+        "@janhq/web#build"
+      ]
+    },
+    "jan#build:test": {
+      "outputs": ["dist/**"],
+      "cache": false,
+      "dependsOn": [
+        "@janhq/core#build",
+        "@janhq/server#build",
+        "@janhq/web#build"
+      ]
     },
     "type-check": {}
   }

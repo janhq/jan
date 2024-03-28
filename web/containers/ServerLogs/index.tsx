@@ -19,7 +19,7 @@ const ServerLogs = (props: ServerLogsProps) => {
   const { limit = 0 } = props
   const { getLogs } = useLogs()
   const serverEnabled = useAtomValue(serverEnabledAtom)
-  const [logs, setLogs] = useState([])
+  const [logs, setLogs] = useState<string[]>([])
 
   const clipboard = useClipboard({ timeout: 1000 })
 

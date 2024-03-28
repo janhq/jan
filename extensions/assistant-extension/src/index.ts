@@ -1,27 +1,21 @@
 import {
   fs,
   Assistant,
-  MessageRequest,
   events,
-  InferenceEngine,
-  MessageEvent,
-  InferenceEvent,
   joinPath,
-  executeOnMain,
   AssistantExtension,
   AssistantEvent,
-  ChatCompletionMessageContentType,
+  ToolManager,
 } from '@janhq/core'
+import { RetrievalTool } from './tools/retrieval'
 
 export default class JanAssistantExtension extends AssistantExtension {
   private static readonly _homeDir = 'file://assistants'
-  private static readonly _threadDir = 'file://threads'
-
-  controller = new AbortController()
-  isCancelled = false
-  retrievalThreadId: string | undefined = undefined
 
   async onLoad() {
+    // Register the retrieval tool
+    ToolManager.instance().register(new RetrievalTool())
+
     // making the assistant directory
     const assistantDirExist = await fs.existsSync(
       JanAssistantExtension._homeDir
@@ -30,7 +24,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       localStorage.getItem(`${EXTENSION_NAME}-version`) !== VERSION ||
       !assistantDirExist
     ) {
-      if (!assistantDirExist) await fs.mkdirSync(JanAssistantExtension._homeDir)
+      if (!assistantDirExist) await fs.mkdir(JanAssistantExtension._homeDir)
 
       // Write assistant metadata
       await this.createJanAssistant()
@@ -39,140 +33,6 @@ export default class JanAssistantExtension extends AssistantExtension {
       // Update the assistant list
       events.emit(AssistantEvent.OnAssistantsUpdate, {})
     }
-
-    // Events subscription
-    events.on(MessageEvent.OnMessageSent, (data: MessageRequest) =>
-      JanAssistantExtension.handleMessageRequest(data, this)
-    )
-
-    events.on(InferenceEvent.OnInferenceStopped, () => {
-      JanAssistantExtension.handleInferenceStopped(this)
-    })
-  }
-
-  private static async handleInferenceStopped(instance: JanAssistantExtension) {
-    instance.isCancelled = true
-    instance.controller?.abort()
-  }
-
-  private static async handleMessageRequest(
-    data: MessageRequest,
-    instance: JanAssistantExtension
-  ) {
-    instance.isCancelled = false
-    instance.controller = new AbortController()
-
-    if (
-      data.model?.engine !== InferenceEngine.tool_retrieval_enabled ||
-      !data.messages ||
-      // TODO: Since the engine is defined, its unsafe to assume that assistant tools are defined
-      // That could lead to an issue where thread stuck at generating response
-      !data.thread?.assistants[0]?.tools
-    ) {
-      return
-    }
-
-    const latestMessage = data.messages[data.messages.length - 1]
-
-    // 1. Ingest the document if needed
-    if (
-      latestMessage &&
-      latestMessage.content &&
-      typeof latestMessage.content !== 'string' &&
-      latestMessage.content.length > 1
-    ) {
-      const docFile = latestMessage.content[1]?.doc_url?.url
-      if (docFile) {
-        await executeOnMain(
-          NODE,
-          'toolRetrievalIngestNewDocument',
-          docFile,
-          data.model?.proxy_model
-        )
-      }
-    } else if (
-      // Check whether we need to ingest document or not
-      // Otherwise wrong context will be sent
-      !(await fs.existsSync(
-        await joinPath([
-          JanAssistantExtension._threadDir,
-          data.threadId,
-          'memory',
-        ])
-      ))
-    ) {
-      // No document ingested, reroute the result to inference engine
-      const output = {
-        ...data,
-        model: {
-          ...data.model,
-          engine: data.model.proxy_model,
-        },
-      }
-      events.emit(MessageEvent.OnMessageSent, output)
-      return
-    }
-    // 2. Load agent on thread changed
-    if (instance.retrievalThreadId !== data.threadId) {
-      await executeOnMain(NODE, 'toolRetrievalLoadThreadMemory', data.threadId)
-
-      instance.retrievalThreadId = data.threadId
-
-      // Update the text splitter
-      await executeOnMain(
-        NODE,
-        'toolRetrievalUpdateTextSplitter',
-        data.thread.assistants[0].tools[0]?.settings?.chunk_size ?? 4000,
-        data.thread.assistants[0].tools[0]?.settings?.chunk_overlap ?? 200
-      )
-    }
-
-    // 3. Using the retrieval template with the result and query
-    if (latestMessage.content) {
-      const prompt =
-        typeof latestMessage.content === 'string'
-          ? latestMessage.content
-          : latestMessage.content[0].text
-      // Retrieve the result
-      const retrievalResult = await executeOnMain(
-        NODE,
-        'toolRetrievalQueryResult',
-        prompt
-      )
-      console.debug('toolRetrievalQueryResult', retrievalResult)
-
-      // Update message content
-      if (data.thread?.assistants[0]?.tools && retrievalResult)
-        data.messages[data.messages.length - 1].content =
-          data.thread.assistants[0].tools[0].settings?.retrieval_template
-            ?.replace('{CONTEXT}', retrievalResult)
-            .replace('{QUESTION}', prompt)
-    }
-
-    // Filter out all the messages that are not text
-    data.messages = data.messages.map((message) => {
-      if (
-        message.content &&
-        typeof message.content !== 'string' &&
-        (message.content.length ?? 0) > 0
-      ) {
-        return {
-          ...message,
-          content: [message.content[0]],
-        }
-      }
-      return message
-    })
-
-    // 4. Reroute the result to inference engine
-    const output = {
-      ...data,
-      model: {
-        ...data.model,
-        engine: data.model.proxy_model,
-      },
-    }
-    events.emit(MessageEvent.OnMessageSent, output)
   }
 
   /**
@@ -185,7 +45,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       JanAssistantExtension._homeDir,
       assistant.id,
     ])
-    if (!(await fs.existsSync(assistantDir))) await fs.mkdirSync(assistantDir)
+    if (!(await fs.existsSync(assistantDir))) await fs.mkdir(assistantDir)
 
     // store the assistant metadata json
     const assistantMetadataPath = await joinPath([
@@ -215,7 +75,7 @@ export default class JanAssistantExtension extends AssistantExtension {
         fileName,
       ])
 
-      if (filePath.includes('.DS_Store')) continue
+      if (!(await fs.fileStat(filePath))?.isDirectory) continue
       const jsonFiles: string[] = (await fs.readdirSync(filePath)).filter(
         (file: string) => file === 'assistant.json'
       )
@@ -248,8 +108,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       JanAssistantExtension._homeDir,
       assistant.id,
     ])
-    await fs.rmdirSync(assistantDir)
-    return Promise.resolve()
+    return fs.rm(assistantDir)
   }
 
   private async createJanAssistant(): Promise<void> {
