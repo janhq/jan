@@ -19,7 +19,7 @@ declare const SETTINGS: Array<any>
 export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
   inferenceUrl: string = COMPLETION_URL
   provider: string = 'openai'
-  settingName = 'openapi-api-key'
+  settingName = 'openai-api-key'
 
   override async onLoad(): Promise<void> {
     super.onLoad()

@@ -6,7 +6,8 @@
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "API Key",
-      "value": ""
+      "value": "",
+      "type": "password"
     }
   }
 ]

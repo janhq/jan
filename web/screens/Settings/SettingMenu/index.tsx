@@ -1,49 +1,69 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 
 import { ScrollArea } from '@janhq/uikit'
-import { motion as m } from 'framer-motion'
-import { twMerge } from 'tailwind-merge'
 
-import { SettingScreen } from '..'
+import { useAtomValue } from 'jotai'
 
-type Props = {
-  settingsScreens: SettingScreen[]
-  activeSettingScreen: SettingScreen
-  onMenuClick: (settingScreen: SettingScreen) => void
-}
+import SettingItem from './SettingItem'
 
-const SettingMenu: React.FC<Props> = ({
-  settingsScreens,
-  activeSettingScreen,
-  onMenuClick,
-}) => (
-  <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
-    <ScrollArea className="h-full w-full">
-      <div className="flex-shrink-0 px-6 py-4 font-medium">
-        {settingsScreens.map((settingScreen) => {
-          const isActive = activeSettingScreen === settingScreen
-          return (
-            <div
-              key={settingScreen}
-              className="relative my-0.5 block cursor-pointer py-1.5"
-              onClick={() => onMenuClick(settingScreen)}
-            >
-              <span className={twMerge(isActive && 'relative z-10')}>
-                {settingScreen}
-              </span>
+import { extensionManager } from '@/extension'
+import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
-              {isActive && (
-                <m.div
-                  className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/50"
-                  layoutId="active-static-menu"
-                />
-              )}
+const SettingMenu: React.FC = () => {
+  const settingScreens = useAtomValue(janSettingScreenAtom)
+  const [extensionHasSettings, setExtensionHasSettings] = useState<string[]>([])
+
+  useEffect(() => {
+    const getAllSettings = async () => {
+      const activeExtensions = await extensionManager.getActive()
+      const extensionsMenu: string[] = []
+
+      for (const extension of activeExtensions) {
+        const extensionName = extension.name
+        if (!extensionName) continue
+
+        const baseExtension = extensionManager.get(extensionName)
+        if (!baseExtension) continue
+
+        if (typeof baseExtension.getSettings === 'function') {
+          const settings = await baseExtension.getSettings()
+          if (settings && settings.length > 0) {
+            extensionsMenu.push(extensionName)
+          }
+        }
+      }
+      setExtensionHasSettings(extensionsMenu)
+    }
+    getAllSettings()
+  }, [])
+
+  return (
+    <div className="flex h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+      <ScrollArea className="h-full w-full">
+        <div className="flex-shrink-0 px-6 py-4 font-medium">
+          {settingScreens.map((settingScreen) => (
+            <SettingItem key={settingScreen} setting={settingScreen} />
+          ))}
+
+          {extensionHasSettings.length > 0 && (
+            <div className="mb-2 mt-6">
+              <label className="text-xs font-medium text-muted-foreground">
+                Extensions
+              </label>
             </div>
-          )
-        })}
-      </div>
-    </ScrollArea>
-  </div>
-)
+          )}
+
+          {extensionHasSettings.map((extensionName: string) => (
+            <SettingItem
+              key={extensionName}
+              setting={extensionName}
+              extension={true}
+            />
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
+  )
+}
 
 export default React.memo(SettingMenu)

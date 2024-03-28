@@ -2,34 +2,32 @@ import React, { useEffect, useState } from 'react'
 
 import { SettingComponentProps } from '@janhq/core/.'
 
-import SettingComponent from '@/screens/Chat/ModelSetting/SettingComponent'
+import { useAtomValue } from 'jotai'
+
+import SettingDetailItem from '../SettingDetail/SettingDetailItem'
 
 import { extensionManager } from '@/extension'
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 const ExtensionSetting: React.FC = () => {
+  const selectedExtensionName = useAtomValue(selectedSettingAtom)
   const [settings, setSettings] = useState<SettingComponentProps[]>([])
 
   useEffect(() => {
-    const getAllSettings = async () => {
-      const activeExtensions = await extensionManager.getActive()
-
+    const getExtensionSettings = async () => {
+      if (!selectedExtensionName) return
       const allSettings: SettingComponentProps[] = []
-
-      for (const extension of activeExtensions) {
-        const extensionName = extension.name
-        if (!extensionName) continue
-
-        const baseExtension = extensionManager.get(extensionName)
-        if (!baseExtension) continue
-        if (typeof baseExtension.getSettings === 'function') {
-          const setting = await baseExtension.getSettings()
-          if (setting) allSettings.push(...setting)
-        }
+      const baseExtension = extensionManager.get(selectedExtensionName)
+      if (!baseExtension) return
+      if (typeof baseExtension.getSettings === 'function') {
+        const setting = await baseExtension.getSettings()
+        if (setting) allSettings.push(...setting)
       }
+
       setSettings(allSettings)
     }
-    getAllSettings()
-  }, [])
+    getExtensionSettings()
+  }, [selectedExtensionName])
 
   const onValueChanged = async (
     key: string,
@@ -42,10 +40,7 @@ const ExtensionSetting: React.FC = () => {
 
       const extensionName = setting.extensionName
       if (extensionName) {
-        const extension = extensionManager.get(extensionName)
-        if (extension) {
-          extension.updateSettings([setting]) // TODO: async
-        }
+        extensionManager.get(extensionName)?.updateSettings([setting])
       }
 
       return setting
@@ -57,7 +52,7 @@ const ExtensionSetting: React.FC = () => {
   if (settings.length === 0) return null
 
   return (
-    <SettingComponent
+    <SettingDetailItem
       componentProps={settings}
       onValueUpdated={onValueChanged}
     />

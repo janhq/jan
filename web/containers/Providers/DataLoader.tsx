@@ -10,11 +10,14 @@ import useGetSystemResources from '@/hooks/useGetSystemResources'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
 
+import { SettingScreenList } from '@/screens/Settings'
+
 import { defaultJanDataFolderAtom } from '@/helpers/atoms/App.atom'
 import {
   janDataFolderPathAtom,
   quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
+import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = {
   children: ReactNode
@@ -24,6 +27,7 @@ const DataLoader: React.FC<Props> = ({ children }) => {
   const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
   const setQuickAskEnabled = useSetAtom(quickAskEnabledAtom)
   const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
+  const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
 
   useModels()
   useThreads()
@@ -48,6 +52,13 @@ const DataLoader: React.FC<Props> = ({ children }) => {
     }
     getDefaultJanDataFolder()
   }, [setJanDefaultDataFolder])
+
+  useEffect(() => {
+    const janSettingScreen = SettingScreenList.filter(
+      (screen) => window.electronAPI || screen !== 'Extensions'
+    )
+    setJanSettingScreen(janSettingScreen)
+  }, [setJanSettingScreen])
 
   console.debug('Load Data...')
 

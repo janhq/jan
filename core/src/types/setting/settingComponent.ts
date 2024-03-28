@@ -14,9 +14,12 @@ export type ConfigType = 'runtime' | 'setting'
 
 export type ControllerType = 'slider' | 'checkbox' | 'input'
 
+export type InputType = 'password' | 'text' | 'email' | 'number' | 'tel' | 'url'
+
 export type InputComponentProps = {
   placeholder: string
   value: string
+  type?: InputType
 }
 
 export type SliderComponentProps = {
