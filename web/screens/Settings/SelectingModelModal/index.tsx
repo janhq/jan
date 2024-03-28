@@ -1,99 +1,40 @@
 import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
-import { ImportingModel, baseName, fs, joinPath } from '@janhq/core'
+import { SelectFileOption, systemInformation } from '@janhq/core'
 import { Modal, ModalContent, ModalHeader, ModalTitle } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { UploadCloudIcon } from 'lucide-react'
 
-import { v4 as uuidv4 } from 'uuid'
-
-import { snackbar } from '@/containers/Toast'
-
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
-import {
+import useImportModel, {
   getImportModelStageAtom,
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-import { FilePathWithSize } from '@/utils/file'
-
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
-
 const SelectingModelModal: React.FC = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
-  const setImportingModels = useSetAtom(importingModelsAtom)
   const { onDropModels } = useDropModelBinaries()
+  const { sanitizeFilePaths } = useImportModel()
 
   const onSelectFileClick = useCallback(async () => {
-    const filePaths = await window.core?.api?.selectModelFiles()
+    const platform = (await systemInformation()).osInfo?.platform
+    if (platform === 'win32') {
+      setImportModelStage('CHOOSE_WHAT_TO_IMPORT')
+      return
+    }
+    const options: SelectFileOption = {
+      title: 'Select model folders',
+      buttonLabel: 'Select',
+      allowMultiple: true,
+      selectDirectory: true,
+    }
+    const filePaths = await window.core?.api?.selectFiles(options)
     if (!filePaths || filePaths.length === 0) return
-
-    const sanitizedFilePaths: FilePathWithSize[] = []
-    for (const filePath of filePaths) {
-      const fileStats = await fs.fileStat(filePath, true)
-      if (!fileStats) continue
-
-      if (!fileStats.isDirectory) {
-        const fileName = await baseName(filePath)
-        sanitizedFilePaths.push({
-          path: filePath,
-          name: fileName,
-          size: fileStats.size,
-        })
-      } else {
-        // allowing only one level of directory
-        const files = await fs.readdirSync(filePath)
-
-        for (const file of files) {
-          const fullPath = await joinPath([filePath, file])
-          const fileStats = await fs.fileStat(fullPath, true)
-          if (!fileStats || fileStats.isDirectory) continue
-
-          sanitizedFilePaths.push({
-            path: fullPath,
-            name: file,
-            size: fileStats.size,
-          })
-        }
-      }
-    }
-
-    const unsupportedFiles = sanitizedFilePaths.filter(
-      (file) => !file.path.endsWith('.gguf')
-    )
-    const supportedFiles = sanitizedFilePaths.filter((file) =>
-      file.path.endsWith('.gguf')
-    )
-
-    const importingModels: ImportingModel[] = supportedFiles.map(
-      ({ path, name, size }: FilePathWithSize) => {
-        return {
-          importId: uuidv4(),
-          modelId: undefined,
-          name: name.replace('.gguf', ''),
-          description: '',
-          path: path,
-          tags: [],
-          size: size,
-          status: 'PREPARING',
-          format: 'gguf',
-        }
-      }
-    )
-    if (unsupportedFiles.length > 0) {
-      snackbar({
-        description: `Only files with .gguf extension can be imported.`,
-        type: 'error',
-      })
-    }
-    if (importingModels.length === 0) return
-
-    setImportingModels(importingModels)
-    setImportModelStage('MODEL_SELECTED')
-  }, [setImportingModels, setImportModelStage])
+    sanitizeFilePaths(filePaths)
+  }, [sanitizeFilePaths, setImportModelStage])
 
   const { isDragActive, getRootProps } = useDropzone({
     noClick: true,

@@ -17,6 +17,7 @@ import { getImportModelStageAtom } from '@/hooks/useImportModel'
 
 import { SUCCESS_SET_NEW_DESTINATION } from '@/screens/Settings/Advanced/DataFolder'
 import CancelModelImportModal from '@/screens/Settings/CancelModelImportModal'
+import ChooseWhatToImportModal from '@/screens/Settings/ChooseWhatToImportModal'
 import EditModelInfoModal from '@/screens/Settings/EditModelInfoModal'
 import ImportModelOptionModal from '@/screens/Settings/ImportModelOptionModal'
 import ImportingModelModal from '@/screens/Settings/ImportingModelModal'
@@ -70,6 +71,7 @@ const BaseLayout = (props: PropsWithChildren) => {
       {importModelStage === 'IMPORTING_MODEL' && <ImportingModelModal />}
       {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
       {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
+      <ChooseWhatToImportModal />
       <InstallingExtensionModal />
     </div>
   )

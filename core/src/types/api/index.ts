@@ -7,7 +7,7 @@ export enum NativeRoute {
   openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
   selectDirectory = 'selectDirectory',
-  selectModelFiles = 'selectModelFiles',
+  selectFiles = 'selectFiles',
   relaunch = 'relaunch',
 
   hideQuickAskWindow = 'hideQuickAskWindow',

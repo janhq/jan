@@ -6,8 +6,11 @@ import {
   getJanDataFolderPath,
   getJanExtensionsPath,
   init,
-  AppEvent, NativeRoute,
+  AppEvent,
+  NativeRoute,
+  SelectFileProp,
 } from '@janhq/core/node'
+import { SelectFileOption } from '@janhq/core/.'
 
 export function handleAppIPCs() {
   /**
@@ -84,23 +87,38 @@ export function handleAppIPCs() {
     }
   })
 
-  ipcMain.handle(NativeRoute.selectModelFiles, async () => {
-    const mainWindow = windowManager.mainWindow
-    if (!mainWindow) {
-      console.error('No main window found')
-      return
-    }
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title: 'Select model files',
-      buttonLabel: 'Select',
-      properties: ['openFile', 'openDirectory', 'multiSelections'],
-    })
-    if (canceled) {
-      return
-    }
+  ipcMain.handle(
+    NativeRoute.selectFiles,
+    async (_event, option?: SelectFileOption) => {
+      const mainWindow = windowManager.mainWindow
+      if (!mainWindow) {
+        console.error('No main window found')
+        return
+      }
 
-    return filePaths
-  })
+      const title = option?.title ?? 'Select files'
+      const buttonLabel = option?.buttonLabel ?? 'Select'
+      const props: SelectFileProp[] = ['openFile']
+
+      if (option?.allowMultiple) {
+        props.push('multiSelections')
+      }
+
+      if (option?.selectDirectory) {
+        props.push('openDirectory')
+      }
+      console.debug(`Select files with props: ${props}`)
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title,
+        buttonLabel,
+        properties: props,
+      })
+
+      if (canceled) return
+
+      return filePaths
+    }
+  )
 
   ipcMain.handle(
     NativeRoute.hideQuickAskWindow,
