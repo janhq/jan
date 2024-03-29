@@ -86,7 +86,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
                 Model is currently unavailable. Please switch to a different
                 model or install the{' '}
                 <button
-                  className="font-medium text-blue-500"
+                  className="font-medium text-primary dark:text-blue-400"
                   onClick={() => setMainState(MainViewState.Settings)}
                 >
                   {loadModelError.split('::')[1] ?? ''}
