@@ -4,8 +4,6 @@ import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 
 import { Toaster } from 'react-hot-toast'
 
-import { usePathname } from 'next/navigation'
-
 import { TooltipProvider } from '@janhq/uikit'
 
 import GPUDriverPrompt from '@/containers/GPUDriverPromptModal'
@@ -29,10 +27,7 @@ import KeyListener from './KeyListener'
 
 import { extensionManager } from '@/extension'
 
-const Providers = (props: PropsWithChildren) => {
-  const { children } = props
-  const pathname = usePathname()
-
+const Providers = ({ children }: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
   const [activated, setActivated] = useState(false)
   const [settingUp, setSettingUp] = useState(false)
@@ -43,11 +38,6 @@ const Providers = (props: PropsWithChildren) => {
 
     setTimeout(async () => {
       if (!isCoreExtensionInstalled()) {
-        // TODO: Proper window handle
-        // Do not migrate extension from quick ask window
-        if (pathname === '/search') {
-          return
-        }
         setSettingUp(true)
         await setupBaseExtensions()
         return
@@ -57,7 +47,7 @@ const Providers = (props: PropsWithChildren) => {
       setSettingUp(false)
       setActivated(true)
     }, 500)
-  }, [pathname])
+  }, [])
 
   // Services Setup
   useEffect(() => {
