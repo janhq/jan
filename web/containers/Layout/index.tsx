@@ -1,4 +1,5 @@
-import React, { PropsWithChildren, useEffect } from 'react'
+'use client'
+import React, { useEffect } from 'react'
 
 import { useTheme } from 'next-themes'
 
@@ -23,12 +24,13 @@ import ImportModelOptionModal from '@/screens/Settings/ImportModelOptionModal'
 import ImportingModelModal from '@/screens/Settings/ImportingModelModal'
 import SelectingModelModal from '@/screens/Settings/SelectingModelModal'
 
+import MainViewContainer from '../MainViewContainer'
+
 import InstallingExtensionModal from './BottomBar/InstallingExtension/InstallingExtensionModal'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
-const BaseLayout = (props: PropsWithChildren) => {
-  const { children } = props
+const BaseLayout = () => {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { theme, setTheme } = useTheme()
@@ -61,7 +63,7 @@ const BaseLayout = (props: PropsWithChildren) => {
               },
             }}
           >
-            {children}
+            <MainViewContainer />
           </m.div>
           <BottomBar />
         </div>
