@@ -26,33 +26,31 @@ const ModelConfigInput: React.FC<Props> = ({
   description,
   placeholder,
   onValueChanged,
-}) => {
-  return (
-    <div className="flex flex-col">
-      <div className="mb-2 flex items-center gap-x-2">
-        <p className="text-sm font-semibold text-zinc-500 dark:text-gray-300">
-          {title}
-        </p>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <InfoIcon size={16} className="flex-shrink-0 dark:text-gray-500" />
-          </TooltipTrigger>
-          <TooltipPortal>
-            <TooltipContent side="top" className="max-w-[240px]">
-              <span>{description}</span>
-              <TooltipArrow />
-            </TooltipContent>
-          </TooltipPortal>
-        </Tooltip>
-      </div>
-      <Textarea
-        placeholder={placeholder}
-        onChange={(e) => onValueChanged?.(e.target.value)}
-        value={value}
-        disabled={!enabled}
-      />
+}) => (
+  <div className="flex flex-col">
+    <div className="mb-2 flex items-center gap-x-2">
+      <p className="text-sm font-semibold text-zinc-500 dark:text-gray-300">
+        {title}
+      </p>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <InfoIcon size={16} className="flex-shrink-0 dark:text-gray-500" />
+        </TooltipTrigger>
+        <TooltipPortal>
+          <TooltipContent side="top" className="max-w-[240px]">
+            <span>{description}</span>
+            <TooltipArrow />
+          </TooltipContent>
+        </TooltipPortal>
+      </Tooltip>
     </div>
-  )
-}
+    <Textarea
+      placeholder={placeholder}
+      onChange={(e) => onValueChanged?.(e.target.value)}
+      value={value}
+      disabled={!enabled}
+    />
+  </div>
+)
 
 export default ModelConfigInput

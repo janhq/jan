@@ -66,7 +66,7 @@ const SelectingModelModal: React.FC = () => {
         </ModalHeader>
 
         <div
-          className={`flex h-[172px] w-full items-center justify-center rounded-md border ${borderColor} ${dragAndDropBgColor}`}
+          className={`flex h-[172px] w-full cursor-pointer items-center justify-center rounded-md border ${borderColor} ${dragAndDropBgColor}`}
           {...getRootProps()}
           onClick={onSelectFileClick}
         >
