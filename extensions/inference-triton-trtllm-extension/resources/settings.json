@@ -1,8 +1,18 @@
 [
   {
+    "key": "chat-completions-endpoint",
+    "title": "Chat Completions Endpoint",
+    "description": "The endpoint to use for chat completions.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Chat Completions Endpoint",
+      "value": "http://localhost:8000/v2/models/tensorrt_llm_bls/generate"
+    }
+  },
+  {
     "key": "tritonllm-api-key",
     "title": "Triton LLM API Key",
-    "description": "Triton LLM API Key",
+    "description": "The Triton LLM API uses API keys for authentication.",
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "API Key",

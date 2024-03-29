@@ -44,7 +44,7 @@ const SettingDetailTextInputItem: React.FC<Props> = ({
         placeholder={placeholder}
         type={type}
         value={value}
-        className="w-[360px]"
+        className="ml-4 w-[360px]"
         onChange={(e) => onValueChanged?.(e.target.value)}
       />
     </div>

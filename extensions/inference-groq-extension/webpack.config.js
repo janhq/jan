@@ -20,9 +20,6 @@ module.exports = {
     new webpack.DefinePlugin({
       SETTINGS: JSON.stringify(settingJson),
       MODULE: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
-      COMPLETION_URL: JSON.stringify(
-        'https://api.groq.com/openai/v1/chat/completions'
-      ),
     }),
   ],
   output: {

@@ -9,6 +9,10 @@
 import { RemoteOAIEngine } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
+enum Settings {
+  apiKey = 'tritonllm-api-key',
+  chatCompletionsEndPoint = 'chat-completions-endpoint',
+}
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -17,7 +21,6 @@ declare const SETTINGS: Array<any>
 export default class JanInferenceTritonTrtLLMExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
   provider: string = 'triton_trtllm'
-  settingName = 'tritonllm-api-key'
 
   /**
    * Subscribes to events emitted by the @janhq/core package.
@@ -29,12 +32,18 @@ export default class JanInferenceTritonTrtLLMExtension extends RemoteOAIEngine {
     this.registerSettings(SETTINGS)
 
     // Retrieve API Key Setting
-    this.apiKey = await this.getSetting<string>(this.settingName, '')
+    this.apiKey = await this.getSetting<string>(Settings.apiKey, '')
+    this.inferenceUrl = await this.getSetting<string>(
+      Settings.chatCompletionsEndPoint,
+      ''
+    )
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    if (key === this.settingName) {
+    if (key === Settings.apiKey) {
       this.apiKey = value as string
+    } else if (key === Settings.chatCompletionsEndPoint) {
+      this.inferenceUrl = value as string
     }
   }
 }

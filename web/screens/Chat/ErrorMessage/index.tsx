@@ -12,8 +12,6 @@ import { MainViewState } from '@/constants/screens'
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
-import { getErrorTitle } from '@/utils/errorMessage'
-
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
@@ -31,10 +29,27 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     resendChatMessage(message)
   }
 
-  const errorTitle = getErrorTitle(
-    message.error_code ?? ErrorCode.Unknown,
-    message.content[0]?.text?.value
-  )
+  const getErrorTitle = () => {
+    switch (message.error_code) {
+      case ErrorCode.Unknown:
+        return 'Apologies, something’s amiss!'
+      case ErrorCode.InvalidApiKey:
+        return (
+          <span>
+            Invalid API key. Please check your API key from{' '}
+            <button
+              className="font-medium text-primary dark:text-blue-400"
+              onClick={() => setMainState(MainViewState.Settings)}
+            >
+              Settings
+            </button>{' '}
+            and try again.
+          </span>
+        )
+      default:
+        return message.content[0]?.text?.value
+    }
+  }
 
   return (
     <div className="mt-10">
@@ -84,7 +99,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
                 Model is currently unavailable. Please switch to a different
                 model or install the{' '}
                 <button
-                  className="font-medium text-blue-500"
+                  className="font-medium text-primary dark:text-blue-400"
                   onClick={() => setMainState(MainViewState.Settings)}
                 >
                   {loadModelError.split('::')[1] ?? ''}
@@ -97,7 +112,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               key={message.id}
               className="flex flex-col items-center text-center text-sm font-medium text-gray-500"
             >
-              <p>{errorTitle}</p>
+              {getErrorTitle()}
               <p>
                 Jan’s in beta. Access&nbsp;
                 <span
