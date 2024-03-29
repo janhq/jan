@@ -9,8 +9,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - '9000:9000'
+      - '9001:9001'
     environment:
       # Set the root user and password for Minio
       MINIO_ROOT_USER: minioadmin # This acts as AWS_ACCESS_KEY
@@ -18,7 +18,7 @@ services:
     command: server --console-address ":9001" /data
     restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
       interval: 30s
       timeout: 20s
       retries: 3
@@ -61,9 +61,9 @@ services:
     profiles:
       - cpu-s3fs
     ports:
-      - "3000:3000"
-      - "1337:1337"
-      - "3928:3928"
+      - '3000:3000'
+      - '1337:1337'
+      - '3928:3928'
     networks:
       vpcbr:
         ipv4_address: 10.5.0.3
@@ -74,9 +74,9 @@ services:
       resources:
         reservations:
           devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     image: jan-gpu:latest
     volumes:
       - app_data_gpu_s3fs:/app/server/build/jan
@@ -95,9 +95,9 @@ services:
     profiles:
       - gpu-s3fs
     ports:
-      - "3000:3000"
-      - "1337:1337"
-      - "3928:3928"
+      - '3000:3000'
+      - '1337:1337'
+      - '3928:3928'
     networks:
       vpcbr:
         ipv4_address: 10.5.0.4
@@ -115,9 +115,9 @@ services:
     profiles:
       - cpu-fs
     ports:
-      - "3000:3000"
-      - "1337:1337"
-      - "3928:3928"
+      - '3000:3000'
+      - '1337:1337'
+      - '3928:3928'
     networks:
       vpcbr:
         ipv4_address: 10.5.0.5
@@ -128,9 +128,9 @@ services:
       resources:
         reservations:
           devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     image: jan-gpu:latest
     volumes:
       - app_data_gpu_fs:/app/server/build/jan
@@ -143,9 +143,9 @@ services:
     profiles:
       - gpu-fs
     ports:
-      - "3000:3000"
-      - "1337:1337"
-      - "3928:3928"
+      - '3000:3000'
+      - '1337:1337'
+      - '3928:3928'
     networks:
       vpcbr:
         ipv4_address: 10.5.0.6
@@ -161,12 +161,11 @@ networks:
   vpcbr:
     driver: bridge
     ipam:
-     config:
-       - subnet: 10.5.0.0/16
-         gateway: 10.5.0.1
-
+      config:
+        - subnet: 10.5.0.0/16
+          gateway: 10.5.0.1
 # Usage:
-# - Run 'docker compose --profile cpu-s3fs up -d' to start the app_cpu service
-# - Run 'docker compose --profile gpu-s3fs up -d' to start the app_gpu service
-# - Run 'docker compose --profile cpu-fs up -d' to start the app_cpu service
-# - Run 'docker compose --profile gpu-fs up -d' to start the app_gpu service
+# - Run 'docker compose -f docker-compose-dev.yml --profile cpu-s3fs up -d' to start the app_cpu service
+# - Run 'docker compose -f docker-compose-dev.yml --profile gpu-s3fs up -d' to start the app_gpu service
+# - Run 'docker compose -f docker-compose-dev.yml --profile cpu-fs up -d' to start the app_cpu service
+# - Run 'docker compose -f docker-compose-dev.yml --profile gpu-fs up -d' to start the app_gpu service
