@@ -83,6 +83,8 @@ export enum MessageStatus {
 export enum ErrorCode {
   InvalidApiKey = 'invalid_api_key',
 
+  InsufficientQuota = 'insufficient_quota',
+
   Unknown = 'unknown',
 }
 
