@@ -19,7 +19,7 @@ const AutoLink: React.FC<Props> = ({ text }) => {
               key={url}
               target="blank"
               href={url.startsWith('http') ? url : `http://${url}`}
-              className="text-blue-400"
+              className="text-primary dark:text-blue-400"
             >
               {url}
             </a>
