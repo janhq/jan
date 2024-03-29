@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-'use client'
 import { ExtensionTypeEnum } from '@janhq/core'
 
 import { extensionManager } from '@/extension/ExtensionManager'
@@ -13,6 +11,7 @@ export const isCoreExtensionInstalled = () => {
   }
   return true
 }
+
 export const setupBaseExtensions = async () => {
   if (typeof window === 'undefined') {
     return
