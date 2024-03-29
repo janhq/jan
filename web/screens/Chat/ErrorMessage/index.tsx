@@ -3,6 +3,7 @@ import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
 
+import AutoLink from '@/containers/AutoLink'
 import ModalTroubleShooting, {
   modalTroubleShootingAtom,
 } from '@/containers/ModalTroubleShoot'
@@ -31,10 +32,11 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     resendChatMessage(message)
   }
 
-  const errorTitle = getErrorTitle(
-    message.error_code ?? ErrorCode.Unknown,
-    message.content[0]?.text?.value
-  )
+  const errorTitle =
+    getErrorTitle(
+      message.error_code ?? ErrorCode.Unknown,
+      message.content[0]?.text?.value
+    ) ?? 'Unknown error occurred.'
 
   return (
     <div className="mt-10">
@@ -95,9 +97,9 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           ) : (
             <div
               key={message.id}
-              className="flex flex-col items-center text-center text-sm font-medium text-gray-500"
+              className="mx-6 flex flex-col items-center space-y-2 text-center text-sm font-medium text-gray-500"
             >
-              <p>{errorTitle}</p>
+              <AutoLink text={errorTitle} />
               <p>
                 Jan’s in beta. Access&nbsp;
                 <span
