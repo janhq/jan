@@ -1,6 +1,7 @@
 const path = require('path')
 const webpack = require('webpack')
 const packageJson = require('./package.json')
+const settingJson = require('./resources/settings.json')
 
 module.exports = {
   experiments: { outputModule: true },
@@ -17,8 +18,8 @@ module.exports = {
   },
   plugins: [
     new webpack.DefinePlugin({
+      SETTINGS: JSON.stringify(settingJson),
       ENGINE: JSON.stringify(packageJson.engine),
-      COMPLETION_URL: JSON.stringify('https://api.openai.com/v1/chat/completions'),
     }),
   ],
   output: {
