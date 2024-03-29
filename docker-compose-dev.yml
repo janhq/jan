@@ -1,0 +1,172 @@
+# Docker Compose file for setting up Minio, createbuckets, app_cpu, and app_gpu services
+
+version: '3.7'
+
+services:
+  # Minio service for object storage
+  minio:
+    image: minio/minio
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      # Set the root user and password for Minio
+      MINIO_ROOT_USER: minioadmin # This acts as AWS_ACCESS_KEY
+      MINIO_ROOT_PASSWORD: minioadmin # This acts as AWS_SECRET_ACCESS_KEY
+    command: server --console-address ":9001" /data
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.2
+
+  # createbuckets service to create a bucket and set its policy
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/mybucket;
+      /usr/bin/mc policy set public myminio/mybucket;
+      exit 0;
+      "
+    networks:
+      vpcbr:
+
+  # app_cpu service for running the CPU version of the application
+  app_cpu_s3fs:
+    image: jan:latest
+    volumes:
+      - app_data_cpu_s3fs:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      # Set the AWS access key, secret access key, bucket name, endpoint, and region for app_cpu
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET_NAME: mybucket
+      AWS_ENDPOINT: http://10.5.0.2:9000
+      AWS_REGION: us-east-1
+      API_BASE_URL: http://localhost:1337
+    restart: always
+    profiles:
+      - cpu-s3fs
+    ports:
+      - "3000:3000"
+      - "1337:1337"
+      - "3928:3928"
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.3
+
+  # app_gpu service for running the GPU version of the application
+  app_gpu_s3fs:
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+    image: jan-gpu:latest
+    volumes:
+      - app_data_gpu_s3fs:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    restart: always
+    environment:
+      # Set the AWS access key, secret access key, bucket name, endpoint, and region for app_gpu
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET_NAME: mybucket
+      AWS_ENDPOINT: http://10.5.0.2:9000
+      AWS_REGION: us-east-1
+      API_BASE_URL: http://localhost:1337
+    profiles:
+      - gpu-s3fs
+    ports:
+      - "3000:3000"
+      - "1337:1337"
+      - "3928:3928"
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.4
+
+  app_cpu_fs:
+    image: jan:latest
+    volumes:
+      - app_data_cpu_fs:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      API_BASE_URL: http://localhost:1337
+    restart: always
+    profiles:
+      - cpu-fs
+    ports:
+      - "3000:3000"
+      - "1337:1337"
+      - "3928:3928"
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.5
+
+  # app_gpu service for running the GPU version of the application
+  app_gpu_fs:
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+    image: jan-gpu:latest
+    volumes:
+      - app_data_gpu_fs:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    restart: always
+    environment:
+      API_BASE_URL: http://localhost:1337
+    profiles:
+      - gpu-fs
+    ports:
+      - "3000:3000"
+      - "1337:1337"
+      - "3928:3928"
+    networks:
+      vpcbr:
+        ipv4_address: 10.5.0.6
+
+volumes:
+  minio_data:
+  app_data_cpu_s3fs:
+  app_data_gpu_s3fs:
+  app_data_cpu_fs:
+  app_data_gpu_fs:
+
+networks:
+  vpcbr:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.5.0.0/16
+         gateway: 10.5.0.1
+
+# Usage:
+# - Run 'docker compose --profile cpu-s3fs up -d' to start the app_cpu service
+# - Run 'docker compose --profile gpu-s3fs up -d' to start the app_gpu service
+# - Run 'docker compose --profile cpu-fs up -d' to start the app_cpu service
+# - Run 'docker compose --profile gpu-fs up -d' to start the app_gpu service
