@@ -130,13 +130,6 @@ jobs:
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
     steps:
-      - name: "Cleanup build folder"
-        run: |
-          ls -la ./
-          rm -rf ./* || true
-          rm -rf ./.??* || true
-          ls -la ./
-          rm -rf ~/.config/jan
       - name: Getting the repo
         uses: actions/checkout@v3
 
