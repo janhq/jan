@@ -43,9 +43,12 @@ services:
 
   # app_cpu service for running the CPU version of the application
   app_cpu_s3fs:
+    image: jan:latest
     volumes:
       - app_data_cpu_s3fs:/app/server/build/jan
-    image: ghcr.io/janhq/jan-server:dev-cpu-latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
       # Set the AWS access key, secret access key, bucket name, endpoint, and region for app_cpu
       AWS_ACCESS_KEY_ID: minioadmin
@@ -74,9 +77,12 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    image: ghcr.io/janhq/jan-server:dev-cuda-12.2-latest
+    image: jan-gpu:latest
     volumes:
       - app_data_gpu_s3fs:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
     restart: always
     environment:
       # Set the AWS access key, secret access key, bucket name, endpoint, and region for app_gpu
@@ -97,9 +103,12 @@ services:
         ipv4_address: 10.5.0.4
 
   app_cpu_fs:
-    image: ghcr.io/janhq/jan-server:dev-cpu-latest
+    image: jan:latest
     volumes:
       - app_data_cpu_fs:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
       API_BASE_URL: http://localhost:1337
     restart: always
@@ -122,9 +131,12 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    image: ghcr.io/janhq/jan-server:dev-cuda-12.2-latest
+    image: jan-gpu:latest
     volumes:
       - app_data_gpu_fs:/app/server/build/jan
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
     restart: always
     environment:
       API_BASE_URL: http://localhost:1337
@@ -153,7 +165,7 @@ networks:
         - subnet: 10.5.0.0/16
           gateway: 10.5.0.1
 # Usage:
-# - Run 'docker compose --profile cpu-s3fs up -d' to start the app_cpu service
-# - Run 'docker compose --profile gpu-s3fs up -d' to start the app_gpu service
-# - Run 'docker compose --profile cpu-fs up -d' to start the app_cpu service
-# - Run 'docker compose --profile gpu-fs up -d' to start the app_gpu service
+# - Run 'docker compose -f docker-compose-dev.yml --profile cpu-s3fs up -d' to start the app_cpu service
+# - Run 'docker compose -f docker-compose-dev.yml --profile gpu-s3fs up -d' to start the app_gpu service
+# - Run 'docker compose -f docker-compose-dev.yml --profile cpu-fs up -d' to start the app_cpu service
+# - Run 'docker compose -f docker-compose-dev.yml --profile gpu-fs up -d' to start the app_gpu service

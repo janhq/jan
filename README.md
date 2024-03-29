@@ -240,6 +240,7 @@ This will build the app MacOS m1/m2 for production (with code signing already do
   - If you intend to run Jan in GPU mode, you need to install `nvidia-driver` and `nvidia-docker2`. Follow the instruction [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for installation.
 
 - Run Jan in Docker mode
+  > User can choose between `docker-compose.yml` with latest prebuilt docker image or `docker-compose-dev.yml` with local docker build
 
 | Docker compose Profile | Description                                  |
 | ---------------------- | -------------------------------------------- |
