@@ -5,7 +5,7 @@
       "url": "https://huggingface.co/janhq/stealth-v1.3-GGUF/resolve/main/stealth-v1.3.Q4_K_M.gguf"
     }
   ],
-  "id": "stealth-7b",
+  "id": "stealth-v1.2-7b",
   "object": "model",
   "name": "Stealth 7B Q4",
   "version": "1.0",
