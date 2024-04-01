@@ -65,7 +65,9 @@ const ModalCancelDownload: React.FC<Props> = ({ model, isFromList }) => {
                   }) as number
                 }
               />
-              <span>{formatDownloadPercentage(downloadState.percent)}</span>
+              <span className="tabular-nums">
+                {formatDownloadPercentage(downloadState.percent)}
+              </span>
             </div>
           </Button>
         )}
