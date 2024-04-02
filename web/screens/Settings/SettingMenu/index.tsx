@@ -47,7 +47,7 @@ const SettingMenu: React.FC = () => {
 
           {extensionHasSettings.length > 0 && (
             <div className="mb-2 mt-6">
-              <label className="text-xs font-medium text-muted-foreground">
+              <label className="text-xs font-medium uppercase text-muted-foreground">
                 Extensions
               </label>
             </div>
