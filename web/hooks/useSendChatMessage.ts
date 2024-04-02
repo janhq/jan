@@ -234,6 +234,10 @@ export default function useSendChatMessage() {
       selectedModelRef.current?.id ??
       activeThreadRef.current.assistants[0].model.id
 
+    if (base64Blob) {
+      setFileUpload([])
+    }
+
     if (modelRef.current?.id !== modelId) {
       setQueuedMessage(true)
       const error = await startModel(modelId).catch((error: Error) => error)
@@ -261,10 +265,6 @@ export default function useSendChatMessage() {
     // Reset states
     setReloadModel(false)
     setEngineParamsUpdate(false)
-
-    if (base64Blob) {
-      setFileUpload([])
-    }
   }
 
   return {
