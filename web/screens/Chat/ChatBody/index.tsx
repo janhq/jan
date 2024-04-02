@@ -3,9 +3,13 @@ import ScrollToBottom from 'react-scroll-to-bottom'
 import { MessageStatus } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
+import { loadModelErrorAtom } from '@/hooks/useActiveModel'
+
 import ChatItem from '../ChatItem'
 
 import ErrorMessage from '../ErrorMessage'
+
+import LoadModelError from '../LoadModelError'
 
 import EmptyModel from './EmptyModel'
 import EmptyThread from './EmptyThread'
@@ -16,6 +20,7 @@ import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const loadModelError = useAtomValue(loadModelErrorAtom)
 
   if (downloadedModels.length === 0) return <EmptyModel />
   if (messages.length === 0) return <EmptyThread />
@@ -29,9 +34,15 @@ const ChatBody: React.FC = () => {
               <ChatItem {...message} key={message.id} />
             )}
 
-          {(message.status === MessageStatus.Error ||
-            message.status === MessageStatus.Stopped) &&
-            index === messages.length - 1 && <ErrorMessage message={message} />}
+          {loadModelError ? (
+            <LoadModelError />
+          ) : (
+            index === messages.length - 1 &&
+            message.status !== MessageStatus.Pending &&
+            message.status !== MessageStatus.Ready && (
+              <ErrorMessage message={message} />
+            )
+          )}
         </div>
       ))}
     </ScrollToBottom>
