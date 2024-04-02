@@ -102,7 +102,7 @@ export abstract class OAIEngine extends AIEngine {
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
       error: async (err: any) => {
-        console.error(`Inference error: ${JSON.stringify(err, null, 2)}`)
+        console.error(`Inference error:`, err)
         if (this.isCancelled || message.content.length) {
           message.status = MessageStatus.Stopped
           events.emit(MessageEvent.OnMessageUpdate, message)
