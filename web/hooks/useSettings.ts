@@ -74,10 +74,10 @@ export const useSettings = () => {
     if (vulkan != null) {
       settings.vulkan = vulkan
       // GPU enabled, set run_mode to 'gpu'
-      if (settings.vulkan) {
+      if (settings.vulkan === true) {
         settings.run_mode = 'gpu'
       } else {
-        settings.run_mode = settings.gpus?.length > 0 ? 'gpu' : 'cpu'
+        settings.run_mode = 'cpu'
       }
     }
     await fs.writeFileSync(settingsFile, JSON.stringify(settings))
