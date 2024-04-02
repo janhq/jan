@@ -48,7 +48,13 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           </span>
         )
       default:
-        return <AutoLink text={message.content[0]?.text?.value} />
+        return (
+          <>
+            {message.content[0]?.text?.value && (
+              <AutoLink text={message.content[0].text.value} />
+            )}
+          </>
+        )
     }
   }
 
