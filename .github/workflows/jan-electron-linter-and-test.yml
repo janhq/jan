@@ -40,13 +40,6 @@ jobs:
   test-on-macos:
     runs-on: [self-hosted, macOS, macos-desktop]
     steps:
-      - name: "Cleanup build folder"
-        run: |
-          ls -la ./
-          rm -rf ./* || true
-          rm -rf ./.??* || true
-          ls -la ./
-          rm -rf ~/Library/Application\ Support/jan
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -62,9 +55,14 @@ jobs:
 
       - name: Linter and test
         run: |
+          npm config set registry ${{ secrets.NPM_PROXY }} --global
+          yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          TURBO_API: "${{ secrets.TURBO_API }}"
+          TURBO_TEAM: "macos"
+          TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
 
   test-on-windows:
     if: github.event_name == 'push'
@@ -74,15 +72,6 @@ jobs:
         antivirus-tools: ['mcafee', 'default-windows-security','bit-defender']
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
-      - name: Clean workspace
-        run: |
-          Remove-Item -Path "\\?\$(Get-Location)\*" -Force -Recurse
-          $path = "$Env:APPDATA\jan"
-          if (Test-Path $path) {
-              Remove-Item "\\?\$path" -Recurse -Force
-          } else {
-              Write-Output "Folder does not exist."
-          }
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -101,20 +90,17 @@ jobs:
       - name: Linter and test
         shell: powershell
         run: |
+          npm config set registry ${{ secrets.NPM_PROXY }} --global
+          yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
+        env:
+          TURBO_API: "${{ secrets.TURBO_API }}"
+          TURBO_TEAM: "windows"
+          TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
   test-on-windows-pr:
     if: github.event_name == 'pull_request'
     runs-on: windows-desktop-default-windows-security
     steps:
-      - name: Clean workspace
-        run: |
-          Remove-Item -Path "\\?\$(Get-Location)\*" -Force -Recurse
-          $path = "$Env:APPDATA\jan"
-          if (Test-Path $path) {
-              Remove-Item "\\?\$path" -Recurse -Force
-          } else {
-              Write-Output "Folder does not exist."
-          }
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -133,18 +119,17 @@ jobs:
       - name: Linter and test
         shell: powershell
         run: |
+          npm config set registry ${{ secrets.NPM_PROXY }} --global
+          yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
+        env:
+          TURBO_API: "${{ secrets.TURBO_API }}"
+          TURBO_TEAM: "windows"
+          TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
 
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
     steps:
-      - name: "Cleanup build folder"
-        run: |
-          ls -la ./
-          rm -rf ./* || true
-          rm -rf ./.??* || true
-          ls -la ./
-          rm -rf ~/.config/jan
       - name: Getting the repo
         uses: actions/checkout@v3
 
@@ -162,4 +147,10 @@ jobs:
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
           echo -e "Display ID: $DISPLAY"
+          npm config set registry ${{ secrets.NPM_PROXY }} --global
+          yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
+        env:
+          TURBO_API: "${{ secrets.TURBO_API }}"
+          TURBO_TEAM: "linux"
+          TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
