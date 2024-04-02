@@ -10,7 +10,6 @@ import ModalTroubleShooting, {
 
 import { MainViewState } from '@/constants/screens'
 
-import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
@@ -20,9 +19,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { resendChatMessage } = useSendChatMessage()
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
-  const loadModelError = useAtomValue(loadModelErrorAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
-  const PORT_NOT_AVAILABLE = 'PORT_NOT_AVAILABLE'
 
   const regenerateMessage = async () => {
     const lastMessageIndex = messages.length - 1
@@ -77,63 +74,23 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         </div>
       )}
       {message.status === MessageStatus.Error && (
-        <>
-          {loadModelError === PORT_NOT_AVAILABLE ? (
-            <div
-              key={message.id}
-              className="flex w-full flex-col items-center text-center text-sm font-medium text-gray-500"
+        <div
+          key={message.id}
+          className="mx-6 flex flex-col items-center space-y-2 text-center text-sm font-medium text-gray-500"
+        >
+          {getErrorTitle()}
+          <p>
+            Jan’s in beta. Access&nbsp;
+            <span
+              className="cursor-pointer text-primary dark:text-blue-400"
+              onClick={() => setModalTroubleShooting(true)}
             >
-              <p className="w-[90%]">
-                Port 3928 is currently unavailable. Check for conflicting apps,
-                or access&nbsp;
-                <span
-                  className="cursor-pointer text-primary dark:text-blue-400"
-                  onClick={() => setModalTroubleShooting(true)}
-                >
-                  troubleshooting assistance
-                </span>
-                &nbsp;for further support.
-              </p>
-              <ModalTroubleShooting />
-            </div>
-          ) : loadModelError &&
-            loadModelError?.includes('EXTENSION_IS_NOT_INSTALLED') ? (
-            <div
-              key={message.id}
-              className="flex w-full flex-col items-center text-center text-sm font-medium text-gray-500"
-            >
-              <p className="w-[90%]">
-                Model is currently unavailable. Please switch to a different
-                model or install the{' '}
-                <button
-                  className="font-medium text-primary dark:text-blue-400"
-                  onClick={() => setMainState(MainViewState.Settings)}
-                >
-                  {loadModelError.split('::')[1] ?? ''}
-                </button>{' '}
-                to continue using it.
-              </p>
-            </div>
-          ) : (
-            <div
-              key={message.id}
-              className="mx-6 flex flex-col items-center space-y-2 text-center text-sm font-medium text-gray-500"
-            >
-              {getErrorTitle()}
-              <p>
-                Jan’s in beta. Access&nbsp;
-                <span
-                  className="cursor-pointer text-primary dark:text-blue-400"
-                  onClick={() => setModalTroubleShooting(true)}
-                >
-                  troubleshooting assistance
-                </span>
-                &nbsp;now.
-              </p>
-              <ModalTroubleShooting />
-            </div>
-          )}
-        </>
+              troubleshooting assistance
+            </span>
+            &nbsp;now.
+          </p>
+          <ModalTroubleShooting />
+        </div>
       )}
     </div>
   )

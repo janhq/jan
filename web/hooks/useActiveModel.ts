@@ -107,7 +107,7 @@ export function useActiveModel() {
         toaster({
           title: 'Failed!',
           description: `Model ${model.id} failed to start.`,
-          type: 'success',
+          type: 'error',
         })
         setLoadModelError(error)
         return Promise.reject(error)
