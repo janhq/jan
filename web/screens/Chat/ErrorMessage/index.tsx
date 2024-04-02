@@ -3,6 +3,7 @@ import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
 
+import AutoLink from '@/containers/AutoLink'
 import ModalTroubleShooting, {
   modalTroubleShootingAtom,
 } from '@/containers/ModalTroubleShoot'
@@ -110,9 +111,9 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           ) : (
             <div
               key={message.id}
-              className="flex flex-col items-center text-center text-sm font-medium text-gray-500"
+              className="mx-6 flex flex-col items-center space-y-2 text-center text-sm font-medium text-gray-500"
             >
-              {getErrorTitle()}
+              <AutoLink text={getErrorTitle()} />
               <p>
                 Jan’s in beta. Access&nbsp;
                 <span
