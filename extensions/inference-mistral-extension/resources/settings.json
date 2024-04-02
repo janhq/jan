@@ -2,17 +2,17 @@
   {
     "key": "chat-completions-endpoint",
     "title": "Chat Completions Endpoint",
-    "description": "The endpoint to use for chat completions. See the [OpenAI API documentation](https://platform.openai.com/docs/api-reference/chat/create) for more information.",
+    "description": "The endpoint to use for chat completions. See the [Mistral API documentation](https://docs.mistral.ai/api/#operation/createChatCompletion) for more information.",
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "Chat Completions Endpoint",
-      "value": "https://api.openai.com/v1/chat/completions"
+      "value": "https://api.mistral.ai/v1/chat/completions"
     }
   },
   {
-    "key": "openai-api-key",
+    "key": "mistral-api-key",
     "title": "API Key",
-    "description": "The OpenAI API uses API keys for authentication. Visit your [API Keys](https://platform.openai.com/account/api-keys) page to retrieve the API key you'll use in your requests.",
+    "description": "The Mistral API uses API keys for authentication. Visit your [API Keys](https://console.mistral.ai/api-keys/ page to retrieve the API key you'll use in your requests.",
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "API Key",
