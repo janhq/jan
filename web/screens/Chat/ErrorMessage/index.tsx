@@ -48,7 +48,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           </span>
         )
       default:
-        return message.content[0]?.text?.value
+        return <AutoLink text={message.content[0]?.text?.value} />
     }
   }
 
@@ -113,7 +113,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               key={message.id}
               className="mx-6 flex flex-col items-center space-y-2 text-center text-sm font-medium text-gray-500"
             >
-              <AutoLink text={getErrorTitle()} />
+              {getErrorTitle()}
               <p>
                 Jan’s in beta. Access&nbsp;
                 <span
