@@ -60,14 +60,20 @@ export function requestInference(
             }
             const text = decoder.decode(value)
             const lines = text.trim().split('\n')
+            let cachedLines = ''
             for (const line of lines) {
-              if (line.startsWith('data: ') && !line.includes('data: [DONE]')) {
-                const data = JSON.parse(line.replace('data: ', ''))
-                content += data.choices[0]?.delta?.content ?? ''
-                if (content.startsWith('assistant: ')) {
-                  content = content.replace('assistant: ', '')
+              try {
+                const toParse = cachedLines + line
+                if (!line.includes('data: [DONE]')) {
+                  const data = JSON.parse(toParse.replace('data: ', ''))
+                  content += data.choices[0]?.delta?.content ?? ''
+                  if (content.startsWith('assistant: ')) {
+                    content = content.replace('assistant: ', '')
+                  }
+                  if (content !== '') subscriber.next(content)
                 }
-                subscriber.next(content)
+              } catch {
+                cachedLines = line
               }
             }
           }
