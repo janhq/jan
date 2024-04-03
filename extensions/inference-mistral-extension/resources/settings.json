@@ -12,7 +12,7 @@
   {
     "key": "mistral-api-key",
     "title": "API Key",
-    "description": "The Mistral API uses API keys for authentication. Visit your [API Keys](https://console.mistral.ai/api-keys/ page to retrieve the API key you'll use in your requests.",
+    "description": "The Mistral API uses API keys for authentication. Visit your [API Keys](https://console.mistral.ai/api-keys/) page to retrieve the API key you'll use in your requests.",
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "API Key",
