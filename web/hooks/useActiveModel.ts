@@ -115,7 +115,8 @@ export function useActiveModel() {
   }
 
   const stopModel = useCallback(async () => {
-    if (!activeModel) return
+    if (!activeModel || (stateModel.state === 'stop' && stateModel.loading))
+      return
 
     setStateModel({ state: 'stop', loading: true, model: activeModel.id })
     const engine = EngineManager.instance().get(activeModel.engine)
@@ -126,7 +127,7 @@ export function useActiveModel() {
         setActiveModel(undefined)
         setStateModel({ state: 'start', loading: false, model: '' })
       })
-  }, [activeModel, setActiveModel, setStateModel])
+  }, [activeModel, stateModel, setActiveModel, setStateModel])
 
   return { activeModel, startModel, stopModel, stateModel }
 }

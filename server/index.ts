@@ -149,7 +149,7 @@ export const stopServer = async () => {
     // Log server stop
     if (isVerbose) logServer(`Debug: Server stopped`)
     // Stop the server
-    await server.close()
+    await server?.close()
   } catch (e) {
     // Log any errors
     if (isVerbose) logServer(`Error: ${e}`)
