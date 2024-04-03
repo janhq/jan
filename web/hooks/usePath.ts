@@ -31,6 +31,9 @@ export const usePath = () => {
         if (!assistantId) return
         filePath = await joinPath(['assistants', assistantId])
         break
+      case 'Logs':
+        filePath = 'logs'
+        break
       default:
         break
     }
