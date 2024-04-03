@@ -81,52 +81,55 @@ export function useActiveModel() {
     }
 
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
-    const engine = EngineManager.instance().get(model.engine)
-    return engine
-      ?.loadModel(model)
-      .then(() => {
-        setActiveModel(model)
-        setStateModel(() => ({
-          state: 'stop',
-          loading: false,
-          model: model.id,
-        }))
-        toaster({
-          title: 'Success!',
-          description: `Model ${model.id} has been started.`,
-          type: 'success',
-        })
-      })
-      .catch((error) => {
-        setStateModel(() => ({
-          state: 'start',
-          loading: false,
-          model: model.id,
-        }))
 
-        toaster({
-          title: 'Failed!',
-          description: `Model ${model.id} failed to start.`,
-          type: 'error',
-        })
-        setLoadModelError(error)
-        return Promise.reject(error)
+    try {
+      await startModelLocally(model)
+      setActiveModel(model)
+      setStateModel(() => ({
+        state: 'stop',
+        loading: false,
+        model: modelId,
+      }))
+      toaster({
+        title: 'Success!',
+        description: `Model ${modelId} has been started.`,
+        type: 'success',
       })
+    } catch (err) {
+      console.warn('Failed to start model', err)
+      setStateModel(() => ({
+        state: 'start',
+        loading: false,
+        model: modelId,
+      }))
+
+      toaster({
+        title: 'Failed!',
+        description: `Model ${modelId} failed to start.`,
+        type: 'error',
+      })
+      setLoadModelError(JSON.stringify(err)) // TODO:
+    }
   }
 
   const stopModel = useCallback(async () => {
     if (!activeModel) return
 
     setStateModel({ state: 'stop', loading: true, model: activeModel.id })
-    const engine = EngineManager.instance().get(activeModel.engine)
-    await engine
-      ?.unloadModel(activeModel)
-      .catch()
-      .then(() => {
-        setActiveModel(undefined)
-        setStateModel({ state: 'start', loading: false, model: '' })
-      })
+    try {
+      await stopModelLocally(activeModel)
+    } catch (err) {
+      console.warn('Failed to stop model', err)
+    }
+    setActiveModel(undefined)
+    setStateModel({ state: 'start', loading: false, model: '' })
   }, [activeModel, setActiveModel, setStateModel])
 
   return { activeModel, startModel, stopModel, stateModel }
 }
+
+const stopModelLocally = async (model: Model): Promise<void> =>
+  EngineManager.instance().get(model.engine)?.unloadModel(model)
+
+const startModelLocally = async (model: Model): Promise<void> =>
+  EngineManager.instance().get(model.engine)?.loadModel(model)

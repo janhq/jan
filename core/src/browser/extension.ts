@@ -81,13 +81,13 @@ export abstract class BaseExtension implements ExtensionType {
    * Called when the extension is loaded.
    * Any initialization logic for the extension should be put here.
    */
-  abstract onLoad(): void
+  abstract onLoad(): Promise<void>
 
   /**
    * Called when the extension is unloaded.
    * Any cleanup logic for the extension should be put here.
    */
-  abstract onUnload(): void
+  abstract onUnload(): Promise<void>
 
   /**
    * The compatibility of the extension.

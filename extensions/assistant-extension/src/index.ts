@@ -35,10 +35,7 @@ export default class JanAssistantExtension extends AssistantExtension {
     }
   }
 
-  /**
-   * Called when the extension is unloaded.
-   */
-  onUnload(): void {}
+  override async onUnload(): Promise<void> {}
 
   async createAssistant(assistant: Assistant): Promise<void> {
     const assistantDir = await joinPath([

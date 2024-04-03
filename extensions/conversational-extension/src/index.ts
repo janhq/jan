@@ -27,9 +27,7 @@ export default class JSONConversationalExtension extends ConversationalExtension
   /**
    * Called when the extension is unloaded.
    */
-  onUnload() {
-    console.debug('JSONConversationalExtension unloaded')
-  }
+  override async onUnload(): Promise<void> {}
 
   /**
    * Returns a Promise that resolves to an array of Conversation objects.

@@ -6,12 +6,9 @@ import { OAIEngine } from './OAIEngine'
  */
 export abstract class RemoteOAIEngine extends OAIEngine {
   apiKey?: string
-  /**
-   * On extension load, subscribe to events.
-   */
-  override onLoad() {
-    super.onLoad()
-  }
+  override async onLoad(): Promise<void> {}
+
+  override async onUnload(): Promise<void> {}
 
   /**
    * Headers for the inference request

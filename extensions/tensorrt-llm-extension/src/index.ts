@@ -164,15 +164,8 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   override async loadModel(model: Model): Promise<void> {
     if (model.engine !== this.provider) return
 
-    if ((await this.installationState()) === 'Installed')
+    if ((await this.installationState()) === 'Installed') {
       return super.loadModel(model)
-    else {
-      events.emit(ModelEvent.OnModelFail, {
-        ...model,
-        error: {
-          message: 'EXTENSION_IS_NOT_INSTALLED::TensorRT-LLM extension',
-        },
-      })
     }
   }
 

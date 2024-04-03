@@ -34,16 +34,11 @@ export abstract class OAIEngine extends AIEngine {
   /**
    * On extension load, subscribe to events.
    */
-  override onLoad() {
+  override async onLoad(): Promise<void> {
     super.onLoad()
     events.on(MessageEvent.OnMessageSent, (data: MessageRequest) => this.inference(data))
     events.on(InferenceEvent.OnInferenceStopped, () => this.stopInference())
   }
-
-  /**
-   * On extension unload
-   */
-  override onUnload(): void {}
 
   /*
    * Inference request

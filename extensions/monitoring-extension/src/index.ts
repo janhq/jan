@@ -21,7 +21,7 @@ export default class JanMonitoringExtension extends MonitoringExtension {
   /**
    * Called when the extension is unloaded.
    */
-  onUnload(): void {}
+  async onUnload(): Promise<void> {}
 
   /**
    * Returns the GPU configuration.

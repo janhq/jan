@@ -16,12 +16,8 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * On extension load, subscribe to events.
    */
-  override onLoad() {
+  override async onLoad(): Promise<void> {
     this.registerEngine()
-
-    events.on(ModelEvent.OnModelInit, (model: Model) => this.loadModel(model))
-    events.on(ModelEvent.OnModelStop, (model: Model) => this.unloadModel(model))
-
     this.prePopulateModels()
   }
 
@@ -42,11 +38,8 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Loads the model.
    */
-  async loadModel(model: Model): Promise<any> {
-    if (model.engine.toString() !== this.provider) return Promise.resolve()
-    events.emit(ModelEvent.OnModelReady, model)
-    return Promise.resolve()
-  }
+  async loadModel(_model: Model): Promise<void> {}
+
   /**
    * Stops the model.
    */
@@ -69,7 +62,7 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Pre-populate models to App Data Folder
    */
-  prePopulateModels(): Promise<void> {
+  async prePopulateModels(): Promise<void> {
     const modelFolder = 'models'
     return this.models().then((models) => {
       const prePoluateOperations = models.map((model) =>

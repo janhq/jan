@@ -44,7 +44,7 @@ export default class JanModelExtension extends ModelExtension {
    * Called when the extension is loaded.
    * @override
    */
-  async onLoad() {
+  override async onLoad(): Promise<void> {
     this.copyModelsToHomeDir()
     // Handle Desktop Events
     this.handleDesktopEvents()
@@ -54,7 +54,7 @@ export default class JanModelExtension extends ModelExtension {
    * Called when the extension is unloaded.
    * @override
    */
-  onUnload(): void {}
+  override async onUnload(): Promise<void> {}
 
   private async copyModelsToHomeDir() {
     try {

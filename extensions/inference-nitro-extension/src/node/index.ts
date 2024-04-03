@@ -7,7 +7,6 @@ import {
   log,
   getSystemResourceInfo,
   Model,
-  InferenceEngine,
   ModelSettingParams,
   PromptTemplate,
   SystemInformation,
@@ -66,78 +65,69 @@ async function loadModel(
   params: ModelInitOptions,
   systemInfo?: SystemInformation
 ): Promise<ModelOperationResponse | void> {
-  if (params.model.engine !== InferenceEngine.nitro) {
-    // Not a nitro model
-    return Promise.resolve()
+  const nitroResourceProbe = await getSystemResourceInfo()
+  // Convert settings.prompt_template to system_prompt, user_prompt, ai_prompt
+  if (params.model.settings.prompt_template) {
+    const promptTemplate = params.model.settings.prompt_template
+    const prompt = promptTemplateConverter(promptTemplate)
+    if (prompt?.error) {
+      return Promise.reject(prompt.error)
+    }
+    params.model.settings.system_prompt = prompt.system_prompt
+    params.model.settings.user_prompt = prompt.user_prompt
+    params.model.settings.ai_prompt = prompt.ai_prompt
   }
 
-  if (params.model.engine !== InferenceEngine.nitro) {
-    return Promise.reject('Not a nitro model')
-  } else {
-    const nitroResourceProbe = await getSystemResourceInfo()
-    // Convert settings.prompt_template to system_prompt, user_prompt, ai_prompt
-    if (params.model.settings.prompt_template) {
-      const promptTemplate = params.model.settings.prompt_template
-      const prompt = promptTemplateConverter(promptTemplate)
-      if (prompt?.error) {
-        return Promise.reject(prompt.error)
-      }
-      params.model.settings.system_prompt = prompt.system_prompt
-      params.model.settings.user_prompt = prompt.user_prompt
-      params.model.settings.ai_prompt = prompt.ai_prompt
-    }
+  // modelFolder is the absolute path to the running model folder
+  // e.g. ~/jan/models/llama-2
+  let modelFolder = params.modelFolder
 
-    // modelFolder is the absolute path to the running model folder
-    // e.g. ~/jan/models/llama-2
-    let modelFolder = params.modelFolder
+  let llama_model_path = params.model.settings.llama_model_path
 
-    let llama_model_path = params.model.settings.llama_model_path
-
-    // Absolute model path support
-    if (
-      params.model?.sources.length &&
-      params.model.sources.every((e) => fs.existsSync(e.url))
-    ) {
-      llama_model_path =
-        params.model.sources.length === 1
-          ? params.model.sources[0].url
-          : params.model.sources.find((e) =>
-              e.url.includes(llama_model_path ?? params.model.id)
-            )?.url
-    }
-
-    if (!llama_model_path || !path.isAbsolute(llama_model_path)) {
-      // Look for GGUF model file
-      const modelFiles: string[] = fs.readdirSync(modelFolder)
-      const ggufBinFile = modelFiles.find(
-        (file) =>
-          // 1. Prioritize llama_model_path (predefined)
-          (llama_model_path && file === llama_model_path) ||
-          // 2. Prioritize GGUF File (manual import)
-          file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT) ||
-          // 3. Fallback Model ID (for backward compatibility)
-          file === params.model.id
-      )
-      if (ggufBinFile) llama_model_path = path.join(modelFolder, ggufBinFile)
-    }
-
-    // Look for absolute source path for single model
-
-    if (!llama_model_path) return Promise.reject('No GGUF model file found')
-
-    currentSettings = {
-      ...params.model.settings,
-      llama_model_path,
-      // This is critical and requires real CPU physical core count (or performance core)
-      cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
-      ...(params.model.settings.mmproj && {
-        mmproj: path.isAbsolute(params.model.settings.mmproj)
-          ? params.model.settings.mmproj
-          : path.join(modelFolder, params.model.settings.mmproj),
-      }),
-    }
-    return runNitroAndLoadModel(systemInfo)
+  // Absolute model path support
+  if (
+    params.model?.sources.length &&
+    params.model.sources.every((e) => fs.existsSync(e.url))
+  ) {
+    llama_model_path =
+      params.model.sources.length === 1
+        ? params.model.sources[0].url
+        : params.model.sources.find((e) =>
+            e.url.includes(llama_model_path ?? params.model.id)
+          )?.url
   }
+
+  if (!llama_model_path || !path.isAbsolute(llama_model_path)) {
+    // Look for GGUF model file
+    const modelFiles: string[] = fs.readdirSync(modelFolder)
+    const ggufBinFile = modelFiles.find(
+      (file) =>
+        // 1. Prioritize llama_model_path (predefined)
+        (llama_model_path && file === llama_model_path) ||
+        // 2. Prioritize GGUF File (manual import)
+        file.toLowerCase().includes(SUPPORTED_MODEL_FORMAT) ||
+        // 3. Fallback Model ID (for backward compatibility)
+        file === params.model.id
+    )
+    if (ggufBinFile) llama_model_path = path.join(modelFolder, ggufBinFile)
+  }
+
+  // Look for absolute source path for single model
+
+  if (!llama_model_path) return Promise.reject('No GGUF model file found')
+
+  currentSettings = {
+    ...params.model.settings,
+    llama_model_path,
+    // This is critical and requires real CPU physical core count (or performance core)
+    cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
+    ...(params.model.settings.mmproj && {
+      mmproj: path.isAbsolute(params.model.settings.mmproj)
+        ? params.model.settings.mmproj
+        : path.join(modelFolder, params.model.settings.mmproj),
+    }),
+  }
+  return runNitroAndLoadModel(systemInfo)
 }
 
 /**

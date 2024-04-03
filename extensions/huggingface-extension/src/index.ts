@@ -38,17 +38,9 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
   ]
   interrupted = false
 
-  /**
-   * Called when the extension is loaded.
-   * @override
-   */
-  onLoad() {}
+  override async onLoad(): Promise<void> {}
 
-  /**
-   * Called when the extension is unloaded.
-   * @override
-   */
-  onUnload(): void {}
+  override async onUnload(): Promise<void> {}
 
   private getFileList(repoData: HuggingFaceRepoData): string[] {
     // SafeTensors first, if not, then PyTorch
