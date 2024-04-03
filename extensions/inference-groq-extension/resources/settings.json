@@ -15,7 +15,7 @@
     "description": "The Groq API uses API keys for authentication. Visit your [API Keys](https://console.groq.com/keys) page to retrieve the API key you'll use in your requests.",
     "controllerType": "input",
     "controllerProps": {
-      "placeholder": "API Key",
+      "placeholder": "gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "value": "",
       "type": "password"
     }
