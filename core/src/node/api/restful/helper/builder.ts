@@ -353,7 +353,7 @@ export const chatCompletions = async (request: any, reply: any) => {
     reply.code(400).send(response)
   } else {
     reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
+      'Content-Type': request.body.stream === true ? 'text/event-stream' : 'application/json',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*',
