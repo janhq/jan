@@ -21,8 +21,6 @@ export abstract class AIEngine extends BaseExtension {
 
     events.on(ModelEvent.OnModelInit, (model: Model) => this.loadModel(model))
     events.on(ModelEvent.OnModelStop, (model: Model) => this.unloadModel(model))
-
-    this.prePopulateModels()
   }
 
   /**
@@ -90,40 +88,4 @@ export abstract class AIEngine extends BaseExtension {
    * Stop inference
    */
   stopInference() {}
-
-  /**
-   * Pre-populate models to App Data Folder
-   */
-  prePopulateModels(): Promise<void> {
-    const modelFolder = 'models'
-    return this.models().then((models) => {
-      const prePoluateOperations = models.map((model) =>
-        getJanDataFolderPath()
-          .then((janDataFolder) =>
-            // Attempt to create the model folder
-            joinPath([janDataFolder, modelFolder, model.id]).then((path) =>
-              fs
-                .mkdir(path)
-                .catch()
-                .then(() => path)
-            )
-          )
-          .then((path) => joinPath([path, 'model.json']))
-          .then((path) => {
-            // Do not overwite existing model.json
-            return fs.existsSync(path).then((exist: any) => {
-              if (!exist) return fs.writeFileSync(path, JSON.stringify(model, null, 2))
-            })
-          })
-          .catch((e: Error) => {
-            console.error('Error', e)
-          })
-      )
-      Promise.all(prePoluateOperations).then(() =>
-        // Emit event to update models
-        // So the UI can update the models list
-        events.emit(ModelEvent.OnModelsUpdate, {})
-      )
-    })
-  }
 }

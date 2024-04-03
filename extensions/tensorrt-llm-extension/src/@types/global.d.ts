@@ -9,3 +9,4 @@ declare const TENSORRT_VERSION: string
 declare const COMPATIBILITY: object
 declare const EXTENSION_NAME: string
 declare const PROVIDER: string
+declare const MODELS: Array<any>

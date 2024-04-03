@@ -23,10 +23,6 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
   nodeModule: string = NODE
   provider: string = 'nitro'
 
-  models(): Promise<Model[]> {
-    return Promise.resolve([])
-  }
-
   /**
    * Checking the health for Nitro's process each 5 secs.
    */

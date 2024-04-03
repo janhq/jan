@@ -23,7 +23,6 @@ import {
   ModelEvent,
   getJanDataFolderPath,
 } from '@janhq/core'
-import models from '../models.json'
 
 /**
  * TensorRTLLMExtension - Implementation of LocalOAIEngine
@@ -46,14 +45,14 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   override compatibility() {
     return COMPATIBILITY as unknown as Compatibility
   }
-  /**
-   * models implemented by the extension
-   * define pre-populated models
-   */
-  override async models(): Promise<Model[]> {
-    if ((await this.installationState()) === 'Installed')
-      return models as unknown as Model[]
-    return []
+
+  override async onLoad(): Promise<void> {
+    super.onLoad()
+
+    if ((await this.installationState()) === 'Installed') {
+      const models = MODELS as unknown as Model[]
+      this.registerModels(models)
+    }
   }
 
   override async install(): Promise<void> {
@@ -134,7 +133,8 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       events.emit(DownloadEvent.onFileUnzipSuccess, state)
 
       // Prepopulate models as soon as it's ready
-      this.prePopulateModels().then(() => {
+      const models = MODELS as unknown as Model[]
+      this.registerModels(models).then(() => {
         showToast(
           'Extension installed successfully.',
           'New models are added to Model Hub.'
@@ -144,7 +144,8 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
   }
 
-  async removePopulatedModels(): Promise<void> {
+  private async removePopulatedModels(): Promise<void> {
+    const models = MODELS as unknown as Model[]
     console.debug(`removePopulatedModels`, JSON.stringify(models))
     const janDataFolderPath = await getJanDataFolderPath()
     const modelFolderPath = await joinPath([janDataFolderPath, 'models'])

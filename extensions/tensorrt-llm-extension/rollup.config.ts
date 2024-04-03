@@ -5,6 +5,7 @@ import typescript from 'rollup-plugin-typescript2'
 import json from '@rollup/plugin-json'
 import replace from '@rollup/plugin-replace'
 const packageJson = require('./package.json')
+const modelsJson = require('./resources/models.json')
 
 export default [
   {
@@ -15,6 +16,7 @@ export default [
     },
     plugins: [
       replace({
+        MODELS: JSON.stringify(modelsJson),
         EXTENSION_NAME: JSON.stringify(packageJson.name),
         TENSORRT_VERSION: JSON.stringify(packageJson.tensorrtVersion),
         PROVIDER: JSON.stringify(packageJson.provider),
