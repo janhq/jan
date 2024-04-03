@@ -16,8 +16,8 @@ export default [
     },
     plugins: [
       replace({
+        preventAssignment: true,
         MODELS: JSON.stringify(modelsJson),
-        EXTENSION_NAME: JSON.stringify(packageJson.name),
         TENSORRT_VERSION: JSON.stringify(packageJson.tensorrtVersion),
         PROVIDER: JSON.stringify(packageJson.provider),
         DOWNLOAD_RUNNER_URL:
@@ -55,7 +55,7 @@ export default [
     },
     plugins: [
       replace({
-        EXTENSION_NAME: JSON.stringify(packageJson.name),
+        preventAssignment: true,
         TENSORRT_VERSION: JSON.stringify(packageJson.tensorrtVersion),
         PROVIDER: JSON.stringify(packageJson.provider),
         LOAD_MODEL_URL: JSON.stringify(

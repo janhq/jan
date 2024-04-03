@@ -2,8 +2,8 @@ declare const NODE: string
 declare const INFERENCE_URL: string
 declare const TROUBLESHOOTING_URL: string
 declare const JAN_SERVER_INFERENCE_URL: string
-declare const EXTENSION_NAME: string
 declare const DEFAULT_SETTINGS: Array<any>
+declare const MODELS: Array<any>
 
 /**
  * The response from the initModel function.

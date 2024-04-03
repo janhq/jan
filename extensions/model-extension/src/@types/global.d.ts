@@ -1,6 +1,6 @@
 export {}
 declare global {
-  declare const EXTENSION_NAME: string
+  declare const DEFAULT_MODEL: object
   declare const MODULE_PATH: string
   declare const VERSION: string
 

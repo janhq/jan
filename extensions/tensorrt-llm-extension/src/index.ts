@@ -115,7 +115,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     const downloadRequest: DownloadRequest = {
       url,
       localPath: tarballFullPath,
-      extensionId: EXTENSION_NAME,
+      extensionId: this.name,
       downloadType: 'extension',
     }
     downloadFile(downloadRequest)

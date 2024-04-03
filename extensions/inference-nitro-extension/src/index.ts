@@ -58,7 +58,8 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
       () => this.periodicallyGetNitroHealth(),
       JanInferenceNitroExtension._intervalHealthCheck
     )
-
+    const models = MODELS as unknown as Model[]
+    this.registerModels(models)
     super.onLoad()
   }
 

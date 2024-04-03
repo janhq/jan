@@ -18,7 +18,7 @@ export default [
     },
     plugins: [
       replace({
-        EXTENSION_NAME: JSON.stringify(packageJson.name),
+        preventAssignment: true,
         NODE_MODULE_PATH: JSON.stringify(
           `${packageJson.name}/${packageJson.node}`
         ),
