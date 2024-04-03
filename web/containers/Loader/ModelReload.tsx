@@ -41,7 +41,7 @@ export default function ModelReload() {
           style={{ width: `${loader}%` }}
         />
         <span className="relative z-10">
-          Reloading model {stateModel.model}
+          Reloading model {stateModel.model?.id}
         </span>
       </div>
     </div>

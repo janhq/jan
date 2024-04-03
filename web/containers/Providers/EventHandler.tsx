@@ -79,7 +79,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   const onModelStopped = useCallback(() => {
     setActiveModel(undefined)
-    setStateModel({ state: 'start', loading: false, model: '' })
+    setStateModel({ state: 'start', loading: false, model: undefined })
   }, [setActiveModel, setStateModel])
 
   const updateThreadTitle = useCallback(

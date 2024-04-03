@@ -34,7 +34,8 @@ const LoadModelError = () => {
           <ModalTroubleShooting />
         </div>
       ) : loadModelError &&
-        loadModelError?.includes('EXTENSION_IS_NOT_INSTALLED') ? (
+        typeof loadModelError.includes === 'function' &&
+        loadModelError.includes('EXTENSION_IS_NOT_INSTALLED') ? (
         <div className="flex w-full flex-col items-center text-center text-sm font-medium text-gray-500">
           <p className="w-[90%]">
             Model is currently unavailable. Please switch to a different model
