@@ -83,6 +83,8 @@ app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
 })
 
 app.on('ready', () => {
+  if (!getAppConfigurations().quick_ask) return
+
   registerGlobalShortcuts()
 })
 
@@ -119,8 +121,6 @@ function createMainWindow() {
 function registerGlobalShortcuts() {
   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
     // Feature Toggle for Quick Ask
-    if (!getAppConfigurations().quick_ask) return
-
     if (!windowManager.isQuickAskWindowVisible()) {
       windowManager.showQuickAskWindow()
       windowManager.sendQuickAskSelectedText(selectedText)
