@@ -28,8 +28,8 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Defines models
    */
-  models(): Promise<Model[]> {
-    return Promise.resolve([])
+  async models(): Promise<Model[]> {
+    return []
   }
 
   /**
@@ -37,6 +37,31 @@ export abstract class AIEngine extends BaseExtension {
    */
   registerEngine() {
     EngineManager.instance().register(this)
+  }
+
+  async registerModels(models: Model[]): Promise<void> {
+    const modelFolder = 'models'
+    const modelFolderPath = await joinPath([await getJanDataFolderPath(), modelFolder])
+
+    let shouldNotifyModelUpdate = false
+    for (const model of models) {
+      const modelPath = await joinPath([modelFolderPath, model.id])
+      const isExist = await fs.existsSync(modelPath)
+
+      // Skip if the model folder already exists
+      if (isExist) continue
+
+      await fs.mkdir(modelPath)
+      await fs.writeFileSync(
+        await joinPath([modelPath, 'model.json']),
+        JSON.stringify(model, null, 2)
+      )
+      shouldNotifyModelUpdate = true
+    }
+
+    if (shouldNotifyModelUpdate) {
+      events.emit(ModelEvent.OnModelsUpdate, {})
+    }
   }
 
   /**

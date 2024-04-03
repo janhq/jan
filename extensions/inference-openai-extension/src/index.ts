@@ -9,10 +9,13 @@
 import { RemoteOAIEngine } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
+declare const MODELS: Array<any>
+
 enum Settings {
   apiKey = 'openai-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',
 }
+
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -27,6 +30,7 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
 
     // Register Settings
     this.registerSettings(SETTINGS)
+    this.registerModels(MODELS)
 
     this.apiKey = await this.getSetting<string>(Settings.apiKey, '')
     this.inferenceUrl = await this.getSetting<string>(
