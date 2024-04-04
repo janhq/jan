@@ -19,6 +19,7 @@ import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { generateThreadId } from '@/utils/thread'
 
+import { useActiveModel } from './useActiveModel'
 import useRecommendedModel from './useRecommendedModel'
 
 import useSetActiveThread from './useSetActiveThread'
@@ -65,6 +66,7 @@ export const useCreateNewThread = () => {
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   const threads = useAtomValue(threadsAtom)
+  const { stopInference } = useActiveModel()
 
   const requestCreateNewThread = async (
     assistant: Assistant,
@@ -72,7 +74,7 @@ export const useCreateNewThread = () => {
   ) => {
     // Stop generating if any
     setIsGeneratingResponse(false)
-    events.emit(InferenceEvent.OnInferenceStopped, {})
+    stopInference()
 
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
 

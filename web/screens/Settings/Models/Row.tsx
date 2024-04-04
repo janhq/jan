@@ -43,7 +43,7 @@ export default function RowModel(props: RowModelProps) {
   const { activeModel, startModel, stopModel, stateModel } = useActiveModel()
   const { deleteModel } = useDeleteModel()
 
-  const isActiveModel = stateModel.model === props.data.id
+  const isActiveModel = stateModel.model?.id === props.data.id
 
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
@@ -84,7 +84,7 @@ export default function RowModel(props: RowModelProps) {
             <span className="h-2 w-2 rounded-full bg-green-500" />
             <span>Active</span>
           </Badge>
-        ) : stateModel.loading && stateModel.model === props.data.id ? (
+        ) : stateModel.loading && stateModel.model?.id === props.data.id ? (
           <Badge
             className="inline-flex items-center space-x-2"
             themes="secondary"
