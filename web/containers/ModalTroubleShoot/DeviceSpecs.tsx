@@ -32,7 +32,7 @@ const DeviceSpecs = () => {
           themes="outline"
           className="bg-white dark:bg-secondary/50"
           onClick={() => {
-            clipboard.copy(logs ?? '')
+            clipboard.copy(logs.join('\n') ?? '')
           }}
         >
           <div className="flex items-center space-x-2">
