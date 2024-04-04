@@ -38,7 +38,7 @@ on:
 
 jobs:
   test-on-macos:
-    if : github.event_name != 'pull_request_target'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macOS, macos-desktop]
     steps:
       - name: Getting the repo
@@ -66,7 +66,7 @@ jobs:
           TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
 
   test-on-macos-pr-target:
-    if : github.event_name == 'pull_request_target'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: [self-hosted, macOS, macos-desktop]
     steps:
       - name: Getting the repo
@@ -124,7 +124,7 @@ jobs:
           TURBO_TEAM: "windows"
           TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
   test-on-windows-pr:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: windows-desktop-default-windows-security
     steps:
       - name: Getting the repo
@@ -154,7 +154,7 @@ jobs:
           TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
 
   test-on-windows-pr-target:
-    if: github.event_name == 'pull_request_target'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: windows-desktop-default-windows-security
     steps:
       - name: Getting the repo
@@ -182,7 +182,7 @@ jobs:
 
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
-    if: github.event_name != 'pull_request_target'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -211,7 +211,7 @@ jobs:
 
   test-on-ubuntu-pr-target:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
-    if: github.event_name == 'pull_request_target'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
