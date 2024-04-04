@@ -44,7 +44,7 @@ import {
 
 const ChatInput: React.FC = () => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const { stateModel } = useActiveModel()
+  const { stateModel, activeModel } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
@@ -60,6 +60,7 @@ const ChatInput: React.FC = () => {
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
   const threadStates = useAtomValue(threadStatesAtom)
+  const { stopInference } = useActiveModel()
 
   const isStreamingResponse = Object.values(threadStates).some(
     (threadState) => threadState.waitingForResponse
@@ -107,7 +108,7 @@ const ChatInput: React.FC = () => {
   }
 
   const onStopInferenceClick = async () => {
-    events.emit(InferenceEvent.OnInferenceStopped, {})
+    stopInference()
   }
 
   /**

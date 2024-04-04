@@ -44,7 +44,7 @@ export default function ModelStart() {
         <span className="relative z-10">
           {stateModel.state === 'start' ? 'Starting' : 'Stopping'}
           &nbsp;model&nbsp;
-          {stateModel.model}
+          {stateModel.model?.id}
         </span>
       </div>
     </div>

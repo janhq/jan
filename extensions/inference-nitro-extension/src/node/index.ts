@@ -13,6 +13,7 @@ import {
   SystemInformation,
 } from '@janhq/core/node'
 import { executableNitroFile } from './execute'
+import terminate from 'terminate'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
@@ -304,23 +305,43 @@ async function killSubprocess(): Promise<void> {
   setTimeout(() => controller.abort(), 5000)
   log(`[NITRO]::Debug: Request to kill Nitro`)
 
-  return fetch(NITRO_HTTP_KILL_URL, {
-    method: 'DELETE',
-    signal: controller.signal,
-  })
-    .then(() => {
-      subprocess?.kill()
-      subprocess = undefined
+  const killRequest = () => {
+    return fetch(NITRO_HTTP_KILL_URL, {
+      method: 'DELETE',
+      signal: controller.signal,
     })
-    .catch(() => {}) // Do nothing with this attempt
-    .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
-    .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
-    .catch((err) => {
-      log(
-        `[NITRO]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
-      )
-      throw 'PORT_NOT_AVAILABLE'
+      .catch(() => {}) // Do nothing with this attempt
+      .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
+      .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
+      .catch((err) => {
+        log(
+          `[NITRO]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
+        )
+        throw 'PORT_NOT_AVAILABLE'
+      })
+  }
+
+  if (subprocess?.pid) {
+    log(`[NITRO]::Debug: Killing PID ${subprocess.pid}`)
+    const pid = subprocess.pid
+    return new Promise((resolve, reject) => {
+      terminate(pid, function (err) {
+        if (err) {
+          return killRequest()
+        } else {
+          return tcpPortUsed
+            .waitUntilFree(PORT, 300, 5000)
+            .then(() => resolve())
+            .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
+            .catch(() => {
+              killRequest()
+            })
+        }
+      })
     })
+  } else {
+    return killRequest()
+  }
 }
 
 /**

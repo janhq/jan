@@ -45,7 +45,7 @@ const AppLogs = () => {
             themes="outline"
             className="bg-white dark:bg-secondary/50"
             onClick={() => {
-              clipboard.copy(logs.slice(-50) ?? '')
+              clipboard.copy(logs.slice(-50).join('\n') ?? '')
             }}
           >
             <div className="flex items-center space-x-2">
