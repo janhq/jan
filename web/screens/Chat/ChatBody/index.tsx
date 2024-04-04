@@ -34,17 +34,15 @@ const ChatBody: React.FC = () => {
               <ChatItem {...message} key={message.id} />
             )}
 
-          {loadModelError ? (
-            <LoadModelError />
-          ) : (
+          {!loadModelError &&
             index === messages.length - 1 &&
             message.status !== MessageStatus.Pending &&
             message.status !== MessageStatus.Ready && (
               <ErrorMessage message={message} />
-            )
-          )}
+            )}
         </div>
       ))}
+      {loadModelError && <LoadModelError />}
     </ScrollToBottom>
   )
 }
