@@ -50,7 +50,6 @@ export default class JanModelExtension extends ModelExtension {
    * @override
    */
   onUnload(): void {}
-  // TODO: NamH remember to migrating model version
 
   /**
    * Downloads a machine learning model.

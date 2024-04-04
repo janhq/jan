@@ -41,7 +41,7 @@ export type Model = {
   /**
    * The version of the model.
    */
-  version: number
+  version: string
 
   /**
    * The format of the model.

@@ -10,6 +10,8 @@ import { EngineManager } from './EngineManager'
  * Applicable to all AI Engines
  */
 export abstract class AIEngine extends BaseExtension {
+  private static modelsFolder = 'models'
+
   // The inference engine
   abstract provider: string
 
@@ -38,16 +40,17 @@ export abstract class AIEngine extends BaseExtension {
   }
 
   async registerModels(models: Model[]): Promise<void> {
-    const modelFolder = 'models'
-    const modelFolderPath = await joinPath([await getJanDataFolderPath(), modelFolder])
+    const modelFolderPath = await joinPath([await getJanDataFolderPath(), AIEngine.modelsFolder])
 
     let shouldNotifyModelUpdate = false
     for (const model of models) {
       const modelPath = await joinPath([modelFolderPath, model.id])
       const isExist = await fs.existsSync(modelPath)
 
-      // Skip if the model folder already exists
-      if (isExist) continue
+      if (isExist) {
+        await this.migrateModelIfNeeded(model, modelPath)
+        continue
+      }
 
       await fs.mkdir(modelPath)
       await fs.writeFileSync(
@@ -59,6 +62,23 @@ export abstract class AIEngine extends BaseExtension {
 
     if (shouldNotifyModelUpdate) {
       events.emit(ModelEvent.OnModelsUpdate, {})
+    }
+  }
+
+  async migrateModelIfNeeded(model: Model, modelPath: string): Promise<void> {
+    try {
+      const modelJson = await fs.readFileSync(await joinPath([modelPath, 'model.json']), 'utf-8')
+      const currentModel: Model = JSON.parse(modelJson)
+      if (currentModel.version !== model.version) {
+        await fs.writeFileSync(
+          await joinPath([modelPath, 'model.json']),
+          JSON.stringify(model, null, 2)
+        )
+
+        events.emit(ModelEvent.OnModelsUpdate, {})
+      }
+    } catch (error) {
+      console.warn('Error while try to migrating model', error)
     }
   }
 
