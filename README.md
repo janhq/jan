@@ -337,6 +337,15 @@ Jan builds on top of other open-source projects:
 - For business inquiries: email hello@jan.ai
 - For jobs: please email hr@jan.ai
 
+## Trust & Safety
+
+Beware of scams.
+
+- We will never ask you for personal info
+- We are a free product; there's no paid version
+- We don't have a token or ICO
+- We are not actively fundraising or seeking donations
+
 ## License
 
 Jan is free and open source, under the AGPLv3 license.
