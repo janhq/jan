@@ -33,7 +33,7 @@ const ModalContent = React.forwardRef<
     <ModalOverlay />
     <ModalPrimitive.Content
       ref={ref}
-      className={twMerge(' modal-content', className)}
+      className={twMerge('modal-content', className)}
       {...props}
     >
       {children}

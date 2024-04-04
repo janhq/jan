@@ -1,31 +1,41 @@
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useCallback, useState } from 'react'
 
 import {
-  repoDataAtom,
-  repoIDAtom,
-  loadingAtom,
-  fetchErrorAtom,
-} from '@/helpers/atoms/HFConverter.atom'
+  ExtensionTypeEnum,
+  HuggingFaceRepoData,
+  ModelExtension,
+} from '@janhq/core'
+
+import { extensionManager } from '@/extension'
 
 export const useGetHFRepoData = () => {
-  const repoID = useAtomValue(repoIDAtom)
-  const setRepoData = useSetAtom(repoDataAtom)
-  const setLoading = useSetAtom(loadingAtom)
-  const setFetchError = useSetAtom(fetchErrorAtom)
+  const [error, setError] = useState<string | undefined>(undefined)
+  const [loading, setLoading] = useState(false)
 
-  const getRepoData = async () => {
-    setLoading(true)
+  const getHfRepoData = useCallback(async (repoId: string) => {
     try {
-      const res = await fetch(`https://huggingface.co/api/models/${repoID}`)
-      const data = await res.json()
-      setRepoData(data)
+      setError(undefined)
+      setLoading(true)
+      const data = await extensionGetHfRepoData(repoId)
+      return data
     } catch (err) {
-      setFetchError(
-        Error("The repo does not exist or you don't have access to it.")
-      )
+      console.error(err)
+      if (err instanceof Error) {
+        setError(err.message)
+      }
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-  }
+    return undefined
+  }, [])
 
-  return getRepoData
+  return { loading, error, getHfRepoData }
+}
+
+const extensionGetHfRepoData = async (
+  repoId: string
+): Promise<HuggingFaceRepoData | undefined> => {
+  return extensionManager
+    .get<ModelExtension>(ExtensionTypeEnum.Model)
+    ?.fetchHuggingFaceRepoData(repoId)
 }
