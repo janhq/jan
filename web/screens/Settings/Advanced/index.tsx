@@ -67,8 +67,7 @@ const Advanced = () => {
   const [gpuList, setGpuList] = useState<GPU[]>([])
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
 
-  const { readSettings, saveSettings, validateSettings, setShowNotification } =
-    useSettings()
+  const { readSettings, saveSettings, validateSettings } = useSettings()
   const { stopModel } = useActiveModel()
 
   const selectedGpu = gpuList
@@ -273,7 +272,6 @@ const Advanced = () => {
                       if (e === true) {
                         saveSettings({ runMode: 'gpu' })
                         setGpuEnabled(true)
-                        setShowNotification(false)
                         snackbar({
                           description:
                             'Successfully turned on GPU Acceleration',

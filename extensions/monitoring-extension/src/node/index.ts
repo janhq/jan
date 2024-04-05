@@ -221,6 +221,7 @@ const updateGpuInfo = async () =>
 
             data = updateCudaExistence(data)
             writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
+            log(`[APP]::${JSON.stringify(data)}`)
             resolve({})
           } else {
             reject(error)
@@ -263,6 +264,7 @@ const updateGpuInfo = async () =>
 
           data = updateCudaExistence(data)
           writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
+          log(`[APP]::${JSON.stringify(data)}`)
           resolve({})
         }
       )

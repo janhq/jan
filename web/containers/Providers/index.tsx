@@ -6,7 +6,6 @@ import { Toaster } from 'react-hot-toast'
 
 import { TooltipProvider } from '@janhq/uikit'
 
-import GPUDriverPrompt from '@/containers/GPUDriverPromptModal'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 import ThemeWrapper from '@/containers/Providers/Theme'
@@ -81,7 +80,6 @@ const Providers = ({ children }: PropsWithChildren) => {
               <TooltipProvider delayDuration={0}>
                 <DataLoader>{children}</DataLoader>
               </TooltipProvider>
-              {!isMac && <GPUDriverPrompt />}
             </EventListenerWrapper>
             <Toaster />
           </KeyListener>

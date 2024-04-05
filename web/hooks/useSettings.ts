@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { fs, joinPath } from '@janhq/core'
-import { atom, useAtom } from 'jotai'
-
-export const isShowNotificationAtom = atom<boolean>(false)
 
 export type AppSettings = {
   run_mode: 'cpu' | 'gpu' | undefined
@@ -15,9 +12,6 @@ export type AppSettings = {
 
 export const useSettings = () => {
   const [isGPUModeEnabled, setIsGPUModeEnabled] = useState(false) // New state for GPU mode
-  const [showNotification, setShowNotification] = useAtom(
-    isShowNotificationAtom
-  )
   const [settings, setSettings] = useState<AppSettings>()
 
   useEffect(() => {
@@ -29,15 +23,6 @@ export const useSettings = () => {
 
   const validateSettings = async () => {
     readSettings().then((settings) => {
-      if (
-        settings &&
-        settings.notify &&
-        ((settings.nvidia_driver?.exist && !settings.cuda?.exist) ||
-          !settings.nvidia_driver?.exist)
-      ) {
-        setShowNotification(false)
-      }
-
       // Check if run_mode is 'gpu' or 'cpu' and update state accordingly
       setIsGPUModeEnabled(settings?.run_mode === 'gpu')
     })
@@ -84,11 +69,9 @@ export const useSettings = () => {
   }
 
   return {
-    showNotification,
     isGPUModeEnabled,
     readSettings,
     saveSettings,
-    setShowNotification,
     validateSettings,
     settings,
   }
