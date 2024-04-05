@@ -30,10 +30,10 @@ const ExploreModelList: React.FC<Props> = ({ models }) => {
         remainingModels.push(m)
       }
     })
-    featuredModels.sort((m1, m2) => m1.name.localeCompare(m2.name));
-    remoteModels.sort((m1, m2) => m1.name.localeCompare(m2.name));
-    localModels.sort((m1, m2) => m1.name.localeCompare(m2.name));
-    remainingModels.sort((m1, m2) => m1.name.localeCompare(m2.name));
+    featuredModels.sort((m1, m2) => m1.name.localeCompare(m2.name))
+    remoteModels.sort((m1, m2) => m1.name.localeCompare(m2.name))
+    localModels.sort((m1, m2) => m1.name.localeCompare(m2.name))
+    remainingModels.sort((m1, m2) => m1.name.localeCompare(m2.name))
     return [
       ...featuredModels,
       ...remoteModels,
