@@ -5,6 +5,7 @@ import json from '@rollup/plugin-json'
 import replace from '@rollup/plugin-replace'
 
 const packageJson = require('./package.json')
+const defaultModelJson = require('./resources/default-model.json')
 
 export default [
   {
@@ -17,7 +18,8 @@ export default [
     },
     plugins: [
       replace({
-        EXTENSION_NAME: JSON.stringify(packageJson.name),
+        preventAssignment: true,
+        DEFAULT_MODEL: JSON.stringify(defaultModelJson),
         MODULE_PATH: JSON.stringify(
           `${packageJson.name}/${packageJson.module}`
         ),

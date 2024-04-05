@@ -21,7 +21,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       JanAssistantExtension._homeDir
     )
     if (
-      localStorage.getItem(`${EXTENSION_NAME}-version`) !== VERSION ||
+      localStorage.getItem(`${this.name}-version`) !== VERSION ||
       !assistantDirExist
     ) {
       if (!assistantDirExist) await fs.mkdir(JanAssistantExtension._homeDir)
@@ -29,7 +29,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       // Write assistant metadata
       await this.createJanAssistant()
       // Finished migration
-      localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION)
+      localStorage.setItem(`${this.name}-version`, VERSION)
       // Update the assistant list
       events.emit(AssistantEvent.OnAssistantsUpdate, {})
     }

@@ -26,7 +26,7 @@
     "pre-install:linux": "find extensions -type f -path \"**/*.tgz\" -exec cp {} pre-install \\;",
     "pre-install:win32": "powershell -Command \"Get-ChildItem -Path \"extensions\" -Recurse -File -Filter \"*.tgz\" | ForEach-Object { Copy-Item -Path $_.FullName -Destination \"pre-install\" }\"",
     "pre-install": "run-script-os",
-    "copy:assets": "cpx \"models/**\" \"electron/models/\" && cpx \"pre-install/*.tgz\" \"electron/pre-install/\" && cpx \"docs/openapi/**\" \"electron/docs/openapi\"",
+    "copy:assets": "cpx \"pre-install/*.tgz\" \"electron/pre-install/\" && cpx \"docs/openapi/**\" \"electron/docs/openapi\"",
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
     "dev:web": "yarn workspace @janhq/web dev",
     "dev:server": "yarn copy:assets && yarn workspace @janhq/server dev",

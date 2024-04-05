@@ -17,6 +17,7 @@ export default [
     },
     plugins: [
       replace({
+        preventAssignment: true,
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
       }),
       // Allow json resolution

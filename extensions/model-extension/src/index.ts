@@ -2,7 +2,6 @@ import {
   fs,
   downloadFile,
   abortDownload,
-  getResourcePath,
   InferenceEngine,
   joinPath,
   ModelExtension,
@@ -11,7 +10,6 @@ import {
   events,
   DownloadEvent,
   DownloadRoute,
-  ModelEvent,
   DownloadState,
   OptionType,
   ImportingModel,
@@ -36,8 +34,6 @@ export default class JanModelExtension extends ModelExtension {
     InferenceEngine.nitro_tensorrt_llm,
   ]
   private static readonly _tensorRtEngineFormat = '.engine'
-  private static readonly _configDirName = 'config'
-  private static readonly _defaultModelFileName = 'default-model.json'
   private static readonly _supportedGpuArch = ['ampere', 'ada']
 
   /**
@@ -45,7 +41,6 @@ export default class JanModelExtension extends ModelExtension {
    * @override
    */
   async onLoad() {
-    this.copyModelsToHomeDir()
     // Handle Desktop Events
     this.handleDesktopEvents()
   }
@@ -55,37 +50,6 @@ export default class JanModelExtension extends ModelExtension {
    * @override
    */
   onUnload(): void {}
-
-  private async copyModelsToHomeDir() {
-    try {
-      // Check for migration conditions
-      if (
-        localStorage.getItem(`${EXTENSION_NAME}-version`) === VERSION &&
-        (await fs.existsSync(JanModelExtension._homeDir))
-      ) {
-        // ignore if the there is no need to migrate
-        console.debug('Models already persisted.')
-        return
-      }
-      // copy models folder from resources to home directory
-      const resourePath = await getResourcePath()
-      const srcPath = await joinPath([resourePath, 'models'])
-
-      const janDataFolderPath = await getJanDataFolderPath()
-      const destPath = await joinPath([janDataFolderPath, 'models'])
-
-      await fs.syncFile(srcPath, destPath)
-
-      console.debug('Finished syncing models')
-
-      // Finished migration
-      localStorage.setItem(`${EXTENSION_NAME}-version`, VERSION)
-
-      events.emit(ModelEvent.OnModelsUpdate, {})
-    } catch (err) {
-      console.error(err)
-    }
-  }
 
   /**
    * Downloads a machine learning model.
@@ -489,20 +453,9 @@ export default class JanModelExtension extends ModelExtension {
     return model
   }
 
-  private async getDefaultModel(): Promise<Model | undefined> {
-    const defaultModelPath = await joinPath([
-      JanModelExtension._homeDir,
-      JanModelExtension._configDirName,
-      JanModelExtension._defaultModelFileName,
-    ])
-
-    if (!(await fs.existsSync(defaultModelPath))) {
-      return undefined
-    }
-
-    const model = await this.readModelMetadata(defaultModelPath)
-
-    return typeof model === 'object' ? model : JSON.parse(model)
+  private async getDefaultModel(): Promise<Model> {
+    const defaultModel = DEFAULT_MODEL as Model
+    return defaultModel
   }
 
   /**

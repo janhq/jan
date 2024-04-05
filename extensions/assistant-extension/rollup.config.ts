@@ -18,8 +18,8 @@ export default [
     },
     plugins: [
       replace({
+        preventAssignment: true,
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
-        EXTENSION_NAME: JSON.stringify(packageJson.name),
         VERSION: JSON.stringify(packageJson.version),
       }),
       // Allow json resolution

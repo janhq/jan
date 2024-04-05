@@ -14,14 +14,12 @@
       "renderer/**/*",
       "build/**/*.{js,map}",
       "pre-install",
-      "models/**/*",
       "docs/**/*",
       "scripts/**/*",
       "icons/**/*"
     ],
     "asarUnpack": [
       "pre-install",
-      "models",
       "docs",
       "scripts",
       "icons"
