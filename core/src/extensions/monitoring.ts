@@ -1,5 +1,5 @@
-import { BaseExtension, ExtensionTypeEnum } from '../extension'
-import { GpuSetting, MonitoringInterface, OperatingSystemInfo } from '../index'
+import { BaseExtension, ExtensionTypeEnum } from "../extension";
+import { MonitoringInterface } from "../index";
 
 /**
  * Monitoring extension for system monitoring.
@@ -10,11 +10,9 @@ export abstract class MonitoringExtension extends BaseExtension implements Monit
    * Monitoring extension type.
    */
   type(): ExtensionTypeEnum | undefined {
-    return ExtensionTypeEnum.SystemMonitoring
+    return ExtensionTypeEnum.SystemMonitoring;
   }
 
-  abstract getGpuSetting(): Promise<GpuSetting>
-  abstract getResourcesInfo(): Promise<any>
-  abstract getCurrentLoad(): Promise<any>
-  abstract getOsInfo(): Promise<OperatingSystemInfo>
+  abstract getResourcesInfo(): Promise<any>;
+  abstract getCurrentLoad(): Promise<any>;
 }

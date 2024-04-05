@@ -3,5 +3,6 @@ export enum MainViewState {
   MyModels,
   Settings,
   Thread,
+  SystemMonitor,
   LocalServer,
 }

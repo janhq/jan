@@ -1,16 +1,13 @@
-export const toGibibytes = (
-  input: number,
-  options?: { hideUnit?: boolean }
-) => {
+export const toGibibytes = (input: number) => {
   if (!input) return ''
   if (input > 1024 ** 3) {
-    return (input / 1024 ** 3).toFixed(2) + (options?.hideUnit ? '' : 'GB')
+    return (input / 1024 ** 3).toFixed(2) + 'GB'
   } else if (input > 1024 ** 2) {
-    return (input / 1024 ** 2).toFixed(2) + (options?.hideUnit ? '' : 'MB')
+    return (input / 1024 ** 2).toFixed(2) + 'MB'
   } else if (input > 1024) {
-    return (input / 1024).toFixed(2) + (options?.hideUnit ? '' : 'KB')
+    return (input / 1024).toFixed(2) + 'KB'
   } else {
-    return input + (options?.hideUnit ? '' : 'B')
+    return input + 'B'
   }
 }
 

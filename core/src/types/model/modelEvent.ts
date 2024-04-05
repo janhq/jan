@@ -12,6 +12,4 @@ export enum ModelEvent {
   OnModelStop = 'OnModelStop',
   /** The `OnModelStopped` event is emitted when a model stopped ok. */
   OnModelStopped = 'OnModelStopped',
-  /** The `OnModelUpdate` event is emitted when the model list is updated. */
-  OnModelsUpdate = 'OnModelsUpdate',
 }

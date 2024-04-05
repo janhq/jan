@@ -1,20 +1,19 @@
-import { openFileExplorer, joinPath, baseName } from '@janhq/core'
+import { openFileExplorer, joinPath, getJanDataFolderPath } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const usePath = () => {
-  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
 
-  const onRevealInFinder = async (type: string) => {
+  const onReviewInFinder = async (type: string) => {
     // TODO: this logic should be refactored.
     if (type !== 'Model' && !activeThread) return
 
+    const userSpace = await getJanDataFolderPath()
     let filePath = undefined
     const assistantId = activeThread?.assistants[0]?.assistant_id
     switch (type) {
@@ -26,7 +25,6 @@ export const usePath = () => {
         if (!selectedModel) return
         filePath = await joinPath(['models', selectedModel.id])
         break
-      case 'Tools':
       case 'Assistant':
         if (!assistantId) return
         filePath = await joinPath(['assistants', assistantId])
@@ -36,7 +34,7 @@ export const usePath = () => {
     }
 
     if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
+    const fullPath = await joinPath([userSpace, filePath])
     openFileExplorer(fullPath)
   }
 
@@ -44,6 +42,7 @@ export const usePath = () => {
     // TODO: this logic should be refactored.
     if (type !== 'Model' && !activeThread) return
 
+    const userSpace = await getJanDataFolderPath()
     let filePath = undefined
     const assistantId = activeThread?.assistants[0]?.assistant_id
     switch (type) {
@@ -60,7 +59,6 @@ export const usePath = () => {
         filePath = await joinPath(['models', selectedModel.id, 'model.json'])
         break
       case 'Assistant':
-      case 'Tools':
         if (!assistantId) return
         filePath = await joinPath(['assistants', assistantId, 'assistant.json'])
         break
@@ -69,34 +67,34 @@ export const usePath = () => {
     }
 
     if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
+    const fullPath = await joinPath([userSpace, filePath])
     openFileExplorer(fullPath)
   }
 
   const onViewFile = async (id: string) => {
     if (!activeThread) return
 
+    const userSpace = await getJanDataFolderPath()
     let filePath = undefined
-
-    id = await baseName(id)
     filePath = await joinPath(['threads', `${activeThread.id}/files`, `${id}`])
     if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
+    const fullPath = await joinPath([userSpace, filePath])
     openFileExplorer(fullPath)
   }
 
   const onViewFileContainer = async () => {
     if (!activeThread) return
 
+    const userSpace = await getJanDataFolderPath()
     let filePath = undefined
     filePath = await joinPath(['threads', `${activeThread.id}/files`])
     if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
+    const fullPath = await joinPath([userSpace, filePath])
     openFileExplorer(fullPath)
   }
 
   return {
-    onRevealInFinder,
+    onReviewInFinder,
     onViewJson,
     onViewFile,
     onViewFileContainer,

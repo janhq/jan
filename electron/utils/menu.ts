@@ -1,41 +1,19 @@
 // @ts-nocheck
-import { app, Menu, shell, dialog } from 'electron'
-import { autoUpdater } from 'electron-updater'
-import { log } from '@janhq/core/node'
+import { app, Menu, dialog, shell } from 'electron'
 const isMac = process.platform === 'darwin'
+import { autoUpdater } from 'electron-updater'
+import { compareSemanticVersions } from './versionDiff'
 
 const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   {
     label: app.name,
     submenu: [
-      {
-        label: `About ${app.name}`,
-        click: () =>
-          dialog.showMessageBox({
-            title: `Jan`,
-            message: `Jan Version v${app.getVersion()}\n\nCopyright © 2024 Jan`,
-          }),
-      },
+      { role: 'about' },
       {
         label: 'Check for Updates...',
         click: () =>
           // Check for updates and notify user if there are any
-          autoUpdater
-            .checkForUpdatesAndNotify()
-            .then((updateCheckResult) => {
-              if (
-                !updateCheckResult?.updateInfo ||
-                updateCheckResult?.updateInfo.version === app.getVersion()
-              ) {
-                dialog.showMessageBox({
-                  message: `No updates available.`,
-                })
-                return
-              }
-            })
-            .catch((error) => {
-              log('Error checking for updates:' + JSON.stringify(error))
-            }),
+          autoUpdater.checkForUpdatesAndNotify(),
       },
       { type: 'separator' },
       { role: 'services' },

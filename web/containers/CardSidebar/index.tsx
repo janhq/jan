@@ -22,7 +22,6 @@ interface Props {
   rightAction?: ReactNode
   title: string
   asChild?: boolean
-  isShow?: boolean
   hideMoreVerticalAction?: boolean
 }
 export default function CardSidebar({
@@ -31,14 +30,13 @@ export default function CardSidebar({
   asChild,
   rightAction,
   hideMoreVerticalAction,
-  isShow,
 }: Props) {
-  const [show, setShow] = useState(isShow ?? false)
+  const [show, setShow] = useState(true)
   const [more, setMore] = useState(false)
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   const activeThread = useAtomValue(activeThreadAtom)
-  const { onRevealInFinder, onViewJson } = usePath()
+  const { onReviewInFinder, onViewJson } = usePath()
 
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
@@ -69,8 +67,8 @@ export default function CardSidebar({
                 show && 'rotate-180'
               )}
             />
-            <span className="font-bold">{title}</span>
           </button>
+          <span className="font-bold">{title}</span>
         </div>
         <div className="flex">
           {rightAction && rightAction}
@@ -100,7 +98,7 @@ export default function CardSidebar({
                 title === 'Model' ? 'items-start' : 'items-center'
               )}
               onClick={() => {
-                onRevealInFinder && onRevealInFinder(title)
+                onReviewInFinder && onReviewInFinder(title)
                 setMore(false)
               }}
             >
@@ -158,10 +156,7 @@ export default function CardSidebar({
                       </>
                     ) : (
                       <>
-                        Opens{' '}
-                        <span className="lowercase">
-                          {title === 'Tools' ? 'assistant' : title}.json.
-                        </span>
+                        Opens <span className="lowercase">{title}.json.</span>
                         &nbsp;Changes affect all new threads.
                       </>
                     )}

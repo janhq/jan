@@ -5,7 +5,7 @@
  * @param handler The handler function to call when the event is observed.
  */
 const on: (eventName: string, handler: Function) => void = (eventName, handler) => {
-  globalThis.core?.events?.on(eventName, handler)
+  global.core?.events?.on(eventName, handler)
 }
 
 /**
@@ -15,7 +15,7 @@ const on: (eventName: string, handler: Function) => void = (eventName, handler) 
  * @param handler The handler function to call when the event is observed.
  */
 const off: (eventName: string, handler: Function) => void = (eventName, handler) => {
-  globalThis.core?.events?.off(eventName, handler)
+  global.core?.events?.off(eventName, handler)
 }
 
 /**
@@ -25,7 +25,7 @@ const off: (eventName: string, handler: Function) => void = (eventName, handler)
  * @param object The object to pass to the event callback.
  */
 const emit: (eventName: string, object: any) => void = (eventName, object) => {
-  globalThis.core?.events?.emit(eventName, object)
+  global.core?.events?.emit(eventName, object)
 }
 
 export const events = {

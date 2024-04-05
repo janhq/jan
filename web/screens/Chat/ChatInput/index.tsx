@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 
 import { InferenceEvent, MessageStatus, events } from '@janhq/core'
 
@@ -24,6 +24,8 @@ import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
+import { FeatureToggleContext } from '@/context/FeatureToggle'
+
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useClickOutside } from '@/hooks/useClickOutside'
 
@@ -32,13 +34,10 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
-  isGeneratingResponseAtom,
-  threadStatesAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -53,17 +52,11 @@ const ChatInput: React.FC = () => {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
-  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
-  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
-  const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
-
-  const isStreamingResponse = Object.values(threadStates).some(
-    (threadState) => threadState.waitingForResponse
-  )
+  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
+  const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)
@@ -119,12 +112,14 @@ const ChatInput: React.FC = () => {
     const file = event.target.files?.[0]
     if (!file) return
     setFileUpload([{ file: file, type: 'pdf' }])
+    setCurrentPrompt('Summarize this for me')
   }
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
     setFileUpload([{ file: file, type: 'image' }])
+    setCurrentPrompt('What do you see in this image?')
   }
 
   const renderPreview = (fileUpload: any) => {
@@ -144,7 +139,7 @@ const ChatInput: React.FC = () => {
 
         <Textarea
           className={twMerge(
-            'max-h-[400px] resize-none pr-20',
+            'max-h-[400px] resize-none overflow-y-hidden pr-20',
             fileUpload.length && 'rounded-t-none'
           )}
           style={{ height: '40px' }}
@@ -165,8 +160,7 @@ const ChatInput: React.FC = () => {
                   if (
                     fileUpload.length > 0 ||
                     (activeThread?.assistants[0].tools &&
-                      !activeThread?.assistants[0].tools[0]?.enabled &&
-                      !activeThread?.assistants[0].model.settings.vision_model)
+                      !activeThread?.assistants[0].tools[0]?.enabled)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -178,13 +172,12 @@ const ChatInput: React.FC = () => {
             <TooltipPortal>
               {fileUpload.length > 0 ||
                 (activeThread?.assistants[0].tools &&
-                  !activeThread?.assistants[0].tools[0]?.enabled &&
-                  !activeThread?.assistants[0].model.settings.vision_model && (
+                  !activeThread?.assistants[0].tools[0]?.enabled && (
                     <TooltipContent side="top" className="max-w-[154px] px-3">
                       {fileUpload.length !== 0 && (
                         <span>
                           Currently, we only support 1 attachment at the same
-                          time.
+                          time
                         </span>
                       )}
                       {activeThread?.assistants[0].tools &&
@@ -192,7 +185,7 @@ const ChatInput: React.FC = () => {
                           false && (
                           <span>
                             Turn on Retrieval in Assistant Settings to use this
-                            feature.
+                            feature
                           </span>
                         )}
                       <TooltipArrow />
@@ -205,86 +198,23 @@ const ChatInput: React.FC = () => {
         {showAttacmentMenus && (
           <div
             ref={refAttachmentMenus}
-            className="absolute bottom-10 right-0 z-30 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
+            className="absolute bottom-10 right-0 w-36 cursor-pointer rounded-lg border border-border bg-background py-1 shadow"
           >
             <ul>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <li
-                    className={twMerge(
-                      'flex w-full items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
-                      activeThread?.assistants[0].model.settings.vision_model
-                        ? 'cursor-pointer'
-                        : 'cursor-not-allowed opacity-50'
-                    )}
-                    onClick={() => {
-                      if (
-                        activeThread?.assistants[0].model.settings.vision_model
-                      ) {
-                        imageInputRef.current?.click()
-                        setShowAttacmentMenus(false)
-                      }
-                    }}
-                  >
-                    <ImageIcon size={16} />
-                    <span className="font-medium">Image</span>
-                  </li>
-                </TooltipTrigger>
-                <TooltipPortal>
-                  {!activeThread?.assistants[0].model.settings.vision_model && (
-                    <TooltipContent side="top" className="max-w-[154px] px-3">
-                      <span>This feature only supports multimodal models.</span>
-                      <TooltipArrow />
-                    </TooltipContent>
-                  )}
-                </TooltipPortal>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <li
-                    className={twMerge(
-                      'flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
-                      activeThread?.assistants[0].model.settings.text_model ===
-                        false
-                        ? 'cursor-not-allowed opacity-50'
-                        : 'cursor-pointer'
-                    )}
-                    onClick={() => {
-                      if (
-                        activeThread?.assistants[0].model.settings
-                          .text_model !== false
-                      ) {
-                        fileInputRef.current?.click()
-                        setShowAttacmentMenus(false)
-                      }
-                    }}
-                  >
-                    <FileTextIcon size={16} />
-                    <span className="font-medium">Document</span>
-                  </li>
-                </TooltipTrigger>
-                <TooltipPortal>
-                  {(!activeThread?.assistants[0].tools ||
-                    !activeThread?.assistants[0].tools[0]?.enabled ||
-                    activeThread?.assistants[0].model.settings.text_model ===
-                      false) && (
-                    <TooltipContent side="top" className="max-w-[154px] px-3">
-                      {activeThread?.assistants[0].model.settings.text_model ===
-                      false ? (
-                        <span>
-                          This model does not support text-based retrieval.
-                        </span>
-                      ) : (
-                        <span>
-                          Turn on Retrieval in Assistant Settings to use this
-                          feature.
-                        </span>
-                      )}
-                      <TooltipArrow />
-                    </TooltipContent>
-                  )}
-                </TooltipPortal>
-              </Tooltip>
+              <li className="flex w-full cursor-not-allowed  items-center space-x-2 px-4 py-2 text-muted-foreground opacity-50 hover:bg-secondary">
+                <ImageIcon size={16} />
+                <span className="font-medium">Image</span>
+              </li>
+              <li
+                className="flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary"
+                onClick={() => {
+                  fileInputRef.current?.click()
+                  setShowAttacmentMenus(false)
+                }}
+              >
+                <FileTextIcon size={16} />
+                <span className="font-medium">Document</span>
+              </li>
             </ul>
           </div>
         )}
@@ -307,9 +237,7 @@ const ChatInput: React.FC = () => {
         accept="application/pdf"
       />
 
-      {messages[messages.length - 1]?.status !== MessageStatus.Pending &&
-      !isGeneratingResponse &&
-      !isStreamingResponse ? (
+      {messages[messages.length - 1]?.status !== MessageStatus.Pending ? (
         <Button
           size="lg"
           disabled={

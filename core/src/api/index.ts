@@ -1,31 +1,15 @@
 /**
- * Native Route APIs
- * @description Enum of all the routes exposed by the app
- */
-export enum NativeRoute {
-  openExternalUrl = 'openExternalUrl',
-  openAppDirectory = 'openAppDirectory',
-  openFileExplore = 'openFileExplorer',
-  selectDirectory = 'selectDirectory',
-  selectModelFiles = 'selectModelFiles',
-  relaunch = 'relaunch',
-
-  hideQuickAskWindow = 'hideQuickAskWindow',
-  sendQuickAskInput = 'sendQuickAskInput',
-
-  hideMainWindow = 'hideMainWindow',
-  showMainWindow = 'showMainWindow',
-
-  quickAskSizeUpdated = 'quickAskSizeUpdated',
-}
-
-/**
  * App Route APIs
  * @description Enum of all the routes exposed by the app
  */
 export enum AppRoute {
+  openExternalUrl = 'openExternalUrl',
+  openAppDirectory = 'openAppDirectory',
+  openFileExplore = 'openFileExplorer',
+  selectDirectory = 'selectDirectory',
   getAppConfigurations = 'getAppConfigurations',
   updateAppConfiguration = 'updateAppConfiguration',
+  relaunch = 'relaunch',
   joinPath = 'joinPath',
   isSubdirectory = 'isSubdirectory',
   baseName = 'baseName',
@@ -33,17 +17,12 @@ export enum AppRoute {
   stopServer = 'stopServer',
   log = 'log',
   logServer = 'logServer',
-  systemInformation = 'systemInformation',
-  showToast = 'showToast',
 }
 
 export enum AppEvent {
   onAppUpdateDownloadUpdate = 'onAppUpdateDownloadUpdate',
   onAppUpdateDownloadError = 'onAppUpdateDownloadError',
   onAppUpdateDownloadSuccess = 'onAppUpdateDownloadSuccess',
-
-  onUserSubmitQuickAsk = 'onUserSubmitQuickAsk',
-  onSelectedText = 'onSelectedText',
 }
 
 export enum DownloadRoute {
@@ -51,21 +30,12 @@ export enum DownloadRoute {
   downloadFile = 'downloadFile',
   pauseDownload = 'pauseDownload',
   resumeDownload = 'resumeDownload',
-  getDownloadProgress = 'getDownloadProgress',
 }
 
 export enum DownloadEvent {
   onFileDownloadUpdate = 'onFileDownloadUpdate',
   onFileDownloadError = 'onFileDownloadError',
   onFileDownloadSuccess = 'onFileDownloadSuccess',
-  onFileUnzipSuccess = 'onFileUnzipSuccess',
-}
-
-export enum LocalImportModelEvent {
-  onLocalImportModelUpdate = 'onLocalImportModelUpdate',
-  onLocalImportModelFailed = 'onLocalImportModelFailed',
-  onLocalImportModelSuccess = 'onLocalImportModelSuccess',
-  onLocalImportModelFinished = 'onLocalImportModelFinished',
 }
 
 export enum ExtensionRoute {
@@ -82,14 +52,13 @@ export enum FileSystemRoute {
   unlinkSync = 'unlinkSync',
   existsSync = 'existsSync',
   readdirSync = 'readdirSync',
-  rm = 'rm',
-  mkdir = 'mkdir',
+  mkdirSync = 'mkdirSync',
   readFileSync = 'readFileSync',
+  rmdirSync = 'rmdirSync',
   writeFileSync = 'writeFileSync',
 }
 export enum FileManagerRoute {
   syncFile = 'syncFile',
-  copyFile = 'copyFile',
   getJanDataFolderPath = 'getJanDataFolderPath',
   getResourcePath = 'getResourcePath',
   getUserHomePath = 'getUserHomePath',
@@ -98,10 +67,6 @@ export enum FileManagerRoute {
 }
 
 export type ApiFunction = (...args: any[]) => any
-
-export type NativeRouteFunctions = {
-  [K in NativeRoute]: ApiFunction
-}
 
 export type AppRouteFunctions = {
   [K in AppRoute]: ApiFunction
@@ -131,8 +96,7 @@ export type FileManagerRouteFunctions = {
   [K in FileManagerRoute]: ApiFunction
 }
 
-export type APIFunctions = NativeRouteFunctions &
-  AppRouteFunctions &
+export type APIFunctions = AppRouteFunctions &
   AppEventFunctions &
   DownloadRouteFunctions &
   DownloadEventFunctions &
@@ -140,17 +104,11 @@ export type APIFunctions = NativeRouteFunctions &
   FileSystemRouteFunctions &
   FileManagerRoute
 
-export const CoreRoutes = [
+export const APIRoutes = [
   ...Object.values(AppRoute),
   ...Object.values(DownloadRoute),
   ...Object.values(ExtensionRoute),
   ...Object.values(FileSystemRoute),
   ...Object.values(FileManagerRoute),
 ]
-
-export const APIRoutes = [...CoreRoutes, ...Object.values(NativeRoute)]
-export const APIEvents = [
-  ...Object.values(AppEvent),
-  ...Object.values(DownloadEvent),
-  ...Object.values(LocalImportModelEvent),
-]
+export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]

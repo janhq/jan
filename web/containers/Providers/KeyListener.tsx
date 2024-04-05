@@ -6,7 +6,7 @@ import { atom, useSetAtom } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { useMainViewState } from '@/hooks/useMainViewState'
 
 type Props = {
   children: ReactNode
@@ -19,7 +19,7 @@ export const showCommandSearchModalAtom = atom<boolean>(false)
 export default function KeyListener({ children }: Props) {
   const setShowLeftSideBar = useSetAtom(showLeftSideBarAtom)
   const setShowSelectModelModal = useSetAtom(showSelectModelModalAtom)
-  const setMainViewState = useSetAtom(mainViewStateAtom)
+  const { setMainViewState } = useMainViewState()
   const showCommandSearchModal = useSetAtom(showCommandSearchModalAtom)
 
   useEffect(() => {
@@ -48,12 +48,8 @@ export default function KeyListener({ children }: Props) {
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [
-    setMainViewState,
-    setShowLeftSideBar,
-    setShowSelectModelModal,
-    showCommandSearchModal,
-  ])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return <Fragment>{children}</Fragment>
 }

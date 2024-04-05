@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import React, { useEffect, useState } from 'react'
+import React, { useContext, useEffect, useState } from 'react'
 
-import { Accept, useDropzone } from 'react-dropzone'
+import { useDropzone } from 'react-dropzone'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -13,10 +13,12 @@ import GenerateResponse from '@/containers/Loader/GenerateResponse'
 import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
 
-import { fileUploadAtom } from '@/containers/Providers/Jotai'
+import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
 import { snackbar } from '@/containers/Toast'
+
+import { FeatureToggleContext } from '@/context/FeatureToggle'
 
 import { activeModelAtom } from '@/hooks/useActiveModel'
 import { queuedMessageAtom, reloadModelAtom } from '@/hooks/useSendChatMessage'
@@ -29,7 +31,6 @@ import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
 import Sidebar from './Sidebar'
 
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   activeThreadAtom,
   engineParamsUpdateAtom,
@@ -53,6 +54,7 @@ const renderError = (code: string) => {
 }
 
 const ChatScreen: React.FC = () => {
+  const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const showLeftSideBar = useAtomValue(showLeftSideBarAtom)
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
@@ -62,37 +64,26 @@ const ChatScreen: React.FC = () => {
   const reloadModel = useAtomValue(reloadModelAtom)
   const [dragRejected, setDragRejected] = useState({ code: '' })
   const setFileUpload = useSetAtom(fileUploadAtom)
-  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
+  const { experimentalFeature } = useContext(FeatureToggleContext)
 
   const activeModel = useAtomValue(activeModelAtom)
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
-  const acceptedFormat: Accept = activeThread?.assistants[0].model.settings
-    .vision_model
-    ? {
-        'application/pdf': ['.pdf'],
-        'image/jpeg': ['.jpeg'],
-        'image/png': ['.png'],
-        'image/jpg': ['.jpg'],
-      }
-    : {
-        'application/pdf': ['.pdf'],
-      }
-
   const { getRootProps, isDragReject } = useDropzone({
     noClick: true,
     multiple: false,
-    accept: acceptedFormat,
+    accept: {
+      'application/pdf': ['.pdf'],
+    },
 
     onDragOver: (e) => {
       // Retrieval file drag and drop is experimental feature
       if (!experimentalFeature) return
       if (
         e.dataTransfer.items.length === 1 &&
-        ((activeThread?.assistants[0].tools &&
-          activeThread?.assistants[0].tools[0]?.enabled) ||
-          activeThread?.assistants[0].model.settings.vision_model)
+        activeThread?.assistants[0].tools &&
+        activeThread?.assistants[0].tools[0]?.enabled
       ) {
         setDragOver(true)
       } else if (
@@ -113,13 +104,17 @@ const ChatScreen: React.FC = () => {
         files.length !== 1 ||
         rejectFiles.length !== 0 ||
         (activeThread?.assistants[0].tools &&
-          !activeThread?.assistants[0].tools[0]?.enabled &&
-          !activeThread?.assistants[0].model.settings.vision_model)
+          !activeThread?.assistants[0].tools[0]?.enabled)
       )
         return
       const imageType = files[0]?.type.includes('image')
       setFileUpload([{ file: files[0], type: imageType ? 'image' : 'pdf' }])
       setDragOver(false)
+      if (imageType) {
+        setCurrentPrompt('What do you see in this image?')
+      } else {
+        setCurrentPrompt('Summarize this for me')
+      }
     },
     onDropRejected: (e) => {
       if (
@@ -176,21 +171,10 @@ const ChatScreen: React.FC = () => {
                 <div className="mt-4 text-blue-600">
                   <h6 className="font-bold">
                     {isDragReject
-                      ? `Currently, we only support 1 attachment at the same time with ${
-                          activeThread?.assistants[0].model.settings
-                            .vision_model
-                            ? 'PDF, JPEG, JPG, PNG'
-                            : 'PDF'
-                        } format`
+                      ? 'Currently, we only support 1 attachment at the same time with PDF format'
                       : 'Drop file here'}
                   </h6>
-                  {!isDragReject && (
-                    <p className="mt-2">
-                      {activeThread?.assistants[0].model.settings.vision_model
-                        ? 'PDF, JPEG, JPG, PNG'
-                        : 'PDF'}
-                    </p>
-                  )}
+                  {!isDragReject && <p className="mt-2">(PDF)</p>}
                 </div>
               </div>
             </div>
@@ -221,7 +205,7 @@ const ChatScreen: React.FC = () => {
           {queuedMessage && !reloadModel && (
             <div className="mb-2 text-center">
               <span className="text-muted-foreground">
-                Message will be sent once the model has started
+                Message queued. It can be sent once the model has started
               </span>
             </div>
           )}

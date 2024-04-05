@@ -8,7 +8,7 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../electron/pre-install"
   },
   "exports": {
     ".": "./dist/index.js",
@@ -17,8 +17,6 @@
   "devDependencies": {
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
-    "ts-loader": "^9.5.0",
-    "typescript": "5.3.3",
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4"
   },
@@ -26,8 +24,9 @@
     "@janhq/core": "file:../../core",
     "fetch-retry": "^5.0.6",
     "path-browserify": "^1.0.1",
-    "rxjs": "^7.8.1",
-    "ulidx": "^2.3.0"
+    "ts-loader": "^9.5.0",
+    "ulid": "^2.3.0",
+    "rxjs": "^7.8.1"
   },
   "engines": {
     "node": ">=18.0.0"

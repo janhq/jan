@@ -1,9 +1,9 @@
-import { useState } from 'react'
+/* eslint-disable react/display-name */
+
+import { forwardRef, useState } from 'react'
 
 import { Model } from '@janhq/core'
 import { Badge } from '@janhq/uikit'
-
-import { twMerge } from 'tailwind-merge'
 
 import ExploreModelItemHeader from '@/screens/ExploreModels/ExploreModelItemHeader'
 
@@ -11,7 +11,7 @@ type Props = {
   model: Model
 }
 
-const ExploreModelItem: React.FC<Props> = ({ model }) => {
+const ExploreModelItem = forwardRef<HTMLDivElement, Props>(({ model }, ref) => {
   const [open, setOpen] = useState('')
 
   const handleToggle = () => {
@@ -23,7 +23,10 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
   }
 
   return (
-    <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-border bg-background/60">
+    <div
+      ref={ref}
+      className="mb-6 flex flex-col overflow-hidden rounded-xl border border-border bg-background/60"
+    >
       <ExploreModelItemHeader
         model={model}
         onClick={handleToggle}
@@ -77,22 +80,19 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
               <span className="font-semibold text-muted-foreground">
                 Format
               </span>
-              <p
-                className={twMerge(
-                  'mt-2 font-medium',
-                  !model.format?.includes(' ') &&
-                    !model.format?.includes('-') &&
-                    'uppercase'
-                )}
-              >
-                {model.format}
-              </p>
+              <p className="mt-2 font-medium uppercase">{model.format}</p>
             </div>
+            {/* <div className="mt-4">
+              <span className="font-semibold text-muted-foreground">
+                Compatibility
+              </span>
+              <p className="mt-2 font-medium">-</p>
+            </div> */}
           </div>
         </div>
       )}
     </div>
   )
-}
+})
 
 export default ExploreModelItem

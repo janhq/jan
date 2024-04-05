@@ -6,7 +6,6 @@ import {
   ChatCompletionRole,
   ContentType,
   MessageRequest,
-  MessageRequestType,
   MessageStatus,
   ExtensionTypeEnum,
   Thread,
@@ -21,16 +20,12 @@ import {
 } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
-import { ulid } from 'ulidx'
+import { ulid } from 'ulid'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
-import {
-  currentPromptAtom,
-  editPromptAtom,
-  fileUploadAtom,
-} from '@/containers/Providers/Jotai'
+import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
-import { compressImage, getBase64 } from '@/utils/base64'
+import { getBase64 } from '@/utils/base64'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
@@ -38,7 +33,6 @@ import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
   addNewMessageAtom,
-  deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
@@ -59,12 +53,11 @@ export default function useSendChatMessage() {
   const updateThread = useSetAtom(updateThreadAtom)
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
-  const deleteMessage = useSetAtom(deleteMessageAtom)
-  const setEditPrompt = useSetAtom(editPromptAtom)
 
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
+  const { activeModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
-  const { activeModel, startModel } = useActiveModel()
+  const { startModel } = useActiveModel()
   const setQueuedMessage = useSetAtom(queuedMessageAtom)
   const loadModelFailed = useAtomValue(loadModelErrorAtom)
 
@@ -77,9 +70,6 @@ export default function useSendChatMessage() {
   const setReloadModel = useSetAtom(reloadModelAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
-  const activeThreadRef = useRef<Thread | undefined>()
-
-  const selectedModelRef = useRef<Model | undefined>()
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -89,22 +79,15 @@ export default function useSendChatMessage() {
     loadModelFailedRef.current = loadModelFailed
   }, [loadModelFailed])
 
-  useEffect(() => {
-    activeThreadRef.current = activeThread
-  }, [activeThread])
-
-  useEffect(() => {
-    selectedModelRef.current = selectedModel
-  }, [selectedModel])
-
   const resendChatMessage = async (currentMessage: ThreadMessage) => {
-    if (!activeThreadRef.current) {
+    if (!activeThread) {
       console.error('No active thread')
       return
     }
-    updateThreadWaiting(activeThreadRef.current.id, true)
+    setIsGeneratingResponse(true)
+    updateThreadWaiting(activeThread.id, true)
     const messages: ChatCompletionMessage[] = [
-      activeThreadRef.current.assistants[0]?.instructions,
+      activeThread.assistants[0]?.instructions,
     ]
       .filter((e) => e && e.trim() !== '')
       .map<ChatCompletionMessage>((instructions) => {
@@ -118,9 +101,8 @@ export default function useSendChatMessage() {
         currentMessages
           .filter(
             (e) =>
-              (currentMessage.role === ChatCompletionRole.User ||
-                e.id !== currentMessage.id) &&
-              e.status !== MessageStatus.Error
+              currentMessage.role === ChatCompletionRole.User ||
+              e.id !== currentMessage.id
           )
           .map<ChatCompletionMessage>((msg) => ({
             role: msg.role,
@@ -130,35 +112,18 @@ export default function useSendChatMessage() {
 
     const messageRequest: MessageRequest = {
       id: ulid(),
-      type: MessageRequestType.Thread,
       messages: messages,
-      threadId: activeThreadRef.current.id,
-      model:
-        activeThreadRef.current.assistants[0].model ?? selectedModelRef.current,
+      threadId: activeThread.id,
+      model: activeThread.assistants[0].model ?? selectedModel,
     }
 
-    const modelId =
-      selectedModelRef.current?.id ??
-      activeThreadRef.current.assistants[0].model.id
+    const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
 
-    if (modelRef.current?.id !== modelId) {
+    if (activeModel?.id !== modelId) {
       setQueuedMessage(true)
       startModel(modelId)
       await waitForModelStarting(modelId)
       setQueuedMessage(false)
-    }
-    setIsGeneratingResponse(true)
-    if (currentMessage.role !== ChatCompletionRole.User) {
-      // Delete last response before regenerating
-      deleteMessage(currentMessage.id ?? '')
-      if (activeThreadRef.current) {
-        await extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.writeMessages(
-            activeThreadRef.current.id,
-            currentMessages.filter((msg) => msg.id !== currentMessage.id)
-          )
-      }
     }
     events.emit(MessageEvent.OnMessageSent, messageRequest)
   }
@@ -166,39 +131,29 @@ export default function useSendChatMessage() {
   const sendChatMessage = async (message: string) => {
     if (!message || message.trim().length === 0) return
 
-    if (!activeThreadRef.current) {
+    if (!activeThread) {
       console.error('No active thread')
       return
     }
+    setIsGeneratingResponse(true)
 
     if (engineParamsUpdate) setReloadModel(true)
 
     const runtimeParams = toRuntimeParams(activeModelParams)
     const settingParams = toSettingParams(activeModelParams)
 
-    updateThreadWaiting(activeThreadRef.current.id, true)
+    updateThreadWaiting(activeThread.id, true)
     const prompt = message.trim()
     setCurrentPrompt('')
-    setEditPrompt('')
 
-    let base64Blob = fileUpload[0]
-      ? await getBase64(fileUpload[0].file)
+    const base64Blob = fileUpload[0]
+      ? await getBase64(fileUpload[0].file).then()
       : undefined
-
-    const fileContentType = fileUpload[0]?.type
 
     const msgId = ulid()
 
-    const isDocumentInput = base64Blob && fileContentType === 'pdf'
-    const isImageInput = base64Blob && fileContentType === 'image'
-
-    if (isImageInput && base64Blob) {
-      // Compress image
-      base64Blob = await compressImage(base64Blob, 512)
-    }
-
     const messages: ChatCompletionMessage[] = [
-      activeThreadRef.current.assistants[0]?.instructions,
+      activeThread.assistants[0]?.instructions,
     ]
       .filter((e) => e && e.trim() !== '')
       .map<ChatCompletionMessage>((instructions) => {
@@ -210,7 +165,6 @@ export default function useSendChatMessage() {
       })
       .concat(
         currentMessages
-          .filter((e) => e.status !== MessageStatus.Error)
           .map<ChatCompletionMessage>((msg) => ({
             role: msg.role,
             content: msg.content[0]?.text.value ?? '',
@@ -219,79 +173,53 @@ export default function useSendChatMessage() {
             {
               role: ChatCompletionRole.User,
               content:
-                selectedModelRef.current && base64Blob
+                selectedModel && base64Blob
                   ? [
                       {
                         type: ChatCompletionMessageContentType.Text,
                         text: prompt,
                       },
-                      isDocumentInput
-                        ? {
-                            type: ChatCompletionMessageContentType.Doc,
-                            doc_url: {
-                              url: `threads/${activeThreadRef.current.id}/files/${msgId}.pdf`,
-                            },
-                          }
-                        : null,
-                      isImageInput
-                        ? {
-                            type: ChatCompletionMessageContentType.Image,
-                            image_url: {
-                              url: base64Blob,
-                            },
-                          }
-                        : null,
-                    ].filter((e) => e !== null)
+                      {
+                        type: ChatCompletionMessageContentType.Doc,
+                        doc_url: {
+                          url: `threads/${activeThread.id}/files/${msgId}.pdf`,
+                        },
+                      },
+                    ]
                   : prompt,
             } as ChatCompletionMessage,
           ])
       )
 
-    let modelRequest =
-      selectedModelRef?.current ?? activeThreadRef.current.assistants[0].model
-
-    // Fallback support for previous broken threads
-    if (activeThreadRef.current?.assistants[0]?.model?.id === '*') {
-      activeThreadRef.current.assistants[0].model = {
-        id: modelRequest.id,
-        settings: modelRequest.settings,
-        parameters: modelRequest.parameters,
-      }
-    }
+    let modelRequest = selectedModel ?? activeThread.assistants[0].model
     if (runtimeParams.stream == null) {
       runtimeParams.stream = true
     }
     // Add middleware to the model request with tool retrieval enabled
     if (
-      activeThreadRef.current.assistants[0].tools?.some(
+      activeThread.assistants[0].tools?.some(
         (tool: AssistantTool) => tool.type === 'retrieval' && tool.enabled
       )
     ) {
       modelRequest = {
         ...modelRequest,
-        // Tool retrieval support document input only for now
-        ...(isDocumentInput
-          ? {
-              engine: InferenceEngine.tool_retrieval_enabled,
-              proxy_model: modelRequest.engine,
-            }
-          : {}),
+        engine: InferenceEngine.tool_retrieval_enabled,
+        proxyEngine: modelRequest.engine,
       }
     }
     const messageRequest: MessageRequest = {
       id: msgId,
-      type: MessageRequestType.Thread,
-      threadId: activeThreadRef.current.id,
+      threadId: activeThread.id,
       messages,
       model: {
         ...modelRequest,
         settings: settingParams,
         parameters: runtimeParams,
       },
-      thread: activeThreadRef.current,
+      thread: activeThread,
     }
-
     const timestamp = Date.now()
+
     const content: any = []
 
     if (base64Blob && fileUpload[0]?.type === 'image') {
@@ -328,7 +256,7 @@ export default function useSendChatMessage() {
 
     const threadMessage: ThreadMessage = {
       id: msgId,
-      thread_id: activeThreadRef.current.id,
+      thread_id: activeThread.id,
       role: ChatCompletionRole.User,
       status: MessageStatus.Ready,
       created: timestamp,
@@ -343,12 +271,8 @@ export default function useSendChatMessage() {
     }
 
     const updatedThread: Thread = {
-      ...activeThreadRef.current,
+      ...activeThread,
       updated: timestamp,
-      metadata: {
-        ...(activeThreadRef.current.metadata ?? {}),
-        lastMessage: prompt,
-      },
     }
 
     // change last update thread when send message
@@ -358,17 +282,15 @@ export default function useSendChatMessage() {
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.addNewMessage(threadMessage)
 
-    const modelId =
-      selectedModelRef.current?.id ??
-      activeThreadRef.current.assistants[0].model.id
+    const modelId = selectedModel?.id ?? activeThread.assistants[0].model.id
 
-    if (modelRef.current?.id !== modelId) {
+    if (activeModel?.id !== modelId) {
       setQueuedMessage(true)
       startModel(modelId)
       await waitForModelStarting(modelId)
       setQueuedMessage(false)
     }
-    setIsGeneratingResponse(true)
+
     events.emit(MessageEvent.OnMessageSent, messageRequest)
 
     setReloadModel(false)

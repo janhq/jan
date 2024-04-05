@@ -3,7 +3,7 @@
  * @module preload
  */
 
-import { APIEvents, APIRoutes } from '@janhq/core/node'
+import { APIEvents, APIRoutes } from '@janhq/core'
 import { contextBridge, ipcRenderer } from 'electron'
 
 const interfaces: { [key: string]: (...args: any[]) => any } = {}

@@ -1,10 +1,8 @@
 'use client'
 
-import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
+import { PropsWithChildren, useEffect, useState } from 'react'
 
 import { Toaster } from 'react-hot-toast'
-
-import { usePathname } from 'next/navigation'
 
 import { TooltipProvider } from '@janhq/uikit'
 
@@ -12,6 +10,8 @@ import GPUDriverPrompt from '@/containers/GPUDriverPromptModal'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 import ThemeWrapper from '@/containers/Providers/Theme'
+
+import FeatureToggleWrapper from '@/context/FeatureToggle'
 
 import { setupCoreServices } from '@/services/coreService'
 import {
@@ -23,31 +23,23 @@ import Umami from '@/utils/umami'
 
 import Loader from '../Loader'
 
-import DataLoader from './DataLoader'
-
 import KeyListener from './KeyListener'
 
 import { extensionManager } from '@/extension'
 
 const Providers = (props: PropsWithChildren) => {
   const { children } = props
-  const pathname = usePathname()
 
   const [setupCore, setSetupCore] = useState(false)
   const [activated, setActivated] = useState(false)
   const [settingUp, setSettingUp] = useState(false)
 
-  const setupExtensions = useCallback(async () => {
+  async function setupExtensions() {
     // Register all active extensions
     await extensionManager.registerActive()
 
     setTimeout(async () => {
       if (!isCoreExtensionInstalled()) {
-        // TODO: Proper window handle
-        // Do not migrate extension from quick ask window
-        if (pathname === '/search') {
-          return
-        }
         setSettingUp(true)
         await setupBaseExtensions()
         return
@@ -57,7 +49,7 @@ const Providers = (props: PropsWithChildren) => {
       setSettingUp(false)
       setActivated(true)
     }, 500)
-  }, [pathname])
+  }
 
   // Services Setup
   useEffect(() => {
@@ -78,7 +70,7 @@ const Providers = (props: PropsWithChildren) => {
         setActivated(true)
       }
     }
-  }, [setupCore, setupExtensions])
+  }, [setupCore])
 
   return (
     <JotaiWrapper>
@@ -87,13 +79,13 @@ const Providers = (props: PropsWithChildren) => {
         {settingUp && <Loader description="Preparing Update..." />}
         {setupCore && activated && (
           <KeyListener>
-            <EventListenerWrapper>
-              <TooltipProvider delayDuration={0}>
-                <DataLoader>{children}</DataLoader>
-              </TooltipProvider>
-              {!isMac && <GPUDriverPrompt />}
-            </EventListenerWrapper>
-            <Toaster />
+            <FeatureToggleWrapper>
+              <EventListenerWrapper>
+                <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+                {!isMac && <GPUDriverPrompt />}
+              </EventListenerWrapper>
+              <Toaster />
+            </FeatureToggleWrapper>
           </KeyListener>
         )}
       </ThemeWrapper>

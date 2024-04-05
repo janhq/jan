@@ -1,0 +1,47 @@
+.theme-doc-markdown {
+  a {
+    @apply text-blue-600 dark:text-blue-400;
+  }
+  ul {
+    list-style: revert;
+  }
+  ol {
+    list-style: decimal;
+  }
+  ul,
+  ol {
+    padding-left: 16px;
+    li {
+      @apply leading-normal;
+      p {
+        margin-bottom: 0;
+      }
+    }
+  }
+  p {
+    @apply mb-2;
+  }
+  h1 {
+    &:first-child {
+      @apply mb-4;
+    }
+  }
+
+  h1,
+  h2 {
+    @apply mb-3;
+  }
+
+  table {
+    width: 100%;
+    display: table;
+  }
+}
+
+.task-list-item {
+  list-style: none;
+}
+
+blockquote {
+  margin-bottom: 12px;
+}

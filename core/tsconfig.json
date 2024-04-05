@@ -13,7 +13,7 @@
     "declarationDir": "dist/types",
     "outDir": "dist/lib",
     "importHelpers": true,
-    "types": ["@types/jest"],
+    "types": ["@types/jest"]
   },
-  "include": ["src"],
+  "include": ["src"]
 }

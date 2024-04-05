@@ -38,10 +38,3 @@ export * from './extension'
  * @module
  */
 export * from './extensions/index'
-
-/**
- * Declare global object
- */
-declare global {
-  var core: any | undefined
-}

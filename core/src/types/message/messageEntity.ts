@@ -27,11 +27,6 @@ export type ThreadMessage = {
   updated: number
   /** The additional metadata of this message. **/
   metadata?: Record<string, unknown>
-
-  type?: string
-
-  /** The error code which explain what error type. Used in conjunction with MessageStatus.Error */
-  error_code?: ErrorCode
 }
 
 /**
@@ -61,8 +56,6 @@ export type MessageRequest = {
   /** The thread of this message is belong to. **/
   // TODO: deprecate threadId field
   thread?: Thread
-
-  type?: string
 }
 
 /**
@@ -78,12 +71,6 @@ export enum MessageStatus {
   Error = 'error',
   /** Message is cancelled streaming */
   Stopped = 'stopped',
-}
-
-export enum ErrorCode {
-  InvalidApiKey = 'invalid_api_key',
-
-  Unknown = 'unknown',
 }
 
 /**

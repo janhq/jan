@@ -1,14 +1,9 @@
 import { PlaywrightTestConfig } from '@playwright/test'
 
 const config: PlaywrightTestConfig = {
-  testDir: './tests/e2e',
+  testDir: './tests',
   retries: 0,
-  globalTimeout: 350000,
-  use: {
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
-    trace: 'retain-on-failure',
-  },
-  reporter: [['html', { outputFolder: './playwright-report' }]],
+  globalTimeout: 300000,
 }
+
 export default config

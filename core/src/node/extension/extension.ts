@@ -104,7 +104,7 @@ export default class Extension {
       await pacote.extract(
         this.specifier,
         join(ExtensionManager.instance.getExtensionsPath() ?? '', this.name ?? ''),
-        this.installOptions
+        this.installOptions,
       )
 
       // Set the url using the custom extensions protocol
@@ -182,7 +182,7 @@ export default class Extension {
   async uninstall(): Promise<void> {
     const path = ExtensionManager.instance.getExtensionsPath()
     const extPath = resolve(path ?? '', this.name ?? '')
-    rmdirSync(extPath, { recursive: true })
+    await rmdirSync(extPath, { recursive: true })
 
     this.emitUpdate()
   }

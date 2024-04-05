@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react'
-
 import { events, Model, ModelEvent } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import { useGetDownloadedModels } from './useGetDownloadedModels'
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
@@ -23,14 +21,8 @@ export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const [stateModel, setStateModel] = useAtom(stateModelAtom)
-  const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const { downloadedModels } = useGetDownloadedModels()
   const setLoadModelError = useSetAtom(loadModelErrorAtom)
-
-  const downloadedModelsRef = useRef<Model[]>([])
-
-  useEffect(() => {
-    downloadedModelsRef.current = downloadedModels
-  }, [downloadedModels])
 
   const startModel = async (modelId: string) => {
     if (
@@ -40,22 +32,14 @@ export function useActiveModel() {
       console.debug(`Model ${modelId} is already initialized. Ignore..`)
       return
     }
-
-    let model = downloadedModelsRef?.current.find((e) => e.id === modelId)
-
-    // Switch between engines
-    if (model && activeModel && activeModel.engine !== model.engine) {
-      stopModel()
-      // TODO: Refactor inference provider would address this
-      await new Promise((res) => setTimeout(res, 1000))
-    }
-
     // TODO: incase we have multiple assistants, the configuration will be from assistant
     setLoadModelError(undefined)
 
     setActiveModel(undefined)
 
     setStateModel({ state: 'start', loading: true, model: modelId })
+
+    let model = downloadedModels.find((e) => e.id === modelId)
 
     if (!model) {
       toaster({
@@ -86,12 +70,13 @@ export function useActiveModel() {
     events.emit(ModelEvent.OnModelInit, model)
   }
 
-  const stopModel = useCallback(async () => {
+  const stopModel = async () => {
     if (activeModel) {
+      setActiveModel(undefined)
       setStateModel({ state: 'stop', loading: true, model: activeModel.id })
       events.emit(ModelEvent.OnModelStop, activeModel)
     }
-  }, [activeModel, setStateModel])
+  }
 
   return { activeModel, startModel, stopModel, stateModel }
 }

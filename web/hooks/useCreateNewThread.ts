@@ -6,11 +6,8 @@ import {
   ThreadAssistantInfo,
   ThreadState,
   Model,
-  AssistantTool,
-  events,
-  InferenceEvent,
 } from '@janhq/core'
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useSetAtom } from 'jotai'
 
 import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
@@ -22,14 +19,11 @@ import useRecommendedModel from './useRecommendedModel'
 import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
-
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   threadsAtom,
   threadStatesAtom,
   updateThreadAtom,
   setThreadModelParamsAtom,
-  isGeneratingResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -57,46 +51,19 @@ export const useCreateNewThread = () => {
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
 
-  const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
-  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
-
   const { recommendedModel, downloadedModels } = useRecommendedModel()
-
-  const threads = useAtomValue(threadsAtom)
 
   const requestCreateNewThread = async (
     assistant: Assistant,
     model?: Model | undefined
   ) => {
-    // Stop generating if any
-    setIsGeneratingResponse(false)
-    events.emit(InferenceEvent.OnInferenceStopped, {})
-
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
-
-    if (!model) {
-      // if we have model, which means user wants to create new thread from Model hub. Allow them.
-
-      // check last thread message, if there empty last message use can not create thread
-      const lastMessage = threads[0]?.metadata?.lastMessage
-
-      if (!lastMessage && threads.length) {
-        return null
-      }
-    }
-
-    // modify assistant tools when experimental on, retieval toggle enabled in default
-    const assistantTools: AssistantTool = {
-      type: 'retrieval',
-      enabled: true,
-      settings: assistant.tools && assistant.tools[0].settings,
-    }
 
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
       assistant_name: assistant.name,
-      tools: experimentalEnabled ? [assistantTools] : assistant.tools,
+      tools: assistant.tools,
       model: {
         id: defaultModel?.id ?? '*',
         settings: defaultModel?.settings ?? {},

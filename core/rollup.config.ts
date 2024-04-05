@@ -3,16 +3,17 @@ import commonjs from 'rollup-plugin-commonjs'
 import sourceMaps from 'rollup-plugin-sourcemaps'
 import typescript from 'rollup-plugin-typescript2'
 import json from 'rollup-plugin-json'
-import replace from '@rollup/plugin-replace'
 
 const pkg = require('./package.json')
+
+const libraryName = 'core'
 
 export default [
   {
     input: `src/index.ts`,
     output: [
-      // { file: pkg.main, name: libraryName, format: 'umd', sourcemap: true },
-      { file: pkg.main, format: 'es', sourcemap: true },
+      { file: pkg.main, name: libraryName, format: 'umd', sourcemap: true },
+      { file: pkg.module, format: 'es', sourcemap: true },
     ],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
     external: ['path'],
@@ -29,13 +30,7 @@ export default [
       // Allow node_modules resolution, so you can use 'external' to control
       // which external modules to include in the bundle
       // https://github.com/rollup/rollup-plugin-node-resolve#usage
-      replace({
-        'node:crypto': 'crypto',
-        'delimiters': ['"', '"'],
-      }),
-      resolve({
-        browser: true,
-      }),
+      resolve(),
 
       // Resolve source maps to the original source
       sourceMaps(),
@@ -51,7 +46,7 @@ export default [
       'pacote',
       '@types/pacote',
       '@npmcli/arborist',
-      'ulidx',
+      'ulid',
       'node-fetch',
       'fs',
       'request',
@@ -59,8 +54,7 @@ export default [
       'url',
       'http',
       'os',
-      'util',
-      'child_process',
+      'util'
     ],
     watch: {
       include: 'src/node/**',

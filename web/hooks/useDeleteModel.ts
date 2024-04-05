@@ -1,32 +1,27 @@
-import { useCallback } from 'react'
-
 import { ExtensionTypeEnum, ModelExtension, Model } from '@janhq/core'
-
-import { useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import { useGetDownloadedModels } from '@/hooks/useGetDownloadedModels'
+
 import { extensionManager } from '@/extension/ExtensionManager'
-import { removeDownloadedModelAtom } from '@/helpers/atoms/Model.atom'
 
 export default function useDeleteModel() {
-  const removeDownloadedModel = useSetAtom(removeDownloadedModelAtom)
+  const { setDownloadedModels, downloadedModels } = useGetDownloadedModels()
 
-  const deleteModel = useCallback(
-    async (model: Model) => {
-      await localDeleteModel(model.id)
-      removeDownloadedModel(model.id)
-      toaster({
-        title: 'Model Deletion Successful',
-        description: `Model ${model.name} has been successfully deleted.`,
-        type: 'success',
-      })
-    },
-    [removeDownloadedModel]
-  )
+  const deleteModel = async (model: Model) => {
+    await extensionManager
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
+      ?.deleteModel(model.id)
+
+    // reload models
+    setDownloadedModels(downloadedModels.filter((e) => e.id !== model.id))
+    toaster({
+      title: 'Model Deletion Successful',
+      description: `The model ${model.id} has been successfully deleted.`,
+      type: 'success',
+    })
+  }
 
   return { deleteModel }
 }
-
-const localDeleteModel = async (id: string) =>
-  extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model)?.deleteModel(id)

@@ -1,62 +1,65 @@
-import { GpuSetting, SystemInformation } from '@janhq/core'
-import * as path from 'path'
+import { readFileSync } from "fs";
+import * as path from "path";
+import { NVIDIA_INFO_FILE } from "./nvidia";
 
 export interface NitroExecutableOptions {
-  executablePath: string
-  cudaVisibleDevices: string
-  vkVisibleDevices: string
+  executablePath: string;
+  cudaVisibleDevices: string;
 }
-const runMode = (settings?: GpuSetting): string => {
-  if (process.platform === 'darwin')
-    // MacOS use arch instead of cpu / cuda
-    return process.arch === 'arm64' ? 'arm64' : 'x64'
-
-  if (!settings) return 'cpu'
-
-  return settings.vulkan === true
-    ? 'vulkan'
-    : settings.run_mode === 'cpu'
-      ? 'cpu'
-      : 'cuda'
-}
-
-const os = (): string => {
-  return process.platform === 'win32'
-    ? 'win'
-    : process.platform === 'darwin'
-      ? 'mac'
-      : 'linux'
-}
-
-const extension = (): '.exe' | '' => {
-  return process.platform === 'win32' ? '.exe' : ''
-}
-
-const cudaVersion = (settings?: GpuSetting): '11-7' | '12-0' | undefined => {
-  const isUsingCuda =
-    settings?.vulkan !== true && settings?.run_mode === 'gpu' && os() !== 'mac'
-
-  if (!isUsingCuda) return undefined
-  return settings?.cuda?.version === '11' ? '11-7' : '12-0'
-}
-
 /**
  * Find which executable file to run based on the current platform.
  * @returns The name of the executable file to run.
  */
-export const executableNitroFile = (
-  gpuSetting?: GpuSetting
-): NitroExecutableOptions => {
-  let binaryFolder = [os(), runMode(gpuSetting), cudaVersion(gpuSetting)]
-    .filter((e) => !!e)
-    .join('-')
-  let cudaVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
-  let vkVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
-  let binaryName = `nitro${extension()}`
-
-  return {
-    executablePath: path.join(__dirname, '..', 'bin', binaryFolder, binaryName),
-    cudaVisibleDevices,
-    vkVisibleDevices,
+export const executableNitroFile = (): NitroExecutableOptions => {
+  let binaryFolder = path.join(__dirname, "..", "bin"); // Current directory by default
+  let cudaVisibleDevices = "";
+  let binaryName = "nitro";
+  /**
+   * The binary folder is different for each platform.
+   */
+  if (process.platform === "win32") {
+    /**
+     *  For Windows: win-cpu, win-cuda-11-7, win-cuda-12-0
+     */
+    let nvidiaInfo = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
+    if (nvidiaInfo["run_mode"] === "cpu") {
+      binaryFolder = path.join(binaryFolder, "win-cpu");
+    } else {
+      if (nvidiaInfo["cuda"].version === "12") {
+        binaryFolder = path.join(binaryFolder, "win-cuda-12-0");
+      } else {
+        binaryFolder = path.join(binaryFolder, "win-cuda-11-7");
+      }
+      cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];
+    }
+    binaryName = "nitro.exe";
+  } else if (process.platform === "darwin") {
+    /**
+     *  For MacOS: mac-arm64 (Silicon), mac-x64 (InteL)
+     */
+    if (process.arch === "arm64") {
+      binaryFolder = path.join(binaryFolder, "mac-arm64");
+    } else {
+      binaryFolder = path.join(binaryFolder, "mac-x64");
+    }
+  } else {
+    /**
+     *  For Linux: linux-cpu, linux-cuda-11-7, linux-cuda-12-0
+     */
+    let nvidiaInfo = JSON.parse(readFileSync(NVIDIA_INFO_FILE, "utf-8"));
+    if (nvidiaInfo["run_mode"] === "cpu") {
+      binaryFolder = path.join(binaryFolder, "linux-cpu");
+    } else {
+      if (nvidiaInfo["cuda"].version === "12") {
+        binaryFolder = path.join(binaryFolder, "linux-cuda-12-0");
+      } else {
+        binaryFolder = path.join(binaryFolder, "linux-cuda-11-7");
+      }
+      cudaVisibleDevices = nvidiaInfo["gpu_highest_vram"];
+    }
   }
-}
+  return {
+    executablePath: path.join(binaryFolder, binaryName),
+    cudaVisibleDevices,
+  };
+};

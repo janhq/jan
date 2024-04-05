@@ -23,9 +23,7 @@ export class ExtensionManager {
    * @param type - The type of the extension to retrieve.
    * @returns The extension, if found.
    */
-  get<T extends BaseExtension>(
-    type: ExtensionTypeEnum | string
-  ): T | undefined {
+  get<T extends BaseExtension>(type: ExtensionTypeEnum): T | undefined {
     return this.extensions.get(type) as T | undefined
   }
 
@@ -85,10 +83,7 @@ export class ExtensionManager {
     // Import class
     const extensionUrl = window.electronAPI
       ? extension.url
-      : extension.url.replace(
-          'extension://',
-          `${window.core?.api?.baseApiUrl ?? ''}/extensions/`
-        )
+      : extension.url.replace('extension://', `${API_BASE_URL}/extensions/`)
     await import(/* webpackIgnore: true */ extensionUrl).then(
       (extensionClass) => {
         // Register class if it has a default export

@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { CoreRoutes } from '@janhq/core'
+import {
+  AppRoute,
+  DownloadRoute,
+  ExtensionRoute,
+  FileSystemRoute,
+} from '@janhq/core'
 
 import { safeJsonParse } from '@/utils/json'
 
@@ -9,7 +14,15 @@ export function openExternalUrl(url: string) {
 }
 
 // Define API routes based on different route types
-export const APIRoutes = [...CoreRoutes.map((r) => ({ path: `app`, route: r }))]
+export const APIRoutes = [
+  ...Object.values(AppRoute).map((r) => ({ path: 'app', route: r })),
+  ...Object.values(DownloadRoute).map((r) => ({ path: `download`, route: r })),
+  ...Object.values(ExtensionRoute).map((r) => ({
+    path: `extension`,
+    route: r,
+  })),
+  ...Object.values(FileSystemRoute).map((r) => ({ path: `fs`, route: r })),
+]
 
 // Define the restAPI object with methods for each API route
 export const restAPI = {
@@ -18,14 +31,11 @@ export const restAPI = {
       ...acc,
       [proxy.route]: (...args: any) => {
         // For each route, define a function that sends a request to the API
-        return fetch(
-          `${window.core?.api.baseApiUrl}/v1/${proxy.path}/${proxy.route}`,
-          {
-            method: 'POST',
-            body: JSON.stringify(args),
-            headers: { contentType: 'application/json' },
-          }
-        ).then(async (res) => {
+        return fetch(`${API_BASE_URL}/v1/${proxy.path}/${proxy.route}`, {
+          method: 'POST',
+          body: JSON.stringify(args),
+          headers: { contentType: 'application/json' },
+        }).then(async (res) => {
           try {
             if (proxy.path === 'fs') {
               const text = await res.text()
@@ -40,7 +50,4 @@ export const restAPI = {
     }
   }, {}),
   openExternalUrl,
-  // Jan Server URL
-  baseApiUrl: process.env.API_BASE_URL ?? API_BASE_URL,
-  pollingInterval: 5000,
 }

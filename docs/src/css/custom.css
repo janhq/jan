@@ -1,0 +1,8 @@
+.DocCardList--no-description .card p {
+  display: none;
+}
+
+/* For dark theme */
+[data-theme="dark"] .DocSearch {
+  --docsearch-hit-active-color: #090a11; /* Keep the color unchanged */
+}

@@ -19,51 +19,18 @@ const OpenAiKeyInput: React.FC = () => {
   >(undefined)
   const { readOpenAISettings, saveOpenAISettings } = useEngineSettings()
 
-  const [groqSettings, setGroqSettings] = useState<
-    { api_key: string } | undefined
-  >(undefined)
-  const { readGroqSettings, saveGroqSettings } = useEngineSettings()
-
   useEffect(() => {
     readOpenAISettings().then((settings) => {
       setOpenAISettings(settings)
     })
   }, [readOpenAISettings])
 
-  useEffect(() => {
-    readGroqSettings().then((settings) => {
-      setGroqSettings(settings)
-    })
-  }, [readGroqSettings])
-
-  if (
-    !selectedModel ||
-    (selectedModel.engine !== InferenceEngine.openai &&
-      selectedModel.engine !== InferenceEngine.groq)
-  ) {
+  if (!selectedModel || selectedModel.engine !== InferenceEngine.openai) {
     return null
   }
 
-  const getCurrentApiKey = () => {
-    if (selectedModel.engine === InferenceEngine.openai) {
-      return openAISettings?.api_key
-    } else if (selectedModel.engine === InferenceEngine.groq) {
-      return groqSettings?.api_key
-    }
-    return '' // Default return value
-  }
-
-  const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newApiKey = e.target.value
-    if (selectedModel.engine === InferenceEngine.openai) {
-      saveOpenAISettings({ apiKey: newApiKey })
-    } else if (selectedModel.engine === InferenceEngine.groq) {
-      saveGroqSettings({ apiKey: newApiKey })
-    }
-  }
-
   return (
-    <div className="my-4">
+    <div className="mt-4">
       <label
         id="thread-title"
         className="mb-2 inline-block font-bold text-gray-600 dark:text-gray-300"
@@ -73,9 +40,11 @@ const OpenAiKeyInput: React.FC = () => {
       <Input
         disabled={serverEnabled}
         id="assistant-instructions"
-        placeholder={getCurrentApiKey()}
-        defaultValue={getCurrentApiKey()}
-        onChange={handleApiKeyChange}
+        placeholder="Enter your API_KEY"
+        defaultValue={openAISettings?.api_key}
+        onChange={(e) => {
+          saveOpenAISettings({ apiKey: e.target.value })
+        }}
       />
     </div>
   )

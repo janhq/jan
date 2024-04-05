@@ -32,30 +32,18 @@ import { usePath } from '@/hooks/usePath'
 import { toGibibytes } from '@/utils/converter'
 import { displayDate } from '@/utils/datetime'
 
-import { openFileTitle } from '@/utils/titleUtils'
-
-import EditChatInput from '../EditChatInput'
 import Icon from '../FileUploadPreview/Icon'
 import MessageToolbar from '../MessageToolbar'
 
-import { RelativeImage } from './RelativeImage'
-
-import {
-  editMessageAtom,
-  getCurrentChatMessagesAtom,
-} from '@/helpers/atoms/ChatMessage.atom'
+import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   let text = ''
-  const isUser = props.role === ChatCompletionRole.User
-  const isSystem = props.role === ChatCompletionRole.System
-  const editMessage = useAtomValue(editMessageAtom)
-
   if (props.content && props.content.length > 0) {
     text = props.content[0]?.text?.value ?? ''
   }
-
   const clipboard = useClipboard({ timeout: 1000 })
+  const { onViewFile, onViewFileContainer } = usePath()
 
   const marked: Marked = new Marked(
     markedHighlight({
@@ -78,7 +66,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             ?.apply(this, [href, title, text])
             .replace('<a', "<a target='_blank'")
         },
-        code(code, lang) {
+        code(code, lang, escaped) {
           return `
           <div class="relative code-block group/item">
             <button class='text-xs copy-action hidden group-hover/item:block bg-gray-950 hover:bg-gray-950/90 text-gray-200 p-2 rounded-lg absolute top-6 right-2' >
@@ -89,7 +77,9 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               }
             </button>
             <pre class="hljs">
-              <code class="language-${lang ?? ''}">${code}</code>
+              <code class="language-${lang ?? ''}">${
+                escaped ? code : decodeURIComponent(code)
+              }</code>
             </pre>
           </div>
           `
@@ -98,8 +88,9 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     }
   )
 
-  const { onViewFile, onViewFileContainer } = usePath()
   const parsedText = marked.parse(text)
+  const isUser = props.role === ChatCompletionRole.User
+  const isSystem = props.role === ChatCompletionRole.System
   const [tokenCount, setTokenCount] = useState(0)
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
   const [tokenSpeed, setTokenSpeed] = useState(0)
@@ -196,7 +187,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         {messages[messages.length - 1]?.id === props.id &&
           (props.status === MessageStatus.Pending || tokenSpeed > 0) && (
             <p className="absolute right-8 text-xs font-medium text-foreground">
-              Token Speed: {Number(tokenSpeed).toFixed(2)}t/s
+              Token Speed: {Number(tokenSpeed).toFixed(2)}/s
             </p>
           )}
       </div>
@@ -204,16 +195,14 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       <div className={twMerge('w-full')}>
         <>
           {props.content[0]?.type === ContentType.Image && (
-            <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
-              <div className="left-0 top-0 z-20 h-full w-full bg-black/20 group-hover/image:inline-block">
-                <RelativeImage
-                  src={props.content[0]?.text.annotations[0]}
-                  id={props.id}
-                  onClick={() =>
-                    onViewFile(`${props.content[0]?.text.annotations[0]}`)
-                  }
-                />
-              </div>
+            <div className="group/image relative mb-2 inline-flex overflow-hidden rounded-xl">
+              <img
+                className="aspect-auto h-[300px]"
+                alt={props.content[0]?.text.name}
+                src={props.content[0]?.text.annotations[0]}
+                onClick={() => onViewFile(`${props.id}.png`)}
+              />
+              <div className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 group-hover/image:inline-block" />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
@@ -225,7 +214,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 </TooltipTrigger>
                 <TooltipPortal>
                   <TooltipContent side="top" className="max-w-[154px] px-3">
-                    <span>{openFileTitle()}</span>
+                    <span>Show in finder</span>
                     <TooltipArrow />
                   </TooltipContent>
                 </TooltipPortal>
@@ -252,7 +241,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 </TooltipTrigger>
                 <TooltipPortal>
                   <TooltipContent side="top" className="max-w-[154px] px-3">
-                    <span>{openFileTitle()}</span>
+                    <span>Show in finder</span>
                     <TooltipArrow />
                   </TooltipContent>
                 </TooltipPortal>
@@ -271,37 +260,16 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             </div>
           )}
 
-          {isUser ? (
-            <>
-              {editMessage === props.id ? (
-                <div>
-                  <EditChatInput message={props} />
-                </div>
-              ) : (
-                <div
-                  className={twMerge(
-                    'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
-                    isUser
-                      ? 'whitespace-pre-wrap break-words'
-                      : 'rounded-xl bg-secondary p-4'
-                  )}
-                >
-                  {text}
-                </div>
-              )}
-            </>
-          ) : (
-            <div
-              className={twMerge(
-                'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
-                isUser
-                  ? 'whitespace-pre-wrap break-words'
-                  : 'rounded-xl bg-secondary p-4'
-              )}
-              // eslint-disable-next-line @typescript-eslint/naming-convention
-              dangerouslySetInnerHTML={{ __html: parsedText }}
-            />
-          )}
+          <div
+            className={twMerge(
+              'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
+              isUser
+                ? 'whitespace-pre-wrap break-words'
+                : 'rounded-xl bg-secondary p-4'
+            )}
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            dangerouslySetInnerHTML={{ __html: parsedText }}
+          />
         </>
       </div>
     </div>

@@ -11,10 +11,7 @@
   "description": "OpenAI GPT 3.5 Turbo model is extremely good",
   "format": "api",
   "settings": {},
-  "parameters": {
-    "max_tokens": 4096,
-    "temperature": 0.7
-  },
+  "parameters": {},
   "metadata": {
     "author": "OpenAI",
     "tags": ["General", "Big Context Length"]
