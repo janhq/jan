@@ -289,7 +289,7 @@ const updateCudaExistence = (
 
   if (process.platform === 'win32') {
     filesCuda12 = ['cublas64_12.dll', 'cudart64_12.dll', 'cublasLt64_12.dll']
-    filesCuda11 = ['cublas64_11.dll', 'cudart64_11.dll', 'cublasLt64_11.dll']
+    filesCuda11 = ['cublas64_11.dll', 'cudart64_110.dll', 'cublasLt64_11.dll']
     paths = process.env.PATH ? process.env.PATH.split(path.delimiter) : []
   } else {
     filesCuda12 = ['libcudart.so.12', 'libcublas.so.12', 'libcublasLt.so.12']
