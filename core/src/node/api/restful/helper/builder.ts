@@ -335,7 +335,6 @@ export const chatCompletions = async (request: any, reply: any) => {
     headers['Authorization'] = `Bearer ${apiKey}`
     headers['api-key'] = apiKey
   }
-  console.debug(apiUrl)
 
   if (requestedModel.engine === 'openai' && request.body.stop) {
     // openai only allows max 4 stop words

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import { InferenceEvent, MessageStatus, events } from '@janhq/core'
+import { MessageStatus } from '@janhq/core'
 
 import {
   Textarea,
@@ -44,7 +44,7 @@ import {
 
 const ChatInput: React.FC = () => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const { stateModel, activeModel } = useActiveModel()
+  const { stateModel } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)

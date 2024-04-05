@@ -9,8 +9,6 @@ import {
   ThreadState,
   Model,
   AssistantTool,
-  events,
-  InferenceEvent,
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 

@@ -4,10 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ConversationalExtension,
   ExtensionTypeEnum,
-  InferenceEvent,
   MessageStatus,
   ThreadMessage,
-  events,
 } from '@janhq/core'
 
 import {
