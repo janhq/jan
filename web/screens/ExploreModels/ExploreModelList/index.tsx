@@ -6,7 +6,7 @@ import { useAtomValue } from 'jotai'
 
 import ExploreModelItem from '@/screens/ExploreModels/ExploreModelItem'
 
-import { downloadedModelsAtom } from '../../../helpers/atoms/Model.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   models: Model[]
