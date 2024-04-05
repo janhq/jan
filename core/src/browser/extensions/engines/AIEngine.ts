@@ -26,13 +26,6 @@ export abstract class AIEngine extends BaseExtension {
   }
 
   /**
-   * Defines models
-   */
-  async models(): Promise<Model[]> {
-    return []
-  }
-
-  /**
    * Registers AI Engines
    */
   registerEngine() {
