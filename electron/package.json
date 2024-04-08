@@ -108,7 +108,8 @@
     "eslint-plugin-react": "^7.34.0",
     "rimraf": "^5.0.5",
     "run-script-os": "^1.1.6",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "@reportportal/agent-js-playwright": "^5.1.7"
   },
   "installConfig": {
     "hoistingLimits": "workspaces"

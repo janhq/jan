@@ -1,5 +1,11 @@
 # Makefile for Jan Electron App - Build, Lint, Test, and Clean
 
+REPORT_PORTAL_URL ?= ""
+REPORT_PORTAL_API_KEY ?= ""
+REPORT_PORTAL_PROJECT_NAME ?= ""
+REPORT_PORTAL_LAUNCH_NAME ?= "Jan App"
+REPORT_PORTAL_DESCRIPTION ?= "Jan App report"
+
 # Default target, does nothing
 all:
 	@echo "Specify a target to run"
@@ -36,6 +42,64 @@ dev: check-file-counts
 # Linting
 lint: check-file-counts
 	yarn lint
+
+update-playwright-config:
+ifeq ($(OS),Windows_NT)
+	echo -e "const RPconfig = {\n\
+	    apiKey: '$(REPORT_PORTAL_API_KEY)',\n\
+	    endpoint: '$(REPORT_PORTAL_URL)',\n\
+	    project: '$(REPORT_PORTAL_PROJECT_NAME)',\n\
+	    launch: '$(REPORT_PORTAL_LAUNCH_NAME)',\n\
+	    attributes: [\n\
+	        {\n\
+	            key: 'key',\n\
+	            value: 'value',\n\
+	        },\n\
+	        {\n\
+	            value: 'value',\n\
+	        },\n\
+	    ],\n\
+	    description: '$(REPORT_PORTAL_DESCRIPTION)',\n\
+	}\n$$(cat electron/playwright.config.ts)" > electron/playwright.config.ts;
+	sed -i "s/^  reporter: .*/    reporter: [['@reportportal\/agent-js-playwright', RPconfig]],/" electron/playwright.config.ts
+
+else ifeq ($(shell uname -s),Linux)
+	echo "const RPconfig = {\n\
+	    apiKey: '$(REPORT_PORTAL_API_KEY)',\n\
+	    endpoint: '$(REPORT_PORTAL_URL)',\n\
+	    project: '$(REPORT_PORTAL_PROJECT_NAME)',\n\
+	    launch: '$(REPORT_PORTAL_LAUNCH_NAME)',\n\
+	    attributes: [\n\
+	        {\n\
+	            key: 'key',\n\
+	            value: 'value',\n\
+	        },\n\
+	        {\n\
+	            value: 'value',\n\
+	        },\n\
+	    ],\n\
+	    description: '$(REPORT_PORTAL_DESCRIPTION)',\n\
+	}\n$$(cat electron/playwright.config.ts)" > electron/playwright.config.ts;
+	sed -i "s/^  reporter: .*/    reporter: [['@reportportal\/agent-js-playwright', RPconfig]],/" electron/playwright.config.ts
+else
+	echo "const RPconfig = {\n\
+	    apiKey: '$(REPORT_PORTAL_API_KEY)',\n\
+	    endpoint: '$(REPORT_PORTAL_URL)',\n\
+	    project: '$(REPORT_PORTAL_PROJECT_NAME)',\n\
+	    launch: '$(REPORT_PORTAL_LAUNCH_NAME)',\n\
+	    attributes: [\n\
+	        {\n\
+	            key: 'key',\n\
+	            value: 'value',\n\
+	        },\n\
+	        {\n\
+	            value: 'value',\n\
+	        },\n\
+	    ],\n\
+	    description: '$(REPORT_PORTAL_DESCRIPTION)',\n\
+	}\n$$(cat electron/playwright.config.ts)" > electron/playwright.config.ts;
+	sed -i '' "s|^  reporter: .*|    reporter: [['@reportportal\/agent-js-playwright', RPconfig]],|" playwright.config.ts
+endif
 
 # Testing
 test: lint
