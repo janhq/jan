@@ -5,62 +5,6 @@
         "url": "https://docs.mistral.ai/api/"
       }
     ],
-    "id": "open-mistral-7b",
-    "object": "model",
-    "name": "Mistral Tiny Cloud Api (7b)",
-    "version": "1.0",
-    "description": "Mistral...le fromage...et..e'pi",
-    "format": "api",
-    "settings": {},
-    "parameters": {
-      "max_tokens": 4096,
-      "temperature": 0.7
-    },
-    "metadata": {
-      "author": "Mistral",
-      "tags": [
-        "Classification",
-        "Customer Support",
-        "Text Generation",
-        "Open"
-      ]
-    },
-    "engine": "mistral"
-  },
-  {
-    "sources": [
-      {
-        "url": "https://docs.mistral.ai/api/"
-      }
-    ],
-    "id": "open-mixtral-8x7b",
-    "object": "model",
-    "name": "Mistral Tiny Cloud Api (8x7b)",
-    "version": "1.0",
-    "description": "Mistral...le fromage...et..e'pi",
-    "format": "api",
-    "settings": {},
-    "parameters": {
-      "max_tokens": 4096,
-      "temperature": 0.7
-    },
-    "metadata": {
-      "author": "Mistral",
-      "tags": [
-        "Classification",
-        "Customer Support",
-        "Text Generation",
-        "Open"
-      ]
-    },
-    "engine": "mistral"
-  },
-  {
-    "sources": [
-      {
-        "url": "https://docs.mistral.ai/api/"
-      }
-    ],
     "id": "mistral-small-latest",
     "object": "model",
     "name": "Mistral Small",
