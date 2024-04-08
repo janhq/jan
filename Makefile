@@ -98,7 +98,7 @@ else
 	    ],\n\
 	    description: '$(REPORT_PORTAL_DESCRIPTION)',\n\
 	}\n$$(cat electron/playwright.config.ts)" > electron/playwright.config.ts;
-	sed -i '' "s|^  reporter: .*|    reporter: [['@reportportal\/agent-js-playwright', RPconfig]],|" playwright.config.ts
+	sed -i '' "s|^  reporter: .*|    reporter: [['@reportportal\/agent-js-playwright', RPconfig]],|" electron/playwright.config.ts
 endif
 
 # Testing
