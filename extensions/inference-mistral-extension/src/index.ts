@@ -9,6 +9,8 @@
 import { RemoteOAIEngine } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
+declare const MODELS: Array<any>
+
 enum Settings {
   apiKey = 'mistral-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',
@@ -27,6 +29,7 @@ export default class JanInferenceMistralExtension extends RemoteOAIEngine {
 
     // Register Settings
     this.registerSettings(SETTINGS)
+    this.registerModels(MODELS)
 
     this.apiKey = await this.getSetting<string>(Settings.apiKey, '')
     this.inferenceUrl = await this.getSetting<string>(

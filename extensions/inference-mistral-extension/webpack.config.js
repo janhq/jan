@@ -2,6 +2,7 @@ const path = require('path')
 const webpack = require('webpack')
 const packageJson = require('./package.json')
 const settingJson = require('./resources/settings.json')
+const modelsJson = require('./resources/models.json')
 
 module.exports = {
   experiments: { outputModule: true },
@@ -20,6 +21,7 @@ module.exports = {
     new webpack.DefinePlugin({
       SETTINGS: JSON.stringify(settingJson),
       ENGINE: JSON.stringify(packageJson.engine),
+      MODELS: JSON.stringify(modelsJson),
     }),
   ],
   output: {
