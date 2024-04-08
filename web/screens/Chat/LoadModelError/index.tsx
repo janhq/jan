@@ -1,3 +1,4 @@
+import { EngineManager } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import ModalTroubleShooting, {
@@ -9,11 +10,15 @@ import { MainViewState } from '@/constants/screens'
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const LoadModelError = () => {
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const loadModelError = useAtomValue(loadModelErrorAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
+  const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
   const PORT_NOT_AVAILABLE = 'PORT_NOT_AVAILABLE'
 
   return (
@@ -42,7 +47,15 @@ const LoadModelError = () => {
             or install the{' '}
             <button
               className="font-medium text-primary dark:text-blue-400"
-              onClick={() => setMainState(MainViewState.Settings)}
+              onClick={() => {
+                setMainState(MainViewState.Settings)
+                if (activeThread?.assistants[0]?.model.engine) {
+                  const engine = EngineManager.instance().get(
+                    activeThread.assistants[0].model.engine
+                  )
+                  engine?.name && setSelectedSettingScreen(engine.name)
+                }
+              }}
             >
               {loadModelError.split('::')[1] ?? ''}
             </button>{' '}

@@ -1,4 +1,9 @@
-import { ErrorCode, MessageStatus, ThreadMessage } from '@janhq/core'
+import {
+  EngineManager,
+  ErrorCode,
+  MessageStatus,
+  ThreadMessage,
+} from '@janhq/core'
 import { Button } from '@janhq/uikit'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
@@ -14,12 +19,16 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { resendChatMessage } = useSendChatMessage()
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
+  const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
 
   const regenerateMessage = async () => {
     const lastMessageIndex = messages.length - 1
@@ -37,7 +46,16 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
             Invalid API key. Please check your API key from{' '}
             <button
               className="font-medium text-primary dark:text-blue-400"
-              onClick={() => setMainState(MainViewState.Settings)}
+              onClick={() => {
+                setMainState(MainViewState.Settings)
+
+                if (activeThread?.assistants[0]?.model.engine) {
+                  const engine = EngineManager.instance().get(
+                    activeThread.assistants[0].model.engine
+                  )
+                  engine?.name && setSelectedSettingScreen(engine.name)
+                }
+              }}
             >
               Settings
             </button>{' '}
