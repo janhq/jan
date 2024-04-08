@@ -15,7 +15,7 @@
     "description": "The Triton LLM API uses API keys for authentication.",
     "controllerType": "input",
     "controllerProps": {
-      "placeholder": "API Key",
+      "placeholder": "xxxxxxxxxxxxxxxxxxxx",
       "value": "",
       "type": "password"
     }
