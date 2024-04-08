@@ -85,6 +85,8 @@ export enum ErrorCode {
 
   InsufficientQuota = 'insufficient_quota',
 
+  InvalidRequestError = 'invalid_request_error',
+
   Unknown = 'unknown',
 }
 
