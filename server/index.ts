@@ -86,6 +86,10 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
       specification: {
         path: configs?.schemaPath ?? './../docs/openapi/jan.yaml',
         baseDir: configs?.baseDir ?? './../docs/openapi',
+        postProcessor: function (swaggerObject: any) {
+          swaggerObject.servers[0].url = configs?.prefix ?? '/v1'
+          return swaggerObject
+        },
       },
     })
 
