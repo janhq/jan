@@ -246,14 +246,15 @@ const DropdownListSidebar = ({
             </div>
 
             <div className="border-b border-border" />
-            {downloadedModels.length === 0 ? (
-              <div className="px-4 py-2">
-                <p>{`Oops, you don't have a model yet.`}</p>
-              </div>
-            ) : (
-              <SelectGroup className="py-2">
-                <>
-                  {modelOptions.map((x, i) => (
+
+            <SelectGroup className="py-2">
+              <>
+                {modelOptions.length === 0 ? (
+                  <div className="px-4 py-2">
+                    <p>{`Oops, you don't have a model yet.`}</p>
+                  </div>
+                ) : (
+                  modelOptions.map((x, i) => (
                     <div
                       key={i}
                       className={twMerge(
@@ -300,10 +301,10 @@ const DropdownListSidebar = ({
                         )}
                       </div>
                     </div>
-                  ))}
-                </>
-              </SelectGroup>
-            )}
+                  ))
+                )}
+              </>
+            </SelectGroup>
             <div className="border-b border-border" />
             <div className="flex w-full space-x-2 px-4 py-2">
               <Button
