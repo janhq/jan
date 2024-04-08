@@ -26,9 +26,9 @@ import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
 import { cleanLogs } from './utils/log'
 
-import { registerShortcut } from './utils/selectedText'
 import { trayManager } from './managers/tray'
 import { logSystemInfo } from './utils/system'
+import { registerGlobalShortcuts } from './utils/shortcut'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -37,8 +37,6 @@ const mainPath = join(rendererPath, 'index.html')
 
 const mainUrl = 'http://localhost:3000'
 const quickAskUrl = `${mainUrl}/search`
-
-const quickAskHotKey = 'CommandOrControl+J'
 
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -60,6 +58,7 @@ app
   .then(handleAppUpdates)
   .then(() => process.env.CI !== 'e2e' && createQuickAskWindow())
   .then(createMainWindow)
+  .then(registerGlobalShortcuts)
   .then(() => {
     if (!app.isPackaged) {
       windowManager.mainWindow?.webContents.openDevTools()
@@ -80,12 +79,6 @@ app
 
 app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
   windowManager.showMainWindow()
-})
-
-app.on('ready', () => {
-  if (!getAppConfigurations().quick_ask) return
-
-  registerGlobalShortcuts()
 })
 
 app.on('before-quit', function (evt) {
@@ -118,23 +111,6 @@ function createMainWindow() {
   windowManager.createMainWindow(preloadPath, startUrl)
 }
 
-function registerGlobalShortcuts() {
-  const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
-    // Feature Toggle for Quick Ask
-    if (!windowManager.isQuickAskWindowVisible()) {
-      windowManager.showQuickAskWindow()
-      windowManager.sendQuickAskSelectedText(selectedText)
-    } else {
-      windowManager.hideQuickAskWindow()
-    }
-  })
-
-  if (!ret) {
-    console.error('Global shortcut registration failed')
-  } else {
-    console.log('Global shortcut registered successfully')
-  }
-}
 
 /**
  * Handles various IPC messages from the renderer process.
