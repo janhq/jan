@@ -38,6 +38,8 @@ const NITRO_HTTP_VALIDATE_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llama
 // The URL for the Nitro subprocess to kill itself
 const NITRO_HTTP_KILL_URL = `${NITRO_HTTP_SERVER_URL}/processmanager/destroy`
 
+const NITRO_PORT_FREE_CHECK_INTERVAL = 100
+
 // The supported model format
 // TODO: Should be an array to support more models
 const SUPPORTED_MODEL_FORMAT = '.gguf'
@@ -150,19 +152,9 @@ async function loadModel(
 async function runNitroAndLoadModel(systemInfo?: SystemInformation) {
   // Gather system information for CPU physical cores and memory
   return killSubprocess()
-    .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
-    .then(() => {
-      /**
-       * There is a problem with Windows process manager
-       * Should wait for awhile to make sure the port is free and subprocess is killed
-       * The tested threshold is 500ms
-       **/
-      if (process.platform === 'win32') {
-        return new Promise((resolve) => setTimeout(resolve, 500))
-      } else {
-        return Promise.resolve()
-      }
-    })
+    .then(() =>
+      tcpPortUsed.waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
+    )
     .then(() => spawnNitroProcess(systemInfo))
     .then(() => loadLLMModel(currentSettings))
     .then(validateModelStatus)
@@ -235,7 +227,7 @@ function loadLLMModel(settings: any): Promise<Response> {
     },
     body: JSON.stringify(settings),
     retries: 3,
-    retryDelay: 500,
+    retryDelay: 300,
   })
     .then((res) => {
       log(
@@ -266,7 +258,7 @@ async function validateModelStatus(): Promise<void> {
       'Content-Type': 'application/json',
     },
     retries: 5,
-    retryDelay: 500,
+    retryDelay: 300,
   }).then(async (res: Response) => {
     log(
       `[NITRO]::Debug: Validate model state with response ${JSON.stringify(
@@ -311,7 +303,9 @@ async function killSubprocess(): Promise<void> {
       signal: controller.signal,
     })
       .catch(() => {}) // Do nothing with this attempt
-      .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
+      .then(() =>
+        tcpPortUsed.waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
+      )
       .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
       .catch((err) => {
         log(
@@ -330,7 +324,7 @@ async function killSubprocess(): Promise<void> {
           return killRequest()
         } else {
           return tcpPortUsed
-            .waitUntilFree(PORT, 300, 5000)
+            .waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
             .then(() => resolve())
             .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
             .catch(() => {
@@ -391,10 +385,12 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
       reject(`child process exited with code ${code}`)
     })
 
-    tcpPortUsed.waitUntilUsed(PORT, 300, 30000).then(() => {
-      log(`[NITRO]::Debug: Nitro is ready`)
-      resolve()
-    })
+    tcpPortUsed
+      .waitUntilUsed(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 30000)
+      .then(() => {
+        log(`[NITRO]::Debug: Nitro is ready`)
+        resolve()
+      })
   })
 }
 

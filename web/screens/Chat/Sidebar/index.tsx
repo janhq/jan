@@ -164,39 +164,33 @@ const Sidebar: React.FC = () => {
         </CardSidebar>
 
         <CardSidebar title="Model" isShow={true}>
-          <div className="px-2 pt-4">
+          <div className="flex flex-col gap-4 px-2 py-4">
             <DropdownListSidebar />
 
             {modelSettings.length > 0 && (
-              <div className="mt-6">
-                <CardSidebar title="Inference Parameters" asChild>
-                  <div className="px-2 py-4">
-                    <ModelSetting componentProps={modelSettings} />
-                  </div>
-                </CardSidebar>
-              </div>
+              <CardSidebar title="Inference Parameters" asChild>
+                <div className="px-2 py-4">
+                  <ModelSetting componentProps={modelSettings} />
+                </div>
+              </CardSidebar>
             )}
 
             {promptTemplateSettings.length > 0 && (
-              <div className="mt-4">
-                <CardSidebar title="Model Parameters" asChild>
-                  <div className="px-2 py-4">
-                    <PromptTemplateSetting
-                      componentData={promptTemplateSettings}
-                    />
-                  </div>
-                </CardSidebar>
-              </div>
+              <CardSidebar title="Model Parameters" asChild>
+                <div className="px-2 py-4">
+                  <PromptTemplateSetting
+                    componentData={promptTemplateSettings}
+                  />
+                </div>
+              </CardSidebar>
             )}
 
             {engineSettings.length > 0 && (
-              <div className="my-4">
-                <CardSidebar title="Engine Parameters" asChild>
-                  <div className="px-2 py-4">
-                    <EngineSetting componentData={engineSettings} />
-                  </div>
-                </CardSidebar>
-              </div>
+              <CardSidebar title="Engine Parameters" asChild>
+                <div className="px-2 py-4">
+                  <EngineSetting componentData={engineSettings} />
+                </div>
+              </CardSidebar>
             )}
           </div>
         </CardSidebar>

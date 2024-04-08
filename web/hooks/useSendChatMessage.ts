@@ -26,7 +26,11 @@ import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { ThreadMessageBuilder } from '@/utils/threadMessageBuilder'
 
-import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
+import {
+  loadModelController,
+  loadModelErrorAtom,
+  useActiveModel,
+} from './useActiveModel'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
