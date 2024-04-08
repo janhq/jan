@@ -65,7 +65,7 @@
     "object": "model",
     "name": "Mistral Small",
     "version": "1.0",
-    "description": "Mistral...le fromage...et..e'pi",
+    "description": "Mistral Small is the ideal choice for simpe tasks that one can do in builk - like Classification, Customer Support, or Text Generation. It offers excellent performance at an affordable price point.",
     "format": "api",
     "settings": {},
     "parameters": {
