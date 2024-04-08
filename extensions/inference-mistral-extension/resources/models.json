@@ -92,7 +92,7 @@
     "object": "model",
     "name": "Mistral Medium",
     "version": "1.0",
-    "description": "Mistral...le fromage...et..e'pi",
+    "description": "Mistral Medium is the ideal for intermediate tasks that require moderate reasoning - like Data extraction, Summarizing a Document, Writing a Job Description, or Writing Product Descriptions. Mistral Medium strikes a balance between performance and capability, making it suitable for a wide range of tasks that only require language transformaion",
     "format": "api",
     "settings": {},
     "parameters": {
