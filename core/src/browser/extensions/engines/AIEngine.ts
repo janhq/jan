@@ -29,7 +29,7 @@ export abstract class AIEngine extends BaseExtension {
    * Registers AI Engines
    */
   registerEngine() {
-    EngineManager.instance().register<AIEngine>(this)
+    EngineManager.instance().register(this)
   }
 
   async registerModels(models: Model[]): Promise<void> {

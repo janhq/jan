@@ -13,14 +13,3 @@ interface ModelOperationResponse {
   error?: any
   modelFile?: string
 }
-
-/**
- * Add core variable to window
- */
-interface Window {
-  core?: {
-    api?: {
-      baseApiUrl?: string;
-    }
-  };
-}
