@@ -227,13 +227,9 @@ const executableNitroFile = (): NitroExecutableOptions => {
     binaryName = 'nitro.exe'
   } else if (process.platform === 'darwin') {
     /**
-     *  For MacOS: mac-arm64 (Silicon), mac-x64 (InteL)
+     *  For MacOS: mac-universal both Silicon and InteL
      */
-    if (process.arch === 'arm64') {
-      binaryFolder = join(binaryFolder, 'mac-arm64')
-    } else {
-      binaryFolder = join(binaryFolder, 'mac-x64')
-    }
+    binaryFolder = join(binaryFolder, 'mac-universal')
   } else {
     /**
      *  For Linux: linux-cpu, linux-cuda-11-7, linux-cuda-12-0

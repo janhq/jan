@@ -32,13 +32,9 @@ export const getQuantizeExecutable = (): string => {
     binaryName = 'quantize.exe'
   } else if (process.platform === 'darwin') {
     /**
-     *  For MacOS: mac-arm64 (Silicon), mac-x64 (InteL)
+     *  For MacOS: mac-universal both Silicon and InteL
      */
-    if (process.arch === 'arm64') {
-      binaryFolder = pjoin(binaryFolder, 'mac-arm64')
-    } else {
-      binaryFolder = pjoin(binaryFolder, 'mac-x64')
-    }
+    binaryFolder = pjoin(binaryFolder, 'mac-universal')
   } else {
     binaryFolder = pjoin(binaryFolder, 'linux-cpu')
   }
