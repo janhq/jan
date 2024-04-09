@@ -38,7 +38,7 @@ export function requestInference(
           const data = await response.json()
           const error = {
             message: data.error?.message ?? 'Error occurred.',
-            code: data.error?.code ?? ErrorCode.Unknown,
+            code: data.error?.code ?? data.error?.type ?? ErrorCode.Unknown,
           }
           subscriber.error(error)
           subscriber.complete()

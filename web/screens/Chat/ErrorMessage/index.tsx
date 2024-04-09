@@ -41,6 +41,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
       case ErrorCode.Unknown:
         return 'Apologies, something’s amiss!'
       case ErrorCode.InvalidApiKey:
+      case ErrorCode.InvalidRequestError:
         return (
           <span>
             Invalid API key. Please check your API key from{' '}
