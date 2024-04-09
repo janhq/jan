@@ -13,6 +13,13 @@ export type SelectFileOption = {
   selectDirectory?: boolean
 
   props?: SelectFileProp[]
+
+  filters?: FilterOption[]
+}
+
+export type FilterOption = {
+  name: string
+  extensions: string[]
 }
 
 export const SelectFilePropTuple = [
