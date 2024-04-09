@@ -99,7 +99,7 @@ const ChatInput: React.FC = () => {
   }, [currentPrompt])
 
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
         sendChatMessage(currentPrompt)
