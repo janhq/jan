@@ -1,0 +1,85 @@
+[
+  {
+    "sources": [
+      {
+        "url": "https://docs.mistral.ai/api/"
+      }
+    ],
+    "id": "mistral-small-latest",
+    "object": "model",
+    "name": "Mistral Small",
+    "version": "1.0",
+    "description": "Mistral Small is the ideal choice for simpe tasks that one can do in builk - like Classification, Customer Support, or Text Generation. It offers excellent performance at an affordable price point.",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 4096,
+      "temperature": 0.7
+    },
+    "metadata": {
+      "author": "Mistral",
+      "tags": [
+        "Classification",
+        "Customer Support",
+        "Text Generation"
+      ]
+    },
+    "engine": "mistral"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://docs.mistral.ai/api/"
+      }
+    ],
+    "id": "mistral-medium-latest",
+    "object": "model",
+    "name": "Mistral Medium",
+    "version": "1.0",
+    "description": "Mistral Medium is the ideal for intermediate tasks that require moderate reasoning - like Data extraction, Summarizing a Document, Writing a Job Description, or Writing Product Descriptions. Mistral Medium strikes a balance between performance and capability, making it suitable for a wide range of tasks that only require language transformaion",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 4096,
+      "temperature": 0.7
+    },
+    "metadata": {
+      "author": "Mistral",
+      "tags": [
+        "Data extraction",
+        "Summarizing a Document",
+        "Writing a Job Description",
+        "Writing Product Descriptions"
+      ]
+    },
+    "engine": "mistral"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://docs.mistral.ai/api/"
+      }
+    ],
+    "id": "mistral-large-latest",
+    "object": "model",
+    "name": "Mistral Large",
+    "version": "1.0",
+    "description": "Mistral Large is ideal for complex tasks that require large reasoning capabilities or are highly specialized - like Synthetic Text Generation, Code Generation, RAG, or Agents.",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 4096,
+      "temperature": 0.7
+    },
+    "metadata": {
+      "author": "Mistral",
+      "tags": [
+        "Text Generation",
+        "Code Generation",
+        "RAG",
+        "Agents"
+      ]
+    },
+    "engine": "mistral"
+  }
+]
