@@ -25,6 +25,8 @@ export const stateModelAtom = atom<ModelState>({
   model: undefined,
 })
 
+export let loadModelController: AbortController | undefined
+
 export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
   const activeThread = useAtomValue(activeThreadAtom)
@@ -46,6 +48,7 @@ export function useActiveModel() {
       console.debug(`Model ${modelId} is already initialized. Ignore..`)
       return Promise.resolve()
     }
+    loadModelController = new AbortController()
 
     let model = downloadedModelsRef?.current.find((e) => e.id === modelId)
 
@@ -104,6 +107,9 @@ export function useActiveModel() {
         })
       })
       .catch((error) => {
+        if (loadModelController?.signal.aborted)
+          return Promise.reject(new Error('aborted'))
+
         setStateModel(() => ({
           state: 'start',
           loading: false,
@@ -131,12 +137,13 @@ export function useActiveModel() {
 
       setStateModel({ state: 'stop', loading: true, model: stoppingModel })
       const engine = EngineManager.instance().get(stoppingModel.engine)
-      await engine
+      return engine
         ?.unloadModel(stoppingModel)
         .catch()
         .then(() => {
           setActiveModel(undefined)
           setStateModel({ state: 'start', loading: false, model: undefined })
+          loadModelController?.abort()
         })
     },
     [activeModel, setActiveModel, setStateModel, stateModel]
