@@ -1,6 +1,7 @@
 import { SettingComponentProps } from '@janhq/core'
 
 import SettingDetailTextInputItem from './SettingDetailTextInputItem'
+import SettingDetailToggleItem from './SettingDetailToggleItem'
 
 type Props = {
   componentProps: SettingComponentProps[]
@@ -16,6 +17,16 @@ const SettingDetailItem: React.FC<Props> = ({
       case 'input': {
         return (
           <SettingDetailTextInputItem
+            key={data.key}
+            settingProps={data}
+            onValueChanged={(value) => onValueUpdated(data.key, value)}
+          />
+        )
+      }
+
+      case 'checkbox': {
+        return (
+          <SettingDetailToggleItem
             key={data.key}
             settingProps={data}
             onValueChanged={(value) => onValueUpdated(data.key, value)}

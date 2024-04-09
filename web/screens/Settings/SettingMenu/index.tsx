@@ -15,20 +15,13 @@ const SettingMenu: React.FC = () => {
 
   useEffect(() => {
     const getAllSettings = async () => {
-      const activeExtensions = await extensionManager.getActive()
       const extensionsMenu: string[] = []
-
-      for (const extension of activeExtensions) {
-        const extensionName = extension.name
-        if (!extensionName) continue
-
-        const baseExtension = extensionManager.get(extensionName)
-        if (!baseExtension) continue
-
-        if (typeof baseExtension.getSettings === 'function') {
-          const settings = await baseExtension.getSettings()
+      const extensions = extensionManager.getAll()
+      for (const extension of extensions) {
+        if (typeof extension.getSettings === 'function') {
+          const settings = await extension.getSettings()
           if (settings && settings.length > 0) {
-            extensionsMenu.push(extensionName)
+            extensionsMenu.push(extension.name ?? extension.url)
           }
         }
       }

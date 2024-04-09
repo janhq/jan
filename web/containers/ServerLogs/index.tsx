@@ -28,9 +28,11 @@ const ServerLogs = (props: ServerLogsProps) => {
 
   const updateLogs = useCallback(
     () =>
-      getLogs('server').then((log) => {
+      getLogs('app').then((log) => {
         if (typeof log?.split === 'function') {
-          setLogs(log.split(/\r?\n|\r|\n/g))
+          setLogs(
+            log.split(/\r?\n|\r|\n/g).filter((e) => e.includes('[SERVER]::'))
+          )
         }
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

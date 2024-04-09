@@ -1,6 +1,7 @@
 import {
   GpuSetting,
   GpuSettingInfo,
+  LoggerManager,
   OperatingSystemInfo,
   ResourceInfo,
   SupportedPlatforms,
@@ -12,6 +13,7 @@ import { exec } from 'child_process'
 import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs'
 import path from 'path'
 import os from 'os'
+import { FileLogger } from './logger'
 
 /**
  * Path to the settings directory
@@ -345,4 +347,23 @@ export const getOsInfo = (): OperatingSystemInfo => {
   }
 
   return osInfo
+}
+
+export const registerLogger = ({ logEnabled, logCleaningInterval }) => {
+  const logger = new FileLogger(logEnabled, logCleaningInterval)
+  LoggerManager.instance().register(logger)
+  logger.cleanLogs()
+}
+
+export const unregisterLogger = () => {
+  LoggerManager.instance().unregister('file')
+}
+
+export const updateLogger = ({ logEnabled, logCleaningInterval }) => {
+  const logger = LoggerManager.instance().loggers.get('file') as FileLogger
+  if (logger && logEnabled !== undefined) logger.logEnabled = logEnabled
+  if (logger && logCleaningInterval)
+    logger.logCleaningInterval = logCleaningInterval
+  // Rerun
+  logger && logger.cleanLogs()
 }

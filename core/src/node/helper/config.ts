@@ -150,31 +150,3 @@ export const getEngineConfiguration = async (engineId: string) => {
     full_url: undefined,
   }
 }
-
-/**
- * Utility function to get server log path
- *
- * @returns {string} The log path.
- */
-export const getServerLogPath = (): string => {
-  const appConfigurations = getAppConfigurations()
-  const logFolderPath = join(appConfigurations.data_folder, 'logs')
-  if (!fs.existsSync(logFolderPath)) {
-    fs.mkdirSync(logFolderPath, { recursive: true })
-  }
-  return join(logFolderPath, 'server.log')
-}
-
-/**
- * Utility function to get app log path
- *
- * @returns {string} The log path.
- */
-export const getAppLogPath = (): string => {
-  const appConfigurations = getAppConfigurations()
-  const logFolderPath = join(appConfigurations.data_folder, 'logs')
-  if (!fs.existsSync(logFolderPath)) {
-    fs.mkdirSync(logFolderPath, { recursive: true })
-  }
-  return join(logFolderPath, 'app.log')
-}

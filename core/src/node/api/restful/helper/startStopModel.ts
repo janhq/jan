@@ -1,7 +1,11 @@
 import fs from 'fs'
 import { join } from 'path'
-import { getJanDataFolderPath, getJanExtensionsPath, getSystemResourceInfo } from '../../../helper'
-import { logServer } from '../../../helper/log'
+import {
+  getJanDataFolderPath,
+  getJanExtensionsPath,
+  getSystemResourceInfo,
+  log,
+} from '../../../helper'
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import { Model, ModelSettingParams, PromptTemplate } from '../../../../types'
 import {
@@ -69,7 +73,7 @@ const runModel = async (modelId: string, settingParams?: ModelSettingParams): Pr
     }),
   }
 
-  logServer(`[NITRO]::Debug: Nitro model settings: ${JSON.stringify(nitroModelSettings)}`)
+  log(`[SERVER]::Debug: Nitro model settings: ${JSON.stringify(nitroModelSettings)}`)
 
   // Convert settings.prompt_template to system_prompt, user_prompt, ai_prompt
   if (modelMetadata.settings.prompt_template) {
@@ -140,7 +144,7 @@ const runNitroAndLoadModel = async (modelId: string, modelSettings: NitroModelSe
 }
 
 const spawnNitroProcess = async (): Promise<void> => {
-  logServer(`[NITRO]::Debug: Spawning Nitro subprocess...`)
+  log(`[SERVER]::Debug: Spawning Nitro subprocess...`)
 
   let binaryFolder = join(
     getJanExtensionsPath(),
@@ -155,8 +159,8 @@ const spawnNitroProcess = async (): Promise<void> => {
 
   const args: string[] = ['1', LOCAL_HOST, NITRO_DEFAULT_PORT.toString()]
   // Execute the binary
-  logServer(
-    `[NITRO]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`
+  log(
+    `[SERVER]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`
   )
   subprocess = spawn(
     executableOptions.executablePath,
@@ -172,20 +176,20 @@ const spawnNitroProcess = async (): Promise<void> => {
 
   // Handle subprocess output
   subprocess.stdout.on('data', (data: any) => {
-    logServer(`[NITRO]::Debug: ${data}`)
+    log(`[SERVER]::Debug: ${data}`)
   })
 
   subprocess.stderr.on('data', (data: any) => {
-    logServer(`[NITRO]::Error: ${data}`)
+    log(`[SERVER]::Error: ${data}`)
   })
 
   subprocess.on('close', (code: any) => {
-    logServer(`[NITRO]::Debug: Nitro exited with code: ${code}`)
+    log(`[SERVER]::Debug: Nitro exited with code: ${code}`)
     subprocess = undefined
   })
 
   tcpPortUsed.waitUntilUsed(NITRO_DEFAULT_PORT, 300, 30000).then(() => {
-    logServer(`[NITRO]::Debug: Nitro is ready`)
+    log(`[SERVER]::Debug: Nitro is ready`)
   })
 }
 
@@ -271,7 +275,7 @@ const validateModelStatus = async (): Promise<void> => {
     retries: 5,
     retryDelay: 500,
   }).then(async (res: Response) => {
-    logServer(`[NITRO]::Debug: Validate model state success with response ${JSON.stringify(res)}`)
+    log(`[SERVER]::Debug: Validate model state success with response ${JSON.stringify(res)}`)
     // If the response is OK, check model_loaded status.
     if (res.ok) {
       const body = await res.json()
@@ -286,7 +290,7 @@ const validateModelStatus = async (): Promise<void> => {
 }
 
 const loadLLMModel = async (settings: NitroModelSettings): Promise<Response> => {
-  logServer(`[NITRO]::Debug: Loading model with params ${JSON.stringify(settings)}`)
+  log(`[SERVER]::Debug: Loading model with params ${JSON.stringify(settings)}`)
   const fetchRT = require('fetch-retry')
   const fetchRetry = fetchRT(fetch)
 
@@ -300,11 +304,11 @@ const loadLLMModel = async (settings: NitroModelSettings): Promise<Response> => 
     retryDelay: 500,
   })
     .then((res: any) => {
-      logServer(`[NITRO]::Debug: Load model success with response ${JSON.stringify(res)}`)
+      log(`[SERVER]::Debug: Load model success with response ${JSON.stringify(res)}`)
       return Promise.resolve(res)
     })
     .catch((err: any) => {
-      logServer(`[NITRO]::Error: Load model failed with error ${err}`)
+      log(`[SERVER]::Error: Load model failed with error ${err}`)
       return Promise.reject(err)
     })
 }
@@ -327,7 +331,7 @@ export const stopModel = async (_modelId: string) => {
       })
     }, 5000)
     const tcpPortUsed = require('tcp-port-used')
-    logServer(`[NITRO]::Debug: Request to kill Nitro`)
+    log(`[SERVER]::Debug: Request to kill Nitro`)
 
     fetch(NITRO_HTTP_KILL_URL, {
       method: 'DELETE',
@@ -341,7 +345,7 @@ export const stopModel = async (_modelId: string) => {
         // don't need to do anything, we still kill the subprocess
       })
       .then(() => tcpPortUsed.waitUntilFree(NITRO_DEFAULT_PORT, 300, 5000))
-      .then(() => logServer(`[NITRO]::Debug: Nitro process is terminated`))
+      .then(() => log(`[SERVER]::Debug: Nitro process is terminated`))
       .then(() =>
         resolve({
           message: 'Model stopped',

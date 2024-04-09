@@ -17,13 +17,12 @@ const ExtensionSetting: React.FC = () => {
     const getExtensionSettings = async () => {
       if (!selectedExtensionName) return
       const allSettings: SettingComponentProps[] = []
-      const baseExtension = extensionManager.get(selectedExtensionName)
+      const baseExtension = extensionManager.getByName(selectedExtensionName)
       if (!baseExtension) return
       if (typeof baseExtension.getSettings === 'function') {
         const setting = await baseExtension.getSettings()
         if (setting) allSettings.push(...setting)
       }
-
       setSettings(allSettings)
     }
     getExtensionSettings()
@@ -40,7 +39,7 @@ const ExtensionSetting: React.FC = () => {
 
       const extensionName = setting.extensionName
       if (extensionName) {
-        extensionManager.get(extensionName)?.updateSettings([setting])
+        extensionManager.getByName(extensionName)?.updateSettings([setting])
       }
 
       return setting

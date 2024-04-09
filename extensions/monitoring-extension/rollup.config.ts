@@ -4,6 +4,7 @@ import sourceMaps from 'rollup-plugin-sourcemaps'
 import typescript from 'rollup-plugin-typescript2'
 import json from '@rollup/plugin-json'
 import replace from '@rollup/plugin-replace'
+const settingJson = require('./resources/settings.json')
 const packageJson = require('./package.json')
 
 export default [
@@ -19,6 +20,7 @@ export default [
       replace({
         preventAssignment: true,
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
+        SETTINGS: JSON.stringify(settingJson),
       }),
       // Allow json resolution
       json(),
