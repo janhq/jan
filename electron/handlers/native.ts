@@ -112,6 +112,7 @@ export function handleAppIPCs() {
         title,
         buttonLabel,
         properties: props,
+        filters: option?.filters,
       })
 
       if (canceled) return

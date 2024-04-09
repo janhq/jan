@@ -25,6 +25,10 @@ const ChooseWhatToImportModal: React.FC = () => {
       title: 'Select model files',
       buttonLabel: 'Select',
       allowMultiple: true,
+      filters: [
+        { name: 'GGUF Files', extensions: ['gguf'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
     }
     const filePaths = await window.core?.api?.selectFiles(options)
     if (!filePaths || filePaths.length === 0) return
