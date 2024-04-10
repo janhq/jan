@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 import ScrollToBottom from 'react-scroll-to-bottom'
 
@@ -45,7 +45,7 @@ import { loadModelErrorAtom, useActiveModel } from '@/hooks/useActiveModel'
 import { useLogs } from '@/hooks/useLogs'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/modelParam'
+import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import EngineSetting from '../Chat/EngineSetting'
 
@@ -74,7 +74,13 @@ const LocalServerScreen = () => {
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const modelEngineParams = toSettingParams(selectedModel?.settings)
+  const modelRuntimeParams = toRuntimeParams(selectedModel?.settings)
+
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
+  const componentDataRuntimeSetting = getConfigurationsData(
+    modelRuntimeParams,
+    selectedModel
+  )
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(apiServerCorsEnabledAtom)
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(
@@ -119,6 +125,17 @@ const LocalServerScreen = () => {
   useEffect(() => {
     handleChangePrefix(prefix)
   }, [handleChangePrefix, prefix])
+
+  const engineSettings = useMemo(
+    () => componentDataEngineSetting.filter((x) => x.key !== 'prompt_template'),
+    [componentDataEngineSetting]
+  )
+
+  const modelSettings = useMemo(() => {
+    return componentDataRuntimeSetting.filter(
+      (x) => x.key !== 'prompt_template'
+    )
+  }, [componentDataRuntimeSetting])
 
   const onStartServerClick = async () => {
     if (selectedModel == null) return
@@ -474,32 +491,21 @@ const LocalServerScreen = () => {
             </div>
           )}
 
-          {componentDataEngineSetting.filter((x) => x.key === 'prompt_template')
-            .length !== 0 && (
+          {modelSettings.length !== 0 && (
             <div className="mt-4">
               <CardSidebar title="Model Parameters" asChild>
                 <div className="px-2 py-4">
-                  <ModelSetting componentProps={componentDataEngineSetting} />
-                  {/* <SettingComponentBuilder
-                    enabled={!serverEnabled}
-                    componentProps={componentDataEngineSetting}
-                    onValueUpdated={function (
-                      key: string,
-                      value: string | number | boolean
-                    ): void {
-                      throw new Error('Function not implemented.')
-                    }}
-                  /> */}
+                  <ModelSetting componentProps={modelSettings} />
                 </div>
               </CardSidebar>
             </div>
           )}
 
-          {componentDataEngineSetting.length !== 0 && (
+          {engineSettings.length !== 0 && (
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting componentData={componentDataEngineSetting} />
+                  <EngineSetting componentData={engineSettings} />
                 </div>
               </CardSidebar>
             </div>
