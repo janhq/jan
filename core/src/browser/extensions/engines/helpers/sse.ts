@@ -36,9 +36,15 @@ export function requestInference(
       .then(async (response) => {
         if (!response.ok) {
           const data = await response.json()
+          let errorCode = ErrorCode.Unknown;
+          if (data.error) {
+            errorCode = data.error.code ?? data.error.type ?? ErrorCode.Unknown
+          } else if (response.status === 401) {
+            errorCode = ErrorCode.InvalidApiKey;
+          }
           const error = {
             message: data.error?.message ?? 'Error occurred.',
-            code: data.error?.code ?? data.error?.type ?? ErrorCode.Unknown,
+            code: errorCode,
           }
           subscriber.error(error)
           subscriber.complete()
