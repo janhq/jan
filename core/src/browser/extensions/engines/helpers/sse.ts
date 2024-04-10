@@ -38,7 +38,7 @@ export function requestInference(
           const data = await response.json()
           let errorCode = ErrorCode.Unknown;
           if (data.error) {
-            errorCode = data.error.code ?? data.error.type;
+            errorCode = data.error.code ?? data.error.type ?? ErrorCode.Unknown
           } else if (response.status === 401) {
             errorCode = ErrorCode.InvalidApiKey;
           }
