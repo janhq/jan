@@ -19,7 +19,8 @@ export class ExtensionManager {
    * @param extension - The extension to register.
    */
   register<T extends BaseExtension>(name: string, extension: T) {
-    this.extensions.set(extension.type() ?? name, extension)
+    // Register for naming use
+    this.extensions.set(name, extension)
 
     // Register AI Engines
     if ('provider' in extension && typeof extension.provider === 'string') {
@@ -35,10 +36,26 @@ export class ExtensionManager {
    * @param type - The type of the extension to retrieve.
    * @returns The extension, if found.
    */
-  get<T extends BaseExtension>(
-    type: ExtensionTypeEnum | string
-  ): T | undefined {
-    return this.extensions.get(type) as T | undefined
+  get<T extends BaseExtension>(type: ExtensionTypeEnum): T | undefined {
+    return this.getAll().findLast((e) => e.type() === type) as T | undefined
+  }
+
+  /**
+   * Retrieves a extension by its type.
+   * @param type - The type of the extension to retrieve.
+   * @returns The extension, if found.
+   */
+  getByName(name: string): BaseExtension | undefined {
+    return this.extensions.get(name) as BaseExtension | undefined
+  }
+
+  /**
+   * Retrieves a extension by its type.
+   * @param type - The type of the extension to retrieve.
+   * @returns The extension, if found.
+   */
+  getAll(): BaseExtension[] {
+    return Array.from(this.extensions.values())
   }
 
   /**

@@ -24,7 +24,6 @@ import { cleanUpAndQuit } from './utils/clean'
 import { setupExtensions } from './utils/extension'
 import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
-import { cleanLogs } from './utils/log'
 
 import { trayManager } from './managers/tray'
 import { logSystemInfo } from './utils/system'
@@ -75,7 +74,6 @@ app
       }
     })
   })
-  .then(() => cleanLogs())
 
 app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
   windowManager.showMainWindow()
@@ -110,7 +108,6 @@ function createMainWindow() {
   const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
   windowManager.createMainWindow(preloadPath, startUrl)
 }
-
 
 /**
  * Handles various IPC messages from the renderer process.

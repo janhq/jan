@@ -1,13 +1,9 @@
 import fastify from 'fastify'
 import dotenv from 'dotenv'
-import {
-  getServerLogPath,
-  v1Router,
-  logServer,
-  getJanExtensionsPath,
-} from '@janhq/core/node'
+import { v1Router, log, getJanExtensionsPath } from '@janhq/core/node'
 import { join } from 'path'
 import tcpPortUsed from 'tcp-port-used'
+import { Logger } from './helpers/logger'
 
 // Load environment variables
 dotenv.config()
@@ -52,7 +48,7 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
     const inUse = await tcpPortUsed.check(Number(configs.port), configs.host)
     if (inUse) {
       const errorMessage = `Port ${configs.port} is already in use.`
-      logServer(errorMessage)
+      log(errorMessage, '[SERVER]')
       throw new Error(errorMessage)
     }
   }
@@ -62,19 +58,15 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
   hostSetting = configs?.host ?? JAN_API_HOST
   portSetting = configs?.port ?? JAN_API_PORT
   corsEnabled = configs?.isCorsEnabled ?? true
-  const serverLogPath = getServerLogPath()
 
   // Start the server
   try {
     // Log server start
-    if (isVerbose) logServer(`Debug: Starting JAN API server...`)
+    if (isVerbose) log(`Debug: Starting JAN API server...`, '[SERVER]')
 
     // Initialize Fastify server with logging
     server = fastify({
-      logger: {
-        level: 'info',
-        file: serverLogPath,
-      },
+      logger: new Logger(),
     })
 
     // Register CORS if enabled
@@ -134,14 +126,15 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
       .then(() => {
         // Log server listening
         if (isVerbose)
-          logServer(
-            `Debug: JAN API listening at: http://${hostSetting}:${portSetting}`
+          log(
+            `Debug: JAN API listening at: http://${hostSetting}:${portSetting}`,
+            '[SERVER]'
           )
       })
     return true
   } catch (e) {
     // Log any errors
-    if (isVerbose) logServer(`Error: ${e}`)
+    if (isVerbose) log(`Error: ${e}`, '[SERVER]')
   }
   return false
 }
@@ -152,11 +145,11 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
 export const stopServer = async () => {
   try {
     // Log server stop
-    if (isVerbose) logServer(`Debug: Server stopped`)
+    if (isVerbose) log(`Debug: Server stopped`, '[SERVER]')
     // Stop the server
     await server?.close()
   } catch (e) {
     // Log any errors
-    if (isVerbose) logServer(`Error: ${e}`)
+    if (isVerbose) log(`Error: ${e}`, '[SERVER]')
   }
 }

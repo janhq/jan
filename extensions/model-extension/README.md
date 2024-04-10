@@ -1,14 +1,10 @@
-# Jan Model Management plugin
+# Create a Jan Extension using Typescript
 
-Created using Jan app example
+Use this template to bootstrap the creation of a TypeScript Jan extension. 🚀
 
-# Create a Jan Plugin using Typescript
+## Create Your Own Extension
 
-Use this template to bootstrap the creation of a TypeScript Jan plugin. 🚀
-
-## Create Your Own Plugin
-
-To create your own plugin, you can use this repository as a template! Just follow the below instructions:
+To create your own extension, you can use this repository as a template! Just follow the below instructions:
 
 1. Click the Use this template button at the top of the repository
 2. Select Create a new repository
@@ -18,7 +14,7 @@ To create your own plugin, you can use this repository as a template! Just follo
 
 ## Initial Setup
 
-After you've cloned the repository to your local machine or codespace, you'll need to perform some initial setup steps before you can develop your plugin.
+After you've cloned the repository to your local machine or codespace, you'll need to perform some initial setup steps before you can develop your extension.
 
 > [!NOTE]
 >
@@ -43,36 +39,37 @@ After you've cloned the repository to your local machine or codespace, you'll ne
 
 1. :white_check_mark: Check your artifact
 
-   There will be a tgz file in your plugin directory now
+   There will be a tgz file in your extension directory now
 
-## Update the Plugin Metadata
+## Update the Extension Metadata
 
-The [`package.json`](package.json) file defines metadata about your plugin, such as
-plugin name, main entry, description and version.
+The [`package.json`](package.json) file defines metadata about your extension, such as
+extension name, main entry, description and version.
 
-When you copy this repository, update `package.json` with the name, description for your plugin.
+When you copy this repository, update `package.json` with the name, description for your extension.
 
-## Update the Plugin Code
+## Update the Extension Code
 
-The [`src/`](./src/) directory is the heart of your plugin! This contains the
-source code that will be run when your plugin extension functions are invoked. You can replace the
+The [`src/`](./src/) directory is the heart of your extension! This contains the
+source code that will be run when your extension functions are invoked. You can replace the
 contents of this directory with your own code.
 
-There are a few things to keep in mind when writing your plugin code:
+There are a few things to keep in mind when writing your extension code:
 
-- Most Jan Plugin Extension functions are processed asynchronously.
+- Most Jan Extension functions are processed asynchronously.
   In `index.ts`, you will see that the extension function will return a `Promise<any>`.
 
   ```typescript
-  import { core } from "@janhq/core";
+  import { events, MessageEvent, MessageRequest } from '@janhq/core'
 
   function onStart(): Promise<any> {
-    return core.invokePluginFunc(MODULE_PATH, "run", 0);
+    return events.on(MessageEvent.OnMessageSent, (data: MessageRequest) =>
+      this.inference(data)
+    )
   }
   ```
 
-  For more information about the Jan Plugin Core module, see the
+  For more information about the Jan Extension Core module, see the
   [documentation](https://github.com/janhq/jan/blob/main/core/README.md).
 
-So, what are you waiting for? Go ahead and start customizing your plugin!
-
+So, what are you waiting for? Go ahead and start customizing your extension!

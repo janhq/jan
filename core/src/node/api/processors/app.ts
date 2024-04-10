@@ -1,9 +1,12 @@
 import { basename, isAbsolute, join, relative } from 'path'
 
 import { Processor } from './Processor'
-import { getAppConfigurations as appConfiguration, updateAppConfiguration } from '../../helper'
-import { log as writeLog, logServer as writeServerLog } from '../../helper/log'
-import { appResourcePath } from '../../helper/path'
+import {
+  log as writeLog,
+  appResourcePath,
+  getAppConfigurations as appConfiguration,
+  updateAppConfiguration,
+} from '../../helper'
 
 export class App implements Processor {
   observer?: Function
@@ -54,13 +57,6 @@ export class App implements Processor {
    */
   log(args: any) {
     writeLog(args)
-  }
-
-  /**
-   * Log message to log file.
-   */
-  logServer(args: any) {
-    writeServerLog(args)
   }
 
   getAppConfigurations() {

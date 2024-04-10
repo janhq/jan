@@ -25,12 +25,12 @@ export const useLogs = () => {
   )
 
   const openServerLog = useCallback(async () => {
-    const fullPath = await joinPath([janDataFolderPath, 'logs', 'server.log'])
+    const fullPath = await joinPath([janDataFolderPath, 'logs', 'app.log'])
     return openFileExplorer(fullPath)
   }, [janDataFolderPath])
 
   const clearServerLog = useCallback(async () => {
-    await fs.writeFileSync(await joinPath(['file://logs', 'server.log']), '')
+    await fs.writeFileSync(await joinPath(['file://logs', 'app.log']), '')
   }, [])
 
   return { getLogs, openServerLog, clearServerLog }
