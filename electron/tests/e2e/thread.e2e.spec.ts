@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import { page, test, TIMEOUT } from '../config/fixtures'
 
-test('Select GPT model for chat via Use model button from Jan Hub', async ({ hubPage }) => {
+test('Select GPT model from Hub and Chat with Invalid API Key', async ({ hubPage }) => {
   await hubPage.navigateByMenu()
   await hubPage.verifyContainerVisible()
 
@@ -22,6 +22,8 @@ test('Select GPT model for chat via Use model button from Jan Hub', async ({ hub
   await page
     .getByTestId('btn-send-chat')
     .click()
+
+  await page.waitForSelector('[data-testid$="-loader"]', { state: 'hidden', timeout: TIMEOUT });
 
   const APIKeyError = page.getByTestId('invalid-API-key-error')
   await expect(APIKeyError).toBeVisible({
