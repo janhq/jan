@@ -5,7 +5,7 @@
     "description": "The endpoint to use for chat completions. See the [Groq documentation](https://console.groq.com/docs/openai) for more information.",
     "controllerType": "input",
     "controllerProps": {
-      "placeholder": "Chat Completions Endpoint",
+      "placeholder": "https://api.groq.com/openai/v1/chat/completions",
       "value": "https://api.groq.com/openai/v1/chat/completions"
     }
   },

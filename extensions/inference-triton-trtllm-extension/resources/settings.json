@@ -5,7 +5,7 @@
     "description": "The endpoint to use for chat completions.",
     "controllerType": "input",
     "controllerProps": {
-      "placeholder": "Chat Completions Endpoint",
+      "placeholder": "http://localhost:8000/v2/models/tensorrt_llm_bls/generate",
       "value": "http://localhost:8000/v2/models/tensorrt_llm_bls/generate"
     }
   },
