@@ -23,7 +23,10 @@ test('Select GPT model from Hub and Chat with Invalid API Key', async ({ hubPage
     .getByTestId('btn-send-chat')
     .click()
 
-  await page.waitForSelector('[data-testid$="-loader"]', { state: 'hidden', timeout: TIMEOUT });
+  await page.waitForFunction(() => {
+    const loaders = document.querySelectorAll('[data-testid$="loader"]');
+    return !loaders.length;
+  }, { timeout: TIMEOUT });
 
   const APIKeyError = page.getByTestId('invalid-API-key-error')
   await expect(APIKeyError).toBeVisible({
