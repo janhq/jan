@@ -6,7 +6,7 @@
  * @module inference-openai-extension/src/index
  */
 
-import { RemoteOAIEngine } from '@janhq/core'
+import { RemoteOAIEngine, SettingComponentProps } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
 declare const MODELS: Array<any>
@@ -43,7 +43,17 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
     if (key === Settings.apiKey) {
       this.apiKey = value as string
     } else if (key === Settings.chatCompletionsEndPoint) {
-      this.inferenceUrl = value as string
+      if (typeof value !== 'string') return
+
+      if (value.trim().length === 0) {
+        SETTINGS.forEach((setting) => {
+          if (setting.key === Settings.chatCompletionsEndPoint) {
+            this.inferenceUrl = setting.controllerProps.value as string
+          }
+        })
+      } else {
+        this.inferenceUrl = value
+      }
     }
   }
 }

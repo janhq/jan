@@ -42,7 +42,17 @@ export default class JanInferenceMistralExtension extends RemoteOAIEngine {
     if (key === Settings.apiKey) {
       this.apiKey = value as string
     } else if (key === Settings.chatCompletionsEndPoint) {
-      this.inferenceUrl = value as string
+      if (typeof value !== 'string') return
+
+      if (value.trim().length === 0) {
+        SETTINGS.forEach((setting) => {
+          if (setting.key === Settings.chatCompletionsEndPoint) {
+            this.inferenceUrl = setting.controllerProps.value as string
+          }
+        })
+      } else {
+        this.inferenceUrl = value
+      }
     }
   }
 }

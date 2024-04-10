@@ -5,7 +5,7 @@
     "description": "The endpoint to use for chat completions. See the [OpenAI API documentation](https://platform.openai.com/docs/api-reference/chat/create) for more information.",
     "controllerType": "input",
     "controllerProps": {
-      "placeholder": "Chat Completions Endpoint",
+      "placeholder": "https://api.openai.com/v1/chat/completions",
       "value": "https://api.openai.com/v1/chat/completions"
     }
   },

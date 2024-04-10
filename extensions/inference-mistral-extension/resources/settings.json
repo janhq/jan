@@ -5,7 +5,7 @@
     "description": "The endpoint to use for chat completions. See the [Mistral API documentation](https://docs.mistral.ai/api/#operation/createChatCompletion) for more information.",
     "controllerType": "input",
     "controllerProps": {
-      "placeholder": "Chat Completions Endpoint",
+      "placeholder": "https://api.mistral.ai/v1/chat/completions",
       "value": "https://api.mistral.ai/v1/chat/completions"
     }
   },
