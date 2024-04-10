@@ -133,6 +133,7 @@ export const getEngineConfiguration = async (engineId: string) => {
   const settingDirectoryPath = join(
     getJanDataFolderPath(),
     'settings',
+    '@janhq',
     engineId === 'openai' ? 'inference-openai-extension' : 'inference-groq-extension',
     'settings.json'
   )
@@ -141,12 +142,15 @@ export const getEngineConfiguration = async (engineId: string) => {
   const settings: SettingComponentProps[] = JSON.parse(content)
   const apiKeyId = engineId === 'openai' ? 'openai-api-key' : 'groq-api-key'
   const keySetting = settings.find((setting) => setting.key === apiKeyId)
+  let fullUrl = settings.find((setting) => setting.key === 'chat-completions-endpoint')
+    ?.controllerProps.value
 
   let apiKey = keySetting?.controllerProps.value
   if (typeof apiKey !== 'string') apiKey = ''
+  if (typeof fullUrl !== 'string') fullUrl = ''
 
   return {
     api_key: apiKey,
-    full_url: undefined,
+    full_url: fullUrl,
   }
 }
