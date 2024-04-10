@@ -38,7 +38,7 @@ on:
 
 jobs:
   test-on-macos:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, macOS, macos-desktop]
     steps:
       - name: Getting the repo
@@ -109,7 +109,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
   test-on-windows:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -155,7 +155,7 @@ jobs:
           TURBO_TEAM: "windows"
           TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
   test-on-windows-pr:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: windows-desktop-default-windows-security
     steps:
       - name: Getting the repo
@@ -228,7 +228,7 @@ jobs:
 
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
