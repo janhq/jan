@@ -23,9 +23,9 @@ export interface Compatibility {
 const ALL_INSTALLATION_STATE = [
   'NotRequired', // not required.
   'Installed', // require and installed. Good to go.
-  'Updatable', // require and installed but need to be updated.
   'NotInstalled', // require to be installed.
   'Corrupted', // require but corrupted. Need to redownload.
+  'NotCompatible', // require but not compatible.
 ] as const
 
 export type InstallationStateTuple = typeof ALL_INSTALLATION_STATE
@@ -96,13 +96,6 @@ export abstract class BaseExtension implements ExtensionType {
    */
   compatibility(): Compatibility | undefined {
     return undefined
-  }
-
-  /**
-   * Determine if the extension is updatable.
-   */
-  updatable(): boolean {
-    return false
   }
 
   async registerSettings(settings: SettingComponentProps[]): Promise<void> {

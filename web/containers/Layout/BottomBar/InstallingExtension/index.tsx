@@ -34,7 +34,7 @@ const InstallingExtension: React.FC = () => {
           onClick={onClick}
         >
           <p className="text-xs font-semibold text-muted-foreground">
-            Installing Extension
+            Installing Additional Dependencies
           </p>
 
           <div className="flex flex-row items-center justify-center space-x-2 rounded-md bg-secondary px-2 py-[2px]">

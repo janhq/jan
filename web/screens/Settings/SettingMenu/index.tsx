@@ -20,7 +20,10 @@ const SettingMenu: React.FC = () => {
       for (const extension of extensions) {
         if (typeof extension.getSettings === 'function') {
           const settings = await extension.getSettings()
-          if (settings && settings.length > 0) {
+          if (
+            (settings && settings.length > 0) ||
+            (await extension.installationState()) !== 'NotRequired'
+          ) {
             extensionsMenu.push(extension.name ?? extension.url)
           }
         }
