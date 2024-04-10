@@ -5,16 +5,14 @@ import { useAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
-import { formatExtensionsName } from '@/utils/converter'
-
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = {
+  name: string
   setting: string
-  extension?: boolean
 }
 
-const SettingItem: React.FC<Props> = ({ setting, extension = false }) => {
+const SettingItem: React.FC<Props> = ({ name, setting }) => {
   const [selectedSetting, setSelectedSetting] = useAtom(selectedSettingAtom)
   const isActive = selectedSetting === setting
 
@@ -28,7 +26,7 @@ const SettingItem: React.FC<Props> = ({ setting, extension = false }) => {
       onClick={onSettingItemClick}
     >
       <span className={twMerge(isActive && 'relative z-10', 'capitalize')}>
-        {extension ? formatExtensionsName(setting) : setting}
+        {name}
       </span>
 
       {isActive && (

@@ -46,7 +46,7 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
 
   useEffect(() => {
     const getExtensionInstallationState = async () => {
-      const extension = extensionManager.getByName(item.name ?? '')
+      const extension = extensionManager.getByName(item.name)
       if (!extension) return
 
       if (typeof extension?.installationState === 'function') {
@@ -59,13 +59,13 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
   }, [item.name, isInstalling])
 
   useEffect(() => {
-    const extension = extensionManager.getByName(item.name ?? '')
+    const extension = extensionManager.getByName(item.name)
     if (!extension) return
     setCompatibility(extension.compatibility())
   }, [setCompatibility, item.name])
 
   const onInstallClick = useCallback(async () => {
-    const extension = extensionManager.getByName(item.name ?? '')
+    const extension = extensionManager.getByName(item.name)
     if (!extension) return
 
     await extension.install()

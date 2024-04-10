@@ -11,6 +11,7 @@ export default class Extension {
    * @property {string} origin Original specification provided to fetch the package.
    * @property {Object} installOptions Options provided to pacote when fetching the manifest.
    * @property {name} name The name of the extension as defined in the manifest.
+   * @property {name} productName The display name of the extension as defined in the manifest.
    * @property {string} url Electron URL where the package can be accessed.
    * @property {string} version Version of the package as defined in the manifest.
    * @property {string} main The entry point as defined in the main entry of the manifest.
@@ -19,6 +20,7 @@ export default class Extension {
   origin?: string
   installOptions: any
   name?: string
+  productName?: string
   url?: string
   version?: string
   main?: string
@@ -42,7 +44,7 @@ export default class Extension {
     const Arborist = require('@npmcli/arborist')
     const defaultOpts = {
       version: false,
-      fullMetadata: false,
+      fullMetadata: true,
       Arborist,
     }
 
@@ -77,6 +79,7 @@ export default class Extension {
         return pacote.manifest(this.specifier, this.installOptions).then((mnf) => {
           // set the Package properties based on the it's manifest
           this.name = mnf.name
+          this.productName = mnf.productName as string | undefined
           this.version = mnf.version
           this.main = mnf.main
           this.description = mnf.description

@@ -85,14 +85,10 @@ const ExtensionCatalog = () => {
               >
                 <div className="w-4/5 flex-shrink-0 space-y-1.5">
                   <div className="flex items-center gap-x-2">
-                    <h6 className="text-sm font-semibold capitalize">
-                      {formatExtensionsName(
-                        item.name ?? item.description ?? ''
-                      )}
+                    <h6 className="text-sm font-semibold">
+                      {item.productName ?? formatExtensionsName(item.name)} v
+                      {item.version}
                     </h6>
-                    <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed ">
-                      v{item.version}
-                    </p>
                   </div>
                   <p className="whitespace-pre-wrap leading-relaxed ">
                     {item.description}

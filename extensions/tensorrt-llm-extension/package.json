@@ -1,5 +1,6 @@
 {
   "name": "@janhq/tensorrt-llm-extension",
+  "productName": "TensorRT-LLM Inference Engine Extension",
   "version": "0.0.3",
   "description": "This extension enables Nvidia's TensorRT-LLM for the fastest GPU acceleration. See the [setup guide](https://jan.ai/guides/providers/tensorrt-llm/) for next steps.",
   "main": "dist/index.js",

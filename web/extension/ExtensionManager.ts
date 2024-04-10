@@ -106,6 +106,7 @@ export class ExtensionManager {
         new Extension(
           ext.url,
           ext.name,
+          ext.productName,
           ext.active,
           ext.description,
           ext.version
@@ -135,10 +136,11 @@ export class ExtensionManager {
           extensionClass.default.prototype
         ) {
           this.register(
-            extension.name ?? extension.url,
+            extension.name,
             new extensionClass.default(
               extension.url,
               extension.name,
+              extension.productName,
               extension.active,
               extension.description,
               extension.version

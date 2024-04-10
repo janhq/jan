@@ -40,7 +40,10 @@ export abstract class BaseExtension implements ExtensionType {
   protected settingFileName = 'settings.json'
 
   /** @type {string} Name of the extension. */
-  name?: string
+  name: string
+
+  /** @type {string} Product Name of the extension. */
+  productName?: string
 
   /** @type {string} The URL of the extension to load. */
   url: string
@@ -56,12 +59,14 @@ export abstract class BaseExtension implements ExtensionType {
 
   constructor(
     url: string,
-    name?: string,
+    name: string,
+    productName?: string,
     active?: boolean,
     description?: string,
     version?: string
   ) {
     this.name = name
+    this.productName = productName
     this.url = url
     this.active = active
     this.description = description
