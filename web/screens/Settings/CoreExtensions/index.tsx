@@ -106,7 +106,7 @@ const ExtensionCatalog = () => {
                 </h6>
               </div>
               <p className="whitespace-pre-wrap leading-relaxed ">
-                Select a extension file to install (.tgz)
+                Select an extension file to install (.tgz)
               </p>
             </div>
             <div>
