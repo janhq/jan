@@ -202,7 +202,7 @@ const Advanced = () => {
               </h6>
             </div>
             <p className="leading-relaxed">
-              Enable experimental features that may be unstable tested.
+              Enable experimental features that may be untested and unstable.
             </p>
           </div>
           <Switch

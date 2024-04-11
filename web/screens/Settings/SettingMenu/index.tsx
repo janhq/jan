@@ -11,11 +11,13 @@ import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
 const SettingMenu: React.FC = () => {
   const settingScreens = useAtomValue(janSettingScreenAtom)
-  const [extensionHasSettings, setExtensionHasSettings] = useState<string[]>([])
+  const [extensionHasSettings, setExtensionHasSettings] = useState<
+    { name?: string; setting: string }[]
+  >([])
 
   useEffect(() => {
     const getAllSettings = async () => {
-      const extensionsMenu: string[] = []
+      const extensionsMenu: { name?: string; setting: string }[] = []
       const extensions = extensionManager.getAll()
       for (const extension of extensions) {
         if (typeof extension.getSettings === 'function') {
@@ -24,7 +26,10 @@ const SettingMenu: React.FC = () => {
             (settings && settings.length > 0) ||
             (await extension.installationState()) !== 'NotRequired'
           ) {
-            extensionsMenu.push(extension.name ?? extension.url)
+            extensionsMenu.push({
+              name: extension.productName,
+              setting: extension.name,
+            })
           }
         }
       }
@@ -38,7 +43,11 @@ const SettingMenu: React.FC = () => {
       <ScrollArea className="h-full w-full">
         <div className="flex-shrink-0 px-6 py-4 font-medium">
           {settingScreens.map((settingScreen) => (
-            <SettingItem key={settingScreen} setting={settingScreen} />
+            <SettingItem
+              key={settingScreen}
+              name={settingScreen}
+              setting={settingScreen}
+            />
           ))}
 
           {extensionHasSettings.length > 0 && (
@@ -49,11 +58,11 @@ const SettingMenu: React.FC = () => {
             </div>
           )}
 
-          {extensionHasSettings.map((extensionName: string) => (
+          {extensionHasSettings.map((item) => (
             <SettingItem
-              key={extensionName}
-              setting={extensionName}
-              extension={true}
+              key={item.name}
+              name={item.name ?? item.setting}
+              setting={item.setting}
             />
           ))}
         </div>
