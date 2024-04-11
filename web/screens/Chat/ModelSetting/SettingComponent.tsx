@@ -11,13 +11,13 @@ import SliderRightPanel from '@/containers/SliderRightPanel'
 
 type Props = {
   componentProps: SettingComponentProps[]
-  enabled?: boolean
+  disabled?: boolean
   onValueUpdated: (key: string, value: string | number | boolean) => void
 }
 
 const SettingComponent: React.FC<Props> = ({
   componentProps,
-  enabled = true,
+  disabled = false,
   onValueUpdated,
 }) => {
   const components = componentProps.map((data) => {
@@ -35,7 +35,7 @@ const SettingComponent: React.FC<Props> = ({
             step={step}
             value={value}
             name={data.key}
-            enabled={enabled}
+            disabled={disabled}
             onValueChanged={(value) => onValueUpdated(data.key, value)}
           />
         )
@@ -47,7 +47,7 @@ const SettingComponent: React.FC<Props> = ({
         return (
           <ModelConfigInput
             title={data.title}
-            enabled={enabled}
+            disabled={disabled}
             key={data.key}
             name={data.key}
             description={data.description}
@@ -63,7 +63,7 @@ const SettingComponent: React.FC<Props> = ({
         return (
           <Checkbox
             key={data.key}
-            enabled={enabled}
+            disabled={disabled}
             name={data.key}
             description={data.description}
             title={data.title}

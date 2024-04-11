@@ -73,10 +73,15 @@ const LocalServerScreen = () => {
   const { startModel, stateModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
 
-  const modelEngineParams = toSettingParams(selectedModel?.settings)
   const modelRuntimeParams = toRuntimeParams(selectedModel?.settings)
 
-  const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
+  const [currentModelSettingParams, setCurrentModelSettingParams] = useState(
+    toSettingParams(selectedModel?.settings)
+  )
+
+  const componentDataEngineSetting = getConfigurationsData(
+    currentModelSettingParams
+  )
   const componentDataRuntimeSetting = getConfigurationsData(
     modelRuntimeParams,
     selectedModel
@@ -176,6 +181,16 @@ const LocalServerScreen = () => {
       await onStartServerClick()
     }
   }
+
+  const onValueChanged = useCallback(
+    (key: string, value: string | number | boolean) => {
+      setCurrentModelSettingParams({
+        ...currentModelSettingParams,
+        [key]: value,
+      })
+    },
+    [currentModelSettingParams]
+  )
 
   return (
     <div className="flex h-full w-full" data-testid="local-server-testid">
@@ -495,7 +510,11 @@ const LocalServerScreen = () => {
             <div className="mt-4">
               <CardSidebar title="Model Parameters" asChild>
                 <div className="px-2 py-4">
-                  <ModelSetting componentProps={modelSettings} />
+                  <ModelSetting
+                    componentProps={modelSettings}
+                    disabled={serverEnabled}
+                    onValueChanged={onValueChanged}
+                  />
                 </div>
               </CardSidebar>
             </div>
@@ -505,7 +524,11 @@ const LocalServerScreen = () => {
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting componentData={engineSettings} />
+                  <EngineSetting
+                    disabled={serverEnabled}
+                    componentData={engineSettings}
+                    onValueChanged={onValueChanged}
+                  />
                 </div>
               </CardSidebar>
             </div>

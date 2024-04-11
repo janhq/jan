@@ -14,7 +14,7 @@ import { InfoIcon } from 'lucide-react'
 type Props = {
   name: string
   title: string
-  enabled?: boolean
+  disabled?: boolean
   description: string
   checked: boolean
   onValueChanged?: (e: string | number | boolean) => void
@@ -23,7 +23,7 @@ type Props = {
 const Checkbox: React.FC<Props> = ({
   title,
   checked,
-  enabled = true,
+  disabled = false,
   description,
   onValueChanged,
 }) => {
@@ -52,7 +52,7 @@ const Checkbox: React.FC<Props> = ({
       <Switch
         checked={checked}
         onCheckedChange={onCheckedChange}
-        disabled={!enabled}
+        disabled={disabled}
       />
     </div>
   )
