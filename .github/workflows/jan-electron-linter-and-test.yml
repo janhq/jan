@@ -54,6 +54,7 @@ jobs:
       - name: "Cleanup cache"
         continue-on-error: true
         run: |
+          rm -rf ~/jan
           make clean
 
       - name: Get Commit Message for PR
@@ -98,6 +99,7 @@ jobs:
       - name: "Cleanup cache"
         continue-on-error: true
         run: |
+          rm -rf ~/jan
           make clean
 
       - name: Linter and test
@@ -131,6 +133,12 @@ jobs:
         shell: powershell
         continue-on-error: true
         run: |
+          $path = "$Env:APPDATA\jan"
+          if (Test-Path $path) {
+              Remove-Item "\\?\$path" -Recurse -Force
+          } else {
+              Write-Output "Folder does not exist."
+          }
           make clean
   
       - name: Get Commit Message for push event
@@ -173,6 +181,12 @@ jobs:
         shell: powershell
         continue-on-error: true
         run: |
+          $path = "$Env:APPDATA\jan"
+          if (Test-Path $path) {
+              Remove-Item "\\?\$path" -Recurse -Force
+          } else {
+              Write-Output "Folder does not exist."
+          }
           make clean
 
       - name: Get Commit Message for PR
@@ -216,6 +230,12 @@ jobs:
         shell: powershell
         continue-on-error: true
         run: |
+          $path = "$Env:APPDATA\jan"
+          if (Test-Path $path) {
+              Remove-Item "\\?\$path" -Recurse -Force
+          } else {
+              Write-Output "Folder does not exist."
+          }
           make clean
 
       - name: Linter and test
@@ -243,6 +263,7 @@ jobs:
       - name: "Cleanup cache"
         continue-on-error: true
         run: |
+          rm -rf ~/jan
           make clean
 
       - name: Get Commit Message for PR
@@ -289,6 +310,7 @@ jobs:
       - name: "Cleanup cache"
         continue-on-error: true
         run: |
+          rm -rf ~/jan
           make clean
             
       - name: Linter and test
