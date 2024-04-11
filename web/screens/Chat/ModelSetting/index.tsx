@@ -16,7 +16,7 @@ const ModelSetting: React.FC<Props> = ({
   disabled = false,
 }) => (
   <SettingComponentBuilder
-    disabled={!disabled}
+    disabled={disabled}
     componentProps={componentProps}
     onValueUpdated={onValueChanged}
   />
