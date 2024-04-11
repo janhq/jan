@@ -120,7 +120,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     const downloadUrl = CUDA_DOWNLOAD_URL
 
     const url = downloadUrl
-      .replace('<version>', info.gpuSetting.cuda?.version ?? '12.4')
+      .replace('<version>', info.gpuSetting?.cuda?.version ?? '12.4')
       .replace('<platform>', platform)
 
     console.debug('Downloading Cuda Toolkit Dependency: ', url)
@@ -168,11 +168,11 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
   override async installationState(): Promise<InstallationState> {
     const info = await systemInformation()
     if (
-      info.gpuSetting.run_mode === 'gpu' &&
-      !info.gpuSetting.vulkan &&
+      info.gpuSetting?.run_mode === 'gpu' &&
+      !info.gpuSetting?.vulkan &&
       info.osInfo &&
       info.osInfo.platform !== 'darwin' &&
-      !info.gpuSetting.cuda?.exist
+      !info.gpuSetting?.cuda?.exist
     ) {
       const janDataFolderPath = await getJanDataFolderPath()
 

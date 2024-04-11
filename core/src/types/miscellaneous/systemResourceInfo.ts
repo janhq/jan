@@ -32,7 +32,7 @@ export type GpuSettingInfo = {
 }
 
 export type SystemInformation = {
-  gpuSetting: GpuSetting
+  gpuSetting?: GpuSetting
   osInfo?: OperatingSystemInfo
 }
 
