@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import {
+  BaseExtension,
   Compatibility,
-  GpuSetting,
   InstallationState,
   abortDownload,
-  systemInformation,
 } from '@janhq/core'
 import {
-  Badge,
   Button,
   Progress,
   Tooltip,
@@ -23,25 +21,20 @@ import { useAtomValue } from 'jotai'
 
 import { Marked, Renderer } from 'marked'
 
-import UpdateExtensionModal from './UpdateExtensionModal'
-
 import { extensionManager } from '@/extension'
-import Extension from '@/extension/Extension'
 import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
 
 type Props = {
-  item: Extension
+  item: BaseExtension
 }
 
-const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
+const ExtensionItem: React.FC<Props> = ({ item }) => {
   const [compatibility, setCompatibility] = useState<Compatibility | undefined>(
     undefined
   )
   const [installState, setInstallState] =
     useState<InstallationState>('NotRequired')
   const installingExtensions = useAtomValue(installingExtensionAtom)
-  const [isGpuSupported, setIsGpuSupported] = useState<boolean>(false)
-  const [promptUpdateModal, setPromptUpdateModal] = useState<boolean>(false)
   const isInstalling = installingExtensions.some(
     (e) => e.extensionId === item.name
   )
@@ -50,32 +43,6 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
     ? installingExtensions.find((e) => e.extensionId === item.name)
         ?.percentage ?? -1
     : -1
-
-  useEffect(() => {
-    const getSystemInfos = async () => {
-      const info = await systemInformation()
-      if (!info) {
-        setIsGpuSupported(false)
-        return
-      }
-
-      const gpuSettings: GpuSetting | undefined = info.gpuSetting
-      if (!gpuSettings || gpuSettings.gpus.length === 0) {
-        setIsGpuSupported(false)
-        return
-      }
-
-      const arch = gpuSettings.gpus[0].arch
-      if (!arch) {
-        setIsGpuSupported(false)
-        return
-      }
-
-      const supportedGpuArch = ['ampere', 'ada']
-      setIsGpuSupported(supportedGpuArch.includes(arch))
-    }
-    getSystemInfos()
-  }, [])
 
   useEffect(() => {
     const getExtensionInstallationState = async () => {
@@ -116,16 +83,10 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
   const description = marked.parse(item.description ?? '', { async: false })
 
   return (
-    <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
+    <div className="mx-6 flex w-full items-start justify-between border-b border-border py-4 py-6 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1.5">
         <div className="flex items-center gap-x-2">
-          <h6 className="text-sm font-semibold capitalize">
-            TensorRT-LLM Extension
-          </h6>
-          <p className="whitespace-pre-wrap text-sm font-semibold leading-relaxed">
-            v{item.version}
-          </p>
-          <Badge>Experimental</Badge>
+          <h6 className="text-base font-bold">Additional Dependencies</h6>
         </div>
         {
           // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -133,18 +94,62 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
         }
       </div>
 
-      {(!compatibility || compatibility['platform']?.includes(PLATFORM)) &&
-      isGpuSupported ? (
+      {(!compatibility || compatibility['platform']?.includes(PLATFORM)) && (
         <div className="flex min-w-[150px] flex-row justify-end">
           <InstallStateIndicator
             installProgress={progress}
             installState={installState}
+            compatibility={compatibility}
             onInstallClick={onInstallClick}
-            onUpdateClick={() => setPromptUpdateModal(true)}
             onCancelClick={onCancelInstallingClick}
           />
         </div>
-      ) : (
+      )}
+    </div>
+  )
+}
+
+type InstallStateProps = {
+  installProgress: number
+  compatibility?: Compatibility
+  installState: InstallationState
+  onInstallClick: () => void
+  onCancelClick: () => void
+}
+
+const InstallStateIndicator: React.FC<InstallStateProps> = ({
+  installProgress,
+  compatibility,
+  installState,
+  onInstallClick,
+  onCancelClick,
+}) => {
+  if (installProgress !== -1) {
+    const progress = installProgress * 100
+    return (
+      <div className="flex h-10 flex-row items-center justify-center space-x-2 rounded-lg bg-[#EFF8FF] px-4 text-primary dark:bg-secondary">
+        <button onClick={onCancelClick} className="font-semibold text-primary">
+          Cancel
+        </button>
+        <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md bg-[#D1E9FF] px-2 py-[2px] dark:bg-black/50">
+          <Progress className="h-1 w-[69px]" value={progress} />
+          <span className="text-xs font-bold text-primary">
+            {progress.toFixed(0)}%
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  switch (installState) {
+    case 'Installed':
+      return (
+        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
+          Installed
+        </div>
+      )
+    case 'NotCompatible':
+      return (
         <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
           <div className="flex flex-row items-center justify-center gap-1">
             Incompatible{' '}
@@ -179,58 +184,6 @@ const TensorRtExtensionItem: React.FC<Props> = ({ item }) => {
             </Tooltip>
           </div>
         </div>
-      )}
-      {promptUpdateModal && (
-        <UpdateExtensionModal onUpdateClick={onInstallClick} />
-      )}
-    </div>
-  )
-}
-
-type InstallStateProps = {
-  installProgress: number
-  installState: InstallationState
-  onInstallClick: () => void
-  onUpdateClick: () => void
-  onCancelClick: () => void
-}
-
-const InstallStateIndicator: React.FC<InstallStateProps> = ({
-  installProgress,
-  installState,
-  onInstallClick,
-  onUpdateClick,
-  onCancelClick,
-}) => {
-  if (installProgress !== -1) {
-    const progress = installProgress * 100
-    return (
-      <div className="flex h-10 flex-row items-center justify-center space-x-2 rounded-lg bg-[#EFF8FF] px-4 text-primary dark:bg-secondary">
-        <button onClick={onCancelClick} className="font-semibold text-primary">
-          Cancel
-        </button>
-        <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md bg-[#D1E9FF] px-2 py-[2px] dark:bg-black/50">
-          <Progress className="h-1 w-[69px]" value={progress} />
-          <span className="text-xs font-bold text-primary">
-            {progress.toFixed(0)}%
-          </span>
-        </div>
-      </div>
-    )
-  }
-
-  switch (installState) {
-    case 'Installed':
-      return (
-        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
-          Installed
-        </div>
-      )
-    case 'Updatable':
-      return (
-        <Button themes="secondaryBlue" size="sm" onClick={onUpdateClick}>
-          Update
-        </Button>
       )
     case 'NotInstalled':
       return (
@@ -253,4 +206,4 @@ const marked: Marked = new Marked({
   },
 })
 
-export default TensorRtExtensionItem
+export default ExtensionItem

@@ -1,7 +1,7 @@
 {
   "name": "@janhq/inference-nitro-extension",
   "version": "1.0.0",
-  "description": "This extension embeds Nitro, a lightweight (3mb) inference engine written in C++. See nitro.jan.ai",
+  "description": "This extension embeds Nitro, a lightweight (3mb) inference engine written in C++. See https://nitro.jan.ai.\nUse this setting if you encounter errors related to **CUDA toolkit** during application execution.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",
@@ -29,6 +29,7 @@
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-replace": "^5.0.5",
+    "@types/decompress": "^4.2.7",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.4",
     "@types/os-utils": "^0.0.4",
@@ -47,6 +48,7 @@
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
+    "decompress": "^4.2.1",
     "fetch-retry": "^5.0.6",
     "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",
@@ -65,6 +67,7 @@
   "bundleDependencies": [
     "tcp-port-used",
     "fetch-retry",
-    "@janhq/core"
+    "@janhq/core",
+    "decompress"
   ]
 }

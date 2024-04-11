@@ -67,7 +67,7 @@ const Advanced = () => {
   const [gpuList, setGpuList] = useState<GPU[]>([])
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
 
-  const { readSettings, saveSettings, validateSettings } = useSettings()
+  const { readSettings, saveSettings } = useSettings()
   const { stopModel } = useActiveModel()
 
   const selectedGpu = gpuList
@@ -277,9 +277,6 @@ const Advanced = () => {
                             'Successfully turned on GPU Acceleration',
                           type: 'success',
                         })
-                        setTimeout(() => {
-                          validateSettings()
-                        }, 300)
                       } else {
                         saveSettings({ runMode: 'cpu' })
                         setGpuEnabled(false)

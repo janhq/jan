@@ -200,7 +200,7 @@ const updateGpuInfo = async () =>
         process.platform === 'win32'
           ? `${__dirname}\\..\\bin\\vulkaninfoSDK.exe --summary`
           : `${__dirname}/../bin/vulkaninfo --summary`,
-        (error, stdout) => {
+        async (error, stdout) => {
           if (!error) {
             const output = stdout.toString()
 
@@ -221,7 +221,7 @@ const updateGpuInfo = async () =>
               data.gpus_in_use = [data.gpus.length > 1 ? '1' : '0']
             }
 
-            data = updateCudaExistence(data)
+            data = await updateCudaExistence(data)
             writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
             log(`[APP]::${JSON.stringify(data)}`)
             resolve({})
@@ -233,7 +233,7 @@ const updateGpuInfo = async () =>
     } else {
       exec(
         'nvidia-smi --query-gpu=index,memory.total,name --format=csv,noheader,nounits',
-        (error, stdout) => {
+        async (error, stdout) => {
           if (!error) {
             log(`[SPECS]::${stdout}`)
             // Get GPU info and gpu has higher memory first
@@ -264,7 +264,8 @@ const updateGpuInfo = async () =>
             data.gpus_in_use = [data.gpu_highest_vram]
           }
 
-          data = updateCudaExistence(data)
+          data = await updateCudaExistence(data)
+          console.log(data)
           writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
           log(`[APP]::${JSON.stringify(data)}`)
           resolve({})
@@ -283,9 +284,9 @@ const checkFileExistenceInPaths = (file: string, paths: string[]): boolean => {
 /**
  * Validate cuda for linux and windows
  */
-const updateCudaExistence = (
+const updateCudaExistence = async (
   data: GpuSetting = DEFAULT_SETTINGS
-): GpuSetting => {
+): Promise<GpuSetting> => {
   let filesCuda12: string[]
   let filesCuda11: string[]
   let paths: string[]
@@ -329,6 +330,23 @@ const updateCudaExistence = (
   }
 
   data.is_initial = false
+
+  // Attempt to query CUDA using NVIDIA SMI
+  if (!cudaExists) {
+    await new Promise<void>((resolve, reject) => {
+      exec('nvidia-smi', (error, stdout) => {
+        if (!error) {
+          const regex = /CUDA\s*Version:\s*(\d+\.\d+)/g
+          const match = regex.exec(stdout)
+          if (match && match[1]) {
+            data.cuda.version = match[1]
+          }
+        }
+        console.log(data)
+        resolve()
+      })
+    })
+  }
   return data
 }
 

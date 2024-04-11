@@ -11,9 +11,11 @@ import {
   ModelSettingParams,
   PromptTemplate,
   SystemInformation,
+  getJanDataFolderPath,
 } from '@janhq/core/node'
 import { executableNitroFile } from './execute'
 import terminate from 'terminate'
+import decompress from 'decompress'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
@@ -420,9 +422,32 @@ const getCurrentNitroProcessInfo = (): NitroProcessInfo => {
   }
 }
 
+const addAdditionalDependencies = (data: { name: string; version: string }) => {
+  const additionalPath = path.delimiter.concat(
+    path.join(getJanDataFolderPath(), 'engines', data.name, data.version)
+  )
+  // Set the updated PATH
+  process.env.PATH = (process.env.PATH || '').concat(additionalPath)
+  process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
+    additionalPath
+  )
+}
+
+const decompressRunner = async (zipPath: string, output: string) => {
+  console.debug(`Decompressing ${zipPath} to ${output}...`)
+  try {
+    const files = await decompress(zipPath, output)
+    console.debug('Decompress finished!', files)
+  } catch (err) {
+    console.error(`Decompress ${zipPath} failed: ${err}`)
+  }
+}
+
 export default {
   loadModel,
   unloadModel,
   dispose,
   getCurrentNitroProcessInfo,
+  addAdditionalDependencies,
+  decompressRunner,
 }

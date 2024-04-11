@@ -85,8 +85,8 @@ export default class JanModelExtension extends ModelExtension {
       }
 
       if (!JanModelExtension._supportedGpuArch.includes(gpuArch)) {
-        console.error(
-          `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
+        console.debug(
+          `Your GPU: ${JSON.stringify(firstGpu)} is not supported. Only 30xx, 40xx series are supported.`
         )
         return
       }

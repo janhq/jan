@@ -92,6 +92,9 @@ export default [
         JAN_SERVER_INFERENCE_URL: JSON.stringify(
           'http://localhost:1337/v1/chat/completions'
         ),
+        CUDA_DOWNLOAD_URL: JSON.stringify(
+          'https://catalog.jan.ai/dist/cuda-dependencies/<version>/<platform>/cuda.tar.gz'
+        ),
       }),
       // Allow json resolution
       json(),

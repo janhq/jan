@@ -2,31 +2,29 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { fs, joinPath } from '@janhq/core'
 
+type NvidiaDriver = {
+  exist: boolean
+  version: string
+}
+
 export type AppSettings = {
   run_mode: 'cpu' | 'gpu' | undefined
   notify: boolean
   gpus_in_use: string[]
   vulkan: boolean
   gpus: string[]
+  nvidia_driver: NvidiaDriver
+  cuda: NvidiaDriver
 }
 
 export const useSettings = () => {
-  const [isGPUModeEnabled, setIsGPUModeEnabled] = useState(false) // New state for GPU mode
   const [settings, setSettings] = useState<AppSettings>()
 
   useEffect(() => {
     readSettings().then((settings) => setSettings(settings as AppSettings))
 
-    setTimeout(() => validateSettings, 3000)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const validateSettings = async () => {
-    readSettings().then((settings) => {
-      // Check if run_mode is 'gpu' or 'cpu' and update state accordingly
-      setIsGPUModeEnabled(settings?.run_mode === 'gpu')
-    })
-  }
 
   const readSettings = useCallback(async () => {
     if (!window?.core?.api) {
@@ -69,10 +67,8 @@ export const useSettings = () => {
   }
 
   return {
-    isGPUModeEnabled,
     readSettings,
     saveSettings,
-    validateSettings,
     settings,
   }
 }
