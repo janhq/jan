@@ -9,12 +9,14 @@ import {
   PromptTemplate,
 } from '@janhq/core/node'
 import decompress from 'decompress'
+import terminate from 'terminate'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
 
 const supportedPlatform = (): string[] => ['win32', 'linux']
 const supportedGpuArch = (): string[] => ['ampere', 'ada']
+const PORT_CHECK_INTERVAL = 100
 
 /**
  * The response object for model init operation.
@@ -64,28 +66,57 @@ async function loadModel(
 /**
  * Stops a Engine subprocess.
  */
-function unloadModel(): Promise<any> {
+function unloadModel(): Promise<void> {
   const controller = new AbortController()
   setTimeout(() => controller.abort(), 5000)
   debugLog(`Request to kill engine`)
 
-  subprocess?.kill()
-  return fetch(TERMINATE_ENGINE_URL, {
-    method: 'DELETE',
-    signal: controller.signal,
-  })
-    .then(() => {
-      subprocess = undefined
+  const killRequest = () => {
+    return fetch(TERMINATE_ENGINE_URL, {
+      method: 'DELETE',
+      signal: controller.signal,
     })
-    .catch(() => {}) // Do nothing with this attempt
-    .then(() => tcpPortUsed.waitUntilFree(parseInt(ENGINE_PORT), 300, 5000)) // Wait for port available
-    .then(() => debugLog(`Engine process is terminated`))
-    .catch((err) => {
-      debugLog(
-        `Could not kill running process on port ${ENGINE_PORT}. Might be another process running on the same port? ${err}`
-      )
-      return { err: 'PORT_NOT_AVAILABLE' }
+      .then(() => {
+        subprocess = undefined
+      })
+      .catch(() => {}) // Do nothing with this attempt
+      .then(() =>
+        tcpPortUsed.waitUntilFree(
+          parseInt(ENGINE_PORT),
+          PORT_CHECK_INTERVAL,
+          5000
+        )
+      ) // Wait for port available
+      .then(() => debugLog(`Engine process is terminated`))
+      .catch((err) => {
+        debugLog(
+          `Could not kill running process on port ${ENGINE_PORT}. Might be another process running on the same port? ${err}`
+        )
+        throw 'PORT_NOT_AVAILABLE'
+      })
+  }
+
+  if (subprocess?.pid) {
+    log(`[NITRO]::Debug: Killing PID ${subprocess.pid}`)
+    const pid = subprocess.pid
+    return new Promise((resolve, reject) => {
+      terminate(pid, function (err) {
+        if (err) {
+          return killRequest()
+        } else {
+          return tcpPortUsed
+            .waitUntilFree(parseInt(ENGINE_PORT), PORT_CHECK_INTERVAL, 5000)
+            .then(() => resolve())
+            .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
+            .catch(() => {
+              killRequest()
+            })
+        }
+      })
     })
+  } else {
+    return killRequest()
+  }
 }
 /**
  * 1. Spawn engine process
@@ -97,11 +128,6 @@ async function runEngineAndLoadModel(
   systemInfo: SystemInformation
 ) {
   return unloadModel()
-    .then((res) => {
-      if (res?.error) {
-        throw new Error(res.error)
-      }
-    })
     .then(() => runEngine(systemInfo))
     .then(() => loadModelRequest(settings))
     .catch((err) => {
@@ -220,10 +246,12 @@ async function runEngine(systemInfo: SystemInformation): Promise<void> {
       reject(`child process exited with code ${code}`)
     })
 
-    tcpPortUsed.waitUntilUsed(parseInt(ENGINE_PORT), 300, 30000).then(() => {
-      debugLog(`Engine is ready`)
-      resolve()
-    })
+    tcpPortUsed
+      .waitUntilUsed(parseInt(ENGINE_PORT), PORT_CHECK_INTERVAL, 30000)
+      .then(() => {
+        debugLog(`Engine is ready`)
+        resolve()
+      })
   })
 }
 
