@@ -70,7 +70,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       'engines',
       this.provider,
       engineVersion,
-      info.gpuSetting.gpus[0].arch,
+      info.gpuSetting?.gpus[0].arch,
     ])
 
     if (!(await fs.existsSync(executableFolderPath))) {
@@ -148,7 +148,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     const info = await systemInformation()
 
     if (!this.isCompatible(info)) return 'NotCompatible'
-    const firstGpu = info.gpuSetting.gpus[0]
+    const firstGpu = info.gpuSetting?.gpus[0]
     const janDataFolderPath = await getJanDataFolderPath()
     const engineVersion = TENSORRT_VERSION
 
@@ -184,12 +184,13 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   isCompatible(info: SystemInformation): info is Required<SystemInformation> & {
     gpuSetting: { gpus: { arch: string }[] }
   } {
-    const firstGpu = info.gpuSetting.gpus[0]
+    const firstGpu = info.gpuSetting?.gpus[0]
     return (
       !!info.osInfo &&
-      info.gpuSetting?.gpus?.length > 0 &&
-      this.supportedPlatform.includes(info.osInfo.platform) &&
+      !!info.gpuSetting &&
       !!firstGpu &&
+      info.gpuSetting.gpus.length > 0 &&
+      this.supportedPlatform.includes(info.osInfo.platform) &&
       !!firstGpu.arch &&
       firstGpu.name.toLowerCase().includes('nvidia') &&
       this.supportedGpuArch.includes(firstGpu.arch)

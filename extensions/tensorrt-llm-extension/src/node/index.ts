@@ -148,7 +148,7 @@ async function runEngine(systemInfo: SystemInformation): Promise<void> {
     )
   }
 
-  if (systemInfo.gpuSetting.gpus.length === 0) {
+  if (systemInfo.gpuSetting?.gpus.length === 0) {
     return Promise.reject('No GPU found. Please check your GPU setting.')
   }
 
@@ -164,7 +164,7 @@ async function runEngine(systemInfo: SystemInformation): Promise<void> {
     )
   }
 
-  const gpu = systemInfo.gpuSetting.gpus[0]
+  const gpu = systemInfo.gpuSetting?.gpus[0]
   if (gpu.name.toLowerCase().includes('nvidia') === false) {
     return Promise.reject('No Nvidia GPU found. Please check your GPU setting.')
   }

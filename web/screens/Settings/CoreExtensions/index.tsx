@@ -8,8 +8,6 @@ import Loader from '@/containers/Loader'
 
 import { formatExtensionsName } from '@/utils/converter'
 
-import ExtensionItem from './ExtensionItem'
-
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
 

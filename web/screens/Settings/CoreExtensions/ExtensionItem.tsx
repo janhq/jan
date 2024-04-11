@@ -94,17 +94,15 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
         }
       </div>
 
-      {(!compatibility || compatibility['platform']?.includes(PLATFORM)) && (
-        <div className="flex min-w-[150px] flex-row justify-end">
-          <InstallStateIndicator
-            installProgress={progress}
-            installState={installState}
-            compatibility={compatibility}
-            onInstallClick={onInstallClick}
-            onCancelClick={onCancelInstallingClick}
-          />
-        </div>
-      )}
+      <div className="flex min-w-[150px] flex-row justify-end">
+        <InstallStateIndicator
+          installProgress={progress}
+          installState={installState}
+          compatibility={compatibility}
+          onInstallClick={onInstallClick}
+          onCancelClick={onCancelInstallingClick}
+        />
+      </div>
     </div>
   )
 }

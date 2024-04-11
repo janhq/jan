@@ -16,10 +16,7 @@ enum Settings {
  * JanMonitoringExtension is a extension that provides system monitoring functionality.
  * It implements the MonitoringExtension interface from the @janhq/core package.
  */
-export default class JanMonitoringExtension
-  extends MonitoringExtension
-  implements MonitoringInterface
-{
+export default class JanMonitoringExtension extends MonitoringExtension {
   /**
    * Called when the extension is loaded.
    */

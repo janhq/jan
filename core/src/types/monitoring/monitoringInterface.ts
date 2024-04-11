@@ -20,7 +20,7 @@ export interface MonitoringInterface {
   /**
    * Returns the GPU configuration.
    */
-  getGpuSetting(): Promise<GpuSetting>
+  getGpuSetting(): Promise<GpuSetting | undefined>
 
   /**
    * Returns information about the operating system.

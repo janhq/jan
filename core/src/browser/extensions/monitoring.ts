@@ -13,7 +13,7 @@ export abstract class MonitoringExtension extends BaseExtension implements Monit
     return ExtensionTypeEnum.SystemMonitoring
   }
 
-  abstract getGpuSetting(): Promise<GpuSetting>
+  abstract getGpuSetting(): Promise<GpuSetting | undefined>
   abstract getResourcesInfo(): Promise<any>
   abstract getCurrentLoad(): Promise<any>
   abstract getOsInfo(): Promise<OperatingSystemInfo>
