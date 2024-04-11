@@ -1,6 +1,6 @@
 {
   "name": "@janhq/inference-nitro-extension",
-  "productName": "Nitro Inference Engine Extension",
+  "productName": "Nitro Inference Engine",
   "version": "1.0.0",
   "description": "This extension embeds Nitro, a lightweight (3mb) inference engine written in C++. See https://nitro.jan.ai.\nUse this setting if you encounter errors related to **CUDA toolkit** during application execution.",
   "main": "dist/index.js",
