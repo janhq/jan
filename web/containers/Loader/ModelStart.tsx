@@ -40,6 +40,7 @@ export default function ModelStart() {
         <div
           className="absolute left-0 top-0 h-full bg-blue-200"
           style={{ width: `${loader}%` }}
+          data-testid="model-loader"
         />
         <span className="relative z-10">
           {stateModel.state === 'start' ? 'Starting' : 'Stopping'}

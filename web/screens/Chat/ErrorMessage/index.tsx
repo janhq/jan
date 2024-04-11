@@ -43,7 +43,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
       case ErrorCode.InvalidApiKey:
       case ErrorCode.InvalidRequestError:
         return (
-          <span>
+          <span data-testid="invalid-API-key-error">
             Invalid API key. Please check your API key from{' '}
             <button
               className="font-medium text-primary dark:text-blue-400"
