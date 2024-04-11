@@ -1,6 +1,6 @@
 {
   "name": "@janhq/huggingface-extension",
-  "productName": "HuggingFace Extension",
+  "productName": "HuggingFace",
   "version": "1.0.0",
   "description": "Hugging Face extension for converting HF models to GGUF",
   "main": "dist/index.js",

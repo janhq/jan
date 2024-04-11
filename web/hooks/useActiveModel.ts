@@ -126,33 +126,27 @@ export function useActiveModel() {
       })
   }
 
-  const stopModel = useCallback(
-    async (model?: Model) => {
-      const stoppingModel = activeModel || model
-      if (
-        !stoppingModel ||
-        (!model && stateModel.state === 'stop' && stateModel.loading)
-      )
-        return
+  const stopModel = useCallback(async () => {
+    const stoppingModel = activeModel || stateModel.model
+    if (!stoppingModel || (stateModel.state === 'stop' && stateModel.loading))
+      return
 
-      setStateModel({ state: 'stop', loading: true, model: stoppingModel })
-      const engine = EngineManager.instance().get(stoppingModel.engine)
-      return engine
-        ?.unloadModel(stoppingModel)
-        .catch()
-        .then(() => {
-          setActiveModel(undefined)
-          setStateModel({ state: 'start', loading: false, model: undefined })
-          loadModelController?.abort()
-        })
-    },
-    [activeModel, setActiveModel, setStateModel, stateModel]
-  )
+    setStateModel({ state: 'stop', loading: true, model: stoppingModel })
+    const engine = EngineManager.instance().get(stoppingModel.engine)
+    return engine
+      ?.unloadModel(stoppingModel)
+      .catch()
+      .then(() => {
+        setActiveModel(undefined)
+        setStateModel({ state: 'start', loading: false, model: undefined })
+        loadModelController?.abort()
+      })
+  }, [activeModel, setActiveModel, setStateModel, stateModel])
 
   const stopInference = useCallback(async () => {
     // Loading model
     if (stateModel.loading) {
-      stopModel(stateModel.model)
+      stopModel()
       return
     }
     if (!activeModel) return
