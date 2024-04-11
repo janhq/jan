@@ -49,7 +49,9 @@ const DEFAULT_SETTINGS: GpuSetting = {
 
 export const getGpuConfig = async (): Promise<GpuSetting | undefined> => {
   if (process.platform === 'darwin') return undefined
-  return JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
+  if (existsSync(GPU_INFO_FILE))
+    return JSON.parse(readFileSync(GPU_INFO_FILE, 'utf-8'))
+  return DEFAULT_SETTINGS
 }
 
 export const getResourcesInfo = async (): Promise<ResourceInfo> => {
