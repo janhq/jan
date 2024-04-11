@@ -1,4 +1,4 @@
-import { AppConfiguration } from '../../types'
+import { AppConfiguration, SettingComponentProps } from '../../types'
 import { join } from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -125,40 +125,32 @@ const exec = async (command: string): Promise<string> => {
   })
 }
 
+// a hacky way to get the api key. we should comes up with a better
+// way to handle this
 export const getEngineConfiguration = async (engineId: string) => {
-  if (engineId !== 'openai' && engineId !== 'groq') {
-    return undefined
-  }
-  const directoryPath = join(getJanDataFolderPath(), 'engines')
-  const filePath = join(directoryPath, `${engineId}.json`)
-  const data = fs.readFileSync(filePath, 'utf-8')
-  return JSON.parse(data)
-}
+  if (engineId !== 'openai' && engineId !== 'groq') return undefined
 
-/**
- * Utility function to get server log path
- *
- * @returns {string} The log path.
- */
-export const getServerLogPath = (): string => {
-  const appConfigurations = getAppConfigurations()
-  const logFolderPath = join(appConfigurations.data_folder, 'logs')
-  if (!fs.existsSync(logFolderPath)) {
-    fs.mkdirSync(logFolderPath, { recursive: true })
-  }
-  return join(logFolderPath, 'server.log')
-}
+  const settingDirectoryPath = join(
+    getJanDataFolderPath(),
+    'settings',
+    '@janhq',
+    engineId === 'openai' ? 'inference-openai-extension' : 'inference-groq-extension',
+    'settings.json'
+  )
 
-/**
- * Utility function to get app log path
- *
- * @returns {string} The log path.
- */
-export const getAppLogPath = (): string => {
-  const appConfigurations = getAppConfigurations()
-  const logFolderPath = join(appConfigurations.data_folder, 'logs')
-  if (!fs.existsSync(logFolderPath)) {
-    fs.mkdirSync(logFolderPath, { recursive: true })
+  const content = fs.readFileSync(settingDirectoryPath, 'utf-8')
+  const settings: SettingComponentProps[] = JSON.parse(content)
+  const apiKeyId = engineId === 'openai' ? 'openai-api-key' : 'groq-api-key'
+  const keySetting = settings.find((setting) => setting.key === apiKeyId)
+  let fullUrl = settings.find((setting) => setting.key === 'chat-completions-endpoint')
+    ?.controllerProps.value
+
+  let apiKey = keySetting?.controllerProps.value
+  if (typeof apiKey !== 'string') apiKey = ''
+  if (typeof fullUrl !== 'string') fullUrl = ''
+
+  return {
+    api_key: apiKey,
+    full_url: fullUrl,
   }
-  return join(logFolderPath, 'app.log')
 }

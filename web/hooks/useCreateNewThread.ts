@@ -1,3 +1,5 @@
+import { useCallback } from 'react'
+
 import {
   Assistant,
   ConversationalExtension,
@@ -7,8 +9,6 @@ import {
   ThreadState,
   Model,
   AssistantTool,
-  events,
-  InferenceEvent,
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -17,6 +17,7 @@ import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { generateThreadId } from '@/utils/thread'
 
+import { useActiveModel } from './useActiveModel'
 import useRecommendedModel from './useRecommendedModel'
 
 import useSetActiveThread from './useSetActiveThread'
@@ -63,6 +64,7 @@ export const useCreateNewThread = () => {
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   const threads = useAtomValue(threadsAtom)
+  const { stopInference } = useActiveModel()
 
   const requestCreateNewThread = async (
     assistant: Assistant,
@@ -70,7 +72,7 @@ export const useCreateNewThread = () => {
   ) => {
     // Stop generating if any
     setIsGeneratingResponse(false)
-    events.emit(InferenceEvent.OnInferenceStopped, {})
+    stopInference()
 
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
 
@@ -134,13 +136,16 @@ export const useCreateNewThread = () => {
     setActiveThread(thread)
   }
 
-  async function updateThreadMetadata(thread: Thread) {
-    updateThread(thread)
+  const updateThreadMetadata = useCallback(
+    async (thread: Thread) => {
+      updateThread(thread)
 
-    await extensionManager
-      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-      ?.saveThread(thread)
-  }
+      await extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.saveThread(thread)
+    },
+    [updateThread]
+  )
 
   return {
     requestCreateNewThread,

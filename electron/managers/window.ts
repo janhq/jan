@@ -45,7 +45,7 @@ class WindowManager {
     windowManager.mainWindow?.on('close', function (evt) {
       // Feature Toggle for Quick Ask
       if (!getAppConfigurations().quick_ask) return
-      
+
       if (!isAppQuitting) {
         evt.preventDefault()
         windowManager.hideMainWindow()
@@ -93,8 +93,20 @@ class WindowManager {
     this._quickAskWindowVisible = true
   }
 
+  closeQuickAskWindow(): void {
+    if (this._quickAskWindow?.isDestroyed()) return
+    this._quickAskWindow?.close()
+    this._quickAskWindow?.destroy()
+    this._quickAskWindow = undefined
+    this._quickAskWindowVisible = false
+  }
+
   isQuickAskWindowVisible(): boolean {
     return this._quickAskWindowVisible
+  }
+
+  isQuickAskWindowDestroyed(): boolean {
+    return this._quickAskWindow?.isDestroyed() ?? true
   }
 
   expandQuickAskWindow(heightOffset: number): void {
@@ -112,10 +124,18 @@ class WindowManager {
   }
 
   cleanUp(): void {
-    this.mainWindow?.destroy()
-    this._quickAskWindow?.destroy()
-    this._quickAskWindowVisible = false
-    this._mainWindowVisible = false
+    if (!this.mainWindow?.isDestroyed()) {
+      this.mainWindow?.close()
+      this.mainWindow?.destroy()
+      this.mainWindow = undefined
+      this._mainWindowVisible = false
+    }
+    if (!this._quickAskWindow?.isDestroyed()) {
+      this._quickAskWindow?.close()
+      this._quickAskWindow?.destroy()
+      this._quickAskWindow = undefined
+      this._quickAskWindowVisible = false
+    }
   }
 }
 

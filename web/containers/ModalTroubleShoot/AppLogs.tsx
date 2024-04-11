@@ -2,14 +2,16 @@ import React, { useEffect, useState } from 'react'
 
 import { Button } from '@janhq/uikit'
 
-import { CopyIcon, CheckIcon } from 'lucide-react'
+import { CopyIcon, CheckIcon, FolderIcon } from 'lucide-react'
 
 import { useClipboard } from '@/hooks/useClipboard'
 import { useLogs } from '@/hooks/useLogs'
+import { usePath } from '@/hooks/usePath'
 
 const AppLogs = () => {
   const { getLogs } = useLogs()
   const [logs, setLogs] = useState<string[]>([])
+  const { onRevealInFinder } = usePath()
 
   useEffect(() => {
     getLogs('app').then((log) => {
@@ -26,27 +28,41 @@ const AppLogs = () => {
   return (
     <>
       <div className="absolute -top-11 right-2">
-        <Button
-          themes="outline"
-          className="bg-white dark:bg-secondary/50"
-          onClick={() => {
-            clipboard.copy(logs.slice(-50) ?? '')
-          }}
-        >
-          <div className="flex items-center space-x-2">
-            {clipboard.copied ? (
+        <div className="flex w-full flex-row gap-2">
+          <Button
+            themes="outline"
+            className="bg-white dark:bg-secondary/50"
+            onClick={() => onRevealInFinder('Logs')}
+          >
+            <div className="flex items-center space-x-2">
               <>
-                <CheckIcon size={14} className="text-green-600" />
-                <span>Copying...</span>
+                <FolderIcon size={14} />
+                <span>Open</span>
               </>
-            ) : (
-              <>
-                <CopyIcon size={14} />
-                <span>Copy All</span>
-              </>
-            )}
-          </div>
-        </Button>
+            </div>
+          </Button>
+          <Button
+            themes="outline"
+            className="bg-white dark:bg-secondary/50"
+            onClick={() => {
+              clipboard.copy(logs.slice(-50).join('\n') ?? '')
+            }}
+          >
+            <div className="flex items-center space-x-2">
+              {clipboard.copied ? (
+                <>
+                  <CheckIcon size={14} className="text-green-600" />
+                  <span>Copying...</span>
+                </>
+              ) : (
+                <>
+                  <CopyIcon size={14} />
+                  <span>Copy All</span>
+                </>
+              )}
+            </div>
+          </Button>
+        </div>
       </div>
       <div className="overflow-hidden">
         {logs.length > 1 ? (

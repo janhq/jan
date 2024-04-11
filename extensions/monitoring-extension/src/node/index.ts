@@ -1,6 +1,7 @@
 import {
   GpuSetting,
   GpuSettingInfo,
+  LoggerManager,
   OperatingSystemInfo,
   ResourceInfo,
   SupportedPlatforms,
@@ -12,6 +13,7 @@ import { exec } from 'child_process'
 import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs'
 import path from 'path'
 import os from 'os'
+import { FileLogger } from './logger'
 
 /**
  * Path to the settings directory
@@ -198,7 +200,7 @@ const updateGpuInfo = async () =>
         process.platform === 'win32'
           ? `${__dirname}\\..\\bin\\vulkaninfoSDK.exe --summary`
           : `${__dirname}/../bin/vulkaninfo --summary`,
-        (error, stdout) => {
+        async (error, stdout) => {
           if (!error) {
             const output = stdout.toString()
 
@@ -219,8 +221,9 @@ const updateGpuInfo = async () =>
               data.gpus_in_use = [data.gpus.length > 1 ? '1' : '0']
             }
 
-            data = updateCudaExistence(data)
+            data = await updateCudaExistence(data)
             writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
+            log(`[APP]::${JSON.stringify(data)}`)
             resolve({})
           } else {
             reject(error)
@@ -230,7 +233,7 @@ const updateGpuInfo = async () =>
     } else {
       exec(
         'nvidia-smi --query-gpu=index,memory.total,name --format=csv,noheader,nounits',
-        (error, stdout) => {
+        async (error, stdout) => {
           if (!error) {
             log(`[SPECS]::${stdout}`)
             // Get GPU info and gpu has higher memory first
@@ -261,8 +264,10 @@ const updateGpuInfo = async () =>
             data.gpus_in_use = [data.gpu_highest_vram]
           }
 
-          data = updateCudaExistence(data)
+          data = await updateCudaExistence(data)
+          console.log(data)
           writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
+          log(`[APP]::${JSON.stringify(data)}`)
           resolve({})
         }
       )
@@ -279,9 +284,9 @@ const checkFileExistenceInPaths = (file: string, paths: string[]): boolean => {
 /**
  * Validate cuda for linux and windows
  */
-const updateCudaExistence = (
+const updateCudaExistence = async (
   data: GpuSetting = DEFAULT_SETTINGS
-): GpuSetting => {
+): Promise<GpuSetting> => {
   let filesCuda12: string[]
   let filesCuda11: string[]
   let paths: string[]
@@ -289,7 +294,7 @@ const updateCudaExistence = (
 
   if (process.platform === 'win32') {
     filesCuda12 = ['cublas64_12.dll', 'cudart64_12.dll', 'cublasLt64_12.dll']
-    filesCuda11 = ['cublas64_11.dll', 'cudart64_11.dll', 'cublasLt64_11.dll']
+    filesCuda11 = ['cublas64_11.dll', 'cudart64_110.dll', 'cublasLt64_11.dll']
     paths = process.env.PATH ? process.env.PATH.split(path.delimiter) : []
   } else {
     filesCuda12 = ['libcudart.so.12', 'libcublas.so.12', 'libcublasLt.so.12']
@@ -325,6 +330,23 @@ const updateCudaExistence = (
   }
 
   data.is_initial = false
+
+  // Attempt to query CUDA using NVIDIA SMI
+  if (!cudaExists) {
+    await new Promise<void>((resolve, reject) => {
+      exec('nvidia-smi', (error, stdout) => {
+        if (!error) {
+          const regex = /CUDA\s*Version:\s*(\d+\.\d+)/g
+          const match = regex.exec(stdout)
+          if (match && match[1]) {
+            data.cuda.version = match[1]
+          }
+        }
+        console.log(data)
+        resolve()
+      })
+    })
+  }
   return data
 }
 
@@ -343,4 +365,23 @@ export const getOsInfo = (): OperatingSystemInfo => {
   }
 
   return osInfo
+}
+
+export const registerLogger = ({ logEnabled, logCleaningInterval }) => {
+  const logger = new FileLogger(logEnabled, logCleaningInterval)
+  LoggerManager.instance().register(logger)
+  logger.cleanLogs()
+}
+
+export const unregisterLogger = () => {
+  LoggerManager.instance().unregister('file')
+}
+
+export const updateLogger = ({ logEnabled, logCleaningInterval }) => {
+  const logger = LoggerManager.instance().loggers.get('file') as FileLogger
+  if (logger && logEnabled !== undefined) logger.logEnabled = logEnabled
+  if (logger && logCleaningInterval)
+    logger.logCleaningInterval = logCleaningInterval
+  // Rerun
+  logger && logger.cleanLogs()
 }

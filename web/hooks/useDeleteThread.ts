@@ -1,7 +1,11 @@
+import { useCallback } from 'react'
+
 import {
   ChatCompletionRole,
   ExtensionTypeEnum,
   ConversationalExtension,
+  fs,
+  joinPath,
 } from '@janhq/core'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -12,10 +16,11 @@ import { toaster } from '@/containers/Toast'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 
+import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
+  chatMessages,
   cleanChatMessageAtom as cleanChatMessagesAtom,
   deleteChatMessageAtom as deleteChatMessagesAtom,
-  getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   threadsAtom,
@@ -26,39 +31,63 @@ import {
 
 export default function useDeleteThread() {
   const [threads, setThreads] = useAtom(threadsAtom)
-  const setCurrentPrompt = useSetAtom(currentPromptAtom)
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
+  const messages = useAtomValue(chatMessages)
+  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
 
+  const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const deleteMessages = useSetAtom(deleteChatMessagesAtom)
   const cleanMessages = useSetAtom(cleanChatMessagesAtom)
+
   const deleteThreadState = useSetAtom(deleteThreadStateAtom)
   const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
 
-  const cleanThread = async (threadId: string) => {
-    if (threadId) {
-      const thread = threads.filter((c) => c.id === threadId)[0]
+  const cleanThread = useCallback(
+    async (threadId: string) => {
       cleanMessages(threadId)
+      const thread = threads.find((c) => c.id === threadId)
+      if (!thread) return
 
-      if (thread) {
-        await extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.writeMessages(
-            threadId,
-            messages.filter((msg) => msg.role === ChatCompletionRole.System)
-          )
+      const updatedMessages = (messages[threadId] ?? []).filter(
+        (msg) => msg.role === ChatCompletionRole.System
+      )
 
-        thread.metadata = {
-          ...thread.metadata,
-          lastMessage: undefined,
-        }
-        await extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.saveThread(thread)
-        updateThreadLastMessage(threadId, undefined)
+      // remove files
+      try {
+        const threadFolderPath = await joinPath([
+          janDataFolderPath,
+          'threads',
+          threadId,
+        ])
+        const threadFilesPath = await joinPath([threadFolderPath, 'files'])
+        const threadMemoryPath = await joinPath([threadFolderPath, 'memory'])
+        await fs.rm(threadFilesPath)
+        await fs.rm(threadMemoryPath)
+      } catch (err) {
+        console.warn('Error deleting thread files', err)
       }
-    }
-  }
+
+      await extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.writeMessages(threadId, updatedMessages)
+
+      thread.metadata = {
+        ...thread.metadata,
+        lastMessage: undefined,
+      }
+      await extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.saveThread(thread)
+      updateThreadLastMessage(threadId, undefined)
+    },
+    [
+      janDataFolderPath,
+      threads,
+      messages,
+      cleanMessages,
+      updateThreadLastMessage,
+    ]
+  )
 
   const deleteThread = async (threadId: string) => {
     if (!threadId) {

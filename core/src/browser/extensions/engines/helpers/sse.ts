@@ -36,9 +36,15 @@ export function requestInference(
       .then(async (response) => {
         if (!response.ok) {
           const data = await response.json()
+          let errorCode = ErrorCode.Unknown;
+          if (data.error) {
+            errorCode = data.error.code ?? data.error.type ?? ErrorCode.Unknown
+          } else if (response.status === 401) {
+            errorCode = ErrorCode.InvalidApiKey;
+          }
           const error = {
             message: data.error?.message ?? 'Error occurred.',
-            code: data.error?.code ?? ErrorCode.Unknown,
+            code: errorCode,
           }
           subscriber.error(error)
           subscriber.complete()
@@ -60,14 +66,20 @@ export function requestInference(
             }
             const text = decoder.decode(value)
             const lines = text.trim().split('\n')
+            let cachedLines = ''
             for (const line of lines) {
-              if (line.startsWith('data: ') && !line.includes('data: [DONE]')) {
-                const data = JSON.parse(line.replace('data: ', ''))
-                content += data.choices[0]?.delta?.content ?? ''
-                if (content.startsWith('assistant: ')) {
-                  content = content.replace('assistant: ', '')
+              try {
+                const toParse = cachedLines + line
+                if (!line.includes('data: [DONE]')) {
+                  const data = JSON.parse(toParse.replace('data: ', ''))
+                  content += data.choices[0]?.delta?.content ?? ''
+                  if (content.startsWith('assistant: ')) {
+                    content = content.replace('assistant: ', '')
+                  }
+                  if (content !== '') subscriber.next(content)
                 }
-                subscriber.next(content)
+              } catch {
+                cachedLines = line
               }
             }
           }

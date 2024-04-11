@@ -29,32 +29,13 @@ describe('test executable nitro file', () => {
     })
   })
 
-  it('executes on MacOS ARM', () => {
+  it('executes on MacOS', () => {
     Object.defineProperty(process, 'platform', {
       value: 'darwin',
     })
-    Object.defineProperty(process, 'arch', {
-      value: 'arm64',
-    })
     expect(executableNitroFile(testSettings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`mac-arm64${sep}nitro`),
-        cudaVisibleDevices: '',
-        vkVisibleDevices: '',
-      })
-    )
-  })
-
-  it('executes on MacOS Intel', () => {
-    Object.defineProperty(process, 'platform', {
-      value: 'darwin',
-    })
-    Object.defineProperty(process, 'arch', {
-      value: 'x64',
-    })
-    expect(executableNitroFile(testSettings)).toEqual(
-      expect.objectContaining({
-        executablePath: expect.stringContaining(`mac-x64${sep}nitro`),
+        executablePath: expect.stringContaining(`mac-universal${sep}nitro`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })

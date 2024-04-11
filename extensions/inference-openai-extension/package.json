@@ -1,5 +1,6 @@
 {
   "name": "@janhq/inference-openai-extension",
+  "productName": "OpenAI Inference Engine Extension",
   "version": "1.0.0",
   "description": "This extension enables OpenAI chat completion API calls",
   "main": "dist/index.js",

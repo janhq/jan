@@ -41,7 +41,6 @@ COPY --from=builder /app/pre-install ./pre-install/
 # Copy the package.json, yarn.lock, and output of web yarn space to leverage Docker cache
 COPY --from=builder /app/uikit ./uikit/
 COPY --from=builder /app/web ./web/
-COPY --from=builder /app/models ./models/
 
 RUN yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build
 RUN yarn workspace @janhq/web install

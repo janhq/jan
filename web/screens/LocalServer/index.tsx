@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 import ScrollToBottom from 'react-scroll-to-bottom'
 
@@ -45,18 +45,18 @@ import { loadModelErrorAtom, useActiveModel } from '@/hooks/useActiveModel'
 import { useLogs } from '@/hooks/useLogs'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { toSettingParams } from '@/utils/modelParam'
+import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import EngineSetting from '../Chat/EngineSetting'
 
-import SettingComponentBuilder from '../Chat/ModelSetting/SettingComponent'
-
+import ModelSetting from '../Chat/ModelSetting'
 import { showRightSideBarAtom } from '../Chat/Sidebar'
 
 import {
   apiServerCorsEnabledAtom,
   apiServerHostAtom,
   apiServerPortAtom,
+  apiServerPrefix,
   apiServerVerboseLogEnabledAtom,
   hostOptions,
 } from '@/helpers/atoms/ApiServer.atom'
@@ -64,6 +64,7 @@ import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
+  const [errorPrefix, setErrorPrefix] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const showRightSideBar = useAtomValue(showRightSideBarAtom)
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
@@ -73,7 +74,13 @@ const LocalServerScreen = () => {
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const modelEngineParams = toSettingParams(selectedModel?.settings)
+  const modelRuntimeParams = toRuntimeParams(selectedModel?.settings)
+
   const componentDataEngineSetting = getConfigurationsData(modelEngineParams)
+  const componentDataRuntimeSetting = getConfigurationsData(
+    modelRuntimeParams,
+    selectedModel
+  )
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(apiServerCorsEnabledAtom)
   const [isVerboseEnabled, setIsVerboseEnabled] = useAtom(
@@ -81,6 +88,7 @@ const LocalServerScreen = () => {
   )
   const [host, setHost] = useAtom(apiServerHostAtom)
   const [port, setPort] = useAtom(apiServerPortAtom)
+  const [prefix, setPrefix] = useAtom(apiServerPrefix)
   const [loadModelError, setLoadModelError] = useAtom(loadModelErrorAtom)
 
   const FIRST_TIME_VISIT_API_SERVER = 'firstTimeVisitAPIServer'
@@ -96,6 +104,14 @@ const LocalServerScreen = () => {
     [setPort]
   )
 
+  const handleChangePrefix = useCallback(
+    (value: string) => {
+      setErrorPrefix(!value.length || !value.startsWith('/'))
+      setPrefix(value)
+    },
+    [setPrefix]
+  )
+
   useEffect(() => {
     if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) == null) {
       setFirstTimeVisitAPIServer(true)
@@ -106,12 +122,28 @@ const LocalServerScreen = () => {
     handleChangePort(port)
   }, [handleChangePort, port])
 
+  useEffect(() => {
+    handleChangePrefix(prefix)
+  }, [handleChangePrefix, prefix])
+
+  const engineSettings = useMemo(
+    () => componentDataEngineSetting.filter((x) => x.key !== 'prompt_template'),
+    [componentDataEngineSetting]
+  )
+
+  const modelSettings = useMemo(() => {
+    return componentDataRuntimeSetting.filter(
+      (x) => x.key !== 'prompt_template'
+    )
+  }, [componentDataRuntimeSetting])
+
   const onStartServerClick = async () => {
     if (selectedModel == null) return
     try {
       const isStarted = await window.core?.api?.startServer({
         host,
         port,
+        prefix,
         isCorsEnabled,
         isVerboseEnabled,
       })
@@ -160,7 +192,12 @@ const LocalServerScreen = () => {
             <Button
               block
               themes={serverEnabled ? 'danger' : 'primary'}
-              disabled={stateModel.loading || errorRangePort || !selectedModel}
+              disabled={
+                stateModel.loading ||
+                errorRangePort ||
+                errorPrefix ||
+                !selectedModel
+              }
               onClick={onToggleServer}
             >
               {serverEnabled ? 'Stop' : 'Start'} Server
@@ -224,6 +261,31 @@ const LocalServerScreen = () => {
                 </div>
                 {errorRangePort && (
                   <p className="mt-2 text-xs text-danger">{`The port range should be from 0 to 65536`}</p>
+                )}
+              </div>
+              <div>
+                <label
+                  id="prefix"
+                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
+                >
+                  API Prefix
+                </label>
+                <div className="flex items-center justify-between">
+                  <Input
+                    className={twMerge(
+                      'w-full flex-shrink-0',
+                      errorPrefix && 'border-danger'
+                    )}
+                    type="text"
+                    value={prefix}
+                    onChange={(e) => {
+                      handleChangePrefix(e.target.value)
+                    }}
+                    disabled={serverEnabled}
+                  />
+                </div>
+                {errorPrefix && (
+                  <p className="mt-2 text-xs text-danger">{`Prefix should start with /`}</p>
                 )}
               </div>
               <div>
@@ -429,30 +491,21 @@ const LocalServerScreen = () => {
             </div>
           )}
 
-          {componentDataEngineSetting.filter(
-            (x) => x.name === 'prompt_template'
-          ).length !== 0 && (
+          {modelSettings.length !== 0 && (
             <div className="mt-4">
               <CardSidebar title="Model Parameters" asChild>
                 <div className="px-2 py-4">
-                  <SettingComponentBuilder
-                    enabled={!serverEnabled}
-                    componentData={componentDataEngineSetting}
-                    selector={(x) => x.name === 'prompt_template'}
-                  />
+                  <ModelSetting componentProps={modelSettings} />
                 </div>
               </CardSidebar>
             </div>
           )}
 
-          {componentDataEngineSetting.length !== 0 && (
+          {engineSettings.length !== 0 && (
             <div className="my-4">
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting
-                    enabled={!serverEnabled}
-                    componentData={componentDataEngineSetting}
-                  />
+                  <EngineSetting componentData={engineSettings} />
                 </div>
               </CardSidebar>
             </div>

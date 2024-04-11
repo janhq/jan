@@ -7,12 +7,10 @@ import replace from '@rollup/plugin-replace'
 
 const packageJson = require('./package.json')
 
-const pkg = require('./package.json')
-
 export default [
   {
     input: `src/index.ts`,
-    output: [{ file: pkg.main, format: 'es', sourcemap: true }],
+    output: [{ file: packageJson.main, format: 'es', sourcemap: true }],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
     external: [],
     watch: {
@@ -20,8 +18,8 @@ export default [
     },
     plugins: [
       replace({
+        preventAssignment: true,
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
-        EXTENSION_NAME: JSON.stringify(packageJson.name),
         VERSION: JSON.stringify(packageJson.version),
       }),
       // Allow json resolution
@@ -36,7 +34,7 @@ export default [
       // https://github.com/rollup/rollup-plugin-node-resolve#usage
       resolve({
         extensions: ['.js', '.ts', '.svelte'],
-        browser: true
+        browser: true,
       }),
 
       // Resolve source maps to the original source

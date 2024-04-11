@@ -1,5 +1,6 @@
 {
   "name": "@janhq/conversational-extension",
+  "productName": "Conversational Extension",
   "version": "1.0.0",
   "description": "This extension enables conversations and state persistence via your filesystem",
   "main": "dist/index.js",

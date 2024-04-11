@@ -13,11 +13,19 @@ import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 export const activeModelAtom = atom<Model | undefined>(undefined)
 export const loadModelErrorAtom = atom<string | undefined>(undefined)
 
-export const stateModelAtom = atom({
+type ModelState = {
+  state: string
+  loading: boolean
+  model?: Model
+}
+
+export const stateModelAtom = atom<ModelState>({
   state: 'start',
   loading: false,
-  model: '',
+  model: undefined,
 })
+
+export let loadModelController: AbortController | undefined
 
 export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
@@ -35,11 +43,12 @@ export function useActiveModel() {
   const startModel = async (modelId: string) => {
     if (
       (activeModel && activeModel.id === modelId) ||
-      (stateModel.model === modelId && stateModel.loading)
+      (stateModel.model?.id === modelId && stateModel.loading)
     ) {
       console.debug(`Model ${modelId} is already initialized. Ignore..`)
       return Promise.resolve()
     }
+    loadModelController = new AbortController()
 
     let model = downloadedModelsRef?.current.find((e) => e.id === modelId)
 
@@ -52,7 +61,7 @@ export function useActiveModel() {
 
     setActiveModel(undefined)
 
-    setStateModel({ state: 'start', loading: true, model: modelId })
+    setStateModel({ state: 'start', loading: true, model })
 
     if (!model) {
       toaster({
@@ -63,7 +72,7 @@ export function useActiveModel() {
       setStateModel(() => ({
         state: 'start',
         loading: false,
-        model: '',
+        model: undefined,
       }))
 
       return Promise.reject(`Model ${modelId} not found!`)
@@ -89,7 +98,7 @@ export function useActiveModel() {
         setStateModel(() => ({
           state: 'stop',
           loading: false,
-          model: model.id,
+          model,
         }))
         toaster({
           title: 'Success!',
@@ -98,35 +107,59 @@ export function useActiveModel() {
         })
       })
       .catch((error) => {
+        if (loadModelController?.signal.aborted)
+          return Promise.reject(new Error('aborted'))
+
         setStateModel(() => ({
           state: 'start',
           loading: false,
-          model: model.id,
+          model,
         }))
 
         toaster({
           title: 'Failed!',
           description: `Model ${model.id} failed to start.`,
-          type: 'success',
+          type: 'error',
         })
         setLoadModelError(error)
         return Promise.reject(error)
       })
   }
 
-  const stopModel = useCallback(async () => {
-    if (activeModel) {
-      setStateModel({ state: 'stop', loading: true, model: activeModel.id })
-      const engine = EngineManager.instance().get(activeModel.engine)
-      await engine
-        ?.unloadModel(activeModel)
+  const stopModel = useCallback(
+    async (model?: Model) => {
+      const stoppingModel = activeModel || model
+      if (
+        !stoppingModel ||
+        (!model && stateModel.state === 'stop' && stateModel.loading)
+      )
+        return
+
+      setStateModel({ state: 'stop', loading: true, model: stoppingModel })
+      const engine = EngineManager.instance().get(stoppingModel.engine)
+      return engine
+        ?.unloadModel(stoppingModel)
         .catch()
         .then(() => {
           setActiveModel(undefined)
-          setStateModel({ state: 'start', loading: false, model: '' })
+          setStateModel({ state: 'start', loading: false, model: undefined })
+          loadModelController?.abort()
         })
-    }
-  }, [activeModel, setActiveModel, setStateModel])
+    },
+    [activeModel, setActiveModel, setStateModel, stateModel]
+  )
 
-  return { activeModel, startModel, stopModel, stateModel }
+  const stopInference = useCallback(async () => {
+    // Loading model
+    if (stateModel.loading) {
+      stopModel(stateModel.model)
+      return
+    }
+    if (!activeModel) return
+
+    const engine = EngineManager.instance().get(activeModel.engine)
+    engine?.stopInference()
+  }, [activeModel, stateModel, stopModel])
+
+  return { activeModel, startModel, stopModel, stopInference, stateModel }
 }

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import { InferenceEvent, MessageStatus, events } from '@janhq/core'
+import { MessageStatus } from '@janhq/core'
 
 import {
   Textarea,
@@ -60,6 +60,7 @@ const ChatInput: React.FC = () => {
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
   const threadStates = useAtomValue(threadStatesAtom)
+  const { stopInference } = useActiveModel()
 
   const isStreamingResponse = Object.values(threadStates).some(
     (threadState) => threadState.waitingForResponse
@@ -98,7 +99,7 @@ const ChatInput: React.FC = () => {
   }, [currentPrompt])
 
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
         sendChatMessage(currentPrompt)
@@ -107,7 +108,7 @@ const ChatInput: React.FC = () => {
   }
 
   const onStopInferenceClick = async () => {
-    events.emit(InferenceEvent.OnInferenceStopped, {})
+    stopInference()
   }
 
   /**

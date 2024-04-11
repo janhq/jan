@@ -1,192 +1,224 @@
-import { SettingComponentData } from './SettingComponent'
+import { SettingComponentProps } from '@janhq/core/.'
 
-export const presetConfiguration: Record<string, SettingComponentData> = {
+export const presetConfiguration: Record<string, SettingComponentProps> = {
   prompt_template: {
-    name: 'prompt_template',
+    key: 'prompt_template',
     title: 'Prompt template',
     description: 'The prompt to use for internal configuration.',
     controllerType: 'input',
-    controllerData: {
+    controllerProps: {
       placeholder: 'Prompt template',
       value: '',
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   stop: {
-    name: 'stop',
+    key: 'stop',
     title: 'Stop',
     description:
       'Defines specific tokens or phrases at which the model will stop generating further output.	',
     controllerType: 'input',
-    controllerData: {
+    controllerProps: {
       placeholder: 'Stop',
       value: '',
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   ctx_len: {
-    name: 'ctx_len',
+    key: 'ctx_len',
     title: 'Context Length',
     description:
       'The context length for model operations varies; the maximum depends on the specific model used.',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 0,
       max: 4096,
       step: 128,
       value: 4096,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   max_tokens: {
-    name: 'max_tokens',
+    key: 'max_tokens',
     title: 'Max Tokens',
     description:
       'The maximum number of tokens the model will generate in a single response.',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 100,
       max: 4096,
       step: 10,
       value: 4096,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   ngl: {
-    name: 'ngl',
+    key: 'ngl',
     title: 'Number of GPU layers (ngl)',
     description: 'The number of layers to load onto the GPU for acceleration.',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 1,
       max: 100,
       step: 1,
       value: 100,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   embedding: {
-    name: 'embedding',
+    key: 'embedding',
     title: 'Embedding',
     description: 'Whether to enable embedding.',
     controllerType: 'checkbox',
-    controllerData: {
-      checked: true,
+    controllerProps: {
+      value: true,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   stream: {
-    name: 'stream',
+    key: 'stream',
     title: 'Stream',
     description: 'Enable real-time data processing for faster predictions.',
     controllerType: 'checkbox',
-    controllerData: {
-      checked: false,
+    controllerProps: {
+      value: false,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   temperature: {
-    name: 'temperature',
+    key: 'temperature',
     title: 'Temperature',
     description: 'Controls the randomness of the model’s output.',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 0,
       max: 2,
       step: 0.1,
       value: 0.7,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   frequency_penalty: {
-    name: 'frequency_penalty',
+    key: 'frequency_penalty',
     title: 'Frequency Penalty',
     description:
       'Adjusts the likelihood of the model repeating words or phrases in its output.	',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 0,
       max: 1,
       step: 0.1,
       value: 0.7,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   presence_penalty: {
-    name: 'presence_penalty',
+    key: 'presence_penalty',
     title: 'Presence Penalty',
     description:
       'Influences the generation of new and varied concepts in the model’s output.	',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 0,
       max: 1,
       step: 0.1,
       value: 0.7,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   top_p: {
-    name: 'top_p',
+    key: 'top_p',
     title: 'Top P',
     description: 'Set probability threshold for more relevant outputs.',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 0,
       max: 1,
       step: 0.1,
       value: 0.95,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   n_parallel: {
-    name: 'n_parallel',
+    key: 'n_parallel',
     title: 'N Parallel',
     description:
       'The number of parallel operations. Only set when enable continuous batching.	',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 0,
       max: 4,
       step: 1,
       value: 1,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   // assistant
   chunk_size: {
-    name: 'chunk_size',
+    key: 'chunk_size',
     title: 'Chunk Size',
     description: 'Maximum number of tokens in a chunk',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 128,
       max: 2048,
       step: 128,
       value: 1024,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   chunk_overlap: {
-    name: 'chunk_overlap',
+    key: 'chunk_overlap',
     title: 'Chunk Overlap',
     description: 'Number of tokens overlapping between two adjacent chunks',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 32,
       max: 512,
       step: 32,
       value: 64,
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
   top_k: {
-    name: 'top_k',
+    key: 'top_k',
     title: 'Top K',
     description: 'Number of top-ranked documents to retrieve',
     controllerType: 'slider',
-    controllerData: {
+    controllerProps: {
       min: 1,
       max: 5,
       step: 1,
       value: 2,
     },
+    requireModelReload: false,
+    configType: 'runtime',
   },
   retrieval_template: {
-    name: 'retrieval_template',
+    key: 'retrieval_template',
     title: 'Retrieval Template',
     description:
       'The template to use for retrieval. The following variables are available: {CONTEXT}, {QUESTION}',
     controllerType: 'input',
-    controllerData: {
+    controllerProps: {
       placeholder: 'Retrieval Template',
       value: '',
     },
+    requireModelReload: true,
+    configType: 'setting',
   },
 }

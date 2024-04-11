@@ -8,8 +8,8 @@ export interface NitroExecutableOptions {
 }
 const runMode = (settings?: GpuSetting): string => {
   if (process.platform === 'darwin')
-    // MacOS use arch instead of cpu / cuda
-    return process.arch === 'arm64' ? 'arm64' : 'x64'
+    // MacOS now has universal binaries
+    return ''
 
   if (!settings) return 'cpu'
 
@@ -24,7 +24,7 @@ const os = (): string => {
   return process.platform === 'win32'
     ? 'win'
     : process.platform === 'darwin'
-      ? 'mac'
+      ? 'mac-universal'
       : 'linux'
 }
 

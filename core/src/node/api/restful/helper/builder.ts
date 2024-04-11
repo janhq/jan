@@ -316,6 +316,7 @@ export const chatCompletions = async (request: any, reply: any) => {
   }
 
   const requestedModel = matchedModels[0]
+
   const engineConfiguration = await getEngineConfiguration(requestedModel.engine)
 
   let apiKey: string | undefined = undefined
@@ -323,7 +324,7 @@ export const chatCompletions = async (request: any, reply: any) => {
 
   if (engineConfiguration) {
     apiKey = engineConfiguration.api_key
-    apiUrl = engineConfiguration.full_url
+    apiUrl = engineConfiguration.full_url ?? DEFAULT_CHAT_COMPLETION_URL
   }
 
   const headers: Record<string, any> = {
@@ -334,7 +335,6 @@ export const chatCompletions = async (request: any, reply: any) => {
     headers['Authorization'] = `Bearer ${apiKey}`
     headers['api-key'] = apiKey
   }
-  console.debug(apiUrl)
 
   if (requestedModel.engine === 'openai' && request.body.stop) {
     // openai only allows max 4 stop words
@@ -352,7 +352,7 @@ export const chatCompletions = async (request: any, reply: any) => {
     reply.code(400).send(response)
   } else {
     reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
+      'Content-Type': request.body.stream === true ? 'text/event-stream' : 'application/json',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*',

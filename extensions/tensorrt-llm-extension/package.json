@@ -1,5 +1,6 @@
 {
   "name": "@janhq/tensorrt-llm-extension",
+  "productName": "TensorRT-LLM Inference Engine Extension",
   "version": "0.0.3",
   "description": "This extension enables Nvidia's TensorRT-LLM for the fastest GPU acceleration. See the [setup guide](https://jan.ai/guides/providers/tensorrt-llm/) for next steps.",
   "main": "dist/index.js",
@@ -36,10 +37,10 @@
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-replace": "^5.0.5",
+    "@types/decompress": "4.2.7",
     "@types/node": "^20.11.4",
     "@types/os-utils": "^0.0.4",
     "@types/tcp-port-used": "^1.0.4",
-    "@types/decompress": "4.2.7",
     "cpx": "^1.5.0",
     "download-cli": "^1.1.1",
     "rimraf": "^3.0.2",
@@ -57,6 +58,7 @@
     "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",
     "tcp-port-used": "^1.0.2",
+    "terminate": "^2.6.1",
     "ulidx": "^2.3.0"
   },
   "engines": {
@@ -71,6 +73,7 @@
     "tcp-port-used",
     "fetch-retry",
     "decompress",
-    "@janhq/core"
+    "@janhq/core",
+    "terminate"
   ]
 }

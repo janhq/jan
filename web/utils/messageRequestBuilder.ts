@@ -117,6 +117,19 @@ export class MessageRequestBuilder {
     return this
   }
 
+  removeLastAssistantMessage() {
+    const lastMessageIndex = this.messages.length - 1
+    if (
+      this.messages.length &&
+      this.messages[lastMessageIndex] &&
+      this.messages[lastMessageIndex].role === ChatCompletionRole.Assistant
+    ) {
+      this.messages.pop()
+    }
+
+    return this
+  }
+
   build(): MessageRequest {
     return {
       id: this.msgId,

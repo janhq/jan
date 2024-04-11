@@ -1,6 +1,8 @@
 const path = require('path')
 const webpack = require('webpack')
 const packageJson = require('./package.json')
+const settingJson = require('./resources/settings.json')
+const modelsJson = require('./resources/models.json')
 
 module.exports = {
   experiments: { outputModule: true },
@@ -17,8 +19,9 @@ module.exports = {
   },
   plugins: [
     new webpack.DefinePlugin({
+      MODELS: JSON.stringify(modelsJson),
+      SETTINGS: JSON.stringify(settingJson),
       MODULE: JSON.stringify(`${packageJson.name}/${packageJson.module}`),
-      COMPLETION_URL: JSON.stringify('https://api.groq.com/openai/v1/chat/completions'),
     }),
   ],
   output: {

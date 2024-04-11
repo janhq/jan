@@ -1,5 +1,7 @@
 .vscode
+.idea
 .env
+.idea
 
 # Jan inference
 error.log

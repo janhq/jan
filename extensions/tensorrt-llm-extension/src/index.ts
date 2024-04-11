@@ -22,8 +22,8 @@ import {
   MessageRequest,
   ModelEvent,
   getJanDataFolderPath,
+  SystemInformation,
 } from '@janhq/core'
-import models from '../models.json'
 
 /**
  * TensorRTLLMExtension - Implementation of LocalOAIEngine
@@ -41,52 +41,26 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
 
   private supportedGpuArch = ['ampere', 'ada']
   private supportedPlatform = ['win32', 'linux']
-  private isUpdateAvailable = false
 
   override compatibility() {
     return COMPATIBILITY as unknown as Compatibility
   }
-  /**
-   * models implemented by the extension
-   * define pre-populated models
-   */
-  override async models(): Promise<Model[]> {
-    if ((await this.installationState()) === 'Installed')
-      return models as unknown as Model[]
-    return []
+
+  override async onLoad(): Promise<void> {
+    super.onLoad()
+
+    if ((await this.installationState()) === 'Installed') {
+      const models = MODELS as unknown as Model[]
+      this.registerModels(models)
+    }
   }
 
   override async install(): Promise<void> {
     await this.removePopulatedModels()
 
     const info = await systemInformation()
-    console.debug(
-      `TensorRTLLMExtension installing pre-requisites... ${JSON.stringify(info)}`
-    )
-    const gpuSetting: GpuSetting | undefined = info.gpuSetting
-    if (gpuSetting === undefined || gpuSetting.gpus.length === 0) {
-      console.error('No GPU setting found. Please check your GPU setting.')
-      return
-    }
 
-    // TODO: we only check for the first graphics card. Need to refactor this later.
-    const firstGpu = gpuSetting.gpus[0]
-    if (!firstGpu.name.toLowerCase().includes('nvidia')) {
-      console.error('No Nvidia GPU found. Please check your GPU setting.')
-      return
-    }
-
-    if (firstGpu.arch === undefined) {
-      console.error('No GPU architecture found. Please check your GPU setting.')
-      return
-    }
-
-    if (!this.supportedGpuArch.includes(firstGpu.arch)) {
-      console.error(
-        `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
-      )
-      return
-    }
+    if (!this.isCompatible(info)) return
 
     const janDataFolderPath = await getJanDataFolderPath()
     const engineVersion = TENSORRT_VERSION
@@ -96,7 +70,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       'engines',
       this.provider,
       engineVersion,
-      firstGpu.arch,
+      info.gpuSetting?.gpus[0].arch,
     ])
 
     if (!(await fs.existsSync(executableFolderPath))) {
@@ -108,7 +82,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
 
     const url = placeholderUrl
       .replace(/<version>/g, tensorrtVersion)
-      .replace(/<gpuarch>/g, firstGpu.arch)
+      .replace(/<gpuarch>/g, info.gpuSetting!.gpus[0]!.arch!)
 
     const tarball = await baseName(url)
 
@@ -116,7 +90,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     const downloadRequest: DownloadRequest = {
       url,
       localPath: tarballFullPath,
-      extensionId: EXTENSION_NAME,
+      extensionId: this.name,
       downloadType: 'extension',
     }
     downloadFile(downloadRequest)
@@ -134,7 +108,8 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       events.emit(DownloadEvent.onFileUnzipSuccess, state)
 
       // Prepopulate models as soon as it's ready
-      this.prePopulateModels().then(() => {
+      const models = MODELS as unknown as Model[]
+      this.registerModels(models).then(() => {
         showToast(
           'Extension installed successfully.',
           'New models are added to Model Hub.'
@@ -144,7 +119,8 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
   }
 
-  async removePopulatedModels(): Promise<void> {
+  private async removePopulatedModels(): Promise<void> {
+    const models = MODELS as unknown as Model[]
     console.debug(`removePopulatedModels`, JSON.stringify(models))
     const janDataFolderPath = await getJanDataFolderPath()
     const modelFolderPath = await joinPath([janDataFolderPath, 'models'])
@@ -162,70 +138,17 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   }
 
   override async loadModel(model: Model): Promise<void> {
-    if (model.engine !== this.provider) return
-
     if ((await this.installationState()) === 'Installed')
       return super.loadModel(model)
-    else {
-      events.emit(ModelEvent.OnModelFail, {
-        ...model,
-        error: {
-          message: 'EXTENSION_IS_NOT_INSTALLED::TensorRT-LLM extension',
-        },
-      })
-    }
-  }
 
-  override updatable() {
-    return this.isUpdateAvailable
+    throw new Error('EXTENSION_IS_NOT_INSTALLED::TensorRT-LLM extension')
   }
 
   override async installationState(): Promise<InstallationState> {
     const info = await systemInformation()
 
-    const gpuSetting: GpuSetting | undefined = info.gpuSetting
-    if (gpuSetting === undefined) {
-      console.warn(
-        'No GPU setting found. TensorRT-LLM extension is not installed'
-      )
-      return 'NotInstalled' // TODO: maybe disabled / incompatible is more appropriate
-    }
-
-    if (gpuSetting.gpus.length === 0) {
-      console.warn('No GPU found. TensorRT-LLM extension is not installed')
-      return 'NotInstalled'
-    }
-
-    const firstGpu = gpuSetting.gpus[0]
-    if (!firstGpu.name.toLowerCase().includes('nvidia')) {
-      console.error('No Nvidia GPU found. Please check your GPU setting.')
-      return 'NotInstalled'
-    }
-
-    if (firstGpu.arch === undefined) {
-      console.error('No GPU architecture found. Please check your GPU setting.')
-      return 'NotInstalled'
-    }
-
-    if (!this.supportedGpuArch.includes(firstGpu.arch)) {
-      console.error(
-        `Your GPU: ${firstGpu} is not supported. Only 20xx, 30xx, 40xx series are supported.`
-      )
-      return 'NotInstalled'
-    }
-
-    const osInfo = info.osInfo
-    if (!osInfo) {
-      console.error('No OS information found. Please check your OS setting.')
-      return 'NotInstalled'
-    }
-
-    if (!this.supportedPlatform.includes(osInfo.platform)) {
-      console.error(
-        `Your OS: ${osInfo.platform} is not supported. Only Windows and Linux are supported.`
-      )
-      return 'NotInstalled'
-    }
+    if (!this.isCompatible(info)) return 'NotCompatible'
+    const firstGpu = info.gpuSetting?.gpus[0]
     const janDataFolderPath = await getJanDataFolderPath()
     const engineVersion = TENSORRT_VERSION
 
@@ -235,7 +158,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       this.provider,
       engineVersion,
       firstGpu.arch,
-      osInfo.platform === 'win32' ? 'nitro.exe' : 'nitro',
+      info.osInfo.platform === 'win32' ? 'nitro.exe' : 'nitro',
     ])
 
     // For now, we just check the executable of nitro x tensor rt
@@ -251,10 +174,26 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     return Promise.resolve()
   }
 
-  override inference(data: MessageRequest): void {
+  override async inference(data: MessageRequest) {
     if (!this.loadedModel) return
     // TensorRT LLM Extension supports streaming only
     if (data.model) data.model.parameters.stream = true
     super.inference(data)
+  }
+
+  isCompatible(info: SystemInformation): info is Required<SystemInformation> & {
+    gpuSetting: { gpus: { arch: string }[] }
+  } {
+    const firstGpu = info.gpuSetting?.gpus[0]
+    return (
+      !!info.osInfo &&
+      !!info.gpuSetting &&
+      !!firstGpu &&
+      info.gpuSetting.gpus.length > 0 &&
+      this.supportedPlatform.includes(info.osInfo.platform) &&
+      !!firstGpu.arch &&
+      firstGpu.name.toLowerCase().includes('nvidia') &&
+      this.supportedGpuArch.includes(firstGpu.arch)
+    )
   }
 }

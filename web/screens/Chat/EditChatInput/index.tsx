@@ -4,10 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ConversationalExtension,
   ExtensionTypeEnum,
-  InferenceEvent,
   MessageStatus,
   ThreadMessage,
-  events,
 } from '@janhq/core'
 
 import {
@@ -50,7 +48,7 @@ type Props = {
 
 const EditChatInput: React.FC<Props> = ({ message }) => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const { stateModel } = useActiveModel()
+  const { stateModel, stopInference } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const [editPrompt, setEditPrompt] = useAtom(editPromptAtom)
@@ -127,7 +125,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   }
 
   const onStopInferenceClick = async () => {
-    events.emit(InferenceEvent.OnInferenceStopped, {})
+    stopInference()
   }
 
   return (

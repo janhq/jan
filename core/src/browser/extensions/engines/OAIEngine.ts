@@ -48,7 +48,7 @@ export abstract class OAIEngine extends AIEngine {
   /*
    * Inference request
    */
-  override inference(data: MessageRequest) {
+  override async inference(data: MessageRequest) {
     if (data.model?.engine?.toString() !== this.provider) return
 
     const timestamp = Date.now()
@@ -77,12 +77,14 @@ export abstract class OAIEngine extends AIEngine {
       ...data.model,
     }
 
+    const header = await this.headers()
+
     requestInference(
       this.inferenceUrl,
       data.messages ?? [],
       model,
       this.controller,
-      this.headers()
+      header
     ).subscribe({
       next: (content: any) => {
         const messageContent: ThreadContent = {
@@ -100,7 +102,9 @@ export abstract class OAIEngine extends AIEngine {
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
       error: async (err: any) => {
-        console.error(`Inference error: ${JSON.stringify(err, null, 2)}`)
+        console.debug('inference url: ', this.inferenceUrl)
+        console.debug('header: ', header)
+        console.error(`Inference error:`, JSON.stringify(err))
         if (this.isCancelled || message.content.length) {
           message.status = MessageStatus.Stopped
           events.emit(MessageEvent.OnMessageUpdate, message)
@@ -131,7 +135,7 @@ export abstract class OAIEngine extends AIEngine {
   /**
    * Headers for the inference request
    */
-  headers(): HeadersInit {
+  async headers(): Promise<HeadersInit> {
     return {}
   }
 }

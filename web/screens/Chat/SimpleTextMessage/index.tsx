@@ -44,12 +44,14 @@ import {
   editMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   let text = ''
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
   const editMessage = useAtomValue(editMessageAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
 
   if (props.content && props.content.length > 0) {
     text = props.content[0]?.text?.value ?? ''
@@ -178,7 +180,9 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             isUser && 'text-gray-500'
           )}
         >
-          {props.role}
+          {isUser
+            ? props.role
+            : activeThread?.assistants[0].assistant_name ?? props.role}
         </div>
         <p className="text-xs font-medium text-gray-400">
           {displayDate(props.created)}

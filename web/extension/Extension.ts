@@ -3,7 +3,10 @@
  */
 class Extension {
   /** @type {string} Name of the extension. */
-  name?: string
+  name: string
+
+  /** @type {string} Product name of the extension. */
+  productName?: string
 
   /** @type {string} The URL of the extension to load. */
   url: string
@@ -19,12 +22,14 @@ class Extension {
 
   constructor(
     url: string,
-    name?: string,
+    name: string,
+    productName?: string,
     active?: boolean,
     description?: string,
     version?: string
   ) {
     this.name = name
+    this.productName = productName
     this.url = url
     this.active = active
     this.description = description

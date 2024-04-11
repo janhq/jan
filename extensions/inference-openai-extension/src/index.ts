@@ -5,18 +5,16 @@
  * @version 1.0.0
  * @module inference-openai-extension/src/index
  */
-declare const ENGINE: string
 
-import {
-  events,
-  fs,
-  AppConfigurationEventName,
-  joinPath,
-  RemoteOAIEngine,
-} from '@janhq/core'
-import { join } from 'path'
+import { RemoteOAIEngine, SettingComponentProps } from '@janhq/core'
 
-declare const COMPLETION_URL: string
+declare const SETTINGS: Array<any>
+declare const MODELS: Array<any>
+
+enum Settings {
+  apiKey = 'openai-api-key',
+  chatCompletionsEndPoint = 'chat-completions-endpoint',
+}
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -24,66 +22,45 @@ declare const COMPLETION_URL: string
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
-  private static readonly _engineDir = 'file://engines'
-  private static readonly _engineMetadataFileName = `${ENGINE}.json`
-
-  private _engineSettings = {
-    full_url: COMPLETION_URL,
-    api_key: 'sk-<your key here>',
-  }
-
-  inferenceUrl: string = COMPLETION_URL
+  inferenceUrl: string = ''
   provider: string = 'openai'
-  apiKey: string = ''
 
-  // TODO: Just use registerSettings from BaseExtension
-  // Remove these methods
-  /**
-   * Subscribes to events emitted by the @janhq/core package.
-   */
-  async onLoad() {
+  override async onLoad(): Promise<void> {
     super.onLoad()
 
-    if (!(await fs.existsSync(JanInferenceOpenAIExtension._engineDir))) {
-      await fs.mkdir(JanInferenceOpenAIExtension._engineDir)
-    }
+    // Register Settings
+    this.registerSettings(SETTINGS)
+    this.registerModels(MODELS)
 
-    this.writeDefaultEngineSettings()
-
-    const settingsFilePath = await joinPath([
-      JanInferenceOpenAIExtension._engineDir,
-      JanInferenceOpenAIExtension._engineMetadataFileName,
-    ])
-
-    events.on(
-      AppConfigurationEventName.OnConfigurationUpdate,
-      (settingsKey: string) => {
-        // Update settings on changes
-        if (settingsKey === settingsFilePath) this.writeDefaultEngineSettings()
-      }
+    this.apiKey = await this.getSetting<string>(Settings.apiKey, '')
+    this.inferenceUrl = await this.getSetting<string>(
+      Settings.chatCompletionsEndPoint,
+      ''
     )
+    if (this.inferenceUrl.length === 0) {
+      SETTINGS.forEach((setting) => {
+        if (setting.key === Settings.chatCompletionsEndPoint) {
+          this.inferenceUrl = setting.controllerProps.value as string
+        }
+      })
+    }
   }
 
-  async writeDefaultEngineSettings() {
-    try {
-      const engineFile = join(
-        JanInferenceOpenAIExtension._engineDir,
-        JanInferenceOpenAIExtension._engineMetadataFileName
-      )
-      if (await fs.existsSync(engineFile)) {
-        const engine = await fs.readFileSync(engineFile, 'utf-8')
-        this._engineSettings =
-          typeof engine === 'object' ? engine : JSON.parse(engine)
-        this.inferenceUrl = this._engineSettings.full_url
-        this.apiKey = this._engineSettings.api_key
+  onSettingUpdate<T>(key: string, value: T): void {
+    if (key === Settings.apiKey) {
+      this.apiKey = value as string
+    } else if (key === Settings.chatCompletionsEndPoint) {
+      if (typeof value !== 'string') return
+
+      if (value.trim().length === 0) {
+        SETTINGS.forEach((setting) => {
+          if (setting.key === Settings.chatCompletionsEndPoint) {
+            this.inferenceUrl = setting.controllerProps.value as string
+          }
+        })
       } else {
-        await fs.writeFileSync(
-          engineFile,
-          JSON.stringify(this._engineSettings, null, 2)
-        )
+        this.inferenceUrl = value
       }
-    } catch (err) {
-      console.error(err)
     }
   }
 }

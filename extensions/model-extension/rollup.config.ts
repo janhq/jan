@@ -1,18 +1,16 @@
 import resolve from '@rollup/plugin-node-resolve'
-import commonjs from '@rollup/plugin-commonjs'
 import sourceMaps from 'rollup-plugin-sourcemaps'
 import typescript from 'rollup-plugin-typescript2'
 import json from '@rollup/plugin-json'
 import replace from '@rollup/plugin-replace'
 
 const packageJson = require('./package.json')
-
-const pkg = require('./package.json')
+const defaultModelJson = require('./resources/default-model.json')
 
 export default [
   {
     input: `src/index.ts`,
-    output: [{ file: pkg.main, format: 'es', sourcemap: true }],
+    output: [{ file: packageJson.main, format: 'es', sourcemap: true }],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
     external: [],
     watch: {
@@ -20,7 +18,8 @@ export default [
     },
     plugins: [
       replace({
-        EXTENSION_NAME: JSON.stringify(packageJson.name),
+        preventAssignment: true,
+        DEFAULT_MODEL: JSON.stringify(defaultModelJson),
         MODULE_PATH: JSON.stringify(
           `${packageJson.name}/${packageJson.module}`
         ),

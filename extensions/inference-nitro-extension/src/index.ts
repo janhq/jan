@@ -12,8 +12,19 @@ import {
   Model,
   ModelEvent,
   LocalOAIEngine,
+  InstallationState,
+  systemInformation,
+  fs,
+  getJanDataFolderPath,
+  joinPath,
+  DownloadRequest,
+  baseName,
+  downloadFile,
+  DownloadState,
+  DownloadEvent,
 } from '@janhq/core'
 
+declare const CUDA_DOWNLOAD_URL: string
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -22,10 +33,6 @@ import {
 export default class JanInferenceNitroExtension extends LocalOAIEngine {
   nodeModule: string = NODE
   provider: string = 'nitro'
-
-  models(): Promise<Model[]> {
-    return Promise.resolve([])
-  }
 
   /**
    * Checking the health for Nitro's process each 5 secs.
@@ -58,14 +65,18 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
       this.inferenceUrl = `${window.core?.api?.baseApiUrl}/v1/chat/completions`
     }
 
-    console.debug('Inference url: ', this.inferenceUrl)
-
     this.getNitroProcesHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
       JanInferenceNitroExtension._intervalHealthCheck
     )
-
+    const models = MODELS as unknown as Model[]
+    this.registerModels(models)
     super.onLoad()
+
+    executeOnMain(NODE, 'addAdditionalDependencies', {
+      name: this.name,
+      version: this.version,
+    })
   }
 
   /**
@@ -100,5 +111,81 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
       this.getNitroProcesHealthIntervalId = undefined
     }
     return super.unloadModel(model)
+  }
+
+  override async install(): Promise<void> {
+    const info = await systemInformation()
+
+    const platform = info.osInfo?.platform === 'win32' ? 'windows' : 'linux'
+    const downloadUrl = CUDA_DOWNLOAD_URL
+
+    const url = downloadUrl
+      .replace('<version>', info.gpuSetting?.cuda?.version ?? '12.4')
+      .replace('<platform>', platform)
+
+    console.debug('Downloading Cuda Toolkit Dependency: ', url)
+
+    const janDataFolderPath = await getJanDataFolderPath()
+
+    const executableFolderPath = await joinPath([
+      janDataFolderPath,
+      'engines',
+      this.name ?? 'nitro',
+      this.version ?? '1.0.0',
+    ])
+
+    if (!(await fs.existsSync(executableFolderPath))) {
+      await fs.mkdir(executableFolderPath)
+    }
+
+    const tarball = await baseName(url)
+    const tarballFullPath = await joinPath([executableFolderPath, tarball])
+
+    const downloadRequest: DownloadRequest = {
+      url,
+      localPath: tarballFullPath,
+      extensionId: this.name,
+      downloadType: 'extension',
+    }
+    downloadFile(downloadRequest)
+
+    const onFileDownloadSuccess = async (state: DownloadState) => {
+      console.log(state)
+      // if other download, ignore
+      if (state.fileName !== tarball) return
+      events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+      await executeOnMain(
+        NODE,
+        'decompressRunner',
+        tarballFullPath,
+        executableFolderPath
+      )
+      events.emit(DownloadEvent.onFileUnzipSuccess, state)
+    }
+    events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+  }
+
+  override async installationState(): Promise<InstallationState> {
+    const info = await systemInformation()
+    if (
+      info.gpuSetting?.run_mode === 'gpu' &&
+      !info.gpuSetting?.vulkan &&
+      info.osInfo &&
+      info.osInfo.platform !== 'darwin' &&
+      !info.gpuSetting?.cuda?.exist
+    ) {
+      const janDataFolderPath = await getJanDataFolderPath()
+
+      const executableFolderPath = await joinPath([
+        janDataFolderPath,
+        'engines',
+        this.name ?? 'nitro',
+        this.version ?? '1.0.0',
+      ])
+
+      if (!(await fs.existsSync(executableFolderPath))) return 'NotInstalled'
+      return 'Installed'
+    }
+    return 'NotRequired'
   }
 }

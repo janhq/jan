@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef } from 'react'
 
 import {
@@ -103,7 +102,9 @@ export default function useSendChatMessage() {
       activeThreadRef.current.assistants[0].model ?? selectedModelRef.current,
       activeThreadRef.current,
       currentMessages
-    ).addSystemMessage(activeThreadRef.current.assistants[0]?.instructions)
+    )
+      .addSystemMessage(activeThreadRef.current.assistants[0]?.instructions)
+      .removeLastAssistantMessage()
 
     const modelId =
       selectedModelRef.current?.id ??

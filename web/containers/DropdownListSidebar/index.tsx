@@ -38,7 +38,6 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 import { toGibibytes } from '@/utils/converter'
 
 import ModelLabel from '../ModelLabel'
-import OpenAiKeyInput from '../OpenAiKeyInput'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
@@ -144,7 +143,7 @@ const DropdownListSidebar = ({
 
         // Update model parameter to the thread file
         if (model)
-          updateModelParameter(activeThread.id, {
+          updateModelParameter(activeThread, {
             params: modelParams,
             modelId: model.id,
             engine: model.engine,
@@ -170,172 +169,165 @@ const DropdownListSidebar = ({
     stateModel.model === selectedModel?.id && stateModel.loading
 
   return (
-    <>
-      <div
-        className={twMerge(
-          'relative w-full overflow-hidden rounded-md',
-          stateModel.loading && 'pointer-events-none',
-          selectedModelLoading && 'bg-blue-200 text-blue-600'
-        )}
+    <div
+      className={twMerge(
+        'relative w-full overflow-hidden rounded-md',
+        stateModel.loading && 'pointer-events-none',
+        selectedModelLoading && 'bg-blue-200 text-blue-600'
+      )}
+    >
+      <Select
+        value={selectedModel?.id}
+        onValueChange={onValueSelected}
+        disabled={serverEnabled}
       >
-        <Select
-          value={selectedModel?.id}
-          onValueChange={onValueSelected}
-          disabled={serverEnabled}
-        >
-          <SelectTrigger className="relative w-full">
-            <SelectValue placeholder="Choose model to start">
-              {selectedModelLoading && (
-                <div
-                  className="z-5 absolute left-0 top-0 h-full w-full rounded-md bg-blue-100/80"
-                  style={{ width: `${loader}%` }}
-                />
-              )}
-              <span
-                className={twMerge(
-                  'relative z-20',
-                  selectedModelLoading && 'font-medium'
-                )}
-              >
-                {selectedModel?.name}
-              </span>
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPortal>
-            <SelectContent
+        <SelectTrigger className="relative w-full">
+          <SelectValue placeholder="Choose model to start">
+            {selectedModelLoading && (
+              <div
+                className="z-5 absolute left-0 top-0 h-full w-full rounded-md bg-blue-100/80"
+                style={{ width: `${loader}%` }}
+              />
+            )}
+            <span
               className={twMerge(
-                'right-2  block w-full min-w-[450px] pr-0',
-                isTabActive === 1 && '[&_.select-scroll-down-button]:hidden'
+                'relative z-20',
+                selectedModelLoading && 'font-medium'
               )}
             >
-              <div className="relative px-2 py-2 dark:bg-secondary/50">
-                <ul className="inline-flex w-full space-x-2 rounded-lg bg-zinc-100 px-1 dark:bg-secondary">
-                  {engineOptions.map((name, i) => {
-                    return (
-                      <li
+              {selectedModel?.name}
+            </span>
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPortal>
+          <SelectContent
+            className={twMerge(
+              'right-2  block w-full min-w-[450px] pr-0',
+              isTabActive === 1 && '[&_.select-scroll-down-button]:hidden'
+            )}
+          >
+            <div className="relative px-2 py-2 dark:bg-secondary/50">
+              <ul className="inline-flex w-full space-x-2 rounded-lg bg-zinc-100 px-1 dark:bg-secondary">
+                {engineOptions.map((name, i) => {
+                  return (
+                    <li
+                      className={twMerge(
+                        'relative my-1 flex w-full cursor-pointer items-center justify-center space-x-2 px-2 py-2',
+                        isTabActive === i &&
+                          'rounded-md bg-background dark:bg-white'
+                      )}
+                      key={i}
+                      onClick={() => setIsTabActive(i)}
+                    >
+                      {i === 0 ? (
+                        <MonitorIcon
+                          size={20}
+                          className="z-50 text-muted-foreground"
+                        />
+                      ) : (
+                        <GlobeIcon
+                          size={20}
+                          className="z-50 text-muted-foreground"
+                        />
+                      )}
+                      <span
                         className={twMerge(
-                          'relative my-1 flex w-full cursor-pointer items-center justify-center space-x-2 px-2 py-2',
+                          'relative z-50 font-medium text-muted-foreground',
                           isTabActive === i &&
-                            'rounded-md bg-background dark:bg-white'
+                            'font-bold text-foreground dark:text-black'
                         )}
-                        key={i}
-                        onClick={() => setIsTabActive(i)}
                       >
-                        {i === 0 ? (
-                          <MonitorIcon
-                            size={20}
-                            className="z-50 text-muted-foreground"
-                          />
-                        ) : (
-                          <GlobeIcon
-                            size={20}
-                            className="z-50 text-muted-foreground"
-                          />
-                        )}
-                        <span
-                          className={twMerge(
-                            'relative z-50 font-medium text-muted-foreground',
-                            isTabActive === i &&
-                              'font-bold text-foreground dark:text-black'
-                          )}
-                        >
-                          {name}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
+                        {name}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
 
-              <div className="border-b border-border" />
-              {downloadedModels.length === 0 ? (
-                <div className="px-4 py-2">
-                  <p>{`Oops, you don't have a model yet.`}</p>
-                </div>
-              ) : (
-                <SelectGroup className="py-2">
-                  <>
-                    {modelOptions.map((x, i) => (
-                      <div
-                        key={i}
+            <div className="border-b border-border" />
+
+            <SelectGroup className="py-2">
+              <>
+                {modelOptions.length === 0 ? (
+                  <div className="px-4 py-2">
+                    <p>{`Oops, you don't have a model yet.`}</p>
+                  </div>
+                ) : (
+                  modelOptions.map((x, i) => (
+                    <div
+                      key={i}
+                      className={twMerge(
+                        x.id === selectedModel?.id && 'bg-secondary',
+                        'hover:bg-secondary'
+                      )}
+                    >
+                      <SelectItem
+                        value={x.id}
                         className={twMerge(
                           x.id === selectedModel?.id && 'bg-secondary',
-                          'hover:bg-secondary'
+                          'my-0 pb-8 pt-4'
                         )}
                       >
-                        <SelectItem
-                          value={x.id}
-                          className={twMerge(
-                            x.id === selectedModel?.id && 'bg-secondary',
-                            'my-0 pb-8 pt-4'
-                          )}
-                        >
-                          <div className="relative flex w-full justify-between">
-                            <div>
-                              <span className="line-clamp-1 block">
-                                {x.name}
-                              </span>
-                              <div className="absolute right-0 top-2 space-x-2">
-                                <span className="font-bold text-muted-foreground">
-                                  {toGibibytes(x.metadata.size)}
-                                </span>
-                                {x.metadata.size && (
-                                  <ModelLabel size={x.metadata.size} />
-                                )}
-                              </div>
-                            </div>
+                        <div className="relative flex w-full justify-between">
+                          <span className="line-clamp-1 block">{x.name}</span>
+                          <div className="absolute right-0 top-2 space-x-2">
+                            <span className="font-bold text-muted-foreground">
+                              {toGibibytes(x.metadata.size)}
+                            </span>
+                            {x.metadata.size && (
+                              <ModelLabel size={x.metadata.size} />
+                            )}
                           </div>
-                        </SelectItem>
-                        <div
-                          className={twMerge(
-                            'absolute -mt-6 inline-flex items-center space-x-2 px-4 pb-2 text-muted-foreground'
-                          )}
-                        >
-                          <span className="text-xs">{x.id}</span>
-                          {clipboard.copied && copyId === x.id ? (
-                            <CheckIcon size={16} className="text-green-600" />
-                          ) : (
-                            <CopyIcon
-                              size={16}
-                              className="z-20 cursor-pointer"
-                              onClick={() => {
-                                clipboard.copy(x.id)
-                                setCopyId(x.id)
-                              }}
-                            />
-                          )}
                         </div>
+                      </SelectItem>
+                      <div
+                        className={twMerge(
+                          'absolute -mt-6 inline-flex items-center space-x-2 px-4 pb-2 text-muted-foreground'
+                        )}
+                      >
+                        <span className="text-xs">{x.id}</span>
+                        {clipboard.copied && copyId === x.id ? (
+                          <CheckIcon size={16} className="text-green-600" />
+                        ) : (
+                          <CopyIcon
+                            size={16}
+                            className="z-20 cursor-pointer"
+                            onClick={() => {
+                              clipboard.copy(x.id)
+                              setCopyId(x.id)
+                            }}
+                          />
+                        )}
                       </div>
-                    ))}
-                  </>
-                </SelectGroup>
-              )}
-              <div className="border-b border-border" />
-              <div className="flex w-full space-x-2 px-4 py-2">
-                <Button
-                  block
-                  themes="secondary"
-                  onClick={() => setMainViewState(MainViewState.Settings)}
-                >
-                  <FoldersIcon size={20} className="mr-2" />
-                  <span>My Models</span>
-                </Button>
-                <Button
-                  block
-                  className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
-                  onClick={() => setMainViewState(MainViewState.Hub)}
-                >
-                  <LayoutGridIcon size={20} className="mr-2" />
-                  <span>Explore The Hub</span>
-                </Button>
-              </div>
-            </SelectContent>
-          </SelectPortal>
-        </Select>
-      </div>
-
-      <OpenAiKeyInput />
-    </>
+                    </div>
+                  ))
+                )}
+              </>
+            </SelectGroup>
+            <div className="border-b border-border" />
+            <div className="flex w-full space-x-2 px-4 py-2">
+              <Button
+                block
+                themes="secondary"
+                onClick={() => setMainViewState(MainViewState.Settings)}
+              >
+                <FoldersIcon size={20} className="mr-2" />
+                <span>My Models</span>
+              </Button>
+              <Button
+                block
+                className="bg-blue-100 font-bold text-blue-600 hover:bg-blue-100 hover:text-blue-600"
+                onClick={() => setMainViewState(MainViewState.Hub)}
+              >
+                <LayoutGridIcon size={20} className="mr-2" />
+                <span>Explore The Hub</span>
+              </Button>
+            </div>
+          </SelectContent>
+        </SelectPortal>
+      </Select>
+    </div>
   )
 }
 

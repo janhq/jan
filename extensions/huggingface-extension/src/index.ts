@@ -338,7 +338,7 @@ export default class JanHuggingFaceExtension extends HuggingFaceExtension {
 
     const metadata: Model = {
       object: 'model',
-      version: 1,
+      version: '1.0',
       format: 'gguf',
       sources: [
         {

@@ -39,6 +39,7 @@ export function handleAppUpdates() {
     })
     if (action.response === 0) {
       trayManager.destroyCurrentTray()
+      windowManager.closeQuickAskWindow()
       waitingToInstallVersion = _info?.version
       autoUpdater.quitAndInstall()
     }

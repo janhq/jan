@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { fs, joinPath } from '@janhq/core'
-import { atom, useAtom } from 'jotai'
 
-export const isShowNotificationAtom = atom<boolean>(false)
+type NvidiaDriver = {
+  exist: boolean
+  version: string
+}
 
 export type AppSettings = {
   run_mode: 'cpu' | 'gpu' | undefined
@@ -11,37 +13,18 @@ export type AppSettings = {
   gpus_in_use: string[]
   vulkan: boolean
   gpus: string[]
+  nvidia_driver: NvidiaDriver
+  cuda: NvidiaDriver
 }
 
 export const useSettings = () => {
-  const [isGPUModeEnabled, setIsGPUModeEnabled] = useState(false) // New state for GPU mode
-  const [showNotification, setShowNotification] = useAtom(
-    isShowNotificationAtom
-  )
   const [settings, setSettings] = useState<AppSettings>()
 
   useEffect(() => {
     readSettings().then((settings) => setSettings(settings as AppSettings))
 
-    setTimeout(() => validateSettings, 3000)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const validateSettings = async () => {
-    readSettings().then((settings) => {
-      if (
-        settings &&
-        settings.notify &&
-        ((settings.nvidia_driver?.exist && !settings.cuda?.exist) ||
-          !settings.nvidia_driver?.exist)
-      ) {
-        setShowNotification(false)
-      }
-
-      // Check if run_mode is 'gpu' or 'cpu' and update state accordingly
-      setIsGPUModeEnabled(settings?.run_mode === 'gpu')
-    })
-  }
 
   const readSettings = useCallback(async () => {
     if (!window?.core?.api) {
@@ -74,22 +57,18 @@ export const useSettings = () => {
     if (vulkan != null) {
       settings.vulkan = vulkan
       // GPU enabled, set run_mode to 'gpu'
-      if (settings.vulkan) {
+      if (settings.vulkan === true) {
         settings.run_mode = 'gpu'
       } else {
-        settings.run_mode = settings.gpus?.length > 0 ? 'gpu' : 'cpu'
+        settings.run_mode = 'cpu'
       }
     }
     await fs.writeFileSync(settingsFile, JSON.stringify(settings))
   }
 
   return {
-    showNotification,
-    isGPUModeEnabled,
     readSettings,
     saveSettings,
-    setShowNotification,
-    validateSettings,
     settings,
   }
 }

@@ -43,32 +43,32 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Stable (Recommended)</b></td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.9/jan-win-x64-0.4.9.exe'>
-        <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
+      <a href='https://app.jan.ai/download/latest/win-x64'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.9/jan-mac-x64-0.4.9.dmg'>
-        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+      <a href='https://app.jan.ai/download/latest/mac-x64'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.9/jan-mac-arm64-0.4.9.dmg'>
-        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+      <a href='https://app.jan.ai/download/latest/mac-arm64'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.9/jan-linux-amd64-0.4.9.deb'>
-        <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
+      <a href='https://app.jan.ai/download/latest/linux-amd64-deb'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://github.com/janhq/jan/releases/download/v0.4.9/jan-linux-x86_64-0.4.9.AppImage'>
-        <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
+      <a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
     </td>
@@ -76,32 +76,32 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
   <tr style="text-align:center">
     <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-win-x64-0.4.9-345.exe'>
-        <img src='./docs/static/img/windows.png' style="height:14px; width: 14px" />
+      <a href='https://app.jan.ai/download/nightly/win-x64'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-mac-x64-0.4.9-345.dmg'>
-        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+      <a href='https://app.jan.ai/download/nightly/mac-x64'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-mac-arm64-0.4.9-345.dmg'>
-        <img src='./docs/static/img/mac.png' style="height:15px; width: 15px" />
+      <a href='https://app.jan.ai/download/nightly/mac-arm64'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-linux-amd64-0.4.9-345.deb'>
-        <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
+      <a href='https://app.jan.ai/download/nightly/linux-amd64-deb'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://delta.jan.ai/latest/jan-linux-x86_64-0.4.9-345.AppImage'>
-        <img src='./docs/static/img/linux.png' style="height:14px; width: 14px" />
+      <a href='https://app.jan.ai/download/nightly/linux-amd64-appimage'>
+        <img src='https://github.com/janhq/docs/blob/main/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
     </td>
@@ -240,6 +240,7 @@ This will build the app MacOS m1/m2 for production (with code signing already do
   - If you intend to run Jan in GPU mode, you need to install `nvidia-driver` and `nvidia-docker2`. Follow the instruction [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for installation.
 
 - Run Jan in Docker mode
+  > User can choose between `docker-compose.yml` with latest prebuilt docker image or `docker-compose-dev.yml` with local docker build
 
 | Docker compose Profile | Description                                  |
 | ---------------------- | -------------------------------------------- |
@@ -335,6 +336,15 @@ Jan builds on top of other open-source projects:
 - For discussion: join our Discord [here](https://discord.gg/FTk2MvZwJH)
 - For business inquiries: email hello@jan.ai
 - For jobs: please email hr@jan.ai
+
+## Trust & Safety
+
+Beware of scams.
+
+- We will never ask you for personal info
+- We are a free product; there's no paid version
+- We don't have a token or ICO
+- We are not actively fundraising or seeking donations
 
 ## License
 

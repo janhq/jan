@@ -1,4 +1,5 @@
-import React, { PropsWithChildren, useEffect } from 'react'
+'use client'
+import React, { useEffect } from 'react'
 
 import { useTheme } from 'next-themes'
 
@@ -17,17 +18,19 @@ import { getImportModelStageAtom } from '@/hooks/useImportModel'
 
 import { SUCCESS_SET_NEW_DESTINATION } from '@/screens/Settings/Advanced/DataFolder'
 import CancelModelImportModal from '@/screens/Settings/CancelModelImportModal'
+import ChooseWhatToImportModal from '@/screens/Settings/ChooseWhatToImportModal'
 import EditModelInfoModal from '@/screens/Settings/EditModelInfoModal'
 import ImportModelOptionModal from '@/screens/Settings/ImportModelOptionModal'
 import ImportingModelModal from '@/screens/Settings/ImportingModelModal'
 import SelectingModelModal from '@/screens/Settings/SelectingModelModal'
 
+import MainViewContainer from '../MainViewContainer'
+
 import InstallingExtensionModal from './BottomBar/InstallingExtension/InstallingExtensionModal'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
-const BaseLayout = (props: PropsWithChildren) => {
-  const { children } = props
+const BaseLayout = () => {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { theme, setTheme } = useTheme()
@@ -60,7 +63,7 @@ const BaseLayout = (props: PropsWithChildren) => {
               },
             }}
           >
-            {children}
+            <MainViewContainer />
           </m.div>
           <BottomBar />
         </div>
@@ -70,6 +73,7 @@ const BaseLayout = (props: PropsWithChildren) => {
       {importModelStage === 'IMPORTING_MODEL' && <ImportingModelModal />}
       {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
       {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
+      <ChooseWhatToImportModal />
       <InstallingExtensionModal />
     </div>
   )

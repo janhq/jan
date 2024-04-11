@@ -11,8 +11,11 @@ import {
   ModelSettingParams,
   PromptTemplate,
   SystemInformation,
+  getJanDataFolderPath,
 } from '@janhq/core/node'
 import { executableNitroFile } from './execute'
+import terminate from 'terminate'
+import decompress from 'decompress'
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
@@ -36,6 +39,8 @@ const NITRO_HTTP_LOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/
 const NITRO_HTTP_VALIDATE_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/modelstatus`
 // The URL for the Nitro subprocess to kill itself
 const NITRO_HTTP_KILL_URL = `${NITRO_HTTP_SERVER_URL}/processmanager/destroy`
+
+const NITRO_PORT_FREE_CHECK_INTERVAL = 100
 
 // The supported model format
 // TODO: Should be an array to support more models
@@ -149,19 +154,9 @@ async function loadModel(
 async function runNitroAndLoadModel(systemInfo?: SystemInformation) {
   // Gather system information for CPU physical cores and memory
   return killSubprocess()
-    .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
-    .then(() => {
-      /**
-       * There is a problem with Windows process manager
-       * Should wait for awhile to make sure the port is free and subprocess is killed
-       * The tested threshold is 500ms
-       **/
-      if (process.platform === 'win32') {
-        return new Promise((resolve) => setTimeout(resolve, 500))
-      } else {
-        return Promise.resolve()
-      }
-    })
+    .then(() =>
+      tcpPortUsed.waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
+    )
     .then(() => spawnNitroProcess(systemInfo))
     .then(() => loadLLMModel(currentSettings))
     .then(validateModelStatus)
@@ -234,7 +229,7 @@ function loadLLMModel(settings: any): Promise<Response> {
     },
     body: JSON.stringify(settings),
     retries: 3,
-    retryDelay: 500,
+    retryDelay: 300,
   })
     .then((res) => {
       log(
@@ -265,7 +260,7 @@ async function validateModelStatus(): Promise<void> {
       'Content-Type': 'application/json',
     },
     retries: 5,
-    retryDelay: 500,
+    retryDelay: 300,
   }).then(async (res: Response) => {
     log(
       `[NITRO]::Debug: Validate model state with response ${JSON.stringify(
@@ -304,23 +299,45 @@ async function killSubprocess(): Promise<void> {
   setTimeout(() => controller.abort(), 5000)
   log(`[NITRO]::Debug: Request to kill Nitro`)
 
-  return fetch(NITRO_HTTP_KILL_URL, {
-    method: 'DELETE',
-    signal: controller.signal,
-  })
-    .then(() => {
-      subprocess?.kill()
-      subprocess = undefined
+  const killRequest = () => {
+    return fetch(NITRO_HTTP_KILL_URL, {
+      method: 'DELETE',
+      signal: controller.signal,
     })
-    .catch(() => {}) // Do nothing with this attempt
-    .then(() => tcpPortUsed.waitUntilFree(PORT, 300, 5000))
-    .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
-    .catch((err) => {
-      log(
-        `[NITRO]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
+      .catch(() => {}) // Do nothing with this attempt
+      .then(() =>
+        tcpPortUsed.waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
       )
-      throw 'PORT_NOT_AVAILABLE'
+      .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
+      .catch((err) => {
+        log(
+          `[NITRO]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
+        )
+        throw 'PORT_NOT_AVAILABLE'
+      })
+  }
+
+  if (subprocess?.pid) {
+    log(`[NITRO]::Debug: Killing PID ${subprocess.pid}`)
+    const pid = subprocess.pid
+    return new Promise((resolve, reject) => {
+      terminate(pid, function (err) {
+        if (err) {
+          return killRequest()
+        } else {
+          return tcpPortUsed
+            .waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
+            .then(() => resolve())
+            .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
+            .catch(() => {
+              killRequest()
+            })
+        }
+      })
     })
+  } else {
+    return killRequest()
+  }
 }
 
 /**
@@ -370,10 +387,12 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
       reject(`child process exited with code ${code}`)
     })
 
-    tcpPortUsed.waitUntilUsed(PORT, 300, 30000).then(() => {
-      log(`[NITRO]::Debug: Nitro is ready`)
-      resolve()
-    })
+    tcpPortUsed
+      .waitUntilUsed(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 30000)
+      .then(() => {
+        log(`[NITRO]::Debug: Nitro is ready`)
+        resolve()
+      })
   })
 }
 
@@ -403,9 +422,32 @@ const getCurrentNitroProcessInfo = (): NitroProcessInfo => {
   }
 }
 
+const addAdditionalDependencies = (data: { name: string; version: string }) => {
+  const additionalPath = path.delimiter.concat(
+    path.join(getJanDataFolderPath(), 'engines', data.name, data.version)
+  )
+  // Set the updated PATH
+  process.env.PATH = (process.env.PATH || '').concat(additionalPath)
+  process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
+    additionalPath
+  )
+}
+
+const decompressRunner = async (zipPath: string, output: string) => {
+  console.debug(`Decompressing ${zipPath} to ${output}...`)
+  try {
+    const files = await decompress(zipPath, output)
+    console.debug('Decompress finished!', files)
+  } catch (err) {
+    console.error(`Decompress ${zipPath} failed: ${err}`)
+  }
+}
+
 export default {
   loadModel,
   unloadModel,
   dispose,
   getCurrentNitroProcessInfo,
+  addAdditionalDependencies,
+  decompressRunner,
 }
