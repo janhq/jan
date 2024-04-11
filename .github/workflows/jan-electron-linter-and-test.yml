@@ -155,7 +155,7 @@ jobs:
           TURBO_TEAM: "windows"
           TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
   test-on-windows-pr:
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: windows-desktop-default-windows-security
     steps:
       - name: Getting the repo
