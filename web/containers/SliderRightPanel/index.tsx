@@ -17,7 +17,7 @@ import { useClickOutside } from '@/hooks/useClickOutside'
 type Props = {
   name: string
   title: string
-  enabled: boolean
+  disabled: boolean
   description: string
   min: number
   max: number
@@ -28,7 +28,7 @@ type Props = {
 
 const SliderRightPanel: React.FC<Props> = ({
   title,
-  enabled,
+  disabled,
   min,
   max,
   step,
@@ -65,7 +65,7 @@ const SliderRightPanel: React.FC<Props> = ({
             min={min}
             max={max}
             step={step}
-            disabled={!enabled}
+            disabled={disabled}
           />
           <div className="relative mt-2 flex items-center justify-between text-gray-400">
             <p className="text-sm">{min}</p>
@@ -80,7 +80,7 @@ const SliderRightPanel: React.FC<Props> = ({
               min={min}
               max={max}
               value={String(value)}
-              disabled={!enabled}
+              disabled={disabled}
               onBlur={(e) => {
                 if (Number(e.target.value) > Number(max)) {
                   onValueChanged?.(Number(max))
