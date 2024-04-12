@@ -27,7 +27,7 @@
     },
     "metadata": {
       "author": "CohereAI",
-      "tags": ["34B", "Finetuned"],
+      "tags": ["34B", "Finetuned", "Coming Soon", "Unavailable"],
       "size": 21500000000
     },
     "engine": "nitro"
