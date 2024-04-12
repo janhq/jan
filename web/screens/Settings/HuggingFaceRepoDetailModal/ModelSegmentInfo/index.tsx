@@ -3,8 +3,9 @@ import React, { useMemo } from 'react'
 import { Badge } from '@janhq/uikit'
 import { useAtomValue } from 'jotai'
 
-import { importingHuggingFaceRepoDataAtom } from '@/helpers/atoms/HuggingFace.atom'
 import { Download } from 'lucide-react'
+
+import { importingHuggingFaceRepoDataAtom } from '@/helpers/atoms/HuggingFace.atom'
 
 const ModelSegmentInfo: React.FC = () => {
   const importingHuggingFaceRepoData = useAtomValue(

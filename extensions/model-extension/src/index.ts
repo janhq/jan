@@ -220,7 +220,11 @@ export default class JanModelExtension extends ModelExtension {
         }
       })
     })
-    data.modelUrl = `https://huggingface.co/${repoId}`
+
+    const url = new URL(sanitizedUrl)
+    const paths = url.pathname.split('/').filter((e) => e.trim().length > 0)
+
+    data.modelUrl = `https://huggingface.co/${paths[2]}/${paths[3]}`
     return data
   }
 
