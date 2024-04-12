@@ -26,8 +26,6 @@ import {
 import { useAtom, useAtomValue } from 'jotai'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
-import ShortcutModal from '@/containers/ShortcutModal'
-
 import { snackbar, toaster } from '@/containers/Toast'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -177,22 +175,7 @@ const Advanced = () => {
 
   return (
     <ScrollArea className="px-4">
-      <div className="block w-full">
-        {/* Keyboard shortcut  */}
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none">
-          <div className="flex-shrink-0 space-y-1.5">
-            <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">
-                Keyboard Shortcuts
-              </h6>
-            </div>
-            <p className="leading-relaxed">
-              Shortcuts that you might find useful in Jan app.
-            </p>
-          </div>
-          <ShortcutModal />
-        </div>
-
+      <div className="block w-full py-4">
         {/* Experimental */}
         <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
           <div className="flex-shrink-0 space-y-1.5">
