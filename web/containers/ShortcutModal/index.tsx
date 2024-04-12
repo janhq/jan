@@ -11,6 +11,11 @@ import {
 
 const availableShortcuts = [
   {
+    combination: 'N',
+    modifierKeys: [isMac ? '⌘' : 'Ctrl'],
+    description: 'Create a new thread',
+  },
+  {
     combination: 'E',
     modifierKeys: [isMac ? '⌘' : 'Ctrl'],
     description: 'Show list your models',
