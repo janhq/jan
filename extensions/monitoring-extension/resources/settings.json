@@ -15,7 +15,8 @@
     "controllerType": "input",
     "controllerProps": {
       "value": "120000",
-      "placeholder": "Interval in milliseconds. E.g. 120000"
+      "placeholder": "Interval in milliseconds. E.g. 120000",
+      "textAlign": "right"
     }
   }
 ]

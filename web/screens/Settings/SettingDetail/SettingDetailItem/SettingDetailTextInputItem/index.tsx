@@ -21,7 +21,7 @@ const SettingDetailTextInputItem: React.FC<Props> = ({
   settingProps,
   onValueChanged,
 }) => {
-  const { value, type, placeholder } =
+  const { value, type, placeholder, textAlign } =
     settingProps.controllerProps as InputComponentProps
 
   const description = marked.parse(settingProps.description ?? '', {
@@ -43,6 +43,7 @@ const SettingDetailTextInputItem: React.FC<Props> = ({
       <Input
         placeholder={placeholder}
         type={type}
+        textAlign={textAlign}
         value={value}
         className="ml-4 w-[360px]"
         onChange={(e) => onValueChanged?.(e.target.value)}
