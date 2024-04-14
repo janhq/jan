@@ -76,8 +76,7 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
     await server.register(require('@fastify/swagger'), {
       mode: 'static',
       specification: {
-        path: configs?.schemaPath ?? './../docs/openapi/jan.yaml',
-        baseDir: configs?.baseDir ?? './../docs/openapi',
+        path: configs?.schemaPath ?? join(__dirname,'./swagger.json'),
         postProcessor: function (swaggerObject: any) {
           swaggerObject.servers[0].url = configs?.prefix ?? '/v1'
           return swaggerObject
@@ -88,7 +87,7 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
     // Register Swagger UI
     await server.register(require('@fastify/swagger-ui'), {
       routePrefix: '/',
-      baseDir: configs?.baseDir ?? join(__dirname, '../..', './docs/openapi'),
+      path: configs?.baseDir ?? join(__dirname,'./swagger.json'),
       uiConfig: {
         docExpansion: 'full',
         deepLinking: false,

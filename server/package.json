@@ -34,13 +34,17 @@
     "tcp-port-used": "^1.0.2"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@types/body-parser": "^1.19.5",
     "@types/npmcli__arborist": "^5.6.4",
     "@types/tcp-port-used": "^1.0.4",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
+    "eslint": "^9.0.0",
     "eslint-plugin-react": "^7.34.0",
     "run-script-os": "^1.1.6",
-    "typescript": "^5.3.3"
+    "tsoa": "^6.2.0",
+    "typescript": "^5.3.3",
+    "typescript-eslint": "^7.6.0"
   }
 }
