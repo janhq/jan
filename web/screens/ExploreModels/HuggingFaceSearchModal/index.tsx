@@ -21,7 +21,7 @@ export const HuggingFaceSearchModal = () => {
   return (
     <>
       <div className="flex flex-col items-center justify-center gap-1">
-        <p className="text-2xl font-bold">Hugging Face Convertor</p>
+        <p className="text-2xl font-bold">Hugging Face Converter</p>
         <p className="text-gray-500">Type the repository id below</p>
       </div>
       <Input

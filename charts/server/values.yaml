@@ -79,7 +79,7 @@ common:
       securityContext: {}
 
       service:
-        extenalLabel: {}
+        externalLabel: {}
         type: ClusterIP
         port: 1337
         targetPort: 1337
@@ -193,7 +193,7 @@ common:
       securityContext: {}
 
       service:
-        extenalLabel: {}
+        externalLabel: {}
         type: ClusterIP
         port: 3000
         targetPort: 3000

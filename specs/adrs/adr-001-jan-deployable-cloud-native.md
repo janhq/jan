@@ -22,7 +22,7 @@
 
 * This ADR aims to outline design decisions for deploying Jan in cloud native environments such as: Runpod, AWS, Azure, GCP in a fast and simple way.
 * The current code-base should not change too much.
-* The current plugins must be reusable across enviroments (Desktop, Cloud-native).
+* The current plugins must be reusable across environments (Desktop, Cloud-native).
 
 
 ### Key Design Decisions

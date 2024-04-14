@@ -62,7 +62,7 @@ export default function Error({
             >
               contact us
             </a>{' '}
-            if the problem presists.
+            if the problem persists.
           </p>
           <div
             className="mt-5 w-full rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
