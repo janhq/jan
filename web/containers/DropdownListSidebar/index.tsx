@@ -266,12 +266,36 @@ const DropdownListSidebar = ({
                         value={x.id}
                         className={twMerge(
                           x.id === selectedModel?.id && 'bg-secondary',
-                          'my-0 pb-8 pt-4'
+                          'my-0 py-2'
                         )}
                       >
-                        <div className="relative flex w-full justify-between">
-                          <span className="line-clamp-1 block">{x.name}</span>
-                          <div className="absolute right-0 top-2 space-x-2">
+                        <div className="flex w-full items-center justify-between gap-x-4">
+                          <div className="max-w-[200px]">
+                            <p className="line-clamp-2">{x.name}</p>
+                            <div
+                              className={twMerge(
+                                'mt-2 inline-flex items-center space-x-2 text-muted-foreground'
+                              )}
+                            >
+                              <p className="line-clamp-2 text-xs">{x.id}</p>
+                              {clipboard.copied && copyId === x.id ? (
+                                <CheckIcon
+                                  size={16}
+                                  className="flex-shrink-0 text-green-600"
+                                />
+                              ) : (
+                                <CopyIcon
+                                  size={16}
+                                  className="z-20 flex-shrink-0 cursor-pointer"
+                                  onClick={() => {
+                                    clipboard.copy(x.id)
+                                    setCopyId(x.id)
+                                  }}
+                                />
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 space-x-2">
                             <span className="font-bold text-muted-foreground">
                               {toGibibytes(x.metadata.size)}
                             </span>
@@ -281,25 +305,6 @@ const DropdownListSidebar = ({
                           </div>
                         </div>
                       </SelectItem>
-                      <div
-                        className={twMerge(
-                          'absolute -mt-6 inline-flex items-center space-x-2 px-4 pb-2 text-muted-foreground'
-                        )}
-                      >
-                        <span className="text-xs">{x.id}</span>
-                        {clipboard.copied && copyId === x.id ? (
-                          <CheckIcon size={16} className="text-green-600" />
-                        ) : (
-                          <CopyIcon
-                            size={16}
-                            className="z-20 cursor-pointer"
-                            onClick={() => {
-                              clipboard.copy(x.id)
-                              setCopyId(x.id)
-                            }}
-                          />
-                        )}
-                      </div>
                     </div>
                   ))
                 )}

@@ -195,7 +195,7 @@ const Advanced = () => {
         </div>
 
         {/* CPU / GPU switching */}
-        {!isMac && (
+        {isMac && (
           <div className="flex w-full flex-col items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
             <div className="flex w-full items-start justify-between">
               <div className="space-y-1.5">
@@ -223,73 +223,76 @@ const Advanced = () => {
                   for further assistance.
                 </p>
               </div>
-              {gpuList.length > 0 && !gpuEnabled && (
+
+              <div>
+                {gpuList.length > 0 && !gpuEnabled && (
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <AlertCircleIcon
+                        size={20}
+                        className="mr-2 text-yellow-600"
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="right"
+                      sideOffset={10}
+                      className="max-w-[240px]"
+                    >
+                      <span>
+                        Disabling NVIDIA GPU Acceleration may result in reduced
+                        performance. It is recommended to keep this enabled for
+                        optimal user experience.
+                      </span>
+                      <TooltipArrow />
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
                 <Tooltip>
                   <TooltipTrigger>
-                    <AlertCircleIcon
-                      size={20}
-                      className="mr-2 text-yellow-600"
+                    <Switch
+                      disabled={gpuList.length === 0 || vulkanEnabled}
+                      checked={gpuEnabled}
+                      onCheckedChange={(e) => {
+                        if (e === true) {
+                          saveSettings({ runMode: 'gpu' })
+                          setGpuEnabled(true)
+                          snackbar({
+                            description:
+                              'Successfully turned on GPU Acceleration',
+                            type: 'success',
+                          })
+                        } else {
+                          saveSettings({ runMode: 'cpu' })
+                          setGpuEnabled(false)
+                          snackbar({
+                            description:
+                              'Successfully turned off GPU Acceleration',
+                            type: 'success',
+                          })
+                        }
+                        // Stop any running model to apply the changes
+                        if (e !== gpuEnabled) stopModel()
+                      }}
                     />
                   </TooltipTrigger>
-                  <TooltipContent
-                    side="right"
-                    sideOffset={10}
-                    className="max-w-[240px]"
-                  >
-                    <span>
-                      Disabling NVIDIA GPU Acceleration may result in reduced
-                      performance. It is recommended to keep this enabled for
-                      optimal user experience.
-                    </span>
-                    <TooltipArrow />
-                  </TooltipContent>
+                  {gpuList.length === 0 && (
+                    <TooltipContent
+                      side="right"
+                      sideOffset={10}
+                      className="max-w-[240px]"
+                    >
+                      <span>
+                        Your current device does not have a compatible GPU for
+                        monitoring. To enable GPU monitoring, please ensure your
+                        device has a supported Nvidia or AMD GPU with updated
+                        drivers.
+                      </span>
+                      <TooltipArrow />
+                    </TooltipContent>
+                  )}
                 </Tooltip>
-              )}
-
-              <Tooltip>
-                <TooltipTrigger>
-                  <Switch
-                    disabled={gpuList.length === 0 || vulkanEnabled}
-                    checked={gpuEnabled}
-                    onCheckedChange={(e) => {
-                      if (e === true) {
-                        saveSettings({ runMode: 'gpu' })
-                        setGpuEnabled(true)
-                        snackbar({
-                          description:
-                            'Successfully turned on GPU Acceleration',
-                          type: 'success',
-                        })
-                      } else {
-                        saveSettings({ runMode: 'cpu' })
-                        setGpuEnabled(false)
-                        snackbar({
-                          description:
-                            'Successfully turned off GPU Acceleration',
-                          type: 'success',
-                        })
-                      }
-                      // Stop any running model to apply the changes
-                      if (e !== gpuEnabled) stopModel()
-                    }}
-                  />
-                </TooltipTrigger>
-                {gpuList.length === 0 && (
-                  <TooltipContent
-                    side="right"
-                    sideOffset={10}
-                    className="max-w-[240px]"
-                  >
-                    <span>
-                      Your current device does not have a compatible GPU for
-                      monitoring. To enable GPU monitoring, please ensure your
-                      device has a supported Nvidia or AMD GPU with updated
-                      drivers.
-                    </span>
-                    <TooltipArrow />
-                  </TooltipContent>
-                )}
-              </Tooltip>
+              </div>
             </div>
             <div className="mt-2 w-full rounded-lg bg-secondary p-4">
               <label className="mb-1 inline-block font-medium">
