@@ -1,20 +1,20 @@
 {
   "sources": [
     {
-      "filename": "wizardcoder-python-13b-v1.0.Q5_K_M.gguf",
-      "url": "https://huggingface.co/TheBloke/WizardCoder-Python-13B-V1.0-GGUF/resolve/main/wizardcoder-python-13b-v1.0.Q5_K_M.gguf"
+      "filename": "wizardcoder-python-13b-v1.0.Q4_K_M.gguf",
+      "url": "https://huggingface.co/TheBloke/WizardCoder-Python-13B-V1.0-GGUF/resolve/main/wizardcoder-python-13b-v1.0.Q4_K_M.gguf"
     }
   ],
   "id": "wizardcoder-13b",
   "object": "model",
-  "name": "Wizard Coder Python 13B Q5",
-  "version": "1.0",
+  "name": "Wizard Coder Python 13B Q4",
+  "version": "1.1",
   "description": "WizardCoder 13B is a Python coding model. This model demonstrate high proficiency in specific domains like coding and mathematics.",
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
     "prompt_template": "### Instruction:\n{prompt}\n### Response:",
-    "llama_model_path": "wizardcoder-python-13b-v1.0.Q5_K_M.gguf"
+    "llama_model_path": "wizardcoder-python-13b-v1.0.Q4_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
