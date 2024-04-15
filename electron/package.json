@@ -55,8 +55,7 @@
       ]
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
       "installerIcon": "icons/icon.ico",
       "uninstallerIcon": "icons/icon.ico",
       "include": "scripts/uninstaller.nsh",
