@@ -323,14 +323,14 @@ async function killSubprocess(): Promise<void> {
     return new Promise((resolve, reject) => {
       terminate(pid, function (err) {
         if (err) {
-          return killRequest()
+          killRequest().then(resolve).catch(reject)
         } else {
-          return tcpPortUsed
+          tcpPortUsed
             .waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
             .then(() => resolve())
             .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
             .catch(() => {
-              killRequest()
+              killRequest().then(resolve).catch(reject)
             })
         }
       })

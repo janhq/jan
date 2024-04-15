@@ -83,7 +83,7 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
   const description = marked.parse(item.description ?? '', { async: false })
 
   return (
-    <div className="mx-6 flex w-full items-start justify-between border-b border-border py-4 py-6 first:pt-4 last:border-none">
+    <div className="mx-6 flex w-full items-start justify-between border-b border-border py-6 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1.5">
         <div className="flex items-center gap-x-2">
           <h6 className="text-base font-bold">Additional Dependencies</h6>

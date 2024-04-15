@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
 import React, { useState, useEffect, useRef } from 'react'
 
 import { Button, ScrollArea } from '@janhq/uikit'
+import { Marked, Renderer } from 'marked'
 
 import Loader from '@/containers/Loader'
 
@@ -88,9 +88,16 @@ const ExtensionCatalog = () => {
                       {item.version}
                     </h6>
                   </div>
-                  <p className="whitespace-pre-wrap leading-relaxed ">
-                    {item.description}
-                  </p>
+                  {
+                    <div
+                      dangerouslySetInnerHTML={{
+                        // eslint-disable-next-line @typescript-eslint/naming-convention
+                        __html: marked.parse(item.description ?? '', {
+                          async: false,
+                        }),
+                      }}
+                    />
+                  }
                 </div>
               </div>
             )
@@ -129,5 +136,15 @@ const ExtensionCatalog = () => {
     </>
   )
 }
+
+const marked: Marked = new Marked({
+  renderer: {
+    link: (href, title, text) => {
+      return Renderer.prototype.link
+        ?.apply(this, [href, title, text])
+        .replace('<a', "<a class='text-blue-500' target='_blank'")
+    },
+  },
+})
 
 export default ExtensionCatalog

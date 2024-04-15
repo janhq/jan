@@ -102,7 +102,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     return super.loadModel(model)
   }
 
-  override async unloadModel(model?: Model) {
+  override async unloadModel(model?: Model): Promise<void> {
     if (model?.engine && model.engine !== this.provider) return
 
     // stop the periocally health check

@@ -19,7 +19,7 @@ export const factoryResetStateAtom = atom(FactoryResetState.Idle)
 
 export default function useFactoryReset() {
   const defaultJanDataFolder = useAtomValue(defaultJanDataFolderAtom)
-  const { activeModel, stopModel } = useActiveModel()
+  const { stopModel } = useActiveModel()
   const setFactoryResetState = useSetAtom(factoryResetStateAtom)
 
   const resetAll = useCallback(
@@ -44,11 +44,9 @@ export default function useFactoryReset() {
         await window.core?.api?.updateAppConfiguration(configuration)
       }
 
-      if (activeModel) {
-        setFactoryResetState(FactoryResetState.StoppingModel)
-        await stopModel()
-        await new Promise((resolve) => setTimeout(resolve, 4000))
-      }
+      setFactoryResetState(FactoryResetState.StoppingModel)
+      await stopModel()
+      await new Promise((resolve) => setTimeout(resolve, 4000))
 
       setFactoryResetState(FactoryResetState.DeletingData)
       await fs.rm(janDataFolderPath)
@@ -59,7 +57,7 @@ export default function useFactoryReset() {
 
       await window.core?.api?.relaunch()
     },
-    [defaultJanDataFolder, activeModel, stopModel, setFactoryResetState]
+    [defaultJanDataFolder, stopModel, setFactoryResetState]
   )
 
   return {

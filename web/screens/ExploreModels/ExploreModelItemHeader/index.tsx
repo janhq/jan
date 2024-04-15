@@ -19,6 +19,10 @@ import { twMerge } from 'tailwind-merge'
 
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
 
+import ModelLabel from '@/containers/ModelLabel'
+
+import { toaster } from '@/containers/Toast'
+
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
@@ -45,22 +49,6 @@ type Props = {
   model: Model
   onClick: () => void
   open: string
-}
-
-const getLabel = (size: number, ram: number, unit: string = 'RAM') => {
-  if (size * 1.25 >= ram) {
-    return (
-      <Badge className="rounded-md" themes="danger">
-        Not enough {unit}
-      </Badge>
-    )
-  } else {
-    return (
-      <Badge className="rounded-md" themes="success">
-        Recommended
-      </Badge>
-    )
-  }
 }
 
 const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
@@ -105,7 +93,11 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 
   const onUseModelClick = useCallback(async () => {
     if (assistants.length === 0) {
-      alert('No assistant available')
+      toaster({
+        title: 'No assistant available.',
+        description: `Could not use Model ${model.name} as no assistant is available.`,
+        type: 'error',
+      })
       return
     }
     await requestCreateNewThread(assistants[0], model)
@@ -164,11 +156,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
           <span className="mr-4 font-semibold text-muted-foreground">
             {toGibibytes(model.metadata.size)}
           </span>
-          {getLabel(
-            model.metadata.size,
-            ram,
-            settings?.run_mode === 'gpu' ? 'VRAM' : 'RAM'
-          )}
+          {<ModelLabel metadata={model.metadata} />}
 
           {downloadButton}
           <ChevronDownIcon
