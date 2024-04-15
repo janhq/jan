@@ -32,7 +32,6 @@ export enum AppRoute {
   startServer = 'startServer',
   stopServer = 'stopServer',
   log = 'log',
-  logServer = 'logServer',
   systemInformation = 'systemInformation',
   showToast = 'showToast',
 }
