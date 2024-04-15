@@ -276,7 +276,7 @@ const DropdownListSidebar = ({
                               {toGibibytes(x.metadata.size)}
                             </span>
                             {x.metadata.size && (
-                              <ModelLabel size={x.metadata.size} />
+                              <ModelLabel metadata={x.metadata} />
                             )}
                           </div>
                         </div>
