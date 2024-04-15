@@ -66,6 +66,7 @@ export class Downloader implements Processor {
       localPath: normalizedPath,
     }
     DownloadManager.instance.downloadProgressMap[modelId] = initialDownloadState
+    DownloadManager.instance.downloadInfo[normalizedPath] = initialDownloadState
 
     if (downloadRequest.downloadType === 'extension') {
       observer?.(DownloadEvent.onFileDownloadUpdate, initialDownloadState)
@@ -118,12 +119,14 @@ export class Downloader implements Processor {
     if (rq) {
       DownloadManager.instance.networkRequests[fileName] = undefined
       rq?.abort()
-    } else {
-      observer?.(DownloadEvent.onFileDownloadError, {
-        fileName,
-        error: 'aborted',
-      })
     }
+
+    const downloadInfo = DownloadManager.instance.downloadInfo[fileName]
+    observer?.(DownloadEvent.onFileDownloadError, {
+      ...downloadInfo,
+      fileName,
+      error: 'aborted',
+    })
   }
 
   resumeDownload(observer: any, fileName: any) {
