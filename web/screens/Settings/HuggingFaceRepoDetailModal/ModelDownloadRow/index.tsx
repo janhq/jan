@@ -9,14 +9,20 @@ import {
 } from '@janhq/core'
 import { Badge, Button, Progress } from '@janhq/uikit'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
+import { MainViewState } from '@/constants/screens'
+
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
-
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
+
+import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
@@ -29,7 +35,6 @@ type Props = {
 }
 
 const ModelDownloadRow: React.FC<Props> = ({
-  index,
   repoData,
   downloadUrl,
   fileName,
@@ -41,7 +46,12 @@ const ModelDownloadRow: React.FC<Props> = ({
   const allDownloadStates = useAtomValue(modelDownloadStateAtom)
   const downloadState: DownloadState | undefined = allDownloadStates[fileName]
 
+  const { requestCreateNewThread } = useCreateNewThread()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
+  const assistants = useAtomValue(assistantsAtom)
   const isDownloaded = downloadedModels.find((md) => md.id === fileName) != null
+
+  const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
 
   const model = useMemo(() => {
     const promptData: string =
@@ -94,6 +104,22 @@ const ModelDownloadRow: React.FC<Props> = ({
     downloadModel(model)
   }, [model, downloadModel])
 
+  const onUseModelClick = useCallback(async () => {
+    if (assistants.length === 0) {
+      alert('No assistant available')
+      return
+    }
+    await requestCreateNewThread(assistants[0], model)
+    setMainViewState(MainViewState.Thread)
+    setHfImportingStage('NONE')
+  }, [
+    assistants,
+    model,
+    requestCreateNewThread,
+    setMainViewState,
+    setHfImportingStage,
+  ])
+
   return (
     <div className="flex w-[662px] flex-row items-center justify-between rounded border border-border p-3">
       <div className="flex">
@@ -106,7 +132,14 @@ const ModelDownloadRow: React.FC<Props> = ({
       </div>
 
       {isDownloaded ? (
-        <div>Downloaded</div>
+        <Button
+          themes="secondaryBlue"
+          className="min-w-[98px]"
+          onClick={onUseModelClick}
+          data-testid={`use-model-btn-${model.id}`}
+        >
+          Use
+        </Button>
       ) : downloadState != null ? (
         <Button themes="secondaryBlue">
           <div className="flex items-center space-x-2">

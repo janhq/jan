@@ -202,8 +202,11 @@ export default class JanModelExtension extends ModelExtension {
     const promises: Promise<number>[] = []
 
     // fetching file sizes
+    const url = new URL(sanitizedUrl)
+    const paths = url.pathname.split('/').filter((e) => e.trim().length > 0)
+
     for (const sibling of data.siblings) {
-      const downloadUrl = `https://huggingface.co/${repoId}/resolve/main/${sibling.rfilename}`
+      const downloadUrl = `https://huggingface.co/${paths[2]}/${paths[3]}/resolve/main/${sibling.rfilename}`
       sibling.downloadUrl = downloadUrl
       promises.push(getFileSize(downloadUrl))
     }
@@ -220,9 +223,6 @@ export default class JanModelExtension extends ModelExtension {
         }
       })
     })
-
-    const url = new URL(sanitizedUrl)
-    const paths = url.pathname.split('/').filter((e) => e.trim().length > 0)
 
     data.modelUrl = `https://huggingface.co/${paths[2]}/${paths[3]}`
     return data
