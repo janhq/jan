@@ -34,7 +34,7 @@ const TableActiveModel = () => {
                 return (
                   <th
                     key={i}
-                    className="px-6 py-2 text-left font-normal last:text-center"
+                    className="px-4 py-2 text-left font-normal last:text-center"
                   >
                     {col}
                   </th>
@@ -46,17 +46,27 @@ const TableActiveModel = () => {
             <Fragment>
               <tbody>
                 <tr>
-                  <td className="px-6 py-2 font-bold">{activeModel.name}</td>
-                  <td className="px-6 py-2 font-bold">{activeModel.id}</td>
-                  <td className="px-6 py-2">
+                  <td
+                    className="max-w-[200px] px-4 py-2 font-bold"
+                    title={activeModel.name}
+                  >
+                    <p className="line-clamp-2">{activeModel.name}</p>
+                  </td>
+                  <td
+                    className="max-w-[200px] px-4 py-2 font-bold"
+                    title={activeModel.id}
+                  >
+                    <p className="line-clamp-2">{activeModel.id}</p>
+                  </td>
+                  <td className="px-4 py-2">
                     <Badge themes="secondary">
                       {toGibibytes(activeModel.metadata.size)}
                     </Badge>
                   </td>
-                  <td className="px-6 py-2">
+                  <td className="px-4 py-2">
                     <Badge themes="secondary">v{activeModel.version}</Badge>
                   </td>
-                  <td className="px-6 py-2 text-center">
+                  <td className="px-4 py-2 text-center">
                     <Tooltip>
                       <TooltipTrigger className="w-full">
                         <Button
