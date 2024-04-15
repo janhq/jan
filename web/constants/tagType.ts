@@ -44,8 +44,8 @@ export enum UsecaseTag {
   UsecaseDefault = 'UsecaseDefault',
 }
 
-export enum MiscellanousTag {
-  MiscellanousDefault = 'MiscellanousDefault',
+export enum MiscellaneousTag {
+  MiscellaneousDefault = 'MiscellaneousDefault',
 }
 
 export type TagType =
@@ -59,4 +59,4 @@ export type TagType =
   | NumOfBit
   | RamRequired
   | UsecaseTag
-  | MiscellanousTag
+  | MiscellaneousTag

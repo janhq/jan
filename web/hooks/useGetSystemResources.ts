@@ -107,7 +107,7 @@ export default function useGetSystemResources() {
 
   return {
     /**
-     * Fetch resource informations once
+     * Fetch resource information once
      */
     getSystemResources,
     /**

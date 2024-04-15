@@ -18,7 +18,7 @@ export const HuggingFaceConvertingErrorModal = () => {
       </div>
       <div className="flex flex-col items-center justify-center gap-1">
         <p className="text-center">
-          An error occured while {conversionStatus} model {repoData.id}.
+          An error occurred while {conversionStatus} model {repoData.id}.
         </p>
         <p>Please close this modal and try again.</p>
       </div>

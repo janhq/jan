@@ -14,7 +14,7 @@ Proposed
 ## Context
 
 What is the issue that we're seeing that is motivating this decision or change?
-- The A.I world is moving fast with multiple runtime/ prebaked environment. We or the builder cannot cover just everything but rather we should adopt it and facillitate it as much as possible within Jan.
+- The A.I world is moving fast with multiple runtime/ prebaked environment. We or the builder cannot cover just everything but rather we should adopt it and facilitate it as much as possible within Jan.
 - For `Run your own A.I`: Builder can build app on Jan (NodeJS env) and connect to external endpoint which serves the real A.I
   - e.g 1: Nitro acting as proxy to `triton-inference-server` running within a Docker container controlled by Jan app
   - e.g 2: Original models can be in many formats (pytorch, paddlepaddle). In order to run it with the most optimized version locally, there must be a step to transpile the model ([Ollama import model](https://github.com/jmorganca/ollama/blob/main/docs/import.md), Tensorrt). Btw Jan can prebuilt it and let user pull but later

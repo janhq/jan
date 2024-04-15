@@ -42,7 +42,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
   /**
    * The interval id for the health check. Used to stop the health check.
    */
-  private getNitroProcesHealthIntervalId: NodeJS.Timeout | undefined = undefined
+  private getNitroProcessHealthIntervalId: NodeJS.Timeout | undefined = undefined
 
   /**
    * Tracking the current state of nitro process.
@@ -65,7 +65,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
       this.inferenceUrl = `${window.core?.api?.baseApiUrl}/v1/chat/completions`
     }
 
-    this.getNitroProcesHealthIntervalId = setInterval(
+    this.getNitroProcessHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
       JanInferenceNitroExtension._intervalHealthCheck
     )
@@ -95,7 +95,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
 
   override loadModel(model: Model): Promise<void> {
     if (model.engine !== this.provider) return Promise.resolve()
-    this.getNitroProcesHealthIntervalId = setInterval(
+    this.getNitroProcessHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
       JanInferenceNitroExtension._intervalHealthCheck
     )
@@ -106,9 +106,9 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     if (model?.engine && model.engine !== this.provider) return
 
     // stop the periocally health check
-    if (this.getNitroProcesHealthIntervalId) {
-      clearInterval(this.getNitroProcesHealthIntervalId)
-      this.getNitroProcesHealthIntervalId = undefined
+    if (this.getNitroProcessHealthIntervalId) {
+      clearInterval(this.getNitroProcessHealthIntervalId)
+      this.getNitroProcessHealthIntervalId = undefined
     }
     return super.unloadModel(model)
   }

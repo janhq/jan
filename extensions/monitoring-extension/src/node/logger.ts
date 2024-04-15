@@ -53,7 +53,7 @@ export class FileLogger extends Logger {
     daysToKeep?: number | undefined
   ): void {
     // clear existing timeout
-    // incase we rerun it with different values
+    // in case we rerun it with different values
     if (this.timeout) clearTimeout(this.timeout)
     this.timeout = undefined
 
