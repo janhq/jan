@@ -13,7 +13,11 @@ import {
   importingHuggingFaceRepoDataAtom,
 } from '@/helpers/atoms/HuggingFace.atom'
 
-const ModelSearch: React.FC = () => {
+type Props = {
+  onSearchLocal?: (searchText: string) => void
+}
+
+const ModelSearch: React.FC<Props> = ({ onSearchLocal }) => {
   const [searchText, setSearchText] = useState('')
   const { loading, getHfRepoData } = useGetHFRepoData()
 
@@ -25,7 +29,12 @@ const ModelSearch: React.FC = () => {
   )
 
   const debounced = useDebouncedCallback(async () => {
-    if (searchText.trim().length === 0) return
+    if (searchText.indexOf('/') === -1) {
+      // if we don't find / in text search, do search locally
+      onSearchLocal?.(searchText)
+      return
+    }
+
     try {
       const data = await getHfRepoData(searchText)
       setImportingHuggingFaceRepoData(data)

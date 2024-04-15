@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { useDropzone } from 'react-dropzone'
 
@@ -23,10 +23,14 @@ const Models: React.FC = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
+  const [searchText, setSearchText] = useState('')
 
   const filteredDownloadedModels = useMemo(
-    () => downloadedModels.sort((a, b) => a.name.localeCompare(b.name)),
-    [downloadedModels]
+    () =>
+      downloadedModels
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .filter((e) => e.name.toLowerCase().includes(searchText.toLowerCase())),
+    [downloadedModels, searchText]
   )
 
   const { getRootProps, isDragActive } = useDropzone({
@@ -38,6 +42,10 @@ const Models: React.FC = () => {
   const onImportModelClick = useCallback(() => {
     setImportModelStage('SELECTING_MODEL')
   }, [setImportModelStage])
+
+  const onSearchChange = useCallback((input: string) => {
+    setSearchText(input)
+  }, [])
 
   return (
     <ScrollArea className="h-full w-full" {...getRootProps()}>
@@ -62,7 +70,7 @@ const Models: React.FC = () => {
       )}
       <div className="m-4 rounded-xl border border-border shadow-sm">
         <div className="flex flex-row justify-between px-6 py-5">
-          <ModelSearch />
+          <ModelSearch onSearchLocal={onSearchChange} />
           <Button
             themes={'outline'}
             className="space-x-2"
