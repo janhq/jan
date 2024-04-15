@@ -6,6 +6,8 @@ import { SearchIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 import { useDebouncedCallback } from 'use-debounce'
 
+import { toaster } from '@/containers/Toast'
+
 import { useGetHFRepoData } from '@/hooks/useGetHFRepoData'
 
 import {
@@ -30,7 +32,7 @@ const ModelSearch: React.FC<Props> = ({ onSearchLocal }) => {
 
   const debounced = useDebouncedCallback(async () => {
     if (searchText.indexOf('/') === -1) {
-      // if we don't find / in text search, do search locally
+      // If we don't find / in the text, perform a local search
       onSearchLocal?.(searchText)
       return
     }
@@ -40,7 +42,15 @@ const ModelSearch: React.FC<Props> = ({ onSearchLocal }) => {
       setImportingHuggingFaceRepoData(data)
       setImportHuggingFaceModelStage('REPO_DETAIL')
     } catch (err) {
-      // TODO: might need to display popup
+      let errMessage = 'Unexpected Error'
+      if (err instanceof Error) {
+        errMessage = err.message
+      }
+      toaster({
+        title: 'Failed to get Hugging Face models',
+        description: errMessage,
+        type: 'error',
+      })
       console.error(err)
     }
   }, 300)
@@ -74,7 +84,10 @@ const ModelSearch: React.FC<Props> = ({ onSearchLocal }) => {
       <div className="flex flex-row items-center space-x-4">
         <Input
           placeholder="Search or paste Hugging Face URL"
-          className={twMerge('pl-8', loading ? 'pr-8' : '')}
+          className={twMerge(
+            'bg-white pl-8 dark:bg-background',
+            loading ? 'pr-8' : ''
+          )}
           onChange={onSearchChanged}
           onKeyDown={onKeyDown}
         />

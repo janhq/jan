@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react'
 
 import {
-  Input,
   ScrollArea,
   Select,
   SelectTrigger,
@@ -13,9 +12,11 @@ import {
 } from '@janhq/uikit'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { UploadIcon, SearchIcon } from 'lucide-react'
+import { UploadIcon } from 'lucide-react'
 
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
+
+import ModelSearch from '../Settings/Models/ModelSearch'
 
 import ExploreModelList from './ExploreModelList'
 
@@ -54,6 +55,10 @@ const ExploreModelsScreen = () => {
     setImportModelStage('SELECTING_MODEL')
   }, [setImportModelStage])
 
+  const onSearchUpdate = useCallback((input: string) => {
+    setsearchValue(input)
+  }, [])
+
   return (
     <div
       className="flex h-full w-full overflow-y-auto bg-background"
@@ -70,17 +75,7 @@ const ExploreModelsScreen = () => {
               />
               <div className="absolute left-1/2 top-1/2 w-1/3 -translate-x-1/2 -translate-y-1/2 space-y-2">
                 <div className="flex flex-row space-x-2">
-                  <div className="relative">
-                    <SearchIcon
-                      size={20}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    />
-                    <Input
-                      placeholder="Search models"
-                      className="bg-white pl-9 dark:bg-background"
-                      onChange={(e) => setsearchValue(e.target.value)}
-                    />
-                  </div>
+                  <ModelSearch onSearchLocal={onSearchUpdate} />
                   <Button
                     themes="outline"
                     className="gap-2 bg-white dark:bg-secondary"

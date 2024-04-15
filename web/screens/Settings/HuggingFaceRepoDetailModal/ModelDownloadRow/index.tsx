@@ -121,7 +121,7 @@ const ModelDownloadRow: React.FC<Props> = ({
   ])
 
   return (
-    <div className="flex w-[662px] flex-row items-center justify-between rounded border border-border p-3">
+    <div className="flex w-[662px] flex-row items-center justify-between space-x-1 rounded border border-border p-3">
       <div className="flex">
         {quantization && <Badge className="mr-1">{quantization}</Badge>}
 

@@ -23,10 +23,10 @@ export const useGetHFRepoData = () => {
       if (err instanceof Error) {
         setError(err.message)
       }
+      throw err
     } finally {
       setLoading(false)
     }
-    return undefined
   }, [])
 
   return { loading, error, getHfRepoData }

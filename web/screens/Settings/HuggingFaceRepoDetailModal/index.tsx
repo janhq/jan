@@ -34,7 +34,7 @@ const HuggingFaceRepoDetailModal: React.FC = () => {
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="max-w-[1162px]">
+      <ModalContent className="w-[1162px] max-w-[calc(100%-38px)]">
         <ModalHeader>
           <ModalTitle>{importingHuggingFaceRepoData.id}</ModalTitle>
         </ModalHeader>

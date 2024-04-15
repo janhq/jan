@@ -29,7 +29,7 @@ const downloadFile: (downloadRequest: DownloadRequest, network?: NetworkConfig) 
 ) => globalThis.core?.api?.downloadFile(downloadRequest, network)
 
 /**
- * Get file size from browser processes.
+ * Get unit in bytes for a remote file.
  *
  * @param url - The url of the file.
  * @returns {Promise<number>} - A promise that resolves with the file size.

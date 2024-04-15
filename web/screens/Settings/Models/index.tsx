@@ -28,8 +28,10 @@ const Models: React.FC = () => {
   const filteredDownloadedModels = useMemo(
     () =>
       downloadedModels
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .filter((e) => e.name.toLowerCase().includes(searchText.toLowerCase())),
+        .filter((e) =>
+          e.name.toLowerCase().includes(searchText.toLowerCase().trim())
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
     [downloadedModels, searchText]
   )
 
