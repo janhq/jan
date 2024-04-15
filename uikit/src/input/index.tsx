@@ -2,14 +2,20 @@ import { forwardRef } from 'react'
 import { twMerge } from 'tailwind-merge'
 
 export interface InputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {}
+  extends React.InputHTMLAttributes<HTMLInputElement> {
+  textAlign?: 'left' | 'right'
+}
 
 const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, textAlign, ...props }, ref) => {
     return (
       <input
         type={type}
-        className={twMerge('input', className)}
+        className={twMerge(
+          'input',
+          className,
+          textAlign === 'right' && 'text-right'
+        )}
         ref={ref}
         {...props}
       />
