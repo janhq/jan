@@ -20,6 +20,7 @@ export type InputComponentProps = {
   placeholder: string
   value: string
   type?: InputType
+  textAlign?: 'left' | 'right'
 }
 
 export type SliderComponentProps = {

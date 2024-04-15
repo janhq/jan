@@ -4,7 +4,7 @@ import { log } from './logger'
 
 export const getSystemResourceInfo = async (): Promise<SystemResourceInfo> => {
   const cpu = await physicalCpuCount()
-  log(`[NITRO]::CPU informations - ${cpu}`)
+  log(`[NITRO]::CPU information - ${cpu}`)
 
   return {
     numCpuPhysicalCore: cpu,

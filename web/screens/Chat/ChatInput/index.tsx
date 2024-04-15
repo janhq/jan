@@ -148,6 +148,7 @@ const ChatInput: React.FC = () => {
             'max-h-[400px] resize-none pr-20',
             fileUpload.length && 'rounded-t-none'
           )}
+          data-testid="txt-input-chat"
           style={{ height: '40px' }}
           ref={textareaRef}
           onKeyDown={onKeyDown}
@@ -320,6 +321,7 @@ const ChatInput: React.FC = () => {
           }
           themes="primary"
           className="min-w-[100px]"
+          data-testid="btn-send-chat"
           onClick={() => sendChatMessage(currentPrompt)}
         >
           Send

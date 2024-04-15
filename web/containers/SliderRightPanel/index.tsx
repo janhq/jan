@@ -81,6 +81,7 @@ const SliderRightPanel: React.FC<Props> = ({
               max={max}
               value={String(value)}
               disabled={disabled}
+              textAlign="right"
               onBlur={(e) => {
                 if (Number(e.target.value) > Number(max)) {
                   onValueChanged?.(Number(max))

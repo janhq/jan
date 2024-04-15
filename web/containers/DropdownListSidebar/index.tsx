@@ -138,7 +138,7 @@ const DropdownListSidebar = ({
           ...model?.parameters,
           ...model?.settings,
         }
-        // Update model paramter to the thread state
+        // Update model parameter to the thread state
         setThreadModelParams(activeThread.id, modelParams)
 
         // Update model parameter to the thread file

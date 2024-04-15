@@ -12,7 +12,7 @@ export async function setup() {
   if (!existsSync(appDir)) mkdirSync(appDir)
   //@ts-ignore
   global.core = {
-    // Define appPath function for app to retrieve app path globaly
+    // Define appPath function for app to retrieve app path globally
     appPath: () => appDir,
   }
   init({

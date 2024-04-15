@@ -1,4 +1,4 @@
-import { test, appInfo } from '../config/fixtures'
+import { test, appInfo, page, TIMEOUT } from '../config/fixtures'
 import { expect } from '@playwright/test'
 
 test.beforeAll(async () => {
@@ -16,4 +16,9 @@ test.beforeAll(async () => {
 test('explores hub', async ({ hubPage }) => {
   await hubPage.navigateByMenu()
   await hubPage.verifyContainerVisible()
+  const useModelBtn= page.getByTestId(/^use-model-btn-.*/).first()
+
+  await expect(useModelBtn).toBeVisible({
+    timeout: TIMEOUT,
+  })
 })

@@ -60,7 +60,7 @@ const joinPath: (paths: string[]) => Promise<string> = (paths) =>
   globalThis.core.api?.joinPath(paths)
 
 /**
- * Retrive the basename from an url.
+ * Retrieve the basename from an url.
  * @param path - The path to retrieve.
  * @returns {Promise<string>} A promise that resolves with the basename.
  */
