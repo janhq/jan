@@ -1,6 +1,7 @@
-import { Controller, Route, Get, Path, Tags } from 'tsoa'
-import { getBuilder, retrieveBuilder } from '@janhq/core/dist/types/node/api/restful/helper/builder'
+import { Controller, Route, Get, Path, Tags, Delete } from 'tsoa'
+import { deleteBuilder, getBuilder, retrieveBuilder } from '@janhq/core/dist/types/node/api/restful/helper/builder'
 import { JanApiRouteConfiguration } from '@janhq/core/dist/types/node/api/restful/helper/configuration'
+import { DeleteObjectResponse } from './entity'
 const normalizeData = (data: any) => {
   return {
     object: 'list',
@@ -18,10 +19,18 @@ export class ModelsController extends Controller {
 
   @Tags('Find model by id')
   @Get(":id")
-  public async getModelsById(
+  public async getModelById(
     @Path('id') id: string,
   ): Promise<{}>{
-    return retrieveBuilder(JanApiRouteConfiguration["models"], id)
+    return retrieveBuilder(JanApiRouteConfiguration['models'], id)
+  }
+
+  @Tags('Delete model by id')
+  @Delete(":id")
+  public async deleteModelById(
+    @Path('id') id: string,
+  ): Promise<DeleteObjectResponse>{
+    return deleteBuilder(JanApiRouteConfiguration['models'], id)
   }
 }
 
