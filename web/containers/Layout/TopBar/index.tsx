@@ -16,6 +16,8 @@ import CommandSearch from '@/containers/Layout/TopBar/CommandSearch'
 
 import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
+import { toaster } from '@/containers/Toast'
+
 import { MainViewState } from '@/constants/screens'
 
 import { useClickOutside } from '@/hooks/useClickOutside'
@@ -61,7 +63,11 @@ const TopBar = () => {
 
   const onCreateConversationClick = async () => {
     if (assistants.length === 0) {
-      alert('No assistant available')
+      toaster({
+        title: 'No assistant available.',
+        description: `Could not create a new thread. Please add an assistant.`,
+        type: 'error',
+      })
     } else {
       requestCreateNewThread(assistants[0])
     }

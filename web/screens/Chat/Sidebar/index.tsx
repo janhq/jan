@@ -2,7 +2,7 @@ import React, { useCallback, useMemo } from 'react'
 
 import { Input, Textarea } from '@janhq/uikit'
 
-import { atom, useAtomValue } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -13,7 +13,10 @@ import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+
+import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
@@ -27,6 +30,7 @@ import PromptTemplateSetting from './PromptTemplateSetting'
 
 import {
   activeThreadAtom,
+  engineParamsUpdateAtom,
   getActiveThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -38,6 +42,10 @@ const Sidebar: React.FC = () => {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
+
+  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
+  const { stopModel } = useActiveModel()
+  const { updateModelParameter } = useUpdateModelParameters()
 
   const modelSettings = useMemo(() => {
     const modelRuntimeParams = toRuntimeParams(activeModelParams)
@@ -94,6 +102,22 @@ const Sidebar: React.FC = () => {
         })
     },
     [activeThread, updateThreadMetadata]
+  )
+
+  const onValueChanged = useCallback(
+    (key: string, value: string | number | boolean) => {
+      if (!activeThread) {
+        return
+      }
+
+      setEngineParamsUpdate(true)
+      stopModel()
+
+      updateModelParameter(activeThread, {
+        params: { [key]: value },
+      })
+    },
+    [activeThread, setEngineParamsUpdate, stopModel, updateModelParameter]
   )
 
   return (
@@ -170,7 +194,10 @@ const Sidebar: React.FC = () => {
             {modelSettings.length > 0 && (
               <CardSidebar title="Inference Parameters" asChild>
                 <div className="px-2 py-4">
-                  <ModelSetting componentProps={modelSettings} />
+                  <ModelSetting
+                    componentProps={modelSettings}
+                    onValueChanged={onValueChanged}
+                  />
                 </div>
               </CardSidebar>
             )}
@@ -188,7 +215,10 @@ const Sidebar: React.FC = () => {
             {engineSettings.length > 0 && (
               <CardSidebar title="Engine Parameters" asChild>
                 <div className="px-2 py-4">
-                  <EngineSetting componentData={engineSettings} />
+                  <EngineSetting
+                    componentData={engineSettings}
+                    onValueChanged={onValueChanged}
+                  />
                 </div>
               </CardSidebar>
             )}

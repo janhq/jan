@@ -11,7 +11,7 @@ import { InfoIcon } from 'lucide-react'
 
 type Props = {
   title: string
-  enabled?: boolean
+  disabled?: boolean
   name: string
   description: string
   placeholder: string
@@ -21,7 +21,7 @@ type Props = {
 
 const ModelConfigInput: React.FC<Props> = ({
   title,
-  enabled = true,
+  disabled = false,
   value,
   description,
   placeholder,
@@ -48,7 +48,7 @@ const ModelConfigInput: React.FC<Props> = ({
       placeholder={placeholder}
       onChange={(e) => onValueChanged?.(e.target.value)}
       value={value}
-      disabled={!enabled}
+      disabled={disabled}
     />
   </div>
 )

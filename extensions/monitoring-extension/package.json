@@ -1,6 +1,6 @@
 {
   "name": "@janhq/monitoring-extension",
-  "productName": "System Monitoring Extension",
+  "productName": "System Monitoring",
   "version": "1.0.10",
   "description": "This extension provides system health and OS level data",
   "main": "dist/index.js",
