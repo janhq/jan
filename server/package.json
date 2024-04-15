@@ -14,6 +14,7 @@
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
     "test:e2e": "playwright test --workers=1",
     "dev": "tsc --watch & node --watch build/main.js",
+    "swagger": "tsoa spec & tsc --watch & node --watch build/main.js",
     "build": "tsc"
   },
   "dependencies": {
