@@ -22,7 +22,7 @@ export const getSelectedText = async () => {
 
 /**
  * Registers a global shortcut of `accelerator`. The `callback` is called
- * with the selected text when the registered shorcut is pressed by the user
+ * with the selected text when the registered shortcut is pressed by the user
  *
  * Returns `true` if the shortcut was registered successfully
  */

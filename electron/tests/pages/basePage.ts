@@ -8,8 +8,9 @@ export class BasePage {
   constructor(
     protected readonly page: Page,
     readonly action: CommonActions,
-    protected containerId: string
-  ) {}
+    protected containerId: string,
+  ) {
+  }
 
   public getValue(key: string) {
     return this.action.getValue(key)
@@ -24,7 +25,11 @@ export class BasePage {
   }
 
   async navigateByMenu() {
-    await this.page.getByTestId(this.menuId).first().click()
+    await this.clickFirstElement(this.menuId)
+  }
+
+  async clickFirstElement(testId: string) {
+    await this.page.getByTestId(testId).first().click()
   }
 
   async verifyContainerVisible() {
@@ -36,7 +41,7 @@ export class BasePage {
     await this.isElementVisible('img[alt="Jan - Logo"]')
   }
 
-  //wait and find a specific element with it's selector and return Visible
+  //wait and find a specific element with its selector and return Visible
   async isElementVisible(selector: any) {
     let isVisible = true
     await this.page

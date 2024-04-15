@@ -113,6 +113,7 @@ const ExploreModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
             className="min-w-[98px]"
             onClick={onUseModelClick}
             disabled={serverEnabled}
+            data-testid={`use-model-btn-${model.id}`}
           >
             Use
           </Button>

@@ -31,6 +31,7 @@ export default function GenerateResponse() {
         <div
           className="absolute left-0 top-0 h-full bg-gray-200"
           style={{ width: `${loader}%` }}
+          data-testid="response-loader"
         />
         <span className="relative z-10">Generating response...</span>
       </div>

@@ -138,7 +138,7 @@ export const getCurrentLoad = () =>
   })
 
 /**
- * This will retrive GPU informations and persist settings.json
+ * This will retrieve GPU information and persist settings.json
  * Will be called when the extension is loaded to turn on GPU acceleration if supported
  */
 export const updateNvidiaInfo = async () => {
