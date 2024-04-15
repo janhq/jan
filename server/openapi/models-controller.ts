@@ -9,17 +9,18 @@ const normalizeData = (data: any) => {
 }
 @Route('models')
 export class ModelsController extends Controller {
-  @Tags('Models')
+  @Tags('Get all models')
   @Get()
   public async getModels(){
     return getBuilder(JanApiRouteConfiguration['models']
     ).then(normalizeData)
   }
 
+  @Tags('Find model by id')
   @Get(":id")
   public async getModelsById(
     @Path('id') id: string,
-  ){
+  ): Promise<{}>{
     return retrieveBuilder(JanApiRouteConfiguration["models"], id)
   }
 }
