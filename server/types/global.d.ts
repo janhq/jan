@@ -1,5 +1,1 @@
-export {}
-
-declare global {
-  let core: any | undefined
-}
+declare var core: any | undefined
