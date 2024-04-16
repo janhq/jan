@@ -1,5 +1,6 @@
-import { join, extname } from 'path'
 import { existsSync, readdirSync, writeFileSync, mkdirSync } from 'fs'
+import { join, extname } from 'path'
+
 import { init, installExtensions } from '@janhq/core/node'
 
 export async function setup() {
@@ -10,7 +11,6 @@ export async function setup() {
 
   console.debug(`Create app data directory at ${appDir}...`)
   if (!existsSync(appDir)) mkdirSync(appDir)
-  //@ts-ignore
   global.core = {
     // Define appPath function for app to retrieve app path globally
     appPath: () => appDir,
@@ -36,23 +36,22 @@ export async function setup() {
     mkdirSync(join(appDir, 'settings'))
     writeFileSync(
       join(appDir, 'settings', 'settings.json'),
-      JSON.stringify(
-        {
-          notify: true,
-          run_mode: 'cpu',
-          nvidia_driver: {
-            exist: false,
-            version: '',
-          },
-          cuda: {
-            exist: false,
-            version: '',
-          },
-          gpus: [],
-          gpu_highest_vram: '',
-          gpus_in_use: [],
-          is_initial: true,
-        }),
+      JSON.stringify({
+        notify: true,
+        run_mode: 'cpu',
+        nvidia_driver: {
+          exist: false,
+          version: '',
+        },
+        cuda: {
+          exist: false,
+          version: '',
+        },
+        gpus: [],
+        gpu_highest_vram: '',
+        gpus_in_use: [],
+        is_initial: true,
+      }),
       'utf-8'
     )
   }

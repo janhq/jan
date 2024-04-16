@@ -41,7 +41,7 @@
     "@types/tcp-port-used": "^1.0.4",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
-    "eslint": "^9.0.0",
+    "eslint": "8.52.0",
     "eslint-plugin-react": "^7.34.0",
     "run-script-os": "^1.1.6",
     "tsoa": "^6.2.0",
