@@ -83,7 +83,7 @@ const ModelDownloadRow: React.FC<Props> = ({
         stream: true,
         max_tokens: 2048,
         stop: ['<endofstring>'],
-        frequency_penalty: 0,
+        frequency_penalty: 0.7,
         presence_penalty: 0,
       },
       metadata: {

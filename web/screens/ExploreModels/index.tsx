@@ -73,7 +73,7 @@ const ExploreModelsScreen = () => {
                 alt="Hub Banner"
                 className="w-full object-cover"
               />
-              <div className="absolute left-1/2 top-1/2 w-1/3 -translate-x-1/2 -translate-y-1/2 space-y-2">
+              <div className="absolute left-1/2 top-1/2 w-1/2 -translate-x-1/2 -translate-y-1/2 space-y-2">
                 <div className="flex flex-row space-x-2">
                   <ModelSearch onSearchLocal={onSearchUpdate} />
                   <Button

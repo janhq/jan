@@ -182,6 +182,11 @@ export default class JanModelExtension extends ModelExtension {
       if (err instanceof InvalidHostError) {
         throw err
       }
+
+      if (repoId.startsWith('https')) {
+        throw new Error(`Cannot parse url: ${repoId}`)
+      }
+
       return `https://huggingface.co/api/models/${repoId}`
     }
   }
