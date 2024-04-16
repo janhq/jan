@@ -335,7 +335,7 @@ const updateCudaExistence = async (
 
   // Attempt to query CUDA using NVIDIA SMI
   if (!cudaExists) {
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve) => {
       exec('nvidia-smi', (error, stdout) => {
         if (!error) {
           const regex = /CUDA\s*Version:\s*(\d+\.\d+)/g

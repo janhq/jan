@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react'
 
 import {
-  Input,
   ScrollArea,
   Select,
   SelectTrigger,
@@ -13,12 +12,13 @@ import {
 } from '@janhq/uikit'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { UploadIcon, SearchIcon } from 'lucide-react'
+import { UploadIcon } from 'lucide-react'
 
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
+import ModelSearch from '../Settings/Models/ModelSearch'
+
 import ExploreModelList from './ExploreModelList'
-import { HuggingFaceModal } from './HuggingFaceModal'
 
 import {
   configuredModelsAtom,
@@ -33,7 +33,6 @@ const ExploreModelsScreen = () => {
   const [searchValue, setsearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('All Models')
 
-  const [showHuggingFaceModal, setShowHuggingFaceModal] = useState(false)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
 
   const filteredModels = configuredModels.filter((x) => {
@@ -56,6 +55,10 @@ const ExploreModelsScreen = () => {
     setImportModelStage('SELECTING_MODEL')
   }, [setImportModelStage])
 
+  const onSearchUpdate = useCallback((input: string) => {
+    setsearchValue(input)
+  }, [])
+
   return (
     <div
       className="flex h-full w-full overflow-y-auto bg-background"
@@ -63,10 +66,6 @@ const ExploreModelsScreen = () => {
     >
       <div className="h-full w-full p-4">
         <div className="h-full">
-          <HuggingFaceModal
-            open={showHuggingFaceModal}
-            onOpenChange={setShowHuggingFaceModal}
-          />
           <ScrollArea>
             <div className="relative">
               <img
@@ -74,19 +73,9 @@ const ExploreModelsScreen = () => {
                 alt="Hub Banner"
                 className="w-full object-cover"
               />
-              <div className="absolute left-1/2 top-1/2 w-1/3 -translate-x-1/2 -translate-y-1/2 space-y-2">
+              <div className="absolute left-1/2 top-1/2 w-1/2 -translate-x-1/2 -translate-y-1/2 space-y-2">
                 <div className="flex flex-row space-x-2">
-                  <div className="relative">
-                    <SearchIcon
-                      size={20}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    />
-                    <Input
-                      placeholder="Search models"
-                      className="bg-white pl-9 dark:bg-background"
-                      onChange={(e) => setsearchValue(e.target.value)}
-                    />
-                  </div>
+                  <ModelSearch onSearchLocal={onSearchUpdate} />
                   <Button
                     themes="outline"
                     className="gap-2 bg-white dark:bg-secondary"
@@ -96,52 +85,10 @@ const ExploreModelsScreen = () => {
                     Import Model
                   </Button>
                 </div>
-                {/* {experimentalFeature && (
-                  <div className="text-center">
-                    <p
-                      onClick={onHuggingFaceConverterClick}
-                      className="cursor-pointer font-semibold text-white underline"
-                    >
-                      Convert from Hugging Face
-                    </p>
-                  </div>
-                )} */}
               </div>
             </div>
             <div className="mx-auto w-4/5 py-6">
               <div className="flex items-center justify-end">
-                {/* Temporary hide tabs */}
-                {/* <div className="inline-flex overflow-hidden rounded-lg border border-border">
-                  <div
-                    className={twMerge(
-                      'flex cursor-pointer items-center space-x-2 border-r border-border px-3 py-2',
-                      tabActive === 'Model' && 'bg-secondary'
-                    )}
-                    onClick={() => setTabActive('Model')}
-                  >
-                    <Code2Icon size={20} className="text-muted-foreground" />
-                    <span className="font-semibold">Model</span>
-                  </div>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <div
-                        className={twMerge(
-                          'pointer-events-none flex cursor-pointer items-center space-x-2 px-3 py-2 text-muted-foreground',
-                          tabActive === 'Assistant' && 'bg-secondary'
-                        )}
-                        onClick={() => setTabActive('Assistant')}
-                      >
-                        <UserIcon size={20} className="text-muted-foreground" />
-                        <span className="font-semibold">Assistant</span>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={10}>
-                      <span className="font-bold">Coming Soon</span>
-                      <TooltipArrow />
-                    </TooltipContent>
-                  </Tooltip>
-                </div> */}
-
                 <Select
                   value={sortSelected}
                   onValueChange={(value) => {

@@ -57,10 +57,10 @@ const ExploreModelItem: React.FC<Props> = ({ model }) => {
                 <span className="mb-1 font-semibold text-muted-foreground">
                   Tags
                 </span>
-                <div className="mt-2 flex space-x-2">
-                  {model.metadata.tags.map((tag, i) => (
+                <div className="mt-2 flex flex-wrap gap-x-1 gap-y-1">
+                  {model.metadata.tags.map((tag: string) => (
                     <Badge
-                      key={i}
+                      key={tag}
                       themes="primary"
                       className="line-clamp-1"
                       title={tag}

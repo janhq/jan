@@ -1,6 +1,6 @@
 import React from 'react'
 
-import { SettingComponentProps } from '@janhq/core/.'
+import { SettingComponentProps } from '@janhq/core'
 
 import SettingComponentBuilder from './SettingComponent'
 
