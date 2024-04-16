@@ -1,13 +1,9 @@
 import { Controller, Route, Get, Path, Tags, Delete } from 'tsoa'
 import { deleteBuilder, getBuilder, retrieveBuilder } from '@janhq/core/dist/types/node/api/restful/helper/builder'
 import { JanApiRouteConfiguration } from '@janhq/core/dist/types/node/api/restful/helper/configuration'
-import { DeleteObjectResponse } from './entity'
-const normalizeData = (data: any) => {
-  return {
-    object: 'list',
-    data,
-  }
-}
+import { DeleteObjectResponse } from './entities'
+import { normalizeData } from './utils'
+
 @Route('models')
 export class ModelsController extends Controller {
   @Tags('Get all models')
