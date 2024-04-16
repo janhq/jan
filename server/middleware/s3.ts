@@ -28,7 +28,7 @@ export const s3 = (req: any, reply: any, done: any) => {
         // Handle customized route
         // S3FS does not handle appendFileSync
         if (route === 'appendFileSync') {
-          let result = handAppendFileSync(args)
+          const result = handAppendFileSync(args)
 
           reply.status(200).send(result)
           return

@@ -19,9 +19,7 @@ export class ModelsController extends Controller {
 
   @Tags('Find model by id')
   @Get(':id')
-  public async getModelById(
-    @Path('id') id: string
-  ): Promise<any> {
+  public async getModelById(@Path('id') id: string): Promise<any> {
     return retrieveBuilder(JanApiRouteConfiguration['models'], id)
   }
 
