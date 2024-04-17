@@ -202,7 +202,7 @@ const DropdownListSidebar = ({
         <SelectPortal>
           <SelectContent
             className={twMerge(
-              'right-2  block w-full min-w-[450px] pr-0',
+              'right-2 block w-full min-w-[450px] pr-0',
               isTabActive === 1 && '[&_.select-scroll-down-button]:hidden'
             )}
           >
@@ -278,21 +278,6 @@ const DropdownListSidebar = ({
                               )}
                             >
                               <p className="line-clamp-2 text-xs">{x.id}</p>
-                              {clipboard.copied && copyId === x.id ? (
-                                <CheckIcon
-                                  size={16}
-                                  className="flex-shrink-0 text-green-600"
-                                />
-                              ) : (
-                                <CopyIcon
-                                  size={16}
-                                  className="z-20 flex-shrink-0 cursor-pointer"
-                                  onClick={() => {
-                                    clipboard.copy(x.id)
-                                    setCopyId(x.id)
-                                  }}
-                                />
-                              )}
                             </div>
                           </div>
                           <div className="flex-shrink-0 space-x-2">
@@ -305,6 +290,27 @@ const DropdownListSidebar = ({
                           </div>
                         </div>
                       </SelectItem>
+                      <div
+                        className={twMerge(
+                          'absolute -mt-6 ml-4 flex max-w-[200px] items-center space-x-2 text-muted-foreground'
+                        )}
+                      >
+                        <p className="line-clamp-1 flex-1 text-xs text-transparent">
+                          {x.id}
+                        </p>
+                        {clipboard.copied && copyId === x.id ? (
+                          <CheckIcon size={16} className="text-green-600" />
+                        ) : (
+                          <CopyIcon
+                            size={16}
+                            className="z-20 cursor-pointer"
+                            onClick={() => {
+                              clipboard.copy(x.id)
+                              setCopyId(x.id)
+                            }}
+                          />
+                        )}
+                      </div>
                     </div>
                   ))
                 )}
