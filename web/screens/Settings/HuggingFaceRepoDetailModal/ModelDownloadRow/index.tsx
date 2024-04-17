@@ -3,7 +3,6 @@ import { useCallback, useMemo } from 'react'
 import {
   DownloadState,
   HuggingFaceRepoData,
-  InferenceEngine,
   Model,
   Quantization,
 } from '@janhq/core'
@@ -23,7 +22,10 @@ import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  defaultModelAtom,
+  downloadedModelsAtom,
+} from '@/helpers/atoms/Model.atom'
 
 type Props = {
   index: number
@@ -52,15 +54,15 @@ const ModelDownloadRow: React.FC<Props> = ({
   const isDownloaded = downloadedModels.find((md) => md.id === fileName) != null
 
   const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
+  const defaultModel = useAtomValue(defaultModelAtom)
 
   const model = useMemo(() => {
-    const promptData: string =
-      (repoData.cardData['prompt_template'] as string) ??
-      '{system_message}\n### Instruction: {prompt}\n### Response:'
+    if (!defaultModel) {
+      return undefined
+    }
+
     const model: Model = {
-      object: 'model',
-      version: '1.0',
-      format: 'gguf',
+      ...defaultModel,
       sources: [
         {
           url: downloadUrl,
@@ -70,38 +72,26 @@ const ModelDownloadRow: React.FC<Props> = ({
       id: fileName,
       name: fileName,
       created: Date.now(),
-      description: 'User self import model',
-      settings: {
-        ctx_len: 4096,
-        embedding: false,
-        prompt_template: promptData,
-        llama_model_path: 'N/A',
-      },
-      parameters: {
-        temperature: 0.7,
-        top_p: 0.95,
-        stream: true,
-        max_tokens: 2048,
-        stop: ['<endofstring>'],
-        frequency_penalty: 0.7,
-        presence_penalty: 0,
-      },
       metadata: {
         author: 'User',
         tags: repoData.tags,
         size: fileSize,
       },
-      engine: InferenceEngine.nitro,
     }
+    console.log('NamH model: ', JSON.stringify(model))
     return model
-  }, [fileName, fileSize, repoData, downloadUrl])
+  }, [fileName, fileSize, repoData, downloadUrl, defaultModel])
 
   const onAbortDownloadClick = useCallback(() => {
-    abortModelDownload(model)
+    if (model) {
+      abortModelDownload(model)
+    }
   }, [model, abortModelDownload])
 
   const onDownloadClick = useCallback(async () => {
-    downloadModel(model)
+    if (model) {
+      downloadModel(model)
+    }
   }, [model, downloadModel])
 
   const onUseModelClick = useCallback(async () => {
@@ -119,6 +109,10 @@ const ModelDownloadRow: React.FC<Props> = ({
     setMainViewState,
     setHfImportingStage,
   ])
+
+  if (!model) {
+    return null
+  }
 
   return (
     <div className="flex w-[662px] flex-row items-center justify-between space-x-1 rounded border border-border p-3">

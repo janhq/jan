@@ -46,6 +46,8 @@ export const removeDownloadedModelAtom = atom(
 
 export const configuredModelsAtom = atom<Model[]>([])
 
+export const defaultModelAtom = atom<Model | undefined>(undefined)
+
 /// TODO: move this part to another atom
 // store the paths of the models that are being imported
 export const importingModelsAtom = atom<ImportingModel[]>([])

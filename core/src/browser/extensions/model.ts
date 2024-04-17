@@ -32,4 +32,5 @@ export abstract class ModelExtension extends BaseExtension implements ModelInter
   abstract importModels(models: ImportingModel[], optionType: OptionType): Promise<void>
   abstract updateModelInfo(modelInfo: Partial<Model>): Promise<Model>
   abstract fetchHuggingFaceRepoData(repoId: string): Promise<HuggingFaceRepoData>
+  abstract getDefaultModel(): Promise<Model>
 }
