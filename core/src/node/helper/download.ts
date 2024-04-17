@@ -8,7 +8,11 @@ export class DownloadManager {
 
   public static instance: DownloadManager = new DownloadManager()
 
+  // store the download information with key is model id
   public downloadProgressMap: Record<string, DownloadState> = {}
+
+  // store the download infomation with key is normalized file path
+  public downloadInfo: Record<string, DownloadState> = {}
 
   constructor() {
     if (DownloadManager.instance) {

@@ -29,6 +29,15 @@ const downloadFile: (downloadRequest: DownloadRequest, network?: NetworkConfig) 
 ) => globalThis.core?.api?.downloadFile(downloadRequest, network)
 
 /**
+ * Get unit in bytes for a remote file.
+ *
+ * @param url - The url of the file.
+ * @returns {Promise<number>} - A promise that resolves with the file size.
+ */
+const getFileSize: (url: string) => Promise<number> = (url: string) =>
+  globalThis.core.api?.getFileSize(url)
+
+/**
  * Aborts the download of a specific file.
  * @param {string} fileName - The name of the file whose download is to be aborted.
  * @returns {Promise<any>} A promise that resolves when the download has been aborted.
@@ -122,6 +131,7 @@ const systemInformation: () => Promise<SystemInformation> = () =>
  */
 const showToast: (title: string, message: string) => void = (title, message) =>
   globalThis.core.api?.showToast(title, message)
+
 /**
  * Register extension point function type definition
  */
@@ -150,5 +160,6 @@ export {
   getUserHomePath,
   systemInformation,
   showToast,
+  getFileSize,
   FileStat,
 }

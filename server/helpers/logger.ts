@@ -14,22 +14,45 @@ export class Logger implements FastifyBaseLogger {
 
   silent = () => {}
 
-  info = function (msg: any) {
-    log(msg)
+  info = (obj?: any, msg?: string, ...args: any[]) => {
+    if (obj?.res?.raw?.statusCode || obj?.req?.url) {
+      log(
+        `[SERVER]::${JSON.stringify({
+          level: obj?.level,
+          time: obj?.time,
+          hostname: obj?.hostname,
+          reqId: obj?.req?.id ?? obj?.res?.request?.id,
+          res: {
+            statusCode: obj?.res?.raw?.statusCode,
+          },
+          req: {
+            method: obj?.req?.method,
+            url: obj?.req?.url,
+            path: obj?.req?.path,
+            hostname: obj?.req?.hostname,
+            remoteAddress: obj?.req?.remoteAddress,
+            remotePort: obj?.req?.remotePort,
+          },
+          msg,
+          responseTime: obj?.responseTime,
+          ...args,
+        })}`
+      )
+    }
   }
-  error = function (msg: any) {
-    log(msg)
+  error = function (message: any) {
+    log(`[SERVER]::${JSON.stringify(message)}`)
   }
-  debug = function (msg: any) {
-    log(msg)
+  debug = function (message: any) {
+    log(`[SERVER]::${JSON.stringify(message)}`)
   }
-  fatal = function (msg: any) {
-    log(msg)
+  fatal = function (message: any) {
+    log(`[SERVER]::${JSON.stringify(message)}`)
   }
-  warn = function (msg: any) {
-    log(msg)
+  warn = function (message: any) {
+    log(`[SERVER]::${JSON.stringify(message)}`)
   }
-  trace = function (msg: any) {
-    log(msg)
+  trace = function (message: any) {
+    log(`[SERVER]::${JSON.stringify(message)}`)
   }
 }

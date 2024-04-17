@@ -65,7 +65,9 @@ const Sidebar: React.FC = () => {
       modelEngineParams,
       selectedModel
     )
-    return componentDataEngineSetting.filter((x) => x.key !== 'prompt_template')
+    return componentDataEngineSetting.filter(
+      (x) => x.key !== 'prompt_template' && x.key !== 'embedding'
+    )
   }, [activeModelParams, selectedModel])
 
   const promptTemplateSettings = useMemo(() => {

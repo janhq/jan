@@ -26,7 +26,6 @@
   "dependencies": {
     "@janhq/core": "file:../../core",
     "fetch-retry": "^5.0.6",
-    "path-browserify": "^1.0.1",
     "rxjs": "^7.8.1",
     "ulidx": "^2.3.0"
   },

@@ -20,10 +20,7 @@ export default [
       replace({
         preventAssignment: true,
         DEFAULT_MODEL: JSON.stringify(defaultModelJson),
-        MODULE_PATH: JSON.stringify(
-          `${packageJson.name}/${packageJson.module}`
-        ),
-        VERSION: JSON.stringify(packageJson.version),
+        NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
       }),
       // Allow json resolution
       json(),

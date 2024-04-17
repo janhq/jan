@@ -1,5 +1,12 @@
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
-import { GpuSetting, ImportingModel, Model, ModelInterface, OptionType } from '../../types'
+import {
+  GpuSetting,
+  HuggingFaceRepoData,
+  ImportingModel,
+  Model,
+  ModelInterface,
+  OptionType,
+} from '../../types'
 
 /**
  * Model extension for managing models.
@@ -24,4 +31,5 @@ export abstract class ModelExtension extends BaseExtension implements ModelInter
   abstract getConfiguredModels(): Promise<Model[]>
   abstract importModels(models: ImportingModel[], optionType: OptionType): Promise<void>
   abstract updateModelInfo(modelInfo: Partial<Model>): Promise<Model>
+  abstract fetchHuggingFaceRepoData(repoId: string): Promise<HuggingFaceRepoData>
 }

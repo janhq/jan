@@ -2,7 +2,7 @@ import { PropsWithChildren, useCallback, useEffect } from 'react'
 
 import React from 'react'
 
-import { DownloadEvent, events, DownloadState } from '@janhq/core'
+import { DownloadEvent, events, DownloadState, ModelEvent } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from '@/hooks/useDownloadState'
@@ -64,6 +64,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       if (state.downloadType !== 'extension') {
         setDownloadState(state)
       }
+      events.emit(ModelEvent.OnModelsUpdate, {})
     },
     [setDownloadState]
   )

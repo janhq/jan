@@ -25,11 +25,6 @@ export { AssistantExtension } from './assistant'
 export { ModelExtension } from './model'
 
 /**
- * Hugging Face extension for converting HF models to GGUF.
- */
-export { HuggingFaceExtension } from './huggingface'
-
-/**
  * Base AI Engines.
  */
 export * from './engines'

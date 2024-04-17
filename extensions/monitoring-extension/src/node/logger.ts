@@ -126,6 +126,10 @@ export class FileLogger extends Logger {
 
 const writeLog = (message: string, logPath: string) => {
   if (!fs.existsSync(logPath)) {
+    const logDirectory = path.join(getJanDataFolderPath(), 'logs')
+    if (!fs.existsSync(logDirectory)) {
+      fs.mkdirSync(logDirectory)
+    }
     fs.writeFileSync(logPath, message)
   } else {
     const logFile = fs.createWriteStream(logPath, {

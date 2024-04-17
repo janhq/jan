@@ -132,7 +132,10 @@ const LocalServerScreen = () => {
   }, [handleChangePrefix, prefix])
 
   const engineSettings = useMemo(
-    () => componentDataEngineSetting.filter((x) => x.key !== 'prompt_template'),
+    () =>
+      componentDataEngineSetting.filter(
+        (x) => x.key !== 'prompt_template' && x.key !== 'embedding'
+      ),
     [componentDataEngineSetting]
   )
 

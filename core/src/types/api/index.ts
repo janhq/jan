@@ -32,7 +32,6 @@ export enum AppRoute {
   startServer = 'startServer',
   stopServer = 'stopServer',
   log = 'log',
-  logServer = 'logServer',
   systemInformation = 'systemInformation',
   showToast = 'showToast',
 }
@@ -52,6 +51,7 @@ export enum DownloadRoute {
   pauseDownload = 'pauseDownload',
   resumeDownload = 'resumeDownload',
   getDownloadProgress = 'getDownloadProgress',
+  getFileSize = 'getFileSize',
 }
 
 export enum DownloadEvent {

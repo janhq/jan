@@ -63,19 +63,23 @@ export default function RowModel(props: RowModelProps) {
 
   return (
     <tr className="relative border-b border-border last:border-none">
-      <td className="px-6 py-4 font-bold">{props.data.name}</td>
-      <td className="px-6 py-4 font-bold">{props.data.id}</td>
-      <td className="px-6 py-4">
+      <td className="max-w-[200px] p-4 font-bold" title={props.data.name}>
+        <p className="line-clamp-2">{props.data.name}</p>
+      </td>
+      <td className="max-w-[200px] p-4 font-bold" title={props.data.id}>
+        <p className="line-clamp-2">{props.data.id}</p>
+      </td>
+      <td className="p-4">
         <Badge themes="secondary">
           {props.data.metadata.size
             ? toGibibytes(props.data.metadata.size)
             : '-'}
         </Badge>
       </td>
-      <td className="px-6 py-4">
+      <td className="p-4">
         <Badge themes="secondary">v{props.data.version}</Badge>
       </td>
-      <td className="px-6 py-4">
+      <td className="p-4">
         {isRemoteModel ? (
           <Badge
             themes="success"
@@ -112,7 +116,7 @@ export default function RowModel(props: RowModelProps) {
           </Badge>
         )}
       </td>
-      <td className="px-6 py-4 text-center">
+      <td className="p-4 text-center">
         {!isRemoteModel && (
           <div
             className="cursor-pointer"
