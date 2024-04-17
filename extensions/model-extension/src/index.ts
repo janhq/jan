@@ -551,7 +551,7 @@ export default class JanModelExtension extends ModelExtension {
     return model
   }
 
-  private async getDefaultModel(): Promise<Model> {
+  override async getDefaultModel(): Promise<Model> {
     const defaultModel = DEFAULT_MODEL as Model
     return defaultModel
   }

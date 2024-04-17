@@ -13,7 +13,7 @@
   "created": 0,
   "description": "User self import model",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 2048,
     "embedding": false,
     "prompt_template": "{system_message}\n### Instruction: {prompt}\n### Response:",
     "llama_model_path": "N/A"
