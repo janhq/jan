@@ -6,7 +6,7 @@ XPStyle on
 ; Uninstall process execution
     ${ifNot} ${isUpdated}
         # If you tick Delete fixed folder
-        MessageBox MB_OKCANCEL "Do you also want to delete jan data at $PROFILE\jan?" IDOK label_ok  IDCANCEL  label_cancel
+        MessageBox MB_OKCANCEL "Do you also want to delete the DEFAULT Jan data folder at $PROFILE\jan?" IDOK label_ok  IDCANCEL  label_cancel
         label_ok:
             # Delete user data folder
             RMDir /r $PROFILE\jan
