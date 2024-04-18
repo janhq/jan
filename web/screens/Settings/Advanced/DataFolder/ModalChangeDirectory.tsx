@@ -36,7 +36,15 @@ const ModalChangeDirectory: React.FC<Props> = ({
         <p className="text-muted-foreground">
           Are you sure you want to relocate Jan data folder to{' '}
           <span className="font-medium text-foreground">{destinationPath}</span>
-          ? A restart will be required afterward.
+          ? <br /> A restart is required afterward, and the original folder
+          remains intact.
+          <br />
+          {isWindows && (
+            <span>
+              Note that Jan will not erase the new Jan data folder upon future
+              uninstallation.
+            </span>
+          )}
         </p>
         <ModalFooter>
           <div className="flex gap-x-2">
