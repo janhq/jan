@@ -1,7 +1,7 @@
-import ScrollToBottom from 'react-scroll-to-bottom'
-
 import { MessageStatus } from '@janhq/core'
 import { useAtomValue } from 'jotai'
+
+import ListContainer from '@/containers/ListContainer'
 
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 
@@ -26,7 +26,7 @@ const ChatBody: React.FC = () => {
   if (messages.length === 0) return <EmptyThread />
 
   return (
-    <ScrollToBottom className="flex h-full w-full flex-col">
+    <ListContainer>
       {messages.map((message, index) => (
         <div key={message.id}>
           {message.status !== MessageStatus.Error &&
@@ -43,7 +43,7 @@ const ChatBody: React.FC = () => {
         </div>
       ))}
       {loadModelError && <LoadModelError />}
-    </ScrollToBottom>
+    </ListContainer>
   )
 }
 
