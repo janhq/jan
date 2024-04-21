@@ -19,8 +19,8 @@ import hljs from 'highlight.js'
 import { useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
-
 import { markedHighlight } from 'marked-highlight'
+import markedKatex from 'marked-katex-extension'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -99,6 +99,8 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       },
     }
   )
+
+  marked.use(markedKatex({ throwOnError: false }))
 
   const { onViewFile, onViewFileContainer } = usePath()
   const parsedText = marked.parse(text)
@@ -297,7 +299,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           ) : (
             <div
               className={twMerge(
-                'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
+                'message max-width-[100%] flex flex-grow flex-col gap-y-2 overflow-auto text-[15px] font-normal leading-relaxed',
                 isUser
                   ? 'whitespace-pre-wrap break-words'
                   : 'rounded-xl bg-secondary p-4'
