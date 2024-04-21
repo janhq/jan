@@ -34,13 +34,10 @@ export default function useUpdateModelParameters() {
 
   const updateModelParameter = useCallback(
     async (thread: Thread, settings: UpdateModelParameter) => {
-      const params = settings.modelId
-        ? settings.params
-        : { ...activeModelParams, ...settings.params }
-
-      const updatedModelParams: ModelParams = {
-        ...params,
-      }
+      const toUpdateSettings = processStopWords(settings.params ?? {})
+      const updatedModelParams = settings.modelId
+        ? toUpdateSettings
+        : { ...activeModelParams, ...toUpdateSettings }
 
       // update the state
       setThreadModelParams(thread.id, updatedModelParams)
@@ -72,6 +69,14 @@ export default function useUpdateModelParameters() {
     },
     [activeModelParams, selectedModel, setThreadModelParams]
   )
+
+  const processStopWords = (params: ModelParams): ModelParams => {
+    if ('stop' in params && typeof params['stop'] === 'string') {
+      // Input as string but stop words accept an array of strings (space as separator)
+      params['stop'] = (params['stop'] as string).split(' ')
+    }
+    return params
+  }
 
   return { updateModelParameter }
 }
