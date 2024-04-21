@@ -242,10 +242,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     const msgId = ulid()
     const messages: ChatCompletionMessage[] = [
       {
-        role: ChatCompletionRole.System,
-        content: `The conversation below is for a text summarization, user asks assistant to summarize a text and assistant should response in just less than ${maxWordForThreadTitle} words`,
-      },
-      {
         role: ChatCompletionRole.User,
         content: summarizeFirstPrompt,
       },
