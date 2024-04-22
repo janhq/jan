@@ -853,7 +853,7 @@ export default class JanModelExtension extends ModelExtension {
     if (config.max_sequence_length) return config.max_sequence_length
     if (config.max_position_embeddings) return config.max_position_embeddings
     if (config.n_ctx) return config.n_ctx
-    return 4096
+    return 2048
   }
 
   /**
@@ -883,7 +883,7 @@ export default class JanModelExtension extends ModelExtension {
     } catch (err) {
       log(`[Conversion]::Debug: Error using hf-to-gguf.py, trying convert.py`)
 
-      let ctx = 4096
+      let ctx = 2048
       try {
         const config = await fs.readFileSync(
           await joinPath([modelDirPath, 'config.json']),

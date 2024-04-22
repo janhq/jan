@@ -31,7 +31,7 @@ export const getConfigurationsData = (
               componentSetting.controllerProps.max =
                 selectedModel?.settings.ctx_len ||
                 componentSetting.controllerProps.max ||
-                4096
+                2048
               break
           }
         }
