@@ -12,7 +12,7 @@
     "description": "The latest model from MetaAI",
     "format": "gguf",
     "settings": {
-      "ctx_len": 4096,
+      "ctx_len": 8192,
       "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
       "llama_model_path": "Meta-Llama-3-8B-Instruct-Q4_K_M.gguf"
     },
