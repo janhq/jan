@@ -31,6 +31,9 @@ export abstract class OAIEngine extends AIEngine {
   // The loaded model instance
   loadedModel: Model | undefined
 
+  // Tranform the message
+  transformMessage?: Function
+
   /**
    * On extension load, subscribe to events.
    */
@@ -78,10 +81,19 @@ export abstract class OAIEngine extends AIEngine {
     }
 
     const header = await this.headers()
+    let requestBody = {
+      messages: data.messages ?? [],
+      model: model.id,
+      stream: true,
+      ...model.parameters,
+    }
+    if (this.transformMessage){
+      requestBody = this.transformMessage(requestBody);
+    }
 
     requestInference(
       this.inferenceUrl,
-      data.messages ?? [],
+      JSON.stringify(requestBody),
       model,
       this.controller,
       header

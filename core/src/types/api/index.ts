@@ -1,3 +1,5 @@
+import { ChatCompletionMessage } from '../inference'
+
 /**
  * Native Route APIs
  * @description Enum of all the routes exposed by the app
@@ -154,3 +156,8 @@ export const APIEvents = [
   ...Object.values(DownloadEvent),
   ...Object.values(LocalImportModelEvent),
 ]
+export type MessageType = {
+  messages: ChatCompletionMessage[];
+  model:string;
+  stream: Boolean;
+}

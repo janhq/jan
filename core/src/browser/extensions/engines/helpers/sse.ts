@@ -7,7 +7,7 @@ import { ErrorCode, ModelRuntimeParams } from '../../../../types'
  */
 export function requestInference(
   inferenceUrl: string,
-  recentMessages: any[],
+  requestBody:string,
   model: {
     id: string
     parameters: ModelRuntimeParams
@@ -16,12 +16,6 @@ export function requestInference(
   headers?: HeadersInit
 ): Observable<string> {
   return new Observable((subscriber) => {
-    const requestBody = JSON.stringify({
-      messages: recentMessages,
-      model: model.id,
-      stream: true,
-      ...model.parameters,
-    })
     fetch(inferenceUrl, {
       method: 'POST',
       headers: {
