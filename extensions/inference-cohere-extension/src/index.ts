@@ -7,13 +7,22 @@
  */
 
 import { RemoteOAIEngine, SettingComponentProps } from '@janhq/core'
+import { MessageType } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
 declare const MODELS: Array<any>
 
 enum Settings {
-  apiKey = 'openai-api-key',
+  apiKey = 'cohere-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',
+}
+enum RoleType {
+  user="USER",
+  chatbot="CHATBOT"
+}
+type CohereMessageType = {
+  chat_history?: Array<{role:RoleType,message:string}>,
+  message?: string,
 }
 
 /**
@@ -21,9 +30,9 @@ enum Settings {
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
+export default class JanInferenceCohereExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'openai'
+  provider: string = 'cohere'
 
   override async onLoad(): Promise<void> {
     super.onLoad()
@@ -62,5 +71,28 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
         this.inferenceUrl = value
       }
     }
+  }
+
+  transformMessage =(message:MessageType):CohereMessageType=>{
+    if (message.messages.length===0){
+      return {}
+    }
+    const convertedData = {
+      chat_history: [],
+      message: ""
+    };
+    message.messages.forEach((item, index) => {
+      // Assign the message of the last item to the `message` property
+      if (index === message.messages.length - 1) {
+        convertedData.message = item.content as string;
+        return;
+      }
+      if (item.role === "user") {
+        convertedData.chat_history.push({ role: "USER", message: item.content });
+      } else if (item.role === "system") {
+        convertedData.chat_history.push({ role: "CHATBOT", message: item.content });
+      }
+    });
+    return convertedData;
   }
 }

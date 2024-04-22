@@ -1,4 +1,4 @@
-# OpenAI Engine Extension
+# Cohere Engine Extension
 
 Created using Jan extension example
 
