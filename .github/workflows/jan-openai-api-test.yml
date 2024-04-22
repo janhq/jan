@@ -1,0 +1,97 @@
+name: Jan Openai API collection test
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - dev
+      - release/**
+    paths:
+      - "docs/**"
+
+  pull_request:
+    branches:
+      - main
+      - dev
+      - release/**
+    paths:
+      - "docs/**"
+
+jobs:
+  test:
+    runs-on: [self-hosted, Linux, ubuntu-desktop]
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Installing node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: "Cleanup cache"
+        continue-on-error: true
+        run: |
+          rm -rf ~/jan
+          make clean
+
+      - name: install dependencies
+        run: |
+          npm install -g @stoplight/prism-cli
+
+      - name: create python virtual environment and run test
+        run: |
+          python3 -m venv /tmp/jan
+          source /tmp/jan/bin/activate
+          # Clone openai-api-python repo
+          OPENAI_API_PYTHON_TAG=$(cat docs/openapi/version.txt)
+          git clone https://github.com/openai/openai-python.git
+          cd openai-python
+          git checkout $OPENAI_API_PYTHON_TAG
+
+          python3 -m venv /tmp/jan
+          source /tmp/jan/bin/activate
+          pip install -r requirements-dev.lock
+          pip install pytest-reportportal pytest-html
+          # Create pytest.ini file with content
+          echo "[pytest]" > pytest.ini
+          echo "rp_api_key = ${{ secrets.REPORT_PORTAL_API_KEY }}" >> pytest.ini
+          echo "rp_endpoint = ${{ secrets.REPORT_PORTAL_URL_PYTEST }}" >> pytest.ini
+          echo "rp_project = openai-api-test" >> pytest.ini
+          echo "rp_launch = CollectionTest" >> pytest.ini
+          echo "rp_launch_description = 'Smoke test'" >> pytest.ini
+          cat pytest.ini
+
+          echo "def pytest_collection_modifyitems(session, config, items):" >> tests/conftest.py
+          echo "    for item in items:" >> tests/conftest.py
+          echo "        filename = item.location[0]" >> tests/conftest.py
+          echo "        relpath = os.path.relpath(filename)" >> tests/conftest.py
+          echo "        item.add_marker(pytest.mark.reportportal(filename=relpath))" >> tests/conftest.py
+          
+          cat tests/conftest.py
+
+          # start mock server and run test then stop mock server
+          prism mock ../docs/openapi/jan.yaml > prism.log & prism_pid=$! && pytest --reportportal --html=report.html && kill $prism_pid
+          deactivate
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: report
+          path: |
+            openai-python/report.html
+            openai-python/assets
+            openai-python/prism.log
+
+      - name: clean up
+        if: always()
+        run: |
+          rm -rf /tmp/jan
+          rm -rf openai-python
+          rm -rf report.html
+          rm -rf report.zip
+  
+
