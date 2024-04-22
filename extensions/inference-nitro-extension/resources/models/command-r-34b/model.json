@@ -8,7 +8,7 @@
     "id": "command-r-34b",
     "object": "model",
     "name": "Command-R v01 34B Q4",
-    "version": "1.1",
+    "version": "1.2",
     "description": "C4AI Command-R developed by CohereAI is optimized for a variety of use cases including reasoning, summarization, and question answering.",
     "format": "gguf",
     "settings": {
