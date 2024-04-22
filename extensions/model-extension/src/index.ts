@@ -196,7 +196,12 @@ export default class JanModelExtension extends ModelExtension {
     console.debug('sanitizedUrl', sanitizedUrl)
 
     const res = await fetch(sanitizedUrl)
-    const data = (await res.json()) as HuggingFaceRepoData
+    const response = await res.json()
+    if (response['error'] != null) {
+      throw new Error(response['error'])
+    }
+
+    const data = response as HuggingFaceRepoData
 
     if (data.tags.indexOf('gguf') === -1) {
       throw new NotSupportedModelError(
