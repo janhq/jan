@@ -1,7 +1,6 @@
 import {
   GpuSetting,
   MonitoringExtension,
-  MonitoringInterface,
   OperatingSystemInfo,
   executeOnMain,
 } from '@janhq/core'

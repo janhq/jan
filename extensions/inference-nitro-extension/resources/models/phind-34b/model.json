@@ -1,14 +1,14 @@
 {
   "sources": [
     {
-      "filename": "phind-codellama-34b-v2.Q4_K_M.gguf",
+      "filename": "phind-codellama-34b-v2.Q5_K_M.gguf",
       "url": "https://huggingface.co/TheBloke/Phind-CodeLlama-34B-v2-GGUF/resolve/main/phind-codellama-34b-v2.Q5_K_M.gguf"
     }
   ],
   "id": "phind-34b",
   "object": "model",
   "name": "Phind 34B Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Phind 34B is the best Open-source coding model.",
   "format": "gguf",
   "settings": {

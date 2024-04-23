@@ -36,6 +36,7 @@ const trinityv127bJson = require('./resources/models/trinity-v1.2-7b/model.json'
 const vistral7bJson = require('./resources/models/vistral-7b/model.json')
 const wizardcoder13bJson = require('./resources/models/wizardcoder-13b/model.json')
 const yi34bJson = require('./resources/models/yi-34b/model.json')
+const llama3Json = require('./resources/models/llama3-8b-instruct/model.json')
 
 export default [
   {
@@ -79,6 +80,7 @@ export default [
           vistral7bJson,
           wizardcoder13bJson,
           yi34bJson,
+          llama3Json
         ]),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),

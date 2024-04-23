@@ -54,6 +54,13 @@
         "nsis"
       ]
     },
+    "nsis": {
+      "oneClick": true,
+      "installerIcon": "icons/icon.ico",
+      "uninstallerIcon": "icons/icon.ico",
+      "include": "scripts/uninstaller.nsh",
+      "deleteAppDataOnUninstall": true
+    },
     "artifactName": "jan-${os}-${arch}-${version}.${ext}"
   },
   "scripts": {

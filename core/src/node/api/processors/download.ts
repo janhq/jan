@@ -66,6 +66,7 @@ export class Downloader implements Processor {
       localPath: normalizedPath,
     }
     DownloadManager.instance.downloadProgressMap[modelId] = initialDownloadState
+    DownloadManager.instance.downloadInfo[normalizedPath] = initialDownloadState
 
     if (downloadRequest.downloadType === 'extension') {
       observer?.(DownloadEvent.onFileDownloadUpdate, initialDownloadState)
@@ -118,19 +119,42 @@ export class Downloader implements Processor {
     if (rq) {
       DownloadManager.instance.networkRequests[fileName] = undefined
       rq?.abort()
-    } else {
-      observer?.(DownloadEvent.onFileDownloadError, {
-        fileName,
-        error: 'aborted',
-      })
     }
+
+    const downloadInfo = DownloadManager.instance.downloadInfo[fileName]
+    observer?.(DownloadEvent.onFileDownloadError, {
+      ...downloadInfo,
+      fileName,
+      error: 'aborted',
+    })
   }
 
-  resumeDownload(observer: any, fileName: any) {
+  resumeDownload(_observer: any, fileName: any) {
     DownloadManager.instance.networkRequests[fileName]?.resume()
   }
 
-  pauseDownload(observer: any, fileName: any) {
+  pauseDownload(_observer: any, fileName: any) {
     DownloadManager.instance.networkRequests[fileName]?.pause()
+  }
+
+  async getFileSize(_observer: any, url: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const request = require('request')
+      request(
+        {
+          url,
+          method: 'HEAD',
+        },
+        function (err: any, response: any) {
+          if (err) {
+            console.error('Getting file size failed:', err)
+            reject(err)
+          } else {
+            const size: number = response.headers['content-length'] ?? -1
+            resolve(size)
+          }
+        }
+      )
+    })
   }
 }

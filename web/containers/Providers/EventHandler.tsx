@@ -34,6 +34,9 @@ import {
   updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
+const maxWordForThreadTitle = 10
+const defaultThreadTitle = 'New Thread'
+
 export default function EventHandler({ children }: { children: ReactNode }) {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
@@ -90,34 +93,64 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       }
 
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
+      if (!thread) {
+        console.warn(
+          `Failed to update title for thread ${message.thread_id}: Thread not found!`
+        )
+        return
+      }
+
       const messageContent = message.content[0]?.text?.value
+      if (!messageContent) {
+        console.warn(
+          `Failed to update title for thread ${message.thread_id}: Responded content is null!`
+        )
+        return
+      }
 
       // The thread title should not be updated if the message is less than 10 words
       // And no new line character is present
       // And non-alphanumeric characters should be removed
-      if (thread && messageContent && !messageContent.includes('\n')) {
-        // Remove non-alphanumeric characters
-        const cleanedMessageContent = messageContent
-          .replace(/[^a-z0-9\s]/gi, '')
-          .trim()
-        // Split the message into words
-        const words = cleanedMessageContent.split(' ')
-        // Check if the message is less than 10 words
-        if (words.length < 10) {
+      if (messageContent.includes('\n')) {
+        console.warn(
+          `Failed to update title for thread ${message.thread_id}: Title can't contain new line character!`
+        )
+        return
+      }
+
+      // Remove non-alphanumeric characters
+      const cleanedMessageContent = messageContent
+        .replace(/[^a-z0-9\s]/gi, '')
+        .trim()
+
+      // Split the message into words
+      const words = cleanedMessageContent.split(' ')
+
+      if (words.length >= maxWordForThreadTitle) {
+        console.warn(
+          `Failed to update title for thread ${message.thread_id}: Title can't be greater than ${maxWordForThreadTitle} words!`
+        )
+        return
+      }
+
+      const updatedThread: Thread = {
+        ...thread,
+
+        title: cleanedMessageContent,
+        metadata: thread.metadata,
+      }
+
+      extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.saveThread({
+          ...updatedThread,
+        })
+        .then(() => {
           // Update the Thread title with the response of the inference on the 1st prompt
           updateThread({
-            ...thread,
-            title: cleanedMessageContent,
-            metadata: thread.metadata,
+            ...updatedThread,
           })
-
-          extensionManager
-            .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-            ?.saveThread({
-              ...thread,
-            })
-        }
-      }
+        })
     },
     [updateThread]
   )
@@ -142,33 +175,32 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       setIsGeneratingResponse(false)
 
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
-      if (thread) {
-        const messageContent = message.content[0]?.text?.value
-        const metadata = {
-          ...thread.metadata,
-          ...(messageContent && { lastMessage: messageContent }),
-        }
+      if (!thread) return
+      const messageContent = message.content[0]?.text?.value
+      const metadata = {
+        ...thread.metadata,
+        ...(messageContent && { lastMessage: messageContent }),
+      }
 
-        updateThread({
+      updateThread({
+        ...thread,
+        metadata,
+      })
+
+      extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.saveThread({
           ...thread,
           metadata,
         })
 
-        extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.saveThread({
-            ...thread,
-            metadata,
-          })
+      // If this is not the summary of the Thread, don't need to add it to the Thread
+      extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.addNewMessage(message)
 
-        // If this is not the summary of the Thread, don't need to add it to the Thread
-        extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.addNewMessage(message)
-
-        // Attempt to generate the title of the Thread when needed
-        generateThreadTitle(message, thread)
-      }
+      // Attempt to generate the title of the Thread when needed
+      generateThreadTitle(message, thread)
     },
     [setIsGeneratingResponse, updateMessage, updateThread, updateThreadWaiting]
   )
@@ -181,6 +213,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           break
         default:
           updateThreadMessage(message)
+          break
       }
     },
     [updateThreadMessage, updateThreadTitle]
@@ -188,54 +221,52 @@ export default function EventHandler({ children }: { children: ReactNode }) {
 
   const generateThreadTitle = (message: ThreadMessage, thread: Thread) => {
     // If this is the first ever prompt in the thread
-    if (
-      thread &&
-      thread.title?.trim() === 'New Thread' &&
-      activeModelRef.current
-    ) {
-      // This is the first time message comes in on a new thread
-      //  Summarize the first message, and make that the title of the Thread
-      // 1. Get the summary of the first prompt using whatever engine user is currently using
-      const threadMessages = messagesRef?.current
-
-      if (!threadMessages || threadMessages.length === 0) return
-
-      const summarizeFirstPrompt = `Summarize in a 5-word Title. Give the title only. "${threadMessages[0].content[0].text.value}"`
-      // Prompt: Given this query from user {query}, return to me the summary in 5 words as the title
-      const msgId = ulid()
-      const messages: ChatCompletionMessage[] = [
-        {
-          role: ChatCompletionRole.System,
-          content:
-            'The conversation below is for a text summarization, user asks assistant to summarize a text and assistant should response in just less than 10 words',
-        },
-        {
-          role: ChatCompletionRole.User,
-          content: summarizeFirstPrompt,
-        },
-      ]
-
-      const messageRequest: MessageRequest = {
-        id: msgId,
-        threadId: message.thread_id,
-        type: MessageRequestType.Summary,
-        messages,
-        model: {
-          ...activeModelRef.current,
-          parameters: {
-            stream: false,
-          },
-        },
-      }
-
-      // 2. Update the title with the result of the inference
-      setTimeout(() => {
-        const engine = EngineManager.instance().get(
-          messageRequest.model?.engine ?? activeModelRef.current?.engine ?? ''
-        )
-        engine?.inference(messageRequest)
-      }, 1000)
+    if (thread.title?.trim() !== defaultThreadTitle) {
+      return
     }
+
+    if (!activeModelRef.current) {
+      return
+    }
+
+    // This is the first time message comes in on a new thread
+    // Summarize the first message, and make that the title of the Thread
+    // 1. Get the summary of the first prompt using whatever engine user is currently using
+    const threadMessages = messagesRef?.current
+
+    if (!threadMessages || threadMessages.length === 0) return
+
+    const summarizeFirstPrompt = `Summarize in a ${maxWordForThreadTitle}-word Title. Give the title only. "${threadMessages[0].content[0].text.value}"`
+
+    // Prompt: Given this query from user {query}, return to me the summary in 10 words as the title
+    const msgId = ulid()
+    const messages: ChatCompletionMessage[] = [
+      {
+        role: ChatCompletionRole.User,
+        content: summarizeFirstPrompt,
+      },
+    ]
+
+    const messageRequest: MessageRequest = {
+      id: msgId,
+      threadId: message.thread_id,
+      type: MessageRequestType.Summary,
+      messages,
+      model: {
+        ...activeModelRef.current,
+        parameters: {
+          stream: false,
+        },
+      },
+    }
+
+    // 2. Update the title with the result of the inference
+    setTimeout(() => {
+      const engine = EngineManager.instance().get(
+        messageRequest.model?.engine ?? activeModelRef.current?.engine ?? ''
+      )
+      engine?.inference(messageRequest)
+    }, 1000)
   }
 
   useEffect(() => {
@@ -244,14 +275,13 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       events.on(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
       events.on(ModelEvent.OnModelStopped, onModelStopped)
     }
-  }, [onNewMessageResponse, onMessageResponseUpdate, onModelStopped])
 
-  useEffect(() => {
     return () => {
       events.off(MessageEvent.OnMessageResponse, onNewMessageResponse)
       events.off(MessageEvent.OnMessageUpdate, onMessageResponseUpdate)
       events.off(ModelEvent.OnModelStopped, onModelStopped)
     }
   }, [onNewMessageResponse, onMessageResponseUpdate, onModelStopped])
+
   return <Fragment>{children}</Fragment>
 }

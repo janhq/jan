@@ -35,7 +35,6 @@
     "@langchain/community": "0.0.13",
     "hnswlib-node": "^1.4.2",
     "langchain": "^0.0.214",
-    "path-browserify": "^1.0.1",
     "pdf-parse": "^1.1.1",
     "ts-loader": "^9.5.0"
   },

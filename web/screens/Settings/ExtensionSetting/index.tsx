@@ -4,7 +4,7 @@ import {
   BaseExtension,
   InstallationState,
   SettingComponentProps,
-} from '@janhq/core/.'
+} from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
 
