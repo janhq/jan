@@ -63,11 +63,11 @@ const runModel = async (modelId: string, settingParams?: ModelSettingParams): Pr
 
   const nitroResourceProbe = await getSystemResourceInfo()
   const nitroModelSettings: NitroModelSettings = {
+    // This is critical and requires real CPU physical core count (or performance core)
+    cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
     ...modelMetadata.settings,
     ...settingParams,
     llama_model_path: modelBinaryPath,
-    // This is critical and requires real CPU physical core count (or performance core)
-    cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
     ...(modelMetadata.settings.mmproj && {
       mmproj: join(modelFolderFullPath, modelMetadata.settings.mmproj),
     }),
