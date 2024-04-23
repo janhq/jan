@@ -35,7 +35,7 @@ export abstract class OAIEngine extends AIEngine {
   transformPayload?: Function
 
   // Cohere flag to decide whether to transform response
-  isCohere?: Boolean
+  isCohere?: boolean
 
   /**
    * On extension load, subscribe to events.
