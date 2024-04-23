@@ -13,7 +13,8 @@ export function requestInference(
     parameters: ModelRuntimeParams
   },
   controller?: AbortController,
-  headers?: HeadersInit
+  headers?: HeadersInit,
+  isCohere?:Boolean
 ): Observable<string> {
   return new Observable((subscriber) => {
     fetch(inferenceUrl, {
@@ -45,8 +46,13 @@ export function requestInference(
           return
         }
         if (model.parameters.stream === false) {
-          const data = await response.json()
-          subscriber.next(data.choices[0]?.message?.content ?? '')
+          if(isCohere){
+            const chatHistory = (await response.json()).chat_history
+            subscriber.next(chatHistory[chatHistory.length - 1].message)
+          } else {
+            const data = await response.json()
+            subscriber.next(data.choices[0]?.message?.content ?? '')
+          }
         } else {
           const stream = response.body
           const decoder = new TextDecoder('utf-8')

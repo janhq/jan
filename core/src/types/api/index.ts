@@ -156,7 +156,7 @@ export const APIEvents = [
   ...Object.values(DownloadEvent),
   ...Object.values(LocalImportModelEvent),
 ]
-export type MessageType = {
+export type PayloadType = {
   messages: ChatCompletionMessage[];
   model:string;
   stream: Boolean;

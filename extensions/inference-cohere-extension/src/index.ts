@@ -6,8 +6,8 @@
  * @module inference-openai-extension/src/index
  */
 
-import { RemoteOAIEngine, SettingComponentProps } from '@janhq/core'
-import { MessageType } from '@janhq/core'
+import { RemoteOAIEngine } from '@janhq/core'
+import { PayloadType } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
 declare const MODELS: Array<any>
@@ -20,7 +20,7 @@ enum RoleType {
   user="USER",
   chatbot="CHATBOT"
 }
-type CohereMessageType = {
+type CoherePayloadType = {
   chat_history?: Array<{role:RoleType,message:string}>,
   message?: string,
 }
@@ -73,17 +73,17 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
     }
   }
 
-  transformMessage =(message:MessageType):CohereMessageType=>{
-    if (message.messages.length===0){
+  transformPayload=(payload:PayloadType):CoherePayloadType=>{
+    if (payload.messages.length===0){
       return {}
     }
     const convertedData = {
       chat_history: [],
       message: ""
     };
-    message.messages.forEach((item, index) => {
+    payload.messages.forEach((item, index) => {
       // Assign the message of the last item to the `message` property
-      if (index === message.messages.length - 1) {
+      if (index === payload.messages.length - 1) {
         convertedData.message = item.content as string;
         return;
       }
@@ -95,4 +95,6 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
     });
     return convertedData;
   }
+
+  isCohere = true;
 }

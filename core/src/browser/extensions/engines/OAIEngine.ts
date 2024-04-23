@@ -31,8 +31,11 @@ export abstract class OAIEngine extends AIEngine {
   // The loaded model instance
   loadedModel: Model | undefined
 
-  // Tranform the message
-  transformMessage?: Function
+  // Tranform the payload
+  transformPayload?: Function
+
+  // Cohere flag to decide whether to transform response
+  isCohere?: Boolean
 
   /**
    * On extension load, subscribe to events.
@@ -87,8 +90,8 @@ export abstract class OAIEngine extends AIEngine {
       stream: true,
       ...model.parameters,
     }
-    if (this.transformMessage){
-      requestBody = this.transformMessage(requestBody);
+    if (this.transformPayload){
+      requestBody = this.transformPayload(requestBody);
     }
 
     requestInference(
@@ -96,7 +99,8 @@ export abstract class OAIEngine extends AIEngine {
       JSON.stringify(requestBody),
       model,
       this.controller,
-      header
+      header,
+      this.isCohere
     ).subscribe({
       next: (content: any) => {
         const messageContent: ThreadContent = {
