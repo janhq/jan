@@ -15,6 +15,8 @@ export const readEmbeddingEngine = (engineName: string) => {
     const settingDirectoryPath = path.join(
       getJanDataFolderPath(),
       'settings',
+      '@janhq',
+      // TODO: James - To be removed
       engineName === 'openai'
         ? 'inference-openai-extension'
         : 'inference-groq-extension',
