@@ -16,10 +16,12 @@ enum Settings {
   apiKey = 'cohere-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',
 }
+
 enum RoleType {
   user = 'USER',
   chatbot = 'CHATBOT',
 }
+
 type CoherePayloadType = {
   chat_history?: Array<{ role: RoleType; message: string }>
   message?: string
@@ -73,7 +75,7 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
     }
   }
 
-  transformPayload(payload: PayloadType): CoherePayloadType {
+  transformPayload = (payload: PayloadType): CoherePayloadType => {
     if (payload.messages.length === 0) {
       return {}
     }
