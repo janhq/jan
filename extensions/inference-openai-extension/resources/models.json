@@ -64,20 +64,25 @@
         "url": "https://openai.com"
       }
     ],
-    "id": "gpt-3.5-turbo-16k-0613",
+    "id": "gpt-3.5-turbo",
     "object": "model",
-    "name": "OpenAI GPT 3.5 Turbo 16k 0613",
-    "version": "1.0",
-    "description": "OpenAI GPT 3.5 Turbo 16k 0613 model is extremely good",
+    "name": "OpenAI GPT 3.5 Turbo",
+    "version": "1.1",
+    "description": "OpenAI GPT 3.5 Turbo model is extremely fast",
     "format": "api",
     "settings": {},
     "parameters": {
-      "max_tokens": 4096,
-      "temperature": 0.7
+      "max_tokens": 16385,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "OpenAI",
-      "tags": ["General", "Big Context Length"]
+      "tags": ["General"]
     },
     "engine": "openai"
   },
