@@ -56,11 +56,13 @@ jobs:
           source /tmp/jan/bin/activate
           pip install -r requirements-dev.lock
           pip install pytest-reportportal pytest-html
-          # Append to pytest.ini
+          
+          # Create pytest.ini file with content
+          cat ../docs/tests/pytest.ini >> pytest.ini
           echo "rp_api_key = ${{ secrets.REPORT_PORTAL_API_KEY }}" >> pytest.ini
           echo "rp_endpoint = ${{ secrets.REPORT_PORTAL_URL_PYTEST }}" >> pytest.ini
-          cat ../docs/tests/pytest.ini >> pytest.ini
-
+          cat pytest.ini
+          
           # Append to conftest.py
           cat ../docs/tests/conftest.py >> tests/conftest.py
 
