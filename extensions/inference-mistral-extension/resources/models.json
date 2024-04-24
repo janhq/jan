@@ -58,5 +58,35 @@
       ]
     },
     "engine": "mistral"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://docs.mistral.ai/api/"
+      }
+    ],
+    "id": "open-mixtral-8x22b",
+    "object": "model",
+    "name": "Mixtral 8x22B",
+    "version": "1.1",
+    "description": "Mixtral 8x22B is a high-performance, cost-effective model designed for complex tasks.",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 32000,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Mistral",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "mistral"
   }
 ]
