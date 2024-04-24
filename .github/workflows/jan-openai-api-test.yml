@@ -56,17 +56,12 @@ jobs:
           source /tmp/jan/bin/activate
           pip install -r requirements-dev.lock
           pip install pytest-reportportal pytest-html
-          # Create pytest.ini file with content
-          echo "[pytest]" > pytest.ini
+          # Append to pytest.ini
           echo "rp_api_key = ${{ secrets.REPORT_PORTAL_API_KEY }}" >> pytest.ini
           echo "rp_endpoint = ${{ secrets.REPORT_PORTAL_URL_PYTEST }}" >> pytest.ini
-          echo "rp_project = openai-api-test" >> pytest.ini
-          echo "rp_launch = 'OpenAI Collection Test'" >> pytest.ini
-          echo "rp_launch_description = 'Full collection'" >> pytest.ini
-          echo "rp_launch_attributes = 'Pytest'" >> pytest.ini
-          
-          cat pytest.ini
+          cat ../docs/tests/pytest.ini >> pytest.ini
 
+          # Append to conftest.py
           cat ../docs/tests/conftest.py >> tests/conftest.py
 
           # start mock server and run test then stop mock server
