@@ -17,12 +17,12 @@ enum Settings {
   chatCompletionsEndPoint = 'chat-completions-endpoint',
 }
 enum RoleType {
-  user="USER",
-  chatbot="CHATBOT"
+  user = 'USER',
+  chatbot = 'CHATBOT',
 }
 type CoherePayloadType = {
-  chat_history?: Array<{role:RoleType,message:string}>,
-  message?: string,
+  chat_history?: Array<{ role: RoleType; message: string }>
+  message?: string
 }
 
 /**
@@ -73,28 +73,31 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
     }
   }
 
-  transformPayload(payload:PayloadType): CoherePayloadType {
-    if (payload.messages.length===0){
+  transformPayload = (payload: PayloadType): CoherePayloadType => {
+    if (payload.messages.length === 0) {
       return {}
     }
     const convertedData = {
       chat_history: [],
-      message: ""
-    };
+      message: '',
+    }
     payload.messages.forEach((item, index) => {
       // Assign the message of the last item to the `message` property
       if (index === payload.messages.length - 1) {
-        convertedData.message = item.content as string;
-        return;
+        convertedData.message = item.content as string
+        return
       }
-      if (item.role === "user") {
-        convertedData.chat_history.push({ role: "USER", message: item.content });
-      } else if (item.role === "system") {
-        convertedData.chat_history.push({ role: "CHATBOT", message: item.content });
+      if (item.role === 'user') {
+        convertedData.chat_history.push({ role: 'USER', message: item.content })
+      } else if (item.role === 'system') {
+        convertedData.chat_history.push({
+          role: 'CHATBOT',
+          message: item.content,
+        })
       }
-    });
-    return convertedData;
+    })
+    return convertedData
   }
 
-  transformResponse = (data:any)=> data.text
+  transformResponse = (data: any) => data.text
 }

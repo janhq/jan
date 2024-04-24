@@ -90,8 +90,8 @@ export abstract class OAIEngine extends AIEngine {
       stream: true,
       ...model.parameters,
     }
-    if (this.transformPayload){
-      requestBody = this.transformPayload(requestBody);
+    if (this.transformPayload) {
+      requestBody = this.transformPayload(requestBody)
     }
 
     requestInference(

@@ -7,14 +7,14 @@ import { ErrorCode, ModelRuntimeParams } from '../../../../types'
  */
 export function requestInference(
   inferenceUrl: string,
-  requestBody:string,
+  requestBody: string,
   model: {
     id: string
     parameters: ModelRuntimeParams
   },
   controller?: AbortController,
   headers?: HeadersInit,
-  transformResponse?:Function
+  transformResponse?: Function
 ): Observable<string> {
   return new Observable((subscriber) => {
     fetch(inferenceUrl, {
@@ -31,11 +31,11 @@ export function requestInference(
       .then(async (response) => {
         if (!response.ok) {
           const data = await response.json()
-          let errorCode = ErrorCode.Unknown;
+          let errorCode = ErrorCode.Unknown
           if (data.error) {
             errorCode = data.error.code ?? data.error.type ?? ErrorCode.Unknown
           } else if (response.status === 401) {
-            errorCode = ErrorCode.InvalidApiKey;
+            errorCode = ErrorCode.InvalidApiKey
           }
           const error = {
             message: data.error?.message ?? 'Error occurred.',
@@ -47,7 +47,7 @@ export function requestInference(
         }
         if (model.parameters.stream === false) {
           const data = await response.json()
-          if(transformResponse){
+          if (transformResponse) {
             subscriber.next(transformResponse(data))
           } else {
             subscriber.next(data.choices[0]?.message?.content ?? '')
