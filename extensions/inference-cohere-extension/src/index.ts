@@ -8,6 +8,7 @@
 
 import { RemoteOAIEngine } from '@janhq/core'
 import { PayloadType } from '@janhq/core'
+import { ChatCompletionRole } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
 declare const MODELS: Array<any>
@@ -20,11 +21,13 @@ enum Settings {
 enum RoleType {
   user = 'USER',
   chatbot = 'CHATBOT',
+  system = 'SYSTEM',
 }
 
 type CoherePayloadType = {
   chat_history?: Array<{ role: RoleType; message: string }>
-  message?: string
+  message?: string,
+  preamble?: string,
 }
 
 /**
@@ -79,7 +82,7 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
     if (payload.messages.length === 0) {
       return {}
     }
-    const convertedData = {
+    const convertedData:CoherePayloadType = {
       chat_history: [],
       message: '',
     }
@@ -89,13 +92,15 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
         convertedData.message = item.content as string
         return
       }
-      if (item.role === 'user') {
-        convertedData.chat_history.push({ role: 'USER', message: item.content })
-      } else if (item.role === 'system') {
+      if (item.role === ChatCompletionRole.User) {
+        convertedData.chat_history.push({ role: RoleType.user, message: item.content as string})
+      } else if (item.role === ChatCompletionRole.Assistant) {
         convertedData.chat_history.push({
-          role: 'CHATBOT',
-          message: item.content,
+          role: RoleType.chatbot,
+          message: item.content as string,
         })
+      } else if (item.role === ChatCompletionRole.System) {
+        convertedData.preamble = item.content as string
       }
     })
     return convertedData
