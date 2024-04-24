@@ -7,7 +7,7 @@ import { ErrorCode, ModelRuntimeParams } from '../../../../types'
  */
 export function requestInference(
   inferenceUrl: string,
-  requestBody: string,
+  requestBody: any,
   model: {
     id: string
     parameters: ModelRuntimeParams
@@ -25,7 +25,7 @@ export function requestInference(
         'Accept': model.parameters.stream ? 'text/event-stream' : 'application/json',
         ...headers,
       },
-      body: requestBody,
+      body: JSON.stringify(requestBody),
       signal: controller?.signal,
     })
       .then(async (response) => {

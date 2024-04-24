@@ -96,7 +96,7 @@ export abstract class OAIEngine extends AIEngine {
 
     requestInference(
       this.inferenceUrl,
-      JSON.stringify(requestBody),
+      requestBody,
       model,
       this.controller,
       header,
