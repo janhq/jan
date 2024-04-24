@@ -20,6 +20,8 @@ import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
 
+import { toRuntimeParams } from '@/utils/modelParam'
+
 import { extensionManager } from '@/extension'
 import {
   getCurrentChatMessagesAtom,
@@ -32,6 +34,7 @@ import {
   threadsAtom,
   isGeneratingResponseAtom,
   updateThreadAtom,
+  getActiveThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const maxWordForThreadTitle = 10
@@ -54,6 +57,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const updateThread = useSetAtom(updateThreadAtom)
   const messagesRef = useRef(messages)
   const activeModelRef = useRef(activeModel)
+  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const activeModelParamsRef = useRef(activeModelParams)
 
   useEffect(() => {
     threadsRef.current = threads
@@ -70,6 +75,10 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   useEffect(() => {
     activeModelRef.current = activeModel
   }, [activeModel])
+
+  useEffect(() => {
+    activeModelParamsRef.current = activeModelParams
+  }, [activeModelParams])
 
   const onNewMessageResponse = useCallback(
     (message: ThreadMessage) => {
@@ -247,6 +256,8 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       },
     ]
 
+    const runtimeParams = toRuntimeParams(activeModelParamsRef.current)
+
     const messageRequest: MessageRequest = {
       id: msgId,
       threadId: message.thread_id,
@@ -255,6 +266,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       model: {
         ...activeModelRef.current,
         parameters: {
+          ...runtimeParams,
           stream: false,
         },
       },
