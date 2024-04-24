@@ -61,8 +61,10 @@ jobs:
           echo "rp_api_key = ${{ secrets.REPORT_PORTAL_API_KEY }}" >> pytest.ini
           echo "rp_endpoint = ${{ secrets.REPORT_PORTAL_URL_PYTEST }}" >> pytest.ini
           echo "rp_project = openai-api-test" >> pytest.ini
-          echo "rp_launch = CollectionTest" >> pytest.ini
-          echo "rp_launch_description = 'Smoke test'" >> pytest.ini
+          echo "rp_launch = 'OpenAI Collection Test'" >> pytest.ini
+          echo "rp_launch_description = 'Full collection'" >> pytest.ini
+          echo "rp_launch_attributes = 'Pytest'" >> pytest.ini
+          
           cat pytest.ini
 
           cat ../docs/tests/conftest.py >> tests/conftest.py
