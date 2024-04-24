@@ -73,7 +73,7 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
     }
   }
 
-  transformPayload=(payload:PayloadType):CoherePayloadType=>{
+  transformPayload(payload:PayloadType): CoherePayloadType {
     if (payload.messages.length===0){
       return {}
     }
