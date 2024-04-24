@@ -96,5 +96,5 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
     return convertedData;
   }
 
-  isCohere = true;
+  transformResponse = (data:any)=> data.text
 }

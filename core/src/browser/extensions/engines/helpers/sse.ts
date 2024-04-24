@@ -14,7 +14,7 @@ export function requestInference(
   },
   controller?: AbortController,
   headers?: HeadersInit,
-  isCohere?:Boolean
+  transformResponse?:Function
 ): Observable<string> {
   return new Observable((subscriber) => {
     fetch(inferenceUrl, {
@@ -46,11 +46,10 @@ export function requestInference(
           return
         }
         if (model.parameters.stream === false) {
-          if(isCohere){
-            const chatHistory = (await response.json()).chat_history
-            subscriber.next(chatHistory[chatHistory.length - 1].message)
+          const data = await response.json()
+          if(transformResponse){
+            subscriber.next(transformResponse(data))
           } else {
-            const data = await response.json()
             subscriber.next(data.choices[0]?.message?.content ?? '')
           }
         } else {

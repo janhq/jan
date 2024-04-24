@@ -31,11 +31,11 @@ export abstract class OAIEngine extends AIEngine {
   // The loaded model instance
   loadedModel: Model | undefined
 
-  // Tranform the payload
+  // Transform the payload
   transformPayload?: Function
 
-  // Cohere flag to decide whether to transform response
-  isCohere?: boolean
+  // Transform the response
+  transformResponse?: Function
 
   /**
    * On extension load, subscribe to events.
@@ -100,7 +100,7 @@ export abstract class OAIEngine extends AIEngine {
       model,
       this.controller,
       header,
-      this.isCohere
+      this.transformResponse
     ).subscribe({
       next: (content: any) => {
         const messageContent: ThreadContent = {
