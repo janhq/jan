@@ -8,7 +8,7 @@
   "id": "stealth-v1.2-7b",
   "object": "model",
   "name": "Stealth 7B Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "This is a new experimental family designed to enhance Mathematical and Logical abilities.",
   "format": "gguf",
   "settings": {
