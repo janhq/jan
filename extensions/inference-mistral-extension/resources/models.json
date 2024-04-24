@@ -68,7 +68,7 @@
     "id": "open-mixtral-8x22b",
     "object": "model",
     "name": "Mixtral 8x22B",
-    "version": "1.1",
+    "version": "1.0",
     "description": "Mixtral 8x22B is a high-performance, cost-effective model designed for complex tasks.",
     "format": "api",
     "settings": {},
