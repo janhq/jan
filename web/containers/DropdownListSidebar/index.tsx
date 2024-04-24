@@ -134,10 +134,19 @@ const DropdownListSidebar = ({
       }
 
       if (activeThread) {
+        // Default setting ctx_len for the model for a better onboarding experience
+        // TODO: When Cortex support hardware instructions, we should remove this
+        const overriddenSettings =
+          model?.settings.ctx_len && model.settings.ctx_len > 2048
+            ? { ctx_len: 2048 }
+            : {}
+
         const modelParams = {
           ...model?.parameters,
           ...model?.settings,
+          ...overriddenSettings,
         }
+
         // Update model parameter to the thread state
         setThreadModelParams(activeThread.id, modelParams)
 
