@@ -1,7 +1,7 @@
 {
   "name": "@janhq/inference-nitro-extension",
   "productName": "Nitro Inference Engine",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "This extension embeds Nitro, a lightweight (3mb) inference engine written in C++. See https://nitro.jan.ai.\nAdditional dependencies could be installed to run without Cuda Toolkit installation.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",
