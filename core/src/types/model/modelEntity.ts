@@ -105,6 +105,7 @@ export type ModelMetadata = {
  */
 export type ModelSettingParams = {
   ctx_len?: number
+  max_ctx_len?: number
   ngl?: number
   embedding?: boolean
   n_parallel?: number

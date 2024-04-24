@@ -29,9 +29,8 @@ export const getConfigurationsData = (
               break
             case 'ctx_len':
               componentSetting.controllerProps.max =
-                selectedModel?.settings.ctx_len ||
-                componentSetting.controllerProps.max ||
-                2048
+                selectedModel?.settings.max_ctx_len ??
+                componentSetting.controllerProps.max
               break
           }
         }
