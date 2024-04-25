@@ -1,4 +1,4 @@
-name: Test - Openai API Pytest collection
+name: Test - OpenAI API Pytest collection
 on:
   workflow_dispatch:
   push:
@@ -18,7 +18,7 @@ on:
       - "docs/**"
 
 jobs:
-  test:
+  openai-python-tests:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
