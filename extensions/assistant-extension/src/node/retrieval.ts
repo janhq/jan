@@ -1,6 +1,7 @@
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
 import { formatDocumentsAsString } from 'langchain/util/document'
 import { PDFLoader } from 'langchain/document_loaders/fs/pdf'
+import { TextLoader } from 'langchain/document_loaders/fs/text'
 
 import { HNSWLib } from 'langchain/vectorstores/hnswlib'
 
@@ -50,9 +51,14 @@ export class Retrieval {
     filePath: string,
     memoryPath: string
   ): Promise<any> => {
-    const loader = new PDFLoader(filePath, {
+    var loader
+    if (filePath.endsWith(".pdf") ) {
+     loader = new PDFLoader(filePath, {
       splitPages: true,
     })
+    } else {
+      loader = new TextLoader(filePath)
+    }
     if (!this.embeddingModel) return Promise.reject()
     const doc = await loader.load()
     const docs = await this.textSplitter!.splitDocuments(doc)

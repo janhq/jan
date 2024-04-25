@@ -113,30 +113,49 @@ export default class JSONConversationalExtension extends ConversationalExtension
       ])
       if (!(await fs.existsSync(threadDirPath))) await fs.mkdir(threadDirPath)
 
-      if (message.content[0]?.type === 'image') {
-        const filesPath = await joinPath([threadDirPath, 'files'])
-        if (!(await fs.existsSync(filesPath))) await fs.mkdir(filesPath)
+      switch (message.content[0]?.type){
+        case 'image': {
+          const filesPath = await joinPath([threadDirPath, 'files'])
+          if (!(await fs.existsSync(filesPath))) await fs.mkdir(filesPath)
 
-        const imagePath = await joinPath([filesPath, `${message.id}.png`])
-        const base64 = message.content[0].text.annotations[0]
-        await this.storeImage(base64, imagePath)
-        if ((await fs.existsSync(imagePath)) && message.content?.length) {
-          // Use file path instead of blob
-          message.content[0].text.annotations[0] = `threads/${message.thread_id}/files/${message.id}.png`
+          const imagePath = await joinPath([filesPath, `${message.id}.png`])
+          const base64 = message.content[0].text.annotations[0]
+          await this.storeImage(base64, imagePath)
+          if ((await fs.existsSync(imagePath)) && message.content?.length) {
+            // Use file path instead of blob
+            message.content[0].text.annotations[0] = `threads/${message.thread_id}/files/${message.id}.png`
+          }
+          break
         }
-      }
 
-      if (message.content[0]?.type === 'pdf') {
-        const filesPath = await joinPath([threadDirPath, 'files'])
-        if (!(await fs.existsSync(filesPath))) await fs.mkdir(filesPath)
+        case 'pdf': {
+          const filesPath = await joinPath([threadDirPath, 'files'])
+          if (!(await fs.existsSync(filesPath))) await fs.mkdir(filesPath)
 
-        const filePath = await joinPath([filesPath, `${message.id}.pdf`])
-        const blob = message.content[0].text.annotations[0]
-        await this.storeFile(blob, filePath)
+          const filePath = await joinPath([filesPath, `${message.id}.pdf`])
+          const blob = message.content[0].text.annotations[0]
+          await this.storePdf(blob, filePath)
 
-        if ((await fs.existsSync(filePath)) && message.content?.length) {
-          // Use file path instead of blob
-          message.content[0].text.annotations[0] = `threads/${message.thread_id}/files/${message.id}.pdf`
+          if ((await fs.existsSync(filePath)) && message.content?.length) {
+            // Use file path instead of blob
+            message.content[0].text.annotations[0] = `threads/${message.thread_id}/files/${message.id}.pdf`
+          }
+          break
+        }
+
+        case 'plainText': {
+          const filesPath = await joinPath([threadDirPath, 'files'])
+          if (!(await fs.existsSync(filesPath))) await fs.mkdir(filesPath)
+
+          const filePath = await joinPath([filesPath, `${message.id}.txt`])
+          const blob = message.content[0].text.annotations[0]
+          await this.storePlainFile(blob, filePath)
+
+          if ((await fs.existsSync(filePath)) && message.content?.length) {
+            // Use file path instead of blob
+            message.content[0].text.annotations[0] = `threads/${message.thread_id}/files/${message.id}.txt`
+          }
+          break
         }
       }
       await fs.appendFileSync(threadMessagePath, JSON.stringify(message) + '\n')
@@ -156,8 +175,18 @@ export default class JSONConversationalExtension extends ConversationalExtension
     }
   }
 
-  async storeFile(base64: string, filePath: string): Promise<void> {
+  async storePdf(base64: string, filePath: string): Promise<void> {
     const base64Data = base64.replace(/^data:application\/pdf;base64,/, '')
+    try {
+      await fs.writeBlob(filePath, base64Data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  // Complete guess
+  async storePlainFile(base64: string, filePath: string): Promise<void> {
+    const base64Data = base64.replace(/^data:text\/plain;base64,/, '')
     try {
       await fs.writeBlob(filePath, base64Data)
     } catch (err) {

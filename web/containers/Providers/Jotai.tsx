@@ -21,7 +21,7 @@ export default function JotaiWrapper({ children }: Props) {
   return <Provider>{children}</Provider>
 }
 
-export type FileType = 'image' | 'pdf'
+export type FileType = 'image' | 'pdf' | 'plain/text'
 
 export type FileInfo = {
   file: File
