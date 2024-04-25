@@ -155,12 +155,12 @@ const LocalServerScreen = () => {
         isCorsEnabled,
         isVerboseEnabled,
       })
-      await startModel(selectedModel.id)
       if (isStarted) setServerEnabled(true)
       if (firstTimeVisitAPIServer) {
         localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
         setFirstTimeVisitAPIServer(false)
       }
+      startModel(selectedModel.id, false).catch((e) => console.error(e))
     } catch (e) {
       console.error(e)
       toaster({

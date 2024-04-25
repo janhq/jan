@@ -8,7 +8,7 @@
     "id": "hermes-pro-7b",
     "object": "model",
     "name": "Hermes Pro 7B Q4",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Hermes Pro is superior in Roleplaying, Reasoning and Explaining problem.",
     "format": "gguf",
     "settings": {
@@ -27,7 +27,7 @@
     },
     "metadata": {
       "author": "NousResearch",
-      "tags": ["7B", "Finetuned", "Featured"],
+      "tags": ["7B", "Finetuned"],
       "size": 4370000000
     },
     "engine": "nitro"
