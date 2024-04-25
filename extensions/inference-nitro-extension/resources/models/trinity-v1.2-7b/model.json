@@ -8,7 +8,7 @@
   "id": "trinity-v1.2-7b",
   "object": "model",
   "name": "Trinity-v1.2 7B Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Trinity is an experimental model merge using the Slerp method. Recommended for daily assistance purposes.",
   "format": "gguf",
   "settings": {
@@ -26,7 +26,7 @@
   },
   "metadata": {
     "author": "Jan",
-    "tags": ["7B", "Merged", "Featured"],
+    "tags": ["7B", "Merged"],
     "size": 4370000000,
     "cover": "https://raw.githubusercontent.com/janhq/jan/dev/models/trinity-v1.2-7b/cover.png"
   },

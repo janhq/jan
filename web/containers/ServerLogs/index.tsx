@@ -97,7 +97,7 @@ const ServerLogs = (props: ServerLogsProps) => {
         </div>
       </div>
       <div className="overflow-hidden">
-        {logs.length > 1 ? (
+        {logs.length > 0 ? (
           <div className="h-full overflow-auto">
             <code className="inline-block whitespace-pre-line text-xs">
               {logs.slice(-limit).map((log, i) => {

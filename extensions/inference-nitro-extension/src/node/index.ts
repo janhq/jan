@@ -131,10 +131,11 @@ async function loadModel(
     if (!llama_model_path) return Promise.reject('No GGUF model file found')
 
     currentSettings = {
+      cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
+      // model.settings can override the default settings
       ...params.model.settings,
       llama_model_path,
       // This is critical and requires real CPU physical core count (or performance core)
-      cpu_threads: Math.max(1, nitroResourceProbe.numCpuPhysicalCore),
       ...(params.model.settings.mmproj && {
         mmproj: path.isAbsolute(params.model.settings.mmproj)
           ? params.model.settings.mmproj
