@@ -1,4 +1,4 @@
-name: Jan Build Electron App
+name: Electron Builder - Tag
 
 on:
   push:

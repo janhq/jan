@@ -25,16 +25,13 @@ If applicable, add screenshots to help explain your issue.
 
 **Environment details**
 - Operating System: [Specify your OS. e.g., MacOS Sonoma 14.2.1, Windows 11, Ubuntu 22, etc]
-- Jan Version: [e.g., 0.4.3]
+- Jan Version: [e.g., 0.4.xxx nightly or manual]
 - Processor: [e.g., Apple M1, Intel Core i7, AMD Ryzen 5, etc]
 - RAM: [e.g., 8GB, 16GB]
 - Any additional relevant hardware specifics: [e.g., Graphics card, SSD/HDD]
 
 **Logs**
-If the cause of the error is not clear, kindly provide your usage logs:
-- `tail -n 50 ~/jan/logs/app.log` if you are using the UI
-- `tail -n 50 ~/jan/logs/server.log` if you are using the local api server
-Making sure to redact any private information.
+If the cause of the error is not clear, kindly provide your usage logs: https://jan.ai/docs/troubleshooting#how-to-get-error-logs
 
 **Additional context**
 Add any other context or information that could be helpful in diagnosing the problem.
