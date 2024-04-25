@@ -1,4 +1,4 @@
-name: Jan Build Electron App Nightly or Manual
+name: Electron Builder - Nightly / Manual
 
 on:
   push:

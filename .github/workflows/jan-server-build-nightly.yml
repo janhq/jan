@@ -1,4 +1,4 @@
-name: Jan Build Docker Nightly or Manual
+name: Docker Builder - Nightly / Manual
 
 on:
   push:
