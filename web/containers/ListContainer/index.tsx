@@ -12,7 +12,7 @@ const ListContainer: React.FC<Props> = ({ children }) => {
 
     listRef.current?.scrollTo({
       top: scrollHeight,
-      behavior: 'smooth',
+      behavior: 'instant',
     })
   })
 
