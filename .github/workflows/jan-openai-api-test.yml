@@ -1,4 +1,4 @@
-name: Test - Openai API collection test
+name: Test - Openai API Pytest collection
 on:
   workflow_dispatch:
   push:

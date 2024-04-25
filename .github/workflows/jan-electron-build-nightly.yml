@@ -1,12 +1,6 @@
 name: Electron Builder - Nightly / Manual
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - 'README.md'
-      - 'docs/**'
   schedule:
     - cron: '0 20 * * 1,2,3' # At 8 PM UTC on Monday, Tuesday, and Wednesday which is 3 AM UTC+7 Tuesday, Wednesday, and Thursday
   workflow_dispatch:
