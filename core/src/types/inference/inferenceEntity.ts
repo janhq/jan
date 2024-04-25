@@ -30,6 +30,7 @@ export enum ChatCompletionMessageContentType {
   Text = 'text',
   Image = 'image_url',
   Doc = 'doc_url',
+  TextDoc = 'plain_doc_url',
 }
 
 export type ChatCompletionMessageContentText = {
