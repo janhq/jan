@@ -1,4 +1,4 @@
-name: Jan Electron Linter & Test
+name: Test - Linter & Playwright
 on:
   workflow_dispatch:
   push:

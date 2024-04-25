@@ -7,21 +7,16 @@ import { ErrorCode, ModelRuntimeParams } from '../../../../types'
  */
 export function requestInference(
   inferenceUrl: string,
-  recentMessages: any[],
+  requestBody: any,
   model: {
     id: string
     parameters: ModelRuntimeParams
   },
   controller?: AbortController,
-  headers?: HeadersInit
+  headers?: HeadersInit,
+  transformResponse?: Function
 ): Observable<string> {
   return new Observable((subscriber) => {
-    const requestBody = JSON.stringify({
-      messages: recentMessages,
-      model: model.id,
-      stream: true,
-      ...model.parameters,
-    })
     fetch(inferenceUrl, {
       method: 'POST',
       headers: {
@@ -30,17 +25,17 @@ export function requestInference(
         'Accept': model.parameters.stream ? 'text/event-stream' : 'application/json',
         ...headers,
       },
-      body: requestBody,
+      body: JSON.stringify(requestBody),
       signal: controller?.signal,
     })
       .then(async (response) => {
         if (!response.ok) {
           const data = await response.json()
-          let errorCode = ErrorCode.Unknown;
+          let errorCode = ErrorCode.Unknown
           if (data.error) {
             errorCode = data.error.code ?? data.error.type ?? ErrorCode.Unknown
           } else if (response.status === 401) {
-            errorCode = ErrorCode.InvalidApiKey;
+            errorCode = ErrorCode.InvalidApiKey
           }
           const error = {
             message: data.error?.message ?? 'Error occurred.',
@@ -52,7 +47,11 @@ export function requestInference(
         }
         if (model.parameters.stream === false) {
           const data = await response.json()
-          subscriber.next(data.choices[0]?.message?.content ?? '')
+          if (transformResponse) {
+            subscriber.next(transformResponse(data))
+          } else {
+            subscriber.next(data.choices[0]?.message?.content ?? '')
+          }
         } else {
           const stream = response.body
           const decoder = new TextDecoder('utf-8')

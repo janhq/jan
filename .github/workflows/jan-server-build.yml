@@ -1,4 +1,4 @@
-name: Jan Build Docker
+name: Docker Builder - Tag
 
 on:
   push:
