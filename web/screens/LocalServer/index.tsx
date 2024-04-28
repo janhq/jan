@@ -1,8 +1,4 @@
-'use client'
-
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-
-import ScrollToBottom from 'react-scroll-to-bottom'
 
 import {
   Button,
@@ -34,9 +30,8 @@ import DropdownListSidebar, {
   selectedModelAtom,
 } from '@/containers/DropdownListSidebar'
 
-import ModalTroubleShooting, {
-  modalTroubleShootingAtom,
-} from '@/containers/ModalTroubleShoot'
+import ListContainer from '@/containers/ListContainer'
+import { modalTroubleShootingAtom } from '@/containers/ModalTroubleShoot'
 import ServerLogs from '@/containers/ServerLogs'
 
 import { toaster } from '@/containers/Toast'
@@ -392,7 +387,7 @@ const LocalServerScreen = () => {
       </div>
 
       {/* Middle Bar */}
-      <ScrollToBottom className="relative flex h-full w-full flex-col overflow-auto bg-background">
+      <ListContainer>
         <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-zinc-600">
           <h2 className="font-bold">Server Logs</h2>
           <div className="space-x-2">
@@ -459,7 +454,7 @@ const LocalServerScreen = () => {
             <ServerLogs />
           </div>
         )}
-      </ScrollToBottom>
+      </ListContainer>
 
       {/* Right bar */}
       <div
@@ -538,7 +533,6 @@ const LocalServerScreen = () => {
           )}
         </div>
       </div>
-      <ModalTroubleShooting />
     </div>
   )
 }
