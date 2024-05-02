@@ -8,23 +8,48 @@
     "id": "mistral-small-latest",
     "object": "model",
     "name": "Mistral Small",
-    "version": "1.1",
-    "description": "Mistral Small is the ideal choice for simpe tasks (Classification, Customer Support, or Text Generation) at an affordable price.",
+    "version": "1.0",
+    "description": "Mistral Small is the ideal choice for simpe tasks that one can do in builk - like Classification, Customer Support, or Text Generation. It offers excellent performance at an affordable price point.",
     "format": "api",
     "settings": {},
     "parameters": {
-      "max_tokens": 32000,
-      "temperature": 0.7,
-      "top_p": 0.95,
-      "stream": true,
-      "stop": [],
-      "frequency_penalty": 0,
-      "presence_penalty": 0
+      "max_tokens": 4096,
+      "temperature": 0.7
     },
     "metadata": {
       "author": "Mistral",
       "tags": [
-        "General"
+        "Classification",
+        "Customer Support",
+        "Text Generation"
+      ]
+    },
+    "engine": "mistral"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://docs.mistral.ai/api/"
+      }
+    ],
+    "id": "mistral-medium-latest",
+    "object": "model",
+    "name": "Mistral Medium",
+    "version": "1.0",
+    "description": "Mistral Medium is the ideal for intermediate tasks that require moderate reasoning - like Data extraction, Summarizing a Document, Writing a Job Description, or Writing Product Descriptions. Mistral Medium strikes a balance between performance and capability, making it suitable for a wide range of tasks that only require language transformaion",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 4096,
+      "temperature": 0.7
+    },
+    "metadata": {
+      "author": "Mistral",
+      "tags": [
+        "Data extraction",
+        "Summarizing a Document",
+        "Writing a Job Description",
+        "Writing Product Descriptions"
       ]
     },
     "engine": "mistral"
@@ -38,53 +63,21 @@
     "id": "mistral-large-latest",
     "object": "model",
     "name": "Mistral Large",
-    "version": "1.1",
-    "description": "Mistral Large is ideal for complex tasks (Synthetic Text Generation, Code Generation, RAG, or Agents).",
-    "format": "api",
-    "settings": {},
-    "parameters": {
-      "max_tokens": 32000,
-      "temperature": 0.7,
-      "top_p": 0.95,
-      "stream": true,
-      "stop": [],
-      "frequency_penalty": 0,
-      "presence_penalty": 0
-    },
-    "metadata": {
-      "author": "Mistral",
-      "tags": [
-        "General"
-      ]
-    },
-    "engine": "mistral"
-  },
-  {
-    "sources": [
-      {
-        "url": "https://docs.mistral.ai/api/"
-      }
-    ],
-    "id": "open-mixtral-8x22b",
-    "object": "model",
-    "name": "Mixtral 8x22B",
     "version": "1.0",
-    "description": "Mixtral 8x22B is a high-performance, cost-effective model designed for complex tasks.",
+    "description": "Mistral Large is ideal for complex tasks that require large reasoning capabilities or are highly specialized - like Synthetic Text Generation, Code Generation, RAG, or Agents.",
     "format": "api",
     "settings": {},
     "parameters": {
-      "max_tokens": 32000,
-      "temperature": 0.7,
-      "top_p": 0.95,
-      "stream": true,
-      "stop": [],
-      "frequency_penalty": 0,
-      "presence_penalty": 0
+      "max_tokens": 4096,
+      "temperature": 0.7
     },
     "metadata": {
       "author": "Mistral",
       "tags": [
-        "General"
+        "Text Generation",
+        "Code Generation",
+        "RAG",
+        "Agents"
       ]
     },
     "engine": "mistral"
