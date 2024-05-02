@@ -1,23 +1,24 @@
 import { clipboard, globalShortcut } from 'electron'
-import { keyboard, Key } from '@nut-tree/nut-js'
 
 /**
  * Gets selected text by synthesizing the keyboard shortcut
  * "CommandOrControl+c" then reading text from the clipboard
  */
 export const getSelectedText = async () => {
-  const currentClipboardContent = clipboard.readText() // preserve clipboard content
-  clipboard.clear()
-  const hotkeys: Key[] = [
-    process.platform === 'darwin' ? Key.LeftCmd : Key.LeftControl,
-    Key.C,
-  ]
-  await keyboard.pressKey(...hotkeys)
-  await keyboard.releaseKey(...hotkeys)
-  await new Promise((resolve) => setTimeout(resolve, 200)) // add a delay before checking clipboard
-  const selectedText = clipboard.readText()
-  clipboard.writeText(currentClipboardContent)
-  return selectedText
+  // TODO: Implement this function
+  // const currentClipboardContent = clipboard.readText() // preserve clipboard content
+  // clipboard.clear()
+  // const hotkeys: Key[] = [
+  //   process.platform === 'darwin' ? Key.LeftCmd : Key.LeftControl,
+  //   Key.C,
+  // ]
+  // await keyboard.pressKey(...hotkeys)
+  // await keyboard.releaseKey(...hotkeys)
+  // await new Promise((resolve) => setTimeout(resolve, 200)) // add a delay before checking clipboard
+  // const selectedText = clipboard.readText()
+  // clipboard.writeText(currentClipboardContent)
+  // return selectedText
+  return ''
 }
 
 /**
