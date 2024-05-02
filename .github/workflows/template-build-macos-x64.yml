@@ -41,7 +41,7 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-13
     environment: production
     permissions:
       contents: write

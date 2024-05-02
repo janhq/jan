@@ -165,6 +165,21 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
     requireModelReload: true,
     configType: 'setting',
   },
+  cpu_threads: {
+    key: 'cpu_threads',
+    title: 'CPU Threads',
+    description:
+      'Determines CPU inference threads, limited by hardware and OS. (Maximum determined by system)',
+    controllerType: 'slider',
+    controllerProps: {
+      min: 0,
+      max: 128,
+      step: 1,
+      value: 1,
+    },
+    requireModelReload: true,
+    configType: 'setting',
+  },
   // assistant
   chunk_size: {
     key: 'chunk_size',

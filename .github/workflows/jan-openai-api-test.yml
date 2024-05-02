@@ -1,0 +1,90 @@
+name: Test - OpenAI API Pytest collection
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - dev
+      - release/**
+    paths:
+      - "docs/**"
+
+  pull_request:
+    branches:
+      - main
+      - dev
+      - release/**
+    paths:
+      - "docs/**"
+
+jobs:
+  openai-python-tests:
+    runs-on: [self-hosted, Linux, ubuntu-desktop]
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Installing node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: "Cleanup cache"
+        continue-on-error: true
+        run: |
+          rm -rf ~/jan
+          make clean
+
+      - name: install dependencies
+        run: |
+          npm install -g @stoplight/prism-cli
+
+      - name: create python virtual environment and run test
+        run: |
+          python3 -m venv /tmp/jan
+          source /tmp/jan/bin/activate
+          # Clone openai-api-python repo
+          OPENAI_API_PYTHON_TAG=$(cat docs/openapi/version.txt)
+          git clone https://github.com/openai/openai-python.git
+          cd openai-python
+          git checkout $OPENAI_API_PYTHON_TAG
+
+          python3 -m venv /tmp/jan
+          source /tmp/jan/bin/activate
+          pip install -r requirements-dev.lock
+          pip install pytest-reportportal pytest-html
+          
+          # Create pytest.ini file with content
+          cat ../docs/tests/pytest.ini >> pytest.ini
+          echo "rp_api_key = ${{ secrets.REPORT_PORTAL_API_KEY }}" >> pytest.ini
+          echo "rp_endpoint = ${{ secrets.REPORT_PORTAL_URL_PYTEST }}" >> pytest.ini
+          cat pytest.ini
+          
+          # Append to conftest.py
+          cat ../docs/tests/conftest.py >> tests/conftest.py
+
+          # start mock server and run test then stop mock server
+          prism mock ../docs/openapi/jan.yaml > prism.log & prism_pid=$! && pytest --reportportal --html=report.html && kill $prism_pid
+          deactivate
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: report
+          path: |
+            openai-python/report.html
+            openai-python/assets
+            openai-python/prism.log
+
+      - name: clean up
+        if: always()
+        run: |
+          rm -rf /tmp/jan
+          rm -rf openai-python
+          rm -rf report.html
+          rm -rf report.zip
+  
+

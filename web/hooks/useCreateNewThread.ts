@@ -94,6 +94,11 @@ export const useCreateNewThread = () => {
       settings: assistant.tools && assistant.tools[0].settings,
     }
 
+    const overriddenSettings =
+      defaultModel?.settings.ctx_len && defaultModel.settings.ctx_len > 2048
+        ? { ctx_len: 2048 }
+        : {}
+
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
@@ -101,7 +106,7 @@ export const useCreateNewThread = () => {
       tools: experimentalEnabled ? [assistantTools] : assistant.tools,
       model: {
         id: defaultModel?.id ?? '*',
-        settings: defaultModel?.settings ?? {},
+        settings: { ...defaultModel?.settings, ...overriddenSettings } ?? {},
         parameters: defaultModel?.parameters ?? {},
         engine: defaultModel?.engine,
       },
@@ -126,6 +131,7 @@ export const useCreateNewThread = () => {
     setThreadModelParams(thread.id, {
       ...defaultModel?.settings,
       ...defaultModel?.parameters,
+      ...overriddenSettings,
     })
 
     // Delete the file upload state
