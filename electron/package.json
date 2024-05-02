@@ -95,8 +95,7 @@
     "pacote": "^17.0.4",
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
-    "ulidx": "^2.3.0",
-    "@nut-tree/nut-js": "^4.0.0"
+    "ulidx": "^2.3.0"
   },
   "devDependencies": {
     "@electron/notarize": "^2.1.0",
