@@ -129,11 +129,11 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   }
 
   return (
-    <div className="mx-auto flex w-full flex-shrink-0 items-end justify-center space-x-4 pb-0 pt-1">
+    <div className="mx-auto flex w-full flex-col flex-shrink-0 items-start justify-center space-y-4 pb-0 pt-1">
       <div className="relative flex w-full flex-col">
         <Textarea
           className={twMerge(
-            'max-h-[400px] resize-none overflow-y-hidden pr-20'
+            'max-h-[400px] resize-none pr-20'
           )}
           style={{ height: '40px' }}
           ref={textareaRef}
