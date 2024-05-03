@@ -21,3 +21,38 @@
     @apply bg-border relative z-50 w-[10px] rounded-full;
   }
 }
+
+// Customized scroll bar
+::-webkit-scrollbar {
+  width: 7px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--scroll-bar));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: hsl(var(--background));
+}
+
+::-webkit-scrollbar-corner {
+  background-color: hsl(var(--background));
+}
+
+::-moz-scrollbar {
+  width: 7px;
+}
+
+::-moz-scrollbar-thumb {
+  background-color: hsl(var(--scroll-bar));
+  border-radius: 4px;
+}
+
+::-moz-scrollbar-track {
+  background-color: hsl(var(--background));
+}
+
+::-moz-scrollbar-corner {
+  background-color: hsl(var(--background));
+}
