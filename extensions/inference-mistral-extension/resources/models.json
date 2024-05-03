@@ -9,7 +9,7 @@
     "object": "model",
     "name": "Mistral Small",
     "version": "1.1",
-    "description": "Mistral Small is the ideal choice for simpe tasks (Classification, Customer Support, or Text Generation) at an affordable price.",
+    "description": "Mistral Small is the ideal choice for simple tasks (Classification, Customer Support, or Text Generation) at an affordable price.",
     "format": "api",
     "settings": {},
     "parameters": {
