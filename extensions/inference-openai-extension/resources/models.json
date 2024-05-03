@@ -47,10 +47,7 @@
       "max_tokens": 4096,
       "temperature": 0.7,
       "top_p": 0.95,
-      "stream": true,
-      "stop": [],
-      "frequency_penalty": 0,
-      "presence_penalty": 0
+      "stream": true
     },
     "metadata": {
       "author": "OpenAI",
