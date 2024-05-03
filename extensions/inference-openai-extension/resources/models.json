@@ -13,7 +13,7 @@
     "format": "api",
     "settings": {},
     "parameters": {
-      "max_tokens": 128000,
+      "max_tokens": 4096,
       "temperature": 0.7,
       "top_p": 0.95,
       "stream": true,
@@ -44,7 +44,7 @@
       "textModel": false
     },
     "parameters": {
-      "max_tokens": 128000,
+      "max_tokens": 4096,
       "temperature": 0.7,
       "top_p": 0.95,
       "stream": true,
@@ -72,7 +72,7 @@
     "format": "api",
     "settings": {},
     "parameters": {
-      "max_tokens": 16385,
+      "max_tokens": 4096,
       "temperature": 0.7,
       "top_p": 0.95,
       "stream": true,
