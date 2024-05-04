@@ -12,7 +12,7 @@
   "description": "CodeNinja is good for coding tasks and can handle various languages including Python, C, C++, Rust, Java, JavaScript, and more.",
   "format": "gguf",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 8192,
     "prompt_template": "GPT4 Correct User: {prompt}<|end_of_turn|>GPT4 Correct Assistant:",
     "llama_model_path": "codeninja-1.0-openchat-7b.Q4_K_M.gguf"
   },
@@ -20,7 +20,7 @@
     "temperature": 0.7,
     "top_p": 0.95,
     "stream": true,
-    "max_tokens": 4096,
+    "max_tokens": 8192,
     "frequency_penalty": 0,
     "presence_penalty": 0
   },
