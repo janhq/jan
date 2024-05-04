@@ -8,7 +8,7 @@
   "id": "codeninja-1.0-7b",
   "object": "model",
   "name": "CodeNinja 7B Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "CodeNinja is good for coding tasks and can handle various languages including Python, C, C++, Rust, Java, JavaScript, and more.",
   "format": "gguf",
   "settings": {
