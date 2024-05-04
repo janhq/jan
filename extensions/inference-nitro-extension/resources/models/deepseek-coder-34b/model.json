@@ -1,26 +1,26 @@
 {
   "sources": [
     {
-      "filename": "deepseek-coder-33b-instruct.Q5_K_M.gguf",
-      "url": "https://huggingface.co/TheBloke/deepseek-coder-33B-instruct-GGUF/resolve/main/deepseek-coder-33b-instruct.Q5_K_M.gguf"
+      "filename": "deepseek-coder-33b-instruct.Q4_K_M.gguf",
+      "url": "https://huggingface.co/TheBloke/deepseek-coder-33B-instruct-GGUF/resolve/main/deepseek-coder-33b-instruct.Q4_K_M.gguf"
     }
   ],
   "id": "deepseek-coder-34b",
   "object": "model",
-  "name": "Deepseek Coder 33B Q5",
-  "version": "1.0",
+  "name": "Deepseek Coder 33B Q4",
+  "version": "1.1",
   "description": "Deepseek Coder excelled in project-level code completion with advanced capabilities across multiple programming languages.",
   "format": "gguf",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 16384,
     "prompt_template": "### Instruction:\n{prompt}\n### Response:",
-    "llama_model_path": "deepseek-coder-33b-instruct.Q5_K_M.gguf"
+    "llama_model_path": "deepseek-coder-33b-instruct.Q4_K_M.gguf"
   },
   "parameters": {
     "temperature": 0.7,
     "top_p": 0.95,
     "stream": true,
-    "max_tokens": 4096,
+    "max_tokens": 16384,
     "stop": [],
     "frequency_penalty": 0,
     "presence_penalty": 0
